@@ -69,8 +69,8 @@ const fn min_protocol_version(network: Network) -> u32 {
     }
 }
 
-/// The default metadata time tolerance for checkpoint queries in milliseconds
-const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
+/// Default signed-metadata freshness window for network SDKs.
+const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
@@ -276,9 +276,16 @@ impl Sdk {
     fn freshness_criteria(&self, method_name: &str) -> (Option<u64>, Option<u64>) {
         match method_name {
             "get_addresses_trunk_state" | "get_addresses_branch_state" => (
-                None,
+                // Address synchronization checkpoints can lag the latest
+                // Platform height. Prefer their signed time when available,
+                // but retain the independently trusted height floor for the
+                // explicitly supported height-only configuration.
                 self.metadata_time_tolerance_ms
-                    .and(Some(ADDRESS_STATE_TIME_TOLERANCE_MS)),
+                    .is_none()
+                    .then_some(self.metadata_height_tolerance)
+                    .flatten(),
+                self.metadata_time_tolerance_ms
+                    .map(|configured| configured.min(DEFAULT_METADATA_TIME_TOLERANCE_MS)),
             ),
             _ => (
                 self.metadata_height_tolerance,
@@ -295,16 +302,18 @@ impl Sdk {
     ) -> Result<(), Error> {
         let (metadata_height_tolerance, metadata_time_tolerance_ms) =
             self.freshness_criteria(method_name);
+        // Check the independent local-clock anchor before mutating the
+        // response-derived height high-water mark.
+        if let Some(time_tolerance) = metadata_time_tolerance_ms {
+            let now = chrono::Utc::now().timestamp_millis() as u64;
+            verify_metadata_time(metadata, now, time_tolerance)?;
+        };
         if let Some(height_tolerance) = metadata_height_tolerance {
             verify_metadata_height(
                 metadata,
                 height_tolerance,
                 Arc::clone(&(self.metadata_last_seen_height)),
             )?;
-        };
-        if let Some(time_tolerance) = metadata_time_tolerance_ms {
-            let now = chrono::Utc::now().timestamp_millis() as u64;
-            verify_metadata_time(metadata, now, time_tolerance)?;
         };
 
         self.maybe_update_protocol_version(metadata.protocol_version);
@@ -659,22 +668,14 @@ fn verify_metadata_height(
     tolerance: u64,
     last_seen_height: Arc<atomic::AtomicU64>,
 ) -> Result<(), Error> {
-    let mut expected_height = last_seen_height.load(Ordering::Relaxed);
     let received_height = metadata.height;
+    // Linearize the response at an atomic max update, then reload so a racing
+    // higher response that committed before this validation completes is also
+    // considered. A lower accepted response can never reduce the baseline.
+    let previous_height = last_seen_height.fetch_max(received_height, Ordering::AcqRel);
+    let expected_height = previous_height.max(last_seen_height.load(Ordering::Acquire));
 
-    // Same height, no need to update.
-    if received_height == expected_height {
-        tracing::trace!(
-            expected_height,
-            received_height,
-            tolerance,
-            "received message has the same height as previously seen"
-        );
-        return Ok(());
-    }
-
-    // If expected_height <= tolerance, then Sdk just started, so we just assume what we got is correct.
-    if expected_height > tolerance && received_height < expected_height - tolerance {
+    if expected_height > tolerance && received_height < expected_height.saturating_sub(tolerance) {
         return Err(StaleNodeError::Height {
             expected_height,
             received_height,
@@ -683,25 +684,12 @@ fn verify_metadata_height(
         .into());
     }
 
-    // New height is ahead of the last seen height, so we update the last seen height.
     tracing::trace!(
-        expected_height = expected_height,
-        received_height = received_height,
-        tolerance,
-        "received message with new height"
-    );
-    while let Err(stored_height) = last_seen_height.compare_exchange(
         expected_height,
         received_height,
-        Ordering::SeqCst,
-        Ordering::Relaxed,
-    ) {
-        // The value was changed to a higher value by another thread, so we need to retry.
-        if stored_height >= metadata.height {
-            break;
-        }
-        expected_height = stored_height;
-    }
+        tolerance,
+        "received response within the monotonic height window"
+    );
 
     Ok(())
 }
@@ -788,6 +776,10 @@ pub struct SdkBuilder {
     /// See [SdkBuilder::with_time_tolerance] for more information.
     metadata_time_tolerance_ms: Option<u64>,
 
+    /// Independently trusted initial Platform height used to seed the
+    /// monotonic freshness high-water mark.
+    trusted_initial_height: Option<u64>,
+
     /// directory where dump files will be stored
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
@@ -815,6 +807,7 @@ impl Default for SdkBuilder {
             proofs: true,
             metadata_height_tolerance: Some(1),
             metadata_time_tolerance_ms: None,
+            trusted_initial_height: None,
 
             #[cfg(feature = "mocks")]
             data_contract_cache_size: NonZeroUsize::new(DEFAULT_CONTRACT_CACHE_SIZE)
@@ -859,6 +852,7 @@ impl SdkBuilder {
     pub fn new(addresses: AddressList) -> Self {
         Self {
             addresses: Some(addresses),
+            metadata_time_tolerance_ms: Some(DEFAULT_METADATA_TIME_TOLERANCE_MS),
             ..Default::default()
         }
     }
@@ -1050,7 +1044,9 @@ impl SdkBuilder {
     ///
     /// If None, the time is not checked.
     ///
-    /// This is set to `None` by default.
+    /// Network builders default to 31 minutes. Mock builders default to
+    /// `None`. Disabling this for a proof-enabled network SDK requires a
+    /// trusted initial height with height checking enabled.
     ///
     /// Note that enabling this check can cause issues if the local time is not synchronized with the network time,
     /// when the network is stalled or time between blocks increases significantly.
@@ -1061,6 +1057,16 @@ impl SdkBuilder {
     /// synchronization issues) should be safe.
     pub fn with_time_tolerance(mut self, tolerance_ms: Option<u64>) -> Self {
         self.metadata_time_tolerance_ms = tolerance_ms;
+        self
+    }
+
+    /// Seed proof freshness with an independently trusted Platform height.
+    ///
+    /// This can be used instead of the local-clock policy. The checkpoint must
+    /// come from a trusted source and should be persisted with its network and
+    /// provenance by the caller.
+    pub fn with_trusted_initial_height(mut self, height: u64) -> Self {
+        self.trusted_initial_height = Some(height);
         self
     }
 
@@ -1090,6 +1096,22 @@ impl SdkBuilder {
     ///
     /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
+        let is_network_sdk = self.addresses.is_some();
+        let has_height_anchor = self
+            .trusted_initial_height
+            .zip(self.metadata_height_tolerance)
+            .is_some_and(|(height, tolerance)| height > tolerance);
+        if is_network_sdk
+            && self.proofs
+            && self.metadata_time_tolerance_ms.is_none()
+            && !has_height_anchor
+        {
+            return Err(Error::Config(
+                "proof mode requires a trusted initial height or signed-time freshness policy"
+                    .to_string(),
+            ));
+        }
+
         let dapi_client_settings = match self.settings {
             Some(settings) => DEFAULT_REQUEST_SETTINGS.override_by(settings),
             None => DEFAULT_REQUEST_SETTINGS,
@@ -1126,8 +1148,9 @@ impl SdkBuilder {
                     // pinned is controlled separately by `version_pinned`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
-                    // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
-                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
+                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
+                        self.trusted_initial_height.unwrap_or(0),
+                    )),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                     #[cfg(feature = "mocks")]
@@ -1196,7 +1219,9 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
                     cancel_token: self.cancel_token,
-                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
+                    metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(
+                        self.trusted_initial_height.unwrap_or(0),
+                    )),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
                 };
@@ -1329,6 +1354,89 @@ mod test {
         );
     }
 
+    #[test]
+    fn network_builders_enable_an_independent_time_anchor() {
+        assert_eq!(
+            SdkBuilder::new_testnet().metadata_time_tolerance_ms,
+            Some(super::DEFAULT_METADATA_TIME_TOLERANCE_MS)
+        );
+        assert_eq!(SdkBuilder::new_mock().metadata_time_tolerance_ms, None);
+    }
+
+    #[test]
+    fn proof_enabled_network_builder_rejects_missing_freshness_anchor() {
+        let error = SdkBuilder::new(super::AddressList::new())
+            .with_time_tolerance(None)
+            .build()
+            .expect_err("network proof mode must have an independent freshness anchor");
+
+        assert!(
+            matches!(error, crate::Error::Config(message) if message.contains("trusted initial height"))
+        );
+    }
+
+    #[test_matrix(0, 0; "zero height")]
+    #[test_matrix(1, 1; "height equals tolerance")]
+    #[test_matrix(1, 2; "height below tolerance")]
+    fn proof_enabled_network_builder_rejects_ineffective_height_anchor(
+        trusted_height: u64,
+        tolerance: u64,
+    ) {
+        let error = SdkBuilder::new(super::AddressList::new())
+            .with_time_tolerance(None)
+            .with_height_tolerance(Some(tolerance))
+            .with_trusted_initial_height(trusted_height)
+            .build()
+            .expect_err("trusted height must impose a freshness floor");
+
+        assert!(
+            matches!(error, crate::Error::Config(message) if message.contains("trusted initial height"))
+        );
+    }
+
+    #[test]
+    fn height_only_address_checkpoint_uses_trusted_height_floor() {
+        let sdk = SdkBuilder::new_mock()
+            .with_time_tolerance(None)
+            .with_height_tolerance(Some(2))
+            .with_trusted_initial_height(100)
+            .build()
+            .expect("effective trusted height should permit height-only proof mode");
+
+        assert!(matches!(
+            sdk.verify_response_metadata(
+                "get_addresses_trunk_state",
+                &ResponseMetadata {
+                    height: 97,
+                    ..Default::default()
+                },
+            ),
+            Err(crate::Error::StaleNode(
+                super::StaleNodeError::Height { .. }
+            ))
+        ));
+        assert_eq!(
+            sdk.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Acquire),
+            100,
+            "a rejected stale checkpoint must not lower the trusted floor"
+        );
+    }
+
+    #[test]
+    fn trusted_initial_height_seeds_the_high_water_mark() {
+        let sdk = SdkBuilder::new_mock()
+            .with_trusted_initial_height(42)
+            .build()
+            .expect("mock SDK should build");
+
+        assert_eq!(
+            sdk.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Acquire),
+            42
+        );
+    }
+
     #[test_matrix(97..102, 100, 2, false; "valid height")]
     #[test_case(103, 100, 2, true; "invalid height")]
     fn test_verify_metadata_height(
@@ -1351,10 +1459,57 @@ mod test {
         if result.is_ok() {
             assert_eq!(
                 last_seen_height.load(std::sync::atomic::Ordering::Relaxed),
-                received_height,
-                "previous height should be updated"
+                expected_height.max(received_height),
+                "height high-water mark must never decrease"
             );
         }
+    }
+
+    #[test]
+    fn accepted_height_tolerance_cannot_walk_the_watermark_backwards() {
+        let last_seen_height = Arc::new(std::sync::atomic::AtomicU64::new(100));
+
+        super::verify_metadata_height(
+            &ResponseMetadata {
+                height: 99,
+                ..Default::default()
+            },
+            1,
+            Arc::clone(&last_seen_height),
+        )
+        .expect("one block behind is within tolerance");
+        assert_eq!(
+            last_seen_height.load(std::sync::atomic::Ordering::Acquire),
+            100
+        );
+
+        super::verify_metadata_height(
+            &ResponseMetadata {
+                height: 98,
+                ..Default::default()
+            },
+            1,
+            Arc::clone(&last_seen_height),
+        )
+        .expect_err("a second rollback step must be compared with the high-water mark");
+        assert_eq!(
+            last_seen_height.load(std::sync::atomic::Ordering::Acquire),
+            100
+        );
+
+        super::verify_metadata_height(
+            &ResponseMetadata {
+                height: 101,
+                ..Default::default()
+            },
+            1,
+            Arc::clone(&last_seen_height),
+        )
+        .expect("a newer height should advance the high-water mark");
+        assert_eq!(
+            last_seen_height.load(std::sync::atomic::Ordering::Acquire),
+            101
+        );
     }
 
     #[test]

@@ -395,10 +395,13 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// resync would gate-skip every re-downloaded position against the
 /// stale tree size.
 ///
-/// Idempotent: calling Clear when shielded support has never
-/// been configured (no coordinator installed) is still a
-/// successful no-op on the coordinator side. The sync-loop stop
-/// is unconditional.
+/// Errors with `ErrorWalletOperation` when no shielded coordinator is
+/// installed on this manager (the sync-loop stop still runs unconditionally
+/// first). A Clear is only reachable behind a bound, shielded-enabled host
+/// surface, so a missing coordinator means `configure_shielded` never ran on
+/// THIS manager instance — a wiring fault that must surface (and make the host
+/// fail closed) rather than report a phantom success while the on-disk tree is
+/// left untouched.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     handle: Handle,

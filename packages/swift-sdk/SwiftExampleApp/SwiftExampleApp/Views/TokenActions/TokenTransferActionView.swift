@@ -122,9 +122,7 @@ struct TokenTransferActionView: View {
     private var balanceValue: UInt64 {
         if let initialBalance { return initialBalance }
         guard let balance = matchingBalance else { return 0 }
-        // PersistentTokenBalance stores Int64; we treat it as
-        // a UInt64 here (token amounts are non-negative on Platform).
-        return balance.balance < 0 ? 0 : UInt64(balance.balance)
+        return balance.unsignedBalance
     }
 
     private var balanceDisplay: String {

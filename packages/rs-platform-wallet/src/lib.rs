@@ -19,8 +19,8 @@ pub mod error;
 pub mod events;
 pub mod manager;
 pub mod spv;
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_support;
 mod util;
 pub mod wallet;
 
@@ -56,8 +56,8 @@ pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
-pub use wallet::core::CoreWallet;
 pub use wallet::core::WalletBalance;
+pub use wallet::core::{CoreWallet, SignedCoreTransaction};
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and
 // `identity::crypto::*` internally).
@@ -88,6 +88,7 @@ pub use changeset::{
     IdentityManagerStartState, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
     PlatformAddressSyncStartState, PlatformWalletChangeSet, TokenBalanceChangeSet,
 };
+pub use changeset::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 
 pub use key_wallet_manager;
 

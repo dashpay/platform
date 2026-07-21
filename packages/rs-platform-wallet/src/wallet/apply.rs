@@ -47,7 +47,7 @@
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::PlatformWalletChangeSet;
-use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Errors returned by [`PlatformWalletInfo::apply_changeset`] and the
@@ -318,35 +318,27 @@ impl PlatformWalletInfo {
         //    `Transaction` inside the entry transfers ownership
         //    directly into the wallet map with no clone.
         //
-        //    `Consumed` is the terminal post-consumption state: it
-        //    means an identity registration / top-up has burned this
-        //    asset lock. We drop the entry from the in-memory map
-        //    (the wallet has no further use for it; nothing should be
-        //    waiting on its proof) but the changeset's `asset_locks`
-        //    entry still flows through to the Swift persister so the
-        //    `PersistentAssetLock` row is upserted with `statusRaw=4`
-        //    for historical lookups (e.g. the Transactions list
-        //    rendering the original locked amount on a consumed
-        //    funding tx).
+        //    `Consumed` is a terminal tombstone. Keep it in memory so
+        //    exact-outpoint retries produce `AssetLockAlreadyConsumed`
+        //    rather than the less truthful `AssetLockNotTracked`; proof
+        //    waiters and actionable-list consumers exclude it by status.
+        //    Replaying the persisted tombstone therefore preserves the
+        //    same classification after a restart.
         if let Some(al_cs) = asset_locks {
             for (out_point, entry) in al_cs.asset_locks {
-                if entry.status == AssetLockStatus::Consumed {
-                    self.tracked_asset_locks.remove(&out_point);
-                } else {
-                    self.tracked_asset_locks.insert(
-                        out_point,
-                        TrackedAssetLock {
-                            out_point: entry.out_point,
-                            transaction: entry.transaction,
-                            account_index: entry.account_index,
-                            funding_type: entry.funding_type,
-                            identity_index: entry.identity_index,
-                            amount: entry.amount_duffs,
-                            status: entry.status,
-                            proof: entry.proof,
-                        },
-                    );
-                }
+                self.tracked_asset_locks.insert(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point: entry.out_point,
+                        transaction: entry.transaction,
+                        account_index: entry.account_index,
+                        funding_type: entry.funding_type,
+                        identity_index: entry.identity_index,
+                        amount: entry.amount_duffs,
+                        status: entry.status,
+                        proof: entry.proof,
+                    },
+                );
             }
             for out_point in al_cs.removed {
                 self.tracked_asset_locks.remove(&out_point);
@@ -723,7 +715,27 @@ mod tests {
             .expect("lock present");
         assert_eq!(lock.amount, 5_000);
 
-        // Tombstone removes it.
+        // A restart replays the persisted Consumed upsert. Retain that
+        // terminal snapshot so an exact-outpoint retry is still classified
+        // as already consumed rather than unknown.
+        let mut consumed_entry: AssetLockEntry = lock.into();
+        consumed_entry.status = AssetLockStatus::Consumed;
+        consumed_entry.proof = None;
+        let mut al_cs = AssetLockChangeSet::default();
+        al_cs.asset_locks.insert(out_point, consumed_entry);
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.asset_locks = Some(al_cs);
+        info.apply_changeset(&mut wallet, cs)
+            .expect("apply consumed replay");
+        assert_eq!(
+            info.tracked_asset_locks
+                .get(&out_point)
+                .expect("consumed tombstone restored")
+                .status,
+            AssetLockStatus::Consumed
+        );
+
+        // An explicit removal tombstone still removes it.
         let mut al_cs = AssetLockChangeSet::default();
         al_cs.removed.insert(out_point);
         let mut cs = PlatformWalletChangeSet::default();
