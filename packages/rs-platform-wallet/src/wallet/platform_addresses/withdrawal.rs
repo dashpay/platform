@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
@@ -7,7 +7,6 @@ use dpp::identity::signer::Signer;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::version::PlatformVersion;
 use dpp::withdrawal::Pooling;
-use key_wallet::PlatformP2PKHAddress;
 
 use super::InputSelection;
 use crate::error::promote_address_nonce_error_or_sdk;
@@ -306,41 +305,11 @@ impl PlatformAddressWallet {
         account_index: u32,
         platform_version: &PlatformVersion,
     ) -> Result<WithdrawalPlan, PlatformWalletError> {
-        // Enumerate the account's derived addresses to get the candidate SET.
-        // Balances are read from the chain below, NOT from the account cache —
-        // the cache only tells us *which* addresses belong to this account.
-        // Drop the read lock before the network fetch so a concurrent sync /
-        // reconcile can't be blocked behind a proof round-trip.
-        let candidate_addresses: BTreeSet<PlatformAddress> = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "Wallet {:?} not found in wallet manager",
-                    hex::encode(self.wallet_id)
-                ))
-            })?;
-
-            let account = info
-                .core_wallet
-                .platform_payment_managed_account_at_index(account_index)
-                .ok_or_else(|| {
-                    PlatformWalletError::AddressSync(format!(
-                        "No platform payment account at index {}",
-                        account_index
-                    ))
-                })?;
-
-            account
-                .addresses
-                .addresses
-                .values()
-                .filter_map(|addr_info| {
-                    PlatformP2PKHAddress::from_address(&addr_info.address)
-                        .ok()
-                        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-                })
-                .collect()
-        };
+        // Candidate SET only — balances are read fresh from the chain below,
+        // NOT from the account cache. Drops the wallet-manager read lock before
+        // the network fetch so a concurrent sync/reconcile isn't blocked behind
+        // the proof round-trip.
+        let candidate_addresses = self.candidate_address_set(account_index).await?;
 
         if candidate_addresses.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
@@ -1451,6 +1420,127 @@ mod plan_withdrawal_seam_tests {
             origin_planned,
             origin_balance - plan.estimated_fee,
             "the fee source keeps exactly the estimated-fee headroom"
+        );
+    }
+
+    /// Post-relaunch hydration bug: right after a fresh app relaunch the
+    /// derived pool (`addresses.addresses`) is EMPTY until a platform sync
+    /// repopulates it, but `initialize_from_persisted` has already hydrated
+    /// the `address_balances` map from the persisted `platform_addresses`
+    /// rows via `set_address_credit_balance(.., None)` — which writes the
+    /// balance map but never the pool. A candidate enumeration that read only
+    /// the pool saw zero candidates and failed with "No funded addresses
+    /// available" even though the balance (and the on-chain funds) were
+    /// present. This pins the fix: the candidate SET is the UNION of the pool
+    /// and the balance-map keys, so a withdraw works immediately after launch.
+    /// (`auto_select_inputs` on the transfer path shares the identical union
+    /// enumeration.)
+    #[tokio::test]
+    async fn plan_withdrawal_finds_candidates_from_balance_map_when_pool_empty() {
+        use dash_sdk::query_types::{AddressInfo, AddressInfos};
+
+        const ACCOUNT: u32 = 0;
+        let funded_byte = 0x33u8;
+        let funded_balance: u64 = dpp::dash_to_credits!(0.05);
+
+        // --- Mock SDK: the candidate SET must be built from the hydrated
+        // balance map alone (the pool is empty), so the fetch_many query key
+        // is exactly the single funded address.
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let query: BTreeSet<PlatformAddress> = [platform_addr(funded_byte)].into_iter().collect();
+        let response: AddressInfos = [(
+            platform_addr(funded_byte),
+            Some(AddressInfo {
+                address: platform_addr(funded_byte),
+                nonce: 1,
+                balance: funded_balance,
+            }),
+        )]
+        .into_iter()
+        .collect();
+        sdk.mock()
+            .expect_fetch_many::<PlatformAddress, AddressInfo, _, AddressInfos>(
+                query,
+                Some(response),
+            )
+            .await
+            .expect("set fetch_many expectation");
+        let sdk = Arc::new(sdk);
+
+        // --- Wallet manager with a platform account whose derived pool is
+        // EMPTY (the post-relaunch state) but whose `address_balances` map is
+        // hydrated exactly the way `initialize_from_persisted` leaves it.
+        let mut wm = WalletManager::<crate::wallet::platform_wallet::PlatformWalletInfo>::new(
+            Network::Testnet,
+        );
+        let wallet_id = wm
+            .create_wallet_with_random_mnemonic(WalletAccountCreationOptions::None)
+            .expect("create wallet");
+        {
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            let base_path = DerivationPath::from(vec![
+                ChildNumber::from_hardened_idx(9).expect("purpose"),
+                ChildNumber::from_hardened_idx(1).expect("coin type"),
+                ChildNumber::from_hardened_idx(17).expect("feature"),
+                ChildNumber::from_hardened_idx(0).expect("subfeature"),
+                ChildNumber::from_hardened_idx(0).expect("account"),
+            ]);
+            // Empty pool: no `pool.addresses.insert(..)` — the derived pool
+            // has not been repopulated by a sync yet.
+            let pool = AddressPool::new_without_generation(
+                base_path,
+                AddressPoolType::Absent,
+                20,
+                Network::Testnet,
+            );
+            let mut platform_account = ManagedPlatformAccount::new(ACCOUNT, 0, pool, false);
+            // Hydrate ONLY the balance map (key_source None ⇒ pool untouched),
+            // mirroring `initialize_from_persisted`.
+            platform_account.set_address_credit_balance(
+                PlatformP2PKHAddress::new([funded_byte; 20]),
+                funded_balance,
+                None,
+            );
+            info.core_wallet
+                .accounts
+                .insert_platform_account(platform_account);
+        }
+
+        // Sanity: the derived pool really is empty — the bug's precondition.
+        {
+            let account = wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .platform_payment_managed_account_at_index(ACCOUNT)
+                .expect("platform account");
+            assert!(
+                account.addresses.addresses.is_empty(),
+                "test setup: the derived pool must be empty (post-relaunch state)"
+            );
+        }
+
+        let wallet_manager = Arc::new(RwLock::new(wm));
+        let wallet = build_seam_test_wallet(sdk, wallet_manager, wallet_id);
+
+        let pv = PlatformVersion::latest();
+        let plan = wallet
+            .plan_withdrawal(ACCOUNT, pv)
+            .await
+            .expect("plan must succeed from the hydrated balance map even with an empty pool");
+
+        // The funded address — discoverable ONLY via the balance-map union —
+        // is the sole input, and as the only (largest) input it is the fee
+        // source, planned at balance − fee.
+        let planned = plan
+            .inputs
+            .get(&platform_addr(funded_byte))
+            .copied()
+            .expect("the balance-map-only address must be selected as an input");
+        assert_eq!(
+            planned,
+            funded_balance - plan.estimated_fee,
+            "the sole input is the fee source, planned at balance − estimated fee"
         );
     }
 

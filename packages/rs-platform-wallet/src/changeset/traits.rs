@@ -7,6 +7,7 @@ use std::error::Error as StdError;
 
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
+use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -188,29 +189,27 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
-    /// Whether stored state survives a process restart once `store` + `flush`
-    /// return `Ok`.
+    /// Feature-specific contracts this backend can persist and, where the
+    /// capability requires it, restore after process restart.
     ///
-    /// **Fail-closed: defaults to `false`.** This capability gates
-    /// security-sensitive flows, so a backend must explicitly ATTEST
-    /// durability by overriding this to `true` — an implementation that
-    /// forgets is refused those flows with a clear error instead of being
-    /// silently trusted. Backends that genuinely write through on
-    /// `store`/`flush` (the SQLite persister, a fully-wired FFI bridge)
-    /// override to `true`; buffer-only or write-dropping backends (e.g.
-    /// [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence),
-    /// an FFI persister constructed without persistence callbacks) stay
-    /// `false`.
-    ///
-    /// Why security-sensitive flows gate on this: creating a DashPay
-    /// invitation exports a one-time bearer voucher key derived from a
-    /// persisted funding index; on a backend that cannot guarantee the index
-    /// survives a restart, the same key could be re-derived and re-exported
-    /// after a relaunch, letting the holder of an earlier link consume a
-    /// later voucher. Such flows refuse a non-durable backend rather than
-    /// silently producing a reusable bearer secret.
+    /// **Fail-closed:** the default is empty. Implementations must attest each
+    /// bit explicitly; schema presence or a generic successful `store()` is
+    /// not sufficient.
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        PersistenceCapabilities::NONE
+    }
+
+    /// Compatibility summary for older invitation callers. It is true when the
+    /// backend attests atomic changesets plus durably persisted invitation rows
+    /// and asset-lock funding indices. This does not attest restart hydration;
+    /// new feature preflights must use [`Self::persistence_capabilities`] and
+    /// require their complete feature-specific set (including `WALLET_RESTORE`
+    /// where the operation needs it).
     fn persists_durably(&self) -> bool {
-        false
+        let required = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+            .union(PersistenceCapabilities::INVITATIONS);
+        self.persistence_capabilities().contains(required)
     }
 
     /// Buffer a changeset for later persistence.
