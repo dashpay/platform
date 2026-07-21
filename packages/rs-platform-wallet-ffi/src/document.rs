@@ -291,11 +291,17 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// non-null for that shape, ignored otherwise (see
 /// `tx_metadata_key_master_for_wallet`).
 ///
-/// The caller supplies `encryption_key_index` (the app's per-document index —
-/// batching stays app-side), `version` (`1` = protobuf, as the wallet writes),
-/// and the already-serialized opaque `payload` (a protobuf `TxMetadataBatch`;
-/// the SDK does not parse it). `payload` may be null only when
-/// `payload_len == 0`.
+/// The caller supplies `encryption_key_index` (the app's per-document index),
+/// `version` (`1` = protobuf, as the wallet writes), and the already-serialized
+/// opaque `payload` (a protobuf `TxMetadataBatch`; the SDK does not parse it).
+/// `payload` may be null only when `payload_len == 0`.
+///
+/// This explicit-index entry point is retained for migration / tests. New
+/// hosts should prefer the ABI-additive sibling
+/// [`platform_wallet_create_encrypted_document_with_signer_auto_index`], which
+/// omits `encryption_key_index` and lets Rust allocate it from authoritative
+/// Platform state (dashpay/platform#4186 follow-up) — moving the index-selection
+/// policy off the host.
 ///
 /// On success the confirmed document's 32-byte id is written to
 /// `out_document_id` and its canonical query-side JSON to `*out_document_json`
@@ -309,6 +315,105 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
     contract_id: *const u8,
     document_type_name: *const c_char,
     encryption_key_index: u32,
+    version: u8,
+    payload: *const u8,
+    payload_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+    out_document_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // ABI-stable explicit-index entry point: the host supplies the per-document
+    // encryptionKeyIndex (migration / tests). Delegates to the shared impl with
+    // `Some(index)`.
+    create_encrypted_document_impl(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        owner_identity_id,
+        contract_id,
+        document_type_name,
+        Some(encryption_key_index),
+        version,
+        payload,
+        payload_len,
+        signer_handle,
+        out_document_id,
+        out_document_json,
+    )
+}
+
+/// Create + broadcast an encrypted `txMetadata` document, letting RUST allocate
+/// the per-document `encryptionKeyIndex` from authoritative Platform state
+/// (dashpay/platform#4186 follow-up). ABI-additive sibling of
+/// [`platform_wallet_create_encrypted_document_with_signer`] — IDENTICAL
+/// parameters minus `encryption_key_index`.
+///
+/// The host omits the index; the SDK counts the identity's existing txMetadata
+/// documents on Platform and uses `1 + count` (dash-wallet's retired
+/// `1 + countAllRequests()` semantics), serialized under the wallet's allocator
+/// mutex so concurrent creates through the same process never collide.
+/// Best-effort unique per device; a cross-device duplicate index is NOT
+/// data-loss (see `IdentityWallet::allocate_encryption_key_index`). Every other
+/// behavior (identity-key selection, AES derivation, sealing, master wiping,
+/// broadcast) matches the explicit-index export.
+///
+/// # Safety
+/// Same contract as [`platform_wallet_create_encrypted_document_with_signer`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_auto_index(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    version: u8,
+    payload: *const u8,
+    payload_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+    out_document_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    // Rust-allocated-index entry point: the host omits encryptionKeyIndex, so
+    // the shared impl allocates it from Platform state (`None`).
+    create_encrypted_document_impl(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        owner_identity_id,
+        contract_id,
+        document_type_name,
+        None,
+        version,
+        payload,
+        payload_len,
+        signer_handle,
+        out_document_id,
+        out_document_json,
+    )
+}
+
+/// Shared implementation behind the explicit-index
+/// ([`platform_wallet_create_encrypted_document_with_signer`], `Some`) and
+/// Rust-allocated
+/// ([`platform_wallet_create_encrypted_document_with_signer_auto_index`],
+/// `None`) encrypted-document create exports.
+///
+/// When `index` is `None` the per-document `encryptionKeyIndex` is allocated
+/// from Platform state via `IdentityWallet::allocate_encryption_key_index`
+/// (serialized under the wallet's allocator mutex) BEFORE any key material is
+/// resolved — the allocation touches no secrets and never crosses the broadcast
+/// await with the master in scope.
+///
+/// # Safety
+/// All pointers must be valid for the duration of the call; `payload` may be
+/// null only when `payload_len == 0`.
+#[allow(clippy::too_many_arguments)]
+unsafe fn create_encrypted_document_impl(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    index: Option<u32>,
     version: u8,
     payload: *const u8,
     payload_len: usize,
@@ -350,6 +455,30 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
         let identity_wallet = wallet.identity().clone();
 
+        // Resolve the per-document encryptionKeyIndex FIRST, before any key
+        // material is in scope: the host either supplies it explicitly
+        // (`Some`, migration / tests) or omits it (`None`), in which case Rust
+        // allocates the next index from authoritative Platform state, serialized
+        // under the wallet's allocator mutex (dashpay/platform#4186 follow-up).
+        // The allocation touches no secrets, so it can run on the worker before
+        // the master is resolved.
+        let resolved_index: u32 = match index {
+            Some(i) => i,
+            None => {
+                let iw = identity_wallet.clone();
+                let doc_type = document_type_str.clone();
+                block_on_worker(async move {
+                    iw.allocate_encryption_key_index(
+                        &owner_id_for_async,
+                        &contract_id_for_async,
+                        &doc_type,
+                    )
+                    .await
+                })
+                .map_err(PlatformWalletFFIResult::from)?
+            }
+        };
+
         // Key-source selection by wallet capability (may synchronously call
         // back into the host mnemonic resolver for external-signable
         // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
@@ -369,7 +498,7 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
         let properties_json = identity_wallet
             .prepare_encrypted_txmetadata_properties(
                 &owner_id_for_async,
-                encryption_key_index,
+                resolved_index,
                 version,
                 &payload_vec,
                 key_source,

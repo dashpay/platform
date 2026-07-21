@@ -259,12 +259,29 @@ class DocumentTransactions internal constructor(
      * writes `{keyIndex, encryptionKeyIndex, encryptedMetadata}`.
      *
      * Batching stays app-side: the caller serializes its items into [payload]
-     * (a protobuf `TxMetadataBatch`) and supplies its own per-document
-     * [encryptionKeyIndex] (dash-wallet's `1 + countAllRequests()` counter).
-     * The identity encryption key id (the `keyIndex` field) is chosen SDK-side
-     * to match the legacy stack, so the key never crosses the FFI boundary.
+     * (a protobuf `TxMetadataBatch`). The identity encryption key id (the
+     * `keyIndex` field) is chosen SDK-side to match the legacy stack, so the key
+     * never crosses the FFI boundary.
      *
-     * @param encryptionKeyIndex per-document index; non-negative.
+     * ### `encryptionKeyIndex` allocation (dashpay/platform#4186 follow-up)
+     * Leave [encryptionKeyIndex] `null` (the default) to let the SDK allocate
+     * the per-document index in Rust from authoritative Platform state — the
+     * host-thin path. Rust counts the identity's existing txMetadata documents
+     * on Platform and uses `1 + count` (matching dash-wallet's retired
+     * `1 + countAllRequests()` semantics EXACTLY), serialized under the wallet's
+     * allocator mutex so concurrent creates through the same process never pick
+     * the same index. The index is best-effort unique PER DEVICE; a cross-device
+     * duplicate is not data-loss (each document stores its own index and the
+     * reader derives that document's key from it, so both decrypt independently).
+     *
+     * Passing an explicit non-negative [encryptionKeyIndex] is retained ONLY for
+     * migration / tests and is discouraged: the host must NOT reintroduce a
+     * caller-supplied `1 + countAllRequests()` counter (concurrent callers /
+     * devices could collide, and it violates the host-thin key-index rule).
+     *
+     * @param encryptionKeyIndex `null` to let the SDK allocate the index
+     *   (preferred); or an explicit non-negative per-document index
+     *   (migration / tests only).
      * @param version payload version byte (`1` = protobuf, as the wallet writes).
      * @param payload already-serialized opaque plaintext; the SDK does not
      *   parse it.
@@ -283,15 +300,15 @@ class DocumentTransactions internal constructor(
         ownerId: ByteArray,
         contractId: ByteArray,
         documentType: String,
-        encryptionKeyIndex: Int,
         version: Int,
         payload: ByteArray,
         signerHandle: Long,
+        encryptionKeyIndex: Int? = null,
     ): String = gate.op {
         require(ownerId.size == 32) { "ownerId must be 32 bytes" }
         require(contractId.size == 32) { "contractId must be 32 bytes" }
-        require(encryptionKeyIndex >= 0) {
-            "encryptionKeyIndex must be non-negative, got $encryptionKeyIndex"
+        require(encryptionKeyIndex == null || encryptionKeyIndex >= 0) {
+            "encryptionKeyIndex, when supplied, must be non-negative, got $encryptionKeyIndex"
         }
         // Only 0 (CBOR) and 1 (protobuf) are wire-meaningful: `seal_tx_metadata`
         // writes this byte verbatim into the envelope and the legacy dashj stack
@@ -308,7 +325,8 @@ class DocumentTransactions internal constructor(
                 ownerId,
                 contractId,
                 documentType,
-                encryptionKeyIndex,
+                // -1 is the JNI sentinel for "let Rust allocate the index".
+                encryptionKeyIndex ?: -1,
                 version,
                 payload,
                 signerHandle,

@@ -754,16 +754,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 
 /// Create + broadcast an ENCRYPTED wallet-contract document (the wire-
 /// compatible `txMetadata` shape) — the JNI bridge over
-/// `platform_wallet_create_encrypted_document_with_signer`.
+/// `platform_wallet_create_encrypted_document_with_signer` and its
+/// Rust-allocated-index sibling.
 ///
 /// The SDK derives the identity encryption key, seals `payload` into the
 /// legacy `version ‖ IV ‖ AES-256-CBC` blob, and writes
-/// `{keyIndex, encryptionKeyIndex, encryptedMetadata}`. `encryptionKeyIndex` is
-/// the app's per-document index; `version` is the payload version byte
-/// (`1` = protobuf); `payload` is the already-serialized opaque plaintext (a
-/// protobuf `TxMetadataBatch`) — the SDK does not parse it. Returns the
-/// confirmed document's canonical JSON (its 32-byte id is the base58 `$id`
-/// field); null after throwing on error.
+/// `{keyIndex, encryptionKeyIndex, encryptedMetadata}`. `version` is the payload
+/// version byte (`1` = protobuf); `payload` is the already-serialized opaque
+/// plaintext (a protobuf `TxMetadataBatch`) — the SDK does not parse it.
+///
+/// `encryption_key_index` carries the per-document index OR the `-1` sentinel
+/// (dashpay/platform#4186 follow-up): a non-negative value is used verbatim
+/// (routed to the explicit-index export, retained for migration / tests), while
+/// `-1` means "let the SDK allocate the index from authoritative Platform state"
+/// and routes to `platform_wallet_create_encrypted_document_with_signer_auto_index`.
+/// Any value `< -1` is rejected. Returns the confirmed document's canonical JSON
+/// (its 32-byte id is the base58 `$id` field); null after throwing on error.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentCreateEncrypted(
@@ -789,10 +795,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
             return ptr::null_mut();
         };
-        if encryption_key_index < 0 {
-            throw_sdk_exception(env, 1, "encryptionKeyIndex must be non-negative");
+        // encryptionKeyIndex == -1 is the "let Rust allocate" sentinel
+        // (dashpay/platform#4186 follow-up): the host omits the index and the
+        // SDK derives the next one from Platform state. A non-negative value is
+        // an explicit caller-supplied index; anything below -1 is invalid.
+        if encryption_key_index < -1 {
+            throw_sdk_exception(
+                env,
+                1,
+                "encryptionKeyIndex must be >= 0, or -1 to let the SDK allocate it",
+            );
             return ptr::null_mut();
         }
+        let auto_index = encryption_key_index == -1;
         // Only 0 (CBOR) and 1 (protobuf) are wire-decodable by the legacy dashj
         // decryptTxMetadata; anything else seals a document the legacy stack
         // can't read. Fail fast here with the correct bound instead of the stale
@@ -825,21 +840,41 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 
         let mut out_id = [0u8; 32];
         let mut out_json: *mut c_char = ptr::null_mut();
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_create_encrypted_document_with_signer(
-                wallet_handle as Handle,
-                mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
-                owner.as_ptr(),
-                contract.as_ptr(),
-                doc_type.as_ptr(),
-                encryption_key_index as u32,
-                version as u8,
-                payload_bytes.as_ptr(),
-                payload_bytes.len(),
-                signer_handle as *mut SignerHandle,
-                out_id.as_mut_ptr(),
-                &mut out_json as *mut *mut c_char,
-            )
+        let result = if auto_index {
+            // Host omitted the index: route to the ABI-additive sibling that
+            // takes no encryptionKeyIndex and lets Rust allocate it.
+            unsafe {
+                platform_wallet_ffi::platform_wallet_create_encrypted_document_with_signer_auto_index(
+                    wallet_handle as Handle,
+                    mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                    owner.as_ptr(),
+                    contract.as_ptr(),
+                    doc_type.as_ptr(),
+                    version as u8,
+                    payload_bytes.as_ptr(),
+                    payload_bytes.len(),
+                    signer_handle as *mut SignerHandle,
+                    out_id.as_mut_ptr(),
+                    &mut out_json as *mut *mut c_char,
+                )
+            }
+        } else {
+            unsafe {
+                platform_wallet_ffi::platform_wallet_create_encrypted_document_with_signer(
+                    wallet_handle as Handle,
+                    mnemonic_resolver_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                    owner.as_ptr(),
+                    contract.as_ptr(),
+                    doc_type.as_ptr(),
+                    encryption_key_index as u32,
+                    version as u8,
+                    payload_bytes.as_ptr(),
+                    payload_bytes.len(),
+                    signer_handle as *mut SignerHandle,
+                    out_id.as_mut_ptr(),
+                    &mut out_json as *mut *mut c_char,
+                )
+            }
         };
         // The FFI call has returned: the plaintext has been sealed into
         // ciphertext and the broadcast has already completed. Scrub this copy
