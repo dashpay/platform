@@ -464,7 +464,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=GITHUB_TOKEN \
     trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
     if [ -s /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     export FEATURES_FLAG=""; \
@@ -642,7 +642,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
     if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
@@ -886,7 +886,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=GITHUB_TOKEN \
     trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
     if [ -s /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
