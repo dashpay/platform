@@ -14,17 +14,20 @@
 //! transaction and its held reservation between build and submission, keyed by
 //! an opaque [`ReservationToken`], and enforces the lifecycle invariants:
 //!
-//! * [`broadcast`](SignedPaymentRegistry::broadcast) removes the entry **before**
-//!   sending, so a repeated or concurrent broadcast of the same token can never
+//! * [`broadcast`](SignedPaymentRegistry::broadcast) validates the wallet
+//!   binding **under the lock** and removes **only a matching** entry, so a
+//!   repeated or concurrent broadcast of the same token can never
 //!   double-broadcast — the second caller finds nothing and gets
-//!   [`SignedPaymentError::StaleToken`].
+//!   [`SignedPaymentError::StaleToken`] — and a wrong-wallet caller cannot
+//!   consume (and thereby strand) the rightful owner's token.
 //! * [`release`](SignedPaymentRegistry::release) is idempotent: releasing an
 //!   unknown / already-consumed token is a silent no-op.
-//! * A token is bound to the exact wallet instance it was minted against
-//!   (`Arc::ptr_eq` on the shared `WalletManager` **and** an equal `wallet_id`,
-//!   so two wallets sharing one multi-wallet `PlatformWalletManager` are still
-//!   told apart). Broadcasting it through a re-created wallet — whose in-memory
-//!   `ReservationSet` no longer holds the inputs — is a
+//! * A token is bound to the exact wallet *generation* it was minted against
+//!   ([`CoreWallet::is_same_generation`](crate::CoreWallet::is_same_generation) —
+//!   the same identity the V2 finalized-transaction handle path uses). Two
+//!   wallets sharing one multi-wallet `PlatformWalletManager`, or a re-created
+//!   wallet under the same id whose in-memory `ReservationSet` no longer holds
+//!   the inputs, are both told apart: broadcasting through either is a
 //!   [`SignedPaymentError::WalletMismatch`] rather than a spend against stale
 //!   state.
 //! * A token has a bounded lifetime ([`RESERVATION_MAX_AGE_BLOCKS`]). Once the
@@ -238,12 +241,19 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// Broadcast the payment behind `token`, reconciling its UTXO reservation on
     /// failure, then consume the token.
     ///
-    /// The entry is removed **before** the send, so a repeated or concurrent
-    /// broadcast of the same token gets [`SignedPaymentError::StaleToken`]
-    /// instead of a second send. `current` must be the same wallet instance the
-    /// token was minted against (checked by `Arc::ptr_eq` on the shared
-    /// `WalletManager`); otherwise the call fails with
-    /// [`SignedPaymentError::WalletMismatch`] and the stale token is dropped.
+    /// The wallet binding is validated **under the registry lock**, and only a
+    /// *matching* entry is removed. So a wrong-wallet caller can never consume
+    /// (and thereby destroy) the rightful owner's token: a mismatched token is
+    /// left in the registry for its owner and this call returns
+    /// [`SignedPaymentError::WalletMismatch`]. `current` must be the same wallet
+    /// *generation* the token was minted against
+    /// (`CoreWallet::is_same_generation`); a re-created wallet under the same id
+    /// is a mismatch, not a spend against stale state.
+    ///
+    /// Because the check-and-consume happen atomically under one lock hold, a
+    /// repeated or concurrent broadcast of the same token by the rightful owner
+    /// gets [`SignedPaymentError::StaleToken`] instead of a second send — the
+    /// first consumer removed it.
     ///
     /// On a definitive rejection the reservation is released for an immediate
     /// rebuild; on an ambiguous ("may already be on the network") failure it is
@@ -253,21 +263,30 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         token: ReservationToken,
         current: &CoreWallet<B>,
     ) -> Result<Txid, SignedPaymentError> {
-        // Remove under the lock and drop the guard *before* awaiting — a
-        // std::Mutex guard must never be held across an await point, and the
-        // atomic take is what makes a double-broadcast impossible.
-        let entry = { self.lock().remove(&token) }.ok_or(SignedPaymentError::StaleToken(token))?;
-
-        // Bound the token to the exact wallet instance: the same shared
-        // `WalletManager` (`Arc::ptr_eq`) *and* the same `wallet_id`, so two
-        // wallets sharing one multi-wallet `PlatformWalletManager` are told
-        // apart (`ptr_eq` alone matches any pair within that manager). The
-        // entry is already removed, so a mismatched token can never be replayed.
-        if !Arc::ptr_eq(&entry.core.wallet_manager, &current.wallet_manager)
-            || entry.core.wallet_id() != current.wallet_id()
-        {
-            return Err(SignedPaymentError::WalletMismatch(token));
-        }
+        // Validate the wallet binding UNDER the lock and consume ONLY a matching
+        // entry. Peeking first means a mismatched caller leaves the entry in
+        // place for its rightful owner rather than removing it (which would
+        // strand the owner's reservation until the TTL backstop). The
+        // check-then-remove is one lock hold, so it is atomic against a
+        // concurrent broadcast; the std::Mutex guard is dropped before any await.
+        let entry = {
+            let mut entries = self.lock();
+            match entries.get(&token) {
+                None => return Err(SignedPaymentError::StaleToken(token)),
+                Some(entry) => {
+                    // Same wallet generation the token was minted against — the
+                    // single identity the V2 handle path also uses. A re-created
+                    // wallet (same id + manager, new generation) is a mismatch.
+                    if !entry.core.is_same_generation(current) {
+                        // Leave the entry for its rightful owner.
+                        return Err(SignedPaymentError::WalletMismatch(token));
+                    }
+                }
+            }
+            entries
+                .remove(&token)
+                .expect("entry present under the same lock hold")
+        };
 
         // Refuse a token whose reservation could already have been swept and
         // re-selected by an unrelated build. The entry is already removed, so we
@@ -780,7 +799,11 @@ mod tests {
             0,
             "nothing was sent on the original wallet"
         );
-        assert_eq!(registry.outstanding(), 0, "the stale token is dropped");
+        assert_eq!(
+            registry.outstanding(),
+            1,
+            "a mismatched broadcast must NOT consume the rightful owner's token"
+        );
     }
 
     /// An ambiguous ("may already be on the network") broadcast failure keeps
@@ -1116,7 +1139,11 @@ mod tests {
             0,
             "nothing was sent for the mismatched wallet"
         );
-        assert_eq!(registry.outstanding(), 0, "the stale token is dropped");
+        assert_eq!(
+            registry.outstanding(),
+            1,
+            "a mismatched broadcast must NOT consume the rightful owner's token"
+        );
     }
 
     /// Destroying a wallet sweeps only its own tokens from the registry, so its
@@ -1183,6 +1210,79 @@ mod tests {
         assert!(
             matches!(sent, Err(SignedPaymentError::StaleToken(t)) if t == token_a),
             "a swept token must be StaleToken, got {sent:?}"
+        );
+    }
+
+    /// Regression for the wrong-wallet-broadcast token theft: a mismatched
+    /// caller must return `WalletMismatch` WITHOUT consuming the entry, so the
+    /// rightful owner's token — and its reservation — survive and it can still
+    /// be broadcast. Previously `broadcast` removed the entry and *then*
+    /// validated, so a wrong-wallet caller destroyed the owner's token and
+    /// stranded its reservation until the TTL backstop.
+    #[tokio::test]
+    async fn wrong_wallet_broadcast_preserves_the_owners_token() {
+        let broadcaster_a = Arc::new(CountingBroadcaster::new());
+        let (core_a, signer_a, outputs_a) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::clone(&broadcaster_a),
+        )
+        .await;
+        // A separate wallet-manager instance is a different generation.
+        let broadcaster_b = Arc::new(CountingBroadcaster::new());
+        let (core_b, _signer_b, _outputs_b) =
+            funded_core_wallet(StandardAccountType::BIP44Account, broadcaster_b).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let tx = build_signed_tx(
+            &core_a,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs_a,
+            &signer_a,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(
+                core_a.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core_a.last_processed_height().await,
+            )
+            .await;
+
+        // Wrong wallet: mismatch, and the token MUST survive for its owner.
+        let mismatched = registry.broadcast(token, &core_b).await;
+        assert!(
+            matches!(mismatched, Err(SignedPaymentError::WalletMismatch(t)) if t == token),
+            "a wrong-wallet broadcast must be WalletMismatch, got {mismatched:?}"
+        );
+        assert_eq!(
+            registry.outstanding(),
+            1,
+            "the owner's token must survive a wrong-wallet broadcast"
+        );
+        assert_eq!(
+            broadcaster_a.count.load(Ordering::SeqCst),
+            0,
+            "nothing was sent for the mismatched caller"
+        );
+
+        // The rightful owner can still broadcast its own token.
+        registry
+            .broadcast(token, &core_a)
+            .await
+            .expect("the owner's broadcast should still succeed");
+        assert_eq!(
+            broadcaster_a.count.load(Ordering::SeqCst),
+            1,
+            "the owner's broadcast must reach the network exactly once"
+        );
+        assert_eq!(
+            registry.outstanding(),
+            0,
+            "the token is consumed by its owner"
         );
     }
 
