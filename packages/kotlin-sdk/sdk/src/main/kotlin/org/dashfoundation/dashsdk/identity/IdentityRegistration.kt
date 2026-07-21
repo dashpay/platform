@@ -115,8 +115,9 @@ class IdentityRegistration internal constructor(
      * replacement funding transaction. Generic recovery cannot consume an
      * invitation voucher.
      *
-     * [keys] are the rich registration rows (built via
-     * [RegistrationKeys.buildRegistrationRows]). Resume carries the SAME key
+     * [keys] carries the rich registration rows (built via
+     * [RegistrationKeys.buildRegistrationRows]) and the HD slot that derived
+     * them. Resume carries the SAME key
      * set the interrupted registration originally committed to on-chain — the
      * base four auth/transfer keys, **without** the DashPay pair: an
      * already-spent asset lock funds a fixed key count, so retroactively
@@ -130,7 +131,7 @@ class IdentityRegistration internal constructor(
         walletHandle: Long,
         lock: TrackedAssetLock,
         identityIndex: Int,
-        keys: List<IdentityPubkey>,
+        keys: RegistrationKeySet,
         signerHandle: Long,
         coreSignerHandle: Long,
     ): ByteArray = gate.op {
@@ -141,14 +142,17 @@ class IdentityRegistration internal constructor(
         require(identityIndex == lock.registrationIndex) {
             "identityIndex $identityIndex does not match tracked lock registrationIndex ${lock.registrationIndex}"
         }
-        require(keys.isNotEmpty()) { "keys must not be empty" }
+        require(keys.identityIndex == lock.registrationIndex) {
+            "registration keys use identityIndex ${keys.identityIndex}, expected tracked lock " +
+                "registrationIndex ${lock.registrationIndex}"
+        }
         val native = mapNativeErrors {
             resumeNative.call(
                 walletHandle = walletHandle,
                 outpointTxid = lock.outpointTxid,
                 outpointVout = lock.outpointVout,
                 identityIndex = identityIndex,
-                pubkeysBlob = IdentityPubkeyCodec.encode(keys),
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
                 signerHandle = signerHandle,
                 coreSignerHandle = coreSignerHandle,
                 consumeInvitationVoucher = false,

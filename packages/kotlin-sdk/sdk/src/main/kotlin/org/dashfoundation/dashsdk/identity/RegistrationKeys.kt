@@ -1,6 +1,25 @@
 package org.dashfoundation.dashsdk.identity
 
 /**
+ * Rich registration rows tied to the identity HD slot that produced them.
+ *
+ * The row wire format deliberately contains only consensus key metadata; the
+ * derivation index is host-side provenance and must travel beside the rows so
+ * asset-lock resume can verify it still matches the tracked lock.
+ */
+class RegistrationKeySet(
+    val identityIndex: Int,
+    rows: List<IdentityPubkey>,
+) {
+    val rows: List<IdentityPubkey> = rows.toList()
+
+    init {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(rows.isNotEmpty()) { "registration key rows must not be empty" }
+    }
+}
+
+/**
  * The canonical DPP-role layout for a freshly-registered identity's keys —
  * the Kotlin source of truth that replaces the retired Rust
  * `role_for_registration_key_id`. Since the registration wire format now

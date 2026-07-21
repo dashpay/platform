@@ -36,7 +36,7 @@ class DashpayKeyProvisioningTest {
         val walletId = ByteArray(32) { 9 }
         data class StoredKey(val hex: String, val scalar: ByteArray, val owner: ByteArray)
         val stored = mutableListOf<StoredKey>()
-        val rows = DashpayKeyProvisioning.provision(
+        val keySet = DashpayKeyProvisioning.provision(
             previews = previews,
             includeDashPayKeys = true,
             walletId = walletId,
@@ -44,7 +44,9 @@ class DashpayKeyProvisioningTest {
                 stored += StoredKey(hex, privateKey.copyOf(), owner.copyOf())
             },
         )
+        val rows = keySet.rows
 
+        assertEquals(5, keySet.identityIndex)
         assertEquals(6, rows.size)
         assertEquals(listOf(0, 1, 2, 3, 4, 5), rows.map { it.keyId })
         assertEquals(KeyPurpose.ENCRYPTION, rows[4].purpose)
@@ -77,12 +79,13 @@ class DashpayKeyProvisioningTest {
     @Test
     fun `resume provisions only the base four keys`() = runTest {
         val previews = (0 until 4).map(::preview)
-        val rows = DashpayKeyProvisioning.provision(
+        val keySet = DashpayKeyProvisioning.provision(
             previews = previews,
             includeDashPayKeys = false,
             walletId = ByteArray(32) { 9 },
             persister = { _, _, _ -> },
         )
+        val rows = keySet.rows
         assertEquals(4, rows.size)
         assertTrue(rows.none { it.contractBounds != null })
     }
@@ -129,6 +132,32 @@ class DashpayKeyProvisioningTest {
         for (p in previews) {
             assertArrayEquals(ByteArray(32), p.privateKey)
         }
+    }
+
+    @Test
+    fun `mixed identity slots are rejected before persist and all scalars are scrubbed`() = runTest {
+        var persisted = false
+        val previews = (0 until 4).map(::preview).toMutableList().also {
+            it[3] = IdentityKeyPreview(
+                identityIndex = 6,
+                derivationPath = it[3].derivationPath,
+                publicKey = it[3].publicKey,
+                privateKey = it[3].privateKey,
+            )
+        }
+
+        val failure = runCatching {
+            DashpayKeyProvisioning.provision(
+                previews = previews,
+                includeDashPayKeys = false,
+                walletId = ByteArray(32) { 9 },
+                persister = { _, _, _ -> persisted = true },
+            )
+        }
+
+        assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
+        assertFalse(persisted)
+        previews.forEach { assertArrayEquals(ByteArray(32), it.privateKey) }
     }
 
     @Test

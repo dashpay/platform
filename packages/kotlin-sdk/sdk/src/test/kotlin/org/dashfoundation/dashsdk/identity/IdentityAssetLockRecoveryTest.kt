@@ -39,7 +39,7 @@ class IdentityAssetLockRecoveryTest {
             walletHandle = 1,
             lock = lock,
             identityIndex = 7,
-            keys = listOf(key()),
+            keys = keySet(),
             signerHandle = 2,
             coreSignerHandle = 3,
         )
@@ -64,7 +64,7 @@ class IdentityAssetLockRecoveryTest {
         val failure = runCatching {
             registration.resumeWithExistingAssetLock(
                 1, lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION),
-                7, listOf(key()), 2, 3,
+                7, keySet(), 2, 3,
             )
         }
         assertTrue(failure.exceptionOrNull() is IllegalStateException)
@@ -84,7 +84,7 @@ class IdentityAssetLockRecoveryTest {
         val failure = runCatching {
             registration.resumeWithExistingAssetLock(
                 1, lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP),
-                7, listOf(key()), 2, 3,
+                7, keySet(), 2, 3,
             )
         }
         assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
@@ -104,7 +104,31 @@ class IdentityAssetLockRecoveryTest {
         val failure = runCatching {
             registration.resumeWithExistingAssetLock(
                 1, lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION),
-                8, listOf(key()), 2, 3,
+                8, keySet(), 2, 3,
+            )
+        }
+        assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
+        assertFalse(called)
+    }
+
+    @Test
+    fun `registration rejects keys derived from a different HD slot before JNI`() = runTest {
+        var called = false
+        val registration = IdentityRegistration(
+            resumeNative = ResumeIdentityNativeCall { _, _, _, _, _, _, _, _ ->
+                called = true
+                IdentityRegistrationNativeResult(ByteArray(32), 1)
+            },
+        )
+
+        val failure = runCatching {
+            registration.resumeWithExistingAssetLock(
+                1,
+                lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION),
+                7,
+                keySet(identityIndex = 8),
+                2,
+                3,
             )
         }
         assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
@@ -128,7 +152,7 @@ class IdentityAssetLockRecoveryTest {
         val operation = async(Dispatchers.Default) {
             registration.resumeWithExistingAssetLock(
                 1, lock(TrackedAssetLock.FundingType.IDENTITY_REGISTRATION),
-                7, listOf(key()), 2, 3,
+                7, keySet(), 2, 3,
             )
         }
         assertTrue(entered.await(5, TimeUnit.SECONDS))
@@ -145,9 +169,13 @@ class IdentityAssetLockRecoveryTest {
         assertTrue(closed)
     }
 
-    // Resume carries the rich base MASTER row; the resume path only checks the
-    // list is non-empty (the key set is fixed by the tracked lock, not
-    // re-validated per key here).
+    private fun keySet(identityIndex: Int = 7) = RegistrationKeySet(
+        identityIndex = identityIndex,
+        rows = listOf(key()),
+    )
+
+    // Resume carries the rich base MASTER row; registration-only wire
+    // invariants are enforced below JNI after the host-side HD-slot check.
     private fun key() = IdentityPubkey(
         keyId = 0,
         keyType = KeyType.ECDSA_SECP256K1,

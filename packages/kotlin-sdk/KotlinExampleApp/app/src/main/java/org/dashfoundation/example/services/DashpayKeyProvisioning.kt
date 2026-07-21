@@ -1,7 +1,7 @@
 package org.dashfoundation.example.services
 
 import org.dashfoundation.dashsdk.identity.IdentityKeyPreview
-import org.dashfoundation.dashsdk.identity.IdentityPubkey
+import org.dashfoundation.dashsdk.identity.RegistrationKeySet
 import org.dashfoundation.dashsdk.identity.RegistrationKeys
 
 /**
@@ -34,7 +34,8 @@ object DashpayKeyProvisioning {
 
     /**
      * Persist each derived private key, scrub the JVM copy, and return the
-     * rich [IdentityPubkey] rows the registration wire format carries.
+     * rich rows the registration wire format carries, tied to the identity HD
+     * slot that produced them.
      *
      * [previews] must be exactly `RegistrationKeys.keyCount(includeDashPayKeys)`
      * rows in key-ID order — the single [IdentityKeyPreview] derivation pass
@@ -55,7 +56,7 @@ object DashpayKeyProvisioning {
         includeDashPayKeys: Boolean,
         walletId: ByteArray,
         persister: IdentityKeyPersistence.PrivateKeyPersister,
-    ): List<IdentityPubkey> {
+    ): RegistrationKeySet {
         val expected = RegistrationKeys.keyCount(includeDashPayKeys)
         try {
             // Inside the try so the catch below scrubs the derived scalars even
@@ -63,6 +64,10 @@ object DashpayKeyProvisioning {
             // key may survive any failure once the previews have been derived.
             require(previews.size == expected) {
                 "expected $expected derived registration keys, got ${previews.size}"
+            }
+            val identityIndex = previews.first().identityIndex
+            require(previews.all { it.identityIndex == identityIndex }) {
+                "every registration key must use identityIndex $identityIndex"
             }
             for (preview in previews) {
                 IdentityKeyPersistence.storeAndScrub(
@@ -80,9 +85,12 @@ object DashpayKeyProvisioning {
             throw e
         }
         // Only the public keys cross into the rich rows — the privates are gone.
-        return RegistrationKeys.buildRegistrationRows(
-            previews.map { it.publicKey },
-            includeDashPayKeys,
+        return RegistrationKeySet(
+            identityIndex = previews.first().identityIndex,
+            rows = RegistrationKeys.buildRegistrationRows(
+                previews.map { it.publicKey },
+                includeDashPayKeys,
+            ),
         )
     }
 }

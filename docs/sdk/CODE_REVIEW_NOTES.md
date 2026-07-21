@@ -117,6 +117,42 @@ Fix:
   the real incompatibilities are its existing-key/max+1 update policy and
   per-slot derivation, versus registration's fixed 0..N batch policy.
 
+## PR #4173 automated-review follow-up
+
+The first automated PR review found three additional blocking regressions. All
+three were independently traced to the current source and fixed:
+
+1. **Mutable controls could redirect an in-flight registration.** The click
+   handler captured the key-count choice before suspension but later reread
+   `fundingSource` and `selectedRecoveryLock`. It now resolves source, amount,
+   identity index, and a defensive copy of the selected lock into one immutable
+   submission snapshot before the coroutine starts. Preparation, dispatch,
+   coordinator tracking, and navigation use only that snapshot. A regression
+   mutates the backing form values and lock txid after capture and verifies the
+   submission is unchanged.
+2. **Platform-address packing did not reserve the six-key creation fee.** The
+   default native strategy deducts the fee from the post-spend remainder of
+   BTreeMap input 0. The packer now mirrors the consensus formula
+   `2,000,000 + 6,500,000 * keyCount + 500,000 * inputCount`, models Rust's
+   `(address type, unsigned hash)` ordering, and selects the smallest input set
+   that contributes the requested identity balance while leaving the full fee
+   on input 0. This preflight runs before key derivation/persistence. The
+   reviewer's 70M-balance/30M-spend case was observed failing before the fix;
+   exact one-input and two-input boundaries are also covered.
+3. **Resume lost its HD-slot provenance check.** Rich consensus rows do not
+   carry a derivation index, so replacing `IdentityKeyPreview` had deleted the
+   old per-key guard. Provisioning now returns a `RegistrationKeySet` that keeps
+   the common preview identity index beside the rich rows, rejects mixed-slot
+   previews before persistence, and resume verifies the set index matches the
+   tracked lock before JNI. The wrong-slot regression was observed calling JNI
+   before the fix and passing afterward.
+
+The full Kotlin SDK/app build, unit-test suites, and instrumented-test-source
+compilation passed after these fixes. The PR's initial emulator check hit the
+workflow's documented Android Keystore unlock-state race; its failed-job rerun
+passed the complete native build and API-35 instrumented suite without a code or
+workflow change.
+
 ## Left for human judgment or environment-bound verification
 
 1. **On-chain bounds assertion is still manual.** No unit test can prove what a
@@ -124,17 +160,19 @@ Fix:
    4/5 contain the exact DashPay contract ID plus `contactRequest` bounds. Then
    run Add Contact as a separate smoke test; Add Contact success alone is not
    proof of the bounds.
-2. **Public Kotlin/logical wire compatibility.** Public registration methods now
-   consume rich `IdentityPubkey` lists, and the opaque `byte[]` layout changed
-   without a version/magic prefix. The parser fails closed on legacy/malformed
-   shapes, but an old Kotlin artifact must not be paired with the new native
-   library. Release coordination or an explicit compatibility layer remains a
-   product/API decision.
+2. **Public Kotlin/logical wire compatibility.** Public fresh-registration
+   methods now consume rich `IdentityPubkey` lists, resume consumes a
+   provenance-carrying `RegistrationKeySet`, and the opaque `byte[]` layout
+   changed without a version/magic prefix. The parser fails closed on
+   legacy/malformed shapes, but an old Kotlin artifact must not be paired with
+   the new native library. Release coordination or an explicit compatibility
+   layer remains a product/API decision.
 3. **No full Compose four-way dispatch seam test.** Static tracing confirms all
    three fresh paths pass the same six-row list and resume passes the four-row
-   list; policy tests cover the funding-source gate. Extracting a larger pure
-   screen-dispatch seam solely for orchestration testing is a maintainability
-   choice, not a discovered production defect.
+   list; policy tests cover the funding-source gate and immutable submission
+   snapshot. Extracting a larger pure screen-dispatch seam solely for
+   orchestration testing is a maintainability choice, not a discovered
+   production defect.
 4. **Kotlin still trusts Rust's preview row keypair correspondence.** Swift
    independently revalidates private/public correspondence. Kotlin documents
    why it does not duplicate private-key math; whether to add an equivalent
