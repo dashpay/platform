@@ -26,9 +26,8 @@ use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     rebuild_provider_key_account, AccountAddressPoolEntry, AccountRegistrationEntry,
     ClientStartState, ClientWalletStartState, Merge, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet,
-    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
-    PERSISTENCE_CAPABILITIES_VERSION,
+    PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
+    ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
