@@ -55,7 +55,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard};
 
 use dashcore::{Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
@@ -316,24 +316,13 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         Ok(txid)
     }
 
-    /// Release the funding reservation behind `token` and drop it. Idempotent:
-    /// releasing an unknown / already-consumed token is a silent no-op, so a
-    /// double release (or a release after a broadcast) is harmless.
-    ///
-    /// The release acts on the wallet instance the token was minted against —
-    /// the one whose `ReservationSet` actually holds the inputs — so no wallet
-    /// handle need be threaded in.
-    pub async fn release(&self, token: ReservationToken) {
-        let entry = { self.lock().remove(&token) };
-        let Some(entry) = entry else {
-            // Unknown / already consumed — idempotent no-op.
-            return;
-        };
-        // If the token has outlived its reservation lifetime, the funding
-        // outpoint may already have been swept and re-selected by an unrelated
-        // build; releasing it by outpoint could free that newer reservation.
-        // Drop the token without touching the `ReservationSet` — the original
-        // reservation is reclaimed by key-wallet's own TTL sweep.
+    /// Reconcile one already-removed entry's reservation, honouring the age
+    /// guard: if the token has outlived its reservation lifetime the funding
+    /// outpoint may already have been swept and re-selected by an unrelated
+    /// build, so releasing it by outpoint could free that newer reservation —
+    /// drop it without touching the `ReservationSet` (key-wallet's TTL reclaims
+    /// the original). Otherwise release the standard-account reservation.
+    async fn reconcile_removed_entry(entry: RegisteredPayment<B>) {
         if reservation_expired(
             entry.registered_height,
             entry.core.last_processed_height().await,
@@ -348,29 +337,75 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         }
     }
 
+    /// Release the funding reservation behind `token` and drop it. Idempotent:
+    /// releasing an unknown / already-consumed token is a silent no-op, so a
+    /// double release (or a release after a broadcast) is harmless.
+    ///
+    /// The release acts on the wallet instance the token was minted against —
+    /// the one whose `ReservationSet` actually holds the inputs — so no wallet
+    /// handle need be threaded in.
+    pub async fn release(&self, token: ReservationToken) {
+        let entry = { self.lock().remove(&token) };
+        let Some(entry) = entry else {
+            // Unknown / already consumed — idempotent no-op.
+            return;
+        };
+        Self::reconcile_removed_entry(entry).await;
+    }
+
+    /// Release and drop every outstanding token bound to `wallet`'s *generation*
+    /// ([`CoreWallet::is_same_generation`](crate::CoreWallet::is_same_generation)),
+    /// returning how many were removed. Called from `platform_wallet_destroy`
+    /// when the **final** handle to a live wallet generation is destroyed.
+    ///
+    /// Unlike [`remove_entries_for_wallet`](Self::remove_entries_for_wallet)
+    /// (which drops without releasing at generation *teardown*), the generation
+    /// here is still live in its manager — destroying the last wrapper handle
+    /// does not remove the logical wallet, and the same wallet can be handed out
+    /// again. So each token's reservation is RELEASED against that still-live
+    /// generation (honouring the age guard), rather than left stranded in the
+    /// account `ReservationSet` until key-wallet's TTL. Race-free: matching is by
+    /// generation, and a generation that was actually torn down
+    /// (`remove_wallet`) has already had its tokens swept there, so this finds
+    /// none and cannot release against a re-created generation's inputs.
+    pub async fn release_entries_for_wallet(&self, wallet: &CoreWallet<B>) -> usize {
+        // Take the matching entries out under the lock, then reconcile each with
+        // the guard dropped (the reconcile path awaits).
+        let taken: Vec<RegisteredPayment<B>> = {
+            let mut entries = self.lock();
+            let tokens: Vec<ReservationToken> = entries
+                .iter()
+                .filter(|(_, entry)| entry.core.is_same_generation(wallet))
+                .map(|(token, _)| *token)
+                .collect();
+            tokens
+                .into_iter()
+                .filter_map(|token| entries.remove(&token))
+                .collect()
+        };
+        let count = taken.len();
+        for entry in taken {
+            Self::reconcile_removed_entry(entry).await;
+        }
+        count
+    }
+
     /// Drop every outstanding token bound to `wallet` (same shared
-    /// `WalletManager` and `wallet_id`), returning how many were removed.
+    /// `WalletManager` and `wallet_id`), WITHOUT releasing, returning how many
+    /// were removed.
     ///
-    /// Called from the FFI when a `PlatformWallet` is destroyed so the registry
-    /// stops pinning that wallet's `WalletManager` (accounts, keys, sync state)
-    /// alive for the rest of the process via its captured `CoreWallet` clone.
-    /// The reservations are intentionally not released: the wallet — and its
-    /// accounts' `ReservationSet`s — are being torn down with it, so there is
-    /// nothing to reconcile, and any surviving token would be a
-    /// [`WalletMismatch`](SignedPaymentError::WalletMismatch) against a
-    /// re-created instance regardless.
-    ///
-    /// This is hooked into `PlatformWallet` teardown rather than the transient
-    /// `CoreWallet` handle destroy: the deferred flow builds/registers on one
-    /// short-lived core handle and broadcasts on another, so sweeping on core
-    /// handle destroy would drop tokens between register and broadcast.
+    /// Called from the FFI at actual wallet-generation *teardown*
+    /// (`platform_wallet_manager_remove_wallet`): the wallet — and its accounts'
+    /// `ReservationSet`s — are removed from the manager, so the reservations
+    /// cease to exist and there is nothing to reconcile. Dropping the tokens here
+    /// also makes any stale handle to that generation inert, so a later
+    /// destroy/release of a lingering handle can never release-by-outpoint
+    /// against a re-created generation's inputs — this is the teardown half of
+    /// the single generation policy the deferred paths share.
     pub fn remove_entries_for_wallet(&self, wallet: &CoreWallet<B>) -> usize {
         let mut entries = self.lock();
         let before = entries.len();
-        entries.retain(|_, entry| {
-            !(Arc::ptr_eq(&entry.core.wallet_manager, &wallet.wallet_manager)
-                && entry.core.wallet_id() == wallet.wallet_id())
-        });
+        entries.retain(|_, entry| !entry.core.is_same_generation(wallet));
         before - entries.len()
     }
 
@@ -1210,6 +1245,88 @@ mod tests {
         assert!(
             matches!(sent, Err(SignedPaymentError::StaleToken(t)) if t == token_a),
             "a swept token must be StaleToken, got {sent:?}"
+        );
+
+        // Generation teardown drops WITHOUT releasing: A's input stays reserved
+        // (the account's ReservationSet is conceptually gone with the wallet, so
+        // there is nothing to reconcile). An immediate rebuild on A still fails.
+        let blocked = build_signed_tx(
+            &core_a,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs_a,
+            &signer_a,
+        )
+        .await;
+        assert!(
+            matches!(blocked, Err(PlatformWalletError::TransactionBuild(_))),
+            "remove_entries_for_wallet must NOT release by outpoint, got {blocked:?}"
+        );
+    }
+
+    /// Regression for the final-alias-destroy leak: `release_entries_for_wallet`
+    /// must RELEASE each of the generation's reservations against the still-live
+    /// wallet, not merely drop them, so a wallet handed out again can respend the
+    /// inputs instead of leaving them reserved until key-wallet's TTL. This is
+    /// the destroy-time half of the teardown policy, and the counterpart to
+    /// `remove_entries_for_wallet` (drop-only, at actual generation teardown).
+    #[tokio::test]
+    async fn release_entries_for_wallet_frees_the_reservation() {
+        let broadcaster = Arc::new(RecordingBroadcaster::new());
+        let (core, signer, outputs) =
+            funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let _token = registry
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
+            .await;
+
+        // Reservation held: an immediate rebuild fails at input selection.
+        let blocked = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
+        assert!(
+            matches!(blocked, Err(PlatformWalletError::TransactionBuild(_))),
+            "rebuild must fail while the reservation is held, got {blocked:?}"
+        );
+
+        // Final-alias destroy path: release (not drop) the generation's tokens.
+        let released = registry.release_entries_for_wallet(&core).await;
+        assert_eq!(released, 1, "the generation's one token is reconciled");
+        assert_eq!(registry.outstanding(), 0);
+
+        // The released input is spendable again — the rebuild now succeeds.
+        let rebuilt = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
+        assert!(
+            rebuilt.is_ok(),
+            "release_entries_for_wallet must free the reservation, got {rebuilt:?}"
         );
     }
 
