@@ -143,45 +143,34 @@ jobs:
           emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
           working-directory: packages/kotlin-sdk
           script: |
-            # Wait for a full boot before touching the lock screen. On a slow
-            # CI boot the script can start while sys.boot_completed is still 0,
-            # so the unlock below races the boot and leaves the device locked.
-            adb wait-for-device
-            until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; do sleep 2; done
+            # NOTE: android-emulator-runner executes this script line by line —
+            # each line is its own `sh -c` with no shared state. So every loop
+            # must fit on ONE line and nothing may rely on a variable set on a
+            # different line; multi-line control flow silently fails with a
+            # syntax error. Back-to-back single commands are fine.
 
             # Enroll a device-wide secure lock screen (PIN) — Android Keystore
             # refuses to generate an auth-required key
-            # (KeyGenParameterSpec.setUserAuthenticationRequired(true), used for
-            # the identity-key KEYS_ALIAS RSA pair) without one enrolled, even
-            # though nothing here ever prompts for it (private-key ENCRYPT is
-            # never auth-gated; only DECRYPT is).
+            # (setUserAuthenticationRequired(true), used for the identity-key
+            # KEYS_ALIAS RSA pair) without one enrolled, even though nothing
+            # here ever prompts for it (private-key ENCRYPT is never auth-gated;
+            # only DECRYPT is).
             adb shell locksettings set-pin 1234
 
             # Enrolling that credential locks the device, which breaks every
-            # OTHER Keystore key made with setUnlockedDeviceRequired(true) — the
-            # mnemonic MASTER_ALIAS AES key every existing test relies on throws
-            # InvalidKeyException while locked. Drive the device to an unlocked
-            # state and VERIFY it instead of a fixed sleep: dismiss-keyguard
-            # returns before LockSettingsService/Keystore propagate the unlocked
-            # state, and a blind sleep is not enough on a slow runner. Poll
-            # dumpsys trust until deviceLocked=0, retrying wake/dismiss and
-            # entering the PIN as a fallback (a secure keyguard does not always
-            # yield to dismiss-keyguard alone) each round.
-            unlocked=0
-            for _ in $(seq 1 30); do
-              adb shell input keyevent KEYCODE_WAKEUP
-              adb shell wm dismiss-keyguard
-              if adb shell dumpsys trust | grep -q 'deviceLocked=0'; then unlocked=1; break; fi
-              adb shell input swipe 500 1500 500 500
-              adb shell input text 1234
-              adb shell input keyevent KEYCODE_ENTER
-              sleep 2
-            done
-            if [ "$unlocked" != 1 ]; then
-              echo "::error::Emulator never reached deviceLocked=0; Keystore-backed tests would fail spuriously."
-              adb shell dumpsys trust || true
-              exit 1
-            fi
+            # OTHER key made with setUnlockedDeviceRequired(true) — the mnemonic
+            # MASTER_ALIAS AES key the tests decrypt throws InvalidKeyException
+            # while locked. Drive the device to an unlocked state and VERIFY it
+            # (poll dumpsys trust for deviceLocked=0) rather than a fixed sleep,
+            # which loses the race on a slow runner; a secure keyguard does not
+            # always yield to dismiss-keyguard alone, so enter the PIN as a
+            # fallback. Whole loop on one line so it runs in a single shell.
+            for i in $(seq 1 30); do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell dumpsys trust | grep -q 'deviceLocked=0' && break; adb shell input swipe 500 1500 500 500; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; done
+
+            # Fail loudly if it never unlocked, so a spurious InvalidKeyException
+            # can't masquerade as a real test failure (re-check with a fresh
+            # dumpsys — the loop's result can't be carried in a variable here).
+            adb shell dumpsys trust | grep -q 'deviceLocked=0' || { echo "::error::Emulator never reached deviceLocked=0; Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1; }
 
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
