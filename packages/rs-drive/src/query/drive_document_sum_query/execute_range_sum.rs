@@ -12,7 +12,7 @@
 //!   regular range proof against the `ProvableSumTree`, returning
 //!   per-key `KVSum` ops bound to the merk root.
 
-use super::{DriveDocumentSumQuery, RangeSumOptions, SumEntry};
+use super::{DriveDocumentSumQuery, RangeSumOptions, RangeSumWalkMode, SumEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -50,7 +50,7 @@ impl DriveDocumentSumQuery<'_> {
             .iter()
             .any(|wc| wc.operator == WhereOperator::In);
 
-        if !options.return_distinct_sums_in_range {
+        if matches!(options.walk_mode, RangeSumWalkMode::Aggregate) {
             if has_in_on_prefix {
                 // Enforce exactly one `In` clause. Without this, a request
                 // with multiple In filters would silently use only the
@@ -148,12 +148,9 @@ impl DriveDocumentSumQuery<'_> {
             }]);
         }
 
-        // Distinct mode must always be bounded before the storage walk.
-        let distinct_limit = options.distinct_limit.ok_or_else(|| {
-            Error::Query(QuerySyntaxError::InvalidLimit(
-                "distinct range SUM execution requires an effective limit".to_string(),
-            ))
-        })?;
+        let RangeSumWalkMode::Distinct(distinct_limit) = options.walk_mode else {
+            unreachable!("aggregate range sums return before the distinct storage walk")
+        };
         let path_query = self.distinct_sum_path_query(
             Some(distinct_limit),
             options.left_to_right,

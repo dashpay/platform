@@ -255,7 +255,7 @@ mod limit_policy_regression {
     use crate::error::query::QuerySyntaxError;
     use crate::error::Error;
     use crate::query::drive_document_sum_query::{
-        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, RangeSumOptions, SumMode,
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
     };
     use crate::query::{WhereClause, WhereOperator};
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -619,53 +619,5 @@ mod limit_policy_regression {
                 "unexpected entry count for requested limit {requested:?}"
             );
         }
-    }
-
-    #[test]
-    fn distinct_sum_executor_rejects_missing_effective_limit_before_storage() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
-        let data_contract = build_widget_contract();
-        let document_type = data_contract
-            .document_type_for_name("widget")
-            .expect("widget");
-        let where_clauses = vec![WhereClause {
-            field: "color".to_string(),
-            operator: WhereOperator::GreaterThan,
-            value: Value::Text("blue".to_string()),
-        }];
-        let index = crate::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses(
-            document_type.indexes(),
-            &where_clauses,
-            "amount",
-        )
-        .expect("byColor rangeSummable index");
-        let query = DriveDocumentSumQuery {
-            document_type,
-            contract_id: data_contract.id().to_buffer(),
-            document_type_name: "widget".to_string(),
-            index,
-            where_clauses,
-            sum_property: "amount".to_string(),
-        };
-
-        let err = query
-            .execute_range_sum_no_proof(
-                &drive,
-                &RangeSumOptions {
-                    return_distinct_sums_in_range: true,
-                    distinct_limit: None,
-                    carrier_outer_limit: None,
-                    left_to_right: true,
-                },
-                None,
-                platform_version,
-            )
-            .expect_err("distinct execution must reject a missing effective limit");
-
-        assert!(
-            matches!(err, Error::Query(QuerySyntaxError::InvalidLimit(_))),
-            "expected QuerySyntaxError::InvalidLimit, got {err:?}"
-        );
     }
 }

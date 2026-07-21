@@ -13,7 +13,8 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::drive_document_sum_query::{
-    DocumentSumMode, DocumentSumRequest, DocumentSumResponse, RangeSumOptions, SumMode,
+    DocumentSumMode, DocumentSumRequest, DocumentSumResponse, RangeSumOptions, RangeSumWalkMode,
+    SumMode,
 };
 use crate::query::{OrderClause, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -86,8 +87,7 @@ impl Drive {
             }
             DocumentSumMode::PerInValue => {
                 let options = RangeSumOptions {
-                    return_distinct_sums_in_range: false,
-                    distinct_limit: None,
+                    walk_mode: RangeSumWalkMode::Aggregate,
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
                 };
@@ -109,12 +109,16 @@ impl Drive {
                     request.mode,
                     SumMode::GroupByRange | SumMode::GroupByCompound
                 );
-                let distinct_limit = return_distinct
-                    .then(|| effective_no_proof_distinct_limit(request.limit, request.drive_config))
-                    .transpose()?;
+                let walk_mode = if return_distinct {
+                    RangeSumWalkMode::Distinct(effective_no_proof_distinct_limit(
+                        request.limit,
+                        request.drive_config,
+                    )?)
+                } else {
+                    RangeSumWalkMode::Aggregate
+                };
                 let options = RangeSumOptions {
-                    return_distinct_sums_in_range: return_distinct,
-                    distinct_limit,
+                    walk_mode,
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
                 };
