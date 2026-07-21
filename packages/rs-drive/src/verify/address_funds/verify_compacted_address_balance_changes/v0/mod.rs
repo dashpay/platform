@@ -7,7 +7,11 @@ use dpp::address_funds::PlatformAddress;
 
 /// The subtree key for compacted address balances storage as u8
 const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
-/// Matches the largest response accepted by the Rust DAPI transport.
+/// Standalone decode budget for the two-proof envelope. Not derived from any
+/// transport limit (tonic clients default to a 4 MiB response cap and the
+/// DAPI server encodes at most 32 MiB): it only needs to sit far above any
+/// realistic proof while bounding hostile allocations before GroveDB
+/// verification runs.
 const MAX_COMPACTED_PROOF_DECODE_BYTES: usize = 16 * 1024 * 1024;
 /// A compacted row contains at most one configured address chunk. Keep a
 /// separate semantic-object budget after the GroveDB envelope is decoded.
@@ -300,6 +304,132 @@ mod tests {
         assert!(
             compacted_changes.is_empty(),
             "should have no compacted entries when no data stored"
+        );
+    }
+
+    /// Stores enough per-block changes to trigger compaction, leaving at
+    /// least one compacted range and one uncompacted recent block.
+    fn setup_drive_with_compacted_ranges() -> (Drive, u64) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let address = PlatformAddress::P2pkh([10; 20]);
+        let max_blocks = platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_blocks_before_compaction as u64;
+
+        for block_height in 1u64..=(max_blocks + 1) {
+            let mut changes = BTreeMap::new();
+            changes.insert(address, CreditOperation::AddToCredits(block_height * 1000));
+            drive
+                .store_address_balances_for_block(
+                    &changes,
+                    block_height,
+                    block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store balances");
+        }
+
+        (drive, max_blocks)
+    }
+
+    #[test]
+    fn beyond_last_compacted_range_uses_fallback_and_returns_empty() {
+        // Exercises the predecessor-exists-but-does-not-contain branch: a
+        // compacted range sits below the requested height, so the verifier
+        // must fall back to the request-derived start key instead of the
+        // authenticated predecessor key.
+        let (drive, max_blocks) = setup_drive_with_compacted_ranges();
+        let platform_version = PlatformVersion::latest();
+
+        // Precondition: compaction produced at least one range below.
+        let proof = drive
+            .prove_compacted_address_balance_changes(1, None, None, platform_version)
+            .expect("should prove from genesis");
+        let (_, changes) =
+            Drive::verify_compacted_address_balance_changes(&proof, 1, None, platform_version)
+                .expect("should verify from genesis");
+        assert!(!changes.is_empty(), "compaction must have produced ranges");
+
+        let beyond_height = max_blocks * 10;
+        let beyond_proof = drive
+            .prove_compacted_address_balance_changes(beyond_height, None, None, platform_version)
+            .expect("should prove beyond the last compacted range");
+        let (_, beyond_changes) = Drive::verify_compacted_address_balance_changes(
+            &beyond_proof,
+            beyond_height,
+            None,
+            platform_version,
+        )
+        .expect("a non-containing predecessor must verify via the fallback key");
+        assert!(
+            beyond_changes.is_empty(),
+            "no compacted range lies at or beyond the requested height"
+        );
+    }
+
+    #[test]
+    fn rejects_envelope_halves_committing_to_different_roots() {
+        // Splice a predecessor proof from one state with a forward proof from
+        // a later state. Each half verifies on its own, so only the explicit
+        // cross-proof root binding can reject the mixed envelope.
+        let (drive, max_blocks) = setup_drive_with_compacted_ranges();
+        let platform_version = PlatformVersion::latest();
+        let interior_height = max_blocks / 2;
+
+        let proof_before = drive
+            .prove_compacted_address_balance_changes(interior_height, None, None, platform_version)
+            .expect("should prove at the earlier state");
+
+        // Mutate uncompacted recent state only: the root changes while the
+        // compacted ranges (and therefore the derived start key) do not.
+        let address = PlatformAddress::P2pkh([10; 20]);
+        let mut changes = BTreeMap::new();
+        changes.insert(address, CreditOperation::AddToCredits(1));
+        drive
+            .store_address_balances_for_block(
+                &changes,
+                max_blocks + 2,
+                (max_blocks + 2) * 1000,
+                None,
+                platform_version,
+            )
+            .expect("should store an additional recent block");
+
+        let proof_after = drive
+            .prove_compacted_address_balance_changes(interior_height, None, None, platform_version)
+            .expect("should prove at the later state");
+
+        let envelope_config = bincode::config::standard().with_big_endian();
+        let (before_envelope, _): (CompactedAddressBalanceProof, usize) =
+            bincode::decode_from_slice(&proof_before, envelope_config)
+                .expect("decode earlier envelope");
+        let (after_envelope, _): (CompactedAddressBalanceProof, usize) =
+            bincode::decode_from_slice(&proof_after, envelope_config)
+                .expect("decode later envelope");
+
+        let spliced = bincode::encode_to_vec(
+            CompactedAddressBalanceProof {
+                predecessor_proof: before_envelope.predecessor_proof,
+                forward_proof: after_envelope.forward_proof,
+            },
+            envelope_config,
+        )
+        .expect("encode spliced envelope");
+
+        let error = Drive::verify_compacted_address_balance_changes(
+            &spliced,
+            interior_height,
+            None,
+            platform_version,
+        )
+        .expect_err("mixed-root envelope halves must be rejected");
+        assert!(
+            error.to_string().contains("different roots"),
+            "expected the cross-proof root binding to reject the envelope, got: {error}"
         );
     }
 
