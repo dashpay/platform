@@ -33,6 +33,41 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testPersisterFFIResultMappingsRemainDistinguishable() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT
+            ),
+            .errorPersisterTransient
+        )
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL
+            ),
+            .errorPersisterFatal
+        )
+
+        let transientResult = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT,
+                message: nil
+            )
+        )
+        let fatalResult = PlatformWalletResult(
+            PlatformWalletFFIResult(
+                code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL,
+                message: nil
+            )
+        )
+
+        guard case .persisterTransient = PlatformWalletError(result: transientResult) else {
+            return XCTFail("transient persister code must map to persisterTransient")
+        }
+        guard case .persisterFatal = PlatformWalletError(result: fatalResult) else {
+            return XCTFail("fatal persister code must map to persisterFatal")
+        }
+    }
+
     // MARK: - ErrorCategory Tests
 
     func testErrorCategoryIsUserRecoverable() {

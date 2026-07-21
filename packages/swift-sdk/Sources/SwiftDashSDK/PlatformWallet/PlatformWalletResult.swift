@@ -66,6 +66,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorAssetLockNotTracked = 23
     case errorAssetLockAlreadyConsumed = 24
     case errorAssetLockFundingMismatch = 25
+    /// A persister operation failed transiently; callers may retry.
+    case errorPersisterTransient = 26
+    /// A persister operation failed permanently; callers must not retry.
+    case errorPersisterFatal = 27
     case notFound = 98
     case errorUnknown = 99
 
@@ -123,6 +127,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockAlreadyConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH:
             self = .errorAssetLockFundingMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT:
+            self = .errorPersisterTransient
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_FATAL:
+            self = .errorPersisterFatal
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -204,6 +212,10 @@ public enum PlatformWalletError: LocalizedError {
     case assetLockNotTracked(String)
     case assetLockAlreadyConsumed(String)
     case assetLockFundingMismatch(String)
+    /// A persister operation failed transiently; callers may retry.
+    case persisterTransient(String)
+    /// A persister operation failed permanently; callers must not retry.
+    case persisterFatal(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -258,6 +270,7 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m),
+             .persisterTransient(let m), .persisterFatal(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
@@ -293,6 +306,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
+        case .errorPersisterTransient: self = .persisterTransient(detail)
+        case .errorPersisterFatal: self = .persisterFatal(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
