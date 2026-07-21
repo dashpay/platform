@@ -6,7 +6,7 @@ source facts from impact inferences. The report was written against that
 baseline; the follow-up resolution below records the consumer fixes subsequently
 applied on this branch.
 
-### Follow-up resolution
+## Follow-up resolution
 
 This follow-up branch implements the two consumer fixes recommended below:
 
