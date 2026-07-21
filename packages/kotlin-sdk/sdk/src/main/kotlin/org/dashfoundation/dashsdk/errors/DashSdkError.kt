@@ -197,6 +197,17 @@ sealed class DashSdkError(
          */
         const val PLATFORM_WALLET_CODE_OFFSET = 1000
 
+        /**
+         * `PlatformWalletFFIResultCode::NotFound` (98) — the code the FFI's
+         * blanket `Option → result` conversion emits for every "requested
+         * <thing> not found" miss (e.g. an identity id that is not managed
+         * by the wallet). Mapped to [NotFound]; Dashpay's managed-identity
+         * local reads intercept the RAW code (offset + 98) via
+         * `translateManagedIdentityNotFoundToZero` before [fromNative] runs
+         * and turn the miss into an absence (zero handle → null / empty).
+         */
+        const val PLATFORM_WALLET_NOT_FOUND_CODE = 98
+
         /** Map a native error code + message into the public hierarchy. */
         fun fromNative(e: DashSDKException): DashSdkError {
             val message = e.message ?: "Unknown SDK error"
@@ -235,7 +246,7 @@ sealed class DashSdkError(
             6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
-            98, // NotFound (Option returned as an error)
+            PLATFORM_WALLET_NOT_FOUND_CODE, // NotFound (Option returned as an error)
             -> NotFound(message, cause)
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
