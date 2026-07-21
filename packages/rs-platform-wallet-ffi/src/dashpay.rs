@@ -50,6 +50,46 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 // Managed identity lookup
 // ---------------------------------------------------------------------------
 
+/// Outcome of the layered [`platform_wallet_get_managed_identity`] lookup,
+/// split out so the dual-error decision (dashpay/platform#4060, findings
+/// `03ff842bd7d7` / `d7c06333de19`) is unit-testable without a fully-seeded
+/// `PlatformWallet` fixture.
+enum ManagedIdentityOutcome<T> {
+    /// A present, live wallet manages the identity.
+    Found(T),
+    /// The `wallet_handle` no longer resolves to a live, managed wallet:
+    /// either absent from `PLATFORM_WALLET_STORAGE` (the outer lookup miss) OR
+    /// present as a handle but already removed from the shared `WalletManager`
+    /// map (a `get_wallet_info` miss — a stale handle racing `removeWallet`,
+    /// which clears the manager entry *before* destroying the handle). Both are
+    /// real wallet failures and must surface as `ErrorInvalidHandle`, never be
+    /// swallowed as "identity not managed".
+    InvalidHandle,
+    /// A valid, live wallet that simply does not manage the identity — the only
+    /// outcome Kotlin's `translateManagedIdentityNotFoundToZero` turns into a
+    /// zero handle.
+    NotManaged,
+}
+
+/// Classify the nested lookup `Option` layers into the FFI result contract:
+///  - outer  = `wallet_handle` presence in `PLATFORM_WALLET_STORAGE`,
+///  - middle = `get_wallet_info` presence in the shared `WalletManager` map,
+///  - inner  = `managed_identity` presence on that wallet.
+///
+/// The two distinct `None`-producing failures (handle absent, and wallet
+/// removed from the manager map) must NOT collapse into `NotManaged` — see
+/// [`ManagedIdentityOutcome`]. Pure and generic so both error arms are directly
+/// unit-testable.
+fn classify_managed_identity_outcome<T>(
+    outcome: Option<Option<Option<T>>>,
+) -> ManagedIdentityOutcome<T> {
+    match outcome {
+        None | Some(None) => ManagedIdentityOutcome::InvalidHandle,
+        Some(Some(None)) => ManagedIdentityOutcome::NotManaged,
+        Some(Some(Some(managed))) => ManagedIdentityOutcome::Found(managed),
+    }
+}
+
 /// Look up the live [`ManagedIdentity`](platform_wallet::ManagedIdentity)
 /// for `identity_id` under `wallet_handle` and return a fresh handle
 /// into the shared `MANAGED_IDENTITY_STORAGE`.
@@ -74,13 +114,42 @@ pub unsafe extern "C" fn platform_wallet_get_managed_identity(
     check_ptr!(out_managed_identity_handle);
     let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+    // THREE distinct outcomes must stay distinct — they must NOT collapse into
+    // one `NotFound` (dashpay/platform#4060, finding 03ff842bd7d7). Using `?`
+    // inside the closure previously folded the `get_wallet_info` miss into the
+    // same closure-`None` as the `managed_identity` miss, so a wallet removed
+    // from the manager map (but not yet handle-destroyed) reported as "identity
+    // not managed". `.map()` keeps the `get_wallet_info` presence in its own
+    // layer instead:
+    //   outer `None`           -> handle absent from PLATFORM_WALLET_STORAGE
+    //   `Some(None)`           -> handle live, wallet REMOVED from the manager map
+    //                             (a stale handle racing `removeWallet`)
+    //   `Some(Some(None))`     -> valid live wallet, identity not managed
+    //   `Some(Some(Some(mi)))` -> found
+    // Kotlin's `translateManagedIdentityNotFoundToZero` (Dashpay.kt) turns ONLY
+    // `NotFound` into a zero handle, so the two handle-invalid cases must surface
+    // as `ErrorInvalidHandle` and never masquerade as an empty (zero-balance)
+    // unmanaged identity. See [`classify_managed_identity_outcome`].
+    let outcome = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let wm = wallet.wallet_manager().blocking_read();
-        let info = wm.get_wallet_info(&wallet.wallet_id())?;
-        info.identity_manager.managed_identity(&id).cloned()
+        wm.get_wallet_info(&wallet.wallet_id())
+            .map(|info| info.identity_manager.managed_identity(&id).cloned())
     });
-    let inner = unwrap_option_or_return!(option);
-    let managed = unwrap_option_or_return!(inner);
+    let managed = match classify_managed_identity_outcome(outcome) {
+        ManagedIdentityOutcome::Found(managed) => managed,
+        ManagedIdentityOutcome::InvalidHandle => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                format!("platform wallet handle {wallet_handle} is not backed by a live wallet"),
+            );
+        }
+        ManagedIdentityOutcome::NotManaged => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::NotFound,
+                format!("wallet {wallet_handle} does not manage the requested identity"),
+            );
+        }
+    };
     unsafe { *out_managed_identity_handle = MANAGED_IDENTITY_STORAGE.insert(managed) };
     PlatformWalletFFIResult::ok()
 }
@@ -1244,5 +1313,75 @@ mod tests {
         let r = unsafe { platform_wallet_pending_contact_crypto_count(0xDEAD_BEEF, &mut count) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(count, 7, "out_count is untouched on a lookup miss");
+    }
+
+    /// An unknown `wallet_handle` surfaces `ErrorInvalidHandle` — the OUTER
+    /// `with_item` miss — NOT `NotFound` (dashpay/platform#4060). This is the
+    /// load-bearing half of the dual-error contract: the Kotlin `Dashpay` layer
+    /// translates only `NotFound` (a valid wallet that does not manage the id)
+    /// into a zero handle, so a stale/closed wallet MUST arrive as
+    /// `ErrorInvalidHandle` to avoid masquerading as an unmanaged identity. The
+    /// 32-byte `identity_id` is read before the wallet lookup (`read_identifier`),
+    /// so a real buffer is supplied; `out_managed_identity_handle` must be left
+    /// untouched on the miss.
+    ///
+    /// The complementary inner outcome (a valid wallet lacking the managed
+    /// identity → `NotFound`) needs a fully seeded wallet in
+    /// `PLATFORM_WALLET_STORAGE`, which this unit-test module has no fixture for;
+    /// that path is covered at the translation layer by the Kotlin
+    /// `ManagedIdentityNotFoundTranslationTest`.
+    #[test]
+    fn get_managed_identity_unknown_wallet_is_invalid_handle() {
+        let id = [0u8; 32];
+        let mut out: Handle = 0;
+        let r = unsafe {
+            platform_wallet_get_managed_identity(0xDEAD_BEEF, id.as_ptr(), &mut out)
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(out, 0, "out handle is untouched on an invalid-handle miss");
+    }
+
+    /// The dual-error decision (dashpay/platform#4060, findings 03ff842bd7d7 &
+    /// d7c06333de19), exercised at the `classify_managed_identity_outcome` seam
+    /// so BOTH error codes are covered without a fully-seeded `PlatformWallet`
+    /// fixture (which this unit-test module cannot build). This is exactly the
+    /// layer where the two `None` outcomes previously collapsed:
+    ///
+    /// - Outer `None` (handle absent from `PLATFORM_WALLET_STORAGE`) AND
+    ///   `Some(None)` (handle live but the wallet was REMOVED from the shared
+    ///   `WalletManager` map — the removed-but-not-destroyed race the finding
+    ///   describes) both classify as `InvalidHandle` → `ErrorInvalidHandle`, so
+    ///   Kotlin's `translateManagedIdentityNotFoundToZero` never swallows a real
+    ///   wallet failure as a zero-balance unmanaged identity.
+    /// - `Some(Some(None))` (valid live wallet that does not manage the id)
+    ///   classifies as `NotManaged` → `NotFound`, the only outcome Kotlin
+    ///   translates to a zero handle.
+    /// - `Some(Some(Some(_)))` classifies as `Found`.
+    ///
+    /// The full FFI path for the outer-`None` arm is additionally covered by
+    /// `get_managed_identity_unknown_wallet_is_invalid_handle` above.
+    #[test]
+    fn classify_managed_identity_outcome_distinguishes_removed_wallet_from_unmanaged() {
+        // Handle absent from storage → invalid handle.
+        assert!(matches!(
+            classify_managed_identity_outcome::<u32>(None),
+            ManagedIdentityOutcome::InvalidHandle
+        ));
+        // Removed-but-not-destroyed: handle live, wallet gone from the manager
+        // map (get_wallet_info miss). Must NOT be "not managed".
+        assert!(matches!(
+            classify_managed_identity_outcome::<u32>(Some(None)),
+            ManagedIdentityOutcome::InvalidHandle
+        ));
+        // Valid live wallet that simply does not manage the identity.
+        assert!(matches!(
+            classify_managed_identity_outcome::<u32>(Some(Some(None))),
+            ManagedIdentityOutcome::NotManaged
+        ));
+        // Found.
+        assert!(matches!(
+            classify_managed_identity_outcome(Some(Some(Some(7u32)))),
+            ManagedIdentityOutcome::Found(7)
+        ));
     }
 }
