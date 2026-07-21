@@ -1188,8 +1188,9 @@ mod tests {
         use super::*;
         use dpp::block::block_info::BlockInfo;
         use dpp::serialization::PlatformSerializable;
-        use dpp::state_transition::proof_result::StateTransitionProofResult;
         use drive::drive::Drive;
+        use drive::error::proof::ProofError;
+        use drive::error::Error as DriveError;
         use grovedb_commitment_tree::{
             Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey,
             NoteValue, Scope, SpendingKey,
@@ -1197,7 +1198,7 @@ mod tests {
         use rand::rngs::OsRng;
 
         #[tokio::test]
-        async fn test_shield_prove_and_verify_address_balances() {
+        async fn test_shield_state_proof_verifies_balances_but_not_execution() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let mut rng = OsRng;
@@ -1325,23 +1326,19 @@ mod tests {
                 .into_data()
                 .expect("expected proof data, not an error");
 
-            // --- Verify proof ---
-            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
-                &st,
-                &BlockInfo::default(),
+            // The state proof still authenticates the resulting address balance.
+            let (root_hash, address_infos): (
+                _,
+                BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+            ) = Drive::verify_addresses_infos(
                 &proof_bytes,
-                &|_| Ok(None),
+                [&input_address],
+                false,
                 platform_version,
             )
-            .expect("expected to verify shield proof");
+            .expect("expected to verify the shield address state proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
-
-            // --- Assert result is VerifiedAddressInfos containing the input address ---
-            let StateTransitionProofResult::VerifiedAddressInfos(address_infos) = proof_result
-            else {
-                panic!("expected VerifiedAddressInfos, got {:?}", proof_result);
-            };
 
             assert!(
                 address_infos.contains_key(&input_address),
@@ -1367,6 +1364,28 @@ mod tests {
             assert!(
                 balance_after < dash_to_credits!(1.0),
                 "balance should be less than original after shield"
+            );
+
+            // A post-state balance alone cannot prove that this specific shield
+            // transition executed; the production verifier must fail closed until
+            // the proof carries transition-bound execution evidence.
+            let error = Drive::verify_state_transition_was_executed_with_proof(
+                &st,
+                &BlockInfo::default(),
+                &proof_bytes,
+                &|_| Ok(None),
+                platform_version,
+            )
+            .expect_err("a shield state proof must not imply transition execution");
+
+            assert!(
+                matches!(
+                    error,
+                    DriveError::Proof(ProofError::UnexpectedResultProof(ref message))
+                        if message.contains("shield execution")
+                            && message.contains("transition-bound execution evidence")
+                ),
+                "unexpected shield execution verification error: {error:?}"
             );
         }
     }
