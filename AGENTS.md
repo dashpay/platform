@@ -52,7 +52,7 @@ Platform uses data contracts to define application data schemas:
 ## Build, Test, and Development Commands
 
 ### Setup and Development
-- Dependencies: `scripts/setup-ai-agent-environment.sh`
+ Set up the agent environment: `bash scripts/setup-ai-agent-environment.sh`
 - Initial setup (installs deps, builds, and configures): `yarn setup`
 - Start local development environment: `yarn start`
 - Stop local environment: `yarn stop`
