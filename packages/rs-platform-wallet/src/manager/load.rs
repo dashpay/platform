@@ -10,7 +10,7 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-use super::PlatformWalletManager;
+use super::{wallet_lifecycle::retry_transient, PlatformWalletManager};
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Load the full [`ClientStartState`] from the configured persister
@@ -30,7 +30,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
-        let start_state = match self.persister.load() {
+        let start_state = match retry_transient(|| self.persister.load()).await {
             Ok(state) => state,
             Err(e) => {
                 // Preserve the typed source chain (Debug carries the real
@@ -353,10 +353,11 @@ mod idempotent_load_tests {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     use super::*;
-    use crate::changeset::{PersistenceError, PlatformWalletChangeSet};
+    use crate::changeset::{PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet};
     use crate::events::{EventHandler, PlatformEventHandler};
 
     /// Persister whose `load()` always fails — the failure path under test.
@@ -380,9 +381,55 @@ mod tests {
         }
     }
 
+    struct TransientOnceLoadPersister {
+        load_calls: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for TransientOnceLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.load_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "simulated transient load failure",
+                ));
+            }
+            Ok(ClientStartState::default())
+        }
+    }
+
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
+
+    #[tokio::test]
+    async fn transient_load_failure_during_startup_rehydration_is_retried() {
+        let persister = Arc::new(TransientOnceLoadPersister {
+            load_calls: AtomicUsize::new(0),
+        });
+        let probe = Arc::clone(&persister);
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = PlatformWalletManager::new(sdk, persister, handler);
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("transient startup load failure must be retried");
+
+        assert_eq!(probe.load_calls.load(Ordering::SeqCst), 2);
+    }
 
     /// A failed `load_from_persistor` must (a) surface the typed `PersisterLoad`
     /// error preserving the source chain, and (b) release the wallet-event

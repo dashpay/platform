@@ -1696,6 +1696,87 @@ impl Merge for PlatformWalletChangeSet {
 mod tests {
     use super::*;
 
+    #[cfg(any(feature = "bls", feature = "eddsa"))]
+    fn provider_key_test_wallet() -> key_wallet::wallet::Wallet {
+        key_wallet::wallet::Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("provider key test wallet")
+    }
+
+    #[cfg(all(feature = "bls", feature = "eddsa"))]
+    #[test]
+    fn rebuild_provider_key_account_restores_bls_and_eddsa() {
+        let wallet = provider_key_test_wallet();
+        let bls_key = wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("BLS provider account")
+            .bls_public_key
+            .clone();
+        let eddsa_key = wallet
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("EdDSA provider account")
+            .ed25519_public_key
+            .clone();
+        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
+        let wallet_id = [0x24; 32];
+
+        rebuild_provider_key_account(
+            &mut accounts,
+            wallet_id,
+            Network::Testnet,
+            AccountType::ProviderOperatorKeys,
+            &ProviderKeyExtendedPubKey::Bls(bls_key),
+        )
+        .expect("rebuild BLS provider account");
+        rebuild_provider_key_account(
+            &mut accounts,
+            wallet_id,
+            Network::Testnet,
+            AccountType::ProviderPlatformKeys,
+            &ProviderKeyExtendedPubKey::EdDSA(eddsa_key),
+        )
+        .expect("rebuild EdDSA provider account");
+
+        assert!(accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .is_some());
+        assert!(accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .is_some());
+    }
+
+    #[cfg(feature = "bls")]
+    #[test]
+    fn rebuild_provider_key_account_rejects_curve_account_type_mismatch() {
+        let wallet = provider_key_test_wallet();
+        let bls_key = wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("BLS provider account")
+            .bls_public_key
+            .clone();
+        let mut accounts = key_wallet::account::account_collection::AccountCollection::new();
+
+        let error = rebuild_provider_key_account(
+            &mut accounts,
+            [0x24; 32],
+            Network::Testnet,
+            AccountType::ProviderPlatformKeys,
+            &ProviderKeyExtendedPubKey::Bls(bls_key),
+        )
+        .expect_err("BLS key must not rebuild as a platform-node account");
+
+        assert!(matches!(error, ProviderAccountRebuildError::Rejected(_)));
+        assert!(accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .is_none());
+    }
+
     fn identity_entry_with_contested(id: Identifier, labels: &[&str]) -> IdentityEntry {
         IdentityEntry {
             id,
