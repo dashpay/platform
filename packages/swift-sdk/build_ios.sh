@@ -70,7 +70,7 @@ stage_target_artifacts() {
   # The final static library and generated headers are all xcodebuild needs.
   # Release the much larger per-architecture dependency tree before building
   # the next target so persistent CI runners cannot exhaust their disk.
-  rm -rf "$TARGET_DIR/$target"
+  rm -rf "${TARGET_DIR:?}/${target:?}"
 }
 
 # -------------------------------
@@ -132,7 +132,7 @@ done
 
 if $CLEAN; then
   log_info "Cleaning all build artifacts..."
-  rm -rf "$TARGET_DIR"
+  rm -rf "${TARGET_DIR:?}"
   rm -rf "$XCFRAMEWORK"
 fi
 
@@ -160,9 +160,9 @@ if [ "$PRUNE_CARGO_TARGETS" = "1" ]; then
   # from an earlier job. Start the bounded build with only Cargo's shared host
   # cache, then prune each Apple target after staging its final artifacts.
   rm -rf \
-    "$TARGET_DIR/aarch64-apple-ios" \
-    "$TARGET_DIR/aarch64-apple-ios-sim" \
-    "$TARGET_DIR/aarch64-apple-darwin"
+    "${TARGET_DIR:?}/aarch64-apple-ios" \
+    "${TARGET_DIR:?}/aarch64-apple-ios-sim" \
+    "${TARGET_DIR:?}/aarch64-apple-darwin"
 fi
 
 # -------------------------------
