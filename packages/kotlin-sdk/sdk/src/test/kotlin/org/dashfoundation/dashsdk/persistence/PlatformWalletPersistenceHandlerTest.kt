@@ -1238,6 +1238,113 @@ class PlatformWalletPersistenceHandlerTest {
         assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
     }
 
+    // ── Pending-key reconstruction after restart (#4060 finding 5) ─────
+
+    @Test
+    fun reconstructionSeedsPendingFromBreadcrumbRowsWithNullIdentifier() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 21 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 12 }
+        upsertIdentityKey(pubkey, identityId) // derive fails → watch-only + breadcrumbs
+
+        // Model a process restart: a fresh handler starts with an empty
+        // in-memory map, then rebuilds it from the durable rows.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { false },
+            nowMs = 42L,
+        )
+
+        val entry = restarted.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull("breadcrumb row with null identifier must re-seed", entry)
+        assertEquals(walletId.toHex(), entry!!.walletIdHex)
+        assertEquals(identityId.toBase58String(), entry.identityIdBase58)
+        assertEquals(0, entry.keyId)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+        assertEquals("reconstructed from persistence after restart", entry.reason)
+        assertEquals(42L, entry.failedAtMs)
+    }
+
+    @Test
+    fun reconstructionSeedsStrandedBlobRowsDespiteRecordedIdentifier() = runTest {
+        // The derive SUCCEEDED at persist time (identifier recorded), but the
+        // stored blob no longer passes the cheap capability check — e.g. the
+        // Keystore keypair was replaced. The repair slot must resurface.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, FakeDeriver())
+        val identityId = ByteArray(32) { 22 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 13 }
+        upsertIdentityKey(pubkey, identityId)
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty()) // healthy at persist time
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { false }, // blob stranded
+        )
+        assertNotNull(restarted.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun reconstructionSkipsHealthyRows() = runTest {
+        // Identifier recorded AND the blob still decrypts: nothing to repair,
+        // so a restart must not fabricate pending state.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, FakeDeriver())
+        val identityId = ByteArray(32) { 23 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 14 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { true },
+        )
+        assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun repairedRowUpdatePreventsReseeding() = runTest {
+        // A failed derive leaves a pending row; the repair path later records
+        // the identifier on the Room row (and the blob decrypts). The next
+        // restart's reconstruction must NOT resurrect the repaired key.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 24 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 16 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertNull(row.privateKeyKeychainIdentifier)
+        db.publicKeyDao().update(
+            row.copy(privateKeyKeychainIdentifier = "privkey." + pubkey.toHex()),
+        )
+
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { true },
+        )
+        assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun reconstructionNeverOverwritesALiveEntry() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 25 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 17 }
+        upsertIdentityKey(pubkey, identityId)
+
+        // The live entry (fresh reason/timestamp) must win over the
+        // reconstructed placeholder.
+        val liveReason = handler.pendingIdentityKeys.value[pubkey.toHex()]!!.reason
+        handler.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { false },
+        )
+        assertEquals(liveReason, handler.pendingIdentityKeys.value[pubkey.toHex()]!!.reason)
+    }
+
     // ── Shielded load round-trip ──────────────────────────────────────
 
     @Test

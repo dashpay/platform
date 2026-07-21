@@ -1202,6 +1202,15 @@ class PlatformWalletPersistenceHandler(
                 // watch-only wallets / no-deriver builds.
                 privateKeyKeychainIdentifier =
                     derivedKeychainId ?: existing?.privateKeyKeychainIdentifier,
+                // Derivation breadcrumbs are recorded whenever Rust supplied
+                // them — success AND failure paths (the breadcrumb is not a
+                // failure marker; the null identifier is). They make the
+                // pending-repair state reconstructible after restart
+                // (dashpay/platform#4060 finding 5).
+                derivationIdentityIndex =
+                    if (derivationIndicesIsSome) identityIndex else existing?.derivationIdentityIndex,
+                derivationKeyIndex =
+                    if (derivationIndicesIsSome) keyIndex else existing?.derivationKeyIndex,
                 identityId = identityBase58,
                 identityIdData = identityId,
                 createdAt = existing?.createdAt ?: java.util.Date(),
@@ -2619,6 +2628,68 @@ class PlatformWalletPersistenceHandler(
      */
     internal fun markIdentityKeyRepaired(publicKeyHex: String) {
         _pendingIdentityKeys.update(clearPendingKeyDelta(publicKeyHex))
+    }
+
+    /**
+     * Rebuild [pendingIdentityKeys] from persistence after a process restart
+     * (dashpay/platform#4060 finding 5) — the in-memory map is process-
+     * lifetime only, but the durable `public_keys` rows carry the derivation
+     * breadcrumbs. A row is (re-)seeded when it has breadcrumbs AND its
+     * private half is unusable: either no keychain identifier was ever
+     * recorded (the derive failed at persist time), or the identifier exists
+     * but [isPrivateKeyDecryptable] (the CHEAP capability check — no
+     * decrypt, no prompt, no key generation) rejects the stored blob — the
+     * second disjunct resurrects the repair slot for blobs stranded by a
+     * Keystore keypair replacement, not just never-derived ones. Read-only
+     * keys are never seeded (they are not ours to derive).
+     *
+     * Seeding is ONE atomic [MutableStateFlow.update]; live entries (from
+     * callbacks that already fired this process) are never overwritten —
+     * their reason/timestamp are fresher. Publishes immediately: no round is
+     * open at load time, same as [markIdentityKeyRepaired].
+     *
+     * Called by `PlatformWalletManager.loadPersistedWallets` after the Room
+     * rows are loaded, before the manager is handed to the host; the wallet
+     * scoping comes from each row's identity (network + wallet id), matching
+     * this handler's [network] when set.
+     */
+    internal suspend fun reconstructPendingIdentityKeysFromPersistence(
+        isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        val rows = database.publicKeyDao().getWithDerivationBreadcrumbs()
+        if (rows.isEmpty()) return
+        val entries = mutableListOf<PendingIdentityKey>()
+        for (row in rows) {
+            if (row.readOnly) continue
+            val identityIndex = row.derivationIdentityIndex ?: continue
+            val keyIndex = row.derivationKeyIndex ?: continue
+            val identityIdData = row.identityIdData ?: continue
+            val identity = database.identityDao().getByIdentityId(identityIdData) ?: continue
+            val networkRaw = network?.ffiValue
+            if (networkRaw != null && identity.networkRaw != networkRaw) continue
+            val walletId = identity.walletId ?: continue
+            val pubkeyHex = row.publicKeyData.toHex()
+            val usable = row.privateKeyKeychainIdentifier != null &&
+                runCatching { isPrivateKeyDecryptable(pubkeyHex) }.getOrDefault(false)
+            if (usable) continue
+            entries += PendingIdentityKey(
+                walletIdHex = walletId.toHex(),
+                identityIdBase58 = row.identityId,
+                keyId = row.keyId,
+                publicKeyHex = pubkeyHex,
+                identityIndex = identityIndex,
+                keyIndex = keyIndex,
+                reason = "reconstructed from persistence after restart",
+                failedAtMs = nowMs,
+            )
+        }
+        if (entries.isEmpty()) return
+        _pendingIdentityKeys.update { map ->
+            entries.fold(map) { acc, entry ->
+                if (entry.publicKeyHex in acc) acc else acc + (entry.publicKeyHex to entry)
+            }
+        }
     }
 
     // ── Error / threading guards ──────────────────────────────────────

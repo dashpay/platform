@@ -953,6 +953,18 @@ class PlatformWalletManager(
     suspend fun loadPersistedWallets(): List<ManagedPlatformWallet> = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.loadFromPersistor(managerHandle) }
 
+        // Rebuild the durable "keys pending repair" state before the manager
+        // is handed to the host (dashpay/platform#4060 finding 5): rows with
+        // derivation breadcrumbs whose private half is missing or fails the
+        // CHEAP capability check re-seed pendingIdentityKeys, so a repair
+        // signal recorded before a process death (or a blob stranded by a
+        // Keystore keypair replacement) resurfaces on every launch.
+        runCatching {
+            persistenceHandler.reconstructPendingIdentityKeysFromPersistence(
+                isPrivateKeyDecryptable = { walletStorage.isPrivateKeyDecryptable(it) },
+            )
+        }
+
         // Room is the source of truth for the restorable id list — the same
         // rows the load callback just fed to Rust. Scope to THIS network so
         // a per-network manager only restores its own wallets (matching the
