@@ -1,119 +1,113 @@
 #!/usr/bin/env python3
-"""Verify that fork pull requests cannot reach the Swift self-hosted runner."""
+"""Verify that untrusted fork pull requests cannot reach the Swift self-hosted runner.
+
+Defense in depth for DS-CAND-103. For pull_request events GitHub evaluates
+workflow YAML from the PR merge commit, so a malicious fork can edit the
+guards this script checks — and this script itself. The authoritative trust
+boundary is therefore server-side: the repository Actions setting that
+requires approval before outside-collaborator workflow runs. This check
+exists to catch accidental regressions on trusted runs (same-repo branches,
+pushes, schedules), where the merge commit is not attacker-controlled.
+
+The workflows are parsed structurally (PyYAML, preinstalled on GitHub's
+Ubuntu runner images), so harmless reformatting does not break the check
+while any semantic change to the guard expressions still fails it.
+"""
 
 import re
 import sys
 from pathlib import Path
 
+try:
+    import yaml
+except ImportError:
+    print(
+        "self-hosted Swift runner policy check requires PyYAML "
+        "(python3 -m pip install pyyaml)",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 CALLER_PATH = Path(".github/workflows/tests.yml")
 CALLEE_PATH = Path(".github/workflows/swift-sdk-build.yml")
 JOB_NAME = "swift-sdk-build"
+
+# Same trusted-fork policy as the sibling self-hosted workflows
+# (tests-rs-wallet.yml, tests-rs-workspace.yml): same-repository pull
+# requests plus thepastaclaw-owned forks.
 CALLEE_POLICY = (
-    "github.event_name!='pull_request'||"
-    "github.event.pull_request.head.repo.full_name==github.repository"
+    "github.event_name!='pull_request'"
+    "||github.event.pull_request.head.repo.full_name==github.repository"
+    "||github.event.pull_request.head.repo.owner.login=='thepastaclaw'"
 )
 CALLER_POLICY = (
-    "always()&&("
-    f"{CALLEE_POLICY}"
-    ")&&needs.changes.outputs.swift-sdk-changed=='true'"
+    "always()"
+    f"&&({CALLEE_POLICY})"
+    "&&needs.changes.outputs.swift-sdk-changed=='true'"
     "&&needs.changes.result!='failure'"
     "&&needs.rs-workspace-tests.result!='failure'"
     "&&needs.rs-wallet-tests.result!='failure'"
 )
 
 
-def job_block(workflow: str, job_name: str) -> str:
-    """Return one top-level job block without accepting sibling job guards."""
-    lines = workflow.splitlines(keepends=True)
-    start_pattern = re.compile(rf"^  {re.escape(job_name)}:\s*(?:#.*)?$")
-    sibling_pattern = re.compile(r"^  [A-Za-z0-9_-]+:\s*(?:#.*)?$")
+def load_workflow(path: Path) -> dict:
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError(f"{path}: expected a mapping at the document root")
+    return document
 
-    start = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if start_pattern.match(line.rstrip("\n"))
-        ),
-        None,
-    )
-    if start is None:
+
+def workflow_triggers(document: dict):
+    # PyYAML resolves a bare `on` key as boolean True (YAML 1.1).
+    return document.get("on", document.get(True))
+
+
+def job(document: dict, job_name: str) -> dict:
+    jobs = document.get("jobs")
+    found = jobs.get(job_name) if isinstance(jobs, dict) else None
+    return found if isinstance(found, dict) else {}
+
+
+def normalized_if(job_mapping: dict) -> str:
+    """Strip the optional ${{ }} wrapper and all whitespace for comparison."""
+    condition = job_mapping.get("if")
+    if not isinstance(condition, str):
         return ""
-
-    end = len(lines)
-    for index in range(start + 1, len(lines)):
-        if sibling_pattern.match(lines[index].rstrip("\n")):
-            end = index
-            break
-    return "".join(lines[start:end])
-
-
-def job_property(block: str, property_name: str) -> str:
-    """Return one job-level property, excluding step-level lookalikes."""
-    lines = block.splitlines(keepends=True)
-    start_pattern = re.compile(rf"^    {re.escape(property_name)}:\s*(?:.*)?$")
-    sibling_pattern = re.compile(r"^    [A-Za-z0-9_-]+:\s*(?:.*)?$")
-
-    start = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if start_pattern.match(line.rstrip("\n"))
-        ),
-        None,
-    )
-    if start is None:
-        return ""
-
-    end = len(lines)
-    for index in range(start + 1, len(lines)):
-        if sibling_pattern.match(lines[index].rstrip("\n")):
-            end = index
-            break
-    return "".join(lines[start:end])
-
-
-def normalized_if(block: str) -> str:
-    """Normalize one job condition for an exact policy comparison."""
-    condition = job_property(block, "if")
-    if not condition:
-        return ""
-
-    first_line, *continuation = condition.splitlines()
-    first_value = first_line.split(":", 1)[1].strip()
-    if first_value in {">", ">-", "|", "|-"}:
-        first_value = ""
-    expression = first_value + "".join(line.strip() for line in continuation)
-    if expression.startswith("$" + "{{") and expression.endswith("}}"):
+    expression = condition.strip()
+    if expression.startswith("${{") and expression.endswith("}}"):
         expression = expression[3:-2]
     return re.sub(r"\s+", "", expression)
 
 
 def check_policy(root: Path) -> list[str]:
-    caller = (root / CALLER_PATH).read_text(encoding="utf-8")
-    callee = (root / CALLEE_PATH).read_text(encoding="utf-8")
-    caller_job = job_block(caller, JOB_NAME)
-    callee_job = job_block(callee, JOB_NAME)
+    caller = load_workflow(root / CALLER_PATH)
+    callee = load_workflow(root / CALLEE_PATH)
+    caller_job = job(caller, JOB_NAME)
+    callee_job = job(callee, JOB_NAME)
     errors = []
 
-    if not re.search(r"(?m)^  pull_request\s*:", caller):
+    triggers = workflow_triggers(caller)
+    if not (isinstance(triggers, dict) and "pull_request" in triggers):
         errors.append(f"{CALLER_PATH}: expected pull_request trigger")
-    if not re.search(
-        r"uses:\s*\./\.github/workflows/swift-sdk-build\.yml(?:\s|$)",
-        job_property(caller_job, "uses"),
-    ):
+    if caller_job.get("uses") != "./.github/workflows/swift-sdk-build.yml":
         errors.append(f"{CALLER_PATH}: {JOB_NAME} must call the Swift workflow")
     if normalized_if(caller_job) != CALLER_POLICY:
         errors.append(f"{CALLER_PATH}: {JOB_NAME} lacks the strict fork PR policy")
     if normalized_if(callee_job) != CALLEE_POLICY:
         errors.append(f"{CALLEE_PATH}: {JOB_NAME} lacks the strict fork PR policy")
-    if not re.search(
-        r"(?m)^\s*runs-on:.*\bself-hosted\b", job_property(callee_job, "runs-on")
-    ):
+
+    runs_on = callee_job.get("runs-on")
+    labels = runs_on if isinstance(runs_on, list) else [runs_on]
+    if "self-hosted" not in labels:
         errors.append(f"{CALLEE_PATH}: expected self-hosted runner boundary")
-    if not re.search(
-        r"(?m)^\s*bash\s+packages/swift-sdk/run_tests\.sh\s*$", callee_job
-    ):
+
+    steps = callee_job.get("steps")
+    commands = "\n".join(
+        step["run"]
+        for step in (steps if isinstance(steps, list) else [])
+        if isinstance(step, dict) and isinstance(step.get("run"), str)
+    )
+    if not re.search(r"(?m)^\s*bash\s+packages/swift-sdk/run_tests\.sh\s*$", commands):
         errors.append(f"{CALLEE_PATH}: expected Swift test entrypoint")
 
     return errors
@@ -123,7 +117,7 @@ def main() -> int:
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
     try:
         errors = check_policy(root)
-    except (OSError, UnicodeDecodeError) as error:
+    except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError) as error:
         print(f"self-hosted Swift runner policy check failed: {error}", file=sys.stderr)
         return 2
 
@@ -132,7 +126,7 @@ def main() -> int:
             print(f"error: {error}", file=sys.stderr)
         return 1
 
-    print("Self-hosted Swift runner policy OK: fork pull requests are rejected")
+    print("Self-hosted Swift runner policy OK: untrusted fork PRs are rejected")
     return 0
 
 
