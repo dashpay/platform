@@ -50,21 +50,20 @@ members = [
 ]
 
 [workspace.dependencies]
-# TODO(pin): tracks dashpay/rust-dashcore#851 (draft) — key-wallet
-# out-of-order UTXO spend fix (#649). Bump to the merged `dev` SHA once
-# that PR lands. 2026-07-15: re-pinned to #851's head again — the prior
-# be6e776d pin and v4.1-dev's independently-bumped 19690d31 pin (#893 +
-# the new provider-key derivation API, #881) had diverged with neither
-# a superset of the other; #851's branch was freshly merged forward
-# with `dev` (73dcf3d0, same day) and is a strict superset of both.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "73dcf3d0ec4e3f75b92d35d65e0cf29712d47732" }
+# TODO(pin): tracks dashpay/rust-dashcore `dash-evo-tool` branch (0091c4a9),
+# a dev-evo-tool integration branch combining PR #909 (out-of-order UTXO
+# spend fix, #649) and PR #818 (address reservation on hand-out) — the two
+# PRs are sibling forks off `dev` and neither is a superset of the other, so
+# neither can be pinned alone without dropping the other's fix. Re-pin to
+# `dev` directly once both PRs land there.
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "0091c4a93db446cb2f950b8f2aa1326a4ffc94c7" }
 
 tokio-metrics = "0.5"
 
