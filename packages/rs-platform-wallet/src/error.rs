@@ -32,6 +32,21 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// A `txMetadata` plaintext payload is too large to seal into a document
+    /// that fits the `encryptedMetadata` byteArray field (`maxItems` 4096). The
+    /// `version(1) ‖ IV(16) ‖ AES-256-CBC/PKCS7(plaintext)` envelope caps the
+    /// plaintext at [`crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN`]
+    /// bytes; anything larger would derive the key and seal only to be rejected
+    /// at broadcast with an opaque DPP schema error, so the caller is rejected
+    /// HERE — before any key derivation or network work. `max` is the largest
+    /// accepted plaintext length and `len` is what was supplied.
+    #[error(
+        "txMetadata payload is {len} bytes; the encryptedMetadata field caps the \
+         plaintext at {max} bytes (version + IV + PKCS7 envelope must fit the \
+         4096-byte field). Reduce the batch and retry."
+    )]
+    TxMetadataPayloadTooLarge { len: usize, max: usize },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
