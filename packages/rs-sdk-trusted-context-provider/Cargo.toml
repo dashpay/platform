@@ -14,7 +14,9 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "dash-sdk-features",
     "bls-signatures",
 ] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+# TLS backend target-gated (see [target] sections below): Android gets rustls
+# + bundled webpki roots; all other targets keep default native-tls so iOS
+# still validates against the system trust store.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
@@ -47,6 +49,12 @@ wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
 document-history-contract = ["dpp/document-history-contract"]
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }

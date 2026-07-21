@@ -47,6 +47,7 @@ members = [
     "packages/rs-platform-encryption",
     "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",
+    "packages/rs-unified-sdk-jni",
     "packages/rs-scripts",
 ]
 
@@ -78,6 +79,22 @@ opt-level = 3
 [profile.dev-ios]
 inherits = "dev"
 panic = "abort"
+lto = "thin"
+
+# Android counterparts for the `rs-unified-sdk-jni` cdylib, used ONLY by
+# `packages/kotlin-sdk/build_android.sh`. Unlike iOS, panic stays
+# `unwind`: a JNI library must never abort the app process — panics are
+# caught at the shim boundary and rethrown as Java exceptions.
+[profile.release-android]
+inherits = "release"
+strip = "debuginfo"
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+[profile.dev-android]
+inherits = "dev"
+strip = "debuginfo"
 lto = "thin"
 
 # Optimize heavy crypto crates even in dev/test builds so that

@@ -205,6 +205,9 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 ///     `applyAccountChangeset` was string-keyed on the legacy
 ///     `Debug`-formatted `account_type_name` and could grow
 ///     duplicate rows for the same logical account.
+///   - `PersistentTokenBalance.balance` remains the original `Int64` SwiftData
+///     property and SQLite column. Protocol `u64` values use its raw bits via a
+///     computed accessor, so full-domain support does not alter this V1 schema.
 /// Each of those is a destructive change to a unique-attribute
 /// column or to relationship topology, so any pre-existing dev
 /// store will fail to open and get rebuilt from scratch on next

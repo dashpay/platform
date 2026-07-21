@@ -519,12 +519,7 @@ class SendViewModel: ObservableObject {
                         amountDuffs: recipient.amountDuffs
                     )
                 }
-                try builder.setFunding(
-                    wallet: platformWallet,
-                    accountType: .bip44,
-                    accountIndex: senderAccountIndex
-                )
-                let signedTx = try builder.buildSigned(
+                let signedTx = try builder.finalizeAtomic(
                     wallet: platformWallet,
                     accountType: .bip44,
                     accountIndex: senderAccountIndex

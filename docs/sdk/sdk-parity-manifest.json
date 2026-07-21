@@ -1,0 +1,1129 @@
+{
+  "schema_version": 1,
+  "baseline": "PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e",
+  "description": "Executable current Kotlin/Swift parity truth for the correctness, persistence, recovery, shared-policy, and immediate example-app capabilities audited from the PR #3999 baseline.",
+  "declared_persistence_capabilities": [
+    "asset_lock_funding_indices",
+    "atomic_changesets",
+    "invitations",
+    "pending_contact_crypto",
+    "provider_transactions",
+    "shielded_viewing_keys",
+    "unsigned_token_storage",
+    "wallet_restore"
+  ],
+  "shared_symbols": {
+    "core_wallet_abandon_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_broadcast_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_get_balance": "packages/rs-platform-wallet-ffi/src/core_wallet/wallet.rs",
+    "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
+    "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
+    "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "on_persist_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+    "platform_address_wallet_addresses_with_balances": "packages/rs-platform-wallet-ffi/src/platform_addresses/wallet.rs",
+    "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
+    "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
+    "platform_wallet_drain_pending_contact_crypto": "packages/rs-platform-wallet-ffi/src/dashpay.rs",
+    "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
+    "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
+    "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
+    "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
+    "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
+    "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
+    "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
+    "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
+    "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
+    "platform_wallet_tracked_asset_locks_list": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
+    "restore_provider_special_txs": "packages/rs-platform-wallet-ffi/src/persistence.rs"
+  },
+  "capabilities": [
+    {
+      "id": "persistence.platform_address_identity",
+      "title": "Platform-address balance callbacks preserve derivation identity",
+      "area": "correctness",
+      "shared_apis": [
+        "on_persist_address_balances_fn"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "not-applicable",
+          "restart": "required",
+          "reason": "Swift persists platform-address balances, but the current ADDR-09 manual case covers watermark/double-credit behavior rather than derivation account/address identity across a conflict and restart. A targeted restart test is still required before this invariant is marked supported."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "tested",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ADDR-09",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "addressBalanceConflictPreservesDerivationIndicesAcrossRestart",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        }
+      ]
+    },
+    {
+      "id": "core.atomic_send",
+      "title": "Core input selection and reservation are atomic",
+      "area": "correctness",
+      "shared_apis": [
+        "core_wallet_tx_builder_finalize",
+        "core_wallet_broadcast_signed_transaction_v2",
+        "core_wallet_abandon_signed_transaction_v2"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "CORE-05",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "CORE-05",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/core/transaction.rs",
+          "id": "concurrent_same_account_finalizers_cannot_reserve_the_same_input",
+          "command": "cargo test -p platform-wallet concurrent_same_account_finalizers_cannot_reserve_the_same_input",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/core/transaction.rs",
+          "id": "validation_and_signing_failures_do_not_strand_reservations",
+          "command": "cargo test -p platform-wallet validation_and_signing_failures_do_not_strand_reservations",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/core/transaction.rs",
+          "id": "abandon_and_definitive_rejection_release_but_maybe_sent_retains",
+          "command": "cargo test -p platform-wallet abandon_and_definitive_rejection_release_but_maybe_sent_retains",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+          "id": "double_free_is_safe_and_releases_reservation",
+          "command": "cargo test -p platform-wallet-ffi double_free_is_safe_and_releases_reservation",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "tokens.full_u64_domain",
+      "title": "Token amounts and costs preserve the full u64 domain",
+      "area": "correctness",
+      "shared_apis": [
+        "platform_wallet_token_transfer",
+        "platform_wallet_token_purchase",
+        "platform_wallet_token_update_config"
+      ],
+      "required_persistence_capabilities": [
+        "unsigned_token_storage"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Swift preserves full-u64 balances without changing the installed SwiftData schema: the original Int64 balance column stores the UInt64 raw bits, while computed/API values, predicates, and in-memory ordering use unsigned semantics. Exact supply/balance formatting, token-metadata fallback, and per-token-decimal transition parsing are covered. It remains partial pending a durable device-store restart gate; there is intentionally no balanceHex column, backfill, or alternate iOS persistence path."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "tested",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/TokenBalanceUInt64PersistenceTests.swift",
+          "id": "testFullUInt64DomainRoundTripsAndSortsUnsigned",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/TokenBalanceUInt64PersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/TokenBalanceUInt64PersistenceTests.swift",
+          "id": "testOriginalSignedColumnPreservesUnsignedRawBits",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/TokenBalanceUInt64PersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/TokenDirectPurchasePricingTests.swift",
+          "id": "test_u64PriceBeyondInt64Range_parses",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -only-testing:SwiftExampleAppTests/TokenDirectPurchasePricingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/tokens/GroupActionTest.kt",
+          "id": "maxSupplyEncodesFullU64RangeAsUnsigned",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/java/org/dashfoundation/dashsdk/tokens/TokenAmountJavaInteropTest.java",
+          "id": "fullDomainConversionIsCallableFromJava",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/tokens.rs",
+          "id": "token_jlong_raw_bits_cover_the_full_u64_domain",
+          "command": "cargo test -p rs-unified-sdk-jni --lib",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "tokenBalanceCallbackDecodesSignedCarrierAsUnsignedBits",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseTest.kt",
+          "id": "tokenBalancesRoundTripAndSortAcrossFullUnsignedRange",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate4To5PreservesFullUnsignedTokenBalances",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/tokens/QuickBasicTokenScreenTest.kt",
+          "id": "token schema preserves full u64 supplies as JSON numbers",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/tokens/TokenDirectPurchasePricingTest.kt",
+          "id": "cost may use the high half of u64",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.seedless_restart",
+      "title": "Shielded wallets rebind after restart from persisted viewing keys",
+      "area": "persistence",
+      "shared_apis": [
+        "on_persist_shielded_viewing_keys_fn",
+        "on_load_shielded_viewing_keys_fn",
+        "on_load_shielded_viewing_keys_free_fn",
+        "platform_wallet_manager_create_with_persistence_capabilities",
+        "platform_wallet_manager_persistence_capabilities"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "shielded_viewing_keys"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Swift wires FVK persist/load, but no named host process-death seedless-rebind gate exists in the current test plan."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Room v6 storage and fail-closed Kotlin callbacks are wired through the JNI persist/load/free vtable with fixed-size paired-allocation coverage, network scoping, purge, and migration tests. The remaining release gate is an instrumented seedless process restart that makes the mnemonic unavailable and proves native shielded rebind/sync from the stored FVK."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "integration",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/viewing_key_bind_tests.rs",
+          "id": "bind_persists_viewing_keys_and_restart_rebinds_seedlessly",
+          "command": "cargo test -p platform-wallet --features shielded bind_persists_viewing_keys_and_restart_rebinds_seedlessly",
+          "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/InvitationPersistenceTests.swift",
+          "id": "testPersistenceCapabilitiesAreExplicitAndMatchSwiftDataSemantics",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/InvitationPersistenceTests/testPersistenceCapabilitiesAreExplicitAndMatchSwiftDataSemantics",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedEngineBindPlanTests.swift",
+          "id": "testBindsEveryWalletExceptMirror",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "persistenceCapabilitiesAreExplicitAndFailClosedByDefault",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "orchardViewingKeyCallbackUpsertsAndLoadRestoresExactBytes",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "orchardViewingKeyPersistAndLoadFailClosedOnMalformedLength",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/WalletDeletionTest.kt",
+          "id": "deleteWalletDataRemovesOnlyThatWalletsOrchardViewingKeys",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate5To6AddsOrchardViewingKeys",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/persistence.rs",
+          "id": "viewing_key_callbacks_are_wired_as_a_paired_fixed_size_contract",
+          "command": "cargo test -p rs-unified-sdk-jni --lib viewing_key_callbacks_are_wired_as_a_paired_fixed_size_contract",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.invitations",
+      "title": "Invitation create, claim, persistence, and reclaim",
+      "area": "persistence",
+      "shared_apis": [
+        "platform_wallet_create_invitation",
+        "platform_wallet_claim_invitation",
+        "platform_wallet_manager_create_with_persistence_capabilities",
+        "platform_wallet_resume_identity_with_existing_asset_lock_signer",
+        "platform_wallet_topup_identity_with_existing_asset_lock_signer"
+      ],
+      "required_persistence_capabilities": [
+        "asset_lock_funding_indices",
+        "atomic_changesets",
+        "invitations",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Shared/Swift implementation and focused tests exist, but the manual plan still marks DP-12 through DP-19 bridge-only and lacks executed restart evidence."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "required",
+          "reason": "Android has no invitation callback, wrappers, screens, or DP-12 through DP-19 gates."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/InvitationPersistenceTests.swift",
+          "id": "testPersistInvitationsReportsSuccessOnCleanUpsert",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/InvitationPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-19",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.provider_restore",
+      "title": "Provider special transactions restore with wallet ownership",
+      "area": "persistence",
+      "shared_apis": [
+        "restore_provider_special_txs"
+      ],
+      "required_persistence_capabilities": [
+        "provider_transactions",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Swift supplies provider restore rows, but the baseline has no named host restart/ownership test gate."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Room v7 ownership/block-position storage and the JNI owned restore slice are wired and unit-tested, but Android still lacks an instrumented cold-start callback round trip using valid ProReg/ProUp consensus fixtures and a process-restart ownership/display gate."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "provider_special_tx_restore_round_trips_block_position",
+          "command": "cargo test -p platform-wallet-ffi provider_special_tx_restore_round_trips_block_position",
+          "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PersistentTransactionDisplayTests.swift",
+          "id": "testProviderSpecialNameForProviderKinds",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/PersistentTransactionDisplayTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "providerRestoreStagingIsPayloadOnlyWalletScopedAndOrderedByBlockPosition",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "providerKindOnStandardAccountDoesNotStageIntoUnrelatedProviderAccount",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/persistence.rs",
+          "id": "provider_special_owned_seal_round_trips_valid_consensus_bytes_and_frees",
+          "command": "cargo test -p rs-unified-sdk-jni --lib provider_special_owned_seal_round_trips_valid_consensus_bytes_and_frees",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate6To7AddsProviderTransactionMembershipAndBlockPosition",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.deferred_contact_crypto",
+      "title": "Deferred contact-crypto queue survives restart",
+      "area": "persistence",
+      "shared_apis": [
+        "platform_wallet_drain_pending_contact_crypto"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "pending_contact_crypto",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "The in-memory drain works, but the FFI backend does not persist or cold-load the queue."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "The in-memory drain works, but the JNI backend does not persist or cold-load the queue."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/payments.rs",
+          "id": "send_payment_runs_pending_contact_crypto_drain",
+          "command": "cargo test -p platform-wallet send_payment_runs_pending_contact_crypto_drain",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-03",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-03",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.asset_lock_resume",
+      "title": "Identity registration and top-up resume from tracked locks",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_resume_identity_with_existing_asset_lock_signer",
+        "platform_wallet_topup_identity_with_existing_asset_lock_signer",
+        "platform_wallet_tracked_asset_locks_list",
+        "platform_wallet_tracked_asset_locks_free"
+      ],
+      "required_persistence_capabilities": [
+        "asset_lock_funding_indices",
+        "atomic_changesets",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Resume UI and filtering exist, but ID-16 remains a pending funded testnet gate."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Kotlin wrappers and screens now reach compiled JNI registration-resume, top-up-resume, and tracked-lock list/free bridges; JNI rejects generic invitation authority and frees list/managed handles on failure paths. Shared tests cover exact Built-transaction rebroadcast, typed consumed/untracked failures, top-up path rederivation after restart, and voucher rejection. Remaining release gates are Android external-function/device execution across process death plus resolver teardown and foreign-wallet error mapping."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/CreateIdentityResumableTests.swift",
+          "id": "testInvitationVouchersAreExcludedFromResumableList",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-16",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityAssetLockRecoveryTest.kt",
+          "id": "registration resume forwards same outpoint and false voucher flag then frees handle",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityAssetLockRecoveryTest.kt",
+          "id": "registration rejects identity index that differs from tracked lock before JNI",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/assetlock/IdentityAssetLockRecoveryTest.kt",
+          "id": "bound topup for another identity is excluded while unbound topup remains eligible",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-16",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "integration",
+          "file": "packages/rs-platform-wallet/src/wallet/asset_lock/sync/recovery.rs",
+          "id": "built_resume_rebroadcasts_original_and_typed_failures_do_not_broadcast",
+          "command": "cargo test -p platform-wallet built_resume_rebroadcasts_original_and_typed_failures_do_not_broadcast",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "integration",
+          "file": "packages/rs-platform-wallet/src/wallet/asset_lock/sync/recovery.rs",
+          "id": "topup_credit_output_path_rederives_after_restart",
+          "command": "cargo test -p platform-wallet topup_credit_output_path_rederives_after_restart",
+          "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/asset_lock/build.rs",
+          "id": "generic_resume_refuses_invitation_voucher_locks",
+          "command": "cargo test -p platform-wallet generic_resume_refuses_invitation_voucher_locks",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/support.rs",
+          "id": "generic_asset_lock_recovery_rejects_invitation_authority",
+          "command": "cargo test -p rs-unified-sdk-jni --lib generic_asset_lock_recovery_rejects_invitation_authority",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.compact_filter_rescan",
+      "title": "User-triggered compact-filter rescan",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_manager_spv_rescan_filters"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The wrapper and UI exist, but no dedicated named rescan test currently verifies the user-triggered height rewind."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The Kotlin wrapper and per-wallet Android UI reach the compiled JNI rescan bridge, and shared tests prove rewind-only behavior for known wallets with equal/forward no-ops and unknown-wallet rejection. A device smoke must still prove JNI typed-error mapping and running-next-tick/stopped-next-start consumption; process death before consumption intentionally loses the in-memory request and requires reissue."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-10",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/sync/CompactFilterRescanTest.kt",
+          "id": "per wallet typed failures are collected without aborting other rewinds",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/manager/accessors.rs",
+          "id": "spv_rescan_only_rewinds_known_wallets",
+          "command": "cargo test -p platform-wallet spv_rescan_only_rewinds_known_wallets",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dpns.contested_names_by_identity",
+      "title": "Complete contested-name discovery by identity",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_sync_contested_dpns_names",
+        "managed_identity_get_contested_dpns_names",
+        "dpns_name_array_free"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Swift consumes the cached array, but the baseline lacks a named completeness test for more than eight unknown names."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "Kotlin now reaches compiled JNI sync and cached-array bridges; the cached array is copied under an RAII free guard, the UI preserves loading/error/unavailable state, and shared last-write-wins tests prove full replacement including resolved-to-empty snapshots. Android identity persistence still drops contested snapshots on restore, with no schema slot before reserved v8 invitations, and JNI allocation-failure/device plus process-restart gates remain."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DPNS-04",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DPNS-04",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/ContestedDpnsNamesTest.kt",
+          "id": "one shared sync returns complete cached snapshot beyond old eight label cap",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/changeset/changeset.rs",
+          "id": "contested_dpns_merge_replaces_canonical_snapshot_and_allows_empty",
+          "command": "cargo test -p platform-wallet contested_dpns_merge_replaces_canonical_snapshot_and_allows_empty",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/state/manager/apply.rs",
+          "id": "contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
+          "command": "cargo test -p platform-wallet contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "network.masternode_discovery",
+      "title": "Canonical masternode endpoint discovery",
+      "area": "shared_policy",
+      "shared_apis": [],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": "Swift duplicates filtering/default-port/host parsing instead of consuming one shared typed result."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": "Kotlin duplicates filtering/default-port/host parsing and uses the wrong missing testnet port."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "CORE-07",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "CORE-07",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.platform_address_auto_funding",
+      "title": "Account-scoped Platform-address identity funding selection",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_address_wallet_addresses_with_balances",
+        "platform_wallet_top_up_from_addresses_with_signer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The example app greedily packs address inputs instead of invoking a Rust account-scoped composite."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The shared addresses-with-balances query is fixed to the first Platform Payment account, while Android pre-enumerates those results and greedily packs inputs. There is no caller-selected account parameter or shared account-scoped composite."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-06",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-06",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "tokens.authorization_decisions",
+      "title": "Shared token authorization and group-proposal decisions",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_token_update_config"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Broadcast is authoritative, but the host UI independently predicts incomplete authorization/group rules."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Broadcast is authoritative, but the host UI independently predicts incomplete authorization/group rules."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "TOK-16",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/tokens/GroupActionRuleEvaluatorTest.kt",
+          "id": "positions are collected across rules and deduped in first-hit order",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "tokens.direct_purchase_quote",
+      "title": "Shared direct-purchase tier and price quote",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_token_purchase"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The app-local quote now matches Drive for the u48 amount ceiling, single-price saturation, set-price checked overflow, zero prices, tier selection, and full-u64 costs. It remains partial because schedules and quotes are parsed/computed locally instead of coming from a typed Rust quote."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The app parses schedules and computes tiers/cost locally instead of rendering a typed Rust quote."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/TokenDirectPurchasePricingTests.swift",
+          "id": "test_setPrices_picksHighestTierAtOrBelowAmount",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -only-testing:SwiftExampleAppTests/TokenDirectPurchasePricingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/tokens/TokenDirectPurchasePricingTest.kt",
+          "id": "set prices picks highest tier at or below amount",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "protocol.address_validation",
+      "title": "Network-aware address family validation uses shared codecs",
+      "area": "shared_policy",
+      "shared_apis": [],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Android keeps app-local Base58/Bech32 classification and does not perform Rust-backed Core checksum/network validation."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/QRPayloadParserTests.swift",
+          "id": "test_garbageString_isRejected",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/util/DashAddressTest.kt",
+          "id": "garbageIsUnknown",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "documents.create_catalog",
+      "title": "Document-create catalog route invokes the bridged operation",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_create_document_with_signer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DOC-02",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DOC-02",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/transitions/StateTransitionDefinitionsTest.kt",
+          "id": "document create routes to its dedicated bridged screen",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "tokens.max_supply_proposal_discovery",
+      "title": "Pending max-supply group proposals are discoverable",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_token_update_config"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The Swift app discovers max-supply proposal positions, but its rule list is explicitly a temporary host-side policy copy pending shared S3a authorization/proposal evaluation. The update transition itself is bridged; discovery is not yet a shared Rust decision."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "The Kotlin app discovers max-supply proposal positions, but GroupActionRuleEvaluator duplicates the host-side rule policy pending shared S3a authorization/proposal evaluation. The update transition itself is bridged; discovery is not yet a shared Rust decision."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "TOK-16",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/TokenGroupRuleResolverTests.swift",
+          "id": "testMaxSupplyRuleContributesExplicitGroupPosition",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "TOK-16",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/tokens/GroupActionRuleEvaluatorTest.kt",
+          "id": "max-supply change group is included in pending proposal positions",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "core.immature_balance_display",
+      "title": "Immature Core balance prevents false empty-wallet state",
+      "area": "example_app",
+      "shared_apis": [
+        "core_wallet_get_balance"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "CORE-06",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/WalletBalanceCardStateTests.swift",
+          "id": "testImmatureOnlyCoreFundsAreNotEmpty",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "CORE-06",
+          "covers_restart": false
+        }
+      ]
+    }
+  ]
+}

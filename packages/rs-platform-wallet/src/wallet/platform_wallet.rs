@@ -505,6 +505,17 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
+        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded seedless restart requires persistence capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
                 "shielded wallet requires at least one account".to_string(),
@@ -522,11 +533,10 @@ impl PlatformWallet {
             account_views.insert(account, ks.viewing_keys());
         }
 
-        // Persist the viewing keys while the seed is legitimately
-        // present, so every later launch can rebind seedlessly. A
-        // queue failure is logged inside the persister wrapper and
-        // does not fail the bind — the next seed-backed bind
-        // re-emits the same bytes.
+        // Persist the viewing keys while the seed is legitimately present, so
+        // every later launch can rebind seedlessly. Do not install the in-memory
+        // keys when persistence rejects the write: that would advertise a
+        // working shielded bind that cannot survive restart.
         let mut cs = crate::changeset::ShieldedChangeSet::default();
         for (account, views) in &account_views {
             cs.record_viewing_key(
@@ -534,20 +544,16 @@ impl PlatformWallet {
                 views.to_fvk_bytes(),
             );
         }
-        if let Err(e) = self
-            .persister
+        self.persister
             .store(crate::changeset::PlatformWalletChangeSet {
                 shielded: Some(cs),
                 ..Default::default()
             })
-        {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                error = %e,
-                "Failed to queue shielded viewing keys for persistence; \
-                 the next seed-backed bind will retry"
-            );
-        }
+            .map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "failed to persist shielded viewing keys before bind: {e}"
+                ))
+            })?;
 
         self.install_shielded_views(account_views, coordinator, None)
             .await
@@ -573,6 +579,17 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded seedless restart requires persistence capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
                 "shielded wallet requires at least one account".to_string(),
@@ -686,6 +703,17 @@ impl PlatformWallet {
         account: u32,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{OrchardKeySet, SubwalletId};
+        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded account persistence requires capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
         let mut slot = self.shielded_keys.write().await;
         let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
         if keys.contains_key(&account) {
@@ -700,20 +728,16 @@ impl PlatformWallet {
             SubwalletId::new(self.wallet_id, account),
             views.to_fvk_bytes(),
         );
-        if let Err(e) = self
-            .persister
+        self.persister
             .store(crate::changeset::PlatformWalletChangeSet {
                 shielded: Some(cs),
                 ..Default::default()
             })
-        {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                account,
-                error = %e,
-                "Failed to queue shielded viewing key for persistence"
-            );
-        }
+            .map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "failed to persist shielded viewing key for account {account}: {e}"
+                ))
+            })?;
         keys.insert(account, views);
         // NOTE: this only updates the per-wallet keys slot — the
         // coordinator's `accounts` registry isn't refreshed here.
