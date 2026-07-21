@@ -41,6 +41,41 @@ final class InvitationPersistenceTests: XCTestCase {
         try ModelContext(container).fetch(FetchDescriptor<PersistentInvitation>())
     }
 
+    func testPersistenceCapabilitiesAreExplicitAndMatchSwiftDataSemantics() throws {
+        let (handler, _) = try makeHandler()
+        let capabilities = handler.makePersistenceCapabilities()
+        let expected =
+            PlatformWalletPersistenceCapabilities.atomicChangesets
+            | PlatformWalletPersistenceCapabilities.invitations
+            | PlatformWalletPersistenceCapabilities.assetLockFundingIndices
+            | PlatformWalletPersistenceCapabilities.shieldedViewingKeys
+            | PlatformWalletPersistenceCapabilities.providerTransactions
+            | PlatformWalletPersistenceCapabilities.unsignedTokenStorage
+            | PlatformWalletPersistenceCapabilities.walletRestore
+
+        XCTAssertEqual(
+            capabilities.version,
+            PlatformWalletPersistenceCapabilities.version1
+        )
+        XCTAssertEqual(capabilities.reserved, 0)
+        XCTAssertEqual(capabilities.bits, expected)
+        XCTAssertEqual(
+            capabilities.bits
+                & PlatformWalletPersistenceCapabilities.pendingContactCrypto,
+            0
+        )
+        let diagnostic = PlatformWalletPersistenceCapabilities(
+            version: capabilities.version,
+            bits: capabilities.bits
+        )
+        XCTAssertTrue(diagnostic.contains(
+            PlatformWalletPersistenceCapabilities.atomicChangesets
+        ))
+        XCTAssertFalse(diagnostic.contains(
+            PlatformWalletPersistenceCapabilities.pendingContactCrypto
+        ))
+    }
+
     /// Create inserts one row (fields mapped, `walletId` set), a re-upsert of the
     /// same outpoint updates in place (no duplicate), and a removal keyed on the
     /// raw outpoint deletes it — the T1 seam. Each round is bracketed by

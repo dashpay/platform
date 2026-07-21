@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v9::DRIVE_ABCI_VALIDATION_VERSIONS_V9;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v7::DRIVE_VERSION_V7;
+use crate::version::drive_versions::v8::DRIVE_VERSION_V8;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
@@ -32,10 +32,11 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 
 /// Introduced as the activation gate for consensus changes landing after v12.
 /// Token authorization and configuration validation use their v1 behavior at
-/// this version; other v13-gated changes can bump their own component versions.
+/// this version. v13 also enables DPNS username transfers and sales by using
+/// the v1 data-trigger bindings and v1 document ownership rewrites.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
-    drive: DRIVE_VERSION_V7,
+    drive: DRIVE_VERSION_V8,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V8,
