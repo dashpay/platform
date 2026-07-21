@@ -3676,6 +3676,7 @@ mod tests {
             persister: real.persister.clone(),
             broadcaster: Arc::new(AcceptingBroadcaster),
             sdk_writer: Arc::clone(&real.sdk_writer),
+            enc_key_index_allocator: Arc::clone(&real.enc_key_index_allocator),
         }
     }
 
