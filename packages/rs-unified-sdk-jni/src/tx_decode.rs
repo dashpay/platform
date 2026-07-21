@@ -35,7 +35,8 @@
 //!   u64    value_duffs
 //!   u16    address_len           (0 = non-standard script, no address)
 //!   u8[address_len] address      (UTF-8 base58)
-//!   u32    script_len
+//!   u32    script_len          (0 = null or empty script; a nonzero
+//!                               length is always followed by its bytes)
 //!   u8[script_len] script_pubkey
 //! ```
 
@@ -95,8 +96,14 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
         for output in outputs {
             blob.extend_from_slice(&output.value_duffs.to_be_bytes());
             push_cstr_opt(&mut blob, output.address);
-            blob.extend_from_slice(&(output.script_pubkey_len as u32).to_be_bytes());
-            if !output.script_pubkey.is_null() && output.script_pubkey_len > 0 {
+            // Length and bytes must be written (or omitted) together: a
+            // null script pointer encodes as length 0, never as a nonzero
+            // length with no bytes, so a defensive-null upstream can't
+            // shift every field that follows in the blob.
+            if output.script_pubkey.is_null() || output.script_pubkey_len == 0 {
+                blob.extend_from_slice(&0u32.to_be_bytes());
+            } else {
+                blob.extend_from_slice(&(output.script_pubkey_len as u32).to_be_bytes());
                 blob.extend_from_slice(std::slice::from_raw_parts(
                     output.script_pubkey,
                     output.script_pubkey_len,
@@ -340,4 +347,38 @@ mod tests {
         assert_eq!(err.0, key_wallet_ffi::FFIErrorCode::InvalidInput as i32);
     }
 
+    #[test]
+    fn null_script_pointer_encodes_as_length_zero() {
+        use key_wallet_ffi::tx_decode::DecodedTxOutputFFI;
+
+        // Hand-built pointer graph: one output whose script pointer is
+        // null but whose length field LIES (nonzero). The encoder must
+        // write length 0 — never a nonzero length without bytes — so the
+        // fields after the script can't shift.
+        let mut output = DecodedTxOutputFFI {
+            address: std::ptr::null_mut(),
+            value_duffs: 42,
+            script_pubkey: std::ptr::null_mut(),
+            script_pubkey_len: 7,
+        };
+        let decoded = DecodedTransactionFFI {
+            txid: [0xABu8; 32],
+            inputs: std::ptr::null_mut(),
+            inputs_count: 0,
+            outputs: &mut output,
+            outputs_count: 1,
+        };
+        // SAFETY: stack-built graph; null pointers are the case under test
+        // and never dereferenced. Not passed to decoded_transaction_free.
+        let blob = unsafe { encode_decoded_transaction(&decoded) };
+
+        let mut r = Reader { blob: &blob, pos: 0 };
+        assert_eq!(r.take(32), [0xABu8; 32]);
+        assert_eq!(r.u32(), 0, "no inputs");
+        assert_eq!(r.u32(), 1, "one output");
+        assert_eq!(r.u64(), 42);
+        assert_eq!(r.str_opt(), None, "no address");
+        assert_eq!(r.u32(), 0, "null script pointer must encode length 0");
+        assert_eq!(r.pos, blob.len(), "no trailing bytes");
+    }
 }
