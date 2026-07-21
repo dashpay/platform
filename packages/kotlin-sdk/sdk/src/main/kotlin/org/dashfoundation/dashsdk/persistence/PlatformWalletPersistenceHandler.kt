@@ -2631,6 +2631,42 @@ class PlatformWalletPersistenceHandler(
     }
 
     /**
+     * Durable bookkeeping for a sign-time
+     * `KeyPermanentlyInvalidatedException` (#4060 round-2 finding 3): null
+     * out `privateKeyKeychainIdentifier` on every `public_keys` row carrying
+     * [pubkeyHex], then re-run the pending-repair reconstruction so
+     * [pendingIdentityKeys] seeds NOW — not just after the next restart.
+     *
+     * Load-bearing for LEGACY-alias-backed keys: the legacy Keystore aliases
+     * are read-only (no deletion boundary), so after a KPIE the CHEAP
+     * capability check keeps reporting the blob signable forever
+     * (`hasLegacyKeysKey()` stays true) — the null identifier is the only
+     * durable signal the reconstruction's usability filter can see. Harmless
+     * for policy-alias keys (their generation-checked deletion already flips
+     * the fingerprint gate; this merely accelerates the in-process seed).
+     * Wired from `KeystoreSigner.onSigningKeyInvalidated` via
+     * `PlatformWalletManager`. Rows without derivation breadcrumbs
+     * (pre-v8 legacy rows not yet re-persisted) cannot seed a repair slot —
+     * the identifier null-out still lands, so they seed as soon as the next
+     * persist round back-fills the breadcrumbs.
+     */
+    internal suspend fun recordSigningKeyInvalidated(
+        pubkeyHex: String,
+        isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean,
+    ) {
+        val publicKeyData = pubkeyHex.hexToByteArray()
+        for (row in database.publicKeyDao().getByPublicKeyData(publicKeyData)) {
+            if (row.privateKeyKeychainIdentifier != null) {
+                database.publicKeyDao().update(row.copy(privateKeyKeychainIdentifier = null))
+            }
+        }
+        reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = isPrivateKeyDecryptable,
+            reason = "signing key permanently invalidated",
+        )
+    }
+
+    /**
      * Rebuild [pendingIdentityKeys] from persistence after a process restart
      * (dashpay/platform#4060 finding 5) — the in-memory map is process-
      * lifetime only, but the durable `public_keys` rows carry the derivation
@@ -2656,6 +2692,7 @@ class PlatformWalletPersistenceHandler(
     internal suspend fun reconstructPendingIdentityKeysFromPersistence(
         isPrivateKeyDecryptable: suspend (pubkeyHex: String) -> Boolean,
         nowMs: Long = System.currentTimeMillis(),
+        reason: String = "reconstructed from persistence after restart",
     ) {
         val rows = database.publicKeyDao().getWithDerivationBreadcrumbs()
         if (rows.isEmpty()) return
@@ -2680,7 +2717,7 @@ class PlatformWalletPersistenceHandler(
                 publicKeyHex = pubkeyHex,
                 identityIndex = identityIndex,
                 keyIndex = keyIndex,
-                reason = "reconstructed from persistence after restart",
+                reason = reason,
                 failedAtMs = nowMs,
             )
         }

@@ -1332,6 +1332,47 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(restarted.pendingIdentityKeys.value.isEmpty())
     }
 
+    /**
+     * #4060 round-2 finding 3: a KeyPermanentlyInvalidatedException on a
+     * LEGACY-alias-backed key is invisible to the cheap capability check —
+     * the legacy aliases are read-only (no deletion boundary), so
+     * `hasLegacyKeysKey()` / `isPrivateKeyDecryptable` stay true forever and
+     * neither canSignWith nor the restart reconstruction ever notices. The
+     * sign path's invalidation hook must write the durable signal (null the
+     * Room identifier) and seed pendingIdentityKeys immediately, EVEN while
+     * the cheap check still claims the key is usable.
+     */
+    @Test
+    fun signingKeyInvalidationSeedsPendingDespiteAUsableCheapCheck() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, FakeDeriver())
+        val identityId = ByteArray(32) { 26 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 18 }
+        upsertIdentityKey(pubkey, identityId) // healthy: identifier + breadcrumbs
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+
+        // Legacy-alias KPIE: the cheap check KEEPS reporting usable (true).
+        handler.recordSigningKeyInvalidated(pubkey.toHex()) { true }
+
+        // Durable: the Room identifier is nulled…
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+        assertNull(row.privateKeyKeychainIdentifier)
+        // …and the pending state seeds NOW, with the invalidation reason.
+        val entry = handler.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull("invalidation must seed a pending entry", entry)
+        assertEquals("signing key permanently invalidated", entry!!.reason)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+
+        // And the SAME durable path re-seeds after a restart, still despite
+        // the cheap check claiming usable.
+        val restarted = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+        restarted.reconstructPendingIdentityKeysFromPersistence(
+            isPrivateKeyDecryptable = { true },
+        )
+        assertNotNull(restarted.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
     @Test
     fun reconstructionNeverOverwritesALiveEntry() = runTest {
         handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())

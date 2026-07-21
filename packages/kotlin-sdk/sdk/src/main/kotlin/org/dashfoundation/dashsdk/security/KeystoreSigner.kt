@@ -44,6 +44,20 @@ class KeystoreSigner(
     private val network: Network,
     private val biometricGate: BiometricGate?,
     private val platformAddressDao: PlatformAddressDao,
+    /**
+     * Invoked (on the signer's IO scope, best-effort) when a sign attempt
+     * classifies a [KeyPermanentlyInvalidatedException] for the given
+     * storage-key pubkey hex — the wiring point for durable pending-repair
+     * bookkeeping. Load-bearing for LEGACY-alias-backed keys (#4060 round-2
+     * finding 3): the legacy aliases are read-only — there is no deletion
+     * boundary — so the cheap capability check (`hasLegacyKeysKey`) keeps
+     * reporting an invalidated legacy key signable forever and the restart
+     * reconstruction never seeds it; this hook is the only signal that
+     * makes the repair path reachable outside the health sheet.
+     * `PlatformWalletManager` wires it to record the invalidation on the
+     * Room rows and re-seed `pendingIdentityKeys`.
+     */
+    private val onSigningKeyInvalidated: (suspend (pubkeyHex: String) -> Unit)? = null,
 ) : NativeSignerBridge(), AutoCloseable {
 
     private val handleRef =
@@ -116,7 +130,10 @@ class KeystoreSigner(
                 // unavailable until re-derived — complete with the TYPED
                 // code on this first attempt instead of letting the generic
                 // catch-all label it an opaque signing failure (#4060
-                // round-2 finding 2).
+                // round-2 finding 2). Record the invalidation durably first
+                // (finding 3) — best-effort: bookkeeping failure must not
+                // eat the typed completion.
+                runCatching { onSigningKeyInvalidated?.invoke(storageKey) }
                 SignerNative.completeSign(
                     completionToken,
                     null,

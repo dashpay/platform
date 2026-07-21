@@ -376,6 +376,21 @@ class PlatformWalletManager(
                 .also { mnemonicResolver = it }
             val keySigner = KeystoreSigner(
                 walletStorage, network, biometricGate, database.platformAddressDao(),
+                // Durable invalidation bookkeeping (#4060 round-2 finding 3):
+                // a sign-time KeyPermanentlyInvalidatedException nulls the
+                // Room rows' keychain identifier and re-seeds
+                // pendingIdentityKeys, making repair reachable even for
+                // legacy-alias keys the cheap capability check can never see
+                // as broken. `persistenceHandler` resolves through
+                // coreChildren AFTER construction completes — the lambda only
+                // runs on later sign attempts, never during this block.
+                onSigningKeyInvalidated = { pubkeyHex ->
+                    runCatching {
+                        persistenceHandler.recordSigningKeyInvalidated(pubkeyHex) {
+                            walletStorage.isPrivateKeyDecryptable(it)
+                        }
+                    }
+                },
             ).also { signer = it }
             val deriver = IdentityKeyPrivateKeyDeriver(
                 network = network,
