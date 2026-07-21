@@ -11,16 +11,12 @@ ignore = [
     # Acknowledged 2026-06-08.
     #
     # Why this is acceptable for now:
-    #   - bincode 2.0.1 is the BLOB-codec trust boundary for every
-    #     persisted column and backup in rs-platform-wallet-storage. The
-    #     known risk class for an unmaintained deserializer is unbounded
-    #     allocation (OOM) on a crafted/corrupt input.
-    #   - In-crate size bounds defang that class: MAX_VALUE_LEN /
-    #     BLOB_SIZE_LIMIT_BYTES (kv/blob), the per-secret SecretTooLarge
-    #     write cap, and the MAX_VAULT_SIZE_BYTES read ceiling all reject
-    #     oversized inputs before bincode ever allocates from them.
-    #   - load() is fail-hard: a malformed/over-large row aborts the call
-    #     with a typed error rather than silently over-allocating.
+    #   - The advisory reports maintenance status, not a known exploit.
+    #   - Variable-length wallet decode boundaries are budgeted: storage
+    #     enforces MAX_VALUE_LEN / BLOB_SIZE_LIMIT_BYTES, per-secret write
+    #     caps, and MAX_VAULT_SIZE_BYTES; FFI asset-lock recovery rejects
+    #     proofs over 16 MiB and applies the same bincode decode budget.
+    #   - Malformed or oversized persisted data fails with a typed error.
     #
     # Residual risk: a future bincode defect would go unpatched upstream.
     # Remediation plan: migrate the BLOB codec to a maintained equivalent
