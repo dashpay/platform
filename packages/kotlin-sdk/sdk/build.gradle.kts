@@ -229,13 +229,13 @@ afterEvaluate {
 // (NativeLoader.ensureLoaded → System.loadLibrary("dash_sdk_jni")).
 val requiredJniAbis = listOf("arm64-v8a", "x86_64") // build_android.sh ABI policy
 
-fun missingJniAbis(): List<String> = requiredJniAbis.filterNot { abi ->
-    file("src/main/jniLibs/$abi/libdash_sdk_jni.so").isFile
-}
-
-fun jniMissingMessage(missing: List<String>): String =
-    "Native JNI library libdash_sdk_jni.so is missing for ABI(s) " +
-        "${missing.joinToString()} under src/main/jniLibs/ — run ./build_android.sh " +
+// A 0-byte .so (e.g. from an interrupted build_android.sh) is as broken at
+// runtime as a missing one, so every check below requires real content, and the
+// guard tasks capture plain serializable values (no script-object references)
+// so they stay configuration-cache safe.
+val jniMissingMessageTemplate =
+    "Native JNI library libdash_sdk_jni.so is missing or empty for ABI(s) " +
+        "%s under src/main/jniLibs/ — run ./build_android.sh " +
         "before publishing so the coordinate isn't broken at runtime."
 
 // Remote / staging publish: ALWAYS hard-fail on a missing .so. `-PallowMissingJni`
@@ -244,11 +244,16 @@ fun jniMissingMessage(missing: List<String>): String =
 // uploads to Maven Central). This closes the escape where `-PallowMissingJni`
 // previously downgraded the check to a warning for every publish task.
 val verifyJniLibsForRemotePublish = tasks.register("verifyJniLibsForRemotePublish") {
+    val jniLibsDir = file("src/main/jniLibs")
+    val abis = requiredJniAbis
+    val template = jniMissingMessageTemplate
     doLast {
-        val missing = missingJniAbis()
+        val missing = abis.filterNot { abi ->
+            jniLibsDir.resolve("$abi/libdash_sdk_jni.so").let { so -> so.isFile && so.length() > 0L }
+        }
         if (missing.isNotEmpty()) {
             throw GradleException(
-                jniMissingMessage(missing) +
+                template.format(missing.joinToString()) +
                     " -PallowMissingJni is a local-only escape and is NOT honored for " +
                     "remote/staging deploys."
             )
@@ -259,11 +264,17 @@ val verifyJniLibsForRemotePublish = tasks.register("verifyJniLibsForRemotePublis
 // Local publish (`publishToMavenLocal`): a dev may pass `-PallowMissingJni` for a
 // POM/metadata-only dry run into the local ~/.m2, which never leaves the machine.
 val verifyJniLibsForLocalPublish = tasks.register("verifyJniLibsForLocalPublish") {
+    val jniLibsDir = file("src/main/jniLibs")
+    val abis = requiredJniAbis
+    val template = jniMissingMessageTemplate
+    val allowMissingJni = project.hasProperty("allowMissingJni")
     doLast {
-        val missing = missingJniAbis()
+        val missing = abis.filterNot { abi ->
+            jniLibsDir.resolve("$abi/libdash_sdk_jni.so").let { so -> so.isFile && so.length() > 0L }
+        }
         if (missing.isNotEmpty()) {
-            val message = jniMissingMessage(missing)
-            if (project.hasProperty("allowMissingJni")) {
+            val message = template.format(missing.joinToString())
+            if (allowMissingJni) {
                 logger.warn(
                     "WARNING: $message (continuing: -PallowMissingJni is set — local publish only.)"
                 )
@@ -366,14 +377,19 @@ val verifyStagedAarForRemotePublish = tasks.register("verifyStagedAarForRemotePu
 
         // (3) The staged AAR itself must carry the native library for every ABI.
         ZipFile(aar).use { zip ->
+            // getEntry("x") falls back to a directory entry "x/", and a 0-byte
+            // entry is as fatal at runtime as an absent one — require a real file
+            // with content.
             val missing = requiredAbis.filter { abi ->
-                zip.getEntry("jni/$abi/libdash_sdk_jni.so") == null
+                val entry = zip.getEntry("jni/$abi/libdash_sdk_jni.so")
+                entry == null || entry.isDirectory || entry.size <= 0L
             }
             if (missing.isNotEmpty()) {
                 throw GradleException(
-                    "Staged AAR ${aar.name} is missing jni/<abi>/libdash_sdk_jni.so for " +
-                        "ABI(s) ${missing.joinToString()} — it would die at runtime with " +
-                        "UnsatisfiedLinkError. Run ../build_android.sh, re-stage, then deploy."
+                    "Staged AAR ${aar.name} is missing (or has an empty) " +
+                        "jni/<abi>/libdash_sdk_jni.so for ABI(s) ${missing.joinToString()} — " +
+                        "it would die at runtime with UnsatisfiedLinkError. " +
+                        "Run ../build_android.sh, re-stage, then deploy."
                 )
             }
         }
