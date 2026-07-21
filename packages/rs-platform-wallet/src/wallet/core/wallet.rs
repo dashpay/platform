@@ -67,6 +67,36 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         self.wallet_id
     }
 
+    /// Whether `self` and `other` are handles to the same wallet *generation* —
+    /// the same logical wallet AND the same live in-memory instance.
+    ///
+    /// Two aliases of one generation (the `Arc<PlatformWallet>` clones handed
+    /// out by `PlatformWalletManager::get_wallet`) share the per-generation
+    /// `Arc<WalletBalance>`; a wallet removed and re-created under the same
+    /// `wallet_id` gets a fresh one. `Arc::ptr_eq` on that balance therefore
+    /// distinguishes generations that `wallet_id` — and the shared multi-wallet
+    /// `WalletManager` `Arc` — alone cannot (both are equal across a
+    /// remove-then-recreate). While either handle is held the balance `Arc`
+    /// cannot be freed, so its address can never be reused for a different
+    /// generation, which makes the pointer comparison sound (the same soundness
+    /// argument the registry already relies on for `Arc::ptr_eq` on the
+    /// manager).
+    ///
+    /// This is the single generation identity shared by BOTH deferred-payment
+    /// paths — the registry-token path
+    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry)) and the V2
+    /// finalized-transaction handle path — so neither acts on a re-created
+    /// wallet's `ReservationSet` while an old handle still names the old
+    /// generation.
+    pub fn is_same_generation<O: TransactionBroadcaster + ?Sized>(
+        &self,
+        other: &CoreWallet<O>,
+    ) -> bool {
+        self.wallet_id == other.wallet_id
+            && Arc::ptr_eq(&self.wallet_manager, &other.wallet_manager)
+            && Arc::ptr_eq(&self.balance, &other.balance)
+    }
+
     pub async fn set_gap_limit(
         &self,
         account_type: AccountTypePreference,
@@ -328,5 +358,70 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for CoreWallet<B> {
             broadcaster: Arc::clone(&self.broadcaster),
             balance: Arc::clone(&self.balance),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use key_wallet::account::account_type::StandardAccountType;
+
+    use super::WalletBalance;
+    use crate::test_support::{funded_wallet_manager, AlwaysOkBroadcaster};
+    use crate::wallet::core::CoreWallet;
+
+    /// The single generation identity both deferred-payment paths share:
+    /// aliases of one generation share the per-generation balance `Arc` (same
+    /// generation), while a wallet re-created under the same `wallet_id` and the
+    /// same multi-wallet `WalletManager` `Arc` but a fresh balance `Arc` is a
+    /// DIFFERENT generation. Neither `wallet_id` nor the manager `Arc` alone can
+    /// tell them apart — the balance `Arc` is what distinguishes them, closing
+    /// the gap where an old handle could act through the old generation while a
+    /// new generation selected the same inputs.
+    #[tokio::test]
+    async fn is_same_generation_distinguishes_recreation_from_aliases() {
+        let (manager, wallet_id, balance, _signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(AlwaysOkBroadcaster);
+
+        let generation_a = CoreWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&manager),
+            wallet_id,
+            Arc::clone(&broadcaster),
+            Arc::clone(&balance),
+        );
+
+        // A clone is an alias of the SAME generation (shares the balance Arc).
+        let alias = generation_a.clone();
+        assert!(
+            generation_a.is_same_generation(&alias),
+            "aliases of one generation must compare equal"
+        );
+        assert!(alias.is_same_generation(&generation_a));
+
+        // A re-created generation: SAME manager Arc + SAME wallet_id, fresh
+        // per-generation balance Arc.
+        let generation_b = CoreWallet::new(
+            sdk,
+            Arc::clone(&manager),
+            wallet_id,
+            broadcaster,
+            Arc::new(WalletBalance::new()),
+        );
+        assert!(
+            !generation_a.is_same_generation(&generation_b),
+            "a re-created generation must NOT match, despite equal wallet_id + manager"
+        );
+        // Sanity: it is ONLY the balance Arc that differs — wallet_id and the
+        // manager Arc are identical, so those checks alone could not tell the
+        // two generations apart.
+        assert_eq!(generation_a.wallet_id(), generation_b.wallet_id());
+        assert!(Arc::ptr_eq(
+            &generation_a.wallet_manager,
+            &generation_b.wallet_manager
+        ));
     }
 }
