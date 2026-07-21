@@ -5,7 +5,11 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -167,6 +171,25 @@ class PlatformWalletPersistenceHandler(
      */
     private class ChangesetBuffer {
         val ops: MutableList<suspend (DashDatabase) -> Unit> = mutableListOf()
+
+        /**
+         * [pendingIdentityKeys] map deltas staged by
+         * [onPersistIdentityKeyUpsert] during this round. The matching
+         * `PublicKeyEntity` row is only BUFFERED until [onChangesetEnd], so
+         * the pending-state change it describes is not true until that row
+         * commits: publishing a record early would flag a key whose
+         * watch-only row may be discarded by rollback, and publishing a
+         * clear early would drop the repair signal for an old watch-only
+         * row whose successful re-derive then rolls back (alias cleanup
+         * deletes the newly stored scalar). Applied in order, in ONE atomic
+         * [MutableStateFlow.update], only after the Room transaction
+         * commits; discarded with the buffer on rollback/abort so an
+         * aborted round leaves the pre-round map untouched
+         * (dashpay/platform#4060, finding de3cf44a71fc).
+         */
+        val pendingKeyDeltas:
+            MutableList<(Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>> =
+                mutableListOf()
     }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
@@ -296,6 +319,52 @@ class PlatformWalletPersistenceHandler(
         callbackExclusion.withLock { block() }
 
     /**
+     * An identity key whose private-half derivation/storage failed — the
+     * key was persisted **watch-only** and cannot sign until re-derived
+     * (e.g. via `PlatformWalletManager.repairIdentityKey`).
+     */
+    data class PendingIdentityKey(
+        /** Hex of the wallet the key belongs to. */
+        val walletIdHex: String,
+        /** Base58 of the owning identity id. */
+        val identityIdBase58: String,
+        /** On-identity key id. */
+        val keyId: Int,
+        /** Lowercase hex of the compressed public key (the storage key). */
+        val publicKeyHex: String,
+        /** Derivation breadcrumb: identity index. */
+        val identityIndex: Int,
+        /** Derivation breadcrumb: key index. */
+        val keyIndex: Int,
+        /** Human-readable failure reason (exception message or contract miss). */
+        val reason: String,
+        /** Epoch millis of the (latest) failure. */
+        val failedAtMs: Long,
+    )
+
+    private val _pendingIdentityKeys =
+        MutableStateFlow<Map<String, PendingIdentityKey>>(emptyMap())
+
+    /**
+     * Queryable "keys pending" state: identity keys whose private half
+     * could not be derived/stored by [onPersistIdentityKeyUpsert] (keyed by
+     * public-key hex). Such keys are persisted watch-only — signing with
+     * them fails — so hosts should watch this flow and surface a repair
+     * path. An entry clears automatically when a later persist round (or an
+     * explicit re-derive that replays the upsert) stores the key.
+     *
+     * Transactional with the round it belongs to: while a store round is
+     * open, record/clear mutations are staged in the round's
+     * [ChangesetBuffer] and published only after the Room transaction
+     * commits — a rolled-back or aborted round leaves this map exactly as
+     * it was before the round (see [ChangesetBuffer.pendingKeyDeltas]).
+     * Standalone (non-bracketed) upserts and [markIdentityKeyRepaired]
+     * publish immediately.
+     */
+    val pendingIdentityKeys: StateFlow<Map<String, PendingIdentityKey>> =
+        _pendingIdentityKeys.asStateFlow()
+
+    /**
      * Stage a write. If a round is open for [walletId] the op is buffered
      * for the round's single transaction; otherwise it runs immediately
      * in its own transaction (the standalone-callback path).
@@ -319,7 +388,8 @@ class PlatformWalletPersistenceHandler(
         // A pending leftover here means the previous round never reached
         // its end callback (abandoned mid-round) — its rows never
         // committed, so its aliases are orphans; scrub them like a
-        // rolled-back round. Then retry any earlier failed cleanup.
+        // rolled-back round (its staged pending-key deltas vanish with the
+        // replaced buffer). Then retry any earlier failed cleanup.
         scrubPendingAliases(key)
         retryOrphanedAliases(key)
         buffers[key] = ChangesetBuffer()
@@ -334,7 +404,9 @@ class PlatformWalletPersistenceHandler(
             // `backgroundContext.rollback()` — and delete the aliases the
             // deriver already wrote for this round: their rows will never
             // commit, so leaving them would strand undiscoverable
-            // identity-key ciphertext in the DataStore forever.
+            // identity-key ciphertext in the DataStore forever. The round's
+            // staged pending-key deltas are discarded with the buffer, so
+            // the pre-round [pendingIdentityKeys] map survives untouched.
             scrubPendingAliases(key)
             return@guarded 0
         }
@@ -346,11 +418,14 @@ class PlatformWalletPersistenceHandler(
                     }
                 }
             }
-            // Rows committed — the aliases are discoverable the normal way.
+            // Rows committed — the aliases are discoverable the normal way,
+            // and the round's pending-key state changes are now true.
             pendingRoundAliases.remove(key)
+            publishPendingKeyDeltas(buffer)
         } catch (t: Throwable) {
             // Commit failed: the staged rows never landed, so the round's
-            // aliases are orphans exactly like the !success branch.
+            // aliases are orphans exactly like the !success branch — and its
+            // pending-key deltas are equally void (discarded with the buffer).
             scrubPendingAliases(key)
             throw t
         }
@@ -1034,17 +1109,61 @@ class PlatformWalletPersistenceHandler(
         // wallet-deletion sweep still reaches it through the committed row).
         val deriveResult: DerivedKeyStoreResult? =
             if (derivationIndicesIsSome && deriver != null && !readOnly && walletStillPersisted) {
-                runCatching {
+                val keyOwnerWalletId = if (walletIdIsSome) keyWalletId else walletId
+                val outcome = runCatching {
                     deriver.deriveAndStore(
-                        walletId = if (walletIdIsSome) keyWalletId else walletId,
+                        walletId = keyOwnerWalletId,
                         publicKeyData = publicKeyData,
                         identityIndex = identityIndex,
                         keyIndex = keyIndex,
                     )
-                }.getOrElse { t ->
-                    Log.w(TAG, "identity private-key derive/store failed; key stays watch-only", t)
-                    null
                 }
+                val id = outcome.getOrNull()
+                if (id != null) {
+                    // Stored — clear any earlier failure for this pubkey.
+                    // Staged with the round (when one is open): if this
+                    // round rolls back, alias cleanup deletes the newly
+                    // stored scalar, so the old watch-only row must keep
+                    // its repair signal (finding de3cf44a71fc).
+                    stagePendingKeyDelta(roundKey, clearPendingKeyDelta(publicKeyData.toHex()))
+                } else {
+                    // NOT silent (dashpay/platform#4053): the key is being
+                    // persisted watch-only, so every signature with it will
+                    // fail until it is re-derived. Log loudly and record a
+                    // queryable pending entry (see [pendingIdentityKeys]).
+                    val reason = outcome.exceptionOrNull()?.let { t ->
+                        t.message ?: t.javaClass.simpleName
+                    } ?: "deriver returned no storage identifier"
+                    Log.e(
+                        TAG,
+                        "identity private-key derive/store FAILED — key " +
+                            "${publicKeyData.toHex()} (identity ${identityId.toBase58String()}, " +
+                            "keyId $keyId, slot $identityIndex/$keyIndex) is persisted " +
+                            "WATCH-ONLY and cannot sign until re-derived " +
+                            "(see PlatformWalletPersistenceHandler.pendingIdentityKeys): $reason",
+                        outcome.exceptionOrNull(),
+                    )
+                    // Staged with the round (when one is open): the row is
+                    // being persisted watch-only INSIDE the round's buffer,
+                    // so if the round aborts that row never commits and the
+                    // pending entry would be a phantom (finding de3cf44a71fc).
+                    stagePendingKeyDelta(
+                        roundKey,
+                        recordPendingKeyDelta(
+                            PendingIdentityKey(
+                                walletIdHex = keyOwnerWalletId.toHex(),
+                                identityIdBase58 = identityId.toBase58String(),
+                                keyId = keyId,
+                                publicKeyHex = publicKeyData.toHex(),
+                                identityIndex = identityIndex,
+                                keyIndex = keyIndex,
+                                reason = reason,
+                                failedAtMs = System.currentTimeMillis(),
+                            ),
+                        ),
+                    )
+                }
+                id
             } else {
                 null
             }
@@ -2428,6 +2547,78 @@ class PlatformWalletPersistenceHandler(
                 }
             }
         }
+    }
+
+    // ── Pending identity-key bookkeeping (#4053) ──────────────────────
+
+    // Every publish to the map goes through `MutableStateFlow.update`
+    // (atomic compare-and-set) rather than a plain read-modify-write on
+    // `.value`: the persistence callback publishes on the Rust caller
+    // thread while `markIdentityKeyRepaired` can clear from an arbitrary
+    // host thread (via PlatformWalletManager.repairIdentityKey). A
+    // non-atomic read-then-write could interleave and drop one of the two
+    // mutations — losing a record leaves a watch-only key with no queryable
+    // pending state, losing a clear leaves a repaired key stale.
+    //
+    // The mutations themselves are expressed as pure map deltas so the
+    // upsert callback can STAGE them with the round's [ChangesetBuffer]
+    // instead of publishing mid-round (finding de3cf44a71fc): the pending
+    // state a delta describes only becomes true when the round's Room
+    // transaction commits, and an aborted round must leave no trace.
+
+    private fun recordPendingKeyDelta(
+        entry: PendingIdentityKey,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { it + (entry.publicKeyHex to entry) }
+
+    private fun clearPendingKeyDelta(
+        publicKeyHex: String,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { if (publicKeyHex in it) it - publicKeyHex else it }
+
+    /**
+     * Stage [delta] with the wallet's open round (published atomically by
+     * [publishPendingKeyDeltas] after the round's transaction commits,
+     * discarded on rollback/abort), or publish immediately when no round is
+     * open — the standalone-callback path, whose Room write also commits
+     * immediately. Caller must hold [callbackExclusion] (every persist
+     * callback does), which also guards [buffers].
+     */
+    private fun stagePendingKeyDelta(
+        walletIdHex: String,
+        delta: (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey>,
+    ) {
+        val buffer = buffers[walletIdHex]
+        if (buffer != null) {
+            buffer.pendingKeyDeltas.add(delta)
+        } else {
+            _pendingIdentityKeys.update(delta)
+        }
+    }
+
+    /** Publish a committed round's staged deltas in ONE atomic map update. */
+    private fun publishPendingKeyDeltas(buffer: ChangesetBuffer) {
+        if (buffer.pendingKeyDeltas.isEmpty()) return
+        _pendingIdentityKeys.update { map ->
+            buffer.pendingKeyDeltas.fold(map) { acc, delta -> delta(acc) }
+        }
+    }
+
+    /**
+     * Drop [publicKeyHex] from [pendingIdentityKeys] after a successful
+     * out-of-band repair.
+     *
+     * [onPersistIdentityKeyUpsert] is the only *persist-callback* path that
+     * clears a pending entry, but [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.repairIdentityKey]
+     * re-derives and stores the private key directly through the deriver,
+     * bypassing that callback — so it must call this on success or a repaired
+     * key would linger in [pendingIdentityKeys] until an unrelated re-persist
+     * happens to fire for the same key. Idempotent: clearing an absent key is a
+     * no-op. Publishes immediately (never staged with a round): the repair's
+     * scalar store already happened out-of-band, not inside any changeset.
+     */
+    internal fun markIdentityKeyRepaired(publicKeyHex: String) {
+        _pendingIdentityKeys.update(clearPendingKeyDelta(publicKeyHex))
     }
 
     // ── Error / threading guards ──────────────────────────────────────

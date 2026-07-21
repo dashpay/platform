@@ -1010,6 +1010,234 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("privkey.deadbeef", row!!.privateKeyKeychainIdentifier)
     }
 
+    // ── Pending identity keys (dashpay/platform#4053: no silent skip) ──
+
+    /** Deriver that always throws — the derive/storage-failure path. */
+    private class ThrowingDeriver : PrivateKeyDeriver {
+        override fun deriveAndStore(
+            walletId: ByteArray,
+            publicKeyData: ByteArray,
+            identityIndex: Int,
+            keyIndex: Int,
+        ): DerivedKeyStoreResult = throw IllegalStateException("keystore unavailable")
+
+        override fun deleteUnownedStored(
+            pubkeyHexes: Collection<String>,
+            excludingWalletId: ByteArray,
+        ): Set<String> = emptySet()
+    }
+
+    private fun upsertIdentityKey(pubkey: ByteArray, identityId: ByteArray) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun derivationFailureIsRecordedAsAPendingIdentityKey() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+
+        val identityId = ByteArray(32) { 15 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 10 }
+        upsertIdentityKey(pubkey, identityId)
+
+        // The key row persists watch-only (no identifier) — same as before…
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertNotNull(row)
+        assertNull(row!!.privateKeyKeychainIdentifier)
+
+        // …but the failure is now queryable instead of silent.
+        val pending = handler.pendingIdentityKeys.value
+        val entry = pending[pubkey.toHex()]
+        assertNotNull("expected a pending entry for the failed key", entry)
+        assertEquals(walletId.toHex(), entry!!.walletIdHex)
+        assertEquals(identityId.toBase58String(), entry.identityIdBase58)
+        assertEquals(0, entry.keyId)
+        assertEquals(3, entry.identityIndex)
+        assertEquals(5, entry.keyIndex)
+        assertEquals("keystore unavailable", entry.reason)
+    }
+
+    @Test
+    fun deriverReturningNullIsAlsoRecordedAsPending() = runTest {
+        handler = PlatformWalletPersistenceHandler(
+            db, Dispatchers.Unconfined, FakeDeriver(id = null),
+        )
+
+        val identityId = ByteArray(32) { 16 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 11 }
+        upsertIdentityKey(pubkey, identityId)
+
+        val entry = handler.pendingIdentityKeys.value[pubkey.toHex()]
+        assertNotNull(entry)
+        assertEquals("deriver returned no storage identifier", entry!!.reason)
+    }
+
+    @Test
+    fun laterSuccessfulDeriveClearsThePendingEntry() = runTest {
+        // First round fails…
+        var boom = true
+        val flaky = object : PrivateKeyDeriver {
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+            ): DerivedKeyStoreResult =
+                if (boom) {
+                    throw IllegalStateException("transient")
+                } else {
+                    DerivedKeyStoreResult("privkey.cafebabe", wasNewlyCreated = true)
+                }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> = emptySet()
+        }
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, flaky)
+
+        val identityId = ByteArray(32) { 17 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 12 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // …a re-persist (e.g. the next sync round) succeeds and clears it.
+        boom = false
+        upsertIdentityKey(pubkey, identityId)
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertEquals("privkey.cafebabe", row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun markIdentityKeyRepairedClearsThePendingEntry() = runTest {
+        // A derive failure records the key as pending…
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 18 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 13 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // …and a successful out-of-band repair (PlatformWalletManager.repairIdentityKey
+        // stores directly through the deriver, never re-firing onPersistIdentityKeyUpsert)
+        // clears it via this hook.
+        handler.markIdentityKeyRepaired(pubkey.toHex())
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // Idempotent: a second clear (or one for an unknown key) is a no-op.
+        handler.markIdentityKeyRepaired(pubkey.toHex())
+        handler.markIdentityKeyRepaired(ByteArray(33) { 99 }.toHex())
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    /**
+     * Regression (dashpay/platform#4060, finding de3cf44a71fc): the pending
+     * record is staged with the round, not published mid-round — the
+     * watch-only row it describes is only buffered until [onChangesetEnd],
+     * so an aborted round (which discards that row) must leave no phantom
+     * pending entry behind.
+     */
+    @Test
+    fun abortedRoundLeavesNoPhantomPendingKeyState() = runTest {
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+
+        val identityId = ByteArray(32) { 19 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 14 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        // Mid-round the record is only STAGED: the watch-only row it
+        // describes has not committed yet.
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+
+        handler.onChangesetEnd(walletId, success = false)
+
+        // The aborted round discarded the watch-only row — its staged
+        // pending entry must vanish with it, not survive as a phantom.
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+
+        // The same failure in a round that COMMITS still publishes.
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    /**
+     * Regression (dashpay/platform#4060, finding de3cf44a71fc), the converse
+     * flow: an earlier watch-only key is pending; a retry round derives
+     * successfully (staging the clear) but then ABORTS. Rollback's alias
+     * cleanup deletes the newly stored scalar, so the old watch-only row —
+     * still the persisted truth — must keep its repair signal instead of
+     * losing it to a mid-round clear.
+     */
+    @Test
+    fun abortedRetryRoundPreservesThePendingRepairSignal() = runTest {
+        var boom = true
+        val flaky = object : PrivateKeyDeriver {
+            val deletedAliases = mutableListOf<String>()
+
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+            ): DerivedKeyStoreResult =
+                if (boom) {
+                    throw IllegalStateException("transient")
+                } else {
+                    DerivedKeyStoreResult("privkey.cafebabe", wasNewlyCreated = true)
+                }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> {
+                deletedAliases.addAll(pubkeyHexes)
+                return pubkeyHexes.toSet()
+            }
+        }
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, flaky)
+
+        val identityId = ByteArray(32) { 20 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 15 }
+
+        // A committed failing round records the watch-only key as pending.
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // The retry round derives + stores successfully (the clear is
+        // staged)… and then the round rolls back.
+        boom = false
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = false)
+
+        // Rollback scrubbed the round's newly stored scalar; the old
+        // watch-only row is still the persisted truth, so the repair signal
+        // must survive the aborted round's staged clear.
+        assertEquals(listOf(pubkey.toHex()), flaky.deletedAliases)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
     // ── Shielded load round-trip ──────────────────────────────────────
 
     @Test
