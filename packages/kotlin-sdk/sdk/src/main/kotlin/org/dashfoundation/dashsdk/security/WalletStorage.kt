@@ -380,6 +380,38 @@ class WalletStorage(
     }
 
     /**
+     * FORCED variant of [storeIfAbsent] for the repair path
+     * (dashpay/platform#4060 finding 6): derive and store [pubkeyHex]'s
+     * private key UNCONDITIONALLY, replacing whatever entry exists — never
+     * the [addOwnerIfUsableLocked] short-circuit, whose shape+fingerprint
+     * usability check can be satisfied by a blob that does not actually
+     * decrypt (a stale-but-matching corner) and would silently skip the
+     * re-derive a repair exists to perform. Blob, fingerprint, and alias tag
+     * are replaced in ONE atomic edit; ownership is recorded like any store.
+     *
+     * Same outside-the-lock derive discipline as [storeIfAbsent] ([derive]
+     * is a native FFI call — never run it holding [privateKeyMutex]), and
+     * the same scrubbing contract: this function does NOT zero the bytes
+     * [derive] returns; the caller owns that on every path. The tombstone
+     * check runs both before the derive (fail fast) and again under the
+     * write lock (a deletion can win the race while deriving).
+     *
+     * Throws [WalletTombstonedException] if [ownerWalletId] was deleted.
+     */
+    suspend fun replacePrivateKey(
+        pubkeyHex: String,
+        ownerWalletId: ByteArray,
+        derive: suspend () -> ByteArray,
+    ) {
+        privateKeyMutex.withLock { rejectIfTombstonedLocked(ownerWalletId) }
+        val derived = derive()
+        privateKeyMutex.withLock {
+            rejectIfTombstonedLocked(ownerWalletId)
+            storePrivateKeyEntryLocked(pubkeyHex, derived, ownerWalletId)
+        }
+    }
+
+    /**
      * If [pubkeyHex] already has a decryptable ciphertext entry (under any
      * owner), record [ownerWalletId]'s ownership and return `true`;
      * otherwise leave everything untouched and return `false`. Lock must

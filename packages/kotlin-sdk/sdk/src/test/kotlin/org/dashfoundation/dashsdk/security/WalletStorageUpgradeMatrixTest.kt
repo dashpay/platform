@@ -415,6 +415,65 @@ class WalletStorageUpgradeMatrixTest {
     }
 
     /**
+     * Finding 6 (forced replacement): a blob that passes the shape +
+     * fingerprint usability check but does not actually decrypt must NOT
+     * short-circuit the repair path. replacePrivateKey overwrites the entry
+     * unconditionally (blob + fingerprint + alias tag in one edit), while
+     * storeIfAbsent — the idempotent persist path — keeps its short-circuit
+     * and would have skipped the re-derive.
+     */
+    @Test
+    fun forcedReplaceOverwritesAFingerprintValidButUndecryptableBlob() = runBlocking {
+        val owner = ByteArray(32) { 6 }
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        storage.storePrivateKey(pub, secret, ownerWalletId = owner)
+
+        // The blob still LOOKS current (shape + fingerprint) but the key no
+        // longer opens it — the stale-but-matching corner.
+        fake.throwBadPaddingOnPolicyDecrypt = true
+        assertTrue(storage.isPrivateKeyDecryptable(pub)) // cheap check fooled
+        assertFalse(storage.probeIdentityKeyRecoverability(pub)) // probe not fooled
+
+        // storeIfAbsent short-circuits on the fingerprint match — no derive.
+        var storeIfAbsentDerives = 0
+        val skipped = storage.storeIfAbsent(pub, ownerWalletId = owner) {
+            storeIfAbsentDerives++
+            secret
+        }
+        assertFalse(skipped)
+        assertEquals(0, storeIfAbsentDerives)
+
+        // replacePrivateKey derives unconditionally and replaces the entry.
+        val replacement = ByteArray(32) { (it + 100).toByte() }
+        var replaceDerives = 0
+        storage.replacePrivateKey(pub, ownerWalletId = owner) {
+            replaceDerives++
+            replacement
+        }
+        assertEquals(1, replaceDerives)
+
+        fake.throwBadPaddingOnPolicyDecrypt = false
+        assertArrayEquals(replacement, storage.retrievePrivateKey(pub))
+        assertTrue(storage.probeIdentityKeyRecoverability(pub))
+        assertTrue(storage.ownedPrivateKeyAliases(owner).contains(pub))
+    }
+
+    /** replacePrivateKey honors wallet tombstones like every other store. */
+    @Test
+    fun forcedReplaceRejectsATombstonedWallet() {
+        runBlocking {
+            val owner = ByteArray(32) { 9 }
+            storage.withPrivateKeyExclusion { tombstoneWallet(owner) }
+            org.junit.Assert.assertThrows(WalletTombstonedException::class.java) {
+                runBlocking {
+                    storage.replacePrivateKey(pub, ownerWalletId = owner) { secret }
+                }
+            }
+            assertFalse(storage.hasPrivateKey(pub))
+        }
+    }
+
+    /**
      * A closed auth window must NOT be mistaken for a wrong key: the
      * UserNotAuthenticatedException propagates so KeystoreSigner can prompt,
      * instead of being swallowed into the former-RSA fallback.

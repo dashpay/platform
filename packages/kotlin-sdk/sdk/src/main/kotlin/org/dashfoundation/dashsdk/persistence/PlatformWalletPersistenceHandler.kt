@@ -2782,12 +2782,19 @@ interface PrivateKeyDeriver {
      *
      * @param publicKeyData the compressed public-key bytes — used as the
      *   storage key so the signer can locate the scalar.
+     * @param force when true, skip the "already usable" short-circuit and
+     *   REPLACE the stored entry unconditionally — the repair path
+     *   (dashpay/platform#4060 finding 6), where a shape+fingerprint-valid
+     *   but undecryptable blob must not suppress the re-derive. The
+     *   persistence-callback call site keeps the default `false` (idempotent
+     *   upserts must not re-derive on every sync).
      */
     fun deriveAndStore(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
+        force: Boolean = false,
     ): DerivedKeyStoreResult?
 
     /**

@@ -451,11 +451,20 @@ class PlatformWalletManager(
      * Returns the recorded storage identifier (e.g. `privkey.<pubkeyHex>`),
      * or throws on a derivation / storage failure.
      *
-     * On success the key is dropped from [pendingIdentityKeys] via the
-     * persistence handler: the repair stores the private key directly through
-     * the deriver, bypassing `onPersistIdentityKeyUpsert` (the only persist
-     * path that clears pending), so it must clear the entry itself or the
-     * repaired key would keep showing as pending.
+     * FORCE-replaces the stored entry (never trusts the shape+fingerprint
+     * usability short-circuit) and then VERIFIES the write with the
+     * real-decrypt probe ([WalletStorage.probeIdentityKeyRecoverability])
+     * before declaring success — a blob that does not actually decrypt fails
+     * the repair with a typed
+     * [DashSdkError.PlatformWallet.SigningKeyUnavailable]
+     * (dashpay/platform#4060 finding 6).
+     *
+     * Only after verification is the key dropped from [pendingIdentityKeys]
+     * via the persistence handler (the repair stores the private key
+     * directly through the deriver, bypassing `onPersistIdentityKeyUpsert` —
+     * the only persist path that clears pending — so it must clear the entry
+     * itself), and the Room rows' `privateKeyKeychainIdentifier` updated so
+     * the durable pending-repair reconstruction does not resurrect the key.
      */
     suspend fun repairIdentityKey(
         walletId: ByteArray,
@@ -467,18 +476,51 @@ class PlatformWalletManager(
         require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
         // deriveAndStore is a synchronous JNI call keyed on the manager's
         // resolver handle — the gate keeps teardown from freeing it
-        // mid-derive (callers run on their own Compose scopes). It only
-        // skips the actual re-derive when the stored scalar is already
-        // decryptable — exactly the case a health-sheet repair is invoked
-        // for (an undecryptable legacy blob) is NOT skipped.
+        // mid-derive (callers run on their own Compose scopes).
+        //
+        // force = true (dashpay/platform#4060 finding 6): storeIfAbsent's
+        // shape+fingerprint usability short-circuit can be satisfied by a
+        // blob that does not actually decrypt, silently skipping the
+        // re-derive a repair exists to perform. The forced path routes
+        // through WalletStorage.replacePrivateKey, which unconditionally
+        // replaces blob + fingerprint + alias tag in one atomic edit.
         val storageIdentifier = identityKeyDeriver.deriveAndStore(
             walletId = walletId,
             publicKeyData = publicKeyData,
             identityIndex = identityIndex,
             keyIndex = keyIndex,
+            force = true,
         )?.identifier
         if (storageIdentifier != null) {
-            persistenceHandler.markIdentityKeyRepaired(publicKeyData.toHex())
+            val pubkeyHex = publicKeyData.toHex()
+            // VERIFY with the real-decrypt probe before declaring success: a
+            // wrong-key crypto failure fails the repair with a typed error.
+            // UserNotAuthenticatedException counts as verified inside the
+            // probe (key present, opens after auth — this manager holds no
+            // BiometricGate on this path, and the just-written fingerprint
+            // rules out the wrong-key-behind-locked-gate ambiguity because
+            // we wrote the blob ourselves under the captured public key).
+            val verified = walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+            if (!verified) {
+                throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                    "identity-key repair stored a blob that does not decrypt " +
+                        "for pubkey $pubkeyHex (identityIndex=$identityIndex, " +
+                        "keyIndex=$keyIndex) — the key remains unusable; " +
+                        "re-run the repair after resolving the Keystore state",
+                )
+            }
+            // Record the identifier on the Room rows too, so the durable
+            // pending-repair reconstruction (finding 5) does not resurrect
+            // this key on the next launch.
+            runCatching {
+                database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
+                    if (row.privateKeyKeychainIdentifier != storageIdentifier) {
+                        database.publicKeyDao()
+                            .update(row.copy(privateKeyKeychainIdentifier = storageIdentifier))
+                    }
+                }
+            }
+            persistenceHandler.markIdentityKeyRepaired(pubkeyHex)
         }
         storageIdentifier
     }

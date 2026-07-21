@@ -778,6 +778,7 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
+            force: Boolean,
         ): DerivedKeyStoreResult? {
             calls.add(Triple(walletId, identityIndex, keyIndex))
             lastPublicKey = publicKeyData
@@ -1019,6 +1020,7 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
+            force: Boolean,
         ): DerivedKeyStoreResult = throw IllegalStateException("keystore unavailable")
 
         override fun deleteUnownedStored(
@@ -1089,6 +1091,7 @@ class PlatformWalletPersistenceHandlerTest {
                 publicKeyData: ByteArray,
                 identityIndex: Int,
                 keyIndex: Int,
+                force: Boolean,
             ): DerivedKeyStoreResult =
                 if (boom) {
                     throw IllegalStateException("transient")
@@ -1195,6 +1198,7 @@ class PlatformWalletPersistenceHandlerTest {
                 publicKeyData: ByteArray,
                 identityIndex: Int,
                 keyIndex: Int,
+                force: Boolean,
             ): DerivedKeyStoreResult =
                 if (boom) {
                     throw IllegalStateException("transient")

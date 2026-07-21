@@ -50,6 +50,7 @@ class IdentityKeyPrivateKeyDeriver(
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
+        force: Boolean,
     ): DerivedKeyStoreResult {
         val pubkeyHex = publicKeyData.toHex()
         var scalar: ByteArray? = null
@@ -62,19 +63,30 @@ class IdentityKeyPrivateKeyDeriver(
         // (the single FFI call below) ONLY when the alias doesn't already
         // have a usable stored scalar under ANY owner — a re-derive of an
         // existing key would just reproduce the same deterministic bytes.
+        //
+        // force = true (the repair path, dashpay/platform#4060 finding 6)
+        // routes through WalletStorage.replacePrivateKey instead: the
+        // usability short-circuit is exactly what must NOT run when a
+        // shape+fingerprint-valid but undecryptable blob is being repaired.
+        val deriveOnce: suspend () -> ByteArray = {
+            // Single Rust FFI call — the whole derivation, deadlock-safe —
+            // runs OUTSIDE WalletStorage's private-key lock (the
+            // storeIfAbsent/replacePrivateKey contract).
+            IdentityNative.deriveIdentityPrivateKeyWithResolver(
+                networkOrd = network.ffiValue,
+                walletId = walletId,
+                resolverHandle = mnemonicResolverHandle,
+                identityIndex = identityIndex,
+                keyIndex = keyIndex,
+            ).also { scalar = it }
+        }
         val wasNewlyCreated = try {
             runBlocking {
-                walletStorage.storeIfAbsent(pubkeyHex, ownerWalletId = walletId) {
-                    // Single Rust FFI call — the whole derivation,
-                    // deadlock-safe — runs OUTSIDE WalletStorage's
-                    // private-key lock (storeIfAbsent's own contract).
-                    IdentityNative.deriveIdentityPrivateKeyWithResolver(
-                        networkOrd = network.ffiValue,
-                        walletId = walletId,
-                        resolverHandle = mnemonicResolverHandle,
-                        identityIndex = identityIndex,
-                        keyIndex = keyIndex,
-                    ).also { scalar = it }
+                if (force) {
+                    walletStorage.replacePrivateKey(pubkeyHex, ownerWalletId = walletId, derive = deriveOnce)
+                    true
+                } else {
+                    walletStorage.storeIfAbsent(pubkeyHex, ownerWalletId = walletId, derive = deriveOnce)
                 }
             }
         } finally {
