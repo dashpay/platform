@@ -38,6 +38,7 @@ use zeroize::Zeroizing;
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::identity::network::encrypted_document::EncryptionKeyIndexAllocator;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
@@ -322,6 +323,15 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// signer-generic `PutDocument` trait) behind two by-value methods
     /// so the call sites stay simple.
     pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
+    /// In-process, per-owner-identity high-water map for allocating the
+    /// txMetadata `encryptionKeyIndex` when the host omits it — the Rust-side
+    /// index-allocation policy (dashpay/platform#4186 follow-up). Shared across
+    /// every clone of this handle (an `Arc`), so two concurrent
+    /// encrypted-document creates through the SAME wallet process serialize
+    /// under its mutex and can never pick the same index. Best-effort unique
+    /// PER DEVICE only; see
+    /// [`IdentityWallet::allocate_encryption_key_index`](crate::wallet::identity::IdentityWallet::allocate_encryption_key_index).
+    pub(crate) enc_key_index_allocator: EncryptionKeyIndexAllocator,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -345,6 +355,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             persister: self.persister.clone(),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
+            enc_key_index_allocator: Arc::clone(&self.enc_key_index_allocator),
         }
     }
 }
