@@ -644,35 +644,16 @@ class ShieldedService: ObservableObject {
     ///
     /// The user reaches this through the Clear button on the
     /// **global** Sync Status surface, not a per-wallet screen.
-    /// "Clear" therefore wipes every wallet's shielded rows + the
-    /// per-network commitment-tree SQLite file, so the rebind on
+    /// "Clear" therefore wipes every wallet's shielded rows and
+    /// empties the per-network commitment tree, so the rebind on
     /// the next Sync Now walks the cmx stream from genesis.
     ///
-    /// What it does NOT touch:
-    ///   * The manager-wide shielded sync loop is `stopShieldedSync`'d
-    ///     first so the persister callback can't re-derive the
-    ///     rows we're deleting. It restarts on either of the two
-    ///     bind paths: [`manualSync`] self-binding (which calls
-    ///     `startShieldedSync()` after a successful self-rebind),
-    ///     or `rebindWalletScopedServices` firing on a navigation.
+    /// What survives the reset:
     ///   * The per-network commitment-tree SQLite file at
-    ///     `dbPath(for:)`. Earlier revisions of this helper
-    ///     unlinked it for a "true clean slate", but with no
-    ///     unbind FFI the Rust-side `FileBackedShieldedStore`
-    ///     keeps the SQLite handle open across the wipe — yanking
-    ///     the file (plus -wal / -shm / -journal sidecars) out
-    ///     from under a live connection is a SQLite-documented
-    ///     corruption pattern, and the corruption it causes is
-    ///     precisely the "Merkle witness unavailable" class of
-    ///     failures the wipe was meant to defuse. The tree's
-    ///     existing leaves are still correct (just chain history);
-    ///     the marked-position auth paths survive; and re-sync
-    ///     with an empty SwiftData snapshot re-decrypts every
-    ///     note while `append_commitment` skips already-appended
-    ///     positions, so the tree stays consistent across rebind.
-    ///   * The Rust-side shielded sub-wallet binding (there's no
-    ///     unbind FFI today; the next `bindShielded` call replaces
-    ///     the binding wholesale).
+    ///     `dbPath(for:)`. `clearShielded` empties the tree through
+    ///     the live Rust store but leaves the open database file in
+    ///     place. Unlinking that file or its sidecars under the live
+    ///     connection risks SQLite corruption.
     ///   * The stashed credentials on the service itself — bare
     ///     [`reset`] would nil them, leaving the user with no
     ///     path back to a synced state from this screen. The
@@ -685,10 +666,7 @@ class ShieldedService: ObservableObject {
     /// `PersistentShieldedSyncState` rows would silently survive
     /// (the symptom the user reported when "Clear" left a row
     /// behind for a non-active wallet).
-    func clearLocalState(
-        modelContext: ModelContext,
-        resetRustStateForTesting: (() throws -> Void)? = nil
-    ) async {
+    func clearLocalState(modelContext: ModelContext) async {
         // Capture the manager before the soft-cleanup below
         // touches anything, so we can stop the background loop
         // first. (We used to capture `network` here too for the
@@ -747,56 +725,53 @@ class ShieldedService: ObservableObject {
         //    every wallet on any wallet-set change or network switch. We
         //    keep the WIPE scope global on purpose (see the class-level
         //    doc below) — this note is about the re-BIND scope.
+        prepareForShieldedRebind()
+        guard let managerForStop else {
+            lastError = "Failed to reset shielded state: no wallet manager is bound."
+            SDKLogger.error(lastError ?? "")
+            return
+        }
+
         do {
-            if let resetRustStateForTesting {
-                try resetRustStateForTesting()
-            } else {
-                guard let managerForStop else {
-                    lastError = "Failed to reset shielded state: no wallet manager is bound."
-                    SDKLogger.error(lastError ?? "")
-                    return
+            try Self.executeClearPersistenceSequence(
+                resetRustState: {
+                    try managerForStop.clearShielded()
+                },
+                clearHostState: {
+                    // Delete every shielded SwiftData row across all
+                    // wallets on this device. The Clear button is on the
+                    // global Sync Status surface, so this is intentionally
+                    // global rather than wallet-scoped.
+                    try modelContext.delete(model: PersistentShieldedNote.self)
+                    try modelContext.delete(model: PersistentShieldedOutgoingNote.self)
+                    try modelContext.delete(model: PersistentShieldedSyncState.self)
+                    try modelContext.delete(model: PersistentShieldedActivity.self)
+                    // Viewing keys are included so a corrupted row cannot
+                    // outlive Clear; the next bind re-persists them.
+                    try modelContext.delete(model: PersistentShieldedViewingKey.self)
+                    try modelContext.save()
                 }
-                try managerForStop.clearShielded()
+            )
+        } catch {
+            switch error {
+            case .rustReset(let underlyingError):
+                lastError =
+                    "Failed to reset shielded state: \(underlyingError.localizedDescription)"
+            case .hostPersistence(let underlyingError):
+                lastError =
+                    "Failed to wipe persisted shielded state: "
+                    + underlyingError.localizedDescription
             }
-        } catch {
-            lastError = "Failed to reset shielded state: \(error.localizedDescription)"
             SDKLogger.error(lastError ?? "")
             return
         }
 
-        // 2) Delete every shielded SwiftData row across all
-        //    wallets on this device. The Clear button is on the
-        //    global Sync Status surface, so its semantics are
-        //    "blow away shielded persistence", not "scope to one
-        //    wallet".
-        do {
-            try modelContext.delete(model: PersistentShieldedNote.self)
-            try modelContext.delete(model: PersistentShieldedOutgoingNote.self)
-            try modelContext.delete(model: PersistentShieldedSyncState.self)
-            try modelContext.delete(model: PersistentShieldedActivity.self)
-            // Viewing keys are included in the wipe so a corrupted
-            // row can't outlive Clear; the next bind falls back to
-            // the mnemonic resolver once and re-persists them.
-            try modelContext.delete(model: PersistentShieldedViewingKey.self)
-            try modelContext.save()
-        } catch {
-            lastError = "Failed to wipe persisted shielded state: \(error.localizedDescription)"
-            SDKLogger.error(lastError ?? "")
-            return
-        }
-
-        // 3) Soft cleanup: zero the published mirror + cancel
-        //    subscriptions, but KEEP the bind credentials
+        // 3) Finish zeroing the published mirror. The subscriptions
+        //    were cancelled before the reset attempt. Keep the bind credentials
         //    (walletManager / boundWalletId / network / resolver
         //    / boundAccounts) so [`manualSync`] can re-bind on
         //    the next Sync Now tap. Bare [`reset`] would nil
         //    them and leave the user stranded on this screen.
-        syncStateCancellable?.cancel()
-        syncEventCancellable?.cancel()
-        progressCancellable?.cancel()
-        treeProgressCancellable?.cancel()
-        isBound = false
-        isSyncing = false
         shieldedBalance = 0
         lastNewNotes = 0
         lastNewlySpent = 0
@@ -810,14 +785,48 @@ class ShieldedService: ObservableObject {
         totalNewlySpent = 0
         lastSyncDuration = nil
         longestSyncDuration = nil
-        currentSyncElapsed = nil
-        currentSyncStartedAt = nil
+    }
+
+    enum ClearLocalStateFailure: Error {
+        case rustReset(Error)
+        case hostPersistence(Error)
+    }
+
+    /// Enforces reset-before-delete ordering for the two persistence halves.
+    /// Kept separate from the user-facing operation so tests can exercise
+    /// failure ordering without exposing a reset bypass on `clearLocalState`.
+    static func executeClearPersistenceSequence(
+        resetRustState: () throws -> Void,
+        clearHostState: () throws -> Void
+    ) throws(ClearLocalStateFailure) {
+        do {
+            try resetRustState()
+        } catch {
+            throw ClearLocalStateFailure.rustReset(error)
+        }
+        do {
+            try clearHostState()
+        } catch {
+            throw ClearLocalStateFailure.hostPersistence(error)
+        }
+    }
+
+    /// A clear attempt quiesces Rust before it can report success or failure,
+    /// and a store failure may occur after one reset half has already landed.
+    /// Treat every attempt as requiring a fresh bind while retaining the
+    /// persisted host rows until the whole sequence succeeds.
+    private func prepareForShieldedRebind() {
+        syncStateCancellable?.cancel()
+        syncEventCancellable?.cancel()
+        progressCancellable?.cancel()
+        treeProgressCancellable?.cancel()
+        isBound = false
+        isSyncing = false
+        endSyncTiming()
         currentSyncScanned = nil
         currentSyncBlockHeight = nil
         currentTreeCommitted = nil
         currentTreeTotal = nil
-        syncTickTimer?.invalidate()
-        syncTickTimer = nil
     }
 
     // MARK: - Sync timing brackets

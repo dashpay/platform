@@ -11,7 +11,9 @@ applied on this branch.
 This follow-up branch implements the two consumer fixes recommended below:
 
 - SwiftExampleApp now aborts `clearLocalState` before deleting SwiftData rows
-  when no wallet manager is bound or the Rust shielded reset throws.
+  when no wallet manager is bound or the Rust shielded reset throws, and every
+  clear attempt leaves the service rebind-required because Rust may already
+  have quiesced or partially reset before returning an error.
 - The invitation reclaim classifier now treats only typed FFI code 24 (the
   retained local tombstone) as definitive evidence of a prior local reclaim and
   restores `Reclaimed`; the consensus-message fallback remains conservative.
@@ -453,13 +455,13 @@ The follow-up Swift changes were also validated with:
 
 - `xcodebuild ... build-for-testing` for an arm64 iOS simulator, which compiled
   the app, unit-test bundle, and UI-test bundle successfully.
+- Focused XCTest execution on an iOS 26.5 simulator: all 4 shielded-clear tests
+  and all 16 invitation-classifier tests passed. The new stale-binding assertion
+  failed against the pre-fix implementation and passed after the fix.
 - `xcrun swiftc -parse` for the changed Swift source and test files.
 - `git diff --check`.
 
-Focused XCTest execution was attempted, but the local iOS 26.5 simulator shut
-down while Xcode was launching the test runner. Compilation therefore passed,
-but the new XCTest cases were not observed running in this environment. No
-Kotlin build was run. Git history was inspected locally for the named commits
-and PR #4041 squash commit. No external population of legacy C callers was
-independently discoverable from this repository or exact-symbol public web
+No local Kotlin build was run. Git history was inspected locally for the named
+commits and PR #4041 squash commit. No external population of legacy C callers
+was independently discoverable from this repository or exact-symbol public web
 searches; private and unindexed callers remain unknowable.
