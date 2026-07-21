@@ -206,6 +206,26 @@ sealed class DashSdkError(
         }
 
         /**
+         * `PlatformWalletFFIResultCode::NotFound` (native code 98,
+         * [PLATFORM_WALLET_NOT_FOUND_CODE]) — the code the FFI's blanket
+         * `Option → result` conversion emits for every "requested <thing>
+         * not found" miss (an unknown wallet id, an identity the wallet
+         * does not manage, …). Typed inside the wallet-error family —
+         * parity with Swift's `PlatformWalletError.notFound`, which also
+         * keeps 98 in the wallet family — so callers can match a
+         * wallet-level absence without sniffing [Generic] codes, while
+         * staying distinct from the rs-sdk-ffi top-level
+         * [DashSdkError.NotFound] that codes 7/8 map to.
+         *
+         * Dashpay's managed-identity local reads never see this type:
+         * `translateManagedIdentityNotFoundToZero` intercepts the RAW
+         * code (offset + 98) on the [org.dashfoundation.dashsdk.ffi.DashSDKException]
+         * before [fromNative] runs and turns the miss into an absence.
+         */
+        class NotFound(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -230,10 +250,7 @@ sealed class DashSdkError(
          * `PlatformWalletFFIResultCode::NotFound` (98) — the code the FFI's
          * blanket `Option → result` conversion emits for every "requested
          * <thing> not found" miss (e.g. an identity id that is not managed
-         * by the wallet). Mapped to [NotFound]; Dashpay's managed-identity
-         * local reads intercept the RAW code (offset + 98) via
-         * `translateManagedIdentityNotFoundToZero` before [fromNative] runs
-         * and turn the miss into an absence (zero handle → null / empty).
+         * by the wallet). Mapped to the typed [PlatformWallet.NotFound].
          */
         const val PLATFORM_WALLET_NOT_FOUND_CODE = 98
 
@@ -284,8 +301,18 @@ sealed class DashSdkError(
                 }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
-            PLATFORM_WALLET_NOT_FOUND_CODE, // NotFound (Option returned as an error)
             -> NotFound(message, cause)
+            // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option →
+            // result miss) stays inside the wallet-error family as the typed
+            // PlatformWallet.NotFound — exact Swift parity
+            // (PlatformWalletError.notFound) — rather than collapsing into the
+            // top-level NotFound that rs-sdk-ffi codes 7/8 map to. Dashpay's
+            // managed-identity local reads are unaffected: they intercept the
+            // RAW code via translateManagedIdentityNotFoundToZero (#4051)
+            // before this mapping ever runs. BREAKING for Kotlin hosts that
+            // caught DashSdkError.NotFound from platform-wallet operations.
+            PLATFORM_WALLET_NOT_FOUND_CODE ->
+                PlatformWallet.NotFound(message, cause)
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
