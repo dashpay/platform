@@ -47,11 +47,14 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
             "invalid core wallet handle".to_string(),
         );
     };
-    if wallet.wallet_id() != finalized.wallet.wallet_id() {
+    // Same generation identity the registry-token path uses: reject a caller
+    // handle that names a different wallet generation (e.g. a re-created wallet
+    // under the same id) before acting through the embedded originating wallet.
+    if !wallet.is_same_generation(&finalized.wallet) {
         runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "transaction was finalized by a different wallet".to_string(),
+            "transaction was finalized by a different wallet generation".to_string(),
         );
     }
     let local_txid = finalized.transaction.transaction().txid();
@@ -90,7 +93,8 @@ pub unsafe extern "C" fn core_wallet_abandon_signed_transaction_v2(
             "invalid core wallet handle".to_string(),
         );
     };
-    if wallet.wallet_id() != transaction.wallet.wallet_id() {
+    // Same generation identity as the broadcast path / registry-token path.
+    if !wallet.is_same_generation(&transaction.wallet) {
         runtime().block_on(
             transaction
                 .wallet
@@ -98,7 +102,7 @@ pub unsafe extern "C" fn core_wallet_abandon_signed_transaction_v2(
         );
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "transaction was finalized by a different wallet".to_string(),
+            "transaction was finalized by a different wallet generation".to_string(),
         );
     }
     runtime().block_on(
