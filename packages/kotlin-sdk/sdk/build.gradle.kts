@@ -13,7 +13,7 @@ plugins {
     alias(libs.plugins.jreleaser)
 }
 
-// Published Maven coordinate group. Per HashEngineering's call on PR #4045:
+// Published Maven coordinate group. Per HashEngineering's call:
 // publish under the existing `org.dashj` group — Dash already owns dashj.org and
 // ships its legacy Core/Platform SDKs there, so this needs no separate domain
 // verification for Maven Central (`org.dashfoundation` would have, since
@@ -60,9 +60,9 @@ android {
             withSourcesJar()
             // Maven Central's Publisher Portal rejects any non-POM component that
             // lacks a javadoc jar, and the snapshot deployer sets
-            // applyMavenCentralRules(true) which enforces it before upload
-            // (dashpay/platform#4045). AGP emits a (Kotlin-appropriate) javadoc jar
-            // here — no Dokka dependency required.
+            // applyMavenCentralRules(true) which enforces it before upload.
+            // AGP emits a (Kotlin-appropriate) javadoc jar here — no Dokka
+            // dependency required.
             withJavadocJar()
         }
     }
@@ -165,7 +165,7 @@ afterEvaluate {
                     licenses {
                         license {
                             name.set("MIT License")
-                            url.set("https://github.com/dashpay/platform/blob/master/LICENSE")
+                            url.set("https://github.com/dashpay/platform/blob/master/LICENSE.md")
                         }
                     }
                     // scm + developers: required by Maven Central (and most
@@ -199,7 +199,7 @@ afterEvaluate {
         // / signingPassword env vars land as the Gradle project properties
         // `signingKey` / `signingPassword`, but the signing plugin does not consume
         // them automatically — a CI release following that path would otherwise fail
-        // in signReleasePublication before staging anything (dashpay/platform#4045).
+        // in signReleasePublication before staging anything.
         // Absent (local dev), this is skipped and, with required=false below, no key
         // is needed. The legacy signing.keyId/password/secretKeyRingFile path is
         // untouched and still handled by Gradle's standard signing properties.
@@ -236,8 +236,7 @@ fun jniMissingMessage(missing: List<String>): String =
 // is deliberately NOT honored here — a nativeless AAR must never reach a network
 // repo, nor jreleaser's build/staging-deploy dir (which `jreleaserDeploy` then
 // uploads to Maven Central). This closes the escape where `-PallowMissingJni`
-// previously downgraded the check to a warning for every publish task
-// (dashpay/platform#4045, finding 8b899bc2e5e8).
+// previously downgraded the check to a warning for every publish task.
 val verifyJniLibsForRemotePublish = tasks.register("verifyJniLibsForRemotePublish") {
     doLast {
         val missing = missingJniAbis()

@@ -174,7 +174,7 @@ class Sdk private constructor(
     // it out of the public ABI means its generated `serializer()` isn't public
     // API, so consumers of the published coordinate don't need
     // kotlinx-serialization on their compile classpath and it can stay
-    // `implementation` (dashpay/platform#4045, finding 96b7b2a236ff).
+    // `implementation`.
     @Serializable
     internal data class MasternodeEntry(
         val address: String,
