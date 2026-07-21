@@ -37,7 +37,15 @@ impl DapiServer {
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
 
-        const MAX_PLATFORM_DECODING_BYTES: usize = 64 * 1024; // 64 KiB
+        // Coarse DoS backstop on the *encoded* Platform request. Must stay
+        // strictly above every per-method app-layer budget plus protobuf
+        // envelope overhead, so that oversized-but-parseable requests reach
+        // the app-layer validators and get their precise errors instead of
+        // dying here with tonic's generic decode-limit status. The largest
+        // legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
+        // 64 KiB of raw components, ~65 KiB encoded) and broadcast state
+        // transitions (`max_state_transition_size`, 20 KiB).
+        const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
         const MAX_CORE_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
