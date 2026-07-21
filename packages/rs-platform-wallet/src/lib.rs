@@ -54,6 +54,7 @@ pub use manager::platform_address_sync::{
 pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
+pub use wallet::asset_lock::CrossDomainConsent;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::WalletBalance;

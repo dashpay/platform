@@ -99,6 +99,35 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorAssetLockInsufficientFunds` (native code 26). Asset-lock coin
+         * selection came up short over the *permitted* funding set — the requested
+         * amount plus the L1 fee exceeds the spendable funds the selector was
+         * allowed to draw on. Raised strictly pre-broadcast (while BUILDING the
+         * asset-lock transaction), so nothing reached the wire. The structured
+         * `available`/`required` duff amounts travel in [message]
+         * (`"asset lock coin selection is short: available N duffs, required M
+         * duffs"`); the typed code lets callers branch without substring-matching.
+         * Distinct from [CoreInsufficientFunds] (code 22), which is the atomic
+         * Core-send selector rather than the asset-lock builder.
+         */
+        class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorAssetLockCrossDomainConsentRequired` (native code 27). The default
+         * single-privacy-domain funding rule (dashpay/platform#4184) refused to
+         * co-spend across privacy domains: the transparent domain (BIP44 + BIP32)
+         * alone cannot cover the asset lock, but the wallet-wide union — adding
+         * CoinJoin and/or DashPay-receiving funds — can. Combining them in one L1
+         * transaction would irreversibly link those domains on-chain, so it is
+         * gated behind explicit user consent. Prompt the user, then re-issue the
+         * funding request with cross-domain consent enabled. The transparent /
+         * union / required duff amounts travel in [message].
+         */
+        class AssetLockCrossDomainConsentRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -345,11 +374,12 @@ sealed class DashSdkError(
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
+            26 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
+            27 -> PlatformWallet.AssetLockCrossDomainConsentRequired(message, cause) // ErrorAssetLockCrossDomainConsentRequired
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message
-            // sniffing involved. (Codes 26-30 are reserved by sibling PRs
-            // #4185 / #4184 — see PlatformWalletFFIResultCode.)
+            // sniffing involved.
             31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the

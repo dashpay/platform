@@ -51,6 +51,7 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
+use platform_wallet::CrossDomainConsent;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
@@ -921,6 +922,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// for a future DPP-side Orchard multi-output bundle change; today
 /// the orchestration rejects anything but a single recipient.
 ///
+/// `allow_cross_domain` is the cross-privacy-domain co-spend consent
+/// (dashpay/platform#4184). Pass `false` by default: the L1 asset-lock funding
+/// is confined to the transparent BIP44/BIP32 privacy domain. Pass `true` ONLY
+/// after the user has consented to also drawing CoinJoin / DashPay-receiving
+/// funds into the lock (an irreversible on-chain linkage between those domains).
+/// When `false` and only the wallet-wide union could cover the amount, the call
+/// fails with the typed `ErrorAssetLockCrossDomainConsentRequired` code so the
+/// host can prompt for consent and re-issue.
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `recipient_raw_43` must point to 43 readable bytes (raw
@@ -942,6 +952,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     surplus_output_ptr: *const u8,
     surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
+    allow_cross_domain: bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -1018,12 +1029,23 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
+                // Cross-privacy-domain co-spend consent (dashpay/platform#4184):
+                // the host sets this only after the user opts into drawing the
+                // L1 lock from CoinJoin / DashPay-receiving funds.
+                CrossDomainConsent::from_allow_flag(allow_cross_domain),
             )
             .await
     });
     if let Err(e) = result {
+        // Preserve the typed FFI code so a cross-domain refusal
+        // (`AssetLockCrossDomainConsentRequired`) or the asset-lock shortfall
+        // (`AssetLockInsufficientFunds`) reaches the host as its dedicated code
+        // instead of the generic `ErrorWalletOperation` — the host prompts for
+        // consent / surfaces the shortfall accordingly. The message stays
+        // prefixed for continuity with the existing dash-wallet log matcher.
+        let code = PlatformWalletFFIResultCode::for_platform_wallet_error(&e);
         return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            code,
             format!("shielded fund-from-asset-lock failed: {e}"),
         );
     }
@@ -1165,12 +1187,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
+                // Resume replays an already-broadcast lock (no fresh coin
+                // selection), so the cross-domain consent is inert here — the
+                // default single-domain rule is correct.
+                CrossDomainConsent::Denied,
             )
             .await
     });
     if let Err(e) = result {
+        // Keep the typed code (a resume can still surface asset-lock shortfalls).
+        let code = PlatformWalletFFIResultCode::for_platform_wallet_error(&e);
         return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            code,
             format!("shielded resume fund-from-asset-lock failed: {e}"),
         );
     }

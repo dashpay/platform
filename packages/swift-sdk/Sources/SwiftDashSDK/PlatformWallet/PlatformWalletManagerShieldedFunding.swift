@@ -126,12 +126,18 @@ extension PlatformWalletManager {
     ///     `lock_value − pool_fee`), so `nil` is always valid; the
     ///     parameter is exposed for parity with the Rust builder and
     ///     forward-compatibility with multi-output bundles.
+    /// - Parameter allowCrossDomain: cross-privacy-domain co-spend consent
+    ///   (dashpay/platform#4184). `false` (default) confines the L1 asset-lock
+    ///   funding to the transparent BIP44/BIP32 domain; pass `true` only after
+    ///   the user consents to also drawing CoinJoin / DashPay-receiving funds. A
+    ///   refusal surfaces as `.errorAssetLockCrossDomainConsentRequired`.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
         amountDuffs: UInt64,
         recipients: [ShieldedFundFromAssetLockRecipient],
-        surplusOutput: Data? = nil
+        surplusOutput: Data? = nil,
+        allowCrossDomain: Bool = false
     ) async throws {
         try shieldedFundFromAssetLockPreflight(
             walletId: walletId,
@@ -177,7 +183,8 @@ extension PlatformWalletManager {
                                 recipientPtr,
                                 surplusPtr,
                                 surplusLen,
-                                coreSigner.handle
+                                coreSigner.handle,
+                                allowCrossDomain
                             )
                         }
                         try result.check()

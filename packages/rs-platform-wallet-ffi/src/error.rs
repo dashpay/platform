@@ -215,13 +215,24 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
-    // Codes 28-30 are NOT claimed here. 28 and 30 are reserved (vacated by the
-    // deferred-payment reservation-token trio on dashpay/platform#4185/#4256
-    // when it moved to 34-36) and 29 belongs to ErrorAssetLockInsufficientFunds
-    // on the asset-lock funding branch (dashpay/platform#4184). Allocating any
-    // of them here too would merge without a textual conflict and silently
-    // misclassify across hosts. See
-    // packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
+    // 28 is deliberately skipped: the deferred-payment reservation-token trio
+    // (ErrorStaleReservationToken / ErrorReservationTokenConsumed /
+    // ErrorReservationWalletMismatch) held 27/28/30 on the split-build-broadcast
+    // branch (dashpay/platform#4185) while this branch was numbered. Allocating
+    // into that range here would merge without a textual conflict and silently
+    // misclassify across hosts. See packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
+    /// Asset-lock coin selection came up short over the *permitted* funding set
+    /// (dashpay/platform#4073 request 3). Carries the structured
+    /// `available`/`required` duff amounts in the message string. Distinct from
+    /// [`Self::ErrorCoreInsufficientFunds`] (22), which is the atomic Core-send
+    /// selector, not the asset-lock builder.
+    ErrorAssetLockInsufficientFunds = 29,
+    /// The default single-privacy-domain funding rule refused a cross-domain
+    /// co-spend (dashpay/platform#4184): the transparent domain alone is short
+    /// but the wallet-wide union would cover it. The host must obtain explicit
+    /// user consent and re-issue the funding request with cross-domain consent.
+    /// The transparent/union/required duff amounts travel in the message string.
+    ErrorAssetLockCrossDomainConsentRequired = 30,
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — the stored blob is
     /// missing, stranded, or written under a different Keystore/Keychain
@@ -331,14 +342,20 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
     }
 }
 
-impl From<PlatformWalletError> for PlatformWalletFFIResult {
-    fn from(error: PlatformWalletError) -> Self {
+impl PlatformWalletFFIResultCode {
+    /// Map a [`PlatformWalletError`] to its dedicated FFI code without consuming
+    /// the error or allocating a message. Kept separate from the `From` impl so
+    /// FFI entry points that want to keep a *prefixed* message (for host log
+    /// matchers) can still surface the typed code instead of flattening to
+    /// `ErrorWalletOperation`/`ErrorUnknown`. The two must stay in lockstep — the
+    /// `From` impl delegates here.
+    pub fn for_platform_wallet_error(error: &PlatformWalletError) -> Self {
         // Map the typed wallet error variants explicitly so they
         // don't flatten to ErrorUnknown at the FFI boundary. The
         // catch-all ErrorUnknown remains for variants the FFI hasn't
         // assigned a dedicated code yet — those still carry the
         // typed Display rendering as the message.
-        let code = match &error {
+        match error {
             PlatformWalletError::NoSpendableInputs { .. }
             | PlatformWalletError::OnlyOutputAddressesFunded { .. }
             | PlatformWalletError::OnlyDustInputs { .. } => {
@@ -405,6 +422,23 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
+            // The asset-lock coin-selection shortfall (dashpay/platform#4073
+            // request 3). Without this arm it flattened to `ErrorUnknown(99)`,
+            // hiding a typed shortfall behind the catch-all and forcing hosts to
+            // string-match the Display text. The structured `available`/`required`
+            // duff amounts still travel in the message (the by-value
+            // `PlatformWalletFFIResult` has no out-params for them), but the code
+            // now lets a host branch on the shortfall without parsing text.
+            PlatformWalletError::AssetLockInsufficientFunds { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds
+            }
+            // The default single-privacy-domain refusal (dashpay/platform#4184):
+            // a typed, actionable signal so the host can prompt for cross-domain
+            // consent and re-issue, rather than seeing an opaque insufficient-funds
+            // error even though the wallet-wide union covers the amount.
+            PlatformWalletError::AssetLockCrossDomainConsentRequired { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockCrossDomainConsentRequired
+            }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
             // wallet operation that propagates the SDK error via `?`). The
@@ -424,7 +458,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
-        };
+        }
+    }
+}
+
+impl From<PlatformWalletError> for PlatformWalletFFIResult {
+    fn from(error: PlatformWalletError) -> Self {
+        let code = PlatformWalletFFIResultCode::for_platform_wallet_error(&error);
         PlatformWalletFFIResult::err(code, error.to_string())
     }
 }
@@ -769,6 +809,68 @@ mod tests {
             let result: PlatformWalletFFIResult = error.into();
             assert_eq!(result.code, expected);
         }
+    }
+
+    /// The asset-lock coin-selection shortfall must cross the FFI boundary as the
+    /// dedicated `ErrorAssetLockInsufficientFunds` (26) code — NOT `ErrorUnknown`
+    /// (99) as it did before this arm existed (dashpay/platform#4073 request 3) —
+    /// and its structured `available`/`required` duffs must survive verbatim in
+    /// the message so hosts can still parse the amounts.
+    #[test]
+    fn asset_lock_insufficient_funds_maps_to_dedicated_code() {
+        let err = PlatformWalletError::AssetLockInsufficientFunds {
+            available: 18_000_000,
+            required: 100_000_000,
+        };
+        let rendered = err.to_string();
+        // Guard the exact text hosts (dash-wallet) substring-match on.
+        assert!(
+            rendered.contains("asset lock coin selection is short"),
+            "shortfall Display text changed — coordinate dash-wallet's matcher \
+             (rendered: {rendered})"
+        );
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInsufficientFunds,
+            "must not flatten to ErrorUnknown(99) (rendered: {rendered})"
+        );
+        assert_ne!(
+            result.code as i32,
+            PlatformWalletFFIResultCode::ErrorUnknown as i32
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            msg, rendered,
+            "structured available/required duffs must survive the FFI boundary verbatim"
+        );
+    }
+
+    /// The default single-privacy-domain refusal (dashpay/platform#4184) must
+    /// cross as the dedicated `ErrorAssetLockCrossDomainConsentRequired` (27) code
+    /// so hosts can prompt for consent and re-issue, instead of seeing an opaque
+    /// insufficient-funds/unknown error even though the union covers the amount.
+    #[test]
+    fn asset_lock_cross_domain_consent_required_maps_to_dedicated_code() {
+        let err = PlatformWalletError::AssetLockCrossDomainConsentRequired {
+            transparent_available: 9_000_000,
+            cross_domain_available: 18_000_000,
+            required: 15_000_000,
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockCrossDomainConsentRequired,
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered);
     }
 
     /// `WalletAlreadyExists` maps to the dedicated

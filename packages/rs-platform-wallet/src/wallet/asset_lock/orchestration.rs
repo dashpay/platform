@@ -403,18 +403,49 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        // Non-shielded funding never leaves the single BIP44 account, so the
+        // default single-privacy-domain rule applies. Shielded fund-from-asset-lock
+        // routes through the consent-bearing variant instead.
+        self.resolve_funding_with_is_timeout_fallback_with_consent(
+            funding,
+            funding_type,
+            destination_index,
+            asset_lock_signer,
+            crate::CrossDomainConsent::Denied,
+        )
+        .await
+    }
+
+    /// Cross-domain-aware form of
+    /// [`Self::resolve_funding_with_is_timeout_fallback`]. `cross_domain` is
+    /// threaded to the shielded union builder for the `FromWalletBalance` path;
+    /// the `FromExistingAssetLock` resume path ignores it (the lock is already
+    /// on-chain, so no fresh coin selection occurs). See
+    /// [`crate::CrossDomainConsent`].
+    pub(crate) async fn resolve_funding_with_is_timeout_fallback_with_consent<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        asset_lock_signer: &AS,
+        cross_domain: crate::CrossDomainConsent,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
                 account_index,
             } => {
                 match self
-                    .create_funded_asset_lock_proof(
+                    .create_funded_asset_lock_proof_with_consent(
                         amount_duffs,
                         account_index,
                         funding_type,
                         destination_index,
                         asset_lock_signer,
+                        cross_domain,
                     )
                     .await
                 {

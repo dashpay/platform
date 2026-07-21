@@ -315,7 +315,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// `fundingAccountIndex`, and shields a single real note to `recipientRaw43`
 /// (43-byte raw Orchard address). `coreSignerHandle` is the manager's
 /// `MnemonicResolverHandle` (asset-lock outer ST signature); `surplusOutput`
-/// is the optional 21-byte remainder platform address (null = none). The
+/// is the optional 21-byte remainder platform address (null = none).
+/// `allowCrossDomain` is the cross-privacy-domain co-spend consent
+/// (dashpay/platform#4184): `false` (default) confines the L1 asset-lock funding
+/// to the transparent BIP44/BIP32 domain; `true` — set only after the user
+/// consents — lets it also draw CoinJoin / DashPay-receiving funds. A refusal
+/// surfaces as the typed `ErrorAssetLockCrossDomainConsentRequired` code. The
 /// ~30s Halo 2 proof runs inside the call; nothing is returned on success.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -329,6 +334,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     recipient_raw43: JByteArray,
     surplus_output: JByteArray,
     core_signer_handle: jlong,
+    allow_cross_domain: jboolean,
 ) {
     guard(&mut env, (), |env| {
         // Reject sign errors at the boundary — negatives would otherwise
@@ -365,6 +371,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 surplus_ptr,
                 surplus_len,
                 core_signer_handle as *mut MnemonicResolverHandle,
+                allow_cross_domain != 0,
             )
         };
         let _ = take_pwffi_error(env, result);

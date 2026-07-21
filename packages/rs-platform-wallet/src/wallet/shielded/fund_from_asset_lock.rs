@@ -127,6 +127,13 @@ impl PlatformWallet {
     ///   shielded seed pool passes `Some(CL_FALLBACK_TIMEOUT)` so a
     ///   `FinalityTimeout` surfaces as its unconfirmed-ancestor pacing
     ///   signal (see `seed_pool.rs`).
+    /// * `cross_domain` — Cross-privacy-domain co-spend consent for the
+    ///   asset-lock funding coin selection (dashpay/platform#4184). Defaults
+    ///   should be [`crate::CrossDomainConsent::Denied`]; pass
+    ///   [`crate::CrossDomainConsent::Allowed`] only after the user has
+    ///   consented to draw the L1 lock from CoinJoin / DashPay-receiving funds
+    ///   in addition to transparent BIP44/BIP32 funds. Ignored for the
+    ///   `FromExistingAssetLock` resume path (no fresh coin selection occurs).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
@@ -140,6 +147,7 @@ impl PlatformWallet {
         dummy_outputs: usize,
         settings: Option<PutSettings>,
         cl_wait: Option<Duration>,
+        cross_domain: crate::CrossDomainConsent,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -208,11 +216,12 @@ impl PlatformWallet {
             tracked_out_point,
         } = match self
             .asset_locks
-            .resolve_funding_with_is_timeout_fallback(
+            .resolve_funding_with_is_timeout_fallback_with_consent(
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
+                cross_domain,
             )
             .await?
         {

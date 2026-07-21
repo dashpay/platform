@@ -10,5 +10,6 @@ pub mod orchestration;
 mod sync;
 pub mod tracked;
 
+pub use build::CrossDomainConsent;
 pub use lock_notify_handler::LockNotifyHandler;
 pub use orchestration::AssetLockFunding;
