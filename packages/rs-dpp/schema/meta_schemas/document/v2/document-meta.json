@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 3.1 RELEASE — FROZEN AFTER. This v1 document meta-schema activates with protocol v12 (CONTRACT_VERSIONS_V4) and admits every v12+ contract written to disk. Once Platform 3.1 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v2+).",
+  "$comment": "EDITABLE UNTIL 4.1 RELEASE — FROZEN AFTER. This v2 document meta-schema activates with protocol v13 (CONTRACT_VERSIONS_V5). It is v1 plus the keepsTransferHistory, keepsPurchaseHistory and keepsPricingHistory document type configuration flags, and admits every v13+ contract written to disk. Once the release carrying protocol v13 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v3+).",
   "type": "object",
   "$defs": {
     "documentProperties": {
