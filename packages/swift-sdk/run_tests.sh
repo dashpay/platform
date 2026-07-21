@@ -33,8 +33,8 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   }
   trap restore_default_keychain EXIT
   security create-keychain -p "" "$CI_KEYCHAIN" 2>/dev/null || true
-  security set-keychain-settings "$CI_KEYCHAIN"   # no auto-lock timeout
   security unlock-keychain -p "" "$CI_KEYCHAIN"
+  security set-keychain-settings "$CI_KEYCHAIN"   # no auto-lock timeout
   security default-keychain -s "$CI_KEYCHAIN"
 fi
 

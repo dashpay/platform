@@ -4,9 +4,34 @@
 // Unit tests for centralized error handling utilities.
 
 import XCTest
+import DashSDKFFI
 @testable import SwiftDashSDK
 
 final class ErrorHandlingTests: XCTestCase {
+
+    func testCoreInsufficientFundsFFIResultMapping() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS
+            ),
+            .errorCoreInsufficientFunds
+        )
+    }
+
+    func testAssetLockRecoveryFFIResultMappings() {
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_TRACKED),
+            .errorAssetLockNotTracked
+        )
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_ALREADY_CONSUMED),
+            .errorAssetLockAlreadyConsumed
+        )
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH),
+            .errorAssetLockFundingMismatch
+        )
+    }
 
     // MARK: - ErrorCategory Tests
 
