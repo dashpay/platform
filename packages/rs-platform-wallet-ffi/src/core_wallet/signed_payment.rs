@@ -73,12 +73,19 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
             *out_txid = c_txid.into_raw();
             PlatformWalletFFIResult::ok()
         }
-        Err(
-            e @ (SignedPaymentError::StaleToken(_)
-            | SignedPaymentError::WalletMismatch(_)
-            | SignedPaymentError::StaleReservationToken(_)),
-        ) => PlatformWalletFFIResult::err(
+        // Split the three deferred-token failures into distinct sibling codes so
+        // a host can message each precisely. All are non-retryable-in-place and
+        // none touched the network.
+        Err(e @ SignedPaymentError::StaleReservationToken(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorStaleReservationToken,
+            e.to_string(),
+        ),
+        Err(e @ SignedPaymentError::StaleToken(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorReservationTokenConsumed,
+            e.to_string(),
+        ),
+        Err(e @ SignedPaymentError::WalletMismatch(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorReservationWalletMismatch,
             e.to_string(),
         ),
         // Preserve the typed underlying wallet error (keeps the ambiguous

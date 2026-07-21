@@ -306,11 +306,15 @@ class ManagedPlatformWallet internal constructor(
     /**
      * Broadcast the deferred payment behind [token] (from [buildSignedPayment])
      * and return its broadcast txid — the "merchant server acked" arm. Consumes
-     * the token: a second [broadcastSigned] with the same token, or one for a
-     * re-created wallet, throws
-     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
-     * rather than double-broadcasting. Operates on the token directly (the
-     * inputs are already reserved).
+     * the token. Rather than double-broadcasting, an unusable token throws one
+     * of three sibling errors: already consumed / unknown
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationTokenConsumed],
+     * e.g. a second [broadcastSigned] with the same token), a different wallet
+     * generation
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationWalletMismatch],
+     * e.g. a re-created wallet), or aged out
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]).
+     * Operates on the token directly (the inputs are already reserved).
      */
     suspend fun broadcastSigned(token: Long): String = withContext(Dispatchers.IO) {
         mapNativeErrors {
