@@ -5,7 +5,7 @@ use key_wallet::ReservationToken;
 
 use super::SignedCoreTransaction;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use crate::wallet::reservations::broadcast_releasing_on_rejection;
+use crate::wallet::reservations::{broadcast_releasing_on_rejection, reservation_expired};
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -19,10 +19,38 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// same inputs under a new token. Releasing by outpoint alone would then
     /// free that other build's inputs (the `dashpay/platform#4185` double-spend
     /// window); presenting the token frees only inputs this build still owns.
+    ///
+    /// # Reservation age guard
+    ///
+    /// A V2 finalized-transaction handle can be pinned by the host for an
+    /// arbitrary time between `finalize` and this broadcast. If the wallet's
+    /// `last_processed_height` advances at least
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)
+    /// blocks past the height the funding reservation was stamped at
+    /// ([`SignedCoreTransaction::reservation_height`]), key-wallet's own
+    /// `ReservationSet` TTL could already have swept those inputs and let an
+    /// unrelated build re-select them. Broadcasting then would spend against a
+    /// newer, unrelated reservation, so the send is refused with
+    /// [`PlatformWalletError::StaleReservation`] **before** the broadcaster is
+    /// touched — mirroring the deferred registry token's
+    /// [`broadcast`](crate::SignedPaymentRegistry::broadcast) guard, off the
+    /// same bound and the same `last_processed_height` clock, and running after
+    /// the FFI layer's generation-identity check just as the registry does.
+    /// The stale reservation is deliberately left for key-wallet's TTL to
+    /// reclaim rather than released by outpoint here (which could free a newer
+    /// build's reservation); the caller must rebuild the payment. Abandon/free
+    /// ([`abandon_transaction`](Self::abandon_transaction)) skip this guard —
+    /// releasing an old reservation is always safe.
     pub async fn broadcast_finalized_transaction(
         &self,
         transaction: &SignedCoreTransaction,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
+        if reservation_expired(
+            transaction.reservation_height(),
+            self.last_processed_height().await,
+        ) {
+            return Err(PlatformWalletError::StaleReservation);
+        }
         match self.broadcaster.broadcast(transaction.transaction()).await {
             Ok(txid) => Ok(txid),
             Err(error) => {
@@ -164,14 +192,17 @@ mod tests {
     use key_wallet::signer::Signer;
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
-        funded_wallet_manager, AlwaysMaybeSentBroadcaster, RejectFirstBroadcaster, WalletSigner,
+        funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
+        RejectFirstBroadcaster, WalletSigner,
     };
     use crate::wallet::core::CoreWallet;
-    use crate::PlatformWalletError;
+    use crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS;
+    use crate::{PlatformWalletError, SignedCoreTransaction};
 
     /// Builds a testnet `CoreWallet` over the shared funded fixture and a
     /// 1_000_000-duff payment to a dummy recipient.
@@ -251,6 +282,166 @@ mod tests {
             .await
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
         Ok(tx)
+    }
+
+    /// Atomically fund + reserve + sign a `SignedCoreTransaction` the way the V2
+    /// handle path (`core_wallet_tx_builder_finalize`) does, capturing the
+    /// reservation's stamp height on the returned handle.
+    async fn finalize_tx<B: TransactionBroadcaster>(
+        core: &CoreWallet<B>,
+        account_type: AccountTypePreference,
+        outputs: &[(DashAddress, u64)],
+        signer: &WalletSigner,
+    ) -> SignedCoreTransaction {
+        let mut builder = TransactionBuilder::new();
+        for (addr, amount) in outputs {
+            builder = builder.add_output(addr, *amount);
+        }
+        core.finalize_transaction(builder, account_type, 0, signer)
+            .await
+            .expect("finalize should succeed")
+    }
+
+    /// Force the wallet's `last_processed_height` forward, simulating chain
+    /// progress between `finalize` and a later broadcast of the pinned V2
+    /// handle — the window in which key-wallet's `ReservationSet` TTL can sweep
+    /// the funding reservation. Same clock the age guard reads.
+    async fn advance_processed_height<B: TransactionBroadcaster>(
+        core: &CoreWallet<B>,
+        height: u32,
+    ) {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.core_wallet.update_last_processed_height(height);
+    }
+
+    /// A freshly finalized V2 handle — no chain progress since `finalize` —
+    /// broadcasts normally: the age guard does not trip.
+    #[tokio::test]
+    async fn fresh_finalized_handle_broadcasts() {
+        for account_type in [AccountTypePreference::BIP44, AccountTypePreference::BIP32] {
+            let (core, signer, outputs) = funded_core_wallet(
+                account_type_standard(account_type),
+                Arc::new(AlwaysOkBroadcaster),
+            )
+            .await;
+            let finalized = finalize_tx(&core, account_type, &outputs, &signer).await;
+            let sent = core.broadcast_finalized_transaction(&finalized).await;
+            assert!(
+                sent.is_ok(),
+                "a fresh handle must broadcast for {account_type:?}, got {sent:?}"
+            );
+        }
+    }
+
+    /// A V2 handle pinned while the wallet syncs past `RESERVATION_MAX_AGE_BLOCKS`
+    /// beyond its reservation stamp must be refused with `StaleReservation`
+    /// (never a send — the broadcaster is `AlwaysOk`, so a leaked send would
+    /// surface as `Ok`), yet must still abandon cleanly at any age: releasing an
+    /// old reservation returns the inputs so an immediate rebuild can reselect
+    /// them.
+    #[tokio::test]
+    async fn aged_finalized_handle_refuses_broadcast_but_abandons() {
+        for account_type in [AccountTypePreference::BIP44, AccountTypePreference::BIP32] {
+            let (core, signer, outputs) = funded_core_wallet(
+                account_type_standard(account_type),
+                Arc::new(AlwaysOkBroadcaster),
+            )
+            .await;
+            let stamped = core
+                .last_processed_height()
+                .await
+                .expect("last processed height");
+            let finalized = finalize_tx(&core, account_type, &outputs, &signer).await;
+
+            // Advance past the guard bound (stay below key-wallet's 24-block TTL,
+            // so the reservation is provably still held — only our guard tripped).
+            advance_processed_height(&core, stamped + RESERVATION_MAX_AGE_BLOCKS + 2).await;
+
+            let sent = core.broadcast_finalized_transaction(&finalized).await;
+            assert!(
+                matches!(sent, Err(PlatformWalletError::StaleReservation)),
+                "an aged handle must refuse with StaleReservation for \
+                 {account_type:?}, got {sent:?}"
+            );
+
+            // Abandon is always allowed, even for an aged handle. It releases the
+            // reservation so an immediate rebuild can reselect the same inputs.
+            core.abandon_transaction(&finalized).await;
+            let rebuilt = finalize_tx(&core, account_type, &outputs, &signer).await;
+            core.abandon_transaction(&rebuilt).await;
+        }
+    }
+
+    /// The guard boundary is exact: `current - stamped >= RESERVATION_MAX_AGE_BLOCKS`
+    /// refuses, one block below still broadcasts.
+    #[tokio::test]
+    async fn finalized_handle_age_guard_boundary_is_exact() {
+        // One below the bound: still fresh enough to broadcast.
+        let (below_core, below_signer, below_outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let below_stamped = below_core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let below = finalize_tx(
+            &below_core,
+            AccountTypePreference::BIP44,
+            &below_outputs,
+            &below_signer,
+        )
+        .await;
+        advance_processed_height(&below_core, below_stamped + RESERVATION_MAX_AGE_BLOCKS - 1).await;
+        assert!(
+            below_core
+                .broadcast_finalized_transaction(&below)
+                .await
+                .is_ok(),
+            "one block below the bound must still broadcast"
+        );
+
+        // Exactly at the bound: refused.
+        let (at_core, at_signer, at_outputs) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(AlwaysOkBroadcaster),
+        )
+        .await;
+        let at_stamped = at_core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let at = finalize_tx(
+            &at_core,
+            AccountTypePreference::BIP44,
+            &at_outputs,
+            &at_signer,
+        )
+        .await;
+        advance_processed_height(&at_core, at_stamped + RESERVATION_MAX_AGE_BLOCKS).await;
+        assert!(
+            matches!(
+                at_core.broadcast_finalized_transaction(&at).await,
+                Err(PlatformWalletError::StaleReservation)
+            ),
+            "exactly at the bound must refuse with StaleReservation"
+        );
+    }
+
+    /// Map a builder `AccountTypePreference` (BIP44/BIP32 only in these tests)
+    /// to the `StandardAccountType` the funded fixture is keyed by.
+    fn account_type_standard(account_type: AccountTypePreference) -> StandardAccountType {
+        match account_type {
+            AccountTypePreference::BIP44 => StandardAccountType::BIP44Account,
+            AccountTypePreference::BIP32 => StandardAccountType::BIP32Account,
+            AccountTypePreference::CoinJoin => {
+                unreachable!("coinjoin funding not exercised by these tests")
+            }
+        }
     }
 
     /// A pre-send broadcast rejection must release the UTXO reservation taken

@@ -41,7 +41,8 @@
 //!   recreation needs the manager write lock, so it cannot slip between that
 //!   check and the release; a stale token can therefore never free a re-created
 //!   generation's reservation.
-//! * A token has a bounded lifetime ([`RESERVATION_MAX_AGE_BLOCKS`]). Once the
+//! * A token has a bounded lifetime
+//!   ([`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)). Once the
 //!   wallet's `last_processed_height` has advanced far enough past the height at
 //!   which `build_signed` / `finalize_transaction` stamped the reservation that
 //!   key-wallet's own `ReservationSet` TTL could have swept and re-selected the
@@ -78,6 +79,10 @@ use key_wallet::ReservationToken as FundingReservationToken;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
+// The age bound and its predicate are shared with the atomic V2 finalized-
+// transaction handle path (`broadcast_finalized_transaction`), so both surfaces
+// measure a reservation's lifetime against key-wallet's TTL with one number.
+use crate::wallet::reservations::reservation_expired;
 use crate::PlatformWalletError;
 
 /// Opaque handle to a registered, signed-but-unsent payment. Minted by
@@ -120,48 +125,6 @@ impl std::fmt::Display for ReservationToken {
     }
 }
 
-/// Maximum age, in `last_processed_height` blocks, of a registered token before
-/// its broadcast or release is refused.
-///
-/// Kept strictly below key-wallet's `RESERVATION_TTL_BLOCKS` (24, ~1h at the
-/// mainnet block target): a `build_signed` / `finalize_transaction` reservation
-/// is stamped at the wallet's `last_processed_height` (via `set_current_height`)
-/// and swept by a later `reserve`/`reserved` call — itself stamped with the same
-/// `last_processed_height` clock — once it is `RESERVATION_TTL_BLOCKS` old,
-/// silently returning the outpoint to the selectable pool where an unrelated
-/// build can re-select and re-reserve it.
-/// `ReservationSet::release` removes an outpoint unconditionally, with no
-/// ownership/generation check, so acting on a token whose reservation was
-/// already swept could free (or broadcast against) a newer, unrelated
-/// reservation. Refusing at this lower bound guarantees the guard always trips
-/// **before** the underlying reservation could have been swept, leaving a margin
-/// for `last_processed_height` to lag a few blocks behind the true tip.
-const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
-
-/// Whether a token stamped at `registered_height` is too old to act on at
-/// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration
-/// height is mandatory — it is derived from the finalized
-/// [`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction)
-/// the registry consumed.
-///
-/// An unknown *current* height means the wallet is gone from the manager, which
-/// disables the guard (`None` → not expired). That is safe only because every
-/// caller establishes liveness first and so never reaches here with a removed
-/// wallet: [`broadcast`](SignedPaymentRegistry::broadcast) refuses with
-/// [`SignedPaymentError::WalletRemoved`] before sampling the height, and
-/// [`reconcile_removed_entry`](SignedPaymentRegistry::reconcile_removed_entry)'s
-/// release is itself generation-bound and no-ops on a missing wallet. The
-/// earlier claim that "the wallet-mismatch / account-lookup paths already reject
-/// those cases" was wrong for the broadcast path — `is_same_generation` compares
-/// handles (a removed generation matches itself) and the broadcast path performs
-/// no account lookup at all (`dashpay/platform#4185`).
-fn reservation_expired(registered_height: u32, current_height: Option<u32>) -> bool {
-    match current_height {
-        Some(current) => current.saturating_sub(registered_height) >= RESERVATION_MAX_AGE_BLOCKS,
-        None => false,
-    }
-}
-
 /// Failure of a deferred broadcast/release token operation.
 #[derive(Debug, thiserror::Error)]
 pub enum SignedPaymentError {
@@ -195,7 +158,8 @@ pub enum SignedPaymentError {
     #[error("reservation token {0} belongs to a wallet that is no longer in the manager")]
     WalletRemoved(ReservationToken),
 
-    /// The token has outlived [`RESERVATION_MAX_AGE_BLOCKS`], so its underlying
+    /// The token has outlived
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS), so its underlying
     /// UTXO reservation may already have been swept by key-wallet's TTL and
     /// re-selected by an unrelated build. Acting on it (broadcast or release)
     /// could touch a newer reservation, so it is refused and the caller must
@@ -262,8 +226,10 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     /// reservation with (`SignedCoreTransaction::reservation_height`). Compared
     /// against the wallet's current `last_processed_height` to refuse a
     /// broadcast/release once the reservation could plausibly have been swept by
-    /// key-wallet's TTL (see [`RESERVATION_MAX_AGE_BLOCKS`]). Mandatory: it is
-    /// derived from the consumed ownership object, never sampled independently.
+    /// key-wallet's TTL (see
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)).
+    /// Mandatory: it is derived from the consumed ownership object, never
+    /// sampled independently.
     registered_height: u32,
     /// The key-wallet [`FundingReservationToken`] stamped onto the funding
     /// inputs when `finalize_transaction` reserved them
@@ -654,13 +620,14 @@ mod tests {
 
     use super::{
         RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
-        RESERVATION_MAX_AGE_BLOCKS,
     };
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::test_support::{
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
+    use crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS;
+    use crate::PlatformWalletError;
 
     /// The [`AccountTypePreference`] a `build_signed_tx` funding account maps to
     /// — the registry now retains the full account handle (CoinJoin included),
@@ -672,7 +639,6 @@ mod tests {
             StandardAccountType::BIP32Account => AccountTypePreference::BIP32,
         }
     }
-    use crate::PlatformWalletError;
 
     /// Broadcaster that records the exact bytes handed to it and succeeds,
     /// so a test can assert the broadcast tx is byte-identical to the one the

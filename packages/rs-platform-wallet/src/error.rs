@@ -90,6 +90,27 @@ pub enum PlatformWalletError {
     )]
     TransactionBroadcastUnconfirmed(String),
 
+    /// A finalized V2 transaction handle
+    /// (`core_wallet_tx_builder_finalize` → `broadcast_finalized_transaction`)
+    /// was held long enough that its funding reservation may already have been
+    /// swept and re-selected by key-wallet's TTL: the wallet's
+    /// `last_processed_height` advanced at least
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS)
+    /// blocks past the height the reservation was stamped at
+    /// ([`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height)).
+    /// Broadcasting it could spend against a newer, unrelated reservation, so it
+    /// is refused **before** touching the network — NOT retryable in place, the
+    /// caller must rebuild the payment. Abandoning/freeing the handle stays
+    /// allowed at any age (releasing an old reservation is always safe).
+    ///
+    /// This is the V2 handle-path sibling of the deferred registry-token
+    /// [`SignedPaymentError::StaleReservationToken`](crate::SignedPaymentError::StaleReservationToken);
+    /// both share the same age bound and the FFI `ErrorStaleReservationToken`
+    /// code. Carries no token — the handle path is keyed by an opaque handle,
+    /// not a numeric reservation token.
+    #[error("finalized transaction reservation has outlived its lifetime; rebuild the payment")]
+    StaleReservation,
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
