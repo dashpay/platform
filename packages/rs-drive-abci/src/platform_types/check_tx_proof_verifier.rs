@@ -83,6 +83,9 @@ impl Drop for CheckTxProofVerifierPermit<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn bounds_and_releases_admitted_work() {
@@ -96,5 +99,45 @@ mod tests {
         assert!(verifier.try_acquire(1).is_some());
 
         drop(second);
+    }
+
+    #[test]
+    fn bounds_concurrent_admission_and_releases_all_capacity() {
+        const LIMIT: usize = 3;
+        const CALLERS: usize = 24;
+
+        let verifier = Arc::new(CheckTxProofVerifier::new(LIMIT));
+        let start = Arc::new(Barrier::new(CALLERS));
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+
+        thread::scope(|scope| {
+            for _ in 0..CALLERS {
+                let verifier = Arc::clone(&verifier);
+                let start = Arc::clone(&start);
+                let active = Arc::clone(&active);
+                let maximum = Arc::clone(&maximum);
+                scope.spawn(move || {
+                    start.wait();
+                    if let Some(permit) = verifier.try_acquire(1) {
+                        let simultaneous = active.fetch_add(1, Ordering::AcqRel) + 1;
+                        maximum.fetch_max(simultaneous, Ordering::AcqRel);
+                        thread::sleep(Duration::from_millis(10));
+                        active.fetch_sub(1, Ordering::AcqRel);
+                        drop(permit);
+                    }
+                });
+            }
+        });
+
+        assert!(maximum.load(Ordering::Acquire) <= LIMIT);
+        assert_eq!(active.load(Ordering::Acquire), 0);
+
+        let permits: Vec<_> = (0..LIMIT)
+            .map(|_| verifier.try_acquire(1).expect("released capacity"))
+            .collect();
+        assert!(verifier.try_acquire(1).is_none());
+        drop(permits);
+        assert!(verifier.try_acquire(LIMIT * 2).is_some());
     }
 }

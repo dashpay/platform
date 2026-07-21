@@ -88,6 +88,11 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             StateTransition::IdentityCreateFromShieldedPool(st) => match st {
                 IdentityCreateFromShieldedPoolTransition::V0(v0) => v0.actions.len(),
             },
+            StateTransition::ShieldFromAssetLock(st) => match st {
+                dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition::V0(v0) => {
+                    v0.actions.len()
+                }
+            },
             _ => 0,
         }
     }

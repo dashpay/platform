@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -28,6 +29,41 @@ use crate::execution::validation::state_transition::processor::is_allowed::State
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
+use drive::state_transition_action::StateTransitionAction;
+use std::collections::BTreeMap;
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
+
+fn transform_into_action_for_check_tx<C: CoreRPCLike>(
+    state_transition: &StateTransition,
+    platform: &PlatformRef<C>,
+    remaining_address_balances: &Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>,
+    validation_mode: ValidationMode,
+    execution_context: &mut StateTransitionExecutionContext,
+    proof_verifier: &CheckTxProofVerifier,
+) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    match state_transition {
+        StateTransition::ShieldFromAssetLock(transition) => transition
+            .transform_into_action_for_shield_from_asset_lock_transition(
+                platform,
+                state_transition.signable_bytes()?,
+                validation_mode,
+                platform.state.last_block_info(),
+                execution_context,
+                Some(proof_verifier),
+                None,
+            ),
+        _ => state_transition.transform_into_action(
+            platform,
+            platform.state.last_block_info(),
+            remaining_address_balances,
+            validation_mode,
+            execution_context,
+            None,
+        ),
+    }
+}
 
 /// Changes the state transition to the execution event.
 /// As this is for check tx it normally does not need to be versioned.
@@ -242,13 +278,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             let action = if state_transition
                 .requires_advanced_structure_validation_with_state_on_check_tx()
             {
-                let state_transition_action_result = state_transition.transform_into_action(
+                let state_transition_action_result = transform_into_action_for_check_tx(
+                    &state_transition,
                     platform,
-                    platform.state.last_block_info(),
                     &remaining_address_balances,
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
-                    None,
+                    proof_verifier,
                 )?;
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
@@ -307,13 +343,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             let action = if let Some(action) = action {
                 action
             } else {
-                let state_transition_action_result = state_transition.transform_into_action(
+                let state_transition_action_result = transform_into_action_for_check_tx(
+                    &state_transition,
                     platform,
-                    platform.state.last_block_info(),
                     &remaining_address_balances,
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
-                    None,
+                    proof_verifier,
                 )?;
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
@@ -426,13 +462,13 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
-                let state_transition_action_result = state_transition.transform_into_action(
+                let state_transition_action_result = transform_into_action_for_check_tx(
+                    &state_transition,
                     platform,
-                    platform.state.last_block_info(),
                     &remaining_address_balances,
                     ValidationMode::RecheckTx,
                     &mut state_transition_execution_context,
-                    None,
+                    proof_verifier,
                 )?;
 
                 if !state_transition_action_result.is_valid_with_data() {
