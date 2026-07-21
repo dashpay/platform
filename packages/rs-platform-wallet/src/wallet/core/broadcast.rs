@@ -376,60 +376,52 @@ mod tests {
     }
 
     /// The guard boundary is exact: `current - stamped >= RESERVATION_MAX_AGE_BLOCKS`
-    /// refuses, one block below still broadcasts.
+    /// refuses, one block below still broadcasts — for both standard account
+    /// types, like the fresh/aged tests.
     #[tokio::test]
     async fn finalized_handle_age_guard_boundary_is_exact() {
-        // One below the bound: still fresh enough to broadcast.
-        let (below_core, below_signer, below_outputs) = funded_core_wallet(
-            StandardAccountType::BIP44Account,
-            Arc::new(AlwaysOkBroadcaster),
-        )
-        .await;
-        let below_stamped = below_core
-            .last_processed_height()
-            .await
-            .expect("last processed height");
-        let below = finalize_tx(
-            &below_core,
-            AccountTypePreference::BIP44,
-            &below_outputs,
-            &below_signer,
-        )
-        .await;
-        advance_processed_height(&below_core, below_stamped + RESERVATION_MAX_AGE_BLOCKS - 1).await;
-        assert!(
-            below_core
-                .broadcast_finalized_transaction(&below)
+        for account_type in [AccountTypePreference::BIP44, AccountTypePreference::BIP32] {
+            // One below the bound: still fresh enough to broadcast.
+            let (below_core, below_signer, below_outputs) = funded_core_wallet(
+                account_type_standard(account_type),
+                Arc::new(AlwaysOkBroadcaster),
+            )
+            .await;
+            let below_stamped = below_core
+                .last_processed_height()
                 .await
-                .is_ok(),
-            "one block below the bound must still broadcast"
-        );
+                .expect("last processed height");
+            let below = finalize_tx(&below_core, account_type, &below_outputs, &below_signer).await;
+            advance_processed_height(&below_core, below_stamped + RESERVATION_MAX_AGE_BLOCKS - 1)
+                .await;
+            assert!(
+                below_core
+                    .broadcast_finalized_transaction(&below)
+                    .await
+                    .is_ok(),
+                "one block below the bound must still broadcast ({account_type:?})"
+            );
 
-        // Exactly at the bound: refused.
-        let (at_core, at_signer, at_outputs) = funded_core_wallet(
-            StandardAccountType::BIP44Account,
-            Arc::new(AlwaysOkBroadcaster),
-        )
-        .await;
-        let at_stamped = at_core
-            .last_processed_height()
-            .await
-            .expect("last processed height");
-        let at = finalize_tx(
-            &at_core,
-            AccountTypePreference::BIP44,
-            &at_outputs,
-            &at_signer,
-        )
-        .await;
-        advance_processed_height(&at_core, at_stamped + RESERVATION_MAX_AGE_BLOCKS).await;
-        assert!(
-            matches!(
-                at_core.broadcast_finalized_transaction(&at).await,
-                Err(PlatformWalletError::StaleReservation)
-            ),
-            "exactly at the bound must refuse with StaleReservation"
-        );
+            // Exactly at the bound: refused.
+            let (at_core, at_signer, at_outputs) = funded_core_wallet(
+                account_type_standard(account_type),
+                Arc::new(AlwaysOkBroadcaster),
+            )
+            .await;
+            let at_stamped = at_core
+                .last_processed_height()
+                .await
+                .expect("last processed height");
+            let at = finalize_tx(&at_core, account_type, &at_outputs, &at_signer).await;
+            advance_processed_height(&at_core, at_stamped + RESERVATION_MAX_AGE_BLOCKS).await;
+            assert!(
+                matches!(
+                    at_core.broadcast_finalized_transaction(&at).await,
+                    Err(PlatformWalletError::StaleReservation)
+                ),
+                "exactly at the bound must refuse with StaleReservation ({account_type:?})"
+            );
+        }
     }
 
     /// Map a builder `AccountTypePreference` (BIP44/BIP32 only in these tests)

@@ -40,7 +40,14 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             tx.accountIndex,
         )
 
-    /** Consume and broadcast a V2 finalized transaction. */
+    /**
+     * Consume and broadcast a V2 finalized transaction. A handle held past the
+     * reservation age bound throws the typed
+     * [StaleReservationToken][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
+     * (native code 34, shared with the deferred-token surface) instead of
+     * broadcasting against inputs key-wallet's TTL may have re-selected —
+     * rebuild the transaction; [abandonTransaction] works at any age.
+     */
     fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
         WalletManagerNative.coreWalletBroadcastSignedTransactionV2(
             handle,
