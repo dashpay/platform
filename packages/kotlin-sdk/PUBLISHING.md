@@ -8,7 +8,48 @@ Maven-coordinates decision only — the Kotlin source packages remain
 release versions go to Maven Central via the Central Portal; `-SNAPSHOT`
 versions go to the Sonatype snapshots repository.
 
-## Prerequisites
+## CI release path (preferred): the `kotlin-sdk-vX.Y.Z` tag
+
+Pushing a `kotlin-sdk-vX.Y.Z` tag runs
+`.github/workflows/kotlin-sdk-release.yml`, which from that ONE checkout:
+
+1. builds the native library and the release AAR and attaches the AAR to the
+   GitHub release for the tag (existing behavior), and
+2. stages the signed Maven artifacts and runs `jreleaserDeploy` with
+   `-PsdkVersion` **derived from the tag** (`kotlin-sdk-v0.1.0` → `0.1.0`).
+
+In CI the version is never passed by hand — it comes only from the tag — so
+the Maven Central artifact and the GitHub-release AAR are always the same
+commit under the same version. Tags that would derive a `-SNAPSHOT` version
+are rejected. A `kotlin-sdk-*` tag without the `vX.Y.Z` form still gets its
+GitHub-release AAR but skips the Maven deploy (there is no version to
+derive). The workflow's manual `workflow_dispatch` path is for
+re-runs/emergencies only: it takes an *existing* tag name, checks out that
+tag, and derives the version from it the same way — it has no version input.
+
+**Secrets gate:** the Maven deploy steps only run when the Sonatype Central
+Portal credentials are configured as GitHub repository secrets. That Portal
+token is currently a personal token (held by HashEngineering, the `org.dashj`
+publisher), so until it is installed as repo secrets the deploy steps **skip
+with a notice** instead of failing — the tag still produces the
+GitHub-release AAR, and the Maven release can be done manually with the
+runbook below, **from the tag's commit with the tag's version**. Required
+secrets (names match the env vars in the next section):
+`JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME`,
+`JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD`, `JRELEASER_GPG_PUBLIC_KEY`,
+`JRELEASER_GPG_SECRET_KEY`, `JRELEASER_GPG_PASSPHRASE`. The GPG secret
+key/passphrase pair is also fed to the Gradle staging signature
+(`ORG_GRADLE_PROJECT_signingKey` / `signingPassword`). A *partially*
+configured secret set fails the run rather than guessing. Both publish guards
+below (`verifyJniLibsForRemotePublish`, `verifyStagedAarForRemotePublish`)
+run in the CI path via the same task dependencies as locally.
+
+## Prerequisites (manual fallback path)
+
+The runbook below is the fallback for while the Portal token is personal (or
+if CI is unavailable). When releasing a tagged version manually, check out
+the `kotlin-sdk-vX.Y.Z` tag and pass exactly its `X.Y.Z` as `-PsdkVersion`,
+so the manual Maven deploy cannot drift from the GitHub-release AAR.
 
 - **Sonatype Central Portal token** for the `org.dashj` namespace (held by
   HashEngineering — the same account that publishes `dashj-core`).

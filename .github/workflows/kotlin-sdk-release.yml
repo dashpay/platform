@@ -1,4 +1,4 @@
-name: Release Kotlin SDK AAR
+name: Release Kotlin SDK (AAR + Maven Central)
 
 on:
   push:
@@ -6,8 +6,15 @@ on:
       - 'kotlin-sdk-*'
   workflow_dispatch:
     inputs:
+      # Re-run/emergency path only. The tag is still the single source of
+      # truth: the build checks out the tag's commit and the Maven version is
+      # derived from the tag name — there is deliberately no separate version
+      # input, so a dispatch can never publish a version that differs from
+      # what the tag's own push would have published.
       tag:
-        description: 'Tag name to release (optional; defaults to ref name)'
+        description: >-
+          Existing kotlin-sdk-* tag to (re-)release (optional; defaults to
+          ref name). The Maven version is derived from this tag.
         required: false
 
 permissions:
@@ -27,6 +34,40 @@ jobs:
           # on the `tag` input it will publish under — without this ref the
           # released AAR could be built from a different commit than the tag.
           ref: ${{ github.event.inputs.tag || github.ref }}
+
+      # The Maven Central version comes from the tag and ONLY from the tag
+      # (kotlin-sdk-vX.Y.Z -> X.Y.Z). Because the checkout above is pinned to
+      # the same tag, the GitHub-release AAR and the Maven Central artifact
+      # produced by this run are always built from the same commit under the
+      # same version — the two channels cannot drift.
+      - name: Derive SDK version from release tag
+        id: sdk-version
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          case "$TAG" in
+            kotlin-sdk-v*)
+              VERSION="${TAG#kotlin-sdk-v}"
+              if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$'; then
+                echo "::error::Tag '$TAG' has the kotlin-sdk-v prefix but '$VERSION' is not a valid version (expected kotlin-sdk-vX.Y.Z)."
+                exit 1
+              fi
+              case "$VERSION" in
+                *-SNAPSHOT)
+                  echo "::error::Tag '$TAG' derives the -SNAPSHOT version '$VERSION'; snapshots must never be released from tags."
+                  exit 1
+                  ;;
+              esac
+              ;;
+            *)
+              # A kotlin-sdk-* tag without the vX.Y.Z form still gets its
+              # GitHub-release AAR below, but carries no Maven version, so
+              # the Maven Central steps are skipped.
+              VERSION=""
+              ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Derived sdkVersion: ${VERSION:-<none — Maven Central deploy will be skipped>}"
 
       - name: Free disk space
         run: |
@@ -92,3 +133,68 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           files: packages/kotlin-sdk/sdk/build/outputs/aar/sdk-release.aar
           generate_release_notes: true
+
+      # ----- Maven Central deploy: same commit, same tag-derived version -----
+      # Gated on the Sonatype Central Portal credentials being configured as
+      # repository secrets. That token is currently personal (held by
+      # HashEngineering, the org.dashj publisher), so on repos/forks without
+      # the secrets these steps skip with a notice instead of failing and the
+      # release stays GitHub-AAR-only — see packages/kotlin-sdk/PUBLISHING.md.
+      # The `secrets` context is mapped into env vars here because emptiness
+      # of the secret is what decides the gate.
+      - name: Check Maven Central deploy preconditions
+        id: maven-gate
+        env:
+          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
+          PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
+          PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
+          GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+        run: |
+          if [ -z "$SDK_VERSION" ]; then
+            echo "::notice::Tag is not kotlin-sdk-vX.Y.Z, so no Maven version can be derived — Maven Central deploy skipped."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ]; then
+            echo "::notice::Maven Central secrets are not configured on this repository (the Central Portal token is currently personal) — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ]; then
+            echo "::error::Maven Central secrets are only partially configured — need JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD and JRELEASER_GPG_SECRET_KEY (plus JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE). Refusing to guess."
+            exit 1
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Stages the signed release AAR + sources/javadoc jars into
+      # sdk/build/staging-deploy. Task dependencies enforce the publish
+      # guards: cleanStagingDeploy wipes the staging dir first and
+      # verifyJniLibsForRemotePublish hard-fails if the source tree lacks
+      # libdash_sdk_jni.so for any required ABI.
+      - name: Stage signed Maven artifacts (version from tag)
+        if: steps.maven-gate.outputs.deploy == 'true'
+        working-directory: packages/kotlin-sdk
+        env:
+          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
+          # Same ASCII-armored GPG key/passphrase jreleaser uses below; Gradle
+          # signing reads them as the in-memory signingKey/signingPassword
+          # project properties.
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: >-
+          ./gradlew :sdk:publishReleasePublicationToStagingRepository
+          -PsdkVersion="$SDK_VERSION" --stacktrace
+
+      # Uploads the staged artifacts to Maven Central. Task dependencies run
+      # verifyJniLibsForRemotePublish and verifyStagedAarForRemotePublish
+      # first, so a stale or nativeless staged AAR can never be deployed.
+      - name: Deploy to Maven Central (jreleaserDeploy, version from tag)
+        if: steps.maven-gate.outputs.deploy == 'true'
+        working-directory: packages/kotlin-sdk
+        env:
+          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
+          JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
+          JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
+          JRELEASER_GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          JRELEASER_GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: >-
+          ./gradlew :sdk:jreleaserDeploy
+          -PsdkVersion="$SDK_VERSION" --stacktrace
