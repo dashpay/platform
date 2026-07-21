@@ -2,7 +2,8 @@ import { expect } from 'chai';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { create } from 'tar';
+import { gzipSync } from 'zlib';
+import { create, Header } from 'tar';
 import unarchiveSamplesFactory from '../../../src/doctor/unarchiveSamplesFactory.js';
 
 describe('unarchiveSamplesFactory', () => {
@@ -53,6 +54,32 @@ describe('unarchiveSamplesFactory', () => {
 
     await expect(unarchiveSamples(archivePath)).to.be.rejectedWith(
       'Unsupported diagnostic archive entry type',
+    );
+    expect(fs.readdirSync(testRoot).filter((name) => name.startsWith('dashmate-doctor-')))
+      .to.deep.equal([]);
+  });
+
+  it('aborts parsing as soon as the archive member budget is exceeded', async () => {
+    const headers = Array.from({ length: 10_001 }, (_, index) => {
+      const header = new Header({
+        path: `entry-${index}.txt`,
+        type: 'File',
+        size: 0,
+        mode: 0o600,
+        uid: 0,
+        gid: 0,
+        mtime: new Date(0),
+      });
+      header.encode();
+      return header.block;
+    });
+    const archivePath = path.join(testRoot, 'too-many-members.tar.gz');
+    fs.writeFileSync(archivePath, gzipSync(Buffer.concat([...headers, Buffer.alloc(1024)])));
+
+    const unarchiveSamples = unarchiveSamplesFactory(() => []);
+
+    await expect(unarchiveSamples(archivePath)).to.be.rejectedWith(
+      'Diagnostic archive exceeds extraction budget',
     );
     expect(fs.readdirSync(testRoot).filter((name) => name.startsWith('dashmate-doctor-')))
       .to.deep.equal([]);

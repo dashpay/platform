@@ -103,11 +103,83 @@ tenderdash_import_state() (
   staging_volume=$(docker volume create)
   trap 'docker volume rm -f "$staging_volume" >/dev/null 2>&1 || true' EXIT
 
-  # Extract the untrusted archive into an isolated volume first. Archive paths
-  # can affect only the disposable container and staging volume at this point.
+  # Validate the archive metadata before writing any untrusted member to disk.
+  # Tenderdash LevelDB trees use only simple names, so rejecting whitespace also
+  # makes the verbose tar listing unambiguous to this preflight parser.
+  docker run --rm --network none -v "$dir:/in:ro" \
+    busybox:1.36 sh -c '
+      set -euo pipefail
+      archive="/in/$1"
+      tar tvzf "$archive" | while read -r mode owner size date time member extra; do
+        [ -n "$member" ] && [ -z "${extra:-}" ] || {
+          echo "unsupported Tenderdash archive member name" >&2
+          exit 1
+        }
+        case "$mode" in
+          d*|-*) ;;
+          *)
+            echo "unsupported Tenderdash archive member type" >&2
+            exit 1
+            ;;
+        esac
+        case "$size" in
+          ""|*[!0-9]*)
+            echo "invalid Tenderdash archive member size" >&2
+            exit 1
+            ;;
+        esac
+        case "$member" in
+          data|data/|data/blockstore.db|data/blockstore.db/*|data/evidence.db|data/evidence.db/*|data/state.db|data/state.db/*|data/tx_index.db|data/tx_index.db/*) ;;
+          *)
+            echo "unexpected Tenderdash archive member" >&2
+            exit 1
+            ;;
+        esac
+        members=$(( ${members:-0} + 1 ))
+        bytes=$(( ${bytes:-0} + size ))
+        [ "$members" -le 200000 ] || {
+          echo "Tenderdash archive contains too many members" >&2
+          exit 1
+        }
+        [ "$bytes" -le 214748364800 ] || {
+          echo "Tenderdash archive exceeds the restore budget" >&2
+          exit 1
+        }
+      done
+      if ! tar tzf "$archive" | awk "
+        /[[:space:]]/ || seen[\$0]++ { invalid = 1 }
+        END { exit invalid ? 1 : 0 }
+      "; then
+        echo "Tenderdash archive contains an unsafe or duplicate member name" >&2
+        exit 1
+      fi
+    ' preflight "$file"
+
+  # Extract into an isolated volume while continuously enforcing the actual
+  # staging-volume budget. ulimit also prevents any single member from crossing it.
   docker run --rm --network none \
     -v "${staging_volume}:/staging" -v "$dir:/in:ro" -w /staging \
-    busybox:1.36 tar xzp -f "/in/$file"
+    busybox:1.36 sh -c '
+      set -eu
+      ulimit -f 419430400
+      tar xzp -f "/in/$1" &
+      extraction_pid=$!
+      while kill -0 "$extraction_pid" 2>/dev/null; do
+        used_kib=$(du -sk /staging | cut -f1)
+        if [ "$used_kib" -gt 209715200 ]; then
+          kill "$extraction_pid" 2>/dev/null || true
+          wait "$extraction_pid" 2>/dev/null || true
+          echo "Tenderdash archive exceeds the restore budget" >&2
+          exit 1
+        fi
+        sleep 1
+      done
+      wait "$extraction_pid"
+      [ "$(du -sk /staging | cut -f1)" -le 209715200 ] || {
+        echo "Tenderdash archive exceeds the restore budget" >&2
+        exit 1
+      }
+    ' extract "$file"
 
   # Accept only the four database trees emitted by tenderdash_export_state.
   docker run --rm --network none -v "${staging_volume}:/staging" \

@@ -1,7 +1,7 @@
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { extract, list } from 'tar';
+import { extract, Parser } from 'tar';
 import Samples from './Samples.js';
 import Config from '../config/Config.js';
 
@@ -58,6 +58,49 @@ function assertSafeArchiveMember(memberPath, entry, budget) {
   return true;
 }
 
+async function validateArchive(archivePath) {
+  const budget = { members: 0, bytes: 0, seen: new Set() };
+
+  await new Promise((resolve, reject) => {
+    const source = fs.createReadStream(archivePath);
+    const parser = new Parser({
+      file: archivePath,
+      strict: true,
+      onReadEntry: (entry) => {
+        try {
+          assertSafeArchiveMember(entry.path, entry, budget);
+          entry.resume();
+        } catch (error) {
+          // Stop compressed input and the parser immediately. In particular, do not let tar's
+          // list helper resume entries and decompress the rest of an over-budget archive.
+          source.unpipe(parser);
+          source.destroy();
+          parser.abort(error);
+        }
+      },
+    });
+
+    let settled = false;
+    const finish = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      source.destroy();
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    source.once('error', finish);
+    parser.once('error', finish);
+    parser.once('end', () => finish());
+    source.pipe(parser);
+  });
+}
+
 /**
  * @param {getServiceList} getServiceList
  * @returns {unarchiveSamples}
@@ -87,22 +130,7 @@ export default function unarchiveSamplesFactory(getServiceList) {
       fs.copyFileSync(archiveFilePath, stagedArchivePath, fs.constants.COPYFILE_EXCL);
       fs.mkdirSync(extractDir, { mode: 0o700 });
 
-      const budget = { members: 0, bytes: 0, seen: new Set() };
-      let validationError;
-      await list({
-        file: stagedArchivePath,
-        strict: true,
-        onentry: (entry) => {
-          try {
-            assertSafeArchiveMember(entry.path, entry, budget);
-          } catch (error) {
-            validationError ??= error;
-          }
-        },
-      });
-      if (validationError) {
-        throw validationError;
-      }
+      await validateArchive(stagedArchivePath);
 
       await extract({
         file: stagedArchivePath,
