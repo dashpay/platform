@@ -77,8 +77,10 @@ fi
       expect(fs.existsSync(path.join(testRoot, 'owned.tar.gz'))).to.equal(false);
       const log = fs.readFileSync(dockerLog, 'utf8');
       expect(log).to.include(`ARG=/in/${archiveName}\n`);
-      expect(log.split('\n').filter((line) => line.includes('touch owned')))
-        .to.deep.equal([`ARG=/in/${archiveName}`]);
+      const archiveArguments = log.split('\n').filter((line) => line.includes('touch owned'));
+      expect(archiveArguments).not.to.be.empty;
+      expect(archiveArguments.every((argument) => argument === `ARG=/in/${archiveName}`))
+        .to.equal(true);
     });
   }
 

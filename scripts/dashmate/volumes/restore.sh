@@ -69,6 +69,6 @@ for volume in "${volumes[@]}"; do
   run_args+=(-v "$volume:/dashmate_volumes/$volume")
 done
 run_args+=(-v "$volume_dump_dir:/backup:ro")
-run_args+=(busybox tar xf /backup/data.tar.gz -C /dashmate_volumes)
+run_args+=(busybox:1.36 tar xf /backup/data.tar.gz -C /dashmate_volumes)
 
 "${run_args[@]}"

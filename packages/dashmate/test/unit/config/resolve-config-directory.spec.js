@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import HomeDir from '../../../src/config/HomeDir.js';
 import resolveConfigDirectory, {
   assertSafeConfigName,
-} from '../../../src/config/resolveConfigDirectory.js';
+} from '../../../src/config/resolve-config-directory.js';
 
 describe('resolveConfigDirectory', () => {
   const homeDir = new HomeDir('/tmp/dashmate-test-home', true);

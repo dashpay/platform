@@ -2,7 +2,7 @@ import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
 import wait from '../../util/wait.js';
-import resolveConfigDirectory from '../../config/resolveConfigDirectory.js';
+import resolveConfigDirectory from '../../config/resolve-config-directory.js';
 
 /**
  * @param {DockerCompose} dockerCompose

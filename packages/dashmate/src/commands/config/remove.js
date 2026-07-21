@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { Args } from '@oclif/core';
 import BaseCommand from '../../oclif/command/BaseCommand.js';
-import resolveConfigDirectory from '../../config/resolveConfigDirectory.js';
+import resolveConfigDirectory from '../../config/resolve-config-directory.js';
 
 export default class ConfigRemoveCommand extends BaseCommand {
   static description = 'Remove config';

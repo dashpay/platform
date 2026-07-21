@@ -51,7 +51,7 @@ abci_export_state() {
   echo "$archive"
   transfer_help "abci" "$archive" >&2
 }
-abci_import_state() {
+abci_import_state() (
   local archive=${1:?archive required}
   local cfg=$(abci_resolve_config "${2:-}")
   local volume
@@ -61,13 +61,146 @@ abci_import_state() {
     echo "archive not found" >&2
     exit 1
   }
-  docker volume inspect "$volume" >/dev/null 2>&1 || docker volume create "$volume" >/dev/null
-  docker run --rm --network none -v "${volume}:/data" \
-    busybox:1.36 sh -c 'rm -rf /data/*'
+
+  local staging_volume
+  staging_volume=$(docker volume create)
+  trap 'docker volume rm -f "$staging_volume" >/dev/null 2>&1 || true' EXIT
+
+  docker run --rm --network none -v "$dir:/in:ro" \
+    busybox:1.36 sh -c '
+      set -euo pipefail
+      archive=$1
+      tar tvzf "$archive" | while read -r mode owner size date time member extra; do
+        [ -n "$member" ] && [ -z "${extra:-}" ] || {
+          echo "unsupported ABCI archive member name" >&2
+          exit 1
+        }
+        case "$mode" in
+          d*|-*) ;;
+          *)
+            echo "unsupported ABCI archive member type" >&2
+            exit 1
+            ;;
+        esac
+        case "$size" in
+          ""|*[!0-9]*)
+            echo "invalid ABCI archive member size" >&2
+            exit 1
+            ;;
+        esac
+        members=$(( ${members:-0} + 1 ))
+        bytes=$(( ${bytes:-0} + size ))
+        [ "$members" -le 200000 ] || {
+          echo "ABCI archive contains too many members" >&2
+          exit 1
+        }
+        [ "$bytes" -le 214748364800 ] || {
+          echo "ABCI archive exceeds the restore budget" >&2
+          exit 1
+        }
+      done
+      if ! tar tzf "$archive" | awk "
+        {
+          name = \$0
+          if (name ~ /[[:space:]]/ || name ~ /^\// || index(name, sprintf(\"%c\", 92))) {
+            invalid = 1
+          }
+          while (sub(/^\.\//, \"\", name)) {}
+          while (sub(/\/$/, \"\", name)) {}
+          if (name == \"\" || name == \".\") next
+          if (name == \".dashmate-restore\" || name ~ /^\.dashmate-restore\// ||
+              name == \".dashmate-previous\" || name ~ /^\.dashmate-previous\//) {
+            invalid = 1
+          }
+          count = split(name, component, \"/\")
+          for (i = 1; i <= count; i++) {
+            if (component[i] == \"\" || component[i] == \".\" || component[i] == \"..\") {
+              invalid = 1
+            }
+          }
+          if (seen[name]++) invalid = 1
+        }
+        END { exit invalid ? 1 : 0 }
+      "; then
+        echo "ABCI archive contains an unsafe or duplicate member name" >&2
+        exit 1
+      fi
+    ' preflight "/in/$file"
+
   docker run --rm --network none \
-    -v "${volume}:/data" -v "$dir:/in:ro" -w /data \
-    busybox:1.36 tar xzp -f "/in/$file"
-}
+    -v "${staging_volume}:/staging" -v "$dir:/in:ro" -w /staging \
+    busybox:1.36 sh -c '
+      set -euo pipefail
+      ulimit -f 419430400
+      tar xzp -f "$1" &
+      extraction_pid=$!
+      while kill -0 "$extraction_pid" 2>/dev/null; do
+        used_kib=$(du -sk /staging | cut -f1)
+        if [ "$used_kib" -gt 209715200 ]; then
+          kill "$extraction_pid" 2>/dev/null || true
+          wait "$extraction_pid" 2>/dev/null || true
+          echo "ABCI archive exceeds the restore budget" >&2
+          exit 1
+        fi
+        sleep 1
+      done
+      wait "$extraction_pid"
+      [ "$(du -sk /staging | cut -f1)" -le 209715200 ] || {
+        echo "ABCI archive exceeds the restore budget" >&2
+        exit 1
+      }
+      unsupported=$(find /staging -mindepth 1 ! -type d ! -type f -print -quit)
+      [ -z "$unsupported" ] || {
+        echo "unsupported ABCI archive member type" >&2
+        exit 1
+      }
+      [ "$(find /staging -mindepth 1 | wc -l)" -le 200000 ] || {
+        echo "ABCI archive contains too many members" >&2
+        exit 1
+      }
+      chmod -R u=rwX,go= /staging
+    ' extract "/in/$file"
+
+  docker volume inspect "$volume" >/dev/null 2>&1 || docker volume create "$volume" >/dev/null
+
+  # Build the complete candidate inside the live volume before swapping it in.
+  # If any move fails, the EXIT trap restores every previous top-level entry.
+  docker run --rm --network none \
+    -v "${staging_volume}:/staging:ro" -v "${volume}:/target" \
+    busybox:1.36 sh -c '
+      set -euo pipefail
+      candidate=/target/.dashmate-restore
+      previous=/target/.dashmate-previous
+      rm -rf "$candidate" "$previous"
+      mkdir -p "$candidate" "$previous"
+      cd /staging
+      tar cf - . | (cd "$candidate" && tar xpf -)
+
+      phase=backup
+      rollback() {
+        status=$?
+        if [ "$status" -ne 0 ] && [ -d "$previous" ]; then
+          if [ "$phase" = install ]; then
+            find /target -mindepth 1 -maxdepth 1 \
+              ! -name .dashmate-restore ! -name .dashmate-previous \
+              -exec rm -rf {} \;
+          fi
+          find "$previous" -mindepth 1 -maxdepth 1 -exec mv {} /target/ \;
+          rm -rf "$candidate" "$previous"
+        fi
+        trap - EXIT
+        exit "$status"
+      }
+      trap rollback EXIT
+
+      find /target -mindepth 1 -maxdepth 1 \
+        ! -name .dashmate-restore ! -name .dashmate-previous \
+        -exec mv {} "$previous"/ \;
+      phase=install
+      find "$candidate" -mindepth 1 -maxdepth 1 -exec mv {} /target/ \;
+      rm -rf "$candidate" "$previous"
+    '
+)
 tenderdash_resolve_volume() {
   local cfg=$1
   local project=$("${DASHMATE_CMD[@]}" config envs --config "$cfg" | awk -F= '$1=="COMPOSE_PROJECT_NAME"{print $2}')
@@ -109,7 +242,7 @@ tenderdash_import_state() (
   docker run --rm --network none -v "$dir:/in:ro" \
     busybox:1.36 sh -c '
       set -euo pipefail
-      archive="/in/$1"
+      archive=$1
       tar tvzf "$archive" | while read -r mode owner size date time member extra; do
         [ -n "$member" ] && [ -z "${extra:-}" ] || {
           echo "unsupported Tenderdash archive member name" >&2
@@ -153,7 +286,7 @@ tenderdash_import_state() (
         echo "Tenderdash archive contains an unsafe or duplicate member name" >&2
         exit 1
       fi
-    ' preflight "$file"
+    ' preflight "/in/$file"
 
   # Extract into an isolated volume while continuously enforcing the actual
   # staging-volume budget. ulimit also prevents any single member from crossing it.
@@ -162,7 +295,7 @@ tenderdash_import_state() (
     busybox:1.36 sh -c '
       set -eu
       ulimit -f 419430400
-      tar xzp -f "/in/$1" &
+      tar xzp -f "$1" &
       extraction_pid=$!
       while kill -0 "$extraction_pid" 2>/dev/null; do
         used_kib=$(du -sk /staging | cut -f1)
@@ -179,7 +312,7 @@ tenderdash_import_state() (
         echo "Tenderdash archive exceeds the restore budget" >&2
         exit 1
       }
-    ' extract "$file"
+    ' extract "/in/$file"
 
   # Accept only the four database trees emitted by tenderdash_export_state.
   docker run --rm --network none -v "${staging_volume}:/staging" \

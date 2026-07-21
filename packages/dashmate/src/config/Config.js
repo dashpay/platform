@@ -8,7 +8,7 @@ import InvalidOptionPathError from './errors/InvalidOptionPathError.js';
 import OptionIsNotSetError from './errors/OptionIsNotSetError.js';
 import InvalidOptionError from './errors/InvalidOptionError.js';
 import InvalidOptionsError from './errors/InvalidOptionsError.js';
-import { assertSafeConfigName } from './resolveConfigDirectory.js';
+import { assertSafeConfigName } from './resolve-config-directory.js';
 
 const {
   get: lodashGet, set: lodashSet, cloneDeep: lodashCloneDeep, isEqual: lodashIsEqual,
