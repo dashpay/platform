@@ -33,6 +33,16 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testPlatformWalletNotFoundFFIResultMapping() {
+        // Code 98 (the blanket Option→result miss) stays typed inside the
+        // wallet-error family — the mapping Kotlin now converges on
+        // (DashSdkError.PlatformWallet.NotFound), dashpay/platform#4060.
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND),
+            .notFound
+        )
+    }
+
     func testSigningKeyUnavailableFFIResultMapping() {
         // The structured signer discriminator (dashpay/platform#4060
         // finding 7): PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
