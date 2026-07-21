@@ -74,6 +74,16 @@ public final class SDK: @unchecked Sendable {
     case trace = 4
   }
 
+  /// Fixed context provider installed when the Rust SDK is constructed.
+  public enum ContextProviderKind: Sendable {
+    /// Trusted HTTP quorum keys plus local contract/token resolution.
+    case trusted
+    /// SPV-only quorum keys plus local contract/token resolution.
+    case spv
+    /// Runtime-selectable Trusted/SPV/Auto quorum routing.
+    case adaptive
+  }
+
   /// Enable logging for gRPC and SDK operations
   /// This will log all network requests, including endpoints being contacted
   public static func enableLogging(level: LogLevel = .debug) {
@@ -240,11 +250,12 @@ public final class SDK: @unchecked Sendable {
     return active.map(\.dapiUrl).joined(separator: ",")
   }
 
-  /// Create a new SDK instance with trusted setup
+  /// Create a new SDK instance with a fixed context-provider policy.
   ///
-  /// This uses a trusted context provider that fetches quorum keys and
-  /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
-  /// This is suitable for mobile applications where proof verification would be resource-intensive.
+  /// `contextProvider` selects one provider identity for the SDK's lifetime.
+  /// Production SPV never falls back to trusted quorum keys; Adaptive is
+  /// intended for examples and deployments that explicitly need live policy
+  /// changes.
   ///
   /// `platformVersion`:
   /// - `0` (default) — let the Rust SDK seed at the per-network minimum
@@ -255,7 +266,11 @@ public final class SDK: @unchecked Sendable {
   ///   testnet floor 12 = V1), so this picks the right wire without a
   ///   Swift-side network→version map.
   /// - non-zero — pin the SDK to this exact `PlatformVersion`.
-  public init(network: Network, platformVersion: UInt32 = 0) throws {
+  public init(
+    network: Network,
+    platformVersion: UInt32 = 0,
+    contextProvider: ContextProviderKind = .trusted
+  ) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
@@ -270,8 +285,8 @@ public final class SDK: @unchecked Sendable {
     // versions. A non-zero value is an explicit pin via `with_version`.
     config.platform_version = platformVersion
 
-    // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
-    // UserDefaults and apply on:
+    // Create the SDK with the selected provider. DAPI / quorum-URL overrides
+    // come from UserDefaults and apply on:
     //
     //   * Regtest unconditionally — the Rust side has no built-in DAPI
     //     defaults for it, so we must supply addresses every time
@@ -344,7 +359,14 @@ public final class SDK: @unchecked Sendable {
       var mutableConfig = config
       if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
       if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
-      return dash_sdk_create_trusted(&mutableConfig)
+      switch contextProvider {
+      case .trusted:
+        return dash_sdk_create_trusted(&mutableConfig)
+      case .spv:
+        return dash_sdk_create_spv(&mutableConfig)
+      case .adaptive:
+        return dash_sdk_create_adaptive(&mutableConfig)
+      }
     }
 
     // Check for errors
@@ -365,6 +387,37 @@ public final class SDK: @unchecked Sendable {
     // Store the handle and network
     handle = OpaquePointer(result.data)
     self.network = network
+  }
+
+  /// Which quorum-key source this SDK's proof verification currently uses.
+  public enum QuorumSource: Sendable {
+    case trusted
+    case spv
+  }
+
+  /// Policy used by the SDK's fixed adaptive context provider.
+  public enum QuorumMode: UInt8, Sendable {
+    case auto = 0
+    case spv = 1
+    case trusted = 2
+  }
+
+  /// The quorum source selected at the most recent mode application.
+  public private(set) var quorumSource: QuorumSource = .trusted
+
+  /// Update quorum routing policy without replacing the SDK context provider.
+  public func setQuorumMode(_ mode: QuorumMode) throws {
+    guard let handle else {
+      throw SDKError.internalError("Cannot set quorum mode: SDK handle is nil")
+    }
+    let result = dash_sdk_set_context_provider_mode(handle, mode.rawValue)
+    if result.error != nil {
+      let error = result.error!.pointee
+      let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+      defer { dash_sdk_error_free(result.error) }
+      throw SDKError.internalError("Failed to set quorum mode: \(message)")
+    }
+    quorumSource = dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
   }
 
   /// Run `body` with two optional C-string pointers. Each input string,

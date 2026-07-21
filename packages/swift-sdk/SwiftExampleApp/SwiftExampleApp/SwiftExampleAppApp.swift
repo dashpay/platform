@@ -196,6 +196,15 @@ struct SwiftExampleAppApp: App {
                 .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
                     rebindWalletScopedServices()
                 }
+                // Refresh adaptive-provider policy and the active-source
+                // indicator as SPV readiness changes.
+                .onChange(of: walletManager.spvProgress) { _, _ in
+                    platformState.applyQuorumMode()
+                }
+                // Apply the Quorum Source picker to the fixed adaptive provider.
+                .onChange(of: platformState.quorumMode) { _, _ in
+                    platformState.applyQuorumMode()
+                }
         }
     }
 
@@ -214,6 +223,7 @@ struct SwiftExampleAppApp: App {
         }
         do {
             try walletManagerStore.activate(network: network, sdk: sdk)
+            platformState.applyQuorumMode()
         } catch {
             SDKLogger.error(
                 "Failed to activate wallet manager for "
@@ -431,6 +441,7 @@ struct SwiftExampleAppApp: App {
                     network: platformState.currentNetwork,
                     sdk: sdk
                 )
+                platformState.applyQuorumMode()
                 let restoredCount = walletManager.wallets.count
                 if restoredCount > 0 {
                     SDKLogger.log(

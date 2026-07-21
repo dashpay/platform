@@ -1,7 +1,9 @@
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// Handle type for FFI objects
 pub type Handle = u64;
@@ -120,13 +122,66 @@ pub static PLATFORM_ADDRESS_WALLET_STORAGE: Lazy<
     HandleStorage<platform_wallet::wallet::platform_addresses::PlatformAddressWallet>,
 > = Lazy::new(HandleStorage::new);
 
+/// FFI-owned manager plus the optional lease that connects its running SPV
+/// runtime to an SDK's fixed SPV-capable context provider.
+pub struct PlatformWalletManagerHandle {
+    manager: platform_wallet::PlatformWalletManager<crate::persistence::FFIPersister>,
+    spv_source: Option<Arc<platform_wallet::spv_context_provider::SpvQuorumSource>>,
+    spv_source_controller: Option<Arc<rs_sdk_ffi::SpvSourceController>>,
+    spv_source_lease: parking_lot::Mutex<Option<rs_sdk_ffi::SpvSourceLease>>,
+}
+
+impl PlatformWalletManagerHandle {
+    pub(crate) fn new(
+        manager: platform_wallet::PlatformWalletManager<crate::persistence::FFIPersister>,
+        spv_source: Option<Arc<platform_wallet::spv_context_provider::SpvQuorumSource>>,
+        spv_source_controller: Option<Arc<rs_sdk_ffi::SpvSourceController>>,
+    ) -> Self {
+        Self {
+            manager,
+            spv_source,
+            spv_source_controller,
+            spv_source_lease: parking_lot::Mutex::new(None),
+        }
+    }
+
+    pub(crate) fn acquire_spv_source(&self) -> Result<(), String> {
+        let Some(controller) = &self.spv_source_controller else {
+            return Ok(());
+        };
+        let source = self
+            .spv_source
+            .as_ref()
+            .ok_or_else(|| "SPV source controller has no quorum source".to_string())?;
+        let readiness_source = Arc::clone(source);
+        let quorum_source: Arc<dyn dash_sdk::platform::ContextProvider> =
+            Arc::clone(source) as Arc<dyn dash_sdk::platform::ContextProvider>;
+        let lease = controller
+            .acquire(quorum_source, Arc::new(move || readiness_source.is_ready()))
+            .map_err(str::to_string)?;
+        *self.spv_source_lease.lock() = Some(lease);
+        Ok(())
+    }
+
+    pub(crate) fn release_spv_source(&self) {
+        let _ = self.spv_source_lease.lock().take();
+    }
+}
+
+impl Deref for PlatformWalletManagerHandle {
+    type Target = platform_wallet::PlatformWalletManager<crate::persistence::FFIPersister>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.manager
+    }
+}
+
 /// Storage for PlatformWalletManager handles.
 ///
 /// The manager is generic over the persister type; the FFI binds it
 /// to the callback-based [`FFIPersister`](crate::persistence::FFIPersister).
-pub static PLATFORM_WALLET_MANAGER_STORAGE: Lazy<
-    HandleStorage<platform_wallet::PlatformWalletManager<crate::persistence::FFIPersister>>,
-> = Lazy::new(HandleStorage::new);
+pub static PLATFORM_WALLET_MANAGER_STORAGE: Lazy<HandleStorage<PlatformWalletManagerHandle>> =
+    Lazy::new(HandleStorage::new);
 
 /// Storage for PlatformWallet handles
 pub static PLATFORM_WALLET_STORAGE: Lazy<

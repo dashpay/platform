@@ -3499,7 +3499,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rustls",
- "rustls-native-certs",
  "tokio",
  "tokio-rustls",
  "tower-service",
@@ -5142,6 +5141,7 @@ dependencies = [
  "async-trait",
  "bimap",
  "bs58",
+ "dash-context-provider",
  "dash-sdk",
  "dash-spv",
  "dashcore",
@@ -6043,7 +6043,6 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls",
- "rustls-native-certs",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -6325,6 +6324,7 @@ dependencies = [
 name = "rs-sdk-ffi"
 version = "4.0.0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "bincode",
  "bs58",
@@ -6343,7 +6343,6 @@ dependencies = [
  "log",
  "once_cell",
  "platform-encryption",
- "reqwest 0.12.28",
  "rs-sdk-trusted-context-provider",
  "serde",
  "serde_json",

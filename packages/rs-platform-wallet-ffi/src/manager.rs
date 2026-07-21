@@ -59,9 +59,67 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     let _runtime_guard = runtime().enter();
 
     let manager = PlatformWalletManager::new(sdk, persister, handler);
-    let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+    let handle = PLATFORM_WALLET_MANAGER_STORAGE
+        .insert(PlatformWalletManagerHandle::new(manager, None, None));
     *out_handle = handle;
 
+    PlatformWalletFFIResult::ok()
+}
+
+/// Create a manager from an owning SDK handle and prepare an SPV source for
+/// that SDK's fixed SPV-capable provider.
+///
+/// The SDK handle is borrowed only for this synchronous call. The manager
+/// retains an `Sdk` clone, never the raw handle.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(sdk_handle);
+    check_ptr!(persistence);
+    check_ptr!(event_handler);
+    check_ptr!(out_handle);
+
+    let sdk_ptr = rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle);
+    if sdk_ptr.is_null() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "SDK has no inner SDK".to_string(),
+        );
+    }
+
+    let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
+    let persister = Arc::new(FFIPersister::new(std::ptr::read(persistence)));
+    let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
+        Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
+
+    let _runtime_guard = runtime().enter();
+    let manager = PlatformWalletManager::new(Arc::clone(&sdk), persister, handler);
+    let spv = manager.spv_arc();
+    let provider = Arc::new(platform_wallet::spv_context_provider::SpvQuorumSource::new(
+        Arc::clone(&spv),
+        sdk.network,
+    ));
+    let controller = match rs_sdk_ffi::dash_sdk_spv_source_controller(sdk_handle) {
+        Ok(controller) => controller,
+        Err(message) => {
+            drop(_runtime_guard);
+            runtime().block_on(manager.shutdown());
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                message,
+            );
+        }
+    };
+
+    *out_handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(PlatformWalletManagerHandle::new(
+        manager,
+        controller.as_ref().map(|_| provider),
+        controller,
+    ));
     PlatformWalletFFIResult::ok()
 }
 
@@ -354,15 +412,14 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
-        // Run the full lifecycle shutdown to completion, not just the
-        // platform-address sync. Every background task (identity sync,
-        // shielded sync, the wallet-event adapter) can fire callbacks
-        // through the host-owned `context` pointer; once `destroy`
-        // returns the host may free that context, so no task may be
-        // left alive to fire a callback against freed memory.
-        // `shutdown()` is idempotent, so this is safe even if the host
-        // already stopped some sync managers before calling destroy.
-        runtime().block_on(manager.shutdown());
+        // Stop SPV first because its event manager retains host callback
+        // pointers. Then detach this manager's matching source lease before
+        // quiescing every remaining callback-capable task.
+        runtime().block_on(async {
+            let _ = manager.spv().stop().await;
+            manager.release_spv_source();
+            manager.shutdown().await;
+        });
     }
     PlatformWalletFFIResult::ok()
 }

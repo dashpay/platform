@@ -24,6 +24,9 @@ pub(crate) mod test_support;
 mod util;
 pub mod wallet;
 
+#[cfg(feature = "spv-context")]
+pub mod spv_context_provider;
+
 pub use error::PlatformWalletError;
 pub use events::{PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;

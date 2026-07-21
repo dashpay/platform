@@ -8,7 +8,6 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
-use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 #[cfg(not(target_arch = "wasm32"))]
@@ -155,12 +154,8 @@ pub struct Sdk {
     /// Nonce cache managed exclusively by the SDK.
     nonce_cache: Arc<NonceCache>,
 
-    /// Context provider used by the SDK.
-    ///
-    /// ## Panics
-    ///
-    /// Note that setting this to None can panic.
-    context_provider: ArcSwapOption<Box<dyn ContextProvider>>,
+    /// Context provider fixed at SDK construction and shared across clones.
+    context_provider: Arc<dyn ContextProvider>,
 
     /// Protocol version number detected from the network. Shared between clones.
     protocol_version: Arc<atomic::AtomicU32>,
@@ -201,7 +196,7 @@ impl Clone for Sdk {
             inner: self.inner.clone(),
             proofs: self.proofs,
             nonce_cache: Arc::clone(&self.nonce_cache),
-            context_provider: ArcSwapOption::new(self.context_provider.load_full()),
+            context_provider: Arc::clone(&self.context_provider),
             cancel_token: self.cancel_token.clone(),
             protocol_version: Arc::clone(&self.protocol_version),
             version_pinned: self.version_pinned,
@@ -459,11 +454,8 @@ impl Sdk {
     }
 
     /// Return [ContextProvider] used by the SDK.
-    pub fn context_provider(&self) -> Option<impl ContextProvider> {
-        let provider_guard = self.context_provider.load();
-        let provider = provider_guard.as_ref().map(Arc::clone);
-
-        provider
+    pub fn context_provider(&self) -> Option<Arc<dyn ContextProvider>> {
+        Some(Arc::clone(&self.context_provider))
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -575,18 +567,6 @@ impl Sdk {
             protocol_version: self.version(),
             prove: self.prove(),
         }
-    }
-
-    // TODO: If we remove this setter we don't need to use ArcSwap.
-    //   It's good enough to set Context once when you initialize the SDK.
-    /// Set the [ContextProvider] to use.
-    ///
-    /// [ContextProvider] is used to access state information, like data contracts and quorum public keys.
-    ///
-    /// Note that this will overwrite any previous context provider.
-    pub fn set_context_provider<C: ContextProvider + 'static>(&self, context_provider: C) {
-        self.context_provider
-            .swap(Some(Arc::new(Box::new(context_provider))));
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (e.g. shutdown was requested).
@@ -775,7 +755,7 @@ pub struct SdkBuilder {
     quorum_public_keys_cache_size: NonZeroUsize,
 
     /// Context provider used by the SDK.
-    context_provider: Option<Box<dyn ContextProvider>>,
+    context_provider: Option<Arc<dyn ContextProvider>>,
 
     /// How many blocks difference is allowed between the last seen metadata height and the height received in response
     /// metadata.
@@ -1000,8 +980,15 @@ impl SdkBuilder {
         mut self,
         context_provider: C,
     ) -> Self {
-        self.context_provider = Some(Box::new(context_provider));
+        self.context_provider = Some(Arc::new(context_provider));
 
+        self
+    }
+
+    /// Configure an already-shared context provider without adding another
+    /// allocation around it.
+    pub fn with_context_provider_arc(mut self, context_provider: Arc<dyn ContextProvider>) -> Self {
+        self.context_provider = Some(context_provider);
         self
     }
 
@@ -1113,13 +1100,44 @@ impl SdkBuilder {
                 #[cfg(feature = "mocks")]
                 let dapi = dapi.dump_dir(self.dump_dir.clone());
 
-                #[allow(unused_mut)] // needs to be mutable for #[cfg(feature = "mocks")]
-                let mut sdk= Sdk{
+                #[cfg(feature = "mocks")]
+                let mut generated_grpc_provider = None;
+                let context_provider = match self.context_provider {
+                    Some(provider) => provider,
+                    None => {
+                        #[cfg(feature = "mocks")]
+                        if !self.core_ip.is_empty() {
+                            tracing::warn!(
+                                "ContextProvider not set, falling back to a mock one; use SdkBuilder::with_context_provider() to set it up");
+                            let mut provider = GrpcContextProvider::new(None,
+                                &self.core_ip, self.core_port, &self.core_user, &self.core_password,
+                                self.data_contract_cache_size, self.token_config_cache_size, self.quorum_public_keys_cache_size)?;
+                            if self.dump_dir.is_some() {
+                                provider.set_dump_dir(self.dump_dir.clone());
+                            }
+                            let provider = Arc::new(provider);
+                            generated_grpc_provider = Some(Arc::clone(&provider));
+                            provider as Arc<dyn ContextProvider>
+                        } else {
+                            return Err(Error::Config(concat!(
+                                "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
+                                "or configure Core access with SdkBuilder::with_core() to use mock context provider")
+                                .to_string()));
+                        }
+                        #[cfg(not(feature = "mocks"))]
+                        return Err(Error::Config(concat!(
+                            "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
+                            "or enable `mocks` feature to use mock context provider")
+                            .to_string()));
+                    }
+                };
+
+                let sdk= Sdk{
                     network: self.network,
                     dapi_client_settings,
                     inner:SdkInstance::Dapi { dapi },
                     proofs:self.proofs,
-                    context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
+                    context_provider,
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
                     // Seed atomic with the initial version; whether the version is
@@ -1133,36 +1151,10 @@ impl SdkBuilder {
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
-                // if context provider is not set correctly (is None), it means we need to fall back to core wallet
-                if  sdk.context_provider.load().is_none() {
-                    #[cfg(feature = "mocks")]
-                    if !self.core_ip.is_empty() {
-                        tracing::warn!(
-                            "ContextProvider not set, falling back to a mock one; use SdkBuilder::with_context_provider() to set it up");
-                        let mut context_provider = GrpcContextProvider::new(None,
-                            &self.core_ip, self.core_port, &self.core_user, &self.core_password,
-                            self.data_contract_cache_size, self.token_config_cache_size, self.quorum_public_keys_cache_size)?;
-                        #[cfg(feature = "mocks")]
-                        if sdk.dump_dir.is_some() {
-                            context_provider.set_dump_dir(sdk.dump_dir.clone());
-                        }
-                        // We have cyclical dependency Sdk <-> GrpcContextProvider, so we just do some
-                        // workaround using additional Arc.
-                        let context_provider= Arc::new(context_provider);
-                        sdk.context_provider.swap(Some(Arc::new(Box::new(context_provider.clone()))));
-                        context_provider.set_sdk(Some(sdk.clone()));
-                    } else{
-                        return Err(Error::Config(concat!(
-                            "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
-                            "or configure Core access with SdkBuilder::with_core() to use mock context provider")
-                            .to_string()));
-                    }
-                    #[cfg(not(feature = "mocks"))]
-                    return Err(Error::Config(concat!(
-                        "context provider is not set, configure it with SdkBuilder::with_context_provider() ",
-                        "or enable `mocks` feature to use mock context provider")
-                        .to_string()));
-                };
+                #[cfg(feature = "mocks")]
+                if let Some(provider) = generated_grpc_provider {
+                    provider.set_sdk(Some(sdk.clone()));
+                }
 
                 sdk
             },
@@ -1176,7 +1168,7 @@ impl SdkBuilder {
                     if let Some(ref dump_dir) = self.dump_dir {
                         cp.quorum_keys_dir(Some(dump_dir.clone()));
                     }
-                    Box::new(cp)
+                    Arc::new(cp)
                 }
                 );
                 let mock_sdk = MockDashPlatformSdk::new(Arc::clone(&dapi));
@@ -1194,7 +1186,7 @@ impl SdkBuilder {
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(initial_version.protocol_version)),
                     version_pinned: self.version_pinned,
-                    context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
+                    context_provider,
                     cancel_token: self.cancel_token,
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
@@ -1261,6 +1253,63 @@ mod test {
     const MAINNET_PLATFORM_HTTP_PORT: u16 = 443;
     /// Testnet Evo masternodes expose the Platform HTTP endpoint on 1443.
     const TESTNET_PLATFORM_HTTP_PORT: u16 = 1443;
+
+    /// SDK clones retain the exact context-provider identity selected at build.
+    #[test]
+    fn context_provider_identity_is_shared_across_clones() {
+        use dash_context_provider::{ContextProvider, ContextProviderError};
+        use dpp::data_contract::TokenConfiguration;
+        use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+        use dpp::version::PlatformVersion;
+
+        /// Provider whose activation height is a distinctive sentinel so it can
+        /// be told apart from the mock SDK's default provider.
+        struct SentinelProvider(CoreBlockHeight);
+        impl ContextProvider for SentinelProvider {
+            fn get_quorum_public_key(
+                &self,
+                _quorum_type: u32,
+                _quorum_hash: [u8; 32],
+                _height: u32,
+            ) -> Result<[u8; 48], ContextProviderError> {
+                Ok([0u8; 48])
+            }
+            fn get_data_contract(
+                &self,
+                _id: &Identifier,
+                _pv: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_token_configuration(
+                &self,
+                _id: &Identifier,
+            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_platform_activation_height(
+                &self,
+            ) -> Result<CoreBlockHeight, ContextProviderError> {
+                Ok(self.0)
+            }
+        }
+
+        const SENTINEL: CoreBlockHeight = 4_242_424;
+
+        let sdk = SdkBuilder::new_mock()
+            .with_context_provider(SentinelProvider(SENTINEL))
+            .build()
+            .expect("mock sdk should build");
+        let clone = sdk.clone();
+
+        let original_provider = sdk.context_provider().expect("provider present");
+        let clone_provider = clone.context_provider().expect("provider present on clone");
+        assert!(Arc::ptr_eq(&original_provider, &clone_provider));
+        let height = original_provider
+            .get_platform_activation_height()
+            .expect("activation height");
+        assert_eq!(height, SENTINEL);
+    }
 
     #[test]
     fn new_testnet_sources_bootstrap_from_seeds() {

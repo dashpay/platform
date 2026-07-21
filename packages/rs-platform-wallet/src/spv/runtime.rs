@@ -5,12 +5,13 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::{DiskStorageManager, StorageManager};
-use dash_spv::sync::SyncProgress;
+use dash_spv::sync::{SyncProgress, SyncState};
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
@@ -23,6 +24,37 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
+
+/// Build the masternode-engine lookup key from a proof-supplied quorum hash.
+///
+/// The SDK's proof verifier supplies the quorum hash in display (big-endian)
+/// byte order — the same order the trusted HTTP provider matches against — but
+/// the masternode engine keys its quorum map in internal (little-endian) order.
+/// The bytes must therefore be reversed before building the [`QuorumHash`] key;
+/// without this every real quorum misses. Verified against a synced testnet
+/// node: the engine stores the reversed form of each requested hash (e.g.
+/// requested `0000…7f`, stored `…000000`).
+///
+/// [`SpvRuntime::get_quorum_public_key`] calls this so the byte-order regression
+/// test exercises the exact transform the production lookup uses.
+fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
+    let mut internal_order = display_order;
+    internal_order.reverse();
+    QuorumHash::from_byte_array(internal_order)
+}
+
+fn verified_quorum_public_key(
+    status: &LLMQEntryVerificationStatus,
+    public_key: [u8; 48],
+) -> Result<[u8; 48], PlatformWalletError> {
+    if matches!(status, LLMQEntryVerificationStatus::Verified) {
+        Ok(public_key)
+    } else {
+        Err(PlatformWalletError::SpvError(format!(
+            "quorum entry is not cryptographically verified: {status:?}"
+        )))
+    }
+}
 
 /// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
@@ -86,7 +118,6 @@ impl SpvRuntime {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
-
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
@@ -124,6 +155,19 @@ impl SpvRuntime {
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Whether dash-spv's current progress reports both header and
+    /// masternode-list synchronization complete.
+    pub async fn is_ready(&self) -> bool {
+        self.sync_progress().await.is_some_and(|progress| {
+            progress
+                .headers()
+                .is_ok_and(|headers| headers.state() == SyncState::Synced)
+                && progress
+                    .masternodes()
+                    .is_ok_and(|masternodes| masternodes.state() == SyncState::Synced)
+        })
     }
 
     /// Broadcast a transaction to all connected SPV peers.
@@ -165,14 +209,17 @@ impl SpvRuntime {
         ))?;
 
         let llmq_type = LLMQType::from(quorum_type as u8);
-        let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
+        let qh = quorum_lookup_key(quorum_hash);
 
         let quorum = client
             .get_quorum_at_height(height, llmq_type, qh)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
+        verified_quorum_public_key(
+            &quorum.verified,
+            *quorum.quorum_entry.quorum_public_key.as_ref(),
+        )
     }
 
     /// Drive the sync loop of an already-[`start`]ed client until [`stop`]
@@ -428,11 +475,17 @@ mod tests {
     use std::sync::Arc;
 
     use dash_spv::error::{NetworkError, SpvError};
+    use dashcore::sml::llmq_entry_verification::{
+        LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
+    };
+    use dashcore::sml::quorum_validation_error::QuorumValidationError;
     use dashcore::Network;
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_broadcast_error, SpvRuntime};
+    use super::{
+        classify_spv_broadcast_error, quorum_lookup_key, verified_quorum_public_key, SpvRuntime,
+    };
     use crate::broadcaster::BroadcastError;
     use crate::events::PlatformEventManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -497,6 +550,78 @@ mod tests {
                 matches!(result, BroadcastError::MaybeSent { .. }),
                 "{rendered} must classify MaybeSent, got {result:?}"
             );
+        }
+    }
+
+    /// Regression guard for the quorum-hash byte order used by
+    /// [`SpvRuntime::get_quorum_public_key`].
+    ///
+    /// This exercises the production transform directly — [`quorum_lookup_key`]
+    /// is the exact function `get_quorum_public_key` calls to build its engine
+    /// lookup key — so dropping (or re-introducing a spurious) reversal there
+    /// fails this test, rather than the test asserting standalone `BTreeMap`
+    /// semantics that can't detect a change in the real code.
+    ///
+    /// The masternode engine keys its quorum map — `quorum_entry_of_type_for_quorum_hash`,
+    /// a `BTreeMap<QuorumHash, _>::get` — in internal byte order, but the SDK
+    /// proof verifier supplies the hash in display (reversed) order. Verified
+    /// end-to-end against a synced testnet node: the engine stores the reversed
+    /// form of each requested hash (requested `0000…`, stored `…0000`), so a
+    /// non-reversed lookup misses every real quorum and falls through to
+    /// fail-closed rejection (previously masked by the trusted-quorum fallback).
+    #[test]
+    fn quorum_hash_reversed_to_internal_order_before_lookup() {
+        use dashcore::hashes::Hash;
+        use dashcore::QuorumHash;
+        use std::collections::BTreeMap;
+
+        // The hash as the proof verifier supplies it (display order).
+        let display_bytes: [u8; 32] = std::array::from_fn(|i| (i as u8) + 1);
+        // The engine keys the quorum under the internal (reversed) order.
+        let mut internal_bytes = display_bytes;
+        internal_bytes.reverse();
+
+        let pubkey = [0xABu8; 48];
+        let mut quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
+        quorums.insert(QuorumHash::from_byte_array(internal_bytes), pubkey);
+
+        // The production key builder must land on the internally-keyed quorum.
+        assert_eq!(
+            quorums.get(&quorum_lookup_key(display_bytes)),
+            Some(&pubkey),
+            "quorum_lookup_key must reverse display order to the engine's internal key"
+        );
+
+        // Sanity: the un-reversed display-order key is absent — this is exactly
+        // the miss that `quorum_lookup_key`'s reversal exists to prevent, so if
+        // the reversal is removed the assertion above fails.
+        assert_eq!(
+            quorums.get(&QuorumHash::from_byte_array(display_bytes)),
+            None,
+            "using the hash without reversal must miss — this was the regression"
+        );
+    }
+
+    #[test]
+    fn only_verified_quorums_can_supply_a_public_key() {
+        let public_key = [0xAB; 48];
+        assert_eq!(
+            verified_quorum_public_key(&LLMQEntryVerificationStatus::Verified, public_key).unwrap(),
+            public_key
+        );
+
+        for status in [
+            LLMQEntryVerificationStatus::Unknown,
+            LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+            LLMQEntryVerificationStatus::Invalid(QuorumValidationError::InvalidQuorumPublicKey),
+        ] {
+            let error = verified_quorum_public_key(&status, public_key)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("not cryptographically verified"));
+            assert!(error.contains(&format!("{status:?}")));
         }
     }
 }

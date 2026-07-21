@@ -327,6 +327,7 @@ struct OptionsView: View {
                                         try? walletManagerStore.activate(
                                             network: .devnet, sdk: sdk
                                         )
+                                        appState.applyQuorumMode()
                                     }
                                     // Drive `rebindWalletScopedServices`
                                     // via the App scene's observer.
@@ -368,6 +369,33 @@ struct OptionsView: View {
                                 .autocorrectionDisabled()
                         }
                     }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Quorum Source")
+                        Picker("Quorum Source", selection: $appState.quorumMode) {
+                            ForEach(AppState.QuorumMode.allCases) { mode in
+                                Text(mode.label).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .help("Which quorum public-key source to use for Platform proof verification, applied live. Auto: trusted until the SPV masternode list syncs, then SPV. SPV: force SPV now (proofs fail closed until synced; no trusted fallback). Trusted: force the trusted HTTP quorum service. The Proof Quorum Source below shows what is actually active.")
+
+                    HStack {
+                        Text("Proof Quorum Source")
+                        Spacer()
+                        switch appState.quorumSource {
+                        case .spv:
+                            Label("SPV (trustless)", systemImage: "checkmark.shield.fill")
+                                .foregroundColor(.green)
+                                .font(.caption.weight(.semibold))
+                        case .trusted:
+                            Label("Trusted (HTTP)", systemImage: "network")
+                                .foregroundColor(.orange)
+                                .font(.caption.weight(.semibold))
+                        }
+                    }
+                    .help("Which quorum public-key source the SDK currently uses to verify Platform proofs. Switches to SPV automatically once the masternode list has synced (start SPV sync from the Core tab).")
 
                     HStack {
                         Text("Network Status")

@@ -88,13 +88,13 @@ fn setup_sdk(config: &Config) -> Sdk {
     .expect("parse uri");
 
     // Now, we create the Sdk with the wallet and context provider.
+    let context_provider = Arc::new(context_provider);
     let sdk = SdkBuilder::new(AddressList::from_iter([address]))
+        .with_context_provider(Arc::clone(&context_provider))
         .build()
         .expect("cannot build sdk");
 
-    // Reconfigure context provider with Sdk
     context_provider.set_sdk(Some(sdk.clone()));
-    sdk.set_context_provider(context_provider);
     // Return the SDK we created
     sdk
 }

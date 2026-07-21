@@ -20,6 +20,11 @@ dash-spv = { workspace = true }
 # Core dependencies
 dashcore = { workspace = true }
 
+# SPV context provider dependency (optional). `dash-spv` and `tokio` are
+# already non-optional dependencies above, so the `spv-context` feature only
+# needs to pull in the context-provider trait crate.
+dash-context-provider = { path = "../rs-context-provider", optional = true }
+
 # Standard dependencies
 thiserror = "1.0"
 async-trait = "0.1"
@@ -112,6 +117,11 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" 
 
 [features]
 default = ["bls", "eddsa"]
+# SPV-backed Platform context provider (delegates quorum lookups to the SPV
+# runtime). `dash-spv`/`tokio` are already non-optional deps; this pulls in the
+# context-provider trait crate plus `rt-multi-thread` (the sync->async bridge
+# in `spv_context_provider` uses `tokio::task::block_in_place`).
+spv-context = ["dep:dash-context-provider", "tokio/rt-multi-thread"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
