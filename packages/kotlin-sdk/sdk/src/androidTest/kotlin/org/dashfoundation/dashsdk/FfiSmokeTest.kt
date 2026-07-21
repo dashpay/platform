@@ -3,8 +3,10 @@ package org.dashfoundation.dashsdk
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
+import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,5 +46,35 @@ class FfiSmokeTest {
         } finally {
             SdkNative.destroy(handle)
         }
+    }
+
+    @Test
+    fun mnemonicAndPathSignerSymbolLoadsAndSigns() {
+        NativeLoader.ensureLoaded()
+        val mnemonicUtf8 = (
+            "abandon abandon abandon abandon abandon abandon abandon abandon " +
+                "abandon abandon abandon about"
+        ).toByteArray(Charsets.UTF_8)
+        val signature = try {
+            SignerNative.signWithMnemonicAndPathInto(
+                mnemonicUtf8 = mnemonicUtf8,
+                derivationPath = "m/9'/5'/3'/0/0",
+                network = Network.TESTNET.ffiValue,
+                data = "jni signer smoke".toByteArray(Charsets.UTF_8),
+            )
+        } finally {
+            // JNI copies the phrase into Rust-owned zeroizing memory but
+            // deliberately does not mutate the JVM array. Direct callers own
+            // this cleanup; the production wrapper applies the same finally.
+            mnemonicUtf8.fill(0)
+        }
+
+        // Assert only what this smoke test can prove: the native symbol binds
+        // and derive-and-sign returns a compact recoverable signature. The
+        // array is zeroed by the test's own `finally` above, so asserting it
+        // is now zero would only re-check that `fill(0)` works — it would say
+        // nothing about JNI, which by contract never scrubs the caller's array.
+        assertNotNull("native derive-and-sign should return a signature", signature)
+        assertEquals("compact recoverable ECDSA signature", 65, signature!!.size)
     }
 }
