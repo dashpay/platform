@@ -1,4 +1,3 @@
-use crate::drive::saved_block_transactions::CompactedAddressBalanceProof;
 use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
@@ -18,7 +17,7 @@ use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use super::VerifiedCompactedAddressBalanceChanges;
+use super::{CompactedAddressBalanceProof, VerifiedCompactedAddressBalanceChanges};
 
 impl Drive {
     /// Verifies compacted address balance changes proof.

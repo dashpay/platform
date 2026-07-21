@@ -8,7 +8,7 @@ use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-use super::CompactedAddressBalanceProof;
+use crate::verify::address_funds::verify_compacted_address_balance_changes::CompactedAddressBalanceProof;
 
 /// Result type for fetched compacted address balance changes
 /// Each entry is (start_block, end_block, address_balance_map)

@@ -8,17 +8,6 @@ use platform_version::version::PlatformVersion;
 
 pub use v0::CompactedAddressBalanceChanges;
 
-/// Proof envelope for compacted address balance changes.
-///
-/// The predecessor proof independently authenticates which range, if any,
-/// contains the requested height. The forward proof can then be verified
-/// against a query derived only from that authenticated result.
-#[derive(Debug, bincode::Encode, bincode::Decode)]
-pub(crate) struct CompactedAddressBalanceProof {
-    pub(crate) predecessor_proof: Vec<u8>,
-    pub(crate) forward_proof: Vec<u8>,
-}
-
 impl Drive {
     /// Fetches compacted address balance changes starting from a given block height.
     ///
