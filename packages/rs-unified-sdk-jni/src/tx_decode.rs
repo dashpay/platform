@@ -130,7 +130,13 @@ fn decode_to_blob(tx_bytes: &[u8], network: FFINetwork) -> Result<Vec<u8>, (i32,
     };
     let mut out: *mut DecodedTransactionFFI = std::ptr::null_mut();
     let ok = unsafe {
-        transaction_decode(tx_bytes.as_ptr(), tx_bytes.len(), network, &mut out, &mut error)
+        transaction_decode(
+            tx_bytes.as_ptr(),
+            tx_bytes.len(),
+            network,
+            &mut out,
+            &mut error,
+        )
     };
     if !ok || out.is_null() {
         let message = if error.message.is_null() {
@@ -281,7 +287,10 @@ mod tests {
         let bytes = serialize(&tx);
         let blob = decode_to_blob(&bytes, FFINetwork::Testnet).expect("decode ok");
 
-        let mut r = Reader { blob: &blob, pos: 0 };
+        let mut r = Reader {
+            blob: &blob,
+            pos: 0,
+        };
         assert_eq!(r.take(32), tx.txid().to_byte_array());
 
         assert_eq!(r.u32(), 1, "one input");
@@ -321,7 +330,10 @@ mod tests {
     fn network_changes_rendered_addresses() {
         let (tx, addr) = p2pkh_spend_tx(Network::Testnet);
         let blob = decode_to_blob(&serialize(&tx), FFINetwork::Mainnet).expect("decode ok");
-        let mut r = Reader { blob: &blob, pos: 0 };
+        let mut r = Reader {
+            blob: &blob,
+            pos: 0,
+        };
         r.take(32);
         r.u32();
         r.take(36);
