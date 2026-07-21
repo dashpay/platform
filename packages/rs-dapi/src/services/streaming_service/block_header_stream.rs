@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
@@ -26,17 +26,53 @@ const MAX_HISTORICAL_HEADERS_PER_STREAM: usize = 10_000;
 const MAX_HEADER_PENDING_EVENTS: usize = 256;
 const MAX_HEADER_PENDING_BYTES: usize = 8 * 1024 * 1024;
 const HEADER_GATE_MAX_TIMEOUT: Duration = Duration::from_secs(180);
-const MAX_LIVE_DELIVERED_HASHES: usize = 2_048;
+const MAX_DELIVERED_HEADER_HASHES: usize =
+    MAX_HISTORICAL_HEADERS_PER_STREAM + MAX_HEADER_PENDING_EVENTS;
 
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
 type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
 type BlockHeaderResponseStream = ReceiverStream<BlockHeaderResponseResult>;
 type BlockHeaderResponse = Response<BlockHeaderResponseStream>;
-type DeliveredHashSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveredHashSet = Arc<AsyncMutex<BoundedDeliveredHashes>>;
 type DeliveryGateSender = watch::Sender<bool>;
 type DeliveryGateReceiver = watch::Receiver<bool>;
 
 const MAX_HEADERS_PER_BATCH: usize = 500;
+
+struct BoundedDeliveredHashes {
+    hashes: HashSet<Vec<u8>>,
+    order: VecDeque<Vec<u8>>,
+    capacity: usize,
+}
+
+impl BoundedDeliveredHashes {
+    fn new(capacity: usize) -> Self {
+        Self {
+            hashes: HashSet::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    /// Records a hash while retaining the most recent overlap window.
+    /// Returns false when the hash has already been delivered.
+    fn mark_delivered(&mut self, hash: Vec<u8>) -> bool {
+        if self.hashes.contains(&hash) {
+            return false;
+        }
+
+        if self.hashes.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.hashes.remove(&oldest);
+        }
+
+        self.hashes.insert(hash.clone());
+        self.order.push_back(hash);
+        true
+    }
+}
+
 impl StreamingServiceImpl {
     pub async fn subscribe_to_block_headers_with_chain_locks_impl(
         &self,
@@ -123,7 +159,9 @@ impl StreamingServiceImpl {
         stream_permit: OwnedSemaphorePermit,
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
-        let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(HashSet::new()));
+        let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(
+            BoundedDeliveredHashes::new(MAX_DELIVERED_HEADER_HASHES),
+        ));
         let (delivery_gate_tx, delivery_gate_rx) = watch::channel(false);
 
         let (subscriber_id, live_worker) = self
@@ -299,7 +337,6 @@ impl StreamingServiceImpl {
                         }
                     if !gated {
                         pending_bytes = 0;
-                        delivered_hashes.lock().await.clear();
                     }
                 }
                 message = block_handle.recv() => {
@@ -405,18 +442,13 @@ impl StreamingServiceImpl {
                 {
                     // scope for the lock
                     let mut hashes = delivered_hashes.lock().await;
-                    if hashes.remove(&hash_bytes[..]) {
+                    if !hashes.mark_delivered(hash_bytes.to_vec()) {
                         trace!(
                             subscriber_id,
                             block_hash = %block_hash_hex,
                             "block_headers=skip_duplicate_block"
                         );
                         allow_forward = false;
-                    } else {
-                        if hashes.len() >= MAX_LIVE_DELIVERED_HASHES {
-                            hashes.clear();
-                        }
-                        hashes.insert(hash_bytes.into());
                     }
                 }
 
@@ -570,7 +602,7 @@ impl StreamingServiceImpl {
                         block_hash = %hex::encode(&hash),
                         "block_headers=delivered_hash_recorded"
                     );
-                    hashes.insert(hash);
+                    hashes.mark_delivered(hash);
                 }
             }
 
@@ -683,5 +715,25 @@ impl StreamingServiceImpl {
         }
 
         Ok((start_height, desired))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BoundedDeliveredHashes;
+
+    #[test]
+    fn should_retain_recent_hashes_and_check_duplicates_before_eviction() {
+        let mut delivered = BoundedDeliveredHashes::new(2);
+        let first = vec![1; 32];
+        let second = vec![2; 32];
+        let third = vec![3; 32];
+
+        assert!(delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(second.clone()));
+        assert!(!delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(third.clone()));
+        assert!(!delivered.mark_delivered(second));
+        assert!(delivered.mark_delivered(first));
     }
 }

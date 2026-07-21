@@ -14,6 +14,15 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
 
+fn validate_state_transition_hash(hash: &[u8]) -> Result<(), DapiError> {
+    if hash.len() != 32 {
+        return Err(DapiError::InvalidArgument(
+            "state transition hash must be exactly 32 bytes".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
     pub async fn wait_for_state_transition_result_impl(
@@ -32,11 +41,7 @@ impl PlatformServiceImpl {
 
         // Validate state transition hash
         let state_transition_hash = v0.state_transition_hash;
-        if state_transition_hash.is_empty() {
-            return Err(DapiError::InvalidArgument(
-                "state transition hash is not specified".to_string(),
-            ));
-        }
+        validate_state_transition_hash(&state_transition_hash)?;
 
         let _wait_permit = self
             .state_transition_wait_permits
@@ -325,6 +330,14 @@ pub(super) fn build_wait_for_state_transition_error_response(
 mod tests {
     use super::*;
     use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+
+    #[test]
+    fn should_require_exact_state_transition_hash_length() {
+        assert!(validate_state_transition_hash(&[0; 32]).is_ok());
+        assert!(validate_state_transition_hash(&[]).is_err());
+        assert!(validate_state_transition_hash(&[0; 31]).is_err());
+        assert!(validate_state_transition_hash(&[0; 33]).is_err());
+    }
 
     /// Extract the `StateTransitionBroadcastError` from a
     /// `WaitForStateTransitionResultResponse`, unwrapping the V0 / Error layers.

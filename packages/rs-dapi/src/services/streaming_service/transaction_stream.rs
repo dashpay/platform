@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
@@ -40,15 +40,51 @@ type TxResponseResult = Result<TransactionsWithProofsResponse, Status>;
 type TxResponseSender = mpsc::Sender<TxResponseResult>;
 type TxResponseStream = ReceiverStream<TxResponseResult>;
 type TxResponse = Response<TxResponseStream>;
-type DeliveredTxSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
-type DeliveredBlockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
-type DeliveredInstantLockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveredTxSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
+type DeliveredBlockSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
+type DeliveredInstantLockSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
 type GateSender = watch::Sender<bool>;
 type GateReceiver = watch::Receiver<bool>;
 
 struct TransactionHistoryWorkerContext {
     state: Option<TransactionStreamState>,
     stream_permit: Option<OwnedSemaphorePermit>,
+}
+
+struct BoundedDeliveredIds {
+    ids: HashSet<Vec<u8>>,
+    order: VecDeque<Vec<u8>>,
+    capacity: usize,
+}
+
+impl BoundedDeliveredIds {
+    fn new(capacity: usize) -> Self {
+        Self {
+            ids: HashSet::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    fn mark_delivered(&mut self, id: Vec<u8>) -> bool {
+        if self.ids.contains(&id) {
+            return false;
+        }
+
+        if self.ids.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.ids.remove(&oldest);
+        }
+
+        self.ids.insert(id.clone());
+        self.order.push_back(id);
+        true
+    }
+
+    fn contains(&self, id: &[u8]) -> bool {
+        self.ids.contains(id)
+    }
 }
 
 fn validate_transaction_from_block_shape(
@@ -74,17 +110,28 @@ struct TransactionStreamState {
     delivered_instant_locks: DeliveredInstantLockSet,
     gate_sender: GateSender,
     gate_receiver: GateReceiver,
+    cancellation_sender: GateSender,
+    cancellation_receiver: GateReceiver,
 }
 
 impl TransactionStreamState {
     fn new() -> Self {
         let (gate_sender, gate_receiver) = watch::channel(false);
+        let (cancellation_sender, cancellation_receiver) = watch::channel(false);
         Self {
-            delivered_txs: Arc::new(AsyncMutex::new(HashSet::new())),
-            delivered_blocks: Arc::new(AsyncMutex::new(HashSet::new())),
-            delivered_instant_locks: Arc::new(AsyncMutex::new(HashSet::new())),
+            delivered_txs: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
+            delivered_blocks: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
+            delivered_instant_locks: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
             gate_sender,
             gate_receiver,
+            cancellation_sender,
+            cancellation_receiver,
         }
     }
 
@@ -99,6 +146,27 @@ impl TransactionStreamState {
     /// This is decoupled for easier handling between tasks.
     fn open_gate(sender: &GateSender) {
         let _ = sender.send(true);
+    }
+
+    fn cancel(&self) {
+        let _ = self.cancellation_sender.send(true);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        *self.cancellation_receiver.borrow()
+    }
+
+    async fn wait_for_cancellation(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+
+        let mut receiver = self.cancellation_receiver.clone();
+        while !*receiver.borrow() {
+            if receiver.changed().await.is_err() {
+                break;
+            }
+        }
     }
 
     async fn wait_for_gate_open(&self) {
@@ -134,10 +202,7 @@ impl TransactionStreamState {
             "transaction_stream=mark_transaction_delivered"
         );
         let mut guard = self.delivered_txs.lock().await;
-        if guard.len() >= MAX_DELIVERED_IDS_PER_STREAM {
-            guard.clear();
-        }
-        guard.insert(txid.to_vec())
+        guard.mark_delivered(txid.to_vec())
     }
 
     async fn mark_transactions_delivered<I>(&self, txids: I)
@@ -146,14 +211,11 @@ impl TransactionStreamState {
     {
         let mut guard = self.delivered_txs.lock().await;
         for txid in txids {
-            if guard.len() >= MAX_DELIVERED_IDS_PER_STREAM {
-                guard.clear();
-            }
             tracing::trace!(
                 txid = txid_to_hex(&txid),
                 "transaction_stream=mark_transaction_delivered"
             );
-            guard.insert(txid);
+            guard.mark_delivered(txid);
         }
     }
 
@@ -165,10 +227,7 @@ impl TransactionStreamState {
 
     async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
         let mut guard = self.delivered_blocks.lock().await;
-        if guard.len() >= MAX_DELIVERED_IDS_PER_STREAM {
-            guard.clear();
-        }
-        let inserted = guard.insert(block_hash.to_vec());
+        let inserted = guard.mark_delivered(block_hash.to_vec());
         trace!(
             block_hash = %hex::encode(block_hash),
             inserted,
@@ -179,14 +238,23 @@ impl TransactionStreamState {
 
     async fn mark_instant_lock_delivered(&self, txid: &[u8]) -> bool {
         let mut guard = self.delivered_instant_locks.lock().await;
-        if guard.len() >= MAX_DELIVERED_IDS_PER_STREAM {
-            guard.clear();
-        }
-        guard.insert(txid.to_vec())
+        guard.mark_delivered(txid.to_vec())
     }
 }
 
 impl StreamingServiceImpl {
+    async fn terminate_transaction_stream(
+        tx: &TxResponseSender,
+        state: &TransactionStreamState,
+        message: &'static str,
+    ) {
+        // Stop the history/mempool/live producers before reserving a queue slot for
+        // the terminal status. Awaiting the send guarantees a full queue cannot
+        // silently discard the resource-exhausted response.
+        state.cancel();
+        let _ = tx.send(Err(Status::resource_exhausted(message))).await;
+    }
+
     async fn validate_transaction_history_range(
         &self,
         from_block: &dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
@@ -305,11 +373,14 @@ impl StreamingServiceImpl {
         let mut gated = !state.is_gate_open();
         let gate_wait = state.wait_for_gate_open();
         tokio::pin!(gate_wait);
+        let cancellation_wait = state.wait_for_cancellation();
+        tokio::pin!(cancellation_wait);
 
         loop {
             tokio::select! {
                 biased;
                 _ = tx.closed() => break,
+                _ = &mut cancellation_wait => break,
                 _ = &mut gate_wait, if gated => {
                     gated = !state.is_gate_open();
                     // gated changed from true to false, flush pending events
@@ -334,9 +405,11 @@ impl StreamingServiceImpl {
                                 if pending.len() >= MAX_TRANSACTION_PENDING_EVENTS
                                     || next_bytes > MAX_TRANSACTION_PENDING_BYTES
                                 {
-                                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                                    Self::terminate_transaction_stream(
+                                        &tx,
+                                        &state,
                                         "live events exceeded the history handoff budget",
-                                    )));
+                                    ).await;
                                     break;
                                 }
                                 pending_bytes = next_bytes;
@@ -370,9 +443,11 @@ impl StreamingServiceImpl {
                                 if pending.len() >= MAX_TRANSACTION_PENDING_EVENTS
                                     || next_bytes > MAX_TRANSACTION_PENDING_BYTES
                                 {
-                                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                                    Self::terminate_transaction_stream(
+                                        &tx,
+                                        &state,
                                         "live events exceeded the history handoff budget",
-                                    )));
+                                    ).await;
                                     break;
                                 }
                                 pending_bytes = next_bytes;
@@ -803,6 +878,7 @@ impl StreamingServiceImpl {
         }
 
         let gate_sender = state.gate_sender.clone();
+        let coordinator_state = state.clone();
 
         local_workers.spawn(
             Self::fetch_mempool_transactions_worker(filter.clone(), tx.clone(), state, core_client)
@@ -817,6 +893,7 @@ impl StreamingServiceImpl {
                 Ok(Ok(())) => { /* task completed successfully */ }
                 Ok(Err(e)) => {
                     debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
+                    coordinator_state.cancel();
                     // return error back to caller
                     let status =  e.to_status();
                     let _ = tx.send(Err(status)).await; // ignore returned value
@@ -825,13 +902,16 @@ impl StreamingServiceImpl {
                 }
                 Err(e) => {
                     debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
+                    coordinator_state.cancel();
                     live_worker.abort().await;
                     return Err(DapiError::TaskJoin(e));
                 }
             }
         }
-        TransactionStreamState::open_gate(&gate_sender);
-        debug!(subscriber_id=&sub_id, "transactions_with_proofs=historical_sync_completed_gate_opened");
+        if !coordinator_state.is_cancelled() {
+            TransactionStreamState::open_gate(&gate_sender);
+            debug!(subscriber_id=&sub_id, "transactions_with_proofs=historical_sync_completed_gate_opened");
+        }
 
         Ok(())
     });
@@ -964,7 +1044,7 @@ impl StreamingServiceImpl {
         let mut matching_bytes = 0usize;
 
         for txid in txids {
-            if tx.is_closed() {
+            if tx.is_closed() || state.is_cancelled() {
                 return Ok(());
             }
 
@@ -976,7 +1056,7 @@ impl StreamingServiceImpl {
                 }
             };
 
-            if tx.is_closed() {
+            if tx.is_closed() || state.is_cancelled() {
                 return Ok(());
             }
 
@@ -1056,7 +1136,11 @@ impl StreamingServiceImpl {
         );
 
         for i in 0..count {
-            if tx.is_closed() {
+            if tx.is_closed()
+                || state
+                    .as_ref()
+                    .is_some_and(TransactionStreamState::is_cancelled)
+            {
                 return Ok(());
             }
             let height = (start_height + i) as u32;
@@ -1387,6 +1471,56 @@ mod tests {
         assert!(state.mark_instant_lock_delivered(&lock_txid).await);
         assert!(!state.mark_instant_lock_delivered(&lock_txid).await);
         assert!(state.has_transaction_been_delivered(&lock_txid).await);
+    }
+
+    #[test]
+    fn should_check_duplicate_before_evicting_oldest_delivery_id() {
+        let mut delivered = BoundedDeliveredIds::new(2);
+        let first = vec![1; 32];
+        let second = vec![2; 32];
+        let third = vec![3; 32];
+
+        assert!(delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(second.clone()));
+        assert!(!delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(third));
+        assert!(delivered.contains(&second));
+        assert!(!delivered.mark_delivered(second));
+        assert!(!delivered.contains(&first));
+    }
+
+    #[tokio::test]
+    async fn should_preserve_terminal_status_when_response_queue_is_full() {
+        let state = TransactionStreamState::new();
+        let (tx, mut rx) = mpsc::channel(1);
+        tx.send(Ok(TransactionsWithProofsResponse { responses: None }))
+            .await
+            .expect("queue should accept first response");
+
+        let terminal_sender = {
+            let state = state.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                StreamingServiceImpl::terminate_transaction_stream(
+                    &tx,
+                    &state,
+                    "history handoff exhausted",
+                )
+                .await;
+            })
+        };
+
+        tokio::task::yield_now().await;
+        assert!(state.is_cancelled());
+        assert!(!terminal_sender.is_finished());
+        assert!(rx.recv().await.expect("queued response").is_ok());
+        terminal_sender.await.expect("terminal sender task");
+        let status = rx
+            .recv()
+            .await
+            .expect("terminal response")
+            .expect_err("terminal response should be an error");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
     }
 
     #[tokio::test]
