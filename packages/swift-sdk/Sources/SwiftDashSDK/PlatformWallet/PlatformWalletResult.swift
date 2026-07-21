@@ -61,6 +61,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// re-fetches the nonce and self-heals. The submitted/expected nonce values
     /// travel in the message string, not as structured fields.
     case errorAddressNonceMismatch = 21
+    /// Atomic Core selection found no or insufficient unreserved UTXOs.
+    case errorCoreInsufficientFunds = 22
+    case errorAssetLockNotTracked = 23
+    case errorAssetLockAlreadyConsumed = 24
+    case errorAssetLockFundingMismatch = 25
     case notFound = 98
     case errorUnknown = 99
 
@@ -110,6 +115,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorTransactionBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
             self = .errorAddressNonceMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS:
+            self = .errorCoreInsufficientFunds
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_TRACKED:
+            self = .errorAssetLockNotTracked
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_ALREADY_CONSUMED:
+            self = .errorAssetLockAlreadyConsumed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH:
+            self = .errorAssetLockFundingMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -187,6 +200,10 @@ public enum PlatformWalletError: LocalizedError {
     case memoryAllocation(String)
     case arithmeticOverflow(String)
     case noSelectableInputs(String)
+    case coreInsufficientFunds(String)
+    case assetLockNotTracked(String)
+    case assetLockAlreadyConsumed(String)
+    case assetLockFundingMismatch(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -238,6 +255,9 @@ public enum PlatformWalletError: LocalizedError {
              .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
+             .coreInsufficientFunds(let m),
+             .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
+             .assetLockFundingMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
@@ -269,6 +289,10 @@ public enum PlatformWalletError: LocalizedError {
         case .errorUtf8Conversion:    self = .utf8Conversion(detail)
         case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
+        case .errorCoreInsufficientFunds: self = .coreInsufficientFunds(detail)
+        case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
+        case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
+        case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

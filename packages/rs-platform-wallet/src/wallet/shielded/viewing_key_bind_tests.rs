@@ -62,6 +62,10 @@ impl CapturingPersistence {
 }
 
 impl PlatformWalletPersistence for CapturingPersistence {
+    fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+        crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART
+    }
+
     fn store(
         &self,
         _wallet_id: WalletId,
@@ -107,7 +111,10 @@ fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
 /// Build a `PlatformWallet` over a fresh test wallet manager with the
 /// given persister. Each call mimics one app process: a fresh handle
 /// whose shielded slot starts unbound.
-async fn platform_wallet_with(persister: Arc<CapturingPersistence>) -> PlatformWallet {
+async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
+where
+    P: PlatformWalletPersistence + 'static,
+{
     let (wallet_manager, wallet_id, balance, _signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let sdk = Arc::new(dash_sdk::Sdk::new_mock());
@@ -124,6 +131,26 @@ async fn platform_wallet_with(persister: Arc<CapturingPersistence>) -> PlatformW
         persister as Arc<dyn PlatformWalletPersistence>,
         Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
     )
+}
+
+/// A shielded bind must not install ephemeral FVK state when the backend
+/// cannot persist and reload it. The capability gate runs before derivation,
+/// persistence, or coordinator registration.
+#[tokio::test]
+async fn bind_fails_closed_without_fvk_restart_capabilities() {
+    let persister = Arc::new(crate::wallet::persister::NoPlatformPersistence);
+    let wallet = platform_wallet_with(persister).await;
+    let coordinator = coordinator_at(&temp_dir("missing_capabilities"));
+
+    let err = wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+        .await
+        .expect_err("missing FVK callbacks must fail closed");
+    assert!(
+        format!("{err}").contains("shielded_viewing_keys"),
+        "error must name the missing feature capability: {err}"
+    );
+    assert!(!wallet.is_shielded_bound().await);
 }
 
 /// The full launch contract in one pass:

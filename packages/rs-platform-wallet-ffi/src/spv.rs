@@ -496,16 +496,15 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
 /// scripts (e.g. newly watched addresses) that weren't in the watch set
 /// when those blocks were first scanned.
 ///
-/// `from_height` at or above the wallet's current checkpoint is written
-/// verbatim but arms no rescan (the loop only rescans wallets strictly
-/// behind the committed height), so a forward/equal set is a harmless
-/// no-op for rescan purposes.
+/// `from_height` must be strictly below the wallet's current checkpoint.
+/// Equal/forward requests are successful no-ops and never advance the
+/// checkpoint.
 ///
 /// Requires SPV running for an immediate effect; otherwise the rewound
 /// checkpoint takes effect when SPV next starts and its filter loop
-/// first ticks. The rewound checkpoint is in-memory only (not persisted
-/// by this call); if the process dies mid-rescan the wallet is simply
-/// still behind and the next start re-arms the backfill.
+/// first ticks in the same process. The rewound checkpoint is in-memory
+/// only (not persisted by this call); if the process dies before the rescan
+/// finishes, the host must issue this request again after restart.
 ///
 /// # Safety
 /// - `wallet_id` must point to 32 readable bytes.
