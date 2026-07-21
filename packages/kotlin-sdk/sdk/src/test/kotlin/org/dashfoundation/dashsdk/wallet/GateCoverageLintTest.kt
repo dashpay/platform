@@ -9,8 +9,9 @@ import org.junit.Test
  * `suspend fun` in the SDK that borrows a raw native handle by parameter
  * name (`signerHandle` / `coreSignerHandle` / `resolverHandle` /
  * `mnemonicResolverHandle` / `sdkHandle`) must open with a gate bracket
- * (`gate.op {` / `teardownGate.op {` / `queryGate.op {` /
- * `sdk.queryGate.op {`) or visibly delegate to another (gated) method.
+ * (`gate.op {` / `gate.opWithCleanupOnCancellation(...) {` /
+ * `teardownGate.op {` / `queryGate.op {` / `sdk.queryGate.op {`) or visibly
+ * delegate to another (gated) method.
  *
  * This exact defect class — a new binding borrowing a handle under plain
  * `withContext(Dispatchers.IO)` — shipped three separate times during
@@ -91,7 +92,10 @@ class GateCoverageLintTest {
         val HANDLE_PARAM = Regex(
             """\b(signerHandle|coreSignerHandle|resolverHandle|mnemonicResolverHandle|sdkHandle)\s*:\s*Long\b""",
         )
-        val GATED_OPENER = Regex("""=\s*(\w+\.)?(gate|teardownGate|queryGate)\.op \{""")
+        val GATED_OPENER = Regex(
+            """=\s*(\w+\.)?(gate|teardownGate|queryGate)\.""" +
+                """(?:op \{|opWithCleanupOnCancellation\()""",
+        )
         val DELEGATION_OPENER = Regex("""=\s*\w+\(""")
 
         /** `funName@FileName.kt` entries that are intentionally ungated. */

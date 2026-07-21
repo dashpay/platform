@@ -8,10 +8,13 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Pins the three properties the manager teardown depends on (each was, or
@@ -96,5 +99,32 @@ class TeardownGateTest {
         // The cancelled op's finally-decrement must have run (it is
         // NonCancellable) — otherwise this hangs and times out.
         withTimeout(5_000) { gate.closeAndAwait() }
+    }
+
+    @Test
+    fun cancelledOpScrubsACompletedSecretResultBeforeDiscardingIt() = runBlocking {
+        val gate = TeardownGate()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val secret = ByteArray(32) { 0x5A }
+
+        val op = launch(Dispatchers.Default) {
+            gate.opWithCleanupOnCancellation(
+                cleanup = { discarded: ByteArray -> discarded.fill(0) },
+            ) {
+                entered.countDown()
+                // A blocking native call does not observe coroutine cancellation.
+                // Return the secret only after the caller has cancelled, forcing
+                // withContext's prompt-cancellation result-discard path.
+                release.await()
+                secret
+            }
+        }
+        assertTrue("blocking operation never started", entered.await(5, TimeUnit.SECONDS))
+        op.cancel()
+        release.countDown()
+        withTimeout(5_000) { op.join() }
+
+        assertArrayEquals(ByteArray(32), secret)
     }
 }
