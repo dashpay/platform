@@ -49,8 +49,13 @@ internal object FundingNative {
      * `platform_wallet_manager_shielded_fund_from_asset_lock`).
      * [recipientRaw43] is the 43-byte raw Orchard address; [surplusOutput]
      * is the optional 21-byte remainder platform address (null = none);
-     * [coreSignerHandle] is the manager's `MnemonicResolverHandle`. Blocks
-     * for the ~30s Halo 2 proof; the note arrives on the next shielded sync.
+     * [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     * [allowCrossDomain] is the cross-privacy-domain co-spend consent
+     * (dashpay/platform#4184): `false` (default) confines the L1 asset-lock
+     * funding to the transparent BIP44/BIP32 domain; pass `true` only after the
+     * user consents to also drawing CoinJoin / DashPay-receiving funds. A refusal
+     * throws with [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockCrossDomainConsentRequired].
+     * Blocks for the ~30s Halo 2 proof; the note arrives on the next shielded sync.
      */
     external fun shieldedFundFromAssetLock(
         managerHandle: Long,
@@ -60,6 +65,7 @@ internal object FundingNative {
         recipientRaw43: ByteArray,
         surplusOutput: ByteArray?,
         coreSignerHandle: Long,
+        allowCrossDomain: Boolean,
     )
 
     /**

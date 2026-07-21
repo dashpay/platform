@@ -76,10 +76,18 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
-    // Raw values 28-30 are NOT claimed here: 28 and 30 are reserved (vacated by
-    // the deferred-payment reservation-token trio on dashpay/platform#4185 /
-    // #4256 when it moved to 34-36) and 29 belongs to the asset-lock funding
-    // shortfall on dashpay/platform#4184.
+    // Raw value 28 is NOT claimed here: it is held by the deferred-payment
+    // reservation-token trio on dashpay/platform#4185.
+    /// Asset-lock coin selection came up short over the permitted funding set
+    /// (dashpay/platform#4073 request 3). The structured available/required
+    /// duffs travel in the message string. Distinct from
+    /// `errorCoreInsufficientFunds` (22), which is the atomic Core-send selector.
+    case errorAssetLockInsufficientFunds = 29
+    /// The default single-privacy-domain funding rule refused a cross-domain
+    /// co-spend (dashpay/platform#4184): the transparent domain alone is short
+    /// but the wallet-wide union would cover it. Obtain explicit user consent
+    /// and re-issue the funding request with cross-domain consent.
+    case errorAssetLockCrossDomainConsentRequired = 30
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — restored from the
     /// structured signer completion code (dashpay/platform#4060 finding 7).
@@ -146,6 +154,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
             self = .errorShutdownIncomplete
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS:
+            self = .errorAssetLockInsufficientFunds
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CROSS_DOMAIN_CONSENT_REQUIRED:
+            self = .errorAssetLockCrossDomainConsentRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE:
             self = .errorSigningKeyUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:

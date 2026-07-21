@@ -104,6 +104,10 @@ class DashSdkErrorTest {
             23 to DashSdkError.PlatformWallet.AssetLockNotTracked::class,
             24 to DashSdkError.PlatformWallet.AssetLockAlreadyConsumed::class,
             25 to DashSdkError.PlatformWallet.AssetLockFundingMismatch::class,
+            // dashpay/platform#4073 request 3 + #4184: the asset-lock shortfall and
+            // the cross-domain-consent refusal get dedicated types, not Generic.
+            26 to DashSdkError.PlatformWallet.AssetLockInsufficientFunds::class,
+            27 to DashSdkError.PlatformWallet.AssetLockCrossDomainConsentRequired::class,
         )
         recoveryCodes.forEach { (code, expected) ->
             val mapped = DashSdkError.fromNative(DashSDKException(offset + code, "recovery"))
