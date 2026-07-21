@@ -43,6 +43,22 @@ package org.dashfoundation.dashsdk.security
  * `PlatformWalletManager.repairIdentityKey`, which re-encrypts under the
  * current policy's alias). Mnemonics ([KeystoreManager.MASTER_ALIAS]) are
  * unaffected — this policy governs identity keys only.
+ *
+ * ## Lockless-device degradation (dashpay/platform#4060)
+ *
+ * [AUTH_GATED]'s authentication gate requires a secure lock screen to exist
+ * — Android KeyMint rejects generating the gated key otherwise. The wallet
+ * must still work without a screen lock (product decision), so on a
+ * lockless device the SDK does NOT silently generate a gate-less key under
+ * the auth-gated alias; new identity keys are written under the
+ * [DEVICE_BOUND] alias instead, and the degradation is surfaced honestly
+ * via [KeystoreManager.effectiveKeySecurityPolicy] /
+ * [WalletStorage.effectiveKeySecurityPolicy]. Each blob records the alias
+ * that produced it, so keys written during a lockless period remain
+ * readable after a lock screen is later enrolled (new writes then move to
+ * the gated alias). Hosts that must never degrade can construct
+ * `KeystoreManager(requireAuthGated = true)`, which throws
+ * [KeySecurityPolicyUnavailableException] instead of degrading.
  */
 enum class KeySecurityPolicy {
     /**

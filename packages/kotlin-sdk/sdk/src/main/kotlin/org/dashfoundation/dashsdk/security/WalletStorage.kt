@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.security
 
+import android.app.KeyguardManager
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -44,7 +45,8 @@ private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore
  */
 class WalletStorage(
     context: Context,
-    private val keystore: KeystoreManager = KeystoreManager(),
+    private val keystore: KeystoreManager =
+        KeystoreManager(deviceSecureProbe = deviceSecureProbe(context)),
 ) {
     /**
      * Construct with an explicit identity-key [keySecurityPolicy] —
@@ -53,12 +55,23 @@ class WalletStorage(
      * [KeySecurityPolicy.AUTH_GATED] default.
      */
     constructor(context: Context, keySecurityPolicy: KeySecurityPolicy) :
-        this(context, KeystoreManager(keySecurityPolicy))
+        this(context, KeystoreManager(keySecurityPolicy, deviceSecureProbe(context)))
 
     private val store = context.secretsStore
 
     /** The identity-key security policy this storage was constructed with. */
     val keySecurityPolicy: KeySecurityPolicy get() = keystore.keySecurityPolicy
+
+    /**
+     * The [KeySecurityPolicy] identity keys are EFFECTIVELY protected with
+     * right now — [KeySecurityPolicy.DEVICE_BOUND] while a requested
+     * [KeySecurityPolicy.AUTH_GATED] key cannot be (or was not) provisioned
+     * with its authentication gate, i.e. on a device with no secure lock
+     * screen. See [KeystoreManager.effectiveKeySecurityPolicy]
+     * (dashpay/platform#4060).
+     */
+    fun effectiveKeySecurityPolicy(): KeySecurityPolicy =
+        keystore.effectiveKeySecurityPolicy()
 
     /**
      * Serializes every `privkey.*` alias mutation. A single DataStore
@@ -379,22 +392,48 @@ class WalletStorage(
         return true
     }
 
-    /** Encrypt-and-write [privateKey] for [pubkeyHex]; lock must already be held. */
+    /**
+     * Encrypt-and-write [privateKey] for [pubkeyHex]; lock must already be
+     * held. The encrypt resolves the EFFECTIVE write alias (the policy alias,
+     * or its lockless DEVICE_BOUND degradation — see
+     * [KeystoreManager.encryptForIdentityKeys]); blob, write-time key
+     * fingerprint, and the producing-alias tag land in ONE atomic edit so
+     * reads can route the decrypt to the exact alias that wrote the blob.
+     */
     private suspend fun storePrivateKeyEntryLocked(
         pubkeyHex: String,
         privateKey: ByteArray,
         ownerWalletId: ByteArray?,
     ) {
-        val encrypted = keystore.encryptForIdentityKeysAlias(keystore.keysAlias, privateKey)
+        val encrypted = keystore.encryptForIdentityKeys(privateKey)
         val blob = encrypted.blob
         val fingerprint = encrypted.keyFingerprint
+        val alias = encrypted.alias
         store.edit {
             it[privateKeyKey(pubkeyHex)] = encode(blob)
             it[privateKeyFingerprintKey(pubkeyHex)] = fingerprint
+            it[privateKeyAliasKey(pubkeyHex)] = alias
             if (ownerWalletId != null) {
                 val indexKey = ownerIndexKey(ownerWalletId.toHex())
                 it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
             }
+        }
+    }
+
+    /**
+     * The RSA identity-keys alias recorded as having written [pubkeyHex]'s
+     * blob (`privkeyalias.<pubkeyHex>`), falling back to the current policy
+     * alias when the tag is missing (blobs written before the tag existed —
+     * backward compatible) or names something that is not a policy alias
+     * (never trusted: only the two RSA policy aliases are ever accepted as
+     * decrypt targets).
+     */
+    private fun recordedKeysAliasFor(pubkeyHex: String, prefs: Preferences): String {
+        val tagged = prefs[privateKeyAliasKey(pubkeyHex)]
+        return if (tagged != null && KeystoreManager.isIdentityKeysAlias(tagged)) {
+            tagged
+        } else {
+            keystore.keysAlias
         }
     }
 
@@ -417,7 +456,8 @@ class WalletStorage(
     ): Boolean {
         if (!keystore.isKeysBlobDecryptable(decode(encoded))) return false
         val fingerprint = prefs[privateKeyFingerprintKey(pubkeyHex)] ?: return false
-        val current = keystore.keysAliasFingerprintOrNull(keystore.keysAlias) ?: return false
+        val alias = recordedKeysAliasFor(pubkeyHex, prefs)
+        val current = keystore.keysAliasFingerprintOrNull(alias) ?: return false
         return fingerprint == current
     }
 
@@ -448,7 +488,10 @@ class WalletStorage(
         val prefs = store.data.first()
         val encoded = prefs[privateKeyKey(pubkeyHex)] ?: return null
         if (!isCurrentKeysBlob(pubkeyHex, encoded, prefs)) return null
-        return keystore.decrypt(decode(encoded), alias = keystore.keysAlias)
+        // Decrypt under the RECORDED alias: a blob written during a lockless
+        // AUTH_GATED→DEVICE_BOUND degradation stays readable after a lock
+        // screen is enrolled and new writes move to the gated alias.
+        return keystore.decrypt(decode(encoded), alias = recordedKeysAliasFor(pubkeyHex, prefs))
     }
 
     suspend fun deletePrivateKey(pubkeyHex: String) {
@@ -456,6 +499,7 @@ class WalletStorage(
             store.edit {
                 it.remove(privateKeyKey(pubkeyHex))
                 it.remove(privateKeyFingerprintKey(pubkeyHex))
+                it.remove(privateKeyAliasKey(pubkeyHex))
             }
         }
     }
@@ -478,6 +522,7 @@ class WalletStorage(
             for (pubkeyHex in normalized) {
                 prefs.remove(privateKeyKey(pubkeyHex))
                 prefs.remove(privateKeyFingerprintKey(pubkeyHex))
+                prefs.remove(privateKeyAliasKey(pubkeyHex))
             }
             // Keep every owner index accurate in the same atomic commit:
             // a deleted alias must leave all wallets' index sets, or a
@@ -535,6 +580,9 @@ class WalletStorage(
     private fun privateKeyFingerprintKey(pubkeyHex: String) =
         stringPreferencesKey(PRIVKEY_FINGERPRINT_PREFIX + pubkeyHex.lowercase())
 
+    private fun privateKeyAliasKey(pubkeyHex: String) =
+        stringPreferencesKey(PRIVKEY_ALIAS_PREFIX + pubkeyHex.lowercase())
+
     private fun ownerIndexKey(walletIdHex: String) =
         stringSetPreferencesKey(PRIVKEY_OWNERS_PREFIX + walletIdHex.lowercase())
 
@@ -551,9 +599,36 @@ class WalletStorage(
         /** Per-alias [KeystoreManager.keysAliasFingerprint] snapshot, taken at write time. */
         const val PRIVKEY_FINGERPRINT_PREFIX = "privkeyfp."
 
+        /**
+         * Per-blob record of the RSA identity-keys alias that produced the
+         * ciphertext (`privkeyalias.<pubkeyHex>`), written atomically with the
+         * blob. Routes reads to the exact producing alias after a lockless
+         * AUTH_GATED→DEVICE_BOUND write degradation (dashpay/platform#4060);
+         * a missing tag means "the current policy alias" (blobs written
+         * before the tag existed).
+         */
+        const val PRIVKEY_ALIAS_PREFIX = "privkeyalias."
+
         /** Durable wallet → alias-hex-set owner index (string-set entries). */
         const val PRIVKEY_OWNERS_PREFIX = "privkeyowners."
 
         fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+        /**
+         * A prompt-free probe of whether the device currently has a secure lock
+         * screen (`KeyguardManager.isDeviceSecure`), captured against the
+         * application context so it re-reads live state at each key generation
+         * (a lock can be added/removed at any time). Handed to [KeystoreManager]
+         * so it can degrade the lock-screen-bound key-gen parameters when no
+         * lock is configured — the wallet must work without a screen lock
+         * (dashpay/platform#4060).
+         */
+        fun deviceSecureProbe(context: Context): () -> Boolean {
+            val appContext = context.applicationContext
+            return {
+                (appContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager)
+                    ?.isDeviceSecure == true
+            }
+        }
     }
 }

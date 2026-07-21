@@ -103,4 +103,66 @@ class KeySecurityPolicyTest {
         val storage = WalletStorage(ApplicationProvider.getApplicationContext())
         assertEquals(KeySecurityPolicy.AUTH_GATED, storage.keySecurityPolicy)
     }
+
+    // ── Effective-policy resolution (lockless degradation, #4060) ───────
+    // AndroidKeyStore has no Robolectric provider, so the alias-presence
+    // check is stubbed through the open seam; the RESOLUTION logic —
+    // requested policy × lock-screen probe × provisioned gated alias — is
+    // what these pin.
+
+    private fun manager(
+        policy: KeySecurityPolicy,
+        deviceSecure: Boolean,
+        authGatedAliasProvisioned: Boolean,
+    ): KeystoreManager = object : KeystoreManager(policy, { deviceSecure }) {
+        override fun hasIdentityKeysKey(alias: String): Boolean =
+            authGatedAliasProvisioned && alias == KEYS_ALIAS_AUTH_GATED
+    }
+
+    @Test
+    fun effectivePolicyDegradesToDeviceBoundOnALocklessDevice() {
+        // Requested AUTH_GATED, no lock screen, gated alias never provisioned:
+        // the manager must not lie — new keys go under the DEVICE_BOUND alias
+        // and the effective policy says so.
+        val m = manager(
+            KeySecurityPolicy.AUTH_GATED,
+            deviceSecure = false,
+            authGatedAliasProvisioned = false,
+        )
+        assertEquals(KeySecurityPolicy.DEVICE_BOUND, m.effectiveKeySecurityPolicy())
+    }
+
+    @Test
+    fun effectivePolicyIsAuthGatedOnceTheGatedAliasExists() {
+        // A provisioned gated alias carries its gate in the key itself —
+        // later lock-screen churn cannot remove it, so the effective policy
+        // stays AUTH_GATED even while the probe reports lockless.
+        val m = manager(
+            KeySecurityPolicy.AUTH_GATED,
+            deviceSecure = false,
+            authGatedAliasProvisioned = true,
+        )
+        assertEquals(KeySecurityPolicy.AUTH_GATED, m.effectiveKeySecurityPolicy())
+    }
+
+    @Test
+    fun effectivePolicyMatchesRequestedOnASecureDevice() {
+        val m = manager(
+            KeySecurityPolicy.AUTH_GATED,
+            deviceSecure = true,
+            authGatedAliasProvisioned = false,
+        )
+        assertEquals(KeySecurityPolicy.AUTH_GATED, m.effectiveKeySecurityPolicy())
+    }
+
+    @Test
+    fun deviceBoundPolicyIsNeverReportedDegraded() {
+        // DEVICE_BOUND is the requested floor — there is nothing to degrade.
+        val m = manager(
+            KeySecurityPolicy.DEVICE_BOUND,
+            deviceSecure = false,
+            authGatedAliasProvisioned = false,
+        )
+        assertEquals(KeySecurityPolicy.DEVICE_BOUND, m.effectiveKeySecurityPolicy())
+    }
 }

@@ -182,6 +182,24 @@ class PlatformWalletManager(
         require(network == sdk.network) {
             "PlatformWalletManager is network-locked: network=$network but sdk.network=${sdk.network}"
         }
+        // One-time honesty log for the lockless-device identity-key policy
+        // degradation (dashpay/platform#4060): if the requested AUTH_GATED
+        // policy is effectively DEVICE_BOUND (no secure lock screen), say so
+        // once, loudly, at manager construction. Best-effort — the probe
+        // touches KeyguardManager/AndroidKeyStore, which may be absent in
+        // JVM test fixtures.
+        runCatching {
+            val requested = walletStorage.keySecurityPolicy
+            val effective = walletStorage.effectiveKeySecurityPolicy()
+            if (effective != requested) {
+                android.util.Log.w(
+                    "PlatformWalletManager",
+                    "identity-key security policy degraded: requested=$requested " +
+                        "effective=$effective (no secure lock screen; new keys use the " +
+                        "device-bound alias — dashpay/platform#4060)",
+                )
+            }
+        }
     }
 
     // ── Reactive plumbing ─────────────────────────────────────────────

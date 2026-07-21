@@ -5,12 +5,14 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
+import android.util.Log
 import java.security.GeneralSecurityException
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.PrivateKey
+import java.security.ProviderException
 import java.security.PublicKey
 import java.security.spec.MGF1ParameterSpec
 import javax.crypto.Cipher
@@ -74,6 +76,27 @@ import javax.crypto.spec.PSource
 // matrix without a device. Production always uses this concrete implementation.
 open class KeystoreManager(
     val keySecurityPolicy: KeySecurityPolicy = KeySecurityPolicy.AUTH_GATED,
+    /**
+     * Whether the device currently has a secure lock screen configured
+     * (`KeyguardManager.isDeviceSecure`). Supplied by [WalletStorage] (which
+     * holds a `Context`); defaults to `true` for the no-`Context` /
+     * unit-test construction path. Consulted at key GENERATION only, to decide
+     * whether the lock-screen-bound Keystore parameters are enforceable — see
+     * [effectiveKeySecurityPolicy] and [generateWithLockScreenDegradation]
+     * (dashpay/platform#4060, no-secure-lock-screen key-gen failure).
+     */
+    private val deviceSecureProbe: () -> Boolean = { true },
+    /**
+     * Strict mode for hosts that must never degrade below
+     * [KeySecurityPolicy.AUTH_GATED]: when true and the auth-gated alias
+     * cannot be provisioned with its authentication gate (no secure lock
+     * screen), identity-key writes throw
+     * [KeySecurityPolicyUnavailableException] instead of selecting the
+     * [KEYS_ALIAS_DEVICE_BOUND] fallback. Default false — the wallet must
+     * work without a screen lock (product decision, dashpay/platform#4060),
+     * with the degradation surfaced via [effectiveKeySecurityPolicy].
+     */
+    private val requireAuthGated: Boolean = false,
 ) {
 
     /**
@@ -88,6 +111,102 @@ open class KeystoreManager(
             KeySecurityPolicy.AUTH_GATED -> KEYS_ALIAS_AUTH_GATED
             KeySecurityPolicy.DEVICE_BOUND -> KEYS_ALIAS_DEVICE_BOUND
         }
+
+    /**
+     * The [KeySecurityPolicy] identity keys are EFFECTIVELY protected with
+     * right now — [KeySecurityPolicy.DEVICE_BOUND] while a requested
+     * [KeySecurityPolicy.AUTH_GATED] cannot be (or was not) provisioned with
+     * its authentication gate, i.e. on a device with no secure lock screen
+     * (dashpay/platform#4060). The manager never silently generates a
+     * gate-less key under the auth-gated alias: on a lockless device new
+     * identity keys are written under [KEYS_ALIAS_DEVICE_BOUND] instead (see
+     * [encryptForIdentityKeys]), and this surface reports that honestly so
+     * hosts can display / log the actual protection level.
+     *
+     * Non-mutating: presence checks and the lock-screen probe only — never
+     * generates a key. Once the auth-gated alias has been provisioned (with
+     * its gate — the only way it is ever created), the effective policy is
+     * [KeySecurityPolicy.AUTH_GATED] regardless of later lock-screen churn:
+     * the gate is baked into the existing key.
+     */
+    open fun effectiveKeySecurityPolicy(): KeySecurityPolicy = when {
+        keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND -> KeySecurityPolicy.DEVICE_BOUND
+        hasIdentityKeysKey(KEYS_ALIAS_AUTH_GATED) -> KeySecurityPolicy.AUTH_GATED
+        !deviceSecureProbe() -> KeySecurityPolicy.DEVICE_BOUND
+        else -> KeySecurityPolicy.AUTH_GATED
+    }
+
+    /**
+     * Encrypt identity-key material under the EFFECTIVE write alias — the
+     * policy alias ([keysAlias]) normally, or [KEYS_ALIAS_DEVICE_BOUND] when
+     * the requested [KeySecurityPolicy.AUTH_GATED] key cannot be provisioned
+     * with its authentication gate (no secure lock screen — the KeyMint
+     * `generate_key` rejection, dashpay/platform#4060). The returned
+     * [KeysAliasEncryptedBlob.alias] records which alias actually produced
+     * the blob, so [WalletStorage] persists it and later reads decrypt under
+     * the recorded alias — an AUTH_GATED-degraded blob stays readable after
+     * a lock screen is enrolled and new writes move to the gated alias.
+     *
+     * With `requireAuthGated = true` the degradation throws
+     * [KeySecurityPolicyUnavailableException] instead.
+     */
+    internal open fun encryptForIdentityKeys(plaintext: ByteArray): KeysAliasEncryptedBlob =
+        encryptForIdentityKeysAlias(resolveIdentityKeysWriteAlias(), plaintext)
+
+    /**
+     * Resolve the alias a new identity-key write must target, provisioning
+     * the auth-gated keypair when needed. The auth-gated alias is NEVER
+     * generated without its gate — on a lockless device (probe, or the
+     * KeyMint safety-net rejection during generation) the write is
+     * redirected to [KEYS_ALIAS_DEVICE_BOUND], whose gate-less parameters
+     * are inherent rather than a silent downgrade. The redirect is decided
+     * at most once per call and only when the requested spec actually
+     * carried the lock-bound parameters (the auth-gated alias always does).
+     */
+    private fun resolveIdentityKeysWriteAlias(): String {
+        if (keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND) return KEYS_ALIAS_DEVICE_BOUND
+        if (hasIdentityKeysKey(KEYS_ALIAS_AUTH_GATED)) return KEYS_ALIAS_AUTH_GATED
+        if (!deviceSecureProbe()) {
+            return degradeAuthGatedWrite(
+                "no secure lock screen (KeyguardManager.isDeviceSecure=false)",
+                cause = null,
+            )
+        }
+        return try {
+            // Provision the gated keypair up front so a mid-generation
+            // KeyMint rejection (lock removed after the probe, or an OEM
+            // quirk) is observed HERE and redirected, instead of surfacing
+            // as an unclassified write failure.
+            ensureKeysKeyPair(KEYS_ALIAS_AUTH_GATED)
+            KEYS_ALIAS_AUTH_GATED
+        } catch (e: ProviderException) {
+            if (!isNoSecureLockScreenKeyGenFailure(e)) throw e
+            degradeAuthGatedWrite(
+                "generation was rejected for requiring a secure lock screen even though " +
+                    "the device reported secure (lock removed mid-flight, or an OEM quirk)",
+                cause = e,
+            )
+        }
+    }
+
+    private fun degradeAuthGatedWrite(reason: String, cause: Exception?): String {
+        if (requireAuthGated) {
+            throw KeySecurityPolicyUnavailableException(
+                "KeySecurityPolicy.AUTH_GATED is unavailable: $reason " +
+                    "(requireAuthGated=true refuses the DEVICE_BOUND fallback)",
+                cause,
+            )
+        }
+        Log.w(
+            TAG,
+            "AUTH_GATED identity-key alias cannot carry its authentication gate — $reason; " +
+                "writing under '$KEYS_ALIAS_DEVICE_BOUND' instead so the wallet works without " +
+                "a screen lock (dashpay/platform#4060). effectiveKeySecurityPolicy() reports " +
+                "the degradation.",
+            cause,
+        )
+        return KEYS_ALIAS_DEVICE_BOUND
+    }
 
     /**
      * Encrypt [plaintext] under [alias]; returns (iv, ciphertext).
@@ -413,7 +532,7 @@ open class KeystoreManager(
     }
 
     private fun generateAesKey(alias: String): SecretKey {
-        fun spec(strongBox: Boolean): KeyGenParameterSpec {
+        fun spec(strongBox: Boolean, lockBound: Boolean): KeyGenParameterSpec {
             val builder = KeyGenParameterSpec.Builder(
                 alias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
@@ -421,7 +540,12 @@ open class KeystoreManager(
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
-                .setUnlockedDeviceRequired(true)
+            // `setUnlockedDeviceRequired(true)` binds the key to a screen-lock
+            // (an "unlocked device" is only meaningful when a secure lock screen
+            // exists); KeyMint rejects generate_key for it on a lockless device.
+            // Dropped when no secure lock screen is configured (see
+            // [generateWithLockScreenDegradation]).
+            if (lockBound) builder.setUnlockedDeviceRequired(true)
             if (strongBox) builder.setIsStrongBoxBacked(true)
             return builder.build()
         }
@@ -430,12 +554,74 @@ open class KeystoreManager(
             KeyProperties.KEY_ALGORITHM_AES,
             ANDROID_KEYSTORE,
         )
+        return generateWithLockScreenDegradation(alias) { strongBox, lockBound ->
+            generator.init(spec(strongBox, lockBound))
+            generator.generateKey()
+        }
+    }
+
+    /**
+     * Run [generate] — which builds+initializes the spec for `(strongBox,
+     * lockBound)` and produces the key — degrading gracefully when the device
+     * has no secure lock screen. Used for [MASTER_ALIAS] (AES) and
+     * [KEYS_ALIAS_DEVICE_BOUND] (RSA) only: dropping `setUnlockedDeviceRequired`
+     * on a lockless device is inherent (there is no lock to bind to) and does
+     * not change the key's authentication semantics. The AUTH_GATED alias is
+     * NEVER routed through here — dropping its `setUserAuthenticationRequired`
+     * gate would silently lie about the policy, so lockless AUTH_GATED writes
+     * are redirected to the DEVICE_BOUND alias instead (see
+     * [resolveIdentityKeysWriteAlias], dashpay/platform#4060).
+     *
+     * THE APP MUST WORK WITHOUT A SCREEN LOCK (product decision,
+     * dashpay/platform#4060). Strategy:
+     *   1. If [deviceSecureProbe] reports NO secure lock screen, build the key
+     *      WITHOUT the lock-bound params up front and log the downgrade.
+     *   2. Otherwise attempt with the lock-bound params; if generation still
+     *      fails with the no-secure-lock-screen signature (a race — the lock was
+     *      removed after the probe — or an OEM that rejects it despite a probe
+     *      saying secure), retry ONCE without them and log the downgrade. The
+     *      retry fires only when the failed spec actually carried lock-bound
+     *      params.
+     * Each attempt keeps the existing StrongBox→TEE fallback.
+     *
+     * Existing keys are never regenerated (callers check presence first), so this
+     * only affects FIRST-USE creation on a lockless device; a key already
+     * provisioned with the lock-bound params is untouched.
+     */
+    private fun <T> generateWithLockScreenDegradation(
+        alias: String,
+        generate: (strongBox: Boolean, lockBound: Boolean) -> T,
+    ): T {
+        fun withStrongBoxFallback(lockBound: Boolean): T =
+            try {
+                generate(true, lockBound)
+            } catch (_: StrongBoxUnavailableException) {
+                generate(false, lockBound)
+            }
+
+        val lockBoundSupported = lockBoundKeyParamsSupported(deviceSecureProbe())
+        if (!lockBoundSupported) {
+            Log.w(
+                TAG,
+                "No secure lock screen (KeyguardManager.isDeviceSecure=false); generating " +
+                    "'$alias' WITHOUT lock-screen binding so the wallet works without a " +
+                    "screen lock (dashpay/platform#4060).",
+            )
+            return withStrongBoxFallback(lockBound = false)
+        }
         return try {
-            generator.init(spec(strongBox = true))
-            generator.generateKey()
-        } catch (_: StrongBoxUnavailableException) {
-            generator.init(spec(strongBox = false))
-            generator.generateKey()
+            withStrongBoxFallback(lockBound = true)
+        } catch (e: ProviderException) {
+            if (!isNoSecureLockScreenKeyGenFailure(e)) throw e
+            Log.w(
+                TAG,
+                "Key generation for '$alias' was rejected for requiring a secure lock " +
+                    "screen even though the device reported secure (lock removed mid-flight, " +
+                    "or an OEM quirk); retrying WITHOUT lock-screen binding " +
+                    "(dashpay/platform#4060).",
+                e,
+            )
+            withStrongBoxFallback(lockBound = false)
         }
     }
 
@@ -517,7 +703,7 @@ open class KeystoreManager(
         // existing installs' identity-key blobs is never deleted here.
         runCatching { keyStore.deleteEntry(alias) }
 
-        fun spec(strongBox: Boolean): KeyGenParameterSpec {
+        fun spec(strongBox: Boolean, lockBound: Boolean): KeyGenParameterSpec {
             val builder = KeyGenParameterSpec.Builder(
                 alias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
@@ -529,7 +715,11 @@ open class KeystoreManager(
                 // [oaepSpec] — both encrypt and decrypt pin MGF1 = SHA-1.
                 .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA1)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_OAEP)
-                .setUnlockedDeviceRequired(true)
+            // Both lock-screen-bound parameters — `setUnlockedDeviceRequired`
+            // and (auth-gated only) `setUserAuthenticationRequired` — require a
+            // secure lock screen to exist; KeyMint rejects generate_key for
+            // them otherwise.
+            if (lockBound) builder.setUnlockedDeviceRequired(true)
             if (authGated) {
                 builder.setUserAuthenticationRequired(true)
                 // setUserAuthenticationParameters is API 30+ (Android 11); on
@@ -557,12 +747,27 @@ open class KeystoreManager(
             KeyProperties.KEY_ALGORITHM_RSA,
             ANDROID_KEYSTORE,
         )
-        try {
-            generator.initialize(spec(strongBox = true))
-            generator.generateKeyPair()
-        } catch (_: StrongBoxUnavailableException) {
-            generator.initialize(spec(strongBox = false))
-            generator.generateKeyPair()
+        if (authGated) {
+            // The authentication gate is NEVER dropped: a lockless device must
+            // not receive a silently degraded key under the auth-gated alias.
+            // A KeyMint no-secure-lock-screen rejection propagates to
+            // [resolveIdentityKeysWriteAlias], which redirects the write to
+            // the DEVICE_BOUND alias instead (dashpay/platform#4060).
+            try {
+                generator.initialize(spec(strongBox = true, lockBound = true))
+                generator.generateKeyPair()
+            } catch (_: StrongBoxUnavailableException) {
+                generator.initialize(spec(strongBox = false, lockBound = true))
+                generator.generateKeyPair()
+            }
+        } else {
+            // DEVICE_BOUND: no auth gate exists to lie about — dropping the
+            // (inherently lock-dependent) setUnlockedDeviceRequired bit on a
+            // lockless device is the documented degradation.
+            generateWithLockScreenDegradation(alias) { strongBox, lockBound ->
+                generator.initialize(spec(strongBox, lockBound))
+                generator.generateKeyPair()
+            }
         }
     }
 
@@ -631,6 +836,101 @@ open class KeystoreManager(
          */
         fun isIdentityKeysAlias(alias: String): Boolean =
             alias == KEYS_ALIAS_AUTH_GATED || alias == KEYS_ALIAS_DEVICE_BOUND
+
+        /**
+         * Whether the lock-screen-bound key-generation parameters
+         * (`setUnlockedDeviceRequired`, and for the auth-gated alias
+         * `setUserAuthenticationRequired`) may be applied. They require a secure
+         * lock screen — KeyMint rejects `generate_key` for them otherwise — so
+         * they are only usable when [deviceSecure]
+         * (`KeyguardManager.isDeviceSecure`) is true. Pure so the
+         * parameter-selection logic is unit-testable without an Android runtime
+         * (dashpay/platform#4060).
+         */
+        internal fun lockBoundKeyParamsSupported(deviceSecure: Boolean): Boolean = deviceSecure
+
+        /**
+         * Whether [t]'s cause chain is the KeyMint "generate_key needs a secure
+         * lock screen" rejection: an `android.security` `KeyStoreException`
+         * that either NAMES the failure (message references `generate_key` or a
+         * lock-screen requirement) or sits in the cause chain OF a
+         * key-generation `ProviderException` (message "Keystore key generation
+         * failed") AND carries the observed KeyMint rejection's numeric code
+         * (internal Keystore code 4 / KeyMint 10309, observed on-device after
+         * the lock screen was removed).
+         *
+         * Deliberately narrow: a bare nested `KeyStoreException` with an
+         * unrelated message (e.g. a signature failure that happens to be
+         * wrapped by a key-gen ProviderException) does NOT classify — the
+         * consideration window opens only at the matched ProviderException and
+         * still requires a message or numeric-code match, so unrelated
+         * Keystore failures never trigger the degraded retry. Used only as the
+         * retry/redirect decision for [generateWithLockScreenDegradation] and
+         * [resolveIdentityKeysWriteAlias]. Pure and JVM-testable — matches by
+         * exception type name, message, and (reflectively read)
+         * `getNumericErrorCode()`, so it needs no Android classes
+         * (dashpay/platform#4060).
+         */
+        internal fun isNoSecureLockScreenKeyGenFailure(t: Throwable): Boolean {
+            var cur: Throwable? = t
+            while (cur != null) {
+                val name = cur::class.java.name
+                val msg = cur.message.orEmpty()
+                if (name.endsWith("KeyStoreException") && keyStoreMessageNamesLockScreen(msg)) {
+                    return true
+                }
+                if (name.endsWith("ProviderException") &&
+                    msg.contains("key generation failed", ignoreCase = true)
+                ) {
+                    // Inspect ONLY this ProviderException's cause chain: a
+                    // KeyStoreException here is a generation-time Keystore
+                    // error, but still must carry the lock-screen signature
+                    // (message or numeric code) to classify.
+                    var nested: Throwable? = cur.cause
+                    while (nested != null) {
+                        if (nested::class.java.name.endsWith("KeyStoreException")) {
+                            val nestedMsg = nested.message.orEmpty()
+                            if (keyStoreMessageNamesLockScreen(nestedMsg) ||
+                                keyStoreNumericCodeIsLockScreenRejection(nested)
+                            ) {
+                                return true
+                            }
+                        }
+                        nested = nested.cause
+                    }
+                    return false
+                }
+                cur = cur.cause
+            }
+            return false
+        }
+
+        private fun keyStoreMessageNamesLockScreen(msg: String): Boolean =
+            msg.contains("generate_key", ignoreCase = true) ||
+                msg.contains("lock screen", ignoreCase = true)
+
+        /**
+         * Reflectively read `getNumericErrorCode()` (API 33+ on the real
+         * `android.security.KeyStoreException`; any test double may declare
+         * the same method) and compare against the observed KeyMint
+         * no-secure-lock-screen rejection codes. Reflection keeps the helper
+         * pure-JVM; absence of the method simply means "no numeric evidence".
+         */
+        private fun keyStoreNumericCodeIsLockScreenRejection(t: Throwable): Boolean = try {
+            val code = t.javaClass.getMethod("getNumericErrorCode").invoke(t) as? Int
+            code != null && code in LOCK_SCREEN_KEYGEN_REJECTION_CODES
+        } catch (_: Exception) {
+            false
+        }
+
+        /**
+         * Numeric codes of the KeyMint "generate_key needs a secure lock
+         * screen" rejection: internal Keystore code 4 and KeyMint 10309
+         * (both observed on-device, dashpay/platform#4060).
+         */
+        private val LOCK_SCREEN_KEYGEN_REJECTION_CODES = setOf(4, 10309)
+
+        private const val TAG = "KeystoreManager"
 
         // Guards first-use creation/migration of the process-global
         // identity-keys entries across concurrent callers (and across the
