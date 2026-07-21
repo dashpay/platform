@@ -345,10 +345,13 @@ jobs:
     # At most one of the two Rust jobs runs (none for e.g. Swift-only PRs);
     # skipped jobs report result 'skipped', not 'failure', so this only
     # blocks on a Rust job that actually ran and failed.
+    # Untrusted fork PRs must not reach the self-hosted Swift runner — same
+    # trusted-fork policy as the callee guard in swift-sdk-build.yml.
     if: >-
       ${{ always()
       && (github.event_name != 'pull_request'
-          || github.event.pull_request.head.repo.full_name == github.repository)
+          || github.event.pull_request.head.repo.full_name == github.repository
+          || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
       && needs.changes.outputs.swift-sdk-changed == 'true'
       && needs.changes.result != 'failure'
       && needs.rs-workspace-tests.result != 'failure'
