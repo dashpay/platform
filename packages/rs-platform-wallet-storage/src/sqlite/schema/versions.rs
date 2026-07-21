@@ -80,11 +80,12 @@ impl Domain {
 /// Domains carrying data in `cs`. The destructure is exhaustive (no `..`), so
 /// adding a field to `PlatformWalletChangeSet` is a compile error here until
 /// it gains a `Domain` variant and an arm below — the R8 forgotten-domain
-/// guard. `shielded` (feature-gated; storage versions no shielded state here)
-/// is bound and deliberately ignored; `provider_key_account_registrations` is
-/// not yet mapped to a `Domain`, but a non-empty one is surfaced via a
-/// `tracing::warn` rather than dropped in silence (deferred — see its binding
-/// below).
+/// guard. One field is bound and deliberately ignored rather than mapped:
+/// `shielded` (feature-gated; storage versions no shielded state here).
+///
+/// `account_registrations` and `provider_key_account_registrations` share
+/// [`Domain::AccountRegistrations`]: both land in `account_registrations`
+/// rows, so one seq covers the whole account manifest.
 pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     let PlatformWalletChangeSet {
         core,
@@ -108,19 +109,6 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     } = cs;
     #[cfg(feature = "shielded")]
     let _ = shielded;
-    // `provider_key_account_registrations` (BLS operator-key / EdDSA
-    // platform-node-key accounts) carries a live data path — both key types are
-    // default-on — but is not yet mapped to a `Domain`. Deferred, not dropped:
-    // nothing ever persisted it (this persister is new, so there is no
-    // regression), and no consumer reads it back yet. Tracked in
-    // https://github.com/dashpay/platform/issues/4113.
-    if !provider_key_account_registrations.is_empty() {
-        tracing::warn!(
-            count = provider_key_account_registrations.len(),
-            "provider-key account registrations in this changeset are not persisted yet \
-             (deferred, tracked in dashpay/platform#4113) and will not survive a reload"
-        );
-    }
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real
     // change; the `Merge::is_empty` bound is the shared emptiness contract.
@@ -162,7 +150,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     if wallet_metadata.is_some() {
         out.push(Domain::WalletMetadata);
     }
-    if !account_registrations.is_empty() {
+    if !account_registrations.is_empty() || !provider_key_account_registrations.is_empty() {
         out.push(Domain::AccountRegistrations);
     }
     if !account_address_pools.is_empty() {

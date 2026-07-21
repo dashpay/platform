@@ -51,24 +51,32 @@ impl OptionalExists for rusqlite::Result<()> {
     }
 }
 
-/// The unified migration lifts the supported schema version to (at least) 3;
-/// V004 (DIP-13 invitations) has since raised the crate's actual max to 4.
+/// The unified migration is embedded and supported. The exact ceiling moves
+/// with the newest migration and is pinned in that migration's own test file.
 #[test]
-fn max_supported_version_is_at_least_three() {
+fn v003_is_embedded_and_supported() {
     assert!(
-        mig::max_supported_version() >= 3,
-        "V003 must raise max_supported_version to at least 3, got {}",
-        mig::max_supported_version()
+        mig::embedded_migrations().iter().any(|(v, _)| *v == 3),
+        "V003 must be in the embedded migration set"
     );
+    assert!(mig::max_supported_version() >= 3, "V003 must be applicable");
 }
 
-/// TC-B-030 — a fresh store migrates clean through the unified V003 target
-/// (and beyond, to V004's DIP-13 invitations table) and every V003 table
-/// exists.
+/// TC-B-030 — a fresh store applies V003 and migrates clean through to the
+/// newest embedded migration (e.g. V004's DIP-13 invitations table), and
+/// every V003 table exists.
 #[test]
 fn tc_b_030_fresh_store_migrates_to_version_three() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
+    let applied: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM refinery_schema_history WHERE version = 3",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(applied, 1, "a fresh store must apply V003");
     let max: i64 = conn
         .query_row(
             "SELECT MAX(version) FROM refinery_schema_history",
@@ -76,7 +84,11 @@ fn tc_b_030_fresh_store_migrates_to_version_three() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(max, 4, "fresh store must land at schema version 4");
+    assert_eq!(
+        max,
+        mig::max_supported_version(),
+        "fresh store must land at the newest embedded schema version"
+    );
     for table in [
         "core_address_pool",
         "meta_data_versions",

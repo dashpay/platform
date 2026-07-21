@@ -162,6 +162,14 @@ fn samples() -> Vec<WalletStorageError> {
             source: dashcore::address::Error::UnrecognizedScript,
         },
         WalletStorageError::AccountRegistrationEntryMismatch,
+        WalletStorageError::ProviderKeyAccountEntryMismatch,
+        WalletStorageError::ProviderKeyAccountConflict {
+            account_type: "provider_platform",
+        },
+        WalletStorageError::TypedPoolKeyConflict {
+            account_type: "provider_platform",
+            address_index: 0,
+        },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
@@ -278,6 +286,13 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::AccountRegistrationEntryMismatch => {
                 (false, "account_registration_entry_mismatch")
             }
+            WalletStorageError::ProviderKeyAccountEntryMismatch => {
+                (false, "provider_key_account_entry_mismatch")
+            }
+            WalletStorageError::ProviderKeyAccountConflict { .. } => {
+                (false, "provider_key_account_conflict")
+            }
+            WalletStorageError::TypedPoolKeyConflict { .. } => (false, "typed_pool_key_conflict"),
             WalletStorageError::MissingAccount { .. } => {
                 (false, "missing_account_registration_entry")
             }
