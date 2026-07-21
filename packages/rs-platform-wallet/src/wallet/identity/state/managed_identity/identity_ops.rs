@@ -249,12 +249,9 @@ impl ManagedIdentity {
     /// Replace the contested-name list wholesale.
     ///
     /// Use this when a sync round pulls the canonical set of
-    /// contested names from Platform — the merge-time dedup-append
-    /// policy on `IdentityChangeSet` would otherwise accumulate
-    /// stale labels (contests that resolved but still appear in
-    /// the local cache). Emitting a full snapshot here + running
-    /// the sync path on identity reapply bakes the authoritative
-    /// set into state.
+    /// contested names from Platform. `IdentityChangeSet::merge` and replay
+    /// both treat this field as a complete last-write-wins snapshot so
+    /// resolved contests are removed, including by an empty snapshot.
     pub fn set_contested_dpns_names(&mut self, labels: Vec<String>, persister: &WalletPersister) {
         self.contested_dpns_names = labels;
         let cs = self.snapshot_changeset();

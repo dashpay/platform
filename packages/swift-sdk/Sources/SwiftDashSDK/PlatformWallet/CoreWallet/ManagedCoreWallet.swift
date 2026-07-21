@@ -105,6 +105,7 @@ public class ManagedCoreWallet {
     /// `buildSigned` took, letting an immediate retry reselect those inputs.
     ///
     /// Returns the transaction ID as a hex string.
+    @available(*, deprecated, message: "Use the atomic FinalizedCoreTransaction send path")
     public func broadcastTransaction(_ tx: CoreTransaction) throws -> String {
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
         try withUnsafePointer(to: tx.ffi) { txPtr in
@@ -121,5 +122,31 @@ public class ManagedCoreWallet {
         defer { core_wallet_free_address(ptr) } // same free for C strings
 
         return String(cString: ptr)
+    }
+
+    /// Consume and broadcast an atomically finalized transaction.
+    public func broadcastTransaction(_ tx: FinalizedCoreTransaction) throws -> String {
+        let transactionHandle = try tx.takeForBroadcast()
+        var txidPtr: UnsafeMutablePointer<CChar>? = nil
+        try core_wallet_broadcast_signed_transaction_v2(
+            handle,
+            transactionHandle,
+            &txidPtr
+        ).check()
+        guard let ptr = txidPtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_broadcast_signed_transaction_v2 returned NULL"
+            )
+        }
+        defer { core_wallet_free_address(ptr) }
+        return String(cString: ptr)
+    }
+
+    /// Consume without sending and release its reservation immediately.
+    public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
+        try core_wallet_abandon_signed_transaction_v2(
+            handle,
+            tx.takeForAbandon()
+        ).check()
     }
 }

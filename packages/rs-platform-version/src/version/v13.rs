@@ -18,10 +18,10 @@ use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::D
 use crate::version::drive_abci_versions::drive_abci_method_versions::v8::DRIVE_ABCI_METHOD_VERSIONS_V8;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v8::DRIVE_ABCI_VALIDATION_VERSIONS_V8;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v9::DRIVE_ABCI_VALIDATION_VERSIONS_V9;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v7::DRIVE_VERSION_V7;
+use crate::version::drive_versions::v8::DRIVE_VERSION_V8;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
@@ -32,18 +32,24 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 
 /// Introduced as the activation gate for recording shielded-spend transparent
 /// credits (Unshield / shield surplus / identity-create fallback) into the
-/// recent-address-balance-changes tree. Functionally identical to v12 at
-/// introduction — the same component version structs, no behavior change. The
-/// consensus change that consumes this gate (a bumped drive-abci methods
-/// struct) lands in a follow-up; keeping v13 == v12 here lets mixed-version
-/// validators agree until that change activates.
+/// recent-address-balance-changes tree. The consensus change that consumes
+/// that gate (a bumped drive-abci methods struct) lands in a follow-up.
+///
+/// v13 also enables DPNS username transfers and sales:
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V9` bumps data trigger bindings to v1,
+///   dropping the reject bindings for Transfer, Purchase and UpdatePrice on
+///   DPNS `domain` documents.
+/// * `DRIVE_VERSION_V8` bumps the document transfer/purchase high-level
+///   operation conversions to v1, which rewrite a transferred or purchased
+///   domain's `records.identity` to the new owner so the username resolves
+///   to the buyer.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
-    drive: DRIVE_VERSION_V7,
+    drive: DRIVE_VERSION_V8, // changed: DPNS domain records.identity rewrite on transfer/purchase
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V8,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V8,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V9, // changed: allow DPNS domain transfer/purchase/update-price
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

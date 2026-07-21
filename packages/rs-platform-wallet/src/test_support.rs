@@ -5,6 +5,7 @@
 //! and `wallet::asset_lock::build`.
 
 use std::collections::BTreeMap;
+#[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,15 +13,19 @@ use async_trait::async_trait;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
-use dashcore::{Network, Transaction, Txid};
+#[cfg(test)]
+use dashcore::Txid;
+use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
-use key_wallet::signer::{Signer, SignerMethod};
+use key_wallet::bip32::ExtendedPubKey;
+use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
+#[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
@@ -29,10 +34,17 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// Broadcaster whose first call fails with a definitive pre-send rejection
 /// and which succeeds afterwards, to model a transient broadcast error
 /// followed by a user retry.
+///
+/// Only consumed by this crate's own `#[cfg(test)]` unit tests (never via
+/// the `test-utils` feature alone), so it's gated on `cfg(test)` directly —
+/// otherwise `--all-features` builds without `--tests` compile this with no
+/// consumer and clippy flags it as dead code.
+#[cfg(test)]
 pub(crate) struct RejectFirstBroadcaster {
     failed_once: AtomicBool,
 }
 
+#[cfg(test)]
 impl RejectFirstBroadcaster {
     pub(crate) fn new() -> Self {
         Self {
@@ -41,6 +53,7 @@ impl RejectFirstBroadcaster {
     }
 }
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for RejectFirstBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -56,8 +69,10 @@ impl TransactionBroadcaster for RejectFirstBroadcaster {
 
 /// Broadcaster that always succeeds, for flows that must run past the
 /// broadcast step (e.g. the broadcast half of the funded asset-lock flow).
+#[cfg(test)]
 pub(crate) struct AlwaysOkBroadcaster;
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for AlwaysOkBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -66,8 +81,10 @@ impl TransactionBroadcaster for AlwaysOkBroadcaster {
 }
 
 /// Broadcaster that always fails with a definitive pre-send rejection.
+#[cfg(test)]
 pub(crate) struct AlwaysRejectedBroadcaster;
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for AlwaysRejectedBroadcaster {
     async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -80,8 +97,10 @@ impl TransactionBroadcaster for AlwaysRejectedBroadcaster {
 /// Broadcaster that always fails with an *ambiguous* result — the network
 /// may already have accepted the transaction — so its inputs must NOT be
 /// released on failure.
+#[cfg(test)]
 pub(crate) struct AlwaysMaybeSentBroadcaster;
 
+#[cfg(test)]
 #[async_trait]
 impl TransactionBroadcaster for AlwaysMaybeSentBroadcaster {
     async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
@@ -94,7 +113,7 @@ impl TransactionBroadcaster for AlwaysMaybeSentBroadcaster {
 /// Soft signer that derives keys straight from a test wallet's seed. Stands
 /// in for the FFI keychain-backed signer used in production.
 #[derive(Clone)]
-pub(crate) struct WalletSigner {
+pub struct WalletSigner {
     wallet: Wallet,
 }
 
@@ -130,6 +149,22 @@ impl Signer for WalletSigner {
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
         Ok(PublicKey::from_secret_key(&secp, &key))
+    }
+}
+
+#[async_trait]
+impl ExtendedPubKeySigner for WalletSigner {
+    async fn extended_public_key(
+        &self,
+        path: &DerivationPath,
+    ) -> Result<ExtendedPubKey, Self::Error> {
+        // The test wallet is full-signable, so it can derive an extended
+        // public key at a hardened path from its root xpriv — mirroring
+        // what `MnemonicResolverCoreSigner` does via the Keychain mnemonic
+        // in production.
+        self.wallet
+            .derive_extended_public_key(path)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -220,4 +255,25 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, balance, signer)
+}
+
+/// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
+/// runtime is intentionally not started; abandon/free only need wallet state.
+pub async fn funded_spv_core_wallet(
+    account_type: StandardAccountType,
+) -> (
+    crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
+    WalletSigner,
+) {
+    let (manager, wallet_id, balance, signer) = funded_wallet_manager(account_type).await;
+    let spv = Arc::new(crate::spv::SpvRuntime::new(
+        Arc::clone(&manager),
+        Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+    ));
+    let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(spv));
+    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+    (
+        crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, balance),
+        signer,
+    )
 }

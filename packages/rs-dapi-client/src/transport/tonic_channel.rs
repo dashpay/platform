@@ -28,8 +28,13 @@ pub fn create_channel(
         .with_webpki_roots()
         .assume_http2(true);
 
-    // Try to add native roots - this may fail on iOS, which is fine since we have webpki roots
-    #[cfg(not(any(target_os = "ios", target_os = "tvos", target_os = "watchos")))]
+    // Try to add native roots - this may fail on iOS/Android, which is fine since we have webpki roots
+    #[cfg(not(any(
+        target_os = "ios",
+        target_os = "tvos",
+        target_os = "watchos",
+        target_os = "android"
+    )))]
     {
         tls_config = tls_config.with_native_roots();
     }

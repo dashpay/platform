@@ -10,22 +10,24 @@ use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
-    /// The recorded [`AssetLockFundingType`] of a tracked lock, or `None`
-    /// when the outpoint is not tracked. Used by the funding resolver to
-    /// refuse consuming `IdentityInvitation` (bearer voucher) locks through
-    /// generic resume/top-up paths.
+    /// Snapshot the funding role, bound index and status used to authorize an
+    /// existing-lock resume. Taking all three under one read lock avoids a
+    /// role/status time-of-check/time-of-use split in the resolver.
     ///
     /// [`AssetLockFundingType`]:
     /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
-    pub(crate) async fn tracked_funding_type(
+    pub(crate) async fn tracked_resume_metadata(
         &self,
         out_point: &OutPoint,
-    ) -> Option<key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType>
-    {
+    ) -> Option<(
+        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
+        u32,
+        AssetLockStatus,
+    )> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| lock.funding_type)
+            .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
     }
 
     /// Track a new asset lock in memory, returning a changeset describing
@@ -111,9 +113,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   ALREADY been queued for persistence before return; the value
     ///   is surfaced for tests / future internal callers that want to
     ///   inspect the diff.
-    /// - `Ok(empty changeset)` — the lock was not tracked (already
-    ///   consumed by a prior call, or never present). Idempotent;
-    ///   nothing queued.
+    /// - `Ok(empty changeset)` — the lock is already marked consumed,
+    ///   or was never tracked. Idempotent; nothing queued.
     /// - `Err(WalletNotFound)` — the wallet id is unknown to the
     ///   manager. Always a programmer error / stale handle.
     ///
@@ -141,15 +142,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .get_wallet_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let mut cs = AssetLockChangeSet::default();
-            if let Some(mut entry) = info.tracked_asset_locks.remove(out_point) {
-                entry.status = AssetLockStatus::Consumed;
-                entry.proof = None; // one-shot — never relevant after consumption
-                cs.asset_locks.insert(*out_point, (&entry).into());
-            } else {
-                tracing::warn!(
-                    outpoint = %out_point,
-                    "consume_asset_lock: outpoint not tracked — already consumed or never present"
-                );
+            match info.tracked_asset_locks.get_mut(out_point) {
+                Some(entry) if entry.status != AssetLockStatus::Consumed => {
+                    entry.status = AssetLockStatus::Consumed;
+                    entry.proof = None; // one-shot — never relevant after consumption
+                    cs.asset_locks.insert(*out_point, (&*entry).into());
+                }
+                Some(_) => {
+                    tracing::debug!(
+                        outpoint = %out_point,
+                        "consume_asset_lock: outpoint is already consumed"
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        outpoint = %out_point,
+                        "consume_asset_lock: outpoint was never tracked"
+                    );
+                }
             }
             cs
         };

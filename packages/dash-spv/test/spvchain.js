@@ -56,6 +56,13 @@ describe('SPVChain', () => {
         .to.throw('Chain not initialized, either call initialize() or set pendingStartBlockHeight');
     });
 
+    it('should reject an unauthenticated remote bootstrap header', () => {
+      spvChain.pendingStartBlockHeight = 10400;
+
+      expect(() => spvChain.addHeaders(testnet.slice(400), 10400))
+        .to.throw('SPV chain cannot initialize from an unauthenticated remote checkpoint');
+    });
+
     it('should assemble headers chain if headers arriving out of order', async () => {
       expect(true).to.equal(true);
 

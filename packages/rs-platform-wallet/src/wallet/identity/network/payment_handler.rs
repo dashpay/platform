@@ -24,6 +24,7 @@
 //! to a core transaction row.
 
 use std::sync::Arc;
+use std::{future::Future, sync::Mutex};
 
 use dash_spv::EventHandler;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -44,6 +45,70 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 pub(crate) struct DashPayPaymentHandler {
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     persister: Arc<dyn PlatformWalletPersistence>,
+    tasks: PaymentTaskTracker,
+}
+
+struct PaymentTaskState {
+    accepting: bool,
+    handles: Vec<tokio::task::JoinHandle<()>>,
+}
+
+/// Admission gate and join barrier for asynchronous payment hooks.
+///
+/// Event dispatch is synchronous, so the gate uses a short standard mutex:
+/// checking admission and recording the resulting task happen atomically with
+/// respect to shutdown. No mutex guard is held while a task is awaited.
+struct PaymentTaskTracker {
+    state: Mutex<PaymentTaskState>,
+}
+
+impl PaymentTaskTracker {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(PaymentTaskState {
+                accepting: true,
+                handles: Vec::new(),
+            }),
+        }
+    }
+
+    fn spawn<F>(&self, future: F) -> bool
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        let mut state = self.state.lock().expect("payment task mutex poisoned");
+        if !state.accepting {
+            return false;
+        }
+
+        // Completed tasks cannot fire another callback and need not be kept
+        // until manager destruction. This bounds the tracker during long syncs.
+        state.handles.retain(|handle| !handle.is_finished());
+        state.handles.push(tokio::spawn(future));
+        true
+    }
+
+    async fn quiesce(&self) {
+        let handles = {
+            let mut state = self.state.lock().expect("payment task mutex poisoned");
+            state.accepting = false;
+            std::mem::take(&mut state.handles)
+        };
+
+        for handle in handles {
+            if let Err(error) = handle.await {
+                tracing::warn!(?error, "DashPay payment task join error");
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn is_accepting(&self) -> bool {
+        self.state
+            .lock()
+            .expect("payment task mutex poisoned")
+            .accepting
+    }
 }
 
 impl DashPayPaymentHandler {
@@ -54,7 +119,14 @@ impl DashPayPaymentHandler {
         Self {
             wallet_manager,
             persister,
+            tasks: PaymentTaskTracker::new(),
         }
+    }
+
+    /// Stop admitting callback-bearing work and join every task admitted
+    /// before the gate closed. Idempotent.
+    pub(crate) async fn quiesce(&self) {
+        self.tasks.quiesce().await;
     }
 }
 
@@ -69,7 +141,7 @@ impl EventHandler for DashPayPaymentHandler {
         let wallet_manager = Arc::clone(&self.wallet_manager);
         let persister = Arc::clone(&self.persister);
         let event = event.clone();
-        tokio::spawn(async move {
+        self.tasks.spawn(async move {
             let wallet_id = event.wallet_id();
             let wallet_persister =
                 crate::wallet::persister::WalletPersister::new(wallet_id, persister);
@@ -185,6 +257,7 @@ mod tests {
     use key_wallet::managed_account::transaction_record::TransactionDirection;
     use key_wallet::transaction_checking::{TransactionContext, TransactionType};
     use key_wallet::WalletCoreBalance;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     /// A `TransactionRecord` whose txid is uniquely seeded by `seed` (via a
     /// distinct input outpoint). Context is irrelevant to the routing under
@@ -322,5 +395,48 @@ mod tests {
         // updated records, so there is nothing to route and nothing to spawn.
         assert!(dashpay_payment_records(&event).is_empty());
         assert!(!drives_payment_hooks(&event));
+    }
+
+    #[tokio::test]
+    async fn payment_task_quiesce_closes_admission_and_joins_in_flight_work() {
+        let tasks = Arc::new(PaymentTaskTracker::new());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_by_task = Arc::clone(&completed);
+
+        assert!(tasks.spawn(async move {
+            let _ = started_tx.send(());
+            let _ = release_rx.await;
+            completed_by_task.store(true, Ordering::SeqCst);
+        }));
+        started_rx.await.expect("tracked task should start");
+
+        let tasks_for_shutdown = Arc::clone(&tasks);
+        let shutdown = tokio::spawn(async move {
+            tasks_for_shutdown.quiesce().await;
+        });
+
+        while tasks.is_accepting() {
+            tokio::task::yield_now().await;
+        }
+        assert!(!shutdown.is_finished(), "quiesce must await admitted work");
+
+        let ran_after_close = Arc::new(AtomicBool::new(false));
+        let ran_after_close_in_task = Arc::clone(&ran_after_close);
+        assert!(!tasks.spawn(async move {
+            ran_after_close_in_task.store(true, Ordering::SeqCst);
+        }));
+
+        release_tx
+            .send(())
+            .expect("tracked task should still exist");
+        shutdown.await.expect("quiesce task should join");
+        assert!(completed.load(Ordering::SeqCst));
+        assert!(!ran_after_close.load(Ordering::SeqCst));
+
+        // Repeated shutdown is safe and keeps admission closed.
+        tasks.quiesce().await;
+        assert!(!tasks.spawn(async {}));
     }
 }

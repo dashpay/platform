@@ -54,7 +54,7 @@ use dash_sdk::platform::documents::transitions::{
     DocumentTransferTransitionBuilder,
 };
 use dash_sdk::platform::transition::put_document::PutDocument;
-use dash_sdk::platform::{DocumentQuery, Fetch};
+use dash_sdk::platform::{ContextProvider, DocumentQuery, Fetch};
 
 use crate::error::PlatformWalletError;
 
@@ -130,6 +130,19 @@ fn allowed_signing_security_levels(requirement: SecurityLevel) -> Vec<SecurityLe
 }
 
 impl IdentityWallet {
+    /// Register a freshly-fetched data contract into the SDK's shared
+    /// context provider so the returned-proof verification after a document
+    /// state-transition broadcast can resolve it. Without this, the mobile
+    /// `TrustedHttpContextProvider` — which never fetches contracts itself —
+    /// returns `None` for the contract and proof verification fails with
+    /// "unknown contract ... in document verification", even though the
+    /// write landed on-chain.
+    fn register_contract_for_proof_verification(&self, contract: &DataContract) {
+        if let Some(provider) = self.sdk.context_provider() {
+            provider.register_data_contract(Arc::new(contract.clone()));
+        }
+    }
+
     /// Create a new revision-1 document on `contract_id`'s
     /// `document_type_name` owned by `owner_identity_id`, and broadcast
     /// it to Platform.
@@ -191,6 +204,9 @@ impl IdentityWallet {
                     "Data contract {contract_id} not found on Platform; cannot create document"
                 ))
             })?;
+
+        // Make the contract resolvable for the post-broadcast proof check.
+        self.register_contract_for_proof_verification(&data_contract);
 
         // Owned `DocumentType` — `put_to_platform_and_wait_for_response`
         // takes the document type by value.
@@ -334,6 +350,9 @@ impl IdentityWallet {
                     "Document type {document_type_name:?} not found on contract {contract_id}: {e}"
                 ))
             })?;
+        // Make the contract resolvable for the post-broadcast proof check
+        // (covers replace/delete/transfer/set-price/purchase).
+        self.register_contract_for_proof_verification(&data_contract);
         Ok(Arc::new(data_contract))
     }
 

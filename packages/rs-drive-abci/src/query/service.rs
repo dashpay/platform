@@ -991,6 +991,7 @@ fn query_error_into_status(error: QueryError) -> Status {
         QueryError::NotFound(message) => Status::not_found(message),
         QueryError::InvalidArgument(message) => Status::invalid_argument(message),
         QueryError::Query(error) => Status::invalid_argument(error.to_string()),
+        QueryError::ResourceExhausted(message) => Status::resource_exhausted(message),
         _ => {
             tracing::error!("unexpected query error: {:?}", error);
 
@@ -1061,6 +1062,20 @@ mod tests {
 
         let status = validate_path_elements_request(&request)
             .expect_err("expected excessive path depth to be rejected");
+        assert_eq!(status.code(), Code::ResourceExhausted);
+    }
+}
+
+#[cfg(test)]
+mod query_error_status_tests {
+    use super::*;
+
+    #[test]
+    fn resource_exhausted_query_error_maps_to_retryable_grpc_status() {
+        let status = query_error_into_status(QueryError::ResourceExhausted(
+            "server-side retained state is over capacity".to_string(),
+        ));
+
         assert_eq!(status.code(), Code::ResourceExhausted);
     }
 }
