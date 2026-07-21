@@ -91,11 +91,14 @@ fun WalletKeyHealthSheet(
                         securityLevel = row.securityLevel,
                         pubkeyHex = pubkeyHex,
                         publicKeyData = row.publicKeyData,
-                        // Decryptability, not mere existence — a blob from the
-                        // pre-RSA scheme is present but unusable and needs the
-                        // same repair as a missing one.
+                        // Real recoverability, not mere presence — the
+                        // PROBING check actually opens the blob with the
+                        // candidate keys, so a stranded/sibling-alias blob is
+                        // reported unhealthy and gets the same repair as a
+                        // missing one (the cheap isPrivateKeyDecryptable is
+                        // reserved for the signer's capability callback).
                         hasPrivateKey = runCatching {
-                            container.walletStorage.isPrivateKeyDecryptable(pubkeyHex)
+                            container.walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
                         }.getOrDefault(false),
                     )
                 }
