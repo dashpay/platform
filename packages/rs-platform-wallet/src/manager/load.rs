@@ -149,9 +149,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
             inserted_in_manager.push(wallet_id);
 
-            let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
-                &self.spv_manager,
-            )));
+            let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(
+                Arc::clone(&self.spv_manager),
+                Arc::clone(&self.sdk),
+            ));
             let platform_wallet = PlatformWallet::new(
                 Arc::clone(&self.sdk),
                 wallet_id,

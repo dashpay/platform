@@ -1932,7 +1932,7 @@ mod auto_select_tests {
         let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
         let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
         let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
-        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv, Arc::clone(&sdk)));
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),

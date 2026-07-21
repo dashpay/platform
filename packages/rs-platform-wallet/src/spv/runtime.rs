@@ -36,28 +36,14 @@ pub struct SpvRuntime {
     task: Mutex<Option<JoinHandle<()>>>,
     peer_tracker: Arc<PeerTracker>,
 }
-/// Classify a dash-spv broadcast failure per the
-/// [`TransactionBroadcaster::broadcast`] contract.
+/// Classify a best-effort SPV relay/local-apply failure.
 ///
-/// dash-spv's `broadcast_transaction` raises
-/// `NetworkError::NotConnected` from its zero-connected-peers check
-/// *before* handing the transaction to any peer, so it is the only
-/// error safe to classify [`BroadcastError::Rejected`]; anything else
-/// may follow a partial peer send and must stay
-/// [`BroadcastError::MaybeSent`]. Pinned by the tests below so a
-/// dash-spv semantic change is caught at this crate's boundary.
-///
-/// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
+/// This method runs only after DAPI/Core has accepted the transaction, so an
+/// SPV failure can never mean the transaction itself was rejected. The caller
+/// logs this diagnostic and preserves the authoritative accepted result.
 fn classify_spv_broadcast_error(error: dash_spv::error::SpvError) -> BroadcastError {
-    use dash_spv::error::{NetworkError, SpvError};
-
-    match error {
-        SpvError::Network(NetworkError::NotConnected) => BroadcastError::Rejected {
-            reason: "SPV broadcast failed: no connected peers".to_string(),
-        },
-        other => BroadcastError::MaybeSent {
-            reason: format!("SPV broadcast failed: {}", other),
-        },
+    BroadcastError::MaybeSent {
+        reason: format!("SPV relay/local apply failed: {error}"),
     }
 }
 
@@ -126,22 +112,15 @@ impl SpvRuntime {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
-    /// Broadcast a transaction to all connected SPV peers.
-    ///
-    /// Failures are classified per the [`TransactionBroadcaster::broadcast`]
-    /// contract: an unstarted client and dash-spv's zero-peer
-    /// `NetworkError::NotConnected` both fire before any bytes leave the
-    /// process, so they are [`BroadcastError::Rejected`]; any later failure
-    /// may follow a partial peer send and is [`BroadcastError::MaybeSent`].
-    ///
-    /// [`TransactionBroadcaster::broadcast`]: crate::broadcaster::TransactionBroadcaster::broadcast
+    /// Relay a Core-accepted transaction to connected SPV peers and inject it
+    /// into dash-spv's local message pipeline.
     pub(crate) async fn broadcast_transaction(
         &self,
         tx: &Transaction,
     ) -> Result<(), BroadcastError> {
         let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(BroadcastError::Rejected {
-            reason: "SPV client not started".to_string(),
+        let client = client_guard.as_ref().ok_or(BroadcastError::MaybeSent {
+            reason: "SPV relay/local apply skipped: client not started".to_string(),
         })?;
 
         client
@@ -449,11 +428,10 @@ mod tests {
         }
     }
 
-    /// An unstarted SPV client fails before any bytes leave the process,
-    /// so the failure must classify `Rejected` (safe to release the
-    /// transaction's input reservation).
+    /// SPV runs only after Core acceptance, so an unavailable local relay can
+    /// never downgrade the transaction to rejected.
     #[tokio::test]
-    async fn broadcast_on_unstarted_client_is_rejected() {
+    async fn broadcast_on_unstarted_client_is_relay_failure() {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
             Network::Testnet,
         )));
@@ -461,23 +439,19 @@ mod tests {
 
         let result = runtime.broadcast_transaction(&dummy_tx()).await;
         assert!(
-            matches!(result, Err(BroadcastError::Rejected { .. })),
-            "unstarted client must classify Rejected, got {result:?}"
+            matches!(result, Err(BroadcastError::MaybeSent { .. })),
+            "unstarted client must stay a relay diagnostic, got {result:?}"
         );
     }
 
-    /// dash-spv raises `NetworkError::NotConnected` from its
-    /// zero-connected-peers check before handing the transaction to any
-    /// peer, so it is the one client error safe to classify `Rejected`.
-    /// If dash-spv ever starts raising `NotConnected` after a partial
-    /// send, this pin must be revisited — releasing on a post-send
-    /// failure reopens the double-spend-on-retry window.
+    /// Even a zero-peer relay failure happens after authoritative Core
+    /// acceptance and therefore remains a best-effort relay diagnostic.
     #[test]
-    fn not_connected_classifies_rejected() {
+    fn not_connected_classifies_relay_failure() {
         let result = classify_spv_broadcast_error(SpvError::Network(NetworkError::NotConnected));
         assert!(
-            matches!(result, BroadcastError::Rejected { .. }),
-            "NotConnected must classify Rejected, got {result:?}"
+            matches!(result, BroadcastError::MaybeSent { .. }),
+            "NotConnected must not downgrade Core acceptance, got {result:?}"
         );
     }
 

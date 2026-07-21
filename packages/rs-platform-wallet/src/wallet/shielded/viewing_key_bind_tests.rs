@@ -123,13 +123,13 @@ where
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
     ));
     PlatformWallet::new(
-        sdk,
+        Arc::clone(&sdk),
         wallet_id,
         wallet_manager,
         balance,
         Arc::new(tokio::sync::Notify::new()),
         persister as Arc<dyn PlatformWalletPersistence>,
-        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv, sdk)),
     )
 }
 
