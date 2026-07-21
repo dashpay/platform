@@ -143,32 +143,46 @@ jobs:
           emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
           working-directory: packages/kotlin-sdk
           script: |
-            # Enroll a device-wide secure lock screen (PIN) — Android
-            # Keystore refuses to generate an auth-required key
-            # (KeyGenParameterSpec.setUserAuthenticationRequired(true),
-            # used for the identity-key KEYS_ALIAS RSA pair) without one
-            # enrolled, even though nothing here ever prompts for it
-            # (private-key ENCRYPT is never auth-gated; only DECRYPT is).
+            # Wait for a full boot before touching the lock screen. On a slow
+            # CI boot the script can start while sys.boot_completed is still 0,
+            # so the unlock below races the boot and leaves the device locked.
+            adb wait-for-device
+            until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; do sleep 2; done
+
+            # Enroll a device-wide secure lock screen (PIN) — Android Keystore
+            # refuses to generate an auth-required key
+            # (KeyGenParameterSpec.setUserAuthenticationRequired(true), used for
+            # the identity-key KEYS_ALIAS RSA pair) without one enrolled, even
+            # though nothing here ever prompts for it (private-key ENCRYPT is
+            # never auth-gated; only DECRYPT is).
             adb shell locksettings set-pin 1234
-            # Enrolling that credential puts the device in a "locked"
-            # security state until first unlock, which breaks every OTHER
-            # Keystore key generated with setUnlockedDeviceRequired(true)
-            # (e.g. the mnemonic MASTER_ALIAS AES key every existing test
-            # already relies on — confirmed the hard way: it started
-            # throwing InvalidKeyException the moment set-pin ran alone).
-            # Explicitly dismiss the keyguard so the device counts as
-            # unlocked for those keys while the PIN stays enrolled for
-            # KEYS_ALIAS generation.
-            adb shell wm dismiss-keyguard
-            # dismiss-keyguard returns before LockSettingsService/Keystore
-            # fully propagate the unlocked state to the keystore daemon —
-            # confirmed via an interactive tmate session on this exact CI
-            # runner: every manual re-run of the full suite passed (23/23),
-            # but every one of those manual runs had multi-second gaps
-            # between commands (SSH round-trips) that this script's
-            # back-to-back execution doesn't have. Give it a moment to
-            # settle before the first Keystore operation.
-            sleep 5
+
+            # Enrolling that credential locks the device, which breaks every
+            # OTHER Keystore key made with setUnlockedDeviceRequired(true) — the
+            # mnemonic MASTER_ALIAS AES key every existing test relies on throws
+            # InvalidKeyException while locked. Drive the device to an unlocked
+            # state and VERIFY it instead of a fixed sleep: dismiss-keyguard
+            # returns before LockSettingsService/Keystore propagate the unlocked
+            # state, and a blind sleep is not enough on a slow runner. Poll
+            # dumpsys trust until deviceLocked=0, retrying wake/dismiss and
+            # entering the PIN as a fallback (a secure keyguard does not always
+            # yield to dismiss-keyguard alone) each round.
+            unlocked=0
+            for _ in $(seq 1 30); do
+              adb shell input keyevent KEYCODE_WAKEUP
+              adb shell wm dismiss-keyguard
+              if adb shell dumpsys trust | grep -q 'deviceLocked=0'; then unlocked=1; break; fi
+              adb shell input swipe 500 1500 500 500
+              adb shell input text 1234
+              adb shell input keyevent KEYCODE_ENTER
+              sleep 2
+            done
+            if [ "$unlocked" != 1 ]; then
+              echo "::error::Emulator never reached deviceLocked=0; Keystore-backed tests would fail spuriously."
+              adb shell dumpsys trust || true
+              exit 1
+            fi
+
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports on failure
