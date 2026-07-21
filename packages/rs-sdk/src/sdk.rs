@@ -276,7 +276,14 @@ impl Sdk {
     fn freshness_criteria(&self, method_name: &str) -> (Option<u64>, Option<u64>) {
         match method_name {
             "get_addresses_trunk_state" | "get_addresses_branch_state" => (
-                None,
+                // Address synchronization checkpoints can lag the latest
+                // Platform height. Prefer their signed time when available,
+                // but retain the independently trusted height floor for the
+                // explicitly supported height-only configuration.
+                self.metadata_time_tolerance_ms
+                    .is_none()
+                    .then_some(self.metadata_height_tolerance)
+                    .flatten(),
                 self.metadata_time_tolerance_ms
                     .map(|configured| configured.min(DEFAULT_METADATA_TIME_TOLERANCE_MS)),
             ),
@@ -1090,8 +1097,10 @@ impl SdkBuilder {
     /// This method will return an error if the Sdk cannot be created.
     pub fn build(self) -> Result<Sdk, Error> {
         let is_network_sdk = self.addresses.is_some();
-        let has_height_anchor =
-            self.trusted_initial_height.is_some() && self.metadata_height_tolerance.is_some();
+        let has_height_anchor = self
+            .trusted_initial_height
+            .zip(self.metadata_height_tolerance)
+            .is_some_and(|(height, tolerance)| height > tolerance);
         if is_network_sdk
             && self.proofs
             && self.metadata_time_tolerance_ms.is_none()
@@ -1363,6 +1372,54 @@ mod test {
 
         assert!(
             matches!(error, crate::Error::Config(message) if message.contains("trusted initial height"))
+        );
+    }
+
+    #[test_matrix(0, 0; "zero height")]
+    #[test_matrix(1, 1; "height equals tolerance")]
+    #[test_matrix(1, 2; "height below tolerance")]
+    fn proof_enabled_network_builder_rejects_ineffective_height_anchor(
+        trusted_height: u64,
+        tolerance: u64,
+    ) {
+        let error = SdkBuilder::new(super::AddressList::new())
+            .with_time_tolerance(None)
+            .with_height_tolerance(Some(tolerance))
+            .with_trusted_initial_height(trusted_height)
+            .build()
+            .expect_err("trusted height must impose a freshness floor");
+
+        assert!(
+            matches!(error, crate::Error::Config(message) if message.contains("trusted initial height"))
+        );
+    }
+
+    #[test]
+    fn height_only_address_checkpoint_uses_trusted_height_floor() {
+        let sdk = SdkBuilder::new_mock()
+            .with_time_tolerance(None)
+            .with_height_tolerance(Some(2))
+            .with_trusted_initial_height(100)
+            .build()
+            .expect("effective trusted height should permit height-only proof mode");
+
+        assert!(matches!(
+            sdk.verify_response_metadata(
+                "get_addresses_trunk_state",
+                &ResponseMetadata {
+                    height: 97,
+                    ..Default::default()
+                },
+            ),
+            Err(crate::Error::StaleNode(
+                super::StaleNodeError::Height { .. }
+            ))
+        ));
+        assert_eq!(
+            sdk.metadata_last_seen_height
+                .load(std::sync::atomic::Ordering::Acquire),
+            100,
+            "a rejected stale checkpoint must not lower the trusted floor"
         );
     }
 
