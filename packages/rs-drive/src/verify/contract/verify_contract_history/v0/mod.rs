@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use crate::error::drive::DriveError;
 use crate::util::common::decode;
-use dpp::serialization::PlatformLimitDeserializableFromVersionedStructure;
+use crate::verify::bounded_decode::decode_proof_data_contract;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
 
@@ -93,10 +93,7 @@ impl Drive {
                     element
                         .into_item_bytes()
                         .map_err(Error::from)
-                        .and_then(|bytes| {
-                            DataContract::versioned_limit_deserialize(&bytes, platform_version)
-                                .map_err(Error::from)
-                        })
+                        .and_then(|bytes| decode_proof_data_contract(&bytes, platform_version))
                 })
                 .transpose()?;
 

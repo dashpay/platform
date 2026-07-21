@@ -4,10 +4,10 @@ use crate::drive::contract::paths::{contract_keeping_history_root_path, contract
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::bounded_decode::decode_proof_data_contract;
 use crate::verify::contract::retry_contract_verification_with_history;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
-use dpp::serialization::PlatformLimitDeserializableFromVersionedStructure;
 use platform_version::version::PlatformVersion;
 
 use crate::error::query::QuerySyntaxError;
@@ -139,8 +139,7 @@ impl Drive {
                         .and_then(|bytes| {
                             // The computed proof root is authenticated by the caller. Keep
                             // proof-derived object construction bounded until that happens.
-                            DataContract::versioned_limit_deserialize(&bytes, platform_version)
-                                .map_err(Error::from)
+                            decode_proof_data_contract(&bytes, platform_version)
                         })
                 })
                 .transpose()?;

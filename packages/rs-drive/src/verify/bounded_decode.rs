@@ -2,6 +2,10 @@ use crate::drive::votes::storage_form::contested_document_resource_reference_sto
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::bincode;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::prelude::DataContract;
+use dpp::ProtocolError;
+use platform_version::version::PlatformVersion;
 
 /// Maximum decoded resource budget for a proof-derived vote reference.
 ///
@@ -9,6 +13,58 @@ use dpp::bincode;
 /// leaves substantial compatibility headroom while preventing compact length
 /// prefixes from requesting attacker-selected allocations.
 const MAX_VOTE_REFERENCE_DECODE_BYTES: usize = 64 * 1024;
+
+/// Maximum in-memory decode budget for a proof-derived data contract.
+///
+/// Contract input bytes are separately capped by the active protocol
+/// version's `max_serialized_size` (currently 65,000 bytes). Bincode charges
+/// this budget for decoded containers rather than wire bytes, so the larger
+/// value preserves ample compatibility headroom while still bounding hostile
+/// compact length prefixes before a proof root is trusted.
+const MAX_CONTRACT_DECODE_MEMORY_BYTES: usize = 16 * 1024 * 1024;
+
+pub(super) fn decode_proof_data_contract(
+    serialized_contract: &[u8],
+    platform_version: &PlatformVersion,
+) -> Result<DataContract, Error> {
+    let max_serialized_size = platform_version.dpp.contract_versions.max_serialized_size as usize;
+    if serialized_contract.len() > max_serialized_size {
+        return Err(ProtocolError::PlatformDeserializationError(format!(
+            "serialized proof data contract exceeds the protocol limit of {max_serialized_size} bytes"
+        ))
+        .into());
+    }
+
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_limit::<MAX_CONTRACT_DECODE_MEMORY_BYTES>();
+    let (serialized_format, consumed) = bincode::borrow_decode_from_slice::<
+        DataContractInSerializationFormat,
+        _,
+    >(serialized_contract, config)
+    .map_err(|e| {
+        ProtocolError::PlatformDeserializationError(format!(
+            "unable to deserialize proof data contract within its bounded budget: {e}"
+        ))
+    })?;
+
+    if consumed != serialized_contract.len() {
+        return Err(ProtocolError::PlatformDeserializationError(
+            "serialized proof data contract contains trailing bytes".to_string(),
+        )
+        .into());
+    }
+
+    DataContract::try_from_platform_versioned(
+        serialized_format,
+        // Contract semantics were validated before insertion into authenticated
+        // Platform state; proof decoding only reconstructs that stored object.
+        false,
+        &mut vec![],
+        platform_version,
+    )
+    .map_err(Error::from)
+}
 
 pub(super) fn decode_vote_reference(
     serialized_reference: &[u8],
@@ -41,6 +97,8 @@ pub(super) fn decode_vote_reference(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::serialization::PlatformSerializableWithPlatformVersion;
+    use dpp::tests::fixtures::get_data_contract_fixture;
 
     #[test]
     fn rejects_oversized_nested_vote_reference_lengths_without_panicking() {
@@ -66,5 +124,26 @@ mod tests {
         bytes.push(0);
 
         assert!(decode_vote_reference(&bytes).is_err());
+    }
+
+    #[test]
+    fn proof_contract_decoder_requires_exact_consumption() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let mut bytes = contract
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialize contract fixture");
+        bytes.push(0);
+
+        assert!(decode_proof_data_contract(&bytes, platform_version).is_err());
+    }
+
+    #[test]
+    fn proof_contract_decoder_enforces_protocol_wire_size() {
+        let platform_version = PlatformVersion::latest();
+        let bytes =
+            vec![0; platform_version.dpp.contract_versions.max_serialized_size as usize + 1];
+
+        assert!(decode_proof_data_contract(&bytes, platform_version).is_err());
     }
 }
