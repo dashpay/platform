@@ -3577,7 +3577,7 @@ mod tests {
                 .address_pools()
                 .iter()
                 .flat_map(|p| p.addresses.values())
-                .filter(|a| a.used)
+                .filter(|a| a.is_used())
                 .map(|a| a.address.clone())
                 .collect();
             assert_eq!(
@@ -3602,7 +3602,7 @@ mod tests {
                     && entry
                         .addresses
                         .iter()
-                        .any(|a| a.used && a.address == used_address)
+                        .any(|a| a.is_used() && a.address == used_address)
             })
         });
         assert!(
