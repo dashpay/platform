@@ -13,15 +13,15 @@ use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::{StateTransition };
 use dpp::state_transition::StateTransitionType;
 use dpp::state_transition::StateTransitionWitnessSigned;
-use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
-use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::version::PlatformVersion;
 use drive::drive::identity::key::fetch::IdentityKeysRequest;
 use drive::drive::Drive;
+use drive::error::proof::ProofError;
+use drive::error::Error as DriveError;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -93,6 +93,33 @@ fn latest_block_info<C>(platform: &PlatformRef<C>) -> BlockInfo {
         .as_ref()
         .map(|info| info.basic_info().clone())
         .unwrap_or_else(BlockInfo::default)
+}
+
+fn assert_transition_execution_requires_receipt(
+    state_transition: &StateTransition,
+    block_info: &BlockInfo,
+    proof: &[u8],
+    operation: &str,
+    platform_version: &PlatformVersion,
+) {
+    let error = Drive::verify_state_transition_was_executed_with_proof(
+        state_transition,
+        block_info,
+        proof,
+        &|_| Ok(None),
+        platform_version,
+    )
+    .expect_err("post-state proof must not imply execution without a bound receipt");
+
+    assert!(
+        matches!(
+            error,
+            DriveError::Proof(ProofError::UnexpectedResultProof(ref message))
+                if message.contains(operation)
+                    && message.contains("transition-bound execution evidence")
+        ),
+        "unexpected {operation} verification error: {error:?}"
+    );
 }
 
 fn assert_address_inputs_state(
@@ -187,60 +214,6 @@ fn assert_optional_action_output_state(
                 action_address
             );
         }
-    }
-}
-
-/// Checks a set of explicit action outputs, ensuring every address has the
-/// expected or higher balance and that proofs reflect the action balances.
-fn assert_action_outputs_state(
-    transition_outputs: &BTreeMap<PlatformAddress, Credits>,
-    action_outputs: &BTreeMap<PlatformAddress, Credits>,
-    proof_address_infos: &BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-    input_count: usize,
-    context: &str,
-) {
-    assert_eq!(
-        action_outputs.len(),
-        transition_outputs.len(),
-        "{context}: action outputs length mismatch"
-    );
-
-    let output_count = transition_outputs.len();
-
-    // Calculate expected max fee based on input/output counts
-    // From rs-platform-version: input_cost=500_000, output_cost=6_000_000
-    let input_cost: Credits = 500_000;
-    let output_cost: Credits = 6_000_000;
-    let expected_max_fee =
-        (input_count as Credits * input_cost) + (output_count as Credits * output_cost);
-    // Add 20% margin plus fixed buffer for additional processing/storage fees
-    let fee_with_margin = expected_max_fee + (expected_max_fee * 20 / 100) + 1_000_000;
-
-    for (address, transition_balance) in transition_outputs {
-        let Some(action_balance) = action_outputs.get(address) else {
-            panic!("{context}: missing action output for address {:?}", address);
-        };
-        let Some(Some((_, proof_balance))) = proof_address_infos.get(address) else {
-            panic!("{context}: missing proof info for address {:?}", address);
-        };
-        assert!(
-            *action_balance == *transition_balance,
-            "{context}: action output balance {} should be >= transition balance {} for address {:?}",
-            action_balance,
-            transition_balance,
-            address
-        );
-
-        // The proof balance may be lower than transition balance if fees were
-        // deducted from this output via ReduceOutput fee strategy
-        assert!(
-            *proof_balance >= transition_balance.saturating_sub(fee_with_margin),
-            "{context}: proof balance {} should be >= transition balance {} minus max fees {} for address {:?}",
-            proof_balance,
-            transition_balance,
-            fee_with_margin,
-            address
-        );
     }
 }
 
@@ -1227,71 +1200,15 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         panic!("expected identity credit transfer state transition");
                     }
                 }
-                StateTransitionAction::AddressFundsTransfer(address_funds_transfer_action) => {
-                    if let StateTransition::AddressFundsTransfer(
-                        address_funds_transfer_transition,
-                    ) = state_transition
-                    {
+                StateTransitionAction::AddressFundsTransfer(_) => {
+                    if let StateTransition::AddressFundsTransfer(_) = state_transition {
                         let block_info = latest_block_info(&platform);
-
-                        let (root_hash, proof_result) =
-                            Drive::verify_state_transition_was_executed_with_proof(
-                                state_transition,
-                                &block_info,
-                                &response_proof.grovedb_proof,
-                                &|_| Ok(None),
-                                platform_version,
-                            )
-                            .expect("expected to verify address funds transfer proof");
-
-                        tracing::debug!(
-                            proof_result = %proof_result,
-                            "address funds transfer proof result"
-                        );
-
-                        assert_eq!(
-                            &root_hash,
-                            expected_root_hash,
-                            "state last block info {:?}",
-                            platform.state.last_committed_block_info()
-                        );
-
-                        let StateTransitionProofResult::VerifiedAddressInfos(
-                            proof_address_infos_map,
-                        ) = proof_result
-                        else {
-                            panic!(
-                                "expected address infos for address funds transfer proof but got {:?}",
-                                proof_result
-                            );
-                        };
-
-                        let expected_addresses: BTreeSet<PlatformAddress> =
-                            address_funds_transfer_transition
-                                .inputs()
-                                .keys()
-                                .chain(address_funds_transfer_transition.outputs().keys())
-                                .copied()
-                                .collect();
-                        let proved_addresses: BTreeSet<PlatformAddress> =
-                            proof_address_infos_map.keys().copied().collect();
-                        assert_eq!(
-                            proved_addresses, expected_addresses,
-                            "proved addresses should match transfer inputs/outputs"
-                        );
-
-                        assert_address_inputs_state(
-                            address_funds_transfer_transition.inputs(),
-                            address_funds_transfer_action.inputs_with_remaining_balance(),
-                            &proof_address_infos_map,
+                        assert_transition_execution_requires_receipt(
+                            state_transition,
+                            &block_info,
+                            &response_proof.grovedb_proof,
                             "address funds transfer",
-                        );
-                        assert_action_outputs_state(
-                            address_funds_transfer_transition.outputs(),
-                            address_funds_transfer_action.outputs(),
-                            &proof_address_infos_map,
-                            address_funds_transfer_transition.inputs().len(),
-                            "address funds transfer outputs",
+                            platform_version,
                         );
                     } else {
                         panic!("expected address funds transfer state transition");
@@ -1305,48 +1222,12 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     ) = state_transition
                     {
                         let block_info = latest_block_info(&platform);
-                        let (root_hash, proof_result) =
-                            Drive::verify_state_transition_was_executed_with_proof(
-                                state_transition,
-                                &block_info,
-                                &response_proof.grovedb_proof,
-                                &|_| Ok(None),
-                                platform_version,
-                            )
-                            .expect("expected to verify address funding from asset lock proof");
-                        tracing::debug!(
-                            proof_result = %proof_result,
-                            "address funding from asset lock proof result"
-                        );
-                        assert_eq!(
-                            &root_hash,
-                            expected_root_hash,
-                            "state last block info {:?}",
-                            platform.state.last_committed_block_info()
-                        );
-
-                        let StateTransitionProofResult::VerifiedAddressInfos(proof_address_infos) =
-                            proof_result
-                        else {
-                            panic!(
-                                "expected address infos for address funding proof but got {:?}",
-                                proof_result
-                            );
-                        };
-
-                        let expected_addresses: BTreeSet<PlatformAddress> =
-                            address_funding_from_asset_lock_transition
-                                .outputs()
-                                .keys()
-                                .copied()
-                                .collect();
-
-                        let proved_addresses: BTreeSet<PlatformAddress> =
-                            proof_address_infos.keys().copied().collect();
-
-                        assert_eq!(
-                            proved_addresses, expected_addresses,
-                            "proved addresses should match funding outputs"
+                        assert_transition_execution_requires_receipt(
+                            state_transition,
+                            &block_info,
+                            &response_proof.grovedb_proof,
+                            "address funding from asset lock",
+                            platform_version,
                         );
 
                         let transition_inputs = address_funding_from_asset_lock_transition.inputs();
@@ -1359,11 +1240,10 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             ?resolved_outputs,
                             "resolved outputs for address funding from asset lock"
                         );
-                        assert_address_inputs_state(
+                        assert_eq!(
                             transition_inputs,
                             address_funding_from_asset_lock_action.inputs_with_remaining_balance(),
-                            &proof_address_infos,
-                            "address funding from asset lock",
+                            "address funding from asset lock inputs should match the action"
                         );
 
                         assert_asset_lock_outputs_state(
@@ -1375,75 +1255,16 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         panic!("expected address funding from asset lock state transition");
                     }
                 }
-                StateTransitionAction::AddressCreditWithdrawal(
-                    address_credit_withdrawal_action,
-                ) => {
-                    if let StateTransition::AddressCreditWithdrawal(
-                        address_credit_withdrawal_transition,
-                    ) = state_transition
-                    {
+                StateTransitionAction::AddressCreditWithdrawal(_) => {
+                    if let StateTransition::AddressCreditWithdrawal(_) = state_transition {
                         let block_info = latest_block_info(&platform);
-                        let (root_hash, proof_result) =
-                            Drive::verify_state_transition_was_executed_with_proof(
-                                state_transition,
-                                &block_info,
-                                &response_proof.grovedb_proof,
-                                &|_| Ok(None),
-                                platform_version,
-                            )
-                            .expect("expected to verify address credit withdrawal proof");
-
-                        assert_eq!(
-                            &root_hash,
-                            expected_root_hash,
-                            "state last block info {:?}",
-                            platform.state.last_committed_block_info()
-                        );
-
-                        let StateTransitionProofResult::VerifiedAddressInfos(proof_address_infos) =
-                            proof_result
-                        else {
-                            panic!(
-                                "expected address infos for address withdrawal proof but got {:?}",
-                                proof_result
-                            );
-                        };
-
-                        let mut expected_addresses: BTreeSet<PlatformAddress> =
-                            address_credit_withdrawal_transition
-                                .inputs()
-                                .keys()
-                                .copied()
-                                .collect();
-                        if let Some((change_address, _)) =
-                            address_credit_withdrawal_transition.output()
-                        {
-                            expected_addresses.insert(*change_address);
-                        }
-
-                        let proved_addresses: BTreeSet<PlatformAddress> =
-                            proof_address_infos.keys().copied().collect();
-                        assert_eq!(
-                            proved_addresses, expected_addresses,
-                            "proved addresses should match expected inputs and change"
-                        );
-
-                        let change_output = address_credit_withdrawal_action.output();
-                        assert_address_inputs_state(
-                            address_credit_withdrawal_transition.inputs(),
-                            address_credit_withdrawal_action.inputs_with_remaining_balance(),
-                            &proof_address_infos,
+                        assert_transition_execution_requires_receipt(
+                            state_transition,
+                            &block_info,
+                            &response_proof.grovedb_proof,
                             "address credit withdrawal",
+                            platform_version,
                         );
-                        let transition_change_output =
-                            address_credit_withdrawal_transition.output().copied();
-                        assert_optional_action_output_state(
-                            transition_change_output,
-                            change_output,
-                            &proof_address_infos,
-                            "address credit withdrawal change output",
-                        );
-                        // TODO: This should verify the withdrawal document was created
                     } else {
                         panic!("expected address credit withdrawal state transition");
                     }
