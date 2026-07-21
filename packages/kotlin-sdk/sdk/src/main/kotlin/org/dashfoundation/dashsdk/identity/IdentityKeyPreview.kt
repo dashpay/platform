@@ -45,6 +45,10 @@ data class IdentityKeyPreview(
          * `IdentityNative.previewRegistrationKeys`. Layout (big-endian):
          * `u32 rowCount` then per row `u32 identityIndex, u16 pathLen,
          * pathUtf8, u8[33] pubkey, u8[32] privkey`.
+         *
+         * Destructively wipes [blob] on both successful and failed decoding
+         * because it contains raw private-key scalars. Callers must not reuse
+         * the array after passing it here.
          */
         fun decodeAll(blob: ByteArray): List<IdentityKeyPreview> {
             val buf = ByteBuffer.wrap(blob) // big-endian by default
