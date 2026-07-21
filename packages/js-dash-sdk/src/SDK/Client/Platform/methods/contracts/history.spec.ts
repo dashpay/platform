@@ -116,12 +116,11 @@ describe('Client - Platform - Contracts - .history()', () => {
   });
 
   describe('other conditions', () => {
-    it('should deal when contract do not exist', async () => {
-      const contract = await history.call({
+    it('should reject an unproved not-found response', async () => {
+      await expect(history.call({
         // @ts-ignore
         apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
-      }, identitiesFixtures.bob.id, 0, 10, 0);
-      expect(contract).to.equal(null);
+      }, identitiesFixtures.bob.id, 0, 10, 0)).to.be.rejectedWith(NotFoundError);
     });
 
     it('should fail before querying when no proof verifier is configured', async () => {
@@ -147,6 +146,16 @@ describe('Client - Platform - Contracts - .history()', () => {
       }, dataContractFixture.getId(), 0, 10, 0);
 
       expect(contractHistory[1000].toJSON()).to.deep.equal(dataContractFixture.toJSON());
+      expect(requestedProofModes[requestedProofModes.length - 1]).to.equal(false);
+    });
+
+    it('should allow endpoint-trusted not-found through historyUnproved', async () => {
+      const contract = await historyUnproved.call({
+        // @ts-ignore
+        apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
+      }, identitiesFixtures.bob.id, 0, 10, 0);
+
+      expect(contract).to.equal(null);
       expect(requestedProofModes[requestedProofModes.length - 1]).to.equal(false);
     });
   });

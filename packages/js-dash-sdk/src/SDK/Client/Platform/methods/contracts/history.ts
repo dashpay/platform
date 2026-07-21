@@ -36,18 +36,9 @@ export async function history(
 
   const contractId : Identifier = Identifier.from(identifier);
 
-  let dataContractHistoryResponse: GetDataContractHistoryResponse;
-  try {
-    dataContractHistoryResponse = await this.fetcher
-      .fetchDataContractHistory(contractId, startAtMs, limit, offset, true);
-    this.logger.silly(`[Contracts#history] Fetched Data Contract History for "${identifier}"`);
-  } catch (e) {
-    if (e instanceof NotFoundError) {
-      return null;
-    }
-
-    throw e;
-  }
+  const dataContractHistoryResponse = await this.fetcher
+    .fetchDataContractHistory(contractId, startAtMs, limit, offset, true);
+  this.logger.silly(`[Contracts#history] Fetched Data Contract History for "${identifier}"`);
 
   if (!dataContractHistoryResponse.getProof() || !dataContractHistoryResponse.getMetadata()) {
     throw new InvalidResponseError('Verified data contract history is missing proof or metadata');
