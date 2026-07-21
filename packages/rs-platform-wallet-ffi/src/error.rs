@@ -405,6 +405,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
+            // A txMetadata plaintext too large to seal into the encryptedMetadata
+            // field. Surfaced as a caller-input error (the payload parameter is
+            // out of range) rather than flattening to ErrorUnknown; the typed
+            // Display carries the supplied length and the accepted maximum. Maps
+            // to the already-mirrored ErrorInvalidParameter so no new numeric
+            // code churns the Swift/Kotlin mirror enums.
+            PlatformWalletError::TxMetadataPayloadTooLarge { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
             // wallet operation that propagates the SDK error via `?`). The
