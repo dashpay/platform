@@ -59,6 +59,15 @@ pub struct SignedCoreTransaction {
     fee: u64,
     funding_account_type: AccountTypePreference,
     funding_account_index: u32,
+    /// The wallet's `last_processed_height` captured **inside** the funding
+    /// critical section — the exact clock `set_current_height` stamped the
+    /// selected inputs' reservation with, sampled *before* the (potentially
+    /// slow, external) signer ran. The deferred-payment registry's age guard
+    /// must baseline off this, not off a fresh `last_processed_height` sampled
+    /// after signing: a slow external signer could otherwise let the wallet
+    /// advance far enough that the token looks fresh while the reservation it
+    /// covers has already aged toward key-wallet's TTL sweep.
+    reservation_height: u32,
 }
 
 impl SignedCoreTransaction {
@@ -76,6 +85,14 @@ impl SignedCoreTransaction {
 
     pub fn funding_account_index(&self) -> u32 {
         self.funding_account_index
+    }
+
+    /// The `last_processed_height` the funding reservation was stamped with,
+    /// captured in the funding critical section before signing. The deferred
+    /// registry registers the token with this height so its age guard measures
+    /// the reservation's true age rather than a post-signing sample.
+    pub fn reservation_height(&self) -> u32 {
+        self.reservation_height
     }
 }
 
@@ -125,7 +142,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         account_index: u32,
         signer: &S,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-        let (unsigned, fee, selected, paths) = {
+        let (unsigned, fee, selected, paths, height) = {
             let mut manager = self.wallet_manager.write().await;
             let (wallet, info) = manager
                 .get_wallet_and_info_mut(&self.wallet_id)
@@ -206,7 +223,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 }
             };
 
-            (unsigned, fee, selected, paths)
+            (unsigned, fee, selected, paths, height)
         };
 
         let signed = match signer
@@ -228,6 +245,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             fee,
             funding_account_type: account_type,
             funding_account_index: account_index,
+            reservation_height: height,
         })
     }
 
