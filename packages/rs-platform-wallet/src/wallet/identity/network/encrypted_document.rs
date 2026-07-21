@@ -29,8 +29,8 @@ use dpp::prelude::{DataContract, Identifier};
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::crypto::tx_metadata::{
-    derive_tx_metadata_key, derive_tx_metadata_key_from_master, open_tx_metadata,
-    seal_tx_metadata,
+    derive_tx_metadata_key, derive_tx_metadata_key_from_master, ensure_tx_metadata_payload_fits,
+    open_tx_metadata, seal_tx_metadata,
 };
 
 use super::*;
@@ -316,6 +316,13 @@ impl IdentityWallet {
     ) -> Result<String, PlatformWalletError> {
         use dashcore::secp256k1::rand::{thread_rng, RngCore};
 
+        // Reject an over-large payload BEFORE any key derivation or network
+        // work: a plaintext that cannot fit the encryptedMetadata field once
+        // sealed would otherwise derive the key, seal, and only then die at
+        // broadcast with an opaque DPP schema error. Fail fast with a typed
+        // error instead (dashpay/platform#4091).
+        ensure_tx_metadata_payload_fits(payload.len())?;
+
         let (identity, identity_index, wallet) =
             self.resolve_encryption_context_blocking(owner_identity_id)?;
         let key_index = Self::select_encryption_key_id(&identity)?;
@@ -341,8 +348,9 @@ impl IdentityWallet {
         let mut iv = [0u8; 16];
         thread_rng().fill_bytes(&mut iv);
         // Rejects a non-wire-decodable version byte (only 0/1) before it can be
-        // sealed into a document the legacy stack can't decode
-        // (dashpay/platform#4091, findings 9c0ce58c3bb7 / 79595960d201).
+        // sealed into a document the legacy stack can't decode, and enforces the
+        // payload-size limit as the choke-point last line of defense
+        // (dashpay/platform#4091).
         let blob = seal_tx_metadata(&aes_key, version, &iv, payload)?;
 
         // Byte-array fields are accepted as hex strings by the generic create
