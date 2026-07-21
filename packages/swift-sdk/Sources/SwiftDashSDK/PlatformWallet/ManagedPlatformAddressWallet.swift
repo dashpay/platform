@@ -497,6 +497,130 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         }.value
     }
 
+    /// Explicit withdrawal input for the partial-amount `withdraw` overload:
+    /// withdraw exactly `credits` from this address. The transition fee is
+    /// deducted by the chain from the address's REMAINING on-chain balance
+    /// (`balance − credits`), so the fee-source input (index 0 under the
+    /// default `DeductFromInput(0)` strategy) must keep at least the fee
+    /// after the withdrawal — an exact-balance input is rejected with
+    /// `fee_fully_covered = false`.
+    public struct WithdrawalInput: Sendable {
+        /// Must be `0` (P2PKH) — same Rust `TryFrom<PlatformAddressFFI>`
+        /// constraint as transfer inputs.
+        public let addressType: UInt8
+        /// 20-byte address hash.
+        public let hash: Data
+        /// Credits to withdraw from this address (its payout contribution).
+        public let credits: UInt64
+
+        public init(addressType: UInt8, hash: Data, credits: UInt64) {
+            self.addressType = addressType
+            self.hash = hash
+            self.credits = credits
+        }
+    }
+
+    /// Partial-amount withdrawal: pay out exactly `Σ inputs.credits` to
+    /// `coreAddress`, drawing the listed amounts from the listed addresses
+    /// (`INPUT_SELECTION_TYPE_EXPLICIT`). Unlike the AUTO overload above,
+    /// the payout equals the requested amount — the transition fee comes out
+    /// of the fee-source input's remaining balance, not the payout. The Rust
+    /// side re-fetches and hard-checks every input's on-chain balance before
+    /// signing, so a stale caller-side balance fails with a typed error
+    /// rather than a wrong-amount withdrawal.
+    ///
+    /// Same `coreAddress` parsing/network rules and signer requirements as
+    /// the AUTO overload.
+    @discardableResult
+    public func withdraw(
+        accountIndex: UInt32,
+        coreAddress: String,
+        inputs: [WithdrawalInput],
+        coreFeePerByte: UInt32 = 1,
+        signer: KeychainSigner
+    ) async throws -> [UpdatedBalance] {
+        let trimmed = coreAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw PlatformWalletError.invalidParameter("coreAddress is empty")
+        }
+        // Same embedded-NUL guard as the AUTO overload: Rust's
+        // `CStr::from_ptr(...).to_str()` stops at the first NUL, so a
+        // `valid\0suffix` value would silently withdraw to `valid`.
+        guard !trimmed.utf8.contains(0) else {
+            throw PlatformWalletError.invalidParameter(
+                "coreAddress contains an embedded NUL byte"
+            )
+        }
+        guard !inputs.isEmpty else {
+            throw PlatformWalletError.invalidParameter("inputs is empty")
+        }
+        for input in inputs {
+            guard input.addressType == 0 else {
+                throw PlatformWalletError.invalidParameter(
+                    "only P2PKH (addressType 0) withdrawal inputs are supported"
+                )
+            }
+            guard input.hash.count == 20 else {
+                throw PlatformWalletError.invalidParameter(
+                    "withdrawal input hash must be 20 bytes, got \(input.hash.count)"
+                )
+            }
+            guard input.credits > 0 else {
+                throw PlatformWalletError.invalidParameter(
+                    "withdrawal input credits must be > 0"
+                )
+            }
+        }
+
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let address = trimmed
+        let feePerByte = coreFeePerByte
+        let inputRows = inputs
+
+        return try await Task.detached(priority: .userInitiated) {
+            () -> [UpdatedBalance] in
+            let ffiInputs = inputRows.map { input -> ExplicitInputFFI in
+                ExplicitInputFFI(
+                    address: PlatformAddressFFI(
+                        address_type: input.addressType,
+                        hash: Self.hashTuple(from: input.hash)
+                    ),
+                    balance: input.credits
+                )
+            }
+            var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
+            // Fee strategy nil/0 → the Rust default `DeductFromInput(0)`:
+            // the first input is the fee source. Callers order inputs so
+            // index 0 carries the fee headroom.
+            let result = withExtendedLifetime(signer) {
+                address.withCString { addrCStr in
+                    ffiInputs.withUnsafeBufferPointer { inputBp in
+                        platform_address_wallet_withdraw_to_address(
+                            handle,
+                            accountIndex,
+                            INPUT_SELECTION_TYPE_EXPLICIT,
+                            inputBp.baseAddress,
+                            UInt(inputBp.count),
+                            nil,
+                            0,
+                            addrCStr,
+                            feePerByte,
+                            nil,
+                            0,
+                            signerHandle,
+                            &changeset
+                        )
+                    }
+                }
+            }
+            try result.check()
+
+            defer { platform_address_wallet_free_changeset(&changeset) }
+            return Self.decodeChangeset(&changeset)
+        }.value
+    }
+
     // MARK: - Fund from Core asset lock
 
     /// Recipient entry for `fundFromAssetLock(...)`.
