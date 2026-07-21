@@ -796,7 +796,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         // Only 0 (CBOR) and 1 (protobuf) are wire-decodable by the legacy dashj
         // decryptTxMetadata; anything else seals a document the legacy stack
         // can't read. Fail fast here with the correct bound instead of the stale
-        // 0..=255 range (dashpay/platform#4091, finding 79595960d201). The Rust
+        // 0..=255 range (dashpay/platform#4091). The Rust
         // core `seal_tx_metadata` enforces the same invariant as the last line
         // of defense.
         if !(0..=1).contains(&version) {
