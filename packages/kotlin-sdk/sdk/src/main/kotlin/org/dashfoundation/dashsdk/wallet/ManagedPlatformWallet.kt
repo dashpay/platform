@@ -248,13 +248,14 @@ class ManagedPlatformWallet internal constructor(
      *
      * The BIP70/BIP270 counterpart to [sendToAddresses]: those protocols sign,
      * POST the raw bytes to a merchant server, and broadcast only on ack, which
-     * a single build-sign-broadcast call cannot express. The `new → addOutput* →
-     * setFunding → buildSigned` build runs under the same per-wallet teardown
-     * gate ([gate]) as [sendToAddresses]; [buildSigned] atomically reserves the
-     * selected UTXOs in the Rust reservation layer (which closes the
-     * setFunding/buildSigned selection race), so once this returns the
-     * reservation holds the inputs and [broadcastSigned] / [releaseReservation]
-     * operate on the token later.
+     * a single build-sign-broadcast call cannot express. The
+     * `new → addOutput* → finalizeSignedPayment` build runs under the same
+     * per-wallet teardown gate ([gate]) as [sendToAddresses]. The single atomic
+     * finalize does select + reserve + sign + register under the wallet-manager
+     * lock (closing the funding/signing selection race the old setFunding +
+     * buildSigned split had), so once this returns the reservation holds the
+     * inputs and [broadcastSigned] / [releaseReservation] operate on the token
+     * later.
      *
      * Process-death note: the reservation is in-memory. An app crash between
      * this call and [broadcastSigned] drops the reservation on restart (the
