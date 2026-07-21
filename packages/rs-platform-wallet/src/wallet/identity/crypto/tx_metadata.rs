@@ -495,6 +495,27 @@ mod tests {
         assert!(ensure_tx_metadata_payload_fits(MAX_TX_METADATA_PLAINTEXT_LEN + 1).is_err());
     }
 
+    /// [`ENCRYPTED_METADATA_FIELD_MAX`] duplicates the `encryptedMetadata`
+    /// `maxItems` from the wallet-utils contract schema (the crate exports no
+    /// limit constant to anchor to), so pin it against the schema JSON itself:
+    /// if the contract ever changes the field limit, this fails instead of the
+    /// size precheck silently drifting.
+    #[test]
+    fn field_max_matches_wallet_utils_contract_schema() {
+        let schema: serde_json::Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../wallet-utils-contract/schema/v1/wallet-utils-contract-documents.json"
+        )))
+        .expect("wallet-utils contract schema parses");
+        let max_items = schema["txMetadata"]["properties"]["encryptedMetadata"]["maxItems"]
+            .as_u64()
+            .expect("encryptedMetadata.maxItems present in schema");
+        assert_eq!(
+            ENCRYPTED_METADATA_FIELD_MAX as u64, max_items,
+            "ENCRYPTED_METADATA_FIELD_MAX must track the contract's encryptedMetadata maxItems"
+        );
+    }
+
     /// A wrong key can never recover the plaintext: PKCS7 rejects it (Err), or
     /// on the rare valid-padding collision the payload differs — never the
     /// original. Must not panic.
