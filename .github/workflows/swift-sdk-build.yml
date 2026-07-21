@@ -87,5 +87,9 @@ jobs:
           rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
 
       - name: Build and test Swift SDK
+        env:
+          # The self-hosted runner persists Cargo's target cache between jobs.
+          # Keep only one Apple architecture's intermediates at a time.
+          PRUNE_CARGO_TARGETS: "1"
         run: |
           bash packages/swift-sdk/run_tests.sh
