@@ -263,37 +263,15 @@ internal object WalletManagerNative {
     external fun coreTransactionFree(tx: Long)
 
     /**
-     * `core_wallet_signed_payment_register` — register a built+signed
-     * transaction (from [coreTxBuilderBuildSigned]) for deferred
-     * (BIP70/BIP270) submission, holding its UTXO reservation. Does NOT consume
-     * the transaction — free it separately with [coreTransactionFree].
-     * [accountType]/[accountIndex] identify the funding account (0 BIP44,
-     * 1 BIP32, 2 CoinJoin).
-     *
-     * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
-     * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
-     * The raw tx bytes come back in this same call — no second native round trip.
-     */
-    external fun coreWalletRegisterSignedPayment(
-        coreHandle: Long,
-        tx: Long,
-        accountType: Int,
-        accountIndex: Int,
-    ): ByteArray
-
-    /**
      * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
      * AND register a builder for deferred (BIP70/BIP270) submission in one
-     * native call. The concurrency-safe replacement for
-     * [coreTxBuilderSetFunding] + [coreTxBuilderBuildSigned] +
-     * [coreWalletRegisterSignedPayment]: selection and reservation commit as a
-     * single unit under the wallet-manager lock, closing the double-selection
-     * window. CONSUMES [builder]. [accountType]/[accountIndex] identify the
-     * funding account (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
+     * native call. Selection and reservation commit as a single unit under the
+     * wallet-manager lock, closing the double-selection window. CONSUMES
+     * [builder]. [accountType]/[accountIndex] identify the funding account
+     * (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
      * `MnemonicResolverHandle`.
      *
-     * Returns the same big-endian BLOB [coreWalletRegisterSignedPayment]
-     * returns, decoded into a `SignedCoreTransaction`:
+     * Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
      * `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
      */
     external fun coreWalletFinalizeSignedPayment(

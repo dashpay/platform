@@ -15,7 +15,6 @@
 //! `core_wallet_broadcast_transaction` surface — the immediate send path is
 //! unchanged.
 
-use super::transaction_builder::{CoreAccountTypeFFI, FFICoreTransaction};
 use crate::error::*;
 use crate::handle::{Handle, CORE_WALLET_STORAGE};
 use crate::runtime::runtime;
@@ -33,99 +32,9 @@ use std::os::raw::c_char;
 pub(crate) static SIGNED_PAYMENT_REGISTRY: Lazy<SignedPaymentRegistry<SpvBroadcaster>> =
     Lazy::new(SignedPaymentRegistry::new);
 
-/// Register a built, signed transaction for deferred submission and return a
-/// reservation token.
-///
-/// `core_wallet_tx_builder_build_signed` already reserved the funding UTXOs; the
-/// registry takes its own copy of the transaction and holds the reservation
-/// (via the captured wallet instance behind `core_handle`) until a later
-/// [`core_wallet_signed_payment_broadcast`] or
-/// [`core_wallet_signed_payment_release`]. The passed `tx` is NOT consumed — the
-/// caller still frees it with `core_wallet_transaction_free`.
-///
-/// `account_type`/`account_index` identify the funding account handed to
-/// `set_funding`, so the reservation can be released on rejection/abandonment.
-/// Writes `out_token`, `out_fee` (the build's fee in duffs), `out_txid` (a
-/// heap-allocated lowercase-hex C string the caller frees with
-/// `core_wallet_free_address`), and `out_bytes_ptr`/`out_bytes_len` (the
-/// consensus-serialized transaction bytes, returned in the same call so the
-/// caller needs no second native round trip).
-///
-/// The `out_bytes_ptr` buffer borrows the `FFICoreTransaction`'s own storage —
-/// it is valid only until `tx` is freed with `core_wallet_transaction_free`, so
-/// the caller must copy the bytes out immediately and must not retain the
-/// pointer.
-///
-/// # Safety
-/// `tx` must be a valid, non-freed `FFICoreTransaction`; `core_handle` a valid
-/// core-wallet handle; all out-pointers must be writable.
-#[no_mangle]
-pub unsafe extern "C" fn core_wallet_signed_payment_register(
-    core_handle: Handle,
-    tx: *const FFICoreTransaction,
-    account_type: CoreAccountTypeFFI,
-    account_index: u32,
-    out_token: *mut u64,
-    out_fee: *mut u64,
-    out_txid: *mut *mut c_char,
-    out_bytes_ptr: *mut *const u8,
-    out_bytes_len: *mut usize,
-) -> PlatformWalletFFIResult {
-    check_ptr!(tx);
-    check_ptr!(out_token);
-    check_ptr!(out_fee);
-    check_ptr!(out_txid);
-    check_ptr!(out_bytes_ptr);
-    check_ptr!(out_bytes_len);
-
-    let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
-
-    let bytes = (*tx).bytes();
-    let transaction: dashcore::Transaction = match dashcore::consensus::deserialize(bytes) {
-        Ok(t) => t,
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorDeserialization,
-                format!("failed to deserialize signed transaction: {e}"),
-            );
-        }
-    };
-    let txid = transaction.txid();
-    let fee = (*tx).fee();
-
-    // Do all fallible/pure marshalling BEFORE the registry insert — that insert
-    // mints a token and holds the funding reservation, so a later failure would
-    // orphan the reservation with no token to release it. txid hex never
-    // contains a NUL, but handle the impossible case anyway.
-    let c_txid = match CString::new(txid.to_string()) {
-        Ok(s) => s,
-        Err(_) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
-                "txid string contained an interior NUL".to_string(),
-            );
-        }
-    };
-
-    let token = runtime().block_on(SIGNED_PAYMENT_REGISTRY.register(
-        core,
-        transaction,
-        account_type.as_standard_account_type(),
-        account_index,
-    ));
-
-    *out_token = token;
-    *out_fee = fee;
-    *out_txid = c_txid.into_raw();
-    // Borrowed view into the still-live `tx` buffer; the caller copies it out
-    // before freeing `tx` (mirrors the retired `core_wallet_transaction_get_bytes`).
-    *out_bytes_ptr = bytes.as_ptr();
-    *out_bytes_len = bytes.len();
-    PlatformWalletFFIResult::ok()
-}
-
 /// Broadcast the payment behind `token` (built earlier via
-/// [`core_wallet_signed_payment_register`]), reconciling its UTXO reservation on
+/// [`core_wallet_signed_payment_finalize`](super::transaction_builder::core_wallet_signed_payment_finalize)),
+/// reconciling its UTXO reservation on
 /// failure, and consume the token.
 ///
 /// The token is consumed atomically before the send, so a repeated or
