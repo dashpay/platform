@@ -414,12 +414,10 @@ pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWall
     let wallet_id = core.wallet_id();
     let manager = wallet.wallet_manager();
     let sibling_alias_alive = PLATFORM_WALLET_STORAGE.any(|other| {
-        other.wallet_id() == wallet_id
-            && std::sync::Arc::ptr_eq(other.wallet_manager(), manager)
+        other.wallet_id() == wallet_id && std::sync::Arc::ptr_eq(other.wallet_manager(), manager)
     });
     if !sibling_alias_alive {
-        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
-            .remove_entries_for_wallet(core);
+        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.remove_entries_for_wallet(core);
     }
     PlatformWalletFFIResult::ok()
 }
@@ -467,6 +465,9 @@ mod destroy_tests {
                     dummy_tx(),
                     Some(StandardAccountType::BIP44Account),
                     0,
+                    // This test exercises only the destroy-time sweep, not the
+                    // age guard, so the reservation height is irrelevant here.
+                    None,
                 )
                 .await;
             assert_eq!(SIGNED_PAYMENT_REGISTRY.outstanding(), baseline + 1);

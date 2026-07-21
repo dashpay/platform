@@ -295,7 +295,9 @@ impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
         Ok(())
     }
 
-    fn load(&self) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError> {
+    fn load(
+        &self,
+    ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError> {
         Ok(crate::changeset::ClientStartState::default())
     }
 }
@@ -312,8 +314,10 @@ impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
 ///
 /// Used by FFI-layer tests that need genuine `PlatformWallet` aliases, e.g. the
 /// `platform_wallet_destroy` final-alias registry-sweep gating.
-pub async fn test_platform_wallet_manager(
-) -> (Arc<crate::PlatformWalletManager<NoopTestPersister>>, WalletId) {
+pub async fn test_platform_wallet_manager() -> (
+    Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+    WalletId,
+) {
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -325,7 +329,11 @@ pub async fn test_platform_wallet_manager(
     let persister = Arc::new(NoopTestPersister);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
-    let manager = Arc::new(crate::PlatformWalletManager::new(sdk, persister, event_handler));
+    let manager = Arc::new(crate::PlatformWalletManager::new(
+        sdk,
+        persister,
+        event_handler,
+    ));
 
     let mnemonic =
         Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
