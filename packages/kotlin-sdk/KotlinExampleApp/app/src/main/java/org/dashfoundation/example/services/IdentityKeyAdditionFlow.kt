@@ -132,6 +132,11 @@ object IdentityKeyAdditionFlow {
     ): List<IdentityPubkey> {
         var freeKeyId = nextKeyId(existingKeyIds)
         val rows = ArrayList<IdentityPubkey>(specs.size)
+        // Route the one allowed persist step through the shared store-then-scrub
+        // primitive (same discipline registration provisioning uses).
+        val persister = IdentityKeyPersistence.PrivateKeyPersister { hex, priv, owner ->
+            walletStorage.storePrivateKey(hex, priv, ownerWalletId = owner)
+        }
         for (spec in specs) {
             validationError(spec)?.let { throw KeyAdditionException(it) }
             val keyId = freeKeyId
@@ -152,20 +157,16 @@ object IdentityKeyAdditionFlow {
             // signer, and `KeystoreSigner.storageKeyFor` looks the scalar
             // up by exactly that hex (Swift's metadata.publicKey choice).
             val storageKeyHex = pubkeyBytesForChain.joinToString("") { "%02x".format(it) }
-            try {
-                // The one allowed Kotlin persist step (kotlin-sdk/CLAUDE.md):
-                // Rust derived; we only encrypt the scalar into the Keystore.
-                // ownerWalletId: the key predates its public_keys row (the
-                // add-key transition hasn't broadcast yet) — the durable
-                // owner index is what lets wallet deletion find it.
-                walletStorage.storePrivateKey(
-                    storageKeyHex,
-                    derived.privateKey,
-                    ownerWalletId = walletId,
-                )
-            } finally {
-                derived.privateKey.fill(0)
-            }
+            // Persist then scrub via the shared primitive. ownerWalletId: the
+            // key predates its public_keys row (the add-key transition hasn't
+            // broadcast yet) — the durable owner index is what lets wallet
+            // deletion find it.
+            IdentityKeyPersistence.storeAndScrub(
+                publicKeyHex = storageKeyHex,
+                privateKey = derived.privateKey,
+                walletId = walletId,
+                persister = persister,
+            )
 
             rows.add(
                 IdentityPubkey(

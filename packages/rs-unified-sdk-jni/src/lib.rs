@@ -21,6 +21,7 @@ mod funding;
 mod identity;
 mod mnemonic;
 mod persistence;
+mod pubkey_rows;
 mod queries;
 mod results;
 mod sdk;
@@ -28,6 +29,7 @@ mod signer;
 mod support;
 mod tokens;
 mod transactions;
+mod tx_decode;
 mod wallet_manager;
 
 use jni::sys::{jint, JNI_VERSION_1_6};

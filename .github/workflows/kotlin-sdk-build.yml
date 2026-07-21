@@ -143,32 +143,41 @@ jobs:
           emulator-options: -no-snapshot -no-window -no-audio -no-boot-anim -camera-back none -dns-server 8.8.8.8,1.1.1.1
           working-directory: packages/kotlin-sdk
           script: |
-            # Enroll a device-wide secure lock screen (PIN) — Android
-            # Keystore refuses to generate an auth-required key
-            # (KeyGenParameterSpec.setUserAuthenticationRequired(true),
-            # used for the identity-key KEYS_ALIAS RSA pair) without one
-            # enrolled, even though nothing here ever prompts for it
-            # (private-key ENCRYPT is never auth-gated; only DECRYPT is).
+            # NOTE: android-emulator-runner executes this script line by line —
+            # each line is its own `sh -c` with no shared state — so every
+            # command must be self-contained on a single line (multi-line loops
+            # or cross-line variables silently fail).
+
+            # Keep the screen on and never time out. THIS is the fix: the flake
+            # was the emulator screen turning off mid-run and RE-LOCKING the
+            # device. The mnemonic MASTER_ALIAS AES key is
+            # setUnlockedDeviceRequired(true), so once the device re-locks even
+            # an ENCRYPT throws `InvalidKeyException: Keystore operation failed`
+            # (see WalletStorage.storeMnemonic). Unlocking alone is not enough —
+            # a slower suite (more instrumented tests) crosses the screen-off
+            # deadline before its wallet tests run, which is why this branch
+            # failed where lighter ones passed. Prevent the re-lock outright.
+            adb shell settings put system screen_off_timeout 2147483647
+            adb shell svc power stayon true
+
+            # Enroll a device-wide secure lock screen (PIN) — Android Keystore
+            # refuses to generate an auth-required key
+            # (setUserAuthenticationRequired(true), used for the identity-key
+            # KEYS_ALIAS RSA pair) without one enrolled, even though nothing
+            # here ever prompts for it (private-key ENCRYPT is never auth-gated;
+            # only DECRYPT is).
             adb shell locksettings set-pin 1234
-            # Enrolling that credential puts the device in a "locked"
-            # security state until first unlock, which breaks every OTHER
-            # Keystore key generated with setUnlockedDeviceRequired(true)
-            # (e.g. the mnemonic MASTER_ALIAS AES key every existing test
-            # already relies on — confirmed the hard way: it started
-            # throwing InvalidKeyException the moment set-pin ran alone).
-            # Explicitly dismiss the keyguard so the device counts as
-            # unlocked for those keys while the PIN stays enrolled for
-            # KEYS_ALIAS generation.
+
+            # Unlock the keyguard. With the screen kept on above, the device now
+            # stays unlocked for the whole run instead of re-locking.
+            adb shell input keyevent KEYCODE_WAKEUP
             adb shell wm dismiss-keyguard
-            # dismiss-keyguard returns before LockSettingsService/Keystore
-            # fully propagate the unlocked state to the keystore daemon —
-            # confirmed via an interactive tmate session on this exact CI
-            # runner: every manual re-run of the full suite passed (23/23),
-            # but every one of those manual runs had multi-second gaps
-            # between commands (SSH round-trips) that this script's
-            # back-to-back execution doesn't have. Give it a moment to
-            # settle before the first Keystore operation.
             sleep 5
+
+            # Fail loudly if the device is still locked, so a spurious
+            # InvalidKeyException can't masquerade as a real test failure.
+            adb shell dumpsys trust | grep -q 'deviceLocked=0' || { echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1; }
+
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
       - name: Upload test reports on failure

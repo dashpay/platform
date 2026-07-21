@@ -1,0 +1,101 @@
+use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::dashpay::create_contact_request_data_trigger;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::dpns::create_domain_data_trigger;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::reject::reject_data_trigger;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::withdrawals::delete_withdrawal_data_trigger;
+
+use dpp::errors::ProtocolError;
+use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
+use dpp::system_data_contracts::{dashpay_contract, dpns_contract, SystemDataContract};
+use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionActionType;
+
+/// Retrieves a list of data triggers binding with matching params.
+///
+/// This function gets all known data triggers which are then returned
+/// as a vector of `DataTrigger` structs.
+///
+/// v1 (PROTOCOL_VERSION_13): DPNS `domain` documents no longer reject
+/// `Transfer`, `Purchase` and `UpdatePrice`, enabling username transfers
+/// and sales. The DPNS contract has declared `transferable: 1` and
+/// `tradeMode: 1` (direct purchase) since genesis, so the generic document
+/// validation paths accept these transitions once the reject bindings are
+/// gone. `Replace` and `Delete` stay rejected: name records remain
+/// immutable and permanent. On transfer and purchase, drive rewrites the
+/// domain's `records.identity` to the new owner so the name resolves to
+/// the buyer (see the v1 document transfer/purchase high-level operation
+/// conversions in rs-drive).
+///
+/// # Returns
+///
+/// A `Vec<DataTriggerBinding>` containing all known data triggers.
+///
+/// # Errors
+///
+/// Returns a `ProtocolError` if there was an error.
+#[inline(always)]
+pub(super) fn data_trigger_bindings_list_v1() -> Result<Vec<DataTriggerBindingV0>, ProtocolError> {
+    let data_triggers = vec![
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Create,
+            data_trigger: create_domain_data_trigger,
+        },
+        // Domain documents can never be modified or deleted, but since
+        // protocol version 13 they can be transferred and sold
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Replace,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dpns_contract::ID,
+            document_type: "domain".to_string(),
+            transition_action_type: DocumentTransitionActionType::Delete,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: dashpay_contract::ID,
+            document_type: "contactRequest".to_string(),
+            transition_action_type: DocumentTransitionActionType::Create,
+            data_trigger: create_contact_request_data_trigger,
+        },
+        // Only masternodes will be able to update it
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::MasternodeRewards.id(),
+            document_type: "rewardShare".to_string(),
+            transition_action_type: DocumentTransitionActionType::Create,
+            data_trigger: reject_data_trigger,
+        },
+        // Only masternodes will be able to update it
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::MasternodeRewards.id(),
+            document_type: "rewardShare".to_string(),
+            transition_action_type: DocumentTransitionActionType::Replace,
+            data_trigger: reject_data_trigger,
+        },
+        // Only masternodes will be able to update it
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::MasternodeRewards.id(),
+            document_type: "rewardShare".to_string(),
+            transition_action_type: DocumentTransitionActionType::Delete,
+            data_trigger: reject_data_trigger,
+        },
+        // We can't use mutability flag otherwise documents won't have revision
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::Withdrawals.id(),
+            document_type: withdrawal::NAME.to_string(),
+            transition_action_type: DocumentTransitionActionType::Replace,
+            data_trigger: reject_data_trigger,
+        },
+        DataTriggerBindingV0 {
+            data_contract_id: SystemDataContract::Withdrawals.id(),
+            document_type: withdrawal::NAME.to_string(),
+            transition_action_type: DocumentTransitionActionType::Delete,
+            data_trigger: delete_withdrawal_data_trigger,
+        },
+    ];
+
+    Ok(data_triggers)
+}

@@ -1,6 +1,7 @@
 package org.dashfoundation.dashsdk.identity
 
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opWithCleanupOnCancellation
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -113,12 +114,24 @@ class IdentityRegistration internal constructor(
      * Rust owns rebroadcast/proof/status decisions; Kotlin never builds a
      * replacement funding transaction. Generic recovery cannot consume an
      * invitation voucher.
+     *
+     * [keys] carries the rich registration rows (built via
+     * [RegistrationKeys.buildRegistrationRows]) and the HD slot that derived
+     * them. Resume carries the SAME key
+     * set the interrupted registration originally committed to on-chain — the
+     * base four auth/transfer keys, **without** the DashPay pair: an
+     * already-spent asset lock funds a fixed key count, so retroactively
+     * growing the transition it funds risks a resume that fails after the
+     * user's DASH is already irreversibly locked (matching iOS, which excludes
+     * DashPay provisioning from the resume path). A user who resumes and wants
+     * DashPay capability adds those keys afterward via the Add Identity Key
+     * flow.
      */
     suspend fun resumeWithExistingAssetLock(
         walletHandle: Long,
         lock: TrackedAssetLock,
         identityIndex: Int,
-        keys: List<IdentityKeyPreview>,
+        keys: RegistrationKeySet,
         signerHandle: Long,
         coreSignerHandle: Long,
     ): ByteArray = gate.op {
@@ -129,9 +142,9 @@ class IdentityRegistration internal constructor(
         require(identityIndex == lock.registrationIndex) {
             "identityIndex $identityIndex does not match tracked lock registrationIndex ${lock.registrationIndex}"
         }
-        require(keys.isNotEmpty()) { "keys must not be empty" }
-        require(keys.all { it.identityIndex == lock.registrationIndex }) {
-            "every registration key must use tracked lock registrationIndex ${lock.registrationIndex}"
+        require(keys.identityIndex == lock.registrationIndex) {
+            "registration keys use identityIndex ${keys.identityIndex}, expected tracked lock " +
+                "registrationIndex ${lock.registrationIndex}"
         }
         val native = mapNativeErrors {
             resumeNative.call(
@@ -139,7 +152,7 @@ class IdentityRegistration internal constructor(
                 outpointTxid = lock.outpointTxid,
                 outpointVout = lock.outpointVout,
                 identityIndex = identityIndex,
-                pubkeysBlob = IdentityKeyPreview.encodeForRegistration(keys),
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
                 signerHandle = signerHandle,
                 coreSignerHandle = coreSignerHandle,
                 consumeInvitationVoucher = false,
@@ -176,7 +189,9 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         startIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = gate.op {
+    ): List<IdentityKeyPreview> = gate.opWithCleanupOnCancellation(
+        cleanup = { previews -> previews.forEach { it.privateKey.fill(0) } },
+    ) {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeys(
                 walletHandle,
@@ -201,9 +216,10 @@ class IdentityRegistration internal constructor(
      * a HIGH-or-CRITICAL AUTHENTICATION key, and credit transfers /
      * withdrawals need the TRANSFER key ("no transfer public key").
      *
-     * The per-key DPP role is applied Rust-side by keyId at registration
-     * time; each row here carries only the derived keypair. The caller
-     * persists each row's private key to the Keystore before registering.
+     * Each row here carries only the derived keypair; the per-key DPP role is
+     * stamped Kotlin-side by [RegistrationKeys] when the rich registration rows
+     * are built. The caller persists each row's private key to the Keystore
+     * before registering.
      *
      * @param count number of keys to derive; < 0 uses the canonical
      *   default set (4 keys). ([previewRegistrationKeys], by contrast,
@@ -215,7 +231,9 @@ class IdentityRegistration internal constructor(
         mnemonicResolverHandle: Long,
         identityIndex: Int,
         count: Int = -1,
-    ): List<IdentityKeyPreview> = gate.op {
+    ): List<IdentityKeyPreview> = gate.opWithCleanupOnCancellation(
+        cleanup = { previews -> previews.forEach { it.privateKey.fill(0) } },
+    ) {
         val blob = mapNativeErrors {
             IdentityNative.previewRegistrationKeySet(
                 walletHandle,
@@ -229,8 +247,10 @@ class IdentityRegistration internal constructor(
 
     /**
      * Register a new identity funded from the wallet's Core balance. The
-     * single entry point the registration coordinator's body calls. Keys
-     * must already be derived + persisted (see [previewRegistrationKeySet]).
+     * single entry point the registration coordinator's body calls. [keys] are
+     * the rich registration rows (built via
+     * [RegistrationKeys.buildRegistrationRows]); each row's private half must
+     * already be derived + persisted (see [previewRegistrationKeySet]).
      *
      * @return the 32-byte identity id.
      */
@@ -239,7 +259,7 @@ class IdentityRegistration internal constructor(
         amountDuffs: Long,
         accountIndex: Int,
         identityIndex: Int,
-        keys: List<IdentityKeyPreview>,
+        keys: List<IdentityPubkey>,
         signerHandle: Long,
         coreSignerHandle: Long,
     ): ByteArray = gate.op {
@@ -252,7 +272,7 @@ class IdentityRegistration internal constructor(
                 amountDuffs,
                 accountIndex,
                 identityIndex,
-                IdentityKeyPreview.encodeForRegistration(keys),
+                IdentityPubkeyCodec.encode(keys),
                 signerHandle,
                 coreSignerHandle,
             )
@@ -265,16 +285,18 @@ class IdentityRegistration internal constructor(
      * from [registerWithWalletFunding] (ID-01) which builds a new Core asset
      * lock. Keys must already be derived + persisted (see
      * [previewRegistrationKeySet]); [inputs] are the funding addresses (the
-     * greedily-packed balance-carrying Platform-payment addresses). The same
-     * [signerHandle] drives both the identity-key and platform-address
-     * signing roles. Nonces are auto-fetched Rust-side.
+     * greedily-packed balance-carrying Platform-payment addresses). [keys] are
+     * the rich registration rows (built via
+     * [RegistrationKeys.buildRegistrationRows]). The same [signerHandle] drives
+     * both the identity-key and platform-address signing roles. Nonces are
+     * auto-fetched Rust-side.
      *
      * @return the 32-byte identity id.
      */
     suspend fun registerFromAddresses(
         walletHandle: Long,
         identityIndex: Int,
-        keys: List<IdentityKeyPreview>,
+        keys: List<IdentityPubkey>,
         signerHandle: Long,
         inputs: List<FundingInput>,
     ): ByteArray = gate.op {
@@ -284,7 +306,7 @@ class IdentityRegistration internal constructor(
             IdentityNative.registerIdentityFromAddresses(
                 walletHandle,
                 identityIndex,
-                IdentityKeyPreview.encodeForRegistration(keys),
+                IdentityPubkeyCodec.encode(keys),
                 signerHandle,
                 FundingInput.encode(inputs),
             )

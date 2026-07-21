@@ -6448,6 +6448,7 @@ dependencies = [
  "android_logger",
  "dash-network",
  "dashcore",
+ "dashpay-contract",
  "jni 0.21.1",
  "key-wallet-ffi",
  "log",

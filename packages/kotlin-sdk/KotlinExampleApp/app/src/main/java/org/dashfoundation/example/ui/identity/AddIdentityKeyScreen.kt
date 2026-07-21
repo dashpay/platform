@@ -381,19 +381,18 @@ private data class BoundsPickerEntry(
 /**
  * DashPay — the one system contract whose schema declares
  * `requiresIdentityEncryptionBoundedKey` (on `contactRequest` only, so
- * contract scope is not allowed). ID bytes:
- * `packages/dashpay-contract/src/lib.rs::ID_BYTES`; network-agnostic.
+ * contract scope is not allowed). The contract id + document type come from
+ * the SDK's single source of truth
+ * ([org.dashfoundation.dashsdk.identity.RegistrationKeys]), the same policy the
+ * registration flow provisions its DashPay keys from.
  */
 private fun dashPaySystemEntry(): BoundsPickerEntry = BoundsPickerEntry(
-    idHex = byteArrayOf(
-        162.toByte(), 161.toByte(), 180.toByte(), 172.toByte(), 111, 239.toByte(), 34, 234.toByte(),
-        42, 26, 104, 232.toByte(), 18, 54, 68, 179.toByte(),
-        87, 135.toByte(), 95, 107, 65, 44, 24, 16,
-        146.toByte(), 129.toByte(), 193.toByte(), 70, 231.toByte(), 178.toByte(), 113, 188.toByte(),
-    ).toHexLocal(),
+    idHex = org.dashfoundation.dashsdk.identity.RegistrationKeys.DASHPAY_CONTRACT_ID.toHexLocal(),
     displayName = "DashPay (System)",
     allowsContractScope = false,
-    documentTypes = listOf("contactRequest"),
+    documentTypes = listOf(
+        org.dashfoundation.dashsdk.identity.RegistrationKeys.DASHPAY_CONTACT_REQUEST_DOCUMENT_TYPE,
+    ),
 )
 
 private fun ByteArray.toHexLocal(): String = joinToString("") { "%02x".format(it) }
