@@ -812,7 +812,7 @@ mod tests {
     }
 
     /// The asset-lock coin-selection shortfall must cross the FFI boundary as the
-    /// dedicated `ErrorAssetLockInsufficientFunds` (26) code — NOT `ErrorUnknown`
+    /// dedicated `ErrorAssetLockInsufficientFunds` (29) code — NOT `ErrorUnknown`
     /// (99) as it did before this arm existed (dashpay/platform#4073 request 3) —
     /// and its structured `available`/`required` duffs must survive verbatim in
     /// the message so hosts can still parse the amounts.
@@ -850,7 +850,7 @@ mod tests {
     }
 
     /// The default single-privacy-domain refusal (dashpay/platform#4184) must
-    /// cross as the dedicated `ErrorAssetLockCrossDomainConsentRequired` (27) code
+    /// cross as the dedicated `ErrorAssetLockCrossDomainConsentRequired` (30) code
     /// so hosts can prompt for consent and re-issue, instead of seeing an opaque
     /// insufficient-funds/unknown error even though the union covers the amount.
     #[test]
