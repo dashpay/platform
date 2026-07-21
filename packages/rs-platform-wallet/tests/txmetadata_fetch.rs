@@ -7,7 +7,11 @@
 //! `encryptedMetadata` fields.
 //!
 //! This pins the wire query so a regression in the where-clause / order-by /
-//! encoding is caught in CI (against testnet) rather than only on-device. The
+//! encoding is caught by this check rather than only on-device. NOTE: the test
+//! is `#[ignore]`d because it hits live testnet, so it is a MANUAL, testnet-
+//! gated check — run it explicitly with `--ignored` (see below). It is NOT part
+//! of the default `cargo test` / CI run, and no scheduled job runs `--ignored`
+//! today; treat it as a local / pre-release regression gate. The
 //! DECRYPT half is not exercised here — it needs the owner's mnemonic — but the
 //! per-document field extraction that feeds decrypt IS asserted, proving the
 //! pipeline reaches the decrypt step for both documents.
