@@ -72,6 +72,12 @@ pub(crate) fn next_encryption_key_index_from_count(count: u32) -> u32 {
 /// Cross-DEVICE uniqueness is NOT guaranteed (another device that has not yet
 /// reflected its writes on Platform can seed to the same base); see
 /// [`IdentityWallet::allocate_encryption_key_index`] for why that stays safe.
+///
+/// Two deliberate trade-offs of the single per-wallet mutex + optimistic
+/// reservation: allocations for OTHER owners in the same wallet serialize
+/// behind a first-time seed fetch (benign for the normal one-identity case),
+/// and a create that fails after allocating leaves a harmless index GAP —
+/// never a collision — since the high-water is not rolled back.
 pub(crate) async fn reserve_next_index<S>(
     allocator: &tokio::sync::Mutex<std::collections::HashMap<Identifier, u32>>,
     owner: &Identifier,
