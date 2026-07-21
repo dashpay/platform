@@ -12,7 +12,9 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
 use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
-use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, AddressState, PublicKeyType,
+};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -2891,7 +2893,7 @@ fn build_core_address_entry_ffi(
         key_type_tag,
         pool_type_tag,
         address_index: info.index,
-        is_used: info.used,
+        is_used: info.is_used(),
         balance: info.balance,
         address_base58: address_ptr,
         derivation_path: path_ptr,
@@ -2987,9 +2989,11 @@ unsafe fn address_info_from_ffi(
         public_key,
         index: entry.address_index,
         path,
-        used: entry.is_used,
-        generated_at: 0,
-        used_at: if entry.is_used { Some(0) } else { None },
+        state: if entry.is_used {
+            AddressState::Used
+        } else {
+            AddressState::Available
+        },
         tx_count: 0,
         total_received: 0,
         total_sent: 0,
@@ -3036,7 +3040,7 @@ fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
         pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-        if info.used {
+        if info.is_used() {
             pool.used_indices.insert(idx);
             pool.highest_used = Some(pool.highest_used.map_or(idx, |h| h.max(idx)));
         }
@@ -5800,9 +5804,7 @@ mod tests {
             index,
             path: DerivationPath::from_str(&format!("m/9'/1'/2'/{}", index))
                 .expect("static derivation path must parse"),
-            used: false,
-            generated_at: 0,
-            used_at: None,
+            state: AddressState::Available,
             tx_count: 0,
             total_received: 0,
             total_sent: 0,
@@ -6431,9 +6433,7 @@ mod tests {
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
-                used: true,
-                generated_at: 0,
-                used_at: None,
+                state: AddressState::Used,
                 tx_count: 0,
                 total_received: 0,
                 total_sent: 0,
@@ -6483,7 +6483,7 @@ mod tests {
             entries
                 .iter()
                 .flat_map(|e| e.addresses.iter())
-                .all(|a| a.used),
+                .all(|a| a.is_used()),
             "every emitted marked-used address must carry used == true"
         );
     }

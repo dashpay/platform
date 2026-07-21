@@ -155,7 +155,7 @@ pub fn apply_pools(
                 pool_type,
                 i64::from(info.index),
                 info.script_pubkey.as_bytes(),
-                info.used,
+                info.is_used(),
                 public_key,
                 key_type,
             ])?;

@@ -1164,7 +1164,7 @@ mod tests {
             cj_external
                 .address_info(&coinjoin_used)
                 .expect("used address must be present in the CoinJoin pool")
-                .used,
+                .is_used(),
             "used CoinJoin address must be marked used on the CoinJoin pool, not account 0"
         );
 
@@ -1573,7 +1573,7 @@ mod tests {
             .address_info(&in_window)
             .expect("in-window address must be present in the pool");
         assert!(
-            info.used,
+            info.is_used(),
             "in-window restored UTXO address must be marked used"
         );
         assert!(
@@ -1703,7 +1703,7 @@ mod tests {
             assert!(
                 !external
                     .address_info(&in_window_used)
-                    .map(|i| i.used)
+                    .map(|i| i.is_used())
                     .unwrap_or(false),
                 "without pool used-state a spent-out address resets to unused"
             );
@@ -1741,7 +1741,7 @@ mod tests {
             external
                 .address_info(&in_window_used)
                 .expect("in-window used address present")
-                .used,
+                .is_used(),
             "in-window spent-out address must be restored as used"
         );
         assert!(external.used_indices.contains(&5), "idx 5 recorded used");
@@ -1749,7 +1749,7 @@ mod tests {
             external
                 .address_info(&deep_used)
                 .expect("deep used address derived into pool")
-                .used,
+                .is_used(),
             "deep spent-out address must be derived + restored as used"
         );
         assert!(external.used_indices.contains(&30), "idx 30 recorded used");
@@ -1852,14 +1852,14 @@ mod tests {
             external
                 .address_info(&in_window_used)
                 .expect("in-window used address present")
-                .used,
+                .is_used(),
             "in-window used address must be restored as used"
         );
         let wedge_info = external
             .address_info(&wedge_used)
             .expect("wedge-zone address must be derived into the pool by the refill");
         assert!(
-            wedge_info.used,
+            wedge_info.is_used(),
             "wedge-zone previously-used address must be re-marked used, \
              not left pool-visible as fresh"
         );

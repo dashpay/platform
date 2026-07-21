@@ -23,7 +23,7 @@ use dashcore::address::Payload;
 use dashcore::hashes::Hash;
 use dashcore::{Address, Network, PubkeyHash};
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -124,7 +124,11 @@ fn tc_b_020_used_set_from_pool_not_utxos() {
     assert_eq!(infos.len(), 10);
     let used_indices = [0u32, 3, 7];
     for info in infos.iter_mut() {
-        info.used = used_indices.contains(&info.index);
+        info.state = if used_indices.contains(&info.index) {
+            AddressState::Used
+        } else {
+            AddressState::Available
+        };
     }
     persister
         .store(
@@ -349,7 +353,7 @@ fn mixed_store_unions_utxo_and_pool_used_sets() {
     // enumerate the historical address at all.
     let mut infos = external_infos(0x27);
     infos.truncate(1);
-    infos[0].used = true;
+    infos[0].state = AddressState::Used;
     let pool_used = infos[0].address.clone();
     persister
         .store(

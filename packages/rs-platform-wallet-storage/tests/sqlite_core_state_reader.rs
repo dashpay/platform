@@ -644,7 +644,7 @@ fn rehydration_routes_via_real_sql_resolver() {
 #[test]
 fn rehydration_routes_used_addresses_to_owning_account() {
     use key_wallet::account::{AccountType, StandardAccountType};
-    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use platform_wallet::changeset::AccountAddressPoolEntry;
     use platform_wallet_storage::sqlite::schema::core_pool::OwningAccount;
@@ -666,7 +666,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
     let mut coinjoin_used = first_external_info(&wallet, |at| {
         matches!(at, AccountType::CoinJoin { index: 0 })
     });
-    coinjoin_used.used = true;
+    coinjoin_used.state = AddressState::Used;
     let bip44_info = first_external_info(&wallet, |at| {
         matches!(
             at,
@@ -764,7 +764,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         cj_external
             .address_info(&coinjoin_used.address)
             .expect("used address present in the CoinJoin pool")
-            .used,
+            .is_used(),
         "used CoinJoin address must be marked used on the CoinJoin pool, not BIP44"
     );
 

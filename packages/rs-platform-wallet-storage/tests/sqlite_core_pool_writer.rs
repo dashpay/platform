@@ -9,7 +9,7 @@ mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use key_wallet::account::{AccountType, StandardAccountType};
-use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -167,7 +167,11 @@ fn tc_b_001_pool_rows_with_used_flags() {
     infos.truncate(6);
     assert_eq!(infos.len(), 6, "need at least six derived addresses");
     for info in infos.iter_mut() {
-        info.used = matches!(info.index, 0 | 2 | 4);
+        info.state = if matches!(info.index, 0 | 2 | 4) {
+            AddressState::Used
+        } else {
+            AddressState::Available
+        };
     }
     let entry = pool_entry(
         AccountType::Standard {
@@ -345,7 +349,7 @@ fn tc_b_010_pool_state_idempotent_and_monotonic() {
 
     // Flip index 1 to used.
     let mut flipped = infos.clone();
-    flipped[1].used = true;
+    flipped[1].state = AddressState::Used;
     persister
         .store(
             w,
@@ -433,7 +437,11 @@ fn tc_b_015_key_class_survives() {
 fn index_zero_info(seed_byte: u8, used: bool) -> Vec<AddressInfo> {
     let mut infos = external_infos(seed_byte);
     infos.truncate(1);
-    infos[0].used = used;
+    infos[0].state = if used {
+        AddressState::Used
+    } else {
+        AddressState::Available
+    };
     infos
 }
 

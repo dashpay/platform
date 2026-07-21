@@ -137,7 +137,11 @@ fn spent_utxo_address_is_marked_used() {
         .managed_account_type()
         .address_pools()
         .iter()
-        .any(|p| p.address_info(&address).map(|i| i.used).unwrap_or(false));
+        .any(|p| {
+            p.address_info(&address)
+                .map(|i| i.is_used())
+                .unwrap_or(false)
+        });
     assert!(
         marked_used,
         "a spent UTXO's address must still be marked used in the pool"

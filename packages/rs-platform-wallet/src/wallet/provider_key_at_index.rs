@@ -277,7 +277,7 @@ pub fn insert_platform_node_pool_entry(
     public_key: [u8; 32],
     used: bool,
 ) -> Result<(), PlatformNodePoolError> {
-    use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+    use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::AddressInfo;
 
@@ -304,9 +304,11 @@ pub fn insert_platform_node_pool_entry(
         public_key: Some(PublicKeyType::EdDSA(public_key.to_vec())),
         index,
         path: key_wallet::bip32::DerivationPath::from(children),
-        used,
-        generated_at: 0,
-        used_at: None,
+        state: if used {
+            AddressState::Used
+        } else {
+            AddressState::Available
+        },
         tx_count: 0,
         total_received: 0,
         total_sent: 0,
@@ -322,6 +324,13 @@ pub fn insert_platform_node_pool_entry(
         pool.highest_generated
             .map_or(index, |highest| highest.max(index)),
     );
+    if used {
+        pool.used_indices.insert(index);
+        pool.highest_used = Some(
+            pool.highest_used
+                .map_or(index, |highest| highest.max(index)),
+        );
+    }
     pool.addresses.insert(index, info);
     Ok(())
 }
@@ -979,8 +988,7 @@ mod tests {
             .cloned()
             .expect("AbsentHardened pool");
         let restored = pool.addresses.get(&key.index).expect("restored entry");
-        assert!(restored.used);
-        assert_eq!(restored.used_at, Some(0));
+        assert!(restored.is_used());
         assert!(pool.used_indices.contains(&key.index));
         assert_eq!(pool.highest_used, Some(key.index));
     }
