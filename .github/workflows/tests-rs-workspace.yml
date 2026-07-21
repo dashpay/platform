@@ -238,7 +238,16 @@ jobs:
         run: |
           if [ -d target/llvm-cov-target ]; then
             du -sh target/llvm-cov-target || true
-            rm -rf target/llvm-cov-target
+            for attempt in 1 2 3; do
+              if rm -rf target/llvm-cov-target; then
+                break
+              fi
+              echo "::warning::Coverage cleanup attempt ${attempt} failed; retrying"
+              sleep 2
+            done
+            if [ -d target/llvm-cov-target ]; then
+              echo "::warning::Coverage artifacts could not be fully removed"
+            fi
           fi
           du -sh target 2>/dev/null || true
 
