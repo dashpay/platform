@@ -285,10 +285,12 @@ internal object WalletManagerNative {
     /**
      * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
      * [token], reconciling its reservation on failure and consuming the token.
-     * A repeated/stale/wrong-wallet token throws
-     * `ErrorStaleReservationToken` (never a double-broadcast). [coreHandle] must
-     * resolve to the wallet the token was minted against. Returns the txid as a
-     * lowercase hex string.
+     * Rather than double-broadcasting, an unusable token throws one of three
+     * sibling codes — `ErrorStaleReservationToken` (26, aged out),
+     * `ErrorReservationTokenConsumed` (27, already consumed/unknown), or
+     * `ErrorReservationWalletMismatch` (28, different wallet generation).
+     * [coreHandle] must resolve to the wallet the token was minted against.
+     * Returns the txid as a lowercase hex string.
      */
     external fun coreWalletBroadcastSignedPayment(coreHandle: Long, token: Long): String
 
