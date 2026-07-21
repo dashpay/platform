@@ -359,10 +359,40 @@ class ManagedPlatformWallet internal constructor(
      * e.g. a re-created wallet), or aged out
      * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]).
      * Operates on the token directly (the inputs are already reserved).
+     *
+     * Callers holding a [SignedCoreTransaction] should prefer the object
+     * overload: with the bare token, the source object must stay strongly
+     * reachable until this call returns, or its GC backstop can release the
+     * reservation mid-broadcast.
      */
     suspend fun broadcastSigned(token: Long): String = withContext(Dispatchers.IO) {
         mapNativeErrors {
             coreWallet().use { core -> core.broadcastSignedPayment(token) }
+        }
+    }
+
+    /**
+     * Broadcast [payment] and return its txid — the object-owning form of
+     * [broadcastSigned]. Prefer this over passing the bare
+     * [SignedCoreTransaction.reservationToken]: the token's lifetime is coupled
+     * to the object's GC-reachability (the [NativeCleaner] backstop releases the
+     * reservation when the object is collected), so a caller that extracts the
+     * `Long` and drops the object races GC and can find the reservation gone.
+     * This overload keeps the object reachable for the whole native call and
+     * disarms the backstop once the token is consumed.
+     */
+    suspend fun broadcastSigned(payment: SignedCoreTransaction): String {
+        try {
+            val txid = broadcastSigned(payment.reservationToken)
+            // Token consumed: close() disarms the GC backstop (the underlying
+            // native release is an idempotent no-op on a consumed token).
+            payment.close()
+            return txid
+        } finally {
+            // The object must stay reachable across the suspend/native call —
+            // without this, GC could run the backstop mid-broadcast and release
+            // the reservation out from under it.
+            java.lang.ref.Reference.reachabilityFence(payment)
         }
     }
 
@@ -378,6 +408,20 @@ class ManagedPlatformWallet internal constructor(
             mapNativeErrors {
                 WalletManagerNative.coreWalletReleaseSignedPayment(token)
             }
+        }
+    }
+
+    /**
+     * Release [payment]'s funding reservation — the object-owning form of
+     * [releaseReservation]; see [broadcastSigned] for why it is preferred over
+     * the bare-token form.
+     */
+    suspend fun releaseReservation(payment: SignedCoreTransaction) {
+        try {
+            releaseReservation(payment.reservationToken)
+            payment.close()
+        } finally {
+            java.lang.ref.Reference.reachabilityFence(payment)
         }
     }
 
