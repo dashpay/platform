@@ -144,10 +144,21 @@ jobs:
           working-directory: packages/kotlin-sdk
           script: |
             # NOTE: android-emulator-runner executes this script line by line —
-            # each line is its own `sh -c` with no shared state. So every loop
-            # must fit on ONE line and nothing may rely on a variable set on a
-            # different line; multi-line control flow silently fails with a
-            # syntax error. Back-to-back single commands are fine.
+            # each line is its own `sh -c` with no shared state — so every
+            # command must be self-contained on a single line (multi-line loops
+            # or cross-line variables silently fail).
+
+            # Keep the screen on and never time out. THIS is the fix: the flake
+            # was the emulator screen turning off mid-run and RE-LOCKING the
+            # device. The mnemonic MASTER_ALIAS AES key is
+            # setUnlockedDeviceRequired(true), so once the device re-locks even
+            # an ENCRYPT throws `InvalidKeyException: Keystore operation failed`
+            # (see WalletStorage.storeMnemonic). Unlocking alone is not enough —
+            # a slower suite (more instrumented tests) crosses the screen-off
+            # deadline before its wallet tests run, which is why this branch
+            # failed where lighter ones passed. Prevent the re-lock outright.
+            adb shell settings put system screen_off_timeout 2147483647
+            adb shell svc power stayon true
 
             # Enroll a device-wide secure lock screen (PIN) — Android Keystore
             # refuses to generate an auth-required key
@@ -157,20 +168,15 @@ jobs:
             # only DECRYPT is).
             adb shell locksettings set-pin 1234
 
-            # Enrolling that credential locks the device, which breaks every
-            # OTHER key made with setUnlockedDeviceRequired(true) — the mnemonic
-            # MASTER_ALIAS AES key the tests decrypt throws InvalidKeyException
-            # while locked. Drive the device to an unlocked state and VERIFY it
-            # (poll dumpsys trust for deviceLocked=0) rather than a fixed sleep,
-            # which loses the race on a slow runner; a secure keyguard does not
-            # always yield to dismiss-keyguard alone, so enter the PIN as a
-            # fallback. Whole loop on one line so it runs in a single shell.
-            for i in $(seq 1 30); do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell dumpsys trust | grep -q 'deviceLocked=0' && break; adb shell input swipe 500 1500 500 500; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; done
+            # Unlock the keyguard. With the screen kept on above, the device now
+            # stays unlocked for the whole run instead of re-locking.
+            adb shell input keyevent KEYCODE_WAKEUP
+            adb shell wm dismiss-keyguard
+            sleep 5
 
-            # Fail loudly if it never unlocked, so a spurious InvalidKeyException
-            # can't masquerade as a real test failure (re-check with a fresh
-            # dumpsys — the loop's result can't be carried in a variable here).
-            adb shell dumpsys trust | grep -q 'deviceLocked=0' || { echo "::error::Emulator never reached deviceLocked=0; Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1; }
+            # Fail loudly if the device is still locked, so a spurious
+            # InvalidKeyException can't masquerade as a real test failure.
+            adb shell dumpsys trust | grep -q 'deviceLocked=0' || { echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1; }
 
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
