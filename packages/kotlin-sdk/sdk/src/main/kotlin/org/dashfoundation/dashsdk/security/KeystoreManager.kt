@@ -150,6 +150,16 @@ class KeystoreManager {
     fun keysAliasFingerprint(): String =
         fingerprint(keysPublicKey())
 
+    /**
+     * Like [keysAliasFingerprint] but read-only: returns `null` when
+     * [KEYS_ALIAS] is absent instead of generating a keypair. Capability
+     * probes (`canSignWith`) run this on a Rust callback thread and must not
+     * block or mutate Keystore state — an absent alias means any stored blob
+     * is already unrecoverable, so the caller treats it as not current.
+     */
+    fun keysAliasFingerprintOrNull(): String? =
+        androidKeyStore().getCertificate(KEYS_ALIAS)?.publicKey?.let { fingerprint(it) }
+
     private fun fingerprint(publicKey: PublicKey): String =
         MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
             .joinToString("") { "%02x".format(it) }

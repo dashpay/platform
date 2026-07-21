@@ -184,6 +184,26 @@ class WalletStorageOwnershipTest {
     }
 
     @Test
+    fun capabilityProbeDoesNotRegenerateAMissingKeysAlias() = runBlocking {
+        storage.storePrivateKey("9c0ffee0", ByteArray(32) { 4 }, ownerWalletId = walletA)
+
+        // Deleting KEYS_ALIAS is exactly what invalidation cleanup does. The
+        // signer capability probe reaches this through canSignWith on a Rust
+        // callback thread, so it must stay read-only: report the blob unusable
+        // WITHOUT falling through to ensureKeysKeyPair and generating a fresh
+        // RSA-2048 pair under the process-wide lock (which would block that
+        // thread and mutate Keystore state on a mere probe).
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+
+        assertFalse(storage.isPrivateKeyDecryptable("9c0ffee0"))
+        assertNull(
+            "capability probe must not regenerate KEYS_ALIAS",
+            keyStore.getCertificate(KeystoreManager.KEYS_ALIAS),
+        )
+    }
+
+    @Test
     fun keysAliasEncryptionCarriesTheFingerprintOfItsEncryptionKey() {
         val keystore = KeystoreManager()
 

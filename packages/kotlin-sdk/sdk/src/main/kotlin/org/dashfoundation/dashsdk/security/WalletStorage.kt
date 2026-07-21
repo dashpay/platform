@@ -383,10 +383,11 @@ class WalletStorage(
      * currently in the Keystore — see [KeystoreManager.keysAliasFingerprint].
      * A missing fingerprint (written before this check existed) is treated
      * as unusable rather than trusted, since a stale RSA-shaped blob is
-     * indistinguishable from a current one by shape alone. Computing the
-     * current fingerprint may generate a missing alias and can therefore
-     * fail until a secure lock screen is configured; this is a capability
-     * check, not a promise of side-effect-free Keystore access.
+     * indistinguishable from a current one by shape alone. Read-only: it uses
+     * the non-generating [KeystoreManager.keysAliasFingerprintOrNull], so an
+     * absent alias (e.g. just deleted by invalidation cleanup) returns `false`
+     * without regenerating a keypair — a capability probe on the Rust signer
+     * callback must never block that thread or mutate Keystore state.
      */
     private fun isCurrentKeysBlob(
         pubkeyHex: String,
@@ -395,7 +396,8 @@ class WalletStorage(
     ): Boolean {
         if (!keystore.isKeysBlobDecryptable(decode(encoded))) return false
         val fingerprint = prefs[privateKeyFingerprintKey(pubkeyHex)] ?: return false
-        return fingerprint == keystore.keysAliasFingerprint()
+        val current = keystore.keysAliasFingerprintOrNull() ?: return false
+        return fingerprint == current
     }
 
     /**
@@ -479,9 +481,10 @@ class WalletStorage(
      * current [KeystoreManager.KEYS_ALIAS] RSA scheme. Blobs written by the
      * pre-RSA AES-GCM scheme survive in the DataStore but lost their key
      * when the RSA pair replaced it, so signing with them can only fail —
-     * key-health treats them as missing and offers a re-derive. This never
-     * decrypts or prompts, but fingerprint lookup may generate a
-     * missing alias and can fail while no secure lock screen is configured.
+     * key-health treats them as missing and offers a re-derive. Read-only: it
+     * never decrypts, prompts, or generates a keypair (an absent alias just
+     * returns `false`), so it is safe to call from the synchronous signer
+     * capability probe without blocking or mutating Keystore state.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
         val prefs = store.data.first()
