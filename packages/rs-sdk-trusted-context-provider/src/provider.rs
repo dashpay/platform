@@ -27,7 +27,10 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "ios", target_os = "android"))
+))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -87,7 +90,10 @@ struct MasternodeDiscoveryResponse {
 
 impl TrustedHttpContextProvider {
     /// Verify that a URL's domain resolves
-    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        not(any(target_os = "ios", target_os = "android"))
+    ))]
     fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
         let parsed_url = Url::parse(url).map_err(|e| {
             TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
@@ -159,7 +165,10 @@ impl TrustedHttpContextProvider {
         }
 
         // Verify the domain resolves before proceeding (skip on WASM and iOS)
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(any(target_os = "ios", target_os = "android"))
+        ))]
         Self::verify_domain_resolves(&base_url)?;
 
         #[cfg(target_arch = "wasm32")]
@@ -174,7 +183,19 @@ impl TrustedHttpContextProvider {
                 .build()?
         };
 
-        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        #[cfg(all(not(target_arch = "wasm32"), target_os = "android"))]
+        let client = {
+            // Android: no blocking DNS pre-check, platform-labelled UA
+            Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent("DashSDK-Android/1.0")
+                .build()?
+        };
+
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(any(target_os = "ios", target_os = "android"))
+        ))]
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .user_agent("DashSDK/1.0")
@@ -754,6 +775,12 @@ impl ContextProvider for TrustedHttpContextProvider {
             // No fallback provider, return None
             Ok(None)
         }
+    }
+
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        let id = contract.id();
+        let mut known = self.known_contracts.lock().unwrap();
+        known.insert(id, contract);
     }
 
     fn get_token_configuration(

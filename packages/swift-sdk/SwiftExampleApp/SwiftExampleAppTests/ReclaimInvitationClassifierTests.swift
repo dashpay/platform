@@ -1,4 +1,5 @@
 import XCTest
+import SwiftDashSDK
 @testable import SwiftExampleApp
 
 /// Pins `ReclaimInvitationSheet.isAlreadyConsumed(message:)` — the classifier
@@ -16,6 +17,18 @@ import XCTest
 /// must NOT be misclassified as already-consumed, or the UI would wrongly flip a
 /// still-live invitation to Claimed.
 final class ReclaimInvitationClassifierTests: XCTestCase {
+
+    func test_typedAlreadyConsumed_classifiedTrue() {
+        let error = PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
+        XCTAssertTrue(ReclaimInvitationSheet.isAlreadyConsumed(error))
+        XCTAssertTrue(ReclaimInvitationSheet.isLocallyConsumedTombstone(error))
+    }
+
+    func test_typedNotTracked_classifiedFalse() {
+        let error = PlatformWalletError.assetLockNotTracked("deadbeef:0")
+        XCTAssertFalse(ReclaimInvitationSheet.isAlreadyConsumed(error))
+        XCTAssertFalse(ReclaimInvitationSheet.isLocallyConsumedTombstone(error))
+    }
 
     /// The real already-consumed rejection, as surfaced to Swift.
     func test_alreadyConsumedDisplay_classifiedTrue() {
@@ -72,11 +85,10 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
             + "output 0 already completely used"
     )
 
-    /// Already-consumed + our own reclaim was in flight ⇒ explicitly ambiguous,
-    /// NEVER `.reclaimed`: the marker only proves a local attempt started a
-    /// consume, not that it landed — the invitee can claim between our crash
-    /// and the retry, and a Reclaimed recovery would misattribute that claim.
-    func test_classify_alreadyConsumed_priorInFlight_isAmbiguous() {
+    /// Consensus already-consumed wording + our own reclaim was in flight is
+    /// explicitly ambiguous: the marker only proves that a local attempt
+    /// started, while the consensus error cannot attribute who consumed it.
+    func test_classify_consensusAlreadyConsumed_priorInFlight_isAmbiguous() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: Self.alreadyConsumed, hadPriorReclaimInFlight: true),
@@ -84,12 +96,29 @@ final class ReclaimInvitationClassifierTests: XCTestCase {
         )
     }
 
-    /// Already-consumed + no prior reclaim ⇒ the invitee claimed it first (Claimed).
-    func test_classify_alreadyConsumed_noPrior_isClaimed() {
+    /// Consensus already-consumed wording + no prior reclaim resolves to Claimed.
+    func test_classify_consensusAlreadyConsumed_noPrior_isClaimed() {
         XCTAssertEqual(
             ReclaimInvitationSheet.classifyReclaimFailure(
                 error: Self.alreadyConsumed, hadPriorReclaimInFlight: false),
             .claimed
+        )
+    }
+
+    /// Typed code 24 is emitted from the wallet's retained local consumed
+    /// tombstone, which is written only after this wallet successfully consumed
+    /// the lock. It therefore recovers Reclaimed regardless of the UI marker.
+    func test_classify_typedConsumedTombstone_isReclaimed_regardlessOfMarker() {
+        let error = PlatformWalletError.assetLockAlreadyConsumed("deadbeef:0")
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: error, hadPriorReclaimInFlight: true),
+            .reclaimed
+        )
+        XCTAssertEqual(
+            ReclaimInvitationSheet.classifyReclaimFailure(
+                error: error, hadPriorReclaimInFlight: false),
+            .reclaimed
         )
     }
 
