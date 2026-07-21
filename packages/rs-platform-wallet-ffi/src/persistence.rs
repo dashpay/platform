@@ -115,6 +115,22 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
 /// General-purpose notifications (`on_store_fn`, `on_flush_fn`) plus
 /// typed callbacks that send incremental data across FFI for the caller
 /// to persist in their preferred storage backend.
+///
+/// # Reentrancy contract (required of every callback)
+///
+/// A persistence callback runs **synchronously on the calling native thread**,
+/// which is frequently a wallet-manager task **holding the manager's write
+/// lock**. That lock is non-reentrant. Therefore a callback MUST NOT call back
+/// into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
+/// `platform_wallet_*` and friends), directly or indirectly — doing so
+/// deadlocks. Write the changeset to your storage backend and return; do not
+/// query live wallet state to enrich a row, and do not synchronously drive an
+/// observer/UI reaction that re-enters native on the same thread. (A UI layer
+/// reacting to the committed rows on a *later* turn — SwiftUI `@Query`, a Room
+/// `Flow` collector on an async dispatcher — is fine: it runs after the
+/// callback returns and the lock is released.) Keep the work bounded; the call
+/// blocks every other wallet accessor while it runs. Mirrors the Rust-side
+/// `PlatformWalletPersistence::store` reentrancy contract.
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 pub struct PersistenceCallbacks {

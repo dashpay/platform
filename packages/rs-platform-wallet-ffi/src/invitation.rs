@@ -447,6 +447,8 @@ pub unsafe extern "C" fn platform_wallet_parse_invitation(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dashcore::secp256k1::SecretKey;
+    use dashcore::{Network, PrivateKey};
 
     // Marshalling-boundary coverage. The invitation crypto/codec semantics are
     // pinned library-side in `platform_wallet`'s `crypto::invitation` +
@@ -608,6 +610,59 @@ mod tests {
         };
         // parse_invitation_uri rejects the scheme → surfaced as an error result.
         assert_ne!(r.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    /// The invitation-claim export is the fifth production caller of
+    /// `decode_identity_pubkeys`. Exercise that call path directly: a valid
+    /// invitation URI gets past parsing, duplicate rows are rejected before the
+    /// unknown wallet is looked up, and no signer/network work is attempted.
+    #[test]
+    fn claim_invitation_rejects_duplicate_key_ids_before_wallet_lookup() {
+        let voucher = SecretKey::from_slice(&[0x11u8; 32]).expect("valid scalar");
+        let wif = PrivateKey::new(voucher, Network::Testnet).to_wif();
+        let uri =
+            std::ffi::CString::new(format!("dashpay://invite?assetlocktx=aa&pk={wif}")).unwrap();
+
+        let pk_a = [0x02u8; 33];
+        let pk_b = [0x03u8; 33];
+        let ffi_row = |pubkey: &[u8]| IdentityPubkeyFFI {
+            key_id: 0,
+            key_type: 0,
+            purpose: 0,
+            security_level: 0,
+            pubkey_bytes: pubkey.as_ptr(),
+            pubkey_len: pubkey.len(),
+            read_only: false,
+            contract_bounds_kind: 0,
+            contract_bounds_id: std::ptr::null(),
+            contract_bounds_document_type: std::ptr::null(),
+        };
+        let rows = [ffi_row(&pk_a), ffi_row(&pk_b)];
+        let dummy_signer = std::ptr::dangling_mut::<SignerHandle>();
+        let mut id = [0xFFu8; 32];
+        let mut handle: Handle = 99;
+
+        let mut result = unsafe {
+            platform_wallet_claim_invitation(
+                0xDEAD_BEEF,
+                uri.as_ptr(),
+                0,
+                rows.as_ptr(),
+                rows.len(),
+                dummy_signer,
+                0,
+                &mut id,
+                &mut handle,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(id, [0u8; 32]);
+        assert_eq!(handle, NULL_HANDLE);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// A null `uri` is rejected with `ErrorNullPointer` before any parsing.

@@ -6,8 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.TransactionsNative
-import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
 
 /**
  * DPP identity public-key type — Kotlin mirror of the Swift `KeyType`
@@ -193,57 +191,10 @@ class IdentityUpdates internal constructor(
             TransactionsNative.updateIdentity(
                 walletHandle,
                 identityId,
-                encodeAddPubkeys(addPublicKeys),
+                IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
             )
         }
-    }
-
-    /**
-     * Encode [keys] into the add-pubkeys blob the FFI decodes (see
-     * `TransactionsNative.updateIdentity`): `u32 rowCount` then per row
-     * `u32 keyId, u8 keyType, u8 purpose, u8 securityLevel, u8 readOnly,
-     * u8 contractBoundsKind, u16 pubkeyLen, pubkey`, plus the 32-byte contract
-     * id (kind != 0) and `u16 docTypeLen, docType` (kind == 2). All integers
-     * big-endian to match the Rust reader.
-     */
-    private fun encodeAddPubkeys(keys: List<IdentityPubkey>): ByteArray {
-        val out = ByteArrayOutputStream()
-        val dos = DataOutputStream(out)
-        dos.writeInt(keys.size)
-        for (k in keys) {
-            dos.writeInt(k.keyId)
-            dos.writeByte(k.keyType.ffiValue)
-            dos.writeByte(k.purpose.ffiValue)
-            dos.writeByte(k.securityLevel.ffiValue)
-            dos.writeByte(if (k.readOnly) 1 else 0)
-            val kind = contractBoundsKind(k.contractBounds)
-            dos.writeByte(kind)
-            require(k.pubkeyBytes.size <= 0xFFFF) {
-                "pubkeyBytes too large: ${k.pubkeyBytes.size}"
-            }
-            dos.writeShort(k.pubkeyBytes.size)
-            dos.write(k.pubkeyBytes)
-            when (val bounds = k.contractBounds) {
-                null -> Unit
-                is ContractBounds.SingleContract -> dos.write(bounds.contractId)
-                is ContractBounds.SingleContractDocumentType -> {
-                    dos.write(bounds.contractId)
-                    val dt = bounds.documentTypeName.toByteArray(Charsets.UTF_8)
-                    require(dt.size <= 0xFFFF) { "documentTypeName too large: ${dt.size}" }
-                    dos.writeShort(dt.size)
-                    dos.write(dt)
-                }
-            }
-        }
-        return out.toByteArray()
-    }
-
-    /** Discriminant matching the FFI: 0 none, 1 SingleContract, 2 with doc type. */
-    private fun contractBoundsKind(bounds: ContractBounds?): Int = when (bounds) {
-        null -> 0
-        is ContractBounds.SingleContract -> 1
-        is ContractBounds.SingleContractDocumentType -> 2
     }
 }

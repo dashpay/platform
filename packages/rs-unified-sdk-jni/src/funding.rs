@@ -39,7 +39,7 @@
 #![allow(clippy::missing_safety_doc)]
 #![cfg(feature = "shielded")]
 
-use crate::identity::{decode_pubkeys_blob, role_for_registration_key_id};
+use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
@@ -654,10 +654,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// spends a note of the fixed exit `denomination` (credits — one of the
 /// on-chain `shielded_identity_create_denominations`: 0.1 / 0.3 / 0.5 /
 /// 1.0 DASH) from the wallet's bound Orchard pool (`account`) to fund a new
-/// identity at `identity_index`. `pubkeys_blob` is the SAME flat
-/// registration-key blob ID-08 uses (`IdentityKeyPreview.encodeForRegistration`),
-/// decoded + role-stamped by keyId exactly like
-/// [`Java_..._registerIdentityFromAddresses`]. `fallback_address` is the
+/// identity at `identity_index`. `pubkeys_blob` is the SAME shared rich
+/// registration key-row blob ID-08 uses (built by `IdentityPubkeyCodec`,
+/// decoded by `decode_registration_pubkeys_blob` exactly like
+/// [`Java_..._registerIdentityFromAddresses`]). `fallback_address` is the
 /// REQUIRED 21-byte `PlatformAddress` (1 variant tag + 20 hash) that
 /// receives the value (minus a penalty) if creation fails a stateful check
 /// — it is bound into the transition sighash. `signer_handle` is the
@@ -700,13 +700,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             return ptr::null_mut();
         };
 
-        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
             return ptr::null_mut();
         };
-        if decoded.is_empty() {
-            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
-            return ptr::null_mut();
-        }
 
         // The 21-byte fallback PlatformAddress (1 variant tag + 20 hash),
         // REQUIRED for Type-20 — validated exactly here.
@@ -727,25 +723,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             return ptr::null_mut();
         }
 
-        // Same positional keyId → DPP role assignment as ID-01 / ID-08.
-        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
-            .iter()
-            .map(|(key_id, bytes)| {
-                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
-                IdentityPubkeyFFI {
-                    key_id: *key_id,
-                    key_type,
-                    purpose,
-                    security_level,
-                    pubkey_bytes: bytes.as_ptr(),
-                    pubkey_len: bytes.len(),
-                    read_only: false,
-                    contract_bounds_kind: 0,
-                    contract_bounds_id: ptr::null(),
-                    contract_bounds_document_type: ptr::null(),
-                }
-            })
-            .collect();
+        // Same rich rows as ID-01 / ID-08 — the caller stamps each key's DPP
+        // role and any contract bounds; this path just marshals them.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
 
         let mut out_id = [0u8; 32];
         let result = unsafe {

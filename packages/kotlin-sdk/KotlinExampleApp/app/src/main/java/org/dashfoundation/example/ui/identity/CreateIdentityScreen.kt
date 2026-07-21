@@ -32,11 +32,13 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.credits.FundingInput
+import org.dashfoundation.dashsdk.identity.RegistrationKeys
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.RegistrationProgress
+import org.dashfoundation.example.services.DashpayKeyProvisioning
 import org.dashfoundation.example.services.IdentityRegistrationController
 import org.dashfoundation.example.services.assetlock.IdentityAssetLockRecovery
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -177,67 +179,114 @@ fun CreateIdentityScreen(navController: NavHostController) {
                 text = "Create Identity",
                 isLoading = isSubmitting,
                 enabled = selectedWallet != null &&
-                    (fundingSource == CreateIdentityFundingSource.AssetLockResume ||
-                        amountText.toLongOrNull() != null) &&
+                    isCreateIdentityFundingAmountValid(
+                        fundingSource,
+                        amountText.toLongOrNull(),
+                    ) &&
                     (fundingSource != CreateIdentityFundingSource.AssetLockResume ||
                         selectedRecoveryLock != null) &&
                     identityIndexText.toIntOrNull() != null,
                 modifier = Modifier.fillMaxWidth().testTag("createIdentity.submit"),
             ) {
                 val wallet = selectedWallet ?: return@SubmitButton
-                val amount = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
-                    null
-                } else {
-                    amountText.toLongOrNull() ?: return@SubmitButton
+                val submission = createIdentitySubmissionSnapshot(
+                    fundingSource = fundingSource,
+                    amountText = amountText,
+                    identityIndexText = identityIndexText,
+                    selectedRecoveryLock = selectedRecoveryLock,
+                ) ?: return@SubmitButton
+                val amount = submission.amount
+                if (!isCreateIdentityFundingAmountValid(submission.fundingSource, amount)) {
+                    error = if (submission.fundingSource == CreateIdentityFundingSource.CoreBalance) {
+                        val minimum = minimumCoreFundingDuffsForKeyCount(
+                            RegistrationKeys.keyCount(submission.includesDashPayKeys),
+                        )
+                        "Core-funded registration with DashPay keys requires at least " +
+                            "$minimum duffs."
+                    } else {
+                        "Funding amount must be positive."
+                    }
+                    return@SubmitButton
                 }
-                val identityIndex = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
-                    selectedRecoveryLock?.registrationIndex ?: return@SubmitButton
-                } else {
-                    identityIndexText.toIntOrNull() ?: return@SubmitButton
-                }
+                val identityIndex = submission.identityIndex
                 val mgr = manager ?: return@SubmitButton
+                val registerDashPayKeys = submission.includesDashPayKeys
                 isSubmitting = true
                 scope.launch {
                     try {
-                        // Step 1 (`.preparingKeys`): derive + persist the full
-                        // canonical identity key SET — the single allowed Kotlin
-                        // persist step. Rust derives keyId 0..3 (MASTER auth,
-                        // CRITICAL auth, HIGH auth, TRANSFER/CRITICAL) at this
-                        // identity index and stamps each key's role by keyId at
-                        // registration; we store each private key under its
-                        // pubkey hex. Deriving only the MASTER key here (the old
-                        // `count = 1` bug) left the identity unable to sign any
-                        // document / token / transfer / withdrawal write.
-                        val keys = mgr.identityRegistration.previewRegistrationKeySet(
+                        // Freeze and validate funding-specific prerequisites
+                        // BEFORE deriving or persisting any registration key.
+                        // The UI remains interactive while this coroutine runs,
+                        // but every operation below uses only `submission`.
+                        val platformInputs = if (
+                            submission.fundingSource == CreateIdentityFundingSource.PlatformAddress
+                        ) {
+                            val requiredAmount = amount
+                                ?: error("A funding amount is required")
+                            val inputs = packFundingInputs(
+                                candidates = wallet.addressesWithBalances(),
+                                target = requiredAmount,
+                                keyCount = RegistrationKeys.keyCount(registerDashPayKeys),
+                            )
+                            if (inputs.isEmpty()) {
+                                error = "Not enough Platform-address balance to fund " +
+                                    "$requiredAmount credits and reserve the identity-create fee."
+                                return@launch
+                            }
+                            inputs
+                        } else {
+                            null
+                        }
+                        val shieldedFallbackAddress = if (
+                            submission.fundingSource == CreateIdentityFundingSource.ShieldedBalance
+                        ) {
+                            val fallbackInput = wallet.addressesWithBalances().firstOrNull()
+                            if (fallbackInput == null) {
+                                error = "This wallet has no Platform-payment address for " +
+                                    "the required Type-20 creation-failure fallback. Fund " +
+                                    "a Platform address first (Wallet → Platform Balance → " +
+                                    "Top Up from Core)."
+                                return@launch
+                            }
+                            byteArrayOf(fallbackInput.addressType.toByte()) + fallbackInput.hash
+                        } else {
+                            null
+                        }
+
+                        // Step 1 (`.preparingKeys`): derive the full registration
+                        // key set in ONE pass, persist each private key to the
+                        // Keystore, and build the rich on-chain rows. Rust derives
+                        // keyId 0..N (base: MASTER auth, CRITICAL auth, HIGH auth,
+                        // TRANSFER/CRITICAL; plus the DashPay ENCRYPTION/DECRYPTION
+                        // pair on fresh funding), and the DPP role for each keyId
+                        // is stamped Kotlin-side by RegistrationKeys and shipped
+                        // over the wire. Fresh funding registers all 6 keys so the
+                        // new identity can send contact requests immediately;
+                        // asset-lock resume keeps the base 4 it originally
+                        // committed to on-chain (§ DashPay resume exclusion).
+                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
                             walletHandle = wallet.handle,
                             mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                             identityIndex = identityIndex,
-                            count = -1,
+                            count = RegistrationKeys.keyCount(registerDashPayKeys),
                         )
-                        keys.forEach { key ->
-                            try {
-                                container.walletStorage.storePrivateKey(
-                                    key.publicKeyHex,
-                                    key.privateKey,
-                                    // Prestored BEFORE the registration
-                                    // broadcasts: only the owner index makes
-                                    // it reachable by wallet deletion until
-                                    // the public_keys row commits.
-                                    ownerWalletId = wallet.walletId,
-                                )
-                            } finally {
-                                // Keystore is authoritative from here; the JVM
-                                // copy must not outlive the store (the
-                                // IdentityKeyPreview retention rule — the
-                                // registration blob reads only publicKey).
-                                key.privateKey.fill(0)
-                            }
-                        }
+                        val keySet = DashpayKeyProvisioning.provision(
+                            previews = previews,
+                            includeDashPayKeys = registerDashPayKeys,
+                            walletId = wallet.walletId,
+                            // Prestored BEFORE the registration broadcasts: only
+                            // the owner index makes it reachable by wallet deletion
+                            // until the public_keys row commits.
+                            persister = { hex, priv, owner ->
+                                container.walletStorage.storePrivateKey(hex, priv, ownerWalletId = owner)
+                            },
+                        )
+                        val keys = keySet.rows
                         // Step 2: hand the single registration FFI entry point to
                         // the coordinator as the body — no orchestration here. The
                         // funding source picks which registration FFI runs (ID-01
                         // Core asset lock vs ID-08 Platform addresses).
-                        when (fundingSource) {
+                        when (submission.fundingSource) {
                             CreateIdentityFundingSource.CoreBalance -> {
                                 coordinator.startRegistration(
                                     walletId = wallet.walletId,
@@ -258,21 +307,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 )
                             }
                             CreateIdentityFundingSource.PlatformAddress -> {
-                                // Enumerate balance-carrying Platform-payment
-                                // addresses, then greedily pack up to `amount`
-                                // credits (largest first) — matching the ID-06
-                                // top-up input assembly. Nonces are auto-fetched
-                                // Rust-side by the register-from-addresses FFI.
-                                val candidates = wallet.addressesWithBalances()
-                                    .sortedByDescending { it.credits }
-                                val requiredAmount = amount
-                                    ?: error("A funding amount is required")
-                                val inputs = packFundingInputs(candidates, requiredAmount)
-                                if (inputs.isEmpty()) {
-                                    error = "Not enough Platform-address balance to fund " +
-                                        "$requiredAmount credits. Fund a Platform address first."
-                                    return@launch
-                                }
+                                val inputs = platformInputs
+                                    ?: error("Platform funding inputs were not prepared")
                                 coordinator.startRegistration(
                                     walletId = wallet.walletId,
                                     identityIndex = identityIndex,
@@ -297,17 +333,8 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 // — build it from the wallet's first Platform-
                                 // payment address (1 variant tag + 20-byte hash),
                                 // the same (addressType, hash) pairing ID-08 feeds.
-                                val fallbackInput = wallet.addressesWithBalances().firstOrNull()
-                                if (fallbackInput == null) {
-                                    error = "This wallet has no Platform-payment address for " +
-                                        "the required Type-20 creation-failure fallback. Fund " +
-                                        "a Platform address first (Wallet → Platform Balance → " +
-                                        "Top Up from Core)."
-                                    return@launch
-                                }
-                                val fallbackAddress =
-                                    byteArrayOf(fallbackInput.addressType.toByte()) +
-                                        fallbackInput.hash
+                                val fallbackAddress = shieldedFallbackAddress
+                                    ?: error("Shielded fallback address was not prepared")
                                 coordinator.startRegistration(
                                     walletId = wallet.walletId,
                                     identityIndex = identityIndex,
@@ -333,7 +360,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                 )
                             }
                             CreateIdentityFundingSource.AssetLockResume -> {
-                                val lock = selectedRecoveryLock
+                                val lock = submission.recoveryLock
                                     ?: error("No resumable registration asset lock is selected")
                                 coordinator.startRegistration(
                                     walletId = wallet.walletId,
@@ -345,7 +372,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                                 walletHandle = wallet.handle,
                                                 lock = it,
                                                 identityIndex = it.registrationIndex,
-                                                keys = keys,
+                                                keys = keySet,
                                                 signerHandle = mgr.signerHandle,
                                                 coreSignerHandle = mgr.mnemonicResolverHandle,
                                             )
@@ -388,7 +415,120 @@ enum class CreateIdentityFundingSource(
     CoreBalance("Core balance", amountInCredits = false),
     PlatformAddress("Platform address", amountInCredits = true),
     ShieldedBalance("Shielded balance", amountInCredits = true),
-    AssetLockResume("Resume from asset lock", amountInCredits = false),
+    AssetLockResume("Resume from asset lock", amountInCredits = false);
+
+    /**
+     * Whether this funding path provisions the DashPay ENCRYPTION/DECRYPTION
+     * pair alongside the base four keys. Every fresh-funding path does;
+     * [AssetLockResume] does NOT — a resumed asset lock funds the fixed key
+     * count it was originally built for, so growing the transition it funds
+     * risks a resume that fails after the DASH is already locked. Matches iOS,
+     * which excludes DashPay provisioning from the resume path. A resumed
+     * identity gets DashPay capability afterward via the Add Identity Key flow.
+     */
+    val includesDashPayKeys: Boolean
+        get() = this != AssetLockResume
+}
+
+/** Immutable control values captured synchronously when Submit is tapped. */
+internal data class CreateIdentitySubmissionSnapshot(
+    val fundingSource: CreateIdentityFundingSource,
+    val amount: Long?,
+    val identityIndex: Int,
+    val recoveryLock: TrackedAssetLock?,
+) {
+    val includesDashPayKeys: Boolean = fundingSource.includesDashPayKeys
+}
+
+/**
+ * Resolve every mutable form control into one submission value before the
+ * first suspension. Resume locks are defensively copied, including the txid
+ * bytes, so later UI/state updates cannot redirect the in-flight operation.
+ */
+internal fun createIdentitySubmissionSnapshot(
+    fundingSource: CreateIdentityFundingSource,
+    amountText: String,
+    identityIndexText: String,
+    selectedRecoveryLock: TrackedAssetLock?,
+): CreateIdentitySubmissionSnapshot? {
+    val lock = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
+        selectedRecoveryLock?.copy(outpointTxid = selectedRecoveryLock.outpointTxid.copyOf())
+            ?: return null
+    } else {
+        null
+    }
+    val amount = if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
+        null
+    } else {
+        amountText.toLongOrNull() ?: return null
+    }
+    val identityIndex = lock?.registrationIndex
+        ?: identityIndexText.toIntOrNull()
+        ?: return null
+    return CreateIdentitySubmissionSnapshot(
+        fundingSource = fundingSource,
+        amount = amount,
+        identityIndex = identityIndex,
+        recoveryLock = lock,
+    )
+}
+
+/** Credits charged by the active fee schedule before the per-key surcharge. */
+private const val IDENTITY_CREATE_BASE_COST_CREDITS = 2_000_000L
+
+/** Credits charged for each public key in an identity-create transition. */
+private const val IDENTITY_KEY_CREATION_COST_CREDITS = 6_500_000L
+
+/** Credits charged for every Platform-address funding input. */
+private const val ADDRESS_FUNDING_INPUT_COST_CREDITS = 500_000L
+
+/** Core asset-lock floor required before identity-create processing starts. */
+private const val IDENTITY_ASSET_LOCK_BASE_DUFFS = 200_000L
+
+private const val CREDITS_PER_DUFF = 1_000L
+
+/**
+ * Protocol minimum for a Core-funded identity create with [keyCount] keys.
+ * Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1` and the
+ * iOS `CreateIdentityView.minFundingDuffs(forKeyCount:)` parity reference.
+ */
+internal fun minimumCoreFundingDuffsForKeyCount(keyCount: Int): Long {
+    require(keyCount > 0) { "keyCount must be positive, got $keyCount" }
+    return IDENTITY_ASSET_LOCK_BASE_DUFFS +
+        (IDENTITY_CREATE_BASE_COST_CREDITS +
+            IDENTITY_KEY_CREATION_COST_CREDITS * keyCount) / CREDITS_PER_DUFF
+}
+
+/**
+ * Protocol fee for an address-funded identity create without a refund output.
+ * Mirrors `IdentityCreateFromAddressesTransition::calculate_min_required_fee`.
+ */
+internal fun minimumPlatformAddressFundingFeeCredits(
+    keyCount: Int,
+    inputCount: Int,
+): Long {
+    require(keyCount > 0) { "keyCount must be positive, got $keyCount" }
+    require(inputCount > 0) { "inputCount must be positive, got $inputCount" }
+    return IDENTITY_CREATE_BASE_COST_CREDITS +
+        IDENTITY_KEY_CREATION_COST_CREDITS * keyCount +
+        ADDRESS_FUNDING_INPUT_COST_CREDITS * inputCount
+}
+
+/** Single submit/UI gate for the active funding source's amount semantics. */
+internal fun isCreateIdentityFundingAmountValid(
+    source: CreateIdentityFundingSource,
+    amount: Long?,
+): Boolean = when (source) {
+    CreateIdentityFundingSource.CoreBalance -> {
+        val minimum = minimumCoreFundingDuffsForKeyCount(
+            RegistrationKeys.keyCount(source.includesDashPayKeys),
+        )
+        amount != null && amount >= minimum
+    }
+    CreateIdentityFundingSource.PlatformAddress,
+    CreateIdentityFundingSource.ShieldedBalance,
+    -> amount != null && amount > 0
+    CreateIdentityFundingSource.AssetLockResume -> true
 }
 
 /**
@@ -501,24 +641,83 @@ private fun FundingSection(
 }
 
 /**
- * Greedily select funding inputs from [candidates] (assumed sorted
- * largest-balance-first) until their combined credits cover [target],
- * spending only what's needed from the final address. Returns an empty list
- * when the candidates can't cover [target]. Mirrors the ID-06 top-up
- * `packInputs`.
+ * Select the smallest feasible Platform-address input set that contributes
+ * exactly [target] credits while leaving the full identity-create fee on the
+ * address that Rust's default `DeductFromInput(0)` strategy will use.
+ *
+ * The native FFI collects inputs into a `BTreeMap<PlatformAddress, Credits>`,
+ * so input 0 is the lowest `(addressType, unsigned hash bytes)` address, not
+ * the first item in this list. Each attempted fee payer therefore selects only
+ * lexicographically greater companion inputs. The payer keeps
+ * [minimumPlatformAddressFundingFeeCredits] after its requested spend; all
+ * selected inputs contribute at least one credit. Returns an empty list when
+ * the requested identity balance plus fee cannot be funded.
  */
-private fun packFundingInputs(candidates: List<FundingInput>, target: Long): List<FundingInput> {
+internal fun packFundingInputs(
+    candidates: List<FundingInput>,
+    target: Long,
+    keyCount: Int = RegistrationKeys.keyCount(includeDashPayKeys = true),
+): List<FundingInput> {
     if (target <= 0) return emptyList()
-    var remaining = target
-    val picked = ArrayList<FundingInput>()
-    for (input in candidates) {
-        if (remaining <= 0) break
-        val spend = minOf(input.credits, remaining)
-        picked.add(input.copy(credits = spend))
-        remaining -= spend
+
+    val byAddress = candidates.sortedWith(::comparePlatformAddresses)
+    for (inputCount in 1..byAddress.size) {
+        if (target < inputCount) break // every encoded input must spend >= 1 credit
+        val fee = minimumPlatformAddressFundingFeeCredits(keyCount, inputCount)
+
+        for (payerIndex in byAddress.indices) {
+            val payer = byAddress[payerIndex]
+            val payerCapacity = payer.credits - fee
+            if (payerCapacity < 1) continue
+
+            // Only greater addresses may accompany this payer, otherwise the
+            // BTreeMap would choose a different input 0 for fee deduction.
+            val companions = byAddress
+                .subList(payerIndex + 1, byAddress.size)
+                .sortedByDescending { it.credits }
+                .take(inputCount - 1)
+            if (companions.size != inputCount - 1) continue
+
+            var totalCapacity = payerCapacity
+            for (companion in companions) {
+                totalCapacity = saturatingAdd(totalCapacity, companion.credits)
+            }
+            if (totalCapacity < target) continue
+
+            val selected = listOf(payer) + companions
+            val spends = LongArray(inputCount) { 1L }
+            var remaining = target - inputCount
+
+            // Spend companions first so the BTreeMap-first payer retains as
+            // much of its fee-bearing balance as possible.
+            for (index in 1 until selected.size) {
+                val extra = minOf(selected[index].credits - 1, remaining)
+                spends[index] += extra
+                remaining -= extra
+            }
+            val payerExtra = minOf(payerCapacity - 1, remaining)
+            spends[0] += payerExtra
+            remaining -= payerExtra
+            check(remaining == 0L) { "feasible funding allocation left $remaining credits" }
+
+            return selected.mapIndexed { index, input -> input.copy(credits = spends[index]) }
+        }
     }
-    return if (remaining <= 0) picked else emptyList()
+    return emptyList()
 }
+
+private fun comparePlatformAddresses(left: FundingInput, right: FundingInput): Int {
+    val typeOrder = left.addressType.compareTo(right.addressType)
+    if (typeOrder != 0) return typeOrder
+    for (index in left.hash.indices) {
+        val byteOrder = left.hash[index].toUByte().compareTo(right.hash[index].toUByte())
+        if (byteOrder != 0) return byteOrder
+    }
+    return 0
+}
+
+private fun saturatingAdd(left: Long, right: Long): Long =
+    if (Long.MAX_VALUE - left < right) Long.MAX_VALUE else left + right
 
 /** Identity-slot section — the Swift `CreateIdentityView` identity-index stepper. */
 @Composable

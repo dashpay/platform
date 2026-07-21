@@ -31,6 +31,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{
     generic_asset_lock_recovery_allowed, guard, take_pwffi_error, throw_sdk_exception,
 };
@@ -72,62 +73,6 @@ impl Drop for ManagedIdentityHandleGuard {
             unsafe { platform_wallet_ffi_result_free(&mut result) };
         }
     }
-}
-
-// ── Canonical registration key-role table ─────────────────────────────
-
-/// DPP `KeyType::ECDSA_SECP256K1` discriminant byte.
-const KEY_TYPE_ECDSA_SECP256K1: u8 = 0;
-/// DPP `Purpose::AUTHENTICATION` discriminant byte.
-const PURPOSE_AUTHENTICATION: u8 = 0;
-/// DPP `Purpose::TRANSFER` discriminant byte.
-const PURPOSE_TRANSFER: u8 = 3;
-/// DPP `SecurityLevel::MASTER` discriminant byte.
-const SECURITY_LEVEL_MASTER: u8 = 0;
-/// DPP `SecurityLevel::CRITICAL` discriminant byte.
-const SECURITY_LEVEL_CRITICAL: u8 = 1;
-/// DPP `SecurityLevel::HIGH` discriminant byte.
-const SECURITY_LEVEL_HIGH: u8 = 2;
-
-/// Canonical `(key_type, purpose, security_level)` for the registration
-/// key at `key_id`. This is the single Android source of truth for the
-/// per-slot identity-key role layout, byte-for-byte identical to the iOS
-/// reference (`packages/rs-platform-wallet-ffi/src/identity_derive_and_persist.rs`,
-/// and `CreateIdentityView.defaultKeyCount` in the SwiftExampleApp):
-///
-/// | key_id | key_type        | purpose        | security_level |
-/// |--------|-----------------|----------------|----------------|
-/// | 0      | ECDSA_SECP256K1 | AUTHENTICATION | MASTER         |
-/// | 1      | ECDSA_SECP256K1 | AUTHENTICATION | CRITICAL       |
-/// | 2      | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
-/// | 3      | ECDSA_SECP256K1 | TRANSFER       | CRITICAL       |
-/// | > 3    | ECDSA_SECP256K1 | AUTHENTICATION | HIGH           |
-///
-/// - keyId 0 (MASTER/AUTH) signs the IdentityCreate transition.
-/// - keyId 1 (CRITICAL/AUTH) signs token state transitions —
-///   `combined_security_level_requirement` collapses any batch with a
-///   token transition to `[CRITICAL]`, so without it the identity can't
-///   mint / burn / freeze tokens.
-/// - keyId 2 (HIGH/AUTH) signs general document / DPNS / contract
-///   transitions.
-/// - keyId 3 (TRANSFER/CRITICAL) signs IdentityCreditTransfer /
-///   IdentityCreditWithdrawal — without it those broadcasts are rejected
-///   on-chain with "no transfer public key".
-///
-/// Previously this JNI hardcoded `purpose = AUTHENTICATION` for every row
-/// and `security_level = MASTER if key_id == 0 else HIGH`, so a freshly
-/// created identity had no CRITICAL auth key and no TRANSFER key, and all
-/// token / credit-transfer / withdrawal writes failed validation right
-/// after creation. If DPP renumbers any discriminant, update this table.
-pub(crate) fn role_for_registration_key_id(key_id: u32) -> (u8, u8, u8) {
-    let (purpose, security_level) = match key_id {
-        0 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_MASTER),
-        1 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_CRITICAL),
-        2 => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
-        3 => (PURPOSE_TRANSFER, SECURITY_LEVEL_CRITICAL),
-        _ => (PURPOSE_AUTHENTICATION, SECURITY_LEVEL_HIGH),
-    };
-    (KEY_TYPE_ECDSA_SECP256K1, purpose, security_level)
 }
 
 /// Read a required 32-byte id from a Java `byte[]`; throws + returns None
@@ -264,10 +209,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_previe
 ///
 /// `count < 0` derives the canonical default set
 /// (`IDENTITY_REGISTRATION_KEY_SET_COUNT` = 4: MASTER auth, CRITICAL
-/// auth, HIGH auth, TRANSFER/CRITICAL). The per-key DPP role is applied
-/// positionally by keyId at registration time
-/// (`role_for_registration_key_id`), NOT carried on the row — every row
-/// is an ECDSA_SECP256K1 keypair.
+/// auth, HIGH auth, TRANSFER/CRITICAL). The create-identity flow may request
+/// more (e.g. 6, appending the DashPay ENCRYPTION/DECRYPTION pair). Every row
+/// is an ECDSA_SECP256K1 keypair; the DPP role for each keyId is stamped by
+/// the Kotlin side (`RegistrationKeys`) and shipped on the registration wire,
+/// not carried on this derived row.
 ///
 /// Returns the same flat `byte[]` BLOB layout as
 /// [`Java_..._previewRegistrationKeys`], decoded by
@@ -596,31 +542,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resume
             return ptr::null_mut();
         }
 
-        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
             return ptr::null_mut();
         };
-        if decoded.is_empty() {
-            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
-            return ptr::null_mut();
-        }
-        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
-            .iter()
-            .map(|(key_id, bytes)| {
-                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
-                IdentityPubkeyFFI {
-                    key_id: *key_id,
-                    key_type,
-                    purpose,
-                    security_level,
-                    pubkey_bytes: bytes.as_ptr(),
-                    pubkey_len: bytes.len(),
-                    read_only: false,
-                    contract_bounds_kind: 0,
-                    contract_bounds_id: ptr::null(),
-                    contract_bounds_document_type: ptr::null(),
-                }
-            })
-            .collect();
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
         let outpoint = OutPointFFI {
             txid,
             vout: outpoint_vout as u32,
@@ -681,20 +606,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resume
 ///
 /// This is the single FFI entry point the app's `RegistrationCoordinator`
 /// invokes — no orchestration on the Kotlin side. The caller (Kotlin) has
-/// already derived + persisted the identity keys via
-/// [`Java_..._previewRegistrationKeys`], so `pubkeysBlob` is the same flat
-/// layout `previewRegistrationKeys` produced, trimmed to the keys being
-/// registered (row `identity_index` is ignored here — the pubkey rows are
-/// read positionally as `keyId = index`).
+/// already derived + persisted the identity keys and built the rich
+/// registration rows (`RegistrationKeys` + `IdentityPubkeyCodec`), so
+/// `pubkeysBlob` is the shared rich key-row layout decoded by
+/// `crate::pubkey_rows` — the same format the identity-update add-key path
+/// uses, carrying each key's full DPP role and any contract bounds.
 ///
-/// `pubkeysBlob` layout (big-endian):
-/// ```text
-/// u32 row_count
-/// repeat: u32 keyId, u16 pubkey_len, u8[pubkey_len] compressed pubkey
-/// ```
-/// Every key is registered as an ECDSA_SECP256K1 / AUTHENTICATION key at
-/// the security level implied by its position (row 0 = MASTER). The Rust
-/// side validates the security-level layout.
+/// The blob is decoded by `decode_registration_pubkeys_blob`, which enforces
+/// the registration-only invariants (≥1 key, no duplicate key IDs, key ID 0
+/// = MASTER + AUTHENTICATION). DPP validates the full structural layout
+/// server-side.
 ///
 /// Returns the 32-byte identity id as a `byte[]`. The `ManagedIdentity`
 /// handle the FFI produces is destroyed here — Room learns of the new
@@ -729,42 +650,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
             return ptr::null_mut();
         }
 
-        // Decode the pubkey rows into owned buffers that outlive the FFI
-        // call (the FFI borrows `pubkey_bytes` for the call duration).
-        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+        // Decode the rich pubkey rows into owned buffers that outlive the FFI
+        // call (the FFI borrows every `pubkey_bytes` / `contract_bounds_*`
+        // pointer for the call duration). The per-key DPP role (type / purpose
+        // / security level) and any contract bounds now ride the wire — the
+        // Kotlin side stamps them from the canonical registration key policy,
+        // so keyId 0 arrives MASTER/AUTH, keyId 1 CRITICAL/AUTH, keyId 2
+        // HIGH/AUTH, keyId 3 TRANSFER/CRITICAL, plus any DashPay
+        // ENCRYPTION/DECRYPTION keys with their contract-document bounds.
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
             return ptr::null_mut();
         };
-        if decoded.is_empty() {
-            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
-            return ptr::null_mut();
-        }
-
-        // Build the FFI rows referencing the owned buffers. `read_only`
-        // false, no contract bounds (auth / transfer keys never carry
-        // bounds — only ENCRYPTION / DECRYPTION do). The per-key role
-        // (key_type / purpose / security_level) is the canonical,
-        // positional function of `key_id` (see
-        // `role_for_registration_key_id`), matching iOS exactly — so a
-        // freshly created identity gets keyId 0 MASTER/AUTH, keyId 1
-        // CRITICAL/AUTH, keyId 2 HIGH/AUTH, keyId 3 TRANSFER/CRITICAL.
-        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
-            .iter()
-            .map(|(key_id, bytes)| {
-                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
-                IdentityPubkeyFFI {
-                    key_id: *key_id,
-                    key_type,
-                    purpose,
-                    security_level,
-                    pubkey_bytes: bytes.as_ptr(),
-                    pubkey_len: bytes.len(),
-                    read_only: false,
-                    contract_bounds_kind: 0,
-                    contract_bounds_id: ptr::null(),
-                    contract_bounds_document_type: ptr::null(),
-                }
-            })
-            .collect();
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
 
         let mut out_id = [0u8; 32];
         let mut out_managed: Handle = 0;
@@ -810,9 +707,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
 /// Core asset lock. No Core-chain transaction is broadcast; the inputs are
 /// existing Platform credits.
 ///
-/// `pubkeysBlob` is the same flat layout `registerIdentityWithFunding`
-/// consumes (`u32 rowCount` then per row `u32 keyId, u16 pubkeyLen,
-/// pubkey`), each key stamped with its canonical DPP role by `keyId`.
+/// `pubkeysBlob` is the same shared rich key-row layout
+/// `registerIdentityWithFunding` consumes (decoded by
+/// `decode_registration_pubkeys_blob`) — each row carries its DPP role and any
+/// contract bounds, stamped Kotlin-side.
 ///
 /// `inputsBlob` is the funding-address row shape shared with the top-up /
 /// transfer-to-addresses exports (`u32 rowCount` then per row
@@ -843,13 +741,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
             return ptr::null_mut();
         }
 
-        let Some(decoded) = decode_pubkeys_blob(env, &pubkeys_blob) else {
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
             return ptr::null_mut();
         };
-        if decoded.is_empty() {
-            throw_sdk_exception(env, 1, "pubkeysBlob contained no keys");
-            return ptr::null_mut();
-        }
 
         let Some(input_rows) = crate::credits::decode_credit_rows(env, &inputs_blob, "inputsBlob")
         else {
@@ -860,26 +754,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
             return ptr::null_mut();
         }
 
-        // Same positional keyId → DPP role assignment as ID-01 (keyId 0
-        // MASTER/AUTH, 1 CRITICAL/AUTH, 2 HIGH/AUTH, 3 TRANSFER/CRITICAL).
-        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
-            .iter()
-            .map(|(key_id, bytes)| {
-                let (key_type, purpose, security_level) = role_for_registration_key_id(*key_id);
-                IdentityPubkeyFFI {
-                    key_id: *key_id,
-                    key_type,
-                    purpose,
-                    security_level,
-                    pubkey_bytes: bytes.as_ptr(),
-                    pubkey_len: bytes.len(),
-                    read_only: false,
-                    contract_bounds_kind: 0,
-                    contract_bounds_id: ptr::null(),
-                    contract_bounds_document_type: ptr::null(),
-                }
-            })
-            .collect();
+        // Same rich rows as ID-01 — the caller stamps each key's DPP role and
+        // any contract bounds; this path just marshals them.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
 
         let input_ffi: Vec<IdentityFundingInputFFI> = input_rows
             .into_iter()
@@ -925,81 +802,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })
-}
-
-/// Decode the registration pubkeys BLOB into `(keyId, bytes)` rows whose
-/// buffers the caller keeps alive across the FFI call. Throws + returns
-/// None on a malformed blob.
-pub(crate) fn decode_pubkeys_blob(
-    env: &mut JNIEnv,
-    arr: &JByteArray,
-) -> Option<Vec<(u32, Vec<u8>)>> {
-    let bytes = match env.convert_byte_array(arr) {
-        Ok(b) => b,
-        Err(_) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, "pubkeysBlob was null/invalid");
-            return None;
-        }
-    };
-    let mut cursor = 0usize;
-    let read = |cursor: &mut usize, n: usize| -> Option<&[u8]> {
-        if *cursor + n > bytes.len() {
-            return None;
-        }
-        let s = &bytes[*cursor..*cursor + n];
-        *cursor += n;
-        Some(s)
-    };
-    let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, "pubkeysBlob truncated (row count)");
-        return None;
-    };
-    let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
-    // Length-before-allocation guard: each row is at least 6 bytes
-    // (u32 keyId + u16 len), so a header claiming more rows than the
-    // remaining payload can hold is malformed — prevents a huge
-    // `with_capacity` abort from a raw-JNI blob.
-    if count
-        .checked_mul(6)
-        .is_none_or(|need| bytes.len() - cursor < need)
-    {
-        throw_sdk_exception(
-            env,
-            1,
-            &format!("pubkeysBlob claims {count} rows but body is too short"),
-        );
-        return None;
-    }
-    let mut rows = Vec::with_capacity(count);
-    for i in 0..count {
-        let Some(id_bytes) = read(&mut cursor, 4) else {
-            throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} keyId"));
-            return None;
-        };
-        let key_id = u32::from_be_bytes(id_bytes.try_into().ok()?);
-        // The Kotlin encoder writes this field with writeInt (signed); a
-        // set sign bit means a negative key id crossed the boundary.
-        if key_id > i32::MAX as u32 {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("pubkeysBlob row {i} keyId must be non-negative"),
-            );
-            return None;
-        }
-        let Some(len_bytes) = read(&mut cursor, 2) else {
-            throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} len"));
-            return None;
-        };
-        let len = u16::from_be_bytes(len_bytes.try_into().ok()?) as usize;
-        let Some(pubkey) = read(&mut cursor, len) else {
-            throw_sdk_exception(env, 1, &format!("pubkeysBlob truncated at row {i} pubkey"));
-            return None;
-        };
-        rows.push((key_id, pubkey.to_vec()));
-    }
-    Some(rows)
 }
 
 // ── Discovery ─────────────────────────────────────────────────────────

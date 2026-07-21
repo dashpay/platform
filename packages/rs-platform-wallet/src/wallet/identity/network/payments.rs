@@ -578,7 +578,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // re-acquires that (non-reentrant) lock internally.
         self.drain_pending_contact_crypto(provider).await;
 
-        let (payment_address, tx, fee) = {
+        let (payment_address, used_flip_changeset, tx, fee) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
@@ -652,36 +652,30 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )));
             }
 
-            // Persist the used-flag flip (and any gap-window extension)
+            // Snapshot the used-flag flip (and any gap-window extension)
             // `next_address` + `mark_address_used` just applied to the
-            // external account's pool.
-            // This must be durable BEFORE the broadcast below: once the
-            // transaction is on the network the address is publicly
-            // spent-to, and a relaunch that rehydrates the pool from a
-            // stale snapshot would hand the SAME address to the next
-            // payment — breaking DIP-15 per-payment rotation and linking
-            // the payments on-chain. A store failure aborts the send
-            // pre-broadcast (nothing has hit the network); the consumed
-            // in-memory address only leaves a one-address gap that the
-            // pool's gap window absorbs on retry.
+            // external account's pool, as an owned changeset. The snapshot is
+            // captured here — while the pool is still borrowed under the
+            // guard — so the persisted state is exactly the flip just made,
+            // but the `persister.store` call itself is deferred until after
+            // this write guard is released (see below, before the broadcast).
+            // The host persistence callback must not run while the
+            // wallet-manager write lock is held: a slow host write would stall
+            // every other wallet accessor for its duration, and a host store
+            // that re-entered any manager API would deadlock the non-reentrant
+            // lock.
             let external_account_type = key_wallet::account::AccountType::DashpayExternalAccount {
                 index: account_index,
                 user_identity_id: from_identity_id.to_buffer(),
                 friend_identity_id: to_contact_id.to_buffer(),
             };
-            self.persister
-                .store(crate::changeset::PlatformWalletChangeSet {
-                    account_address_pools: crate::changeset::account_address_pool_entries(
-                        external_account_type,
-                        external_account.managed_account_type().address_pools(),
-                    ),
-                    ..Default::default()
-                })
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "failed to persist payment-address used flip: {e}"
-                    ))
-                })?;
+            let used_flip_changeset = crate::changeset::PlatformWalletChangeSet {
+                account_address_pools: crate::changeset::account_address_pool_entries(
+                    external_account_type,
+                    external_account.managed_account_type().address_pools(),
+                ),
+                ..Default::default()
+            };
 
             let current_height = info.core_wallet.synced_height();
 
@@ -727,8 +721,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 .await
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            (payment_address, tx, fee)
+            (payment_address, used_flip_changeset, tx, fee)
         };
+
+        // Persist the payment-address used flip now that the wallet-manager
+        // write guard is released, but BEFORE the broadcast below. Durability
+        // must precede broadcast: once the transaction is on the network the
+        // address is publicly spent-to, and a relaunch that rehydrated the
+        // pool from a stale snapshot would re-hand the SAME address to the
+        // next payment — breaking DIP-15 per-payment rotation and linking the
+        // payments on-chain. A store failure aborts the send pre-broadcast
+        // (nothing has hit the network); the consumed in-memory address only
+        // leaves a one-address gap that the pool's gap window absorbs on
+        // retry. A funding-build failure above returns before this point, so
+        // an address consumed for a send that never broadcasts is likewise
+        // left only in memory — safe to re-hand, since it was never exposed
+        // on-chain.
+        self.persister.store(used_flip_changeset).map_err(|e| {
+            PlatformWalletError::Persistence(format!(
+                "failed to persist payment-address used flip: {e}"
+            ))
+        })?;
 
         // --- 3. Broadcast the transaction, releasing the build's UTXO
         // reservation if the broadcast is definitively rejected pre-send. ---
@@ -3465,25 +3478,79 @@ mod tests {
         }
     }
 
-    /// `send_payment` must persist the used-flag flip `next_address`
-    /// applies to the contact's external-account pool. The flip is
-    /// otherwise in-memory only: after a relaunch the pool rehydrates
-    /// from the last persisted snapshot with the address unused, and the
-    /// next payment to the same contact reuses the SAME address —
-    /// breaking DIP-15 per-payment rotation and linking the payments
-    /// on-chain. Pins the `AccountAddressPoolEntry` contract (snapshots
-    /// at register / pool-extend / used-flip): a whole-pool snapshot
-    /// carrying the used flag is emitted once the payment address is
-    /// consumed, before anything reaches the network.
+    /// The `send_payment` used-flag flip persist must run only AFTER the
+    /// wallet-manager write guard is released (and before the broadcast).
+    ///
+    /// The host persistence callback is synchronous, so holding the manager's
+    /// write lock across it would stall every other wallet accessor for the
+    /// host write's duration, and a host store that re-entered a manager API
+    /// would deadlock the non-reentrant lock. This pins that the used-flip
+    /// changeset is persisted AND that the write lock was already released
+    /// when it was — a `try_read` on the shared manager succeeds iff no writer
+    /// holds it. Against the pre-fix ordering (store inside the write-guarded
+    /// block) the lock-released assertion fails; with the persist deferred
+    /// until after the guard drops it holds.
     #[tokio::test]
-    async fn send_payment_persists_external_pool_used_flip() {
+    async fn send_payment_persists_external_pool_used_flip_after_releasing_lock() {
         use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
         use key_wallet::account::AccountType;
-        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
-        let (manager, persister, wallet_id) = make_wallet().await;
+        // Probe persister: on the used-flip store (the changeset carrying an
+        // external account's address pools), records whether the shared
+        // wallet-manager write lock was already released — a `try_read`
+        // succeeds iff no writer holds it. A `Weak` back-reference avoids a
+        // persister <-> manager cycle.
+        type ManagerLock = tokio::sync::RwLock<
+            key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+        >;
+        struct LockProbePersister {
+            manager: Mutex<Option<std::sync::Weak<ManagerLock>>>,
+            /// `Some(true)`: an external-pool store was seen with the write
+            /// lock released; `Some(false)`: seen but the lock was still held;
+            /// `None`: never seen.
+            external_pool_store_unlocked: Mutex<Option<bool>>,
+        }
+
+        impl PlatformWalletPersistence for LockProbePersister {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                let carries_external_pool = changeset
+                    .account_address_pools
+                    .iter()
+                    .any(|e| matches!(e.account_type, AccountType::DashpayExternalAccount { .. }));
+                if carries_external_pool {
+                    let unlocked = self
+                        .manager
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .and_then(|w| w.upgrade())
+                        .map(|m| m.try_read().is_ok())
+                        .unwrap_or(false);
+                    *self.external_pool_store_unlocked.lock().unwrap() = Some(unlocked);
+                }
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let probe = Arc::new(LockProbePersister {
+            manager: Mutex::new(None),
+            external_pool_store_unlocked: Mutex::new(None),
+        });
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&probe)).await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
+        // Point the probe at the shared manager lock the send will contend on.
+        *probe.manager.lock().unwrap() = Some(Arc::downgrade(&iw.wallet_manager));
 
         let owner_id = Identifier::from([0x11; 32]);
         let contact_id = Identifier::from([0x22; 32]);
@@ -3495,7 +3562,7 @@ mod tests {
                     bare_identity([0x11; 32]),
                     0,
                     wallet_id,
-                    &WalletPersister::new(wallet_id, Arc::clone(&persister) as _),
+                    &WalletPersister::new(wallet_id, Arc::clone(&probe) as _),
                 )
                 .expect("add owner");
         }
@@ -3538,9 +3605,15 @@ mod tests {
             .await
             .expect("register external account");
 
-        // Drop the registration round's (all-unused) snapshot so the
-        // assertions below only see what the send path emits.
-        persister.stores.lock().unwrap().clear();
+        // Isolate the assertion to the send path: forget any external-pool
+        // store the registration round may have made (that one runs under the
+        // registration write guard).
+        *probe.external_pool_store_unlocked.lock().unwrap() = None;
+
+        // Fund BIP-44 account 0 so the send builds, signs, and broadcasts —
+        // reaching the used-flip persist, which now fires only on the path to
+        // broadcast (a funding-build failure returns before it).
+        fund_bip44_account_0(&manager, wallet_id, 0xA1, 60_000).await;
 
         let seed = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
             .expect("valid mnemonic")
@@ -3548,67 +3621,23 @@ mod tests {
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         let signer = SeedSigner::new(seed, Network::Testnet);
 
-        // The seedless test wallet has no UTXOs, so the send fails at
-        // funding — AFTER the payment address was consumed and its
-        // used-flip persisted, which is exactly the window under test.
-        let _err = iw
+        let iw_send = with_accepting_broadcaster(iw);
+        iw_send
             .dashpay()
-            .send_payment(&owner_id, &contact_id, 10_000, None, &signer, &provider)
+            .send_payment(&owner_id, &contact_id, 50_000, None, &signer, &provider)
             .await
-            .expect_err("no spendable UTXOs — the funding build must fail");
+            .expect("funded + signable send must succeed through the accepting broadcaster");
 
-        // In-memory: the pool consumed exactly one payment address.
-        let key = DashpayAccountKey {
-            index: 0,
-            user_identity_id: owner_id.to_buffer(),
-            friend_identity_id: contact_id.to_buffer(),
-        };
-        let used_address = {
-            let wm = iw.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&wallet_id).expect("info");
-            let account = info
-                .core_wallet
-                .accounts
-                .dashpay_external_accounts
-                .get(&key)
-                .expect("external account resident");
-            let used: Vec<dashcore::Address> = account
-                .managed_account_type()
-                .address_pools()
-                .iter()
-                .flat_map(|p| p.addresses.values())
-                .filter(|a| a.is_used())
-                .map(|a| a.address.clone())
-                .collect();
-            assert_eq!(
-                used.len(),
-                1,
-                "exactly one payment address must be marked used in memory"
-            );
-            used.into_iter().next().expect("one used address")
-        };
-
-        // Persisted: a whole-pool snapshot for THIS contact's external
-        // account was emitted with the consumed address flagged used.
-        let expected_account_type = AccountType::DashpayExternalAccount {
-            index: 0,
-            user_identity_id: owner_id.to_buffer(),
-            friend_identity_id: contact_id.to_buffer(),
-        };
-        let stores = persister.stores.lock().unwrap();
-        let flip_persisted = stores.iter().any(|(_, cs)| {
-            cs.account_address_pools.iter().any(|entry| {
-                entry.account_type == expected_account_type
-                    && entry
-                        .addresses
-                        .iter()
-                        .any(|a| a.is_used() && a.address == used_address)
-            })
-        });
-        assert!(
-            flip_persisted,
-            "send_payment must persist the external-account pool snapshot \
-             with the consumed address marked used"
+        // The used-flip changeset was persisted (Some(_)) AND the store ran
+        // after the write guard was released (Some(true)). Some(false) means
+        // it still ran under the held write guard (the pre-fix ordering);
+        // None means the flip was never persisted.
+        let observed = *probe.external_pool_store_unlocked.lock().unwrap();
+        assert_eq!(
+            observed,
+            Some(true),
+            "send_payment must persist the external-account used flip AFTER \
+             releasing the wallet-manager write lock (observed: {observed:?})"
         );
     }
 
@@ -3653,8 +3682,8 @@ mod tests {
     /// Plant a single spendable UTXO of `value_duffs` on BIP-44 account 0's
     /// first pool address (a real derived address, so its derivation path is
     /// resolvable and [`SeedSigner`] can sign the funding input).
-    async fn fund_bip44_account_0(
-        manager: &Arc<PlatformWalletManager<RecordingPersister>>,
+    async fn fund_bip44_account_0<P: PlatformWalletPersistence + 'static>(
+        manager: &Arc<PlatformWalletManager<P>>,
         wallet_id: WalletId,
         txid_byte: u8,
         value_duffs: u64,

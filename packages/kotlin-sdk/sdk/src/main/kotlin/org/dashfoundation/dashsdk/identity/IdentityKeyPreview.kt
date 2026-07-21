@@ -45,56 +45,60 @@ data class IdentityKeyPreview(
          * `IdentityNative.previewRegistrationKeys`. Layout (big-endian):
          * `u32 rowCount` then per row `u32 identityIndex, u16 pathLen,
          * pathUtf8, u8[33] pubkey, u8[32] privkey`.
+         *
+         * Destructively wipes [blob] on both successful and failed decoding
+         * because it contains raw private-key scalars. Callers must not reuse
+         * the array after passing it here.
          */
         fun decodeAll(blob: ByteArray): List<IdentityKeyPreview> {
             val buf = ByteBuffer.wrap(blob) // big-endian by default
-            val count = buf.int
-            val rows = ArrayList<IdentityKeyPreview>(count)
-            repeat(count) {
-                val identityIndex = buf.int
-                val pathLen = buf.short.toInt() and 0xFFFF
-                val pathBytes = ByteArray(pathLen)
-                buf.get(pathBytes)
-                val pubkey = ByteArray(33)
-                buf.get(pubkey)
-                val privkey = ByteArray(32)
-                buf.get(privkey)
-                rows.add(
-                    IdentityKeyPreview(
-                        identityIndex = identityIndex,
-                        derivationPath = String(pathBytes, Charsets.UTF_8),
-                        publicKey = pubkey,
-                        privateKey = privkey,
-                    ),
-                )
+            val rows = ArrayList<IdentityKeyPreview>()
+            try {
+                val count = buf.int
+                require(count >= 0) { "preview row count must be non-negative, got $count" }
+                repeat(count) {
+                    val identityIndex = buf.int
+                    val pathLen = buf.short.toInt() and 0xFFFF
+                    val pathBytes = ByteArray(pathLen)
+                    buf.get(pathBytes)
+                    val pubkey = ByteArray(33)
+                    buf.get(pubkey)
+                    val privkey = ByteArray(32)
+                    var rowOwnsPrivateKey = false
+                    try {
+                        buf.get(privkey)
+                        rows.add(
+                            IdentityKeyPreview(
+                                identityIndex = identityIndex,
+                                derivationPath = String(pathBytes, Charsets.UTF_8),
+                                publicKey = pubkey,
+                                privateKey = privkey,
+                            ),
+                        )
+                        rowOwnsPrivateKey = true
+                    } finally {
+                        // If construction/list insertion fails after the scalar
+                        // copy, it never reaches the outer rows cleanup.
+                        if (!rowOwnsPrivateKey) privkey.fill(0)
+                    }
+                }
+                require(!buf.hasRemaining()) {
+                    "preview blob has ${buf.remaining()} trailing byte(s)"
+                }
+                return rows
+            } catch (e: Throwable) {
+                // Some rows may already have been copied out of the interleaved
+                // blob when a later row fails. They will never reach the caller,
+                // so scrub those discarded scalar arrays here.
+                rows.forEach { it.privateKey.fill(0) }
+                throw e
+            } finally {
+                // The source blob interleaves every row's raw private scalar.
+                // Wipe it on success and on every malformed/truncated failure;
+                // otherwise an exception before the old tail-only fill left all
+                // native-returned scalars resident in a JVM byte array.
+                blob.fill(0)
             }
-            // The source blob interleaves every row's raw private scalar —
-            // consume-and-wipe it so the only remaining plaintext copies
-            // are the per-row arrays the caller owns (and must zero after
-            // use, per this class's contract).
-            blob.fill(0)
-            return rows
-        }
-
-        /**
-         * Encode the registration-key rows for
-         * `IdentityNative.registerIdentityWithFunding`. Only the public
-         * keys cross (the private material is already persisted to the
-         * Keystore). Layout (big-endian): `u32 rowCount` then per row
-         * `u32 keyId, u16 pubkeyLen, pubkey`; [keys] is taken positionally
-         * so `keyId == index` (row 0 = MASTER).
-         */
-        fun encodeForRegistration(keys: List<IdentityKeyPreview>): ByteArray {
-            var size = 4
-            keys.forEach { size += 4 + 2 + it.publicKey.size }
-            val buf = ByteBuffer.allocate(size)
-            buf.putInt(keys.size)
-            keys.forEachIndexed { index, key ->
-                buf.putInt(index)
-                buf.putShort(key.publicKey.size.toShort())
-                buf.put(key.publicKey)
-            }
-            return buf.array()
         }
     }
 }

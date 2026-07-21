@@ -25,6 +25,9 @@ android_logger = "0.14"
 
 [dev-dependencies]
 dashcore = { workspace = true }
+# Anchors the cross-language golden-fixture test to the canonical DashPay
+# contract id, so the mirrored Kotlin constant can't drift undetected.
+dashpay-contract = { path = "../dashpay-contract" }
 
 [features]
 default = ["shielded"]

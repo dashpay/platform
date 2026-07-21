@@ -21,6 +21,7 @@ mod funding;
 mod identity;
 mod mnemonic;
 mod persistence;
+mod pubkey_rows;
 mod queries;
 mod results;
 mod sdk;

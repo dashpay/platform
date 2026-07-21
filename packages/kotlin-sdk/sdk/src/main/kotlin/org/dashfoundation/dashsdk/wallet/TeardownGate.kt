@@ -91,3 +91,33 @@ class TeardownGate {
  */
 internal suspend fun <T> TeardownGate?.op(block: suspend () -> T): T =
     if (this != null) withOp(block) else withContext(Dispatchers.IO) { block() }
+
+/**
+ * Run [block] like [op], but invoke [cleanup] if a completed result is discarded
+ * by coroutine cancellation while [withContext] dispatches back to its caller.
+ *
+ * This matters for blocking JNI calls that return private material: they cannot
+ * observe cancellation while native code is running, and `withContext` provides
+ * prompt cancellation when it resumes the original dispatcher. Without this
+ * handoff guard, the completed secret-bearing result can be dropped before the
+ * caller ever receives a reference it can scrub.
+ */
+internal suspend fun <T> TeardownGate?.opWithCleanupOnCancellation(
+    cleanup: (T) -> Unit,
+    block: suspend () -> T,
+): T {
+    class CompletedResult<T>(val value: T)
+
+    var completed: CompletedResult<T>? = null
+    try {
+        val value = op {
+            block().also { completed = CompletedResult(it) }
+        }
+        // No suspension point exists between the successful handoff and this
+        // clear, so ownership has moved to the caller from here onward.
+        completed = null
+        return value
+    } finally {
+        completed?.let { cleanup(it.value) }
+    }
+}
