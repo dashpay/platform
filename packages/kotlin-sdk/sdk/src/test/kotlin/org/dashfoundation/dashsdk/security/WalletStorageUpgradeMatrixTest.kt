@@ -219,6 +219,48 @@ class WalletStorageUpgradeMatrixTest {
     }
 
     /**
+     * #4060 round-2 finding: a REPLACED auth-gated alias (Keystore loss +
+     * regeneration) whose window is closed — the normal state, the window is
+     * only ~30 s — throws UserNotAuthenticatedException at cipher.init,
+     * before the ciphertext is touched. Without the fingerprint disproof the
+     * probe reported the unopenable blob "healthy" (no repair offered) while
+     * pendingIdentityKeys listed the same key. The stored fingerprint no
+     * longer matches the replacement key, which disproves ownership
+     * prompt-free → not recoverable → the sheet offers repair.
+     */
+    @Test
+    fun replacedAliasBlobWithClosedAuthWindowIsNotReportedRecoverable() = runBlocking {
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        storage.storePrivateKey(pub, secret)
+        assertTrue(storage.probeIdentityKeyRecoverability(pub))
+
+        // Keystore loss + regeneration: fresh keypair at the policy alias…
+        fake.policyFingerprintSuffix = "-replacement"
+        // …auth-gated, so its window is closed in the steady state.
+        fake.throwAuthOnPolicyDecrypt = true
+
+        assertFalse(storage.probeIdentityKeyRecoverability(pub))
+        // The cheap capability surface agrees (fingerprint mismatch).
+        assertFalse(storage.isPrivateKeyDecryptable(pub))
+    }
+
+    /**
+     * The complement guard: a fingerprint-MATCHED blob behind a closed auth
+     * window stays recoverable — it genuinely just needs authentication, and
+     * the probe must not prompt (also pinned by
+     * [authGatedPolicyKeyReportsRecoverableWithoutPrompting]).
+     */
+    @Test
+    fun fingerprintMatchedBlobWithClosedAuthWindowStaysRecoverable() = runBlocking {
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        storage.storePrivateKey(pub, secret)
+
+        fake.throwAuthOnPolicyDecrypt = true // same key, window merely closed
+
+        assertTrue(storage.probeIdentityKeyRecoverability(pub))
+    }
+
+    /**
      * The same auth-gated semantics on the former-RSA recovery path: a present but
      * auth-gated KEYS_ALIAS RSA key that would open the blob after auth reports
      * recoverable when the window is closed (UserNotAuth), rather than stranded.
@@ -521,6 +563,13 @@ private class FakeKeystoreManager :
     var deviceBoundKeyPresent: Boolean = false
     var degradeWritesToDeviceBound: Boolean = false
     var throwAuthOnPolicyDecrypt: Boolean = false
+
+    /**
+     * Models a Keystore-loss + regeneration of the policy alias: the CURRENT
+     * key's fingerprint diverges from every previously captured one while
+     * the alias stays present (and, being auth-gated, usually locked).
+     */
+    var policyFingerprintSuffix: String = ""
     var throwAuthOnLegacyRsaDecrypt: Boolean = false
     var throwInvalidatedOnPolicyDecrypt: Boolean = false
     var throwBadPaddingOnPolicyDecrypt: Boolean = false
@@ -548,7 +597,8 @@ private class FakeKeystoreManager :
     // The real implementation hashes an AndroidKeyStore public key, which
     // cannot exist on the JVM; presence-driven per-alias values instead.
     override fun keysAliasFingerprintOrNull(alias: String): String? = when (alias) {
-        POLICY_ALIAS -> if (policyKeyProvisioned) fpOf(POLICY_ALIAS) else null
+        POLICY_ALIAS ->
+            if (policyKeyProvisioned) fpOf(POLICY_ALIAS) + policyFingerprintSuffix else null
         KEYS_ALIAS_DEVICE_BOUND -> if (deviceBoundKeyPresent) fpOf(KEYS_ALIAS_DEVICE_BOUND) else null
         else -> null
     }

@@ -821,9 +821,23 @@ class WalletStorage(
         ) {
             return false
         }
+        // A closed auth window (UserNotAuthenticatedException, thrown at
+        // cipher.init BEFORE the ciphertext is examined) proves nothing
+        // about ownership. Count it as recoverable ONLY while the stored
+        // write-time fingerprint still matches the recorded alias's CURRENT
+        // key — a prompt-free disproof of the replaced-alias case: after a
+        // Keystore loss + regeneration, the fresh auth-gated key's window is
+        // closed almost always (it is only ever open ~AUTH_VALIDITY_SECONDS
+        // after an auth), so without the fingerprint gate the probe would
+        // report a blob that key can never open as "healthy" and the
+        // key-health sheet would offer no repair while pendingIdentityKeys
+        // simultaneously lists the same key (#4060 round-2 finding).
+        val storedFingerprint = prefs[privateKeyFingerprintKey(pubkeyHex)]
+        val unaeProvesRecoverable = storedFingerprint != null &&
+            storedFingerprint == keystore.keysAliasFingerprintOrNull(recordedAlias)
         return (
             keystore.hasIdentityKeysKey(recordedAlias) &&
-                probeOpensBlob { keystore.decrypt(blob, recordedAlias) }
+                probeOpensBlob(unaeProvesRecoverable) { keystore.decrypt(blob, recordedAlias) }
             ) ||
             (
                 keystore.hasLegacyRsaKeysKey() &&
@@ -834,12 +848,20 @@ class WalletStorage(
     /**
      * True iff [decrypt] recovers the blob with a PRESENT key (plaintext
      * scrubbed immediately), or the key is auth-gated with a closed window
-     * (`UserNotAuthenticatedException` — present and would recover after auth,
-     * so recoverable). A wrong-key crypto failure or an absent key (`null`) is
-     * false. Prompt-free by construction — see [probeIdentityKeyRecoverability].
-     * Used only by the non-prompting key-health probe, never on a signing path.
+     * (`UserNotAuthenticatedException`) AND [unaeProvesRecoverable] — the
+     * caller's prompt-free evidence that the gated key actually owns the
+     * blob (the stored write-time fingerprint matches the alias's current
+     * key). UNAE is thrown at `cipher.init`, before the ciphertext is
+     * examined, so without that evidence a locked REPLACEMENT key would be
+     * indistinguishable from a locked legitimate owner. A wrong-key crypto
+     * failure or an absent key (`null`) is false. Prompt-free by
+     * construction — see [probeIdentityKeyRecoverability]. Used only by the
+     * non-prompting key-health probe, never on a signing path.
      */
-    private fun probeOpensBlob(decrypt: () -> ByteArray?): Boolean =
+    private fun probeOpensBlob(
+        unaeProvesRecoverable: Boolean = true,
+        decrypt: () -> ByteArray?,
+    ): Boolean =
         try {
             val plain = decrypt()
             if (plain != null) {
@@ -849,7 +871,7 @@ class WalletStorage(
                 false
             }
         } catch (e: UserNotAuthenticatedException) {
-            true
+            unaeProvesRecoverable
         } catch (e: GeneralSecurityException) {
             false
         }
