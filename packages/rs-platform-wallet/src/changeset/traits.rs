@@ -220,6 +220,25 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Returns an error if the internal accumulator cannot be accessed
     /// (e.g. mutex poisoning). Callers that use fire-and-forget
     /// semantics should log the error rather than propagating.
+    ///
+    /// ## Reentrancy contract (required)
+    ///
+    /// **A `store` implementation MUST NOT call back into any wallet-manager /
+    /// platform-wallet API.** The wallet manager is guarded by a single,
+    /// **non-reentrant** async `RwLock`, and many callers invoke `store`
+    /// **while holding that lock's write guard** (the balance/registration/
+    /// contact/payment mutation paths persist inside their critical section).
+    /// A callback that re-acquired the manager lock — directly, or indirectly
+    /// via a wallet-manager FFI call, an event/observer that synchronously
+    /// drives one, or a read-back that queries live wallet state — would
+    /// **deadlock on first execution**. Persist only the changeset you were
+    /// handed; do not consult the wallet manager to enrich it.
+    ///
+    /// Because `store` may run under that write guard, it is also
+    /// **latency-sensitive**: a slow synchronous write blocks every other
+    /// wallet accessor (readers and writers) for its duration. Keep the
+    /// per-call work bounded; if the backend does inline I/O (see the type
+    /// doc), size it accordingly.
     fn store(
         &self,
         wallet_id: WalletId,
