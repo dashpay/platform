@@ -10,6 +10,7 @@ use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{PlatformWalletError, TxMetadataKeySource};
+use zeroize::Zeroizing;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -323,21 +324,26 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
     let document_type_str =
         unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
 
-    // Copy the payload into an owned Vec (it is moved into the async block; a
-    // borrow of `payload` can't outlive this call). Null is allowed only for a
-    // zero-length payload.
-    let payload_vec: Vec<u8> = if payload_len == 0 {
+    // Copy the payload into an owned buffer. Null is allowed only for a
+    // zero-length payload. It is wrapped in `Zeroizing` so the native plaintext
+    // copy is scrubbed on drop, and it is dropped explicitly the instant the
+    // encrypted properties are prepared (below) — the plaintext must NOT linger
+    // in scope across the broadcast `.await` (dashpay/platform#4091).
+    let payload_vec: Zeroizing<Vec<u8>> = Zeroizing::new(if payload_len == 0 {
         Vec::new()
     } else {
         check_ptr!(payload);
         slice::from_raw_parts(payload, payload_len).to_vec()
-    };
+    });
 
     let signer_addr = signer_handle as usize;
     let owner_id_for_async = owner_id;
     let contract_id_for_async = contract_id_value;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+    // `move` so the closure OWNS `payload_vec` and can drop it (scrubbing the
+    // plaintext) before the broadcast `.await`; the other captures are Copy or
+    // already moved into the nested `async move` block.
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
         let identity_wallet = wallet.identity().clone();
 
         // Key-source selection by wallet capability (may synchronously call
@@ -366,7 +372,11 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
                 key_source,
             )
             .map_err(PlatformWalletFFIResult::from)?;
-        // Scrub the master now — it is not needed for the broadcast.
+        // The plaintext is now sealed inside `properties_json` (ciphertext
+        // only). Scrub the native plaintext copy AND the master immediately —
+        // neither may cross the broadcast `.await` below. `payload_vec` is
+        // `Zeroizing`, so the drop also wipes its bytes (dashpay/platform#4091).
+        drop(payload_vec);
         drop(master_opt);
 
         let result: Result<(Identifier, String), PlatformWalletError> =
