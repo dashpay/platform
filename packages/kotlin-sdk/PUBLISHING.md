@@ -76,6 +76,19 @@ remote publishes; `-PallowMissingJni` only downgrades the check for
 `publishToMavenLocal` (metadata-only dry runs into `~/.m2`). If the guard
 fires, run step 1.
 
+That check inspects the *source* tree; a second, deploy-time guard —
+`verifyStagedAarForRemotePublish` — inspects what JReleaser will actually
+upload. Immediately before any `jreleaser*` deploy/upload/release task it
+opens the staged AAR in `sdk/build/staging-deploy` and hard-fails unless:
+(a) the staged artifacts live under exactly the intended
+`org/dashj/dash-sdk-android/<version>/` path, with nothing staged outside it;
+(b) exactly one release AAR is staged, named for that coordinate; and
+(c) the AAR contains both `jni/arm64-v8a/libdash_sdk_jni.so` and
+`jni/x86_64/libdash_sdk_jni.so`. A stale or malformed staging dir therefore
+cannot be deployed even when the current source tree is valid. If it fires,
+re-run steps 1–2, then deploy. `publishToMavenLocal` never triggers this
+guard.
+
 ## Consuming the artifact
 
 ```kotlin

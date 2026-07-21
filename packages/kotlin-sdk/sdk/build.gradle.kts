@@ -1,4 +1,5 @@
 import java.util.concurrent.Callable
+import java.util.zip.ZipFile
 import org.gradle.api.publish.maven.tasks.PublishToMavenLocal
 import org.gradle.api.publish.maven.tasks.PublishToMavenRepository
 import org.jreleaser.model.Active
@@ -24,6 +25,11 @@ plugins {
 // dashj/core/build.gradle.
 group = "org.dashj"
 version = project.findProperty("sdkVersion")?.toString() ?: "0.1.0-SNAPSHOT"
+
+// Single source of truth for the published coordinate — consumed by the
+// `release` publication and by verifyStagedAarForRemotePublish (both below).
+val publishGroupId = "org.dashj"
+val publishArtifactId = "dash-sdk-android"
 
 android {
     namespace = "org.dashfoundation.dashsdk"
@@ -153,8 +159,8 @@ afterEvaluate {
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
-                groupId = "org.dashj"
-                artifactId = "dash-sdk-android"
+                groupId = publishGroupId
+                artifactId = publishArtifactId
                 pom {
                     name.set("Dash Platform Kotlin SDK")
                     description.set(
@@ -274,13 +280,123 @@ tasks.withType<PublishToMavenRepository>().configureEach {
 tasks.withType<PublishToMavenLocal>().configureEach {
     dependsOn(verifyJniLibsForLocalPublish)
 }
+// Deploy-time guard on the STAGED artifacts. verifyJniLibsForRemotePublish
+// (above) checks the source jniLibs tree, but `jreleaserDeploy` uploads whatever
+// already sits in build/staging-deploy — a valid current source tree could
+// green-light a stale or malformed staged AAR. So, immediately before any
+// jreleaser deploy/upload/release, inspect the staging repository itself:
+//   1. artifacts must exist under exactly the intended
+//      <group>/<artifactId>/<version> path, and nothing may be staged outside it
+//      (jreleaser pushes the whole staging repository, strays included);
+//   2. exactly one release AAR must be staged, named for the intended
+//      artifactId + version (plain, or Maven unique-snapshot timestamped);
+//   3. that AAR, opened as a zip, must contain jni/<abi>/libdash_sdk_jni.so for
+//      every required ABI.
+// Everything is computed in doLast, so configuration stays lazy and
+// mavenLocal/plain builds never touch this. Only jreleaser tasks depend on it.
+val verifyStagedAarForRemotePublish = tasks.register("verifyStagedAarForRemotePublish") {
+    description = "Fails unless build/staging-deploy holds exactly the intended " +
+        "GAV with a release AAR containing all required JNI libraries."
+    // Capture plain values at configuration time; all I/O happens at execution.
+    val stagingDirProvider = layout.buildDirectory.dir("staging-deploy")
+    val expectedGroup = publishGroupId
+    val expectedArtifact = publishArtifactId
+    val expectedVersion = version.toString()
+    val requiredAbis = requiredJniAbis
+    doLast {
+        val stagingRoot = stagingDirProvider.get().asFile
+        val gav = "$expectedGroup:$expectedArtifact:$expectedVersion"
+        val gavDir = stagingRoot
+            .resolve(expectedGroup.replace('.', '/'))
+            .resolve(expectedArtifact)
+            .resolve(expectedVersion)
+        if (!gavDir.isDirectory) {
+            throw GradleException(
+                "Staged repository $stagingRoot has no artifacts for $gav " +
+                    "(expected $gavDir). Run " +
+                    ":sdk:publishReleasePublicationToStagingRepository with this exact " +
+                    "version first — do not deploy a staging dir left over from " +
+                    "another version."
+            )
+        }
+
+        // (1) No artifacts outside the intended GAV directory.
+        val artifactExtensions = setOf("aar", "jar", "pom", "module")
+        val strays = stagingRoot.walkTopDown()
+            .filter { it.isFile && it.extension in artifactExtensions }
+            .filterNot { it.parentFile == gavDir }
+            .toList()
+        if (strays.isNotEmpty()) {
+            throw GradleException(
+                "Staged repository $stagingRoot contains artifacts outside $gav " +
+                    "(jreleaser would upload them too): " +
+                    strays.joinToString { it.relativeTo(stagingRoot).path } +
+                    ". Re-stage from clean (the staging publish runs cleanStagingDeploy)."
+            )
+        }
+
+        // (2) Exactly one release AAR (sources/javadoc are jars, so any .aar is
+        // the main artifact), named for the intended artifactId + version.
+        val aars = gavDir.listFiles { f: java.io.File -> f.isFile && f.extension == "aar" }
+            .orEmpty()
+            .sortedBy { it.name }
+        if (aars.size != 1) {
+            throw GradleException(
+                "Expected exactly one release AAR staged for $gav in $gavDir, found " +
+                    "${aars.size}${if (aars.isEmpty()) "" else ": " + aars.joinToString { it.name }}. " +
+                    "Re-stage from clean."
+            )
+        }
+        val aar = aars.single()
+        val plainName = "$expectedArtifact-$expectedVersion.aar"
+        val timestampedSnapshotName = Regex(
+            Regex.escape("$expectedArtifact-" + expectedVersion.removeSuffix("-SNAPSHOT")) +
+                "-\\d{8}\\.\\d{6}-\\d+\\.aar"
+        )
+        val nameMatchesGav = aar.name == plainName ||
+            (expectedVersion.endsWith("-SNAPSHOT") && timestampedSnapshotName.matches(aar.name))
+        if (!nameMatchesGav) {
+            throw GradleException(
+                "Staged AAR ${aar.name} in $gavDir does not match the intended " +
+                    "coordinate $gav (expected $plainName" +
+                    (if (expectedVersion.endsWith("-SNAPSHOT")) " or a unique-snapshot timestamped variant" else "") +
+                    "). Re-stage from clean."
+            )
+        }
+
+        // (3) The staged AAR itself must carry the native library for every ABI.
+        ZipFile(aar).use { zip ->
+            val missing = requiredAbis.filter { abi ->
+                zip.getEntry("jni/$abi/libdash_sdk_jni.so") == null
+            }
+            if (missing.isNotEmpty()) {
+                throw GradleException(
+                    "Staged AAR ${aar.name} is missing jni/<abi>/libdash_sdk_jni.so for " +
+                        "ABI(s) ${missing.joinToString()} — it would die at runtime with " +
+                        "UnsatisfiedLinkError. Run ../build_android.sh, re-stage, then deploy."
+                )
+            }
+        }
+        logger.lifecycle(
+            "Verified staged AAR ${aar.name} for $gav: all required JNI ABIs present " +
+                "(${requiredAbis.joinToString()})."
+        )
+    }
+    // If a single invocation stages and deploys, verify AFTER staging has run.
+    mustRunAfter(tasks.withType<PublishToMavenRepository>())
+}
+
 // jreleaser's deploy/upload/release tasks push the already-staged artifacts, so
-// gate them on the strict remote check too — a staging dir populated out-of-band
-// (or by a future task rewiring) can't be uploaded without the native library.
+// gate them on both remote checks — the source-tree check (a staging dir
+// populated out-of-band can't be uploaded without the native library) and the
+// staged-AAR inspection above (what is actually uploaded is what is verified).
 tasks.matching { task ->
     task.name.startsWith("jreleaser") &&
         listOf("Deploy", "Upload", "Release").any { task.name.contains(it) }
-}.configureEach { dependsOn(verifyJniLibsForRemotePublish) }
+}.configureEach {
+    dependsOn(verifyJniLibsForRemotePublish)
+    dependsOn(verifyStagedAarForRemotePublish)
+}
 
 // Maven Central / Sonatype deployment via jreleaser, mirroring
 // dashj/core/build.gradle (https://github.com/dashpay/dashj/blob/master/core/build.gradle#L139).
