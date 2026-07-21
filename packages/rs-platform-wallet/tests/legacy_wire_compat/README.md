@@ -14,8 +14,7 @@ Two checked-in JVM tools back the hard-coded vectors in
   REAL `org.bitcoinj.wallet.DerivationPathFactory` and confirms that
   `LegacyKeyN`'s hand-built account path equals the factory's output at
   identityIndex 0, so the wire-compat anchor is independently reproducible from
-  checked-in code — not just asserted in prose (dashpay/platform#4091, findings
-  989be307db0f / dd246b5e17d0 / 4c0754158cc6).
+  checked-in code — not just asserted in prose (dashpay/platform#4091).
 
 ## What each vector proves (and what it does NOT)
 
