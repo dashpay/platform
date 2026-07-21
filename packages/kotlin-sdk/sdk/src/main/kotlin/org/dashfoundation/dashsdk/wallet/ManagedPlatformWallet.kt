@@ -216,10 +216,9 @@ class ManagedPlatformWallet internal constructor(
 
         internal companion object {
             /**
-             * Decode the big-endian native BLOB the deferred build/register FFI
-             * returns: `u64 token, u64 feeDuffs, u32 txidLen, txid utf8,
-             * u32 txBytesLen, txBytes`. Shared by the atomic
-             * finalize-and-register path and the deprecated register path.
+             * Decode the big-endian native BLOB the atomic
+             * finalize-and-register FFI returns: `u64 token, u64 feeDuffs,
+             * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
              */
             internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
                 val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
