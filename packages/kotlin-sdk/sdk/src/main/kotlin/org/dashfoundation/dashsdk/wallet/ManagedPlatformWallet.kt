@@ -180,6 +180,19 @@ class ManagedPlatformWallet internal constructor(
      * flows that must sign now, POST the raw bytes to a merchant server, and
      * broadcast only on the server's ack.
      *
+     * **Owns the reservation token.** The blocking native registration mints the
+     * token before this object exists, so if the object were then discarded —
+     * the caller drops it, or a coroutine cancellation is observed after
+     * [buildSignedPayment]'s native call returned — the token (and its funding
+     * reservation) would be orphaned until key-wallet's TTL. This type is
+     * therefore [AutoCloseable] with a [NativeCleaner] GC backstop: [close], or
+     * GC if you never call it, releases the token exactly once. Release is
+     * idempotent native-side and tokens are process-unique (never reused), so
+     * releasing a token already consumed by [broadcastSigned] /
+     * [releaseReservation] — or releasing twice — is a harmless no-op. A caller
+     * that broadcasts or releases can still `use`/close this object; a caller
+     * that abandons it is covered by GC.
+     *
      * @property txidHex the transaction id (lowercase hex) the broadcast will
      *   return — computed from the signed bytes Rust-side so it matches exactly.
      * @property rawTxBytes the consensus-serialized signed transaction, to hand
@@ -187,14 +200,29 @@ class ManagedPlatformWallet internal constructor(
      * @property feeDuffs the fee the build charged, in duffs.
      * @property reservationToken the opaque token for [broadcastSigned] /
      *   [releaseReservation]. Valid only for this wallet instance and only until
-     *   consumed by one of those calls.
+     *   consumed by one of those calls (or released by [close] / GC).
      */
     class SignedCoreTransaction internal constructor(
         val txidHex: String,
         val rawTxBytes: ByteArray,
         val feeDuffs: Long,
         val reservationToken: Long,
-    ) {
+    ) : AutoCloseable {
+
+        // GC backstop: releases the token if it was neither broadcast nor
+        // released. The action must not reference this object (it would never
+        // become phantom-reachable), so it captures the token by value.
+        private val cleanable = NativeCleaner.register(this, TokenRelease(reservationToken))
+
+        /**
+         * Release the funding reservation if this payment was neither broadcast
+         * nor released, and drop the token. Idempotent — safe to call after a
+         * [broadcastSigned] / [releaseReservation] (native no-op) and safe to
+         * call twice. The [NativeCleaner] backstop runs the same release on GC
+         * if you never call [close].
+         */
+        override fun close() = cleanable.clean()
+
         override fun equals(other: Any?): Boolean =
             other is SignedCoreTransaction &&
                 txidHex == other.txidHex &&
@@ -213,6 +241,13 @@ class ManagedPlatformWallet internal constructor(
         override fun toString(): String =
             "SignedCoreTransaction(txidHex=$txidHex, feeDuffs=$feeDuffs, " +
                 "reservationToken=$reservationToken, rawTxBytes=${rawTxBytes.size} bytes)"
+
+        /** Releases the reservation token exactly once, on [close] or GC. */
+        private class TokenRelease(private val token: Long) : Runnable {
+            override fun run() {
+                WalletManagerNative.coreWalletReleaseSignedPayment(token)
+            }
+        }
 
         internal companion object {
             /**
@@ -256,6 +291,14 @@ class ManagedPlatformWallet internal constructor(
      * buildSigned split had), so once this returns the reservation holds the
      * inputs and [broadcastSigned] / [releaseReservation] operate on the token
      * later.
+     *
+     * The returned [SignedCoreTransaction] OWNS the token: it is [AutoCloseable]
+     * with a GC/[NativeCleaner] backstop, so a token that is neither broadcast
+     * nor released is never orphaned — even if the caller drops the object or a
+     * cancellation discards it after this call's blocking native registration
+     * already minted the token. The backstop releases the reservation on GC (or
+     * on an explicit [SignedCoreTransaction.close]); consuming the token via
+     * [broadcastSigned] / [releaseReservation] makes that release a native no-op.
      *
      * Process-death note: the reservation is in-memory. An app crash between
      * this call and [broadcastSigned] drops the reservation on restart (the
