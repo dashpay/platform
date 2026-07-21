@@ -100,6 +100,8 @@ pub(crate) fn restore_provider_platform_node_pool(
         return Ok(());
     }
 
+    // TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
+    // restoring it requires widening `insert_platform_node_pool_entry` in rs-platform-wallet.
     for (index, script_bytes, public_key, used) in entries {
         let PublicKeyType::EdDSA(public_key) = public_key else {
             return Err(WalletStorageError::blob_decode(

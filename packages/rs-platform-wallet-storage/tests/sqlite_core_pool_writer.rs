@@ -217,6 +217,140 @@ fn tc_b_001_pool_rows_with_used_flags() {
     }
 }
 
+#[test]
+fn reserved_address_persists_reservation_timestamp() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB0);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut info = external_infos(0xB0).remove(0);
+    let reserved_at = 1_752_528_623;
+    info.state = AddressState::Reserved { at: reserved_at };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![pool_entry(
+                    AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    AddressPoolType::External,
+                    vec![info],
+                )],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let conn = persister.lock_conn_for_test();
+    let (used, stored_reserved_at): (i64, Option<i64>) = conn
+        .query_row(
+            "SELECT used, reserved_at FROM core_address_pool WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(used, 0);
+    assert_eq!(stored_reserved_at, Some(reserved_at as i64));
+}
+
+#[test]
+fn available_and_used_addresses_persist_without_reservation_timestamp() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB1);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut infos = external_infos(0xB1);
+    infos.truncate(2);
+    infos[0].state = AddressState::Available;
+    infos[1].state = AddressState::Used;
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![pool_entry(
+                    AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    AddressPoolType::External,
+                    infos,
+                )],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let conn = persister.lock_conn_for_test();
+    let mut stmt = conn
+        .prepare(
+            "SELECT used, reserved_at FROM core_address_pool \
+             WHERE wallet_id = ?1 ORDER BY address_index",
+        )
+        .unwrap();
+    let rows = stmt
+        .query_map(rusqlite::params![w.as_slice()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(rows, vec![(0, None), (1, None)]);
+}
+
+#[test]
+fn used_address_cannot_regain_reservation_from_stale_snapshot() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xB2);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut info = external_infos(0xB2).remove(0);
+    let account_type = AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    info.state = AddressState::Used;
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![pool_entry(
+                    account_type,
+                    AddressPoolType::External,
+                    vec![info.clone()],
+                )],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    info.state = AddressState::Reserved { at: 1_752_528_624 };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_address_pools: vec![pool_entry(
+                    account_type,
+                    AddressPoolType::External,
+                    vec![info],
+                )],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let conn = persister.lock_conn_for_test();
+    let state: (i64, Option<i64>) = conn
+        .query_row(
+            "SELECT used, reserved_at FROM core_address_pool WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(state, (1, None));
+}
+
 /// TC-B-002 — a UTXO whose owning account is index 1 stores
 /// `account_index = 1`, not the retired hardcoded 0.
 #[test]
@@ -976,7 +1110,7 @@ fn typed_pool_loader_rejects_mismatched_key_nullability() {
                 w,
                 PlatformWalletChangeSet {
                     account_address_pools: vec![pool_entry(
-                        account_type.clone(),
+                        account_type,
                         AddressPoolType::External,
                         vec![info],
                     )],

@@ -41,17 +41,23 @@ const ECDSA_PUBLIC_KEY_LEN: usize = 33;
 const EDDSA_PUBLIC_KEY_LEN: usize = 32;
 const BLS_PUBLIC_KEY_LEN: usize = 48;
 
+// Monotonic final usage clears reservations so a stale Reserved snapshot
+// cannot resurrect one after the row has become Used.
 const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
         (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
-         pool_type, address_index, script, used, public_key, key_type) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
      ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
                  friend_identity_id, pool_type, address_index) \
      DO UPDATE SET \
         script = excluded.script, \
         public_key = excluded.public_key, \
         key_type = excluded.key_type, \
-        used = MAX(used, excluded.used)";
+        used = MAX(used, excluded.used), \
+        reserved_at = CASE \
+            WHEN MAX(used, excluded.used) = 1 THEN NULL \
+            ELSE excluded.reserved_at \
+        END";
 
 const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
         SELECT 1 FROM core_address_pool \
@@ -145,6 +151,12 @@ pub fn apply_pools(
                     address_index: info.index,
                 });
             }
+            let reserved_at = info
+                .reserved_at()
+                .map(|at| {
+                    crate::sqlite::util::safe_cast::u64_to_i64("core_address_pool.reserved_at", at)
+                })
+                .transpose()?;
             upsert_stmt.execute(params![
                 wallet_id.as_slice(),
                 account_type,
@@ -158,12 +170,15 @@ pub fn apply_pools(
                 info.is_used(),
                 public_key,
                 key_type,
+                reserved_at,
             ])?;
         }
     }
     Ok(())
 }
 
+// TODO(#4188): `reserved_at` is persisted but deliberately not consumed here;
+// restoring it requires widening `insert_platform_node_pool_entry` in rs-platform-wallet.
 /// One restored typed-pool row: `(address_index, script_bytes, public_key, used)`.
 pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 
