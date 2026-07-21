@@ -19,21 +19,24 @@ use drive::util::grove_operations::GroveDBToUse;
 
 /// Derive V0's complete-response envelope from the active retention policy.
 ///
-/// The retained set can grow for one pruning interval past the retention
-/// depth. One additional interval provides operational headroom without
-/// letting this unpaginated legacy query drift away from versioned policy.
+/// The retention policy caps the retained set at
+/// `max_retained_shielded_anchors()`. We allow one further pruning interval of
+/// operational headroom on top of that worst case,
+/// so this unpaginated legacy query never fails closed on legitimately in-policy
+/// state while staying coupled to the pruning algorithm rather than re-deriving
+/// the bound from the raw constants.
+///
+/// Returns `(safety_limit, preflight_limit)`, or `None` if the active policy
+/// exceeds what this V0 response can enumerate within a `u16` query limit.
 fn v0_shielded_anchor_limits(platform_version: &PlatformVersion) -> Option<(u16, u16)> {
     let event_constants = &platform_version
         .drive_abci
         .validation_and_processing
         .event_constants;
     let safety_limit = event_constants
-        .shielded_anchor_pruning_interval
-        .checked_mul(2)
-        .and_then(|headroom| {
-            event_constants
-                .shielded_anchor_retention_blocks
-                .checked_add(headroom)
+        .max_retained_shielded_anchors()
+        .and_then(|max_retained| {
+            max_retained.checked_add(event_constants.shielded_anchor_pruning_interval)
         })
         .and_then(|limit| u16::try_from(limit).ok())?;
     let preflight_limit = safety_limit.checked_add(1)?;
@@ -277,5 +280,52 @@ mod tests {
         let (_, proved_anchors) = Drive::verify_shielded_anchors(&proof, false, version)
             .expect("verify small-state anchor proof");
         assert_eq!(proved_anchors, expected_sorted);
+    }
+
+    #[test]
+    fn v0_envelope_covers_the_retention_policy_for_every_platform_version() {
+        // The V0 safety envelope must cover the worst-case retained set for
+        // every supported protocol version. This binds the query bound to the
+        // pruning policy: a future version that tunes retention/pruning (or an
+        // edit that weakens the headroom) fails here instead of silently
+        // rejecting legitimately in-policy state at runtime.
+        for platform_version in dpp::version::PLATFORM_VERSIONS {
+            let event_constants = &platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants;
+
+            let max_retained = event_constants
+                .max_retained_shielded_anchors()
+                .expect("retention policy must not overflow u64");
+            assert_eq!(
+                max_retained,
+                event_constants.shielded_anchor_retention_blocks
+                    + event_constants.shielded_anchor_pruning_interval,
+                "protocol version {} max-retained drifted from retention + interval",
+                platform_version.protocol_version
+            );
+
+            let (safety_limit, preflight_limit) = v0_shielded_anchor_limits(platform_version)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "protocol version {} retention policy overflows the V0 u16 envelope",
+                        platform_version.protocol_version
+                    )
+                });
+
+            assert!(
+                u64::from(safety_limit) >= max_retained,
+                "protocol version {} safety limit {} does not cover max retained {}",
+                platform_version.protocol_version,
+                safety_limit,
+                max_retained
+            );
+            assert_eq!(
+                preflight_limit,
+                safety_limit + 1,
+                "preflight must read exactly one past the safety limit"
+            );
+        }
     }
 }
