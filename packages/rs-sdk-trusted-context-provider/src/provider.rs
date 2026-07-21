@@ -17,6 +17,7 @@ use dpp::data_contract::TokenConfiguration;
     feature = "wallet-utils-contract",
     feature = "token-history-contract",
     feature = "keywords-contract",
+    feature = "document-history-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -658,6 +659,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "wallet-utils-contract",
             feature = "token-history-contract",
             feature = "keywords-contract",
+            feature = "document-history-contract",
             feature = "all-system-contracts"
         ))]
         {

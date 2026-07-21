@@ -177,26 +177,45 @@ impl DocumentTypeV0 {
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(data_contact_config.documents_keep_history_contract_default());
 
-        // Are transfers of documents of this type recorded in the document
-        // history system contract?
-        let documents_keep_transfer_history: bool =
-            Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
-
-        // Are purchases of documents of this type recorded in the document
-        // history system contract?
-        let documents_keep_purchase_history: bool =
-            Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
-
-        // Are price updates on documents of this type recorded in the
-        // document history system contract?
-        let documents_keep_pricing_history: bool =
-            Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
+        // The document history subscription flags are only recognized from
+        // document meta-schema v2 (protocol version 13). Earlier meta-schema
+        // versions either accepted and ignored unknown top-level keys (v0) or
+        // rejected them outright (v1), so parsing them here for historical
+        // protocol versions would change replay validation: a pre-v12
+        // contract carrying e.g. a non-boolean value under one of these names
+        // validated fine on the base implementation and must keep doing so.
+        let (
+            documents_keep_transfer_history,
+            documents_keep_purchase_history,
+            documents_keep_pricing_history,
+        ): (bool, bool, bool) = if platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .document_type_schema
+            >= 2
+        {
+            (
+                // Are transfers of documents of this type recorded in the
+                // document history system contract?
+                Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default(),
+                // Are purchases of documents of this type recorded in the
+                // document history system contract?
+                Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default(),
+                // Are price updates on documents of this type recorded in the
+                // document history system contract?
+                Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default(),
+            )
+        } else {
+            (false, false, false)
+        };
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
