@@ -74,7 +74,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         &self,
         contract_id: Identifier,
     ) -> Result<Arc<DataContract>, PlatformWalletError> {
-        use dash_sdk::platform::Fetch;
+        use dash_sdk::platform::{ContextProvider, Fetch};
 
         let contract = DataContract::fetch(&self.sdk, contract_id)
             .await
@@ -85,6 +85,19 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     contract_id
                 ))
             })?;
-        Ok(Arc::new(contract))
+        let contract = Arc::new(contract);
+        // Register the fetched contract with the SDK context provider so the
+        // returned-proof verification after a token state-transition broadcast
+        // can resolve it. Mirrors document.rs's
+        // `register_contract_for_proof_verification`, done here at the shared
+        // token fetch point so every write path (mint / burn / transfer /
+        // purchase / freeze / …) is covered. The mobile
+        // `TrustedHttpContextProvider` never fetches contracts itself, so
+        // without this the returned-proof verification fails with "unknown
+        // contract" even though the token write already landed on-chain.
+        if let Some(provider) = self.sdk.context_provider() {
+            provider.register_data_contract(Arc::clone(&contract));
+        }
+        Ok(contract)
     }
 }

@@ -8,9 +8,7 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, PlatformWalletChangeSet,
-};
+use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
@@ -29,25 +27,17 @@ fn dashpay_account_registration_changeset(
     account_xpub: key_wallet::bip32::ExtendedPubKey,
     managed: &key_wallet::managed_account::ManagedCoreFundsAccount,
 ) -> PlatformWalletChangeSet {
-    let mut cs = PlatformWalletChangeSet {
+    PlatformWalletChangeSet {
         account_registrations: vec![AccountRegistrationEntry {
             account_type,
             account_xpub,
         }],
-        ..Default::default()
-    };
-    for pool in managed.managed_account_type().address_pools() {
-        let addresses: Vec<key_wallet::AddressInfo> = pool.addresses.values().cloned().collect();
-        if addresses.is_empty() {
-            continue;
-        }
-        cs.account_address_pools.push(AccountAddressPoolEntry {
+        account_address_pools: crate::changeset::account_address_pool_entries(
             account_type,
-            pool_type: pool.pool_type,
-            addresses,
-        });
+            managed.managed_account_type().address_pools(),
+        ),
+        ..Default::default()
     }
-    cs
 }
 
 /// Why a [`register_external_contact_account`] attempt failed, classified
