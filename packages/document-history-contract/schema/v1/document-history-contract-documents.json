@@ -4,6 +4,7 @@
     "documentsMutable": false,
     "canBeDeleted": false,
     "creationRestrictionMode": 2,
+    "documentsCountable": true,
     "indices": [
       {
         "name": "byDocument",
@@ -28,7 +29,9 @@
           {
             "$createdAt": "asc"
           }
-        ]
+        ],
+        "countable": "countable",
+        "rangeCountable": true
       },
       {
         "name": "from",
@@ -103,6 +106,7 @@
     "documentsMutable": false,
     "canBeDeleted": false,
     "creationRestrictionMode": 2,
+    "documentsAverageable": "price",
     "indices": [
       {
         "name": "byDocument",
@@ -116,7 +120,9 @@
           {
             "$createdAt": "asc"
           }
-        ]
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
       },
       {
         "name": "byContract",
@@ -127,7 +133,9 @@
           {
             "$createdAt": "asc"
           }
-        ]
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
       },
       {
         "name": "buyer",
@@ -199,8 +207,7 @@
       },
       "price": {
         "type": "integer",
-        "minimum": 0,
-        "description": "The price paid for the document in credits",
+        "description": "The price paid for the document in credits. Unbounded integer so the property is sum-aggregatable (i64); actual values are consensus-validated non-negative credit amounts written only by the protocol",
         "position": 4
       }
     },
@@ -217,9 +224,11 @@
   },
   "priceUpdate": {
     "type": "object",
+    "$comment": "Time-range aggregates over these records are weighted by listing events: a document relisted N times in the window contributes N records. They are activity-weighted averages, not time-weighted prices.",
     "documentsMutable": false,
     "canBeDeleted": false,
     "creationRestrictionMode": 2,
+    "documentsCountable": true,
     "indices": [
       {
         "name": "byDocument",
@@ -233,7 +242,9 @@
           {
             "$createdAt": "asc"
           }
-        ]
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
       },
       {
         "name": "byContract",
@@ -244,7 +255,9 @@
           {
             "$createdAt": "asc"
           }
-        ]
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
       }
     ],
     "properties": {
@@ -274,8 +287,7 @@
       },
       "price": {
         "type": "integer",
-        "minimum": 0,
-        "description": "The new asking price for the document in credits",
+        "description": "The new asking price for the document in credits. Unbounded integer so the property is sum-aggregatable (i64); actual values are consensus-validated non-negative credit amounts written only by the protocol",
         "position": 3
       }
     },

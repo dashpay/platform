@@ -966,6 +966,15 @@ mod dpns_username_transfer_tests {
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
+    use drive::query::drive_document_average_query::{
+        AverageMode, DocumentAverageRequest, DocumentAverageResponse,
+    };
+    use drive::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse,
+    };
+    use drive::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, SumMode,
+    };
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
@@ -1212,6 +1221,147 @@ mod dpns_username_transfer_tests {
         );
     }
 
+    fn history_where_by_contract(source_data_contract_id: Identifier) -> WhereClause {
+        WhereClause {
+            field: "dataContractId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(source_data_contract_id.to_buffer()),
+        }
+    }
+
+    fn history_where_created_between(from_ms: u64, to_ms: u64) -> WhereClause {
+        WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::Between,
+            value: Value::Array(vec![Value::U64(from_ms), Value::U64(to_ms)]),
+        }
+    }
+
+    /// Provable aggregate count of history documents matching the where
+    /// clauses (whole doctype when empty).
+    fn history_aggregate_count(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> u64 {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let request = DocumentCountRequest {
+            contract: &history_contract,
+            document_type,
+            where_clauses,
+            order_clauses: vec![],
+            mode: CountMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &platform.config.drive,
+        };
+
+        match platform
+            .drive
+            .execute_document_count_request(request, None, platform_version)
+            .expect("expected the count query to execute")
+        {
+            DocumentCountResponse::Aggregate(count) => count,
+            other => panic!("expected an aggregate count, got {:?}", other),
+        }
+    }
+
+    /// Provable aggregate sum of the `price` property over history documents
+    /// matching the where clauses (whole doctype when empty).
+    fn history_aggregate_price_sum(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> i64 {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let request = DocumentSumRequest {
+            contract: &history_contract,
+            document_type,
+            sum_property: "price".to_string(),
+            where_clauses,
+            order_clauses: vec![],
+            mode: SumMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &platform.config.drive,
+        };
+
+        match platform
+            .drive
+            .execute_document_sum_request(request, None, platform_version)
+            .expect("expected the sum query to execute")
+        {
+            DocumentSumResponse::Aggregate(sum) => sum,
+            other => panic!("expected an aggregate sum, got {:?}", other),
+        }
+    }
+
+    /// Provable `(count, sum)` average pair of the `price` property over
+    /// history documents matching the where clauses.
+    fn history_aggregate_price_average(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> (u64, i64) {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let request = DocumentAverageRequest {
+            contract: &history_contract,
+            document_type,
+            sum_property: "price".to_string(),
+            where_clauses,
+            order_clauses: vec![],
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &platform.config.drive,
+        };
+
+        match platform
+            .drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("expected the average query to execute")
+        {
+            DocumentAverageResponse::Aggregate { count, sum } => (count, sum),
+            other => panic!("expected an aggregate average, got {:?}", other),
+        }
+    }
+
     /// Queries the document history system contract for history documents of
     /// the given history document type recorded for a source document.
     fn query_history_documents(
@@ -1426,6 +1576,39 @@ mod dpns_username_transfer_tests {
             );
 
             assert!(history_document.created_at().is_some());
+
+            // Provable transfer counts: doctype-wide and per-contract in a
+            // time window
+            assert_eq!(
+                history_aggregate_count(&platform, "transfer", vec![], platform_version),
+                1
+            );
+
+            assert_eq!(
+                history_aggregate_count(
+                    &platform,
+                    "transfer",
+                    vec![
+                        history_where_by_contract(dpns_contract.id()),
+                        history_where_created_between(0, 9_999_999_999_999),
+                    ],
+                    platform_version,
+                ),
+                1
+            );
+
+            assert_eq!(
+                history_aggregate_count(
+                    &platform,
+                    "transfer",
+                    vec![
+                        history_where_by_contract(dpns_contract.id()),
+                        history_where_created_between(1, 2),
+                    ],
+                    platform_version,
+                ),
+                0
+            );
         } else {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
@@ -1799,6 +1982,65 @@ mod dpns_username_transfer_tests {
         );
 
         assert_eq!(transfer_history.len(), 0);
+
+        // Provable marketplace aggregates: exactly one sale for 0.1 dash was
+        // recorded, visible as O(1) doctype-wide count and volume
+        assert_eq!(
+            history_aggregate_count(&platform, "purchase", vec![], platform_version),
+            1
+        );
+
+        assert_eq!(
+            history_aggregate_price_sum(&platform, "purchase", vec![], platform_version),
+            dash_to_credits!(0.1) as i64
+        );
+
+        // Time-range aggregates on the byContract index: the sale falls in a
+        // wide window and average sale price = sum / count
+        let (window_count, window_sum) = history_aggregate_price_average(
+            &platform,
+            "purchase",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(0, 9_999_999_999_999),
+            ],
+            platform_version,
+        );
+
+        assert_eq!(
+            (window_count, window_sum),
+            (1, dash_to_credits!(0.1) as i64)
+        );
+
+        // ... and an empty window contains no sales
+        let (empty_count, empty_sum) = history_aggregate_price_average(
+            &platform,
+            "purchase",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(1, 2),
+            ],
+            platform_version,
+        );
+
+        assert_eq!((empty_count, empty_sum), (0, 0));
+
+        // The listing is aggregated the same way: average asking price
+        // between dates over priceUpdate records
+        let (listing_count, listing_sum) = history_aggregate_price_average(
+            &platform,
+            "priceUpdate",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(0, 9_999_999_999_999),
+            ],
+            platform_version,
+        );
+
+        assert_eq!(
+            (listing_count, listing_sum),
+            (1, dash_to_credits!(0.1) as i64)
+        );
 
         let issues = platform
             .drive

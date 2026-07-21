@@ -3,8 +3,16 @@ use arc_swap::{ArcSwap, Guard};
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use dpp::ProtocolError;
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use std::sync::Arc;
+
+/// The protocol version at which the document history contract activates. Its
+/// schema uses index aggregation keywords (`averageable`, `rangeCountable`,
+/// ...) that earlier document meta-schemas do not recognize, so the contract
+/// is always loaded and validated under this version regardless of the
+/// version the cache is being (re)loaded at.
+pub const DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION: ProtocolVersion = 13;
 
 /// A wrapper around a system [`DataContract`] that tracks its activation version
 /// and allows atomic replacement.
@@ -90,7 +98,11 @@ impl SystemDataContracts {
             load_system_data_contract(MasternodeRewards, platform_version)?;
         let token_history = load_system_data_contract(TokenHistory, platform_version)?;
         let keyword_search = load_system_data_contract(KeywordSearch, platform_version)?;
-        let document_history = load_system_data_contract(DocumentHistory, platform_version)?;
+        let document_history = load_system_data_contract(
+            DocumentHistory,
+            PlatformVersion::get(DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION)
+                .map_err(ProtocolError::from)?,
+        )?;
 
         // 2. Swap the cached Arcs — each swap is lock-free & O(1).
         self.withdrawals.store(withdrawals);
@@ -148,9 +160,10 @@ impl SystemDataContracts {
             document_history: ActiveSystemDataContract::new(
                 load_system_data_contract(
                     SystemDataContract::DocumentHistory,
-                    PlatformVersion::first(),
+                    PlatformVersion::get(DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION)
+                        .map_err(ProtocolError::from)?,
                 )?,
-                13,
+                DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION,
             ),
         })
     }
