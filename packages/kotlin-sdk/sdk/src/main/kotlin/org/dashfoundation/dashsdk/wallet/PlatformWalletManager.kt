@@ -1332,19 +1332,20 @@ class PlatformWalletManager(
      * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed
      * exit [denomination] (credits — one of the on-chain 0.1/0.3/0.5/1.0 DASH
      * denominations) from the wallet's bound Orchard pool ([account]) to fund
-     * a new identity at [identityIndex]. [keys] are the derived + persisted
-     * canonical registration keys, encoded to the same blob ID-08 uses.
-     * [fallbackAddress] is the REQUIRED 21-byte PlatformAddress that receives
-     * the value (minus a penalty) if creation fails a stateful check. Signed
-     * by the Keystore identity signer ([signerHandle]). Blocks for the ~30s
-     * Halo 2 proof.
+     * a new identity at [identityIndex]. [keys] are the rich registration rows
+     * (built via `RegistrationKeys.buildRegistrationRows`), encoded to the same
+     * blob every registration path uses; each row's private half must already
+     * be persisted. [fallbackAddress] is the REQUIRED 21-byte PlatformAddress
+     * that receives the value (minus a penalty) if creation fails a stateful
+     * check. Signed by the Keystore identity signer ([signerHandle]). Blocks
+     * for the ~30s Halo 2 proof.
      *
      * @return the new 32-byte identity id.
      */
     suspend fun shieldedIdentityCreateFromPool(
         walletId: ByteArray,
         identityIndex: Int,
-        keys: List<org.dashfoundation.dashsdk.identity.IdentityKeyPreview>,
+        keys: List<org.dashfoundation.dashsdk.identity.IdentityPubkey>,
         denomination: Long,
         fallbackAddress: ByteArray,
         account: Int = 0,
@@ -1362,7 +1363,7 @@ class PlatformWalletManager(
                 mnemonicResolver.nativeHandle,
                 account,
                 identityIndex,
-                org.dashfoundation.dashsdk.identity.IdentityKeyPreview.encodeForRegistration(keys),
+                org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode(keys),
                 denomination,
                 fallbackAddress,
                 signerHandle,

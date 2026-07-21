@@ -87,11 +87,15 @@ internal object IdentityNative {
      * keypair a freshly-created identity is built from.
      *
      * [count] < 0 derives the canonical default set (4 keys: MASTER auth,
-     * CRITICAL auth, HIGH auth, TRANSFER/CRITICAL). Returns the same flat
-     * BLOB layout as [previewRegistrationKeys], decoded by
+     * CRITICAL auth, HIGH auth, TRANSFER/CRITICAL); the create-identity flow
+     * may request more (e.g. 6, appending the DashPay ENCRYPTION/DECRYPTION
+     * pair). Returns the same flat BLOB layout as [previewRegistrationKeys],
+     * decoded by
      * [org.dashfoundation.dashsdk.identity.IdentityKeyPreview.decodeAll].
-     * The per-key DPP role is applied positionally by keyId at
-     * registration time — the row carries only the derived ECDSA keypair.
+     * The row carries only the derived ECDSA keypair — the per-key DPP role is
+     * stamped Kotlin-side by
+     * [org.dashfoundation.dashsdk.identity.RegistrationKeys] when the rich
+     * registration rows are built.
      *
      * @param resolverHandle `MnemonicResolverHandle`, needed for
      *   watch-only / external-signable wallets; ignored for resident-key
@@ -149,9 +153,10 @@ internal object IdentityNative {
      * Register a new identity funded from the wallet's Core balance. The
      * single FFI entry point the registration coordinator's body invokes.
      *
-     * @param pubkeysBlob the keys to register, big-endian: `u32 rowCount`
-     *   then per row `u32 keyId, u16 pubkeyLen, pubkey`. Built by
-     *   [org.dashfoundation.dashsdk.identity.IdentityKeyPreview.encodeForRegistration].
+     * @param pubkeysBlob the rich key rows to register, encoded by
+     *   [org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode] — each
+     *   row carries its keyId, DPP role, and any contract bounds (built from
+     *   [org.dashfoundation.dashsdk.identity.RegistrationKeys]).
      * @param signerHandle identity-key `SignerHandle`.
      * @param coreSignerHandle `MnemonicResolverHandle` for the asset-lock
      *   credit-spend signature.
@@ -173,9 +178,9 @@ internal object IdentityNative {
      * distinct from [registerIdentityWithFunding] (ID-01) which builds a
      * new Core asset lock.
      *
-     * @param pubkeysBlob the keys to register (same layout as
-     *   [registerIdentityWithFunding]). Built by
-     *   [org.dashfoundation.dashsdk.identity.IdentityKeyPreview.encodeForRegistration].
+     * @param pubkeysBlob the rich key rows to register (same layout as
+     *   [registerIdentityWithFunding], encoded by
+     *   [org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode]).
      * @param signerHandle used for **both** the identity-key and the
      *   platform-address signing roles (the native `VTableSigner`
      *   dispatches by key-type byte).

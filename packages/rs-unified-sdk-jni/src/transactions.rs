@@ -38,6 +38,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::pubkey_rows::decode_update_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jint, jlong, jstring};
@@ -240,27 +241,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         }
 
         // Build the FFI rows referencing the owned buffers in `decoded`.
-        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded
-            .iter()
-            .map(|row| IdentityPubkeyFFI {
-                key_id: row.key_id,
-                key_type: row.key_type,
-                purpose: row.purpose,
-                security_level: row.security_level,
-                pubkey_bytes: row.pubkey_bytes.as_ptr(),
-                pubkey_len: row.pubkey_bytes.len(),
-                read_only: row.read_only,
-                contract_bounds_kind: row.contract_bounds_kind,
-                contract_bounds_id: row
-                    .contract_bounds_id
-                    .as_ref()
-                    .map_or(ptr::null(), |b| b.as_ptr()),
-                contract_bounds_document_type: row
-                    .contract_bounds_document_type
-                    .as_ref()
-                    .map_or(ptr::null(), |c| c.as_ptr()),
-            })
-            .collect();
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
 
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_update_identity_with_signer(
@@ -285,163 +266,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         // reference; they stay in scope through the FFI call above.
         take_pwffi_error(env, result);
     })
-}
-
-/// One decoded add-key row with owned buffers backing the FFI pointers.
-struct DecodedPubkeyRow {
-    key_id: u32,
-    key_type: u8,
-    purpose: u8,
-    security_level: u8,
-    read_only: bool,
-    contract_bounds_kind: u8,
-    pubkey_bytes: Vec<u8>,
-    contract_bounds_id: Option<[u8; 32]>,
-    contract_bounds_document_type: Option<CString>,
-}
-
-/// Decode the identity-update add-keys BLOB documented on
-/// [`Java_..._updateIdentity`]. Throws + returns None on a malformed blob.
-fn decode_update_pubkeys_blob(env: &mut JNIEnv, arr: &JByteArray) -> Option<Vec<DecodedPubkeyRow>> {
-    let bytes = match env.convert_byte_array(arr) {
-        Ok(b) => b,
-        Err(_) => {
-            // A null blob is a legitimate "no keys to add".
-            let _ = env.exception_clear();
-            return Some(Vec::new());
-        }
-    };
-    if bytes.is_empty() {
-        return Some(Vec::new());
-    }
-
-    let mut cursor = 0usize;
-    let read = |cursor: &mut usize, n: usize| -> Option<Vec<u8>> {
-        if *cursor + n > bytes.len() {
-            return None;
-        }
-        let s = bytes[*cursor..*cursor + n].to_vec();
-        *cursor += n;
-        Some(s)
-    };
-
-    let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, "addPubkeysBlob truncated (row count)");
-        return None;
-    };
-    let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
-    // Length-before-allocation guard: each row is at least an 11-byte
-    // fixed header, so a header claiming more rows than the remaining
-    // payload can hold is malformed — prevents a huge `with_capacity`
-    // abort from a raw-JNI blob.
-    if count
-        .checked_mul(11)
-        .is_none_or(|need| bytes.len() - cursor < need)
-    {
-        throw_sdk_exception(
-            env,
-            1,
-            &format!("addPubkeysBlob claims {count} rows but body is too short"),
-        );
-        return None;
-    }
-    let mut rows = Vec::with_capacity(count);
-    for i in 0..count {
-        let Some(fixed) = read(&mut cursor, 4 + 1 + 1 + 1 + 1 + 1 + 2) else {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("addPubkeysBlob truncated at row {i} header"),
-            );
-            return None;
-        };
-        let key_id = u32::from_be_bytes([fixed[0], fixed[1], fixed[2], fixed[3]]);
-        // The Kotlin encoder writes this field with writeInt (signed); a
-        // set sign bit means a negative key id crossed the boundary.
-        if key_id > i32::MAX as u32 {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("addPubkeysBlob row {i} keyId must be non-negative"),
-            );
-            return None;
-        }
-        let key_type = fixed[4];
-        let purpose = fixed[5];
-        let security_level = fixed[6];
-        let read_only = fixed[7] != 0;
-        let contract_bounds_kind = fixed[8];
-        let pubkey_len = u16::from_be_bytes([fixed[9], fixed[10]]) as usize;
-
-        let Some(pubkey_bytes) = read(&mut cursor, pubkey_len) else {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("addPubkeysBlob truncated at row {i} pubkey"),
-            );
-            return None;
-        };
-
-        let mut contract_bounds_id: Option<[u8; 32]> = None;
-        let mut contract_bounds_document_type: Option<CString> = None;
-        if contract_bounds_kind != 0 {
-            let Some(id_bytes) = read(&mut cursor, 32) else {
-                throw_sdk_exception(
-                    env,
-                    1,
-                    &format!("addPubkeysBlob truncated at row {i} contractBoundsId"),
-                );
-                return None;
-            };
-            let mut id = [0u8; 32];
-            id.copy_from_slice(&id_bytes);
-            contract_bounds_id = Some(id);
-
-            if contract_bounds_kind == 2 {
-                let Some(dt_len_bytes) = read(&mut cursor, 2) else {
-                    throw_sdk_exception(
-                        env,
-                        1,
-                        &format!("addPubkeysBlob truncated at row {i} docTypeLen"),
-                    );
-                    return None;
-                };
-                let dt_len = u16::from_be_bytes(dt_len_bytes.try_into().ok()?) as usize;
-                let Some(dt_bytes) = read(&mut cursor, dt_len) else {
-                    throw_sdk_exception(
-                        env,
-                        1,
-                        &format!("addPubkeysBlob truncated at row {i} docType"),
-                    );
-                    return None;
-                };
-                match CString::new(dt_bytes) {
-                    Ok(c) => contract_bounds_document_type = Some(c),
-                    Err(_) => {
-                        throw_sdk_exception(
-                            env,
-                            1,
-                            &format!("addPubkeysBlob row {i} docType had an interior NUL"),
-                        );
-                        return None;
-                    }
-                }
-            }
-        }
-
-        rows.push(DecodedPubkeyRow {
-            key_id,
-            key_type,
-            purpose,
-            security_level,
-            read_only,
-            contract_bounds_kind,
-            pubkey_bytes,
-            contract_bounds_id,
-            contract_bounds_document_type,
-        });
-    }
-    Some(rows)
 }
 
 // ── Document purchase / set-price ─────────────────────────────────────

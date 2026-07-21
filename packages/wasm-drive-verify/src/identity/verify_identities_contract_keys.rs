@@ -6,6 +6,14 @@ use js_sys::{Array, Uint8Array};
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
+fn purpose_from_js_number(value: f64) -> Result<Purpose, ()> {
+    if !value.is_finite() || value.fract() != 0.0 || !(0.0..=u8::MAX as f64).contains(&value) {
+        return Err(());
+    }
+
+    Purpose::try_from(value as u8).map_err(|_| ())
+}
+
 #[wasm_bindgen]
 pub struct VerifyIdentitiesContractKeysResult {
     root_hash: Vec<u8>,
@@ -63,16 +71,8 @@ pub fn verify_identities_contract_keys(
             .get(i)
             .as_f64()
             .ok_or_else(|| JsValue::from_str("Invalid purpose value"))?;
-        let purpose = match purpose_num as u8 {
-            0 => Purpose::AUTHENTICATION,
-            1 => Purpose::ENCRYPTION,
-            2 => Purpose::DECRYPTION,
-            3 => Purpose::TRANSFER,
-            4 => Purpose::SYSTEM,
-            5 => Purpose::VOTING,
-            6 => Purpose::OWNER,
-            _ => return Err(JsValue::from_str("Invalid purpose value")),
-        };
+        let purpose = purpose_from_js_number(purpose_num)
+            .map_err(|_| JsValue::from_str("Invalid purpose value"))?;
         purposes_vec.push(purpose);
     }
 
@@ -98,4 +98,49 @@ pub fn verify_identities_contract_keys(
         root_hash: root_hash.to_vec(),
         keys: keys_js,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn purpose_parser_accepts_only_exact_discriminants() {
+        for (value, expected) in [
+            (0.0, Purpose::AUTHENTICATION),
+            (1.0, Purpose::ENCRYPTION),
+            (2.0, Purpose::DECRYPTION),
+            (3.0, Purpose::TRANSFER),
+            (4.0, Purpose::SYSTEM),
+            (5.0, Purpose::VOTING),
+            (6.0, Purpose::OWNER),
+        ] {
+            assert_eq!(purpose_from_js_number(value), Ok(expected));
+        }
+    }
+
+    #[test]
+    fn purpose_parser_rejects_lossy_or_unknown_values() {
+        for value in [
+            -1.0,
+            -0.5,
+            0.9,
+            1.9,
+            3.9,
+            5.9,
+            6.9,
+            7.0,
+            255.0,
+            256.0,
+            f64::NAN,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+        ] {
+            assert_eq!(
+                purpose_from_js_number(value),
+                Err(()),
+                "{value:?} should be rejected"
+            );
+        }
+    }
 }
