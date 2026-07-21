@@ -397,27 +397,34 @@ pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWall
     };
 
     // `platform_wallet_manager_get_wallet` hands out an independent handle for
-    // each alias of the same logical wallet (they share the underlying
-    // `WalletManager` `Arc` and `wallet_id`). A deferred-payment token minted
-    // through one alias must NOT be invalidated when a *sibling* alias is
-    // destroyed — the token is still live and broadcastable through the survivor.
+    // each alias of the same wallet *generation* (they share the underlying
+    // `WalletManager` `Arc`, `wallet_id`, and the per-generation balance `Arc`).
+    // A deferred-payment token minted through one alias must NOT be invalidated
+    // when a *sibling* alias of the same generation is destroyed — the token is
+    // still live and broadcastable through the survivor.
     //
-    // So only sweep the registry when THIS is the final live alias: no other
-    // stored handle shares the same (`WalletManager` pointer + `wallet_id`) —
-    // exactly the key `remove_entries_for_wallet` matches on. When a sibling is
-    // still live, the destructor just drops this handle, leaving its tokens
-    // (and the shared `WalletManager` pin) in place. Once the last alias goes,
-    // the sweep runs, releasing the registry's pin on the wallet's
-    // `WalletManager` (accounts, keys, sync state) that each token's captured
-    // `CoreWallet` clone would otherwise keep alive for the process lifetime.
+    // So only reconcile when THIS is the final live alias of the generation: no
+    // other stored handle is the same generation
+    // (`CoreWallet::is_same_generation`). While a sibling is live, the
+    // destructor just drops this handle.
+    //
+    // Once the last alias goes, RELEASE (not merely drop) each of this
+    // generation's deferred-payment reservations: destroying the last wrapper
+    // handle does NOT remove the logical wallet from its manager, so the wallet
+    // — and its accounts' still-live `ReservationSet`s — remain, and the same
+    // wallet can be handed out again. Dropping the tokens without releasing
+    // would leave those inputs reserved until key-wallet's TTL. Releasing here
+    // also frees the registry's `CoreWallet` pin on the shared `WalletManager`.
+    // (Actual generation teardown — `remove_wallet` — instead drops the tokens,
+    // since the reservation ceases to exist with the generation.)
     let core = wallet.core();
-    let wallet_id = core.wallet_id();
-    let manager = wallet.wallet_manager();
-    let sibling_alias_alive = PLATFORM_WALLET_STORAGE.any(|other| {
-        other.wallet_id() == wallet_id && std::sync::Arc::ptr_eq(other.wallet_manager(), manager)
-    });
+    let sibling_alias_alive =
+        PLATFORM_WALLET_STORAGE.any(|other| other.core().is_same_generation(core));
     if !sibling_alias_alive {
-        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.remove_entries_for_wallet(core);
+        runtime().block_on(
+            crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+                .release_entries_for_wallet(core),
+        );
     }
     PlatformWalletFFIResult::ok()
 }
@@ -445,7 +452,12 @@ mod destroy_tests {
     /// `platform_wallet_destroy` final-alias gating.
     #[test]
     fn destroying_one_alias_keeps_a_siblings_token() {
-        runtime().block_on(async {
+        // Async setup only. `platform_wallet_destroy` now itself does
+        // `runtime().block_on(...)` to release reservations, exactly as it does
+        // when called from the JNI / NativeCleaner threads (never from inside a
+        // tokio runtime). Calling it from within an outer `block_on` would nest
+        // runtimes and abort, so the destroys run on the plain test thread below.
+        let (manager, handle_a, handle_b, baseline) = runtime().block_on(async {
             let (manager, wallet_id) = test_platform_wallet_manager().await;
 
             // Two independent handles for the SAME logical wallet, exactly as two
@@ -471,27 +483,28 @@ mod destroy_tests {
                 )
                 .await;
             assert_eq!(SIGNED_PAYMENT_REGISTRY.outstanding(), baseline + 1);
-
-            // Destroy alias A while B is still live → token must survive.
-            let result = unsafe { platform_wallet_destroy(handle_a) };
-            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-            assert_eq!(
-                SIGNED_PAYMENT_REGISTRY.outstanding(),
-                baseline + 1,
-                "a sibling alias's token must survive destroying another alias"
-            );
-
-            // Destroy the final alias B → now the token is swept.
-            let result = unsafe { platform_wallet_destroy(handle_b) };
-            assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-            assert_eq!(
-                SIGNED_PAYMENT_REGISTRY.outstanding(),
-                baseline,
-                "destroying the final alias must sweep the wallet's tokens"
-            );
-
-            // Keep the manager alive until the end (owns the wallet + adapter).
-            drop(manager);
+            (manager, handle_a, handle_b, baseline)
         });
+
+        // Destroy alias A while B is still live → token must survive.
+        let result = unsafe { platform_wallet_destroy(handle_a) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline + 1,
+            "a sibling alias's token must survive destroying another alias"
+        );
+
+        // Destroy the final alias B → now the token is swept.
+        let result = unsafe { platform_wallet_destroy(handle_b) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            SIGNED_PAYMENT_REGISTRY.outstanding(),
+            baseline,
+            "destroying the final alias must sweep the wallet's tokens"
+        );
+
+        // Keep the manager alive until the end (owns the wallet + adapter).
+        drop(manager);
     }
 }

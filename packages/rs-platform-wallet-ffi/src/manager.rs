@@ -520,7 +520,23 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
     });
     let result = unwrap_option_or_return!(option);
     match result {
-        Ok(_) => PlatformWalletFFIResult::ok(),
+        Ok(removed) => {
+            // Generation teardown: the wallet and its accounts' `ReservationSet`s
+            // are now gone from the manager, so the deferred-payment reservations
+            // cease to exist — there is nothing to reconcile. DROP (do not
+            // release) this generation's registry tokens and its finalized-tx V2
+            // handles. This is the teardown half of the single generation policy
+            // both deferred paths share: it makes any stale handle to the removed
+            // generation inert, so a later destroy/release of a lingering handle
+            // can never release-by-outpoint against a re-created generation's
+            // inputs.
+            let core = removed.core();
+            crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+                .remove_entries_for_wallet(core);
+            crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE
+                .remove_matching(|tx| tx.wallet.is_same_generation(core));
+            PlatformWalletFFIResult::ok()
+        }
         // Idempotency: a wallet that's already gone is the success
         // state callers want. Everything else is a real failure.
         Err(platform_wallet::PlatformWalletError::WalletNotFound(_)) => {
