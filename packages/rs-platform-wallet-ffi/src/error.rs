@@ -235,15 +235,36 @@ pub enum PlatformWalletFFIResultCode {
     /// wallet-operation failure. Not retryable as-is — the key must be
     /// (re-)derived first.
     ErrorSigningKeyUnavailable = 31,
-    /// Maps `SignedPaymentError::StaleToken` / `SignedPaymentError::WalletMismatch`
-    /// from the deferred build → broadcast/release core-send lifecycle
-    /// (`core_wallet_signed_payment_*`). The reservation token is unknown,
-    /// already broadcast, already released, or was minted against a different
-    /// (re-created) wallet instance. The operation did NOT touch the network —
-    /// there is no double-broadcast — but the token can never succeed, so this
-    /// is NOT retryable: the host must rebuild the payment. Release is
-    /// idempotent and never surfaces this code.
+    /// Maps `SignedPaymentError::StaleReservationToken` from the deferred
+    /// build → broadcast/release core-send lifecycle (`core_wallet_signed_payment_*`):
+    /// the token has outlived the registry's `RESERVATION_MAX_AGE_BLOCKS` bound
+    /// and its funding reservation may already have been swept and re-selected by
+    /// key-wallet's TTL, so acting on it could touch a newer, unrelated
+    /// reservation. The operation did NOT touch the network. NOT retryable in
+    /// place — the host must rebuild the payment.
+    ///
+    /// Sibling codes split out the other two deferred-token failures that this
+    /// code used to conflate: [`Self::ErrorReservationTokenConsumed`] (35,
+    /// unknown / already broadcast / already released) and
+    /// [`Self::ErrorReservationWalletMismatch`] (36, minted against a different
+    /// wallet generation). All three are non-retryable-in-place and none touched
+    /// the network; they are distinct codes so a host can message each precisely.
     ErrorStaleReservationToken = 34,
+
+    /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is
+    /// unknown, already broadcast, or already released — the guard that turns a
+    /// double-broadcast (or a broadcast after release) into a typed error
+    /// instead of a second send. Did NOT touch the network; NOT retryable
+    /// (rebuild the payment). Release is idempotent and never surfaces this.
+    ErrorReservationTokenConsumed = 35,
+
+    /// Maps `SignedPaymentError::WalletMismatch`. The deferred reservation token
+    /// was minted against a different wallet *generation* than the one it is
+    /// being broadcast through (e.g. a wallet re-created under the same id); its
+    /// reservation lives in that other generation's `ReservationSet`. Did NOT
+    /// touch the network and did NOT consume the rightful owner's token; NOT
+    /// retryable through this handle (rebuild the payment).
+    ErrorReservationWalletMismatch = 36,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,

@@ -242,15 +242,44 @@ sealed class DashSdkError(
         /**
          * `ErrorStaleReservationToken` (native code 26). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
-         * was given a reservation token that is unknown, already broadcast,
-         * already released, or was minted against a re-created wallet instance.
-         * The call did NOT touch the network — there is no double-broadcast —
-         * but the token can never succeed, so this is NOT retryable: rebuild the
-         * payment with
+         * token has outlived its funding reservation's lifetime: key-wallet's
+         * TTL may already have swept and re-selected the inputs, so acting on it
+         * could touch a newer, unrelated reservation. The call did NOT touch the
+         * network. NOT retryable in place — rebuild the payment with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
+         *
+         * Sibling of the other two deferred-token failures this code used to
+         * conflate: [ReservationTokenConsumed] (unknown / already broadcast /
+         * already released) and [ReservationWalletMismatch] (minted against a
+         * different wallet generation).
+         */
+        class StaleReservationToken(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorReservationTokenConsumed` (native code 27). A deferred
+         * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
+         * token is unknown, already broadcast, or already released — the guard
+         * that turns a double-broadcast (or a broadcast after release) into a
+         * typed error instead of a second send. The call did NOT touch the
+         * network. NOT retryable: rebuild the payment with
          * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
          * (Release is idempotent and never raises this.)
          */
-        class StaleReservationToken(message: String, cause: Throwable? = null) :
+        class ReservationTokenConsumed(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorReservationWalletMismatch` (native code 28). A deferred
+         * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
+         * token was minted against a different wallet *generation* than the one
+         * broadcasting it (e.g. a wallet re-created under the same id); its
+         * reservation lives in that other generation's reservation set. The call
+         * did NOT touch the network and did NOT consume the rightful owner's
+         * token. NOT retryable through this handle: rebuild the payment with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment].
+         */
+        class ReservationWalletMismatch(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -360,6 +389,8 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             34 -> PlatformWallet.StaleReservationToken(message, cause) // ErrorStaleReservationToken
+            35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
+            36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

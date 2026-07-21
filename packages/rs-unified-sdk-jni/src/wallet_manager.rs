@@ -1363,10 +1363,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 
 /// `core_wallet_signed_payment_broadcast` — broadcast the payment behind
 /// `token`, releasing/keeping its reservation per the broadcast outcome and
-/// consuming the token. A repeated/stale token throws (native
-/// `ErrorStaleReservationToken`, code 26) rather than double-broadcasting.
-/// `coreHandle` must resolve to the wallet the token was minted against.
-/// Returns the txid as a lowercase hex string.
+/// consuming the token. Rather than double-broadcasting, an unusable token
+/// throws one of three sibling codes: `ErrorStaleReservationToken` (26, aged
+/// out), `ErrorReservationTokenConsumed` (27, unknown / already broadcast /
+/// already released), or `ErrorReservationWalletMismatch` (28, different wallet
+/// generation). `coreHandle` must resolve to the wallet the token was minted
+/// against. Returns the txid as a lowercase hex string.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedPayment(
     mut env: JNIEnv,
