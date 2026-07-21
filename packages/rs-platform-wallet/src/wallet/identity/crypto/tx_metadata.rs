@@ -92,6 +92,63 @@ const BLOB_HEADER_LEN: usize = 1 + 16;
 /// AES block size — the ciphertext must be a non-zero multiple of this.
 const AES_BLOCK_LEN: usize = 16;
 
+/// `maxItems` of the wallet-utils contract's `encryptedMetadata` byteArray
+/// field: the stored blob must not exceed this or the document is rejected by
+/// DPP schema validation at broadcast.
+const ENCRYPTED_METADATA_FIELD_MAX: usize = 4096;
+
+/// The largest plaintext payload [`seal_tx_metadata`] can accept while keeping
+/// the stored blob within the [`ENCRYPTED_METADATA_FIELD_MAX`]-byte field limit.
+///
+/// The blob is `version(1) ‖ IV(16) ‖ AES-256-CBC/PKCS7(plaintext)`. PKCS7
+/// **always** appends a full padding block when the plaintext is block-aligned,
+/// so the ciphertext length for a plaintext of `L` bytes is
+/// `16 * (L / 16 + 1)` — the next multiple of 16 strictly greater than `L`.
+/// The blob length is therefore `17 + 16 * (L / 16 + 1)`.
+///
+/// Derived (not hardcoded) from the field limit so the boundary stays correct
+/// if the framing ever changes: the largest ciphertext that fits is
+/// `((4096 - 17) / 16) * 16 = 254 * 16 = 4064` bytes, and because PKCS7 spends
+/// at least one byte of the final block on padding, the largest plaintext is one
+/// less — **4063**. That plaintext frames to `17 + 4064 = 4081` bytes, which
+/// fits. `L = 4064` is block-aligned, so PKCS7 adds a whole 16-byte block →
+/// ciphertext 4080 → blob `17 + 4080 = 4097`, which overflows. So 4063 is the
+/// true maximum and 4064 the first rejected length.
+///
+/// Note the envelope for the maximum plaintext is 4081 bytes, not 4096: the
+/// gap 4082..=4096 is unreachable because the next plaintext byte (4064) forces
+/// a fresh padding block that jumps straight to 4097. (The 4063/4064 boundary
+/// itself matches the reviewer's figure; the "4063 → 4096" envelope size in the
+/// review does not — see the module tests, which pin the real 4081-byte blob.)
+pub const MAX_TX_METADATA_PLAINTEXT_LEN: usize = {
+    // Largest whole ciphertext (a multiple of the AES block) that still fits
+    // the field alongside the version+IV header.
+    let max_ciphertext = ((ENCRYPTED_METADATA_FIELD_MAX - BLOB_HEADER_LEN) / AES_BLOCK_LEN)
+        * AES_BLOCK_LEN;
+    // PKCS7 always consumes ≥ 1 byte of the final block for padding, so the
+    // plaintext is at most one byte short of that ciphertext length.
+    max_ciphertext - 1
+};
+
+/// Reject a `txMetadata` plaintext that cannot fit the `encryptedMetadata`
+/// field once sealed, BEFORE any key derivation or network work.
+///
+/// Callers on the create path (`prepare_encrypted_txmetadata_properties`, and
+/// the FFI/JNI entry points) run this first so an over-large batch fails with a
+/// typed [`PlatformWalletError::TxMetadataPayloadTooLarge`] up front instead of
+/// deriving the key, sealing, and dying at broadcast with an opaque DPP schema
+/// error. [`seal_tx_metadata`] also enforces it as the choke-point last line of
+/// defense.
+pub fn ensure_tx_metadata_payload_fits(payload_len: usize) -> Result<(), PlatformWalletError> {
+    if payload_len > MAX_TX_METADATA_PLAINTEXT_LEN {
+        return Err(PlatformWalletError::TxMetadataPayloadTooLarge {
+            len: payload_len,
+            max: MAX_TX_METADATA_PLAINTEXT_LEN,
+        });
+    }
+    Ok(())
+}
+
 /// Build the full tx-metadata key derivation path
 /// `identity_auth_path(identity_index, key_index) / 32769' / encryption_key_index'`
 /// — the single path both key sources ([`derive_tx_metadata_key`] and
@@ -221,7 +278,14 @@ pub fn derive_tx_metadata_key_from_master(
 /// cannot decode, silently breaking the bidirectional wire-compat guarantee, so
 /// it is rejected HERE, at the one choke point every layer (JNI, FFI, resident
 /// wallet) funnels through — not only in the Kotlin `require`
-/// (dashpay/platform#4091, findings 9c0ce58c3bb7 / 79595960d201).
+/// (dashpay/platform#4091).
+///
+/// `payload` must be at most [`MAX_TX_METADATA_PLAINTEXT_LEN`] bytes: a larger
+/// plaintext seals into a blob that overflows the `encryptedMetadata` field and
+/// would be rejected at broadcast with an opaque DPP schema error. This is the
+/// last-line-of-defense enforcement of the same limit the create path
+/// pre-checks up front (see [`ensure_tx_metadata_payload_fits`]); over-large
+/// payloads fail with a typed [`PlatformWalletError::TxMetadataPayloadTooLarge`].
 pub fn seal_tx_metadata(
     key: &[u8; 32],
     version: u8,
@@ -235,6 +299,10 @@ pub fn seal_tx_metadata(
              by the legacy decryptTxMetadata"
         )));
     }
+    // Choke-point size guard: reject a plaintext that would overflow the
+    // encryptedMetadata field once framed (typed error, not an opaque DPP
+    // failure at broadcast).
+    ensure_tx_metadata_payload_fits(payload.len())?;
     let ciphertext = platform_encryption::encrypt_aes_256_cbc(key, iv, payload);
     let mut blob = Vec::with_capacity(BLOB_HEADER_LEN + ciphertext.len());
     blob.push(version);
@@ -354,8 +422,8 @@ mod tests {
         }
     }
 
-    /// Rust-side wire-version guard (dashpay/platform#4091, findings
-    /// 9c0ce58c3bb7 / 79595960d201): `seal_tx_metadata` accepts only the two
+    /// Rust-side wire-version guard (dashpay/platform#4091):
+    /// `seal_tx_metadata` accepts only the two
     /// versions the legacy `decryptTxMetadata` understands (0 = CBOR, 1 =
     /// protobuf) and rejects everything else, so the guard holds even when a
     /// caller bypasses the Kotlin `require` (e.g. through the FFI/JNI directly).
@@ -377,6 +445,54 @@ mod tests {
                 "version {version} must be rejected as non-wire-decodable"
             );
         }
+    }
+
+    /// Payload-size boundary (dashpay/platform#4091): the largest plaintext the
+    /// `encryptedMetadata` field (`maxItems` 4096) can hold once framed is
+    /// [`MAX_TX_METADATA_PLAINTEXT_LEN`] = 4063, and 4064 is the first rejected
+    /// length. Pins the REAL PKCS7 envelope math against the code, not the
+    /// reviewer's "4063 → 4096" arithmetic: because PKCS7 adds a whole padding
+    /// block when the plaintext is block-aligned, a 4063-byte plaintext frames to
+    /// a 4081-byte blob (1 version + 16 IV + 4064 ciphertext), and a 4064-byte
+    /// plaintext jumps to 4097 (4080 ciphertext) — overflowing the field.
+    #[test]
+    fn seal_rejects_payload_above_size_limit() {
+        let key = [0x11u8; 32];
+        let iv = [0x22u8; 16];
+
+        assert_eq!(MAX_TX_METADATA_PLAINTEXT_LEN, 4063);
+
+        // 4063 bytes: seals, and the blob is exactly 4081 bytes (≤ 4096) — the
+        // real envelope, NOT 4096. It also round-trips.
+        let max_payload = vec![0xabu8; MAX_TX_METADATA_PLAINTEXT_LEN];
+        let blob = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &max_payload)
+            .expect("the maximum-size payload must seal");
+        assert_eq!(
+            blob.len(),
+            4081,
+            "1 version + 16 IV + 4064 PKCS7 ciphertext = 4081 (fits the 4096 field)"
+        );
+        assert!(
+            blob.len() <= ENCRYPTED_METADATA_FIELD_MAX,
+            "the max-payload blob must fit the encryptedMetadata field"
+        );
+        let opened = open_tx_metadata(&key, &blob).expect("max-size blob round-trips");
+        assert_eq!(opened.payload, max_payload);
+
+        // 4064 bytes: rejected up front with the typed error, before any cipher
+        // work — it would frame to a 4097-byte blob and be refused at broadcast.
+        let over_payload = vec![0xabu8; MAX_TX_METADATA_PLAINTEXT_LEN + 1];
+        match seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &over_payload) {
+            Err(PlatformWalletError::TxMetadataPayloadTooLarge { len, max }) => {
+                assert_eq!(len, 4064);
+                assert_eq!(max, 4063);
+            }
+            other => panic!("expected TxMetadataPayloadTooLarge, got {other:?}"),
+        }
+
+        // The standalone precheck agrees on the boundary.
+        assert!(ensure_tx_metadata_payload_fits(MAX_TX_METADATA_PLAINTEXT_LEN).is_ok());
+        assert!(ensure_tx_metadata_payload_fits(MAX_TX_METADATA_PLAINTEXT_LEN + 1).is_err());
     }
 
     /// A wrong key can never recover the plaintext: PKCS7 rejects it (Err), or
@@ -611,8 +727,8 @@ mod tests {
     /// (`keyId = 2`, `encryptionKeyIndex = 1`) independently of anything this
     /// crate constructs, and it produced exactly `4a2eaec1…`. So this vector's
     /// path is proven by the legacy library, not merely mirrored back from
-    /// Rust's own `tx_metadata_derivation_path` (dashpay/platform#4091, finding
-    /// dd246b5e17d0). Note the factory has NO identity-index argument — the
+    /// Rust's own `tx_metadata_derivation_path` (dashpay/platform#4091).
+    /// Note the factory has NO identity-index argument — the
     /// legacy tx-metadata path is fixed at the primary identity, which is why
     /// wire-compat is defined here and only here.
     ///
@@ -717,8 +833,8 @@ mod tests {
     }
 
     /// **Internal derivation-slot consistency at a nonzero `identity_index` —
-    /// NOT a legacy wire-compat claim** (dashpay/platform#4091, finding
-    /// 4c0754158cc6). This exercises that the `identity_index` parameter lands in
+    /// NOT a legacy wire-compat claim** (dashpay/platform#4091). This
+    /// exercises that the `identity_index` parameter lands in
     /// the correct path slot and is deterministic across both key sources, so a
     /// refactor that dropped, swapped, or misplaced it would fail loudly. It does
     /// NOT assert cross-stack compatibility, because the legacy stack has no

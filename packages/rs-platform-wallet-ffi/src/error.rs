@@ -329,6 +329,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
             }
+            // A txMetadata plaintext too large to seal into the encryptedMetadata
+            // field. Surfaced as a caller-input error (the payload parameter is
+            // out of range) rather than flattening to ErrorUnknown; the typed
+            // Display carries the supplied length and the accepted maximum. Maps
+            // to the already-mirrored ErrorInvalidParameter so no new numeric
+            // code churns the Swift/Kotlin mirror enums.
+            PlatformWalletError::TxMetadataPayloadTooLarge { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
