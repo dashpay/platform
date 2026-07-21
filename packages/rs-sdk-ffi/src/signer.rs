@@ -154,6 +154,39 @@ pub type SignAsyncCallback = unsafe extern "C" fn(
     completion: SignCompletionCallback,
 );
 
+/// Structured discriminator for signer completion failures, carried as a
+/// typed `i32` across the C ABI (dashpay/platform#4060 finding 7) so
+/// language layers never have to sniff human-readable messages.
+///
+/// Only [`Generic`](DashSDKSignerErrorCode::Generic) and
+/// [`SigningKeyUnavailable`](DashSDKSignerErrorCode::SigningKeyUnavailable)
+/// are emitted today; `AuthenticationFailed` is RESERVED for a follow-up so
+/// the numeric space is stable across SDK releases.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashSDKSignerErrorCode {
+    /// Unclassified signing failure — the historical behavior.
+    Generic = 0,
+    /// The signer has no usable private key for the requested public key
+    /// (missing / stranded / written under a different Keystore alias) —
+    /// the operation itself did not fail; the key must be (re-)derived.
+    SigningKeyUnavailable = 1,
+    /// RESERVED (not yet emitted): user authentication was required and
+    /// failed/was dismissed.
+    AuthenticationFailed = 2,
+}
+
+/// Stable machine prefix that carries the
+/// [`DashSDKSignerErrorCode::SigningKeyUnavailable`] discriminator through
+/// the `ProtocolError::Generic` string segment between this crate's signer
+/// completion and `platform-wallet-ffi`'s error conversion (which maps it to
+/// `PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable`). The
+/// discriminator is TYPED at both ABI edges (an `i32` across C, a result
+/// code across the Kotlin/Swift FFI); this Rust-owned constant is the one
+/// bridge across the `ProtocolError` segment — never sniff human-readable
+/// message text.
+pub const DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
+
 /// Completion callback invoked by the C / iOS side when a signature is ready.
 ///
 /// # Parameters
@@ -161,6 +194,9 @@ pub type SignAsyncCallback = unsafe extern "C" fn(
 /// - `signature` / `signature_len`: signature bytes on success. Ignored when
 ///   `error_message` is non-null. May be null with `signature_len == 0` if
 ///   `error_message` is non-null.
+/// - `error_code`: a [`DashSDKSignerErrorCode`] discriminant classifying the
+///   failure; ignored on success (`error_message` null). Callers that have
+///   no classification pass 0 (`Generic`).
 /// - `error_message`: null-terminated UTF-8 error string on failure, null on
 ///   success. Ownership is *not* transferred — the Rust side copies the string
 ///   before returning, so the caller can free/reuse the buffer immediately
@@ -175,6 +211,7 @@ pub type SignCompletionCallback = unsafe extern "C" fn(
     completion_ctx: *mut c_void,
     signature: *const u8,
     signature_len: usize,
+    error_code: i32,
     error_message: *const c_char,
 );
 
@@ -670,6 +707,7 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
     completion_ctx: *mut c_void,
     signature: *const u8,
     signature_len: usize,
+    error_code: i32,
     error_message: *const c_char,
 ) {
     if completion_ctx.is_null() {
@@ -690,7 +728,19 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
 
     let result: SignResult = if !error_message.is_null() {
         let msg = CStr::from_ptr(error_message).to_string_lossy().into_owned();
-        Err(ProtocolError::Generic(msg))
+        // `SignResult` stays `Result<Vec<u8>, ProtocolError>` (a new rs-dpp
+        // ProtocolError variant would have serialization blast radius), so
+        // the typed `error_code` rides the one Rust-owned machine prefix
+        // through the Generic string segment; platform-wallet-ffi's error
+        // conversion recognizes the prefix and restores the typed code
+        // (dashpay/platform#4060 finding 7).
+        if error_code == DashSDKSignerErrorCode::SigningKeyUnavailable as i32 {
+            Err(ProtocolError::Generic(format!(
+                "{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}{msg}"
+            )))
+        } else {
+            Err(ProtocolError::Generic(msg))
+        }
     } else if signature.is_null() {
         Err(ProtocolError::Generic(
             "Signer completion returned null signature with no error message".to_string(),
@@ -968,7 +1018,7 @@ mod tests {
         COMPLETION_CALLED.store(true, Ordering::SeqCst);
         let sig = [0xABu8; 64];
         // Null error_message = success.
-        completion(completion_ctx, sig.as_ptr(), sig.len(), std::ptr::null());
+        completion(completion_ctx, sig.as_ptr(), sig.len(), 0, std::ptr::null());
     }
 
     /// Test sign callback that reports an error via the completion callback.
@@ -983,7 +1033,29 @@ mod tests {
         completion: SignCompletionCallback,
     ) {
         let msg = c"simulated hsm error";
-        completion(completion_ctx, std::ptr::null(), 0, msg.as_ptr());
+        completion(completion_ctx, std::ptr::null(), 0, 0, msg.as_ptr());
+    }
+
+    /// Test sign callback that reports a MISSING KEY via the structured
+    /// `error_code` (dashpay/platform#4060 finding 7).
+    unsafe extern "C" fn test_sign_async_key_unavailable(
+        _signer: *const c_void,
+        _pubkey_bytes: *const u8,
+        _pubkey_len: usize,
+        _key_type: u8,
+        _data: *const u8,
+        _data_len: usize,
+        completion_ctx: *mut c_void,
+        completion: SignCompletionCallback,
+    ) {
+        let msg = c"no private key stored for 02abcd";
+        completion(
+            completion_ctx,
+            std::ptr::null(),
+            0,
+            DashSDKSignerErrorCode::SigningKeyUnavailable as i32,
+            msg.as_ptr(),
+        );
     }
 
     /// Test sign callback that spawns a *different thread* to invoke the
@@ -1010,6 +1082,7 @@ mod tests {
                     ctx_usize as *mut c_void,
                     sig.as_ptr(),
                     sig.len(),
+                    0,
                     std::ptr::null(),
                 );
             }
@@ -1193,6 +1266,44 @@ mod tests {
         );
     }
 
+    /// Pins the structured discriminator's Rust segment (dashpay/platform#4060
+    /// finding 7): an `error_code = SigningKeyUnavailable` completion must
+    /// surface as a `ProtocolError::Generic` whose message carries the stable
+    /// machine prefix (followed by the human message), so
+    /// `platform-wallet-ffi` can restore the typed code without sniffing
+    /// human-readable text.
+    #[tokio::test]
+    async fn completion_callback_key_unavailable_carries_machine_prefix() {
+        let signer = make_signer(test_sign_async_key_unavailable);
+        let key = make_dummy_key();
+
+        let err = signer
+            .sign(&key, &[4, 5, 6])
+            .await
+            .expect_err("sign should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&format!(
+                "{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+            )),
+            "typed code must ride the stable prefix: got {msg}"
+        );
+    }
+
+    /// A generic-code error must NOT acquire the machine prefix.
+    #[tokio::test]
+    async fn completion_callback_generic_error_has_no_machine_prefix() {
+        let signer = make_signer(test_sign_async_error);
+        let key = make_dummy_key();
+
+        let err = signer
+            .sign(&key, &[4, 5, 6])
+            .await
+            .expect_err("sign should fail");
+        let msg = err.to_string();
+        assert!(!msg.contains(DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX));
+    }
+
     #[tokio::test]
     async fn completion_callback_cross_thread() {
         // Exercises the realistic case: completion runs on a different
@@ -1222,13 +1333,13 @@ mod tests {
         completion: SignCompletionCallback,
     ) {
         let sig = [0x42u8; 64];
-        completion(completion_ctx, sig.as_ptr(), sig.len(), std::ptr::null());
+        completion(completion_ctx, sig.as_ptr(), sig.len(), 0, std::ptr::null());
         // Duplicate error payload — must not overwrite the first result.
         let err_msg = c"duplicate completion — should be ignored";
-        completion(completion_ctx, std::ptr::null(), 0, err_msg.as_ptr());
+        completion(completion_ctx, std::ptr::null(), 0, 0, err_msg.as_ptr());
         // Duplicate success payload — still a no-op.
         let sig2 = [0x99u8; 64];
-        completion(completion_ctx, sig2.as_ptr(), sig2.len(), std::ptr::null());
+        completion(completion_ctx, sig2.as_ptr(), sig2.len(), 0, std::ptr::null());
     }
 
     #[tokio::test]
@@ -1286,7 +1397,7 @@ mod tests {
         };
         *cap.observed.lock().unwrap() = Some((key_type, bytes));
         let sig = [0x77u8; 64];
-        completion(completion_ctx, sig.as_ptr(), sig.len(), std::ptr::null());
+        completion(completion_ctx, sig.as_ptr(), sig.len(), 0, std::ptr::null());
     }
 
     unsafe extern "C" fn capture_can_sign(

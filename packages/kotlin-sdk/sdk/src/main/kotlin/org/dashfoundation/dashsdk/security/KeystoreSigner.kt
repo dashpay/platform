@@ -84,6 +84,7 @@ class KeystoreSigner(
                 SignerNative.completeSign(
                     completionToken,
                     null,
+                    SignerNative.SIGNER_ERROR_CODE_GENERIC,
                     e.message ?: "signing failed",
                 )
             }
@@ -101,13 +102,17 @@ class KeystoreSigner(
             val storageKey = storageKeyFor(pubkeyBytes)
             key = retrieveKeyWithAuth(storageKey)
             if (key == null) {
-                // Built from the shared marker so the error survives the
-                // Rust round-trip and comes back typed as
-                // DashSdkError.PlatformWallet.SigningKeyUnavailable (the
-                // fromPlatformWalletNative message match) instead of Generic.
+                // The typed SIGNER_ERROR_CODE_KEY_UNAVAILABLE rides the
+                // completion ABI and comes back as platform-wallet code 31 →
+                // DashSdkError.PlatformWallet.SigningKeyUnavailable
+                // (dashpay/platform#4060 finding 7). The MESSAGE_MARKER text
+                // is ALSO kept during the transition window so an old native
+                // library paired with new Kotlin (partial builds) still maps
+                // via the deprecated message fallback.
                 SignerNative.completeSign(
                     completionToken,
                     null,
+                    SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
                     "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
                         "${storageKey.take(16)}…",
                 )
@@ -115,9 +120,19 @@ class KeystoreSigner(
             }
             val signature = SignerNative.signWithPrivateKey(key, network.ffiValue, data)
             if (signature != null) {
-                SignerNative.completeSign(completionToken, signature, null)
+                SignerNative.completeSign(
+                    completionToken,
+                    signature,
+                    SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                    null,
+                )
             } else {
-                SignerNative.completeSign(completionToken, null, "signing returned no data")
+                SignerNative.completeSign(
+                    completionToken,
+                    null,
+                    SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                    "signing returned no data",
+                )
             }
         } finally {
             key?.fill(0)
@@ -146,6 +161,7 @@ class KeystoreSigner(
             SignerNative.completeSign(
                 completionToken,
                 null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no platform address row for $hashHex",
             )
             return
@@ -157,6 +173,7 @@ class KeystoreSigner(
             SignerNative.completeSign(
                 completionToken,
                 null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no signable platform address row for $hashHex " +
                     "(no candidate has both a derivation path and a stored mnemonic)",
             )
@@ -170,6 +187,7 @@ class KeystoreSigner(
             SignerNative.completeSign(
                 completionToken,
                 null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no mnemonic stored for wallet of platform address $hashHex",
             )
             return
@@ -183,9 +201,19 @@ class KeystoreSigner(
             SignerNative.signWithMnemonicAndPathInto(m, path, net, payload)
         }
         if (signature != null) {
-            SignerNative.completeSign(completionToken, signature, null)
+            SignerNative.completeSign(
+                completionToken,
+                signature,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                null,
+            )
         } else {
-            SignerNative.completeSign(completionToken, null, "signing returned no data")
+            SignerNative.completeSign(
+                completionToken,
+                null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                "signing returned no data",
+            )
         }
     }
 

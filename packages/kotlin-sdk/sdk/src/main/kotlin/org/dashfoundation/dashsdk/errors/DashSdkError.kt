@@ -182,12 +182,13 @@ sealed class DashSdkError(
          * is missing (never derived, wiped, or written under a different
          * Keystore alias/policy) rather than the operation itself failing.
          *
-         * Signing failures originate as free text in
-         * `KeystoreSigner.completeSign` (the "[MESSAGE_MARKER] <pubkeyHex>"
-         * string), travel through Rust, and come back under the catch-all
-         * platform-wallet codes; [fromPlatformWalletNative] recognizes the
-         * marker on the Kotlin boundary and surfaces this typed error so
-         * hosts can route users to key repair (e.g.
+         * Primary path (dashpay/platform#4060 finding 7): `KeystoreSigner`
+         * completes with the STRUCTURED
+         * `SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE`, which travels
+         * typed across the Rust boundary and returns as
+         * `PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable` (31) —
+         * mapped directly here, no message inspection involved. Hosts route
+         * users to key repair (e.g.
          * `PlatformWalletManager.repairIdentityKey`) instead of treating it
          * as an opaque [Generic] failure. Not retryable as-is — the key must
          * be (re-)derived first.
@@ -197,9 +198,17 @@ sealed class DashSdkError(
             companion object {
                 /**
                  * Stable prefix of the `KeystoreSigner` "missing key"
-                 * completion error. `KeystoreSigner` builds its message from
-                 * this constant, so the emitter and the matcher cannot
-                 * drift.
+                 * completion error message. `KeystoreSigner` builds its
+                 * message from this constant, so the emitter and the matcher
+                 * cannot drift.
+                 *
+                 * DEPRECATED as a discriminator: superseded by the typed
+                 * code-31 mapping above; the marker match is retained only
+                 * for the transition window where an old native library
+                 * (pre-code-31) is paired with new Kotlin during partial
+                 * builds. Remove the fallback (and this constant's matcher
+                 * role) in the next minor release once the native artifacts
+                 * are guaranteed current.
                  */
                 const val MESSAGE_MARKER = "no private key stored for"
             }
@@ -280,11 +289,13 @@ sealed class DashSdkError(
          * [PlatformWallet] subtree — mirror of Swift's
          * `PlatformWalletError(result:)` construction. Retry-semantics-bearing
          * codes get dedicated types; the rest fall through to
-         * [PlatformWallet.Generic] — except the `KeystoreSigner` "missing
-         * key" completion error, which travels as free text through Rust and
-         * is recognized by its [PlatformWallet.SigningKeyUnavailable]
-         * message marker here (only on the catch-all codes, so the dedicated
-         * retry-semantics types are never overridden).
+         * [PlatformWallet.Generic]. The `KeystoreSigner` "missing key"
+         * completion arrives TYPED as code 31
+         * (`ErrorSigningKeyUnavailable`, dashpay/platform#4060 finding 7);
+         * the legacy message-marker sniff on the catch-all codes is a
+         * deprecated transition fallback for old native libraries (never
+         * applied to the dedicated retry-semantics types, so those are
+         * never overridden).
          */
         private fun fromPlatformWalletNative(
             code: Int,
@@ -294,6 +305,10 @@ sealed class DashSdkError(
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
             6 -> // ErrorWalletOperation
+                // @Deprecated fallback: the marker sniff survives only for
+                // old-native/new-Kotlin partial builds; the typed code 31
+                // below is the real discriminator (#4060 finding 7). Remove
+                // with MESSAGE_MARKER's matcher role next minor release.
                 if (isSigningKeyUnavailable(message)) {
                     PlatformWallet.SigningKeyUnavailable(message, cause)
                 } else {
@@ -321,7 +336,15 @@ sealed class DashSdkError(
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
+            // ErrorSigningKeyUnavailable — the STRUCTURED signer
+            // discriminator (dashpay/platform#4060 finding 7): the typed
+            // completion code rides the whole Rust round-trip, no message
+            // sniffing involved. (Codes 26-30 are reserved by sibling PRs
+            // #4185 / #4184 — see PlatformWalletFFIResultCode.)
+            31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
             else ->
+                // @Deprecated fallback — see the code-6 arm; code 31 is the
+                // real discriminator.
                 if (isSigningKeyUnavailable(message)) {
                     PlatformWallet.SigningKeyUnavailable(message, cause)
                 } else {

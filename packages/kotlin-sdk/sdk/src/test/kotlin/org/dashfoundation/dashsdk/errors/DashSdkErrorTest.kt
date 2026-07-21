@@ -129,13 +129,28 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun signingKeyUnavailableCode31MapsTyped() {
+        // The STRUCTURED discriminator (dashpay/platform#4060 finding 7):
+        // PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable (31) maps
+        // to the typed error on the code alone — no message inspection.
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val mapped = DashSdkError.fromNative(
+            DashSDKException(offset + 31, "arbitrary human text, no marker"),
+        )
+        assertTrue(mapped is DashSdkError.PlatformWallet.SigningKeyUnavailable)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
     fun signingKeyUnavailableIsRecognizedByItsMessageMarker() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
         val marker = DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER
-        // The KeystoreSigner completion error travels as free text through
-        // Rust and returns under the catch-all codes (ErrorUnknown = 99 via
-        // the blanket PlatformWalletError conversion, sometimes wrapped as
-        // ErrorWalletOperation = 6) — both must surface typed (#4052).
+        // DEPRECATED transition fallback: an OLD native library (pre the
+        // typed code 31) still returns the completion error as free text
+        // under the catch-all codes (ErrorUnknown = 99 via the blanket
+        // PlatformWalletError conversion, sometimes wrapped as
+        // ErrorWalletOperation = 6) — both must keep surfacing typed until
+        // the fallback's removal (#4052, #4060 finding 7).
         for (code in intArrayOf(6, 99)) {
             val mapped = DashSdkError.fromNative(
                 DashSDKException(offset + code, "Signing failed: $marker deadbeef00112233…"),

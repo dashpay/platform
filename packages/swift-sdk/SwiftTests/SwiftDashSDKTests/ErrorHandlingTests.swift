@@ -33,6 +33,39 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testSigningKeyUnavailableFFIResultMapping() {
+        // The structured signer discriminator (dashpay/platform#4060
+        // finding 7): PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        // (31) surfaces as the typed .errorSigningKeyUnavailable /
+        // PlatformWalletError.signingKeyUnavailable — no message sniffing.
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE
+            ),
+            .errorSigningKeyUnavailable
+        )
+    }
+
+    func testKeychainSignerMissingKeyErrorsClassifyAsSigningKeyUnavailable() {
+        // The trampoline's structured completion code: "no stored key"
+        // outcomes carry SigningKeyUnavailable (1); operational failures
+        // stay Generic (0).
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(for: .publicKeyNotFound),
+            KeychainSignerCompletionErrorCode.signingKeyUnavailable
+        )
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(
+                for: .privateKeyMissingFromKeychain(account: "acct")
+            ),
+            KeychainSignerCompletionErrorCode.signingKeyUnavailable
+        )
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(for: .ffiSignFailed(message: "boom")),
+            KeychainSignerCompletionErrorCode.generic
+        )
+    }
+
     // MARK: - ErrorCategory Tests
 
     func testErrorCategoryIsUserRecoverable() {

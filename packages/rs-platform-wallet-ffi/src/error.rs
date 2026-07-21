@@ -182,6 +182,26 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
+    // Codes 28-30 are NOT claimed here. 28 and 30 are reserved (vacated by the
+    // deferred-payment reservation-token trio on dashpay/platform#4185/#4256
+    // when it moved to 34-36) and 29 belongs to ErrorAssetLockInsufficientFunds
+    // on the asset-lock funding branch (dashpay/platform#4184). Allocating any
+    // of them here too would merge without a textual conflict and silently
+    // misclassify across hosts. See
+    // packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
+    /// A state transition could not be signed because the signer has no
+    /// usable private key for the requested public key — the stored blob is
+    /// missing, stranded, or written under a different Keystore/Keychain
+    /// alias — rather than the operation itself failing. Restored from the
+    /// typed signer completion code
+    /// ([`rs_sdk_ffi::DashSDKSignerErrorCode::SigningKeyUnavailable`]) via
+    /// the stable machine prefix
+    /// [`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`] riding the
+    /// `ProtocolError::Generic` segment (dashpay/platform#4060 finding 7).
+    /// Hosts route this to key repair instead of treating it as an opaque
+    /// wallet-operation failure. Not retryable as-is — the key must be
+    /// (re-)derived first.
+    ErrorSigningKeyUnavailable = 31,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -352,6 +372,19 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
+            // A signer failure can also reach this blanket impl wrapped as
+            // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
+            // wallet operation that propagates the SDK error via `?`). The
+            // typed discriminator rides the stable machine prefix in the
+            // rendered message — restore it here too, but ONLY on the
+            // catch-all: the dedicated retry-semantics codes above are never
+            // overridden (dashpay/platform#4060 finding 7).
+            _ if error
+                .to_string()
+                .contains(rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX) =>
+            {
+                PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
@@ -444,7 +477,13 @@ impl From<bincode::error::DecodeError> for PlatformWalletFFIResult {
 impl From<dpp::ProtocolError> for PlatformWalletFFIResult {
     fn from(e: dpp::ProtocolError) -> Self {
         let msg = e.to_string();
-        let code = if msg.contains("identifier") {
+        // The signer's typed SigningKeyUnavailable completion rides the
+        // stable machine prefix through ProtocolError::Generic
+        // (dashpay/platform#4060 finding 7) — restore the typed code FIRST,
+        // before any of the loose keyword sniffs below can misroute it.
+        let code = if msg.contains(rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX) {
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        } else if msg.contains("identifier") {
             PlatformWalletFFIResultCode::ErrorInvalidIdentifier
         } else if msg.contains("deserialization") || msg.contains("decode") {
             PlatformWalletFFIResultCode::ErrorDeserialization
@@ -850,5 +889,53 @@ mod tests {
         let err = PlatformWalletError::AddressOperation("explicit fallthrough".to_string());
         let result: PlatformWalletFFIResult = err.into();
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
+
+    /// The typed SigningKeyUnavailable signer completion rides the stable
+    /// machine prefix through `ProtocolError::Generic`; the conversion must
+    /// restore code 31 (dashpay/platform#4060 finding 7) — and must do so
+    /// BEFORE the loose keyword sniffs (the human message may well contain
+    /// "identifier" or similar).
+    #[test]
+    fn signer_key_unavailable_prefix_maps_to_code_31() {
+        let e = dpp::ProtocolError::Generic(format!(
+            "{}no private key stored for identifier 02abcd",
+            rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX
+        ));
+        let result: PlatformWalletFFIResult = e.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+    }
+
+    /// The same prefix arriving wrapped in the SDK-error path (the blanket
+    /// `From<PlatformWalletError>` catch-all) restores code 31 too — but
+    /// only on the catch-all; typed variants keep their codes.
+    #[test]
+    fn signer_key_unavailable_prefix_maps_on_the_sdk_catch_all() {
+        let err = PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(
+            format!(
+                "{}no private key stored for 02abcd",
+                rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX
+            ),
+        )));
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        );
+    }
+
+    /// A generic protocol error without the prefix keeps the historical
+    /// mapping — no message sniffing beyond the machine prefix.
+    #[test]
+    fn generic_protocol_error_without_prefix_is_unchanged() {
+        let e = dpp::ProtocolError::Generic("no private key stored for 02abcd".to_string());
+        let result: PlatformWalletFFIResult = e.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
     }
 }
