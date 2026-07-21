@@ -48,7 +48,10 @@ jobs:
           case "$TAG" in
             kotlin-sdk-v*)
               VERSION="${TAG#kotlin-sdk-v}"
-              if ! printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$'; then
+              # bash [[ =~ ]] matches the WHOLE string (unlike line-oriented
+              # grep), so a multiline value from a workflow_dispatch input can
+              # never pass validation and inject extra GITHUB_OUTPUT lines.
+              if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
                 echo "::error::Tag '$TAG' has the kotlin-sdk-v prefix but '$VERSION' is not a valid version (expected kotlin-sdk-vX.Y.Z)."
                 exit 1
               fi
@@ -149,15 +152,21 @@ jobs:
           PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
           PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
           GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
         run: |
+          # All five secrets the staging + jreleaser steps actually consume:
+          # Portal user/token, and the GPG secret key, public key and
+          # passphrase (gradle signing needs key+passphrase; jreleaser's
+          # Active.ALWAYS signing needs all three GPG values).
           if [ -z "$SDK_VERSION" ]; then
             echo "::notice::Tag is not kotlin-sdk-vX.Y.Z, so no Maven version can be derived — Maven Central deploy skipped."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ]; then
+          elif [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ] && [ -z "$GPG_PUBLIC_KEY" ] && [ -z "$GPG_PASSPHRASE" ]; then
             echo "::notice::Maven Central secrets are not configured on this repository (the Central Portal token is currently personal) — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ]; then
-            echo "::error::Maven Central secrets are only partially configured — need JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD and JRELEASER_GPG_SECRET_KEY (plus JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE). Refusing to guess."
+          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ] || [ -z "$GPG_PUBLIC_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::Maven Central secrets are only partially configured — need ALL of JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD, JRELEASER_GPG_SECRET_KEY, JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE. Refusing to guess."
             exit 1
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
