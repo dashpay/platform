@@ -195,23 +195,32 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Take ownership of a built, signed `tx` (whose funding UTXOs `build_signed`
+    /// Take ownership of a built, signed `tx` (whose funding UTXOs `finalize`
     /// already reserved) and return an opaque token for a later
     /// [`broadcast`](Self::broadcast) or [`release`](Self::release).
     ///
     /// `core` is the wallet the payment was built against; it is captured so the
     /// later operation acts on the exact reservation state that holds the inputs.
-    /// The wallet's current `last_processed_height` is captured too, to bound the
-    /// token's lifetime against key-wallet's reservation TTL (see
-    /// [`RESERVATION_MAX_AGE_BLOCKS`]).
+    ///
+    /// `registered_height` MUST be the `last_processed_height` the funding
+    /// reservation was stamped with — the height captured **inside** the funding
+    /// critical section, *before* signing (`SignedCoreTransaction::reservation_height`).
+    /// The caller passes it in rather than the registry sampling a fresh
+    /// `last_processed_height` here, which would be taken *after* the
+    /// (potentially slow, external) signer ran: a slow signer could let the
+    /// wallet advance so that a freshly-sampled height makes the token look
+    /// young while the reservation it covers has already aged toward
+    /// key-wallet's TTL. `None` disables the age guard for this entry (the
+    /// wallet-mismatch / account-lookup paths still reject a re-created wallet).
+    /// See [`RESERVATION_MAX_AGE_BLOCKS`].
     pub async fn register(
         &self,
         core: CoreWallet<B>,
         tx: Transaction,
         account_type: Option<StandardAccountType>,
         account_index: u32,
+        registered_height: Option<u32>,
     ) -> ReservationToken {
-        let registered_height = core.last_processed_height().await;
         let token = self.next_token.fetch_add(1, Ordering::SeqCst);
         self.lock().insert(
             token,
@@ -265,7 +274,10 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // simply drop it — deliberately WITHOUT releasing, since a release by
         // outpoint here could free a newer build's reservation. The stale
         // reservation is reclaimed by key-wallet's own TTL sweep.
-        if reservation_expired(entry.registered_height, current.last_processed_height().await) {
+        if reservation_expired(
+            entry.registered_height,
+            current.last_processed_height().await,
+        ) {
             return Err(SignedPaymentError::StaleReservationToken(token));
         }
 
@@ -303,7 +315,10 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // build; releasing it by outpoint could free that newer reservation.
         // Drop the token without touching the `ReservationSet` — the original
         // reservation is reclaimed by key-wallet's own TTL sweep.
-        if reservation_expired(entry.registered_height, entry.core.last_processed_height().await) {
+        if reservation_expired(
+            entry.registered_height,
+            entry.core.last_processed_height().await,
+        ) {
             return;
         }
         if let Some(account_type) = entry.account_type {
@@ -517,7 +532,13 @@ mod tests {
         let expected_txid = tx.txid();
 
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
         assert_eq!(registry.outstanding(), 1);
 
@@ -553,7 +574,13 @@ mod tests {
                 .await
                 .expect("build should succeed");
             let token = registry
-                .register(core.clone(), tx, Some(account_type), 0)
+                .register(
+                    core.clone(),
+                    tx,
+                    Some(account_type),
+                    0,
+                    core.last_processed_height().await,
+                )
                 .await;
 
             // With the reservation held, an immediate rebuild finds no
@@ -595,7 +622,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         registry
@@ -632,7 +665,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         registry.release(token).await;
@@ -660,7 +699,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         registry.release(token).await;
@@ -721,6 +766,7 @@ mod tests {
                 tx,
                 Some(StandardAccountType::BIP44Account),
                 0,
+                core_a.last_processed_height().await,
             )
             .await;
 
@@ -757,7 +803,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         let sent = registry.broadcast(token, &core).await;
@@ -807,7 +859,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         let mut handles = Vec::new();
@@ -861,8 +919,9 @@ mod tests {
             let core = core.clone();
             let tx = tx.clone();
             handles.push(tokio::spawn(async move {
+                let height = core.last_processed_height().await;
                 registry
-                    .register(core, tx, Some(StandardAccountType::BIP44Account), 0)
+                    .register(core, tx, Some(StandardAccountType::BIP44Account), 0, height)
                     .await
             }));
         }
@@ -879,7 +938,10 @@ mod tests {
     /// progress between build/register and a later broadcast/release — the window
     /// in which key-wallet's `ReservationSet` TTL can sweep the funding
     /// reservation. This is the same clock the registry's age guard reads.
-    async fn advance_processed_height<B: TransactionBroadcaster>(core: &CoreWallet<B>, height: u32) {
+    async fn advance_processed_height<B: TransactionBroadcaster>(
+        core: &CoreWallet<B>,
+        height: u32,
+    ) {
         let mut wm = core.wallet_manager.write().await;
         let (_, info) = wm
             .get_wallet_and_info_mut(&core.wallet_id())
@@ -899,7 +961,10 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let registered_height = core.last_processed_height().await.expect("last processed height");
+        let registered_height = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
         let tx = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
@@ -910,7 +975,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         // Advance past the age bound but stay below key-wallet's 24-block TTL, so
@@ -955,7 +1026,10 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let registered_height = core.last_processed_height().await.expect("last processed height");
+        let registered_height = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
         let tx = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
@@ -966,7 +1040,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         advance_processed_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
@@ -1010,7 +1090,13 @@ mod tests {
         .await
         .expect("build should succeed");
         let token = registry
-            .register(core.clone(), tx, Some(StandardAccountType::BIP44Account), 0)
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                core.last_processed_height().await,
+            )
             .await;
 
         // A sibling handle over the SAME manager Arc but a different wallet_id —
@@ -1065,6 +1151,7 @@ mod tests {
                 tx_a,
                 Some(StandardAccountType::BIP44Account),
                 0,
+                core_a.last_processed_height().await,
             )
             .await;
         let tx_b = build_signed_tx(
@@ -1082,6 +1169,7 @@ mod tests {
                 tx_b,
                 Some(StandardAccountType::BIP44Account),
                 0,
+                core_b.last_processed_height().await,
             )
             .await;
         assert_eq!(registry.outstanding(), 2);
@@ -1095,6 +1183,76 @@ mod tests {
         assert!(
             matches!(sent, Err(SignedPaymentError::StaleToken(t)) if t == token_a),
             "a swept token must be StaleToken, got {sent:?}"
+        );
+    }
+
+    /// Regression for the "reservation height captured before signing, token
+    /// height sampled after" gap: `register` takes the reservation's OWN stamp
+    /// height, so a slow external signer that let `last_processed_height`
+    /// advance between stamping and registration cannot make the token look
+    /// younger than the reservation it covers.
+    ///
+    /// The wallet is advanced to `H + (MAX_AGE - 1)` *before* the token is
+    /// registered — modelling a signer slow enough that a fresh
+    /// post-signing sample would read that higher height. The token is
+    /// registered with the reservation's real stamp height `H`. One more block
+    /// (`H + MAX_AGE`) then trips the guard: exactly `MAX_AGE` past the
+    /// reservation. Under the old behaviour (sampling `last_processed_height`
+    /// at register time) the baseline would have been `H + MAX_AGE - 1`, so the
+    /// same final height would read an age of 1 and the token would broadcast —
+    /// this test would fail. Baselining on the passed-in reservation height is
+    /// what keeps the guard tripping before key-wallet's TTL sweep.
+    #[tokio::test]
+    async fn register_baselines_on_reservation_height_not_a_post_signing_sample() {
+        let broadcaster = Arc::new(CountingBroadcaster::new());
+        let (core, signer, outputs) =
+            funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let reservation_height = core
+            .last_processed_height()
+            .await
+            .expect("last processed height");
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+
+        // Slow signer: the wallet advanced to just under the age bound while
+        // signing. A fresh sample here would read `reservation_height +
+        // MAX_AGE - 1`.
+        advance_processed_height(&core, reservation_height + RESERVATION_MAX_AGE_BLOCKS - 1).await;
+
+        // Register with the reservation's OWN stamp height, not a fresh sample.
+        let token = registry
+            .register(
+                core.clone(),
+                tx,
+                Some(StandardAccountType::BIP44Account),
+                0,
+                Some(reservation_height),
+            )
+            .await;
+
+        // One block past the reservation height (still below the 24-block TTL)
+        // trips the guard because the baseline is `reservation_height`.
+        advance_processed_height(&core, reservation_height + RESERVATION_MAX_AGE_BLOCKS).await;
+
+        let sent = registry.broadcast(token, &core).await;
+        assert!(
+            matches!(sent, Err(SignedPaymentError::StaleReservationToken(t)) if t == token),
+            "a token past MAX_AGE from its reservation height must be StaleReservationToken, \
+             got {sent:?}"
+        );
+        assert_eq!(
+            broadcaster.count.load(Ordering::SeqCst),
+            0,
+            "the network must not have been hit"
         );
     }
 }

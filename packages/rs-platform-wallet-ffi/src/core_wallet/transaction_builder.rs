@@ -243,13 +243,18 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // committed the reservation; register just takes ownership of the built tx so
     // a later broadcast/release can reconcile it, capturing the wallet instance
     // whose `ReservationSet` holds the inputs.
-    let token =
-        runtime().block_on(crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.register(
+    let token = runtime().block_on(
+        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.register(
             wallet.core().clone(),
             finalized.transaction().clone(),
             account_type.as_standard_account_type(),
             account_index,
-        ));
+            // Baseline the age guard on the reservation's OWN stamp height,
+            // captured inside finalize's funding critical section before the
+            // external signer ran — never a fresh post-signing sample.
+            Some(finalized.reservation_height()),
+        ),
+    );
 
     *out_tx = FFICoreTransaction {
         tx_bytes: Box::into_raw(serialized.into_boxed_slice()) as *mut u8,
