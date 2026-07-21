@@ -414,9 +414,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // obtains user consent and re-issues with `CrossDomainConsent::Allowed`.
         // Note: coin selection accounts for the L1 fee, so `transparent_total`
         // being >= `target_duffs` here is necessary but not sufficient; a
-        // fee-driven shortfall still surfaces as `AssetLockInsufficientFunds` from
-        // the builder below. The consent gate only fires when the WIDER union is
-        // what unlocks the amount.
+        // fee-driven shortfall surfaces from the builder below and is
+        // reclassified to consent-required at that site when the union covers
+        // the fee-inclusive amount. This gate handles the plain-amount case
+        // early, before any selection work.
         if !allow_cross_domain && transparent_total < target_duffs && union_total >= target_duffs {
             tracing::debug!(
                 transparent_total,
@@ -556,7 +557,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let (transaction, fee) = builder
             .build_signed(signer, move |addr| path_map.get(&addr).cloned())
             .await
-            .map_err(|e| map_builder_error(e, target_duffs))?;
+            .map_err(|e| {
+                let mapped = map_builder_error(e, target_duffs);
+                // Fee-band consent reclassification: the pre-selection gate
+                // compares domain totals against the fee-EXCLUSIVE target, so a
+                // transparent total in [target, target+fee) slips past it and
+                // then fails selection on the fee. When the union would cover
+                // the fee-inclusive `required` that selection reported, the
+                // actionable answer is still consent — reclassify to the
+                // consent-required error so hosts prompt instead of
+                // dead-ending on "insufficient funds".
+                match mapped {
+                    PlatformWalletError::AssetLockInsufficientFunds { available, required }
+                        if !allow_cross_domain
+                            && union_total > available
+                            && union_total >= required =>
+                    {
+                        PlatformWalletError::AssetLockCrossDomainConsentRequired {
+                            transparent_available: available,
+                            cross_domain_available: union_total,
+                            required,
+                        }
+                    }
+                    other => other,
+                }
+            })?;
         tracing::debug!(
             selected_inputs = transaction.input.len(),
             fee,
@@ -2487,6 +2512,114 @@ mod tests {
             other => panic!(
                 "expected typed AssetLockInsufficientFunds carrying the union \
                  available/required, got {other:?}"
+            ),
+        }
+    }
+
+    /// Fee-band reclassification: the transparent domain covers the requested
+    /// amount but not amount + fee, while the union does. The pre-selection
+    /// gate (fee-exclusive) does not fire, transparent-only selection then
+    /// fails on the fee — and that shortfall must surface as the typed
+    /// consent-required error (the union unlocks it), NOT as a dead-end
+    /// insufficient-funds.
+    #[tokio::test]
+    async fn shielded_asset_lock_fee_band_reclassifies_to_consent_required() {
+        // Transparent = 0.09 DASH, CoinJoin = 0.09 DASH; ask for exactly the
+        // transparent balance so only the fee is short.
+        let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
+
+        let result = manager
+            .build_asset_lock_transaction_with_consent(
+                9_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                CrossDomainConsent::Denied,
+            )
+            .await;
+
+        match result {
+            Err(PlatformWalletError::AssetLockCrossDomainConsentRequired {
+                transparent_available,
+                cross_domain_available,
+                required,
+            }) => {
+                assert_eq!(
+                    transparent_available, 9_000_000,
+                    "transparent_available should be the transparent slice"
+                );
+                assert_eq!(
+                    cross_domain_available, 18_000_000,
+                    "cross_domain_available should be the full union"
+                );
+                // key-wallet reports `required` as the plain target here (the
+                // fee shortfall is why selection failed, but the error carries
+                // the requested amount) — the reclassification must not depend
+                // on a fee-inclusive `required`.
+                assert!(
+                    required >= 9_000_000,
+                    "required ({required}) must be at least the 9_000_000 target"
+                );
+            }
+            other => panic!(
+                "fee-band shortfall the union can cover must ask for consent, got {other:?}"
+            ),
+        }
+
+        // And consent does unlock exactly this request.
+        manager
+            .build_asset_lock_transaction_with_consent(
+                9_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                CrossDomainConsent::Allowed,
+            )
+            .await
+            .expect("the fee-band request must succeed once consent is granted");
+    }
+
+    /// Denied + both domains short: when even the union cannot cover the
+    /// request, consent would not help, so the error stays the typed
+    /// insufficient-funds (code path distinct from consent-required) with the
+    /// transparent slice as `available` — the permitted funding set under the
+    /// default rule.
+    #[tokio::test]
+    async fn shielded_asset_lock_denied_union_shortfall_stays_insufficient() {
+        // Union spendable is 0.18 DASH; ask for 1.0 DASH with consent Denied.
+        let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
+
+        let result = manager
+            .build_asset_lock_transaction_with_consent(
+                100_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                CrossDomainConsent::Denied,
+            )
+            .await;
+
+        match result {
+            Err(PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            }) => {
+                assert!(
+                    available <= 9_000_000,
+                    "available ({available}) must reflect the permitted \
+                     transparent slice under Denied, not the union"
+                );
+                assert!(
+                    required >= 100_000_000,
+                    "required ({required}) should be at least the requested amount"
+                );
+            }
+            other => panic!(
+                "a shortfall consent cannot fix must stay AssetLockInsufficientFunds, \
+                 got {other:?}"
             ),
         }
     }
