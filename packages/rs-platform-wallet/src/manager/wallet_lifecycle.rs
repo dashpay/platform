@@ -75,7 +75,7 @@ const PERSIST_RETRY_MAX_BACKOFF: std::time::Duration = std::time::Duration::from
 /// immediately — a fatal failure never retries. The sleep is async so it
 /// yields the Tokio worker instead of spinning the CPU, which is exactly
 /// what the storage layer's `FlushRetryable` contract asks callers to do.
-async fn retry_transient<T, F>(mut op: F) -> Result<T, PersistenceError>
+pub(super) async fn retry_transient<T, F>(mut op: F) -> Result<T, PersistenceError>
 where
     F: FnMut() -> Result<T, PersistenceError>,
 {

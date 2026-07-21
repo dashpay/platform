@@ -14,6 +14,11 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
+    /// Updating a managed platform-node address pool failed structurally.
+    #[cfg(feature = "eddsa")]
+    #[error("platform-node pool update failed: {0}")]
+    PlatformNodePool(#[from] crate::wallet::provider_key_at_index::PlatformNodePoolError),
+
     /// The persister failed to load the client start state during
     /// rehydration. Carries the typed [`PersistenceError`] so callers keep
     /// its retry classification (`is_transient()` /
