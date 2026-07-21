@@ -3,6 +3,7 @@ use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBinding;
 
 mod v0;
+mod v1;
 
 pub fn data_trigger_bindings_list(
     platform_version: &PlatformVersion,
@@ -19,9 +20,13 @@ pub fn data_trigger_bindings_list(
             .into_iter()
             .map(|binding| binding.into())
             .collect()),
+        1 => Ok(v1::data_trigger_bindings_list_v1()?
+            .into_iter()
+            .map(|binding| binding.into())
+            .collect()),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "data_trigger_bindings".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         }),
     }

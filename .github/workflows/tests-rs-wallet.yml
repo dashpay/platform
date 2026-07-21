@@ -6,11 +6,11 @@
 # Rust workspace). Fork PRs and push/schedule runs always take the full
 # `tests-rs-workspace.yml` path. In the wallet case this workflow runs in
 # place of the full one, compiling and testing only the wallet crates plus
-# their sole in-workspace dependent (`rs-unified-sdk-ffi`) instead of the
+# their in-workspace dependents (`rs-unified-sdk-ffi`, `rs-unified-sdk-jni`) instead of the
 # whole workspace.
 #
 # Safety: nothing in the workspace depends on the wallet crates except
-# `rs-unified-sdk-ffi` — an invariant enforced by the "Verify wallet
+# those dependents — an invariant enforced by the "Verify wallet
 # reverse-dependency closure" step below, so a new dependent added elsewhere
 # fails this job until the scoped package lists are updated. Scoped clippy
 # compiles that dependent, preserving the downstream compile check the full
@@ -163,9 +163,10 @@ jobs:
           done
           echo "No immutable/append_only structure violations found"
 
-      # Scoped clippy over the wallet crates plus `rs-unified-sdk-ffi`, the only
-      # in-workspace crate that depends on them — this preserves the downstream
-      # compile check the full `clippy --workspace` would otherwise provide.
+      # Scoped clippy over the wallet crates plus their in-workspace
+      # dependents (`rs-unified-sdk-ffi`, `rs-unified-sdk-jni`) — this preserves
+      # the downstream compile check the full `clippy --workspace` would
+      # otherwise provide.
       - name: Clippy lints (wallet crates + dependents)
         run: |
           cargo clippy \
@@ -173,6 +174,7 @@ jobs:
             --package platform-wallet-storage \
             --package platform-wallet-ffi \
             --package rs-unified-sdk-ffi \
+            --package rs-unified-sdk-jni \
             --all-features \
             --locked \
             -- --no-deps -D warnings
