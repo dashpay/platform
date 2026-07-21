@@ -39,13 +39,13 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::pubkey_rows::decode_update_pubkeys_blob;
-use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jint, jlong, jstring};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
-use rs_sdk_ffi::{FFINetwork, SignerHandle};
+use rs_sdk_ffi::SignerHandle;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
@@ -127,18 +127,6 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
             throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
             None
         }
-    }
-}
-
-/// FFINetwork ordinal → the crate's `FFINetwork` enum
-/// (0=Mainnet, 2=Devnet, 3=Regtest, else Testnet). Matches
-/// `identity::net_from_ord` and Kotlin's `Network.ffiValue`.
-fn net_from_ord(ord: i32) -> FFINetwork {
-    match ord {
-        0 => FFINetwork::Mainnet,
-        2 => FFINetwork::Devnet,
-        3 => FFINetwork::Regtest,
-        _ => FFINetwork::Testnet,
     }
 }
 

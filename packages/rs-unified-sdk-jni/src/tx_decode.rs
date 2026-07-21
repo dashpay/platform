@@ -39,7 +39,7 @@
 //!   u8[script_len] script_pubkey
 //! ```
 
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, throw_sdk_exception};
 use dash_network::ffi::FFINetwork;
 use jni::objects::{JByteArray, JClass};
 use jni::sys::{jbyteArray, jint};
@@ -48,18 +48,6 @@ use key_wallet_ffi::tx_decode::{
     decoded_transaction_free, transaction_decode, DecodedTransactionFFI,
 };
 use std::ffi::CStr;
-
-/// FFINetwork ordinal → enum (0=Mainnet, 2=Devnet, 3=Regtest, else
-/// Testnet). Matches `transactions::net_from_ord` and Kotlin's
-/// `Network.ffiValue`.
-fn net_from_ord(ord: i32) -> FFINetwork {
-    match ord {
-        0 => FFINetwork::Mainnet,
-        2 => FFINetwork::Devnet,
-        3 => FFINetwork::Regtest,
-        _ => FFINetwork::Testnet,
-    }
-}
 
 /// Append `u16 len + bytes` for an optional C string (null → len 0).
 /// An `Address` rendering is never empty, so 0 unambiguously means "none".
@@ -352,12 +340,4 @@ mod tests {
         assert_eq!(err.0, key_wallet_ffi::FFIErrorCode::InvalidInput as i32);
     }
 
-    #[test]
-    fn net_from_ord_matches_kotlin_ffi_values() {
-        assert_eq!(net_from_ord(0), FFINetwork::Mainnet);
-        assert_eq!(net_from_ord(1), FFINetwork::Testnet);
-        assert_eq!(net_from_ord(2), FFINetwork::Devnet);
-        assert_eq!(net_from_ord(3), FFINetwork::Regtest);
-        assert_eq!(net_from_ord(-1), FFINetwork::Testnet, "unknown → Testnet");
-    }
 }
