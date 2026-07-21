@@ -38,11 +38,9 @@ fn effective_no_proof_distinct_limit(
         ));
     }
 
-    u16::try_from(effective_limit).map_err(|_| {
-        Error::Query(crate::error::query::QuerySyntaxError::InvalidLimit(
-            "effective distinct SUM limit does not fit u16".to_string(),
-        ))
-    })
+    // Both configuration limits are u16, and the `min` above bounds every
+    // caller-supplied value to `max_query_limit` before this conversion.
+    Ok(effective_limit as u16)
 }
 
 #[cfg(feature = "server")]
