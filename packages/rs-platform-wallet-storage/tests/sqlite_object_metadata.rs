@@ -590,7 +590,7 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
 fn meta_identity_cleanup_fires_on_wallet_cascade() {
     use rusqlite::{params, Connection};
 
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::secure_tempdir().expect("tempdir");
     let path = tmp.path().join("raw.db");
     let mut conn = Connection::open(&path).expect("open raw conn");
     platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");
@@ -658,7 +658,7 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
 fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     use rusqlite::{params, Connection};
 
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::secure_tempdir().expect("tempdir");
     let path = tmp.path().join("raw.db");
     let mut conn = Connection::open(&path).expect("open raw conn");
     platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");

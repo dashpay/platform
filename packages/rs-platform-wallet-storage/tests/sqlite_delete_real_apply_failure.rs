@@ -35,7 +35,7 @@ fn full_changeset(synced: u32) -> PlatformWalletChangeSet {
 
 #[test]
 fn delete_wallet_pre_flush_apply_real_sql_failure_restores_buffer() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let cfg = SqlitePersisterConfig::new(&path).with_flush_mode(FlushMode::Manual);
     let persister = SqlitePersister::open(cfg).unwrap();

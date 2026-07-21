@@ -104,7 +104,7 @@ fn tc035_restore_roundtrip() {
 /// TC-036: restore source missing schema_history is rejected.
 #[test]
 fn tc036_restore_missing_schema_history() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let fake_src = tmp.path().join("empty.db");
     rusqlite::Connection::open(&fake_src).unwrap();
     let dest = tmp.path().join("dest.db");
@@ -116,7 +116,7 @@ fn tc036_restore_missing_schema_history() {
 /// TC-037: corrupt source rejected.
 #[test]
 fn tc037_restore_corrupt_source() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let corrupt = tmp.path().join("corrupt.db");
     fs::write(&corrupt, b"not a sqlite file ABCDEF").unwrap();
     let dest = tmp.path().join("dest.db");
@@ -176,7 +176,7 @@ fn atom_004_backup_to_failure_leaves_no_junk_at_dest() {
 /// TC-038: prune retention AND-semantics.
 #[test]
 fn tc038_prune_and_semantics() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let dir = tmp.path();
     // Write 5 fake backup files with mtimes 1d/7d/14d/30d/60d ago.
     let day = std::time::Duration::from_secs(86_400);
@@ -244,7 +244,7 @@ fn atom_011_prune_report_carries_failed_removals_field() {
 #[cfg(unix)]
 fn is_root_via_probe() -> bool {
     use std::os::unix::fs::PermissionsExt;
-    let Ok(tmp) = tempfile::tempdir() else {
+    let Ok(tmp) = common::secure_tempdir() else {
         return false;
     };
     let dir = tmp.path().join("probe");
@@ -369,7 +369,7 @@ fn tc_code_019_a_failed_removal_counts_in_kept() {
         return;
     }
     use std::os::unix::fs::PermissionsExt;
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let dir = tmp.path().join("backups");
     fs::create_dir(&dir).unwrap();
     // Five eligible backups, all old enough to be removed by `max_age`.

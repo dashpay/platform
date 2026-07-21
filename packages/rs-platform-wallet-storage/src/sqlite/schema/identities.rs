@@ -171,9 +171,7 @@ pub fn load_state(
         // selected by (mirrors the accounts / identity_keys readers): the
         // blob must name the same identity, and its own wallet_id (when set)
         // must match the wallet scope, else the row is corrupt / mis-filed.
-        let typed_id = <[u8; 32]>::try_from(identity_id_bytes.as_slice()).map_err(|_| {
-            WalletStorageError::blob_decode("identities.identity_id is not 32 bytes")
-        })?;
+        let typed_id = super::id32("identities.identity_id", &identity_id_bytes)?;
         if entry.id != dpp::prelude::Identifier::from(typed_id) {
             return Err(WalletStorageError::IdentityEntryIdMismatch);
         }
@@ -248,9 +246,7 @@ fn load_tombstoned_ids(
     let mut out = HashSet::new();
     while let Some(row) = rows.next()? {
         let id_bytes: Vec<u8> = row.get(0)?;
-        let id32 = <[u8; 32]>::try_from(id_bytes.as_slice()).map_err(|_| {
-            WalletStorageError::blob_decode("identities.identity_id is not 32 bytes")
-        })?;
+        let id32 = super::id32("identities.identity_id", &id_bytes)?;
         out.insert(Identifier::from(id32));
     }
     Ok(out)

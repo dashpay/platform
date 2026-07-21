@@ -116,6 +116,7 @@ fn samples() -> Vec<WalletStorageError> {
             dir: PathBuf::from("/nope"),
             source: std::io::Error::other("nope"),
         },
+        WalletStorageError::InsecureParentDir { mode: 0o777 },
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
@@ -154,7 +155,10 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::InvalidWalletIdHex {
             source: hex::FromHexError::OddLength,
         },
-        WalletStorageError::InvalidWalletIdLength { actual: 10 },
+        WalletStorageError::InvalidWalletIdLength {
+            column: "wallets.wallet_id",
+            actual: 10,
+        },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
         WalletStorageError::IdentityEntryIdMismatch,
         WalletStorageError::OrphanedIdentityEntry { owner: [0x0E; 32] },
@@ -252,6 +256,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::AutoBackupDirUnwritable { .. } => {
                 (false, "auto_backup_dir_unwritable")
             }
+            WalletStorageError::InsecureParentDir { .. } => (false, "insecure_parent_dir"),
             WalletStorageError::WalletNotFound { .. } => (false, "wallet_not_found"),
             WalletStorageError::WalletIdMismatch { .. } => (false, "wallet_id_mismatch"),
             WalletStorageError::LockPoisoned => (false, "lock_poisoned"),

@@ -44,7 +44,7 @@ fn seed_one_row(persister: &SqlitePersister, w: &[u8; 32]) {
 fn restore_takes_and_releases_native_exclusive() {
     let (persister, tmp, db_path) = fresh_persister();
     seed_one_row(&persister, &wid(0xA1));
-    let backup_dir = tempfile::tempdir().expect("backup dir");
+    let backup_dir = common::secure_tempdir().expect("backup dir");
     let backup_path = persister.backup_to(backup_dir.path()).unwrap();
     drop(persister);
 
@@ -71,7 +71,7 @@ fn restore_takes_and_releases_native_exclusive() {
 fn restore_blocks_when_peer_holds_exclusive() {
     let (persister, tmp, db_path) = fresh_persister();
     seed_one_row(&persister, &wid(0xA2));
-    let backup_dir = tempfile::tempdir().expect("backup dir");
+    let backup_dir = common::secure_tempdir().expect("backup dir");
     let backup_path = persister.backup_to(backup_dir.path()).unwrap();
     drop(persister);
 

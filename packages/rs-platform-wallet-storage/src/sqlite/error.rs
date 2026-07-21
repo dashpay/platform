@@ -93,6 +93,14 @@ pub enum WalletStorageError {
         source: std::io::Error,
     },
 
+    /// The database file's parent directory is group/other writable, which
+    /// would let another local user replace the database despite mode `0600`.
+    #[error("database parent directory has insecure permissions")]
+    InsecureParentDir {
+        /// Offending POSIX mode bits on the parent directory.
+        mode: u32,
+    },
+
     /// `delete_wallet` (or another wallet-id-keyed operation) was
     /// called with an id that has no matching `wallets` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
@@ -128,10 +136,14 @@ pub enum WalletStorageError {
         source: hex::FromHexError,
     },
 
-    /// A wallet-id hex string had the wrong length (must be 64 chars
-    /// for a 32-byte id).
-    #[error("invalid wallet id length: expected 64 hex chars, got {actual}")]
-    InvalidWalletIdLength { actual: usize },
+    /// A stored identifier column did not contain exactly 32 bytes.
+    #[error("invalid id length in {column}: expected 32 bytes, got {actual}")]
+    InvalidWalletIdLength {
+        /// Schema-qualified column containing the malformed identifier.
+        column: &'static str,
+        /// Actual byte length read from the column.
+        actual: usize,
+    },
 
     /// A `SqlitePersisterConfig` field carries an unsupported value
     /// (e.g. `synchronous = Off`). The `reason` is a compile-time
@@ -441,6 +453,7 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
+            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             // TODO(qa): `LockPoisoned` fatal classification has no e2e
@@ -532,6 +545,7 @@ impl WalletStorageError {
             Self::SchemaVersionUnsupported { .. } => "schema_version_unsupported",
             Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
+            Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::WalletNotFound { .. } => "wallet_not_found",
             Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",

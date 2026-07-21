@@ -1212,8 +1212,8 @@ fn tc_p4_008_corruption_is_hard_error() {
 
 /// `contacts::load_state` is fail-hard. A garbage `outgoing_request`
 /// blob yields a typed `BincodeDecode`; a non-32-byte id column yields a
-/// typed `BlobDecode`. Neither is silently skipped, and an intact wallet
-/// still decodes cleanly.
+/// typed `InvalidWalletIdLength`. Neither is silently skipped, and an intact
+/// wallet still decodes cleanly.
 #[test]
 fn tc_p4_008b_contacts_corruption_is_hard_error() {
     use platform_wallet_storage::sqlite::schema::contacts;
@@ -1276,8 +1276,15 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
         "garbage contacts entry_blob must be a typed BincodeDecode; got {blob_result:?}"
     );
     assert!(
-        matches!(id_result, Err(WalletStorageError::BlobDecode { .. })),
-        "non-32-byte contacts id column must be a typed BlobDecode; got {id_result:?}"
+        matches!(
+            id_result,
+            Err(WalletStorageError::InvalidWalletIdLength {
+                column: "contacts.owner_id",
+                actual: 10
+            })
+        ),
+        "non-32-byte contacts id must identify contacts.owner_id and actual length 10; \
+         got {id_result:?}"
     );
     assert_eq!(good_state.sent_requests.len(), 1);
 }
@@ -1403,9 +1410,12 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
     assert!(
         matches!(
             result,
-            Err(WalletStorageError::InvalidWalletIdLength { actual: 10 })
+            Err(WalletStorageError::InvalidWalletIdLength {
+                column: "wallets.wallet_id",
+                actual: 10
+            })
         ),
-        "non-32-byte stored wallet_id must be a typed InvalidWalletIdLength {{ actual: 10 }}; \
+        "non-32-byte stored wallet_id must identify wallets.wallet_id and actual length 10; \
          got {result:?}"
     );
 }

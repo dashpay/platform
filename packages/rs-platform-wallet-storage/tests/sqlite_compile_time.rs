@@ -4,6 +4,8 @@
 //! TC-P1-003 — every writer call site uses `prepare_cached`.
 //! TC-P4-011 — `ClientStartState` keeps the base public shape.
 
+mod common;
+
 use std::sync::Arc;
 
 use platform_wallet::changeset::PlatformWalletPersistence;
@@ -16,7 +18,7 @@ assert_impl_all!(SqlitePersister: Send, Sync, PlatformWalletPersistence);
 #[test]
 fn tc078_object_safety() {
     fn accepts(_: Arc<dyn PlatformWalletPersistence>) {}
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let cfg = SqlitePersisterConfig::new(&path);
     let p = SqlitePersister::open(cfg).unwrap();

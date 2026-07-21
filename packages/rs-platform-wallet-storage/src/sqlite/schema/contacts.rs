@@ -302,7 +302,8 @@ pub(crate) fn load_state(
         let label: String = row.get(2)?;
         let outgoing: Option<Vec<u8>> = row.get(3)?;
         let incoming: Option<Vec<u8>> = row.get(4)?;
-        let (owner_id, contact_id) = decode_pair_key(&owner, &contact)?;
+        let (owner_id, contact_id) =
+            decode_pair_key("contacts.owner_id", &owner, "contacts.contact_id", &contact)?;
 
         match contact_state_from_label(&label)? {
             ContactState::Sent => {
@@ -386,11 +387,14 @@ fn decode_request(
     }
 }
 
-fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
-    let a32 = <[u8; 32]>::try_from(a)
-        .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;
-    let b32 = <[u8; 32]>::try_from(b)
-        .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;
+fn decode_pair_key(
+    a_column: &'static str,
+    a: &[u8],
+    b_column: &'static str,
+    b: &[u8],
+) -> Result<(Identifier, Identifier), WalletStorageError> {
+    let a32 = super::id32(a_column, a)?;
+    let b32 = super::id32(b_column, b)?;
     Ok((Identifier::from(a32), Identifier::from(b32)))
 }
 
@@ -428,7 +432,12 @@ pub(crate) fn load_ignored_senders(
     while let Some(row) = rows.next()? {
         let owner: Vec<u8> = row.get(0)?;
         let sender: Vec<u8> = row.get(1)?;
-        let (owner, sender) = decode_pair_key(&owner, &sender)?;
+        let (owner, sender) = decode_pair_key(
+            "ignored_senders.owner_id",
+            &owner,
+            "ignored_senders.sender_id",
+            &sender,
+        )?;
         map.entry(owner).or_default().insert(sender);
     }
     Ok(map)

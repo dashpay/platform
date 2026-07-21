@@ -80,7 +80,7 @@ fn tc013_wallet_metadata_roundtrip() {
 /// `ConfigInvalid` error and the DB is not created.
 #[test]
 fn tc_code_029_1_journal_mode_memory_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.journal_mode = JournalMode::Memory;
@@ -101,7 +101,7 @@ fn tc_code_029_1_journal_mode_memory_rejected() {
 /// error and the DB is not created.
 #[test]
 fn tc_code_029_2_journal_mode_off_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.journal_mode = JournalMode::Off;
@@ -123,7 +123,7 @@ fn tc_code_029_2_journal_mode_off_rejected() {
 #[test]
 #[tracing_test::traced_test]
 fn tc_code_029_3_busy_timeout_zero_warns() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.busy_timeout = std::time::Duration::ZERO;
@@ -138,7 +138,7 @@ fn tc_code_029_3_busy_timeout_zero_warns() {
 /// TC-079: synchronous=Off is rejected at open with a typed error.
 #[test]
 fn tc079_synchronous_off_rejected() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let mut cfg = SqlitePersisterConfig::new(&path);
     cfg.synchronous = Synchronous::Off;

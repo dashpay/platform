@@ -397,9 +397,7 @@ fn decode_address_row(
 }
 
 fn wallet_id_from_bytes(bytes: &[u8]) -> Result<WalletId, WalletStorageError> {
-    <[u8; 32]>::try_from(bytes).map_err(|_| WalletStorageError::InvalidWalletIdLength {
-        actual: bytes.len(),
-    })
+    super::id32("platform_addresses.wallet_id", bytes)
 }
 
 #[cfg(test)]

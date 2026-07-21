@@ -104,10 +104,10 @@ auto-backup dir at `<db_dir>/backups/auto/`.
 
 The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
 Schema migrations are versioned Rust files under `migrations/`, applied via
-[`refinery`](https://github.com/rust-db/refinery) on every `open`. While the
-crate is unreleased, in-place edits to the sole shipped `V001` are allowed;
-the append-only guarantee (add a new versioned file, never edit a prior one)
-takes effect once the schema is frozen at release.
+[`refinery`](https://github.com/rust-db/refinery) on every `open`. The full
+`V001`–`V006` set is still unreleased and may be edited in place, except that
+`V001` stays byte-identical so its refinery checksum cannot diverge on an
+existing store. Once the schema ships, migrations become append-only.
 
 #### Flush semantics (store / flush)
 
@@ -157,10 +157,10 @@ reconstructed from these per-area readers:
 | `network` / `birth_height` | `schema::wallets::fetch` |
 | `account_manifest` | `schema::accounts::load_state` |
 | `core_state` | `schema::core_state::load_state` |
-| `identity_manager` | `schema::identities::load_state` |
+| `identity_manager` | `schema::identities::load_prekeyed` (folds persisted identities, public identity keys, and contacts into each `ManagedIdentity`) |
 | `unused_asset_locks` | `schema::asset_locks::load_unconsumed` (`Consumed`-filtered — spent locks stay on disk but are never resurrected) |
-| `contacts` | `schema::contacts::load_changeset` |
-| `identity_keys` | `schema::identity_keys::load_state` |
+| `contacts` | folded into `identity_manager` by `load_prekeyed`; the standalone field stays empty |
+| `identity_keys` | folded into `identity_manager` by `load_prekeyed`; the standalone field stays empty |
 
 The persisted payload stores **no** `Wallet` and no key material. `load()`
 reconstructs the full keyless payload, rebuilding each wallet
@@ -302,9 +302,11 @@ directly via `WalletStorageError::is_transient`.
 
 ### Schema
 
-The canonical schema is [`migrations/V001__initial.rs`](./migrations/V001__initial.rs)
-— 23 tables of hand-written `CREATE TABLE … FOREIGN KEY …` SQL with native
-`ON DELETE CASCADE`. Foreign-key enforcement is enabled and
+The schema is defined by the complete [`migrations/`](./migrations/) set,
+`V001` through `V006`. `V001` creates the 23-table base schema; later
+migrations add tables and columns for address pools, metadata versions,
+invitations, typed public keys, and reservation timestamps. Foreign-key
+enforcement is enabled and
 read-back-asserted on every connection open. For the full table reference,
 the cascade triggers, the no-FK `meta_*` soft cascade, the orphan-metadata
 limitation, and the enum-domain CHECK constraints, see

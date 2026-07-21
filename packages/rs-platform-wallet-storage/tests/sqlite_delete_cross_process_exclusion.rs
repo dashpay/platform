@@ -19,7 +19,7 @@ fn delete_wallet_blocks_when_peer_holds_exclusive() {
     let w = wid(0x77);
     ensure_wallet_meta(&persister, &w);
 
-    let backup_dir = tempfile::tempdir().expect("backup dir");
+    let backup_dir = common::secure_tempdir().expect("backup dir");
     // Re-open with auto-backup wired so delete_wallet exercises the
     // backup + cascade path (the canonical path under test).
     drop(persister);
@@ -77,7 +77,7 @@ fn delete_wallet_blocks_when_peer_holds_exclusive() {
 #[test]
 fn delete_wallet_single_process_still_works() {
     let (persister, _tmp, db_path) = fresh_persister();
-    let backup_dir = tempfile::tempdir().expect("backup dir");
+    let backup_dir = common::secure_tempdir().expect("backup dir");
     drop(persister);
     let cfg = platform_wallet_storage::SqlitePersisterConfig::new(&db_path)
         .with_auto_backup_dir(Some(backup_dir.path().to_path_buf()));

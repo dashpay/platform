@@ -12,7 +12,7 @@ use platform_wallet_storage::{
 /// TC-050: brand-new DB does NOT produce a pre-migration backup.
 #[test]
 fn tc050_brand_new_db_skips_pre_migration_backup() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let cfg = SqlitePersisterConfig::new(&path);
     let dir = cfg.auto_backup_dir.clone().unwrap();
@@ -50,7 +50,7 @@ fn tc051_pre_delete_backup_taken() {
 /// TC-052: delete_wallet with auto_backup_dir = None returns AutoBackupDisabled.
 #[test]
 fn tc052_delete_wallet_auto_backup_disabled() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(None);
     let persister = SqlitePersister::open(cfg).unwrap();
@@ -87,7 +87,7 @@ fn tc052_delete_wallet_auto_backup_disabled() {
 /// CI containers.
 #[test]
 fn tc054_unwritable_auto_backup_dir() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let blocker = tmp.path().join("not-a-dir");
     std::fs::write(&blocker, b"regular file").unwrap();

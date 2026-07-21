@@ -276,7 +276,7 @@ fn build_populated_store(path: &Path) {
 #[test]
 #[ignore = "regenerator: rewrites the committed fixture on disk"]
 fn regenerate_populated_v001_fixture() {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = common::secure_tempdir().expect("tempdir");
     let src = tmp.path().join("build.db");
     // Seed on a fully-migrated store: the writers (core_state UTXO attribution,
     // the meta_data_versions bump) reference V002/V003 tables, so a V001-only

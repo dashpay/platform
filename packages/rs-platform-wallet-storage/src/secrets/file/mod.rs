@@ -250,7 +250,14 @@ impl EncryptedFileStore {
         // Refuse a group/other-WRITABLE parent: directory write governs
         // rename/unlink, so a writable parent lets another local user
         // replace the vault despite its own 0600 (the A1 guarantee).
-        check_parent_perms(parent)?;
+        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+            crate::parent_permissions::ParentPermissionsError::Io(source) => {
+                SecretStoreError::io_at(parent, source)
+            }
+            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+                SecretStoreError::InsecureParentDir { mode }
+            }
+        })?;
 
         // Lock first — every subsequent step assumes exclusive ownership.
         let lock = VaultLock::acquire(&lock_path_for(&path))?;
@@ -336,6 +343,9 @@ impl EncryptedFileStore {
     /// The Argon2 derivation runs OUTSIDE the lock — it touches only the
     /// new passphrase + fresh salt, so paying ~hundreds of ms inside the
     /// critical section would needlessly stall unrelated put/get ops.
+    ///
+    /// The vault is one shared fault domain: a corrupt entry blocks rekeying
+    /// every wallet in the vault until that entry is manually removed.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
         // Reject a blank target passphrase: `rekey` always advances to a
         // REAL passphrase (the empty→real migration uses this). The resident
@@ -1190,30 +1200,6 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
 // https://github.com/dashpay/platform/issues/3754 — set ACLs manually.
 #[cfg(not(unix))]
 fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
-    Ok(())
-}
-
-/// Refuse a group/other-WRITABLE vault parent (`mode & 0o022`). The
-/// threat is rename/unlink/replace, which POSIX gates on directory WRITE,
-/// so this targets write bits only — a 0o755 read-only parent leaks
-/// filenames but not the 0600 contents and is the common layout.
-/// `DirBuilder::mode` only hardens dirs this process creates, so a
-/// pre-existing loose dir must still be checked here.
-#[cfg(unix)]
-fn check_parent_perms(parent: &Path) -> Result<(), SecretStoreError> {
-    use std::os::unix::fs::MetadataExt;
-    let meta = fs::metadata(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
-    let mode = meta.mode() & 0o777;
-    if mode & 0o022 != 0 {
-        return Err(SecretStoreError::InsecureParentDir { mode });
-    }
-    Ok(())
-}
-
-// INTENTIONAL: Windows parent-dir ACL check deferred to the same
-// follow-up as `check_perms` — https://github.com/dashpay/platform/issues/3754.
-#[cfg(not(unix))]
-fn check_parent_perms(_parent: &Path) -> Result<(), SecretStoreError> {
     Ok(())
 }
 

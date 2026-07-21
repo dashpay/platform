@@ -61,7 +61,7 @@ fn wallets_rows_for(persister: &SqlitePersister, w: &[u8; 32]) -> i64 {
 /// the buffer (restored) or already durable on disk.
 #[test]
 fn preflush_begin_exclusive_busy_preserves_buffer() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     // No auto_backup_dir + skip_backup keeps the test on the
     // pre-flush -> cascade path without a backup dependency.
@@ -120,7 +120,7 @@ fn preflush_begin_exclusive_busy_preserves_buffer() {
 /// deleted wallet.
 #[test]
 fn delete_retry_after_transient_abort_converges_to_deleted() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let cfg = SqlitePersisterConfig::new(&path).with_flush_mode(FlushMode::Manual);
     let persister = SqlitePersister::open(cfg).unwrap();

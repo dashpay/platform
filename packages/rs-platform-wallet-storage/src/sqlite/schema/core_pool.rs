@@ -41,6 +41,14 @@ const ECDSA_PUBLIC_KEY_LEN: usize = 33;
 const EDDSA_PUBLIC_KEY_LEN: usize = 32;
 const BLS_PUBLIC_KEY_LEN: usize = 48;
 
+fn key_type_to_i64(key_type: &PublicKeyType) -> i64 {
+    match key_type {
+        PublicKeyType::ECDSA(_) => KEY_TYPE_ECDSA,
+        PublicKeyType::EdDSA(_) => KEY_TYPE_EDDSA,
+        PublicKeyType::BLS(_) => KEY_TYPE_BLS,
+    }
+}
+
 // Monotonic final usage clears reservations so a stale Reserved snapshot
 // cannot resurrect one after the row has become Used.
 const UPSERT_POOL_SQL: &str = "INSERT INTO core_address_pool \
@@ -101,28 +109,20 @@ pub fn apply_pools(
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
         for info in &entry.addresses {
-            let (public_key, key_type, expected_key_len): (
-                Option<&[u8]>,
-                Option<i64>,
-                Option<usize>,
-            ) = match info.public_key.as_ref() {
-                None => (None, None, None),
-                Some(PublicKeyType::ECDSA(bytes)) => (
-                    Some(bytes.as_slice()),
-                    Some(KEY_TYPE_ECDSA),
-                    Some(ECDSA_PUBLIC_KEY_LEN),
-                ),
-                Some(PublicKeyType::EdDSA(bytes)) => (
-                    Some(bytes.as_slice()),
-                    Some(KEY_TYPE_EDDSA),
-                    Some(EDDSA_PUBLIC_KEY_LEN),
-                ),
-                Some(PublicKeyType::BLS(bytes)) => (
-                    Some(bytes.as_slice()),
-                    Some(KEY_TYPE_BLS),
-                    Some(BLS_PUBLIC_KEY_LEN),
-                ),
-            };
+            let key_type = info.public_key.as_ref().map(key_type_to_i64);
+            let (public_key, expected_key_len): (Option<&[u8]>, Option<usize>) =
+                match info.public_key.as_ref() {
+                    None => (None, None),
+                    Some(PublicKeyType::ECDSA(bytes)) => {
+                        (Some(bytes.as_slice()), Some(ECDSA_PUBLIC_KEY_LEN))
+                    }
+                    Some(PublicKeyType::EdDSA(bytes)) => {
+                        (Some(bytes.as_slice()), Some(EDDSA_PUBLIC_KEY_LEN))
+                    }
+                    Some(PublicKeyType::BLS(bytes)) => {
+                        (Some(bytes.as_slice()), Some(BLS_PUBLIC_KEY_LEN))
+                    }
+                };
             if let (Some(public_key), Some(expected_key_len)) = (public_key, expected_key_len) {
                 blob::check_fixed_width(
                     i64::try_from(public_key.len()).unwrap_or(i64::MAX),
@@ -330,10 +330,8 @@ pub(crate) fn owning_account_for_script(
     };
     let account_index =
         crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
-    let user_identity_id = <[u8; 32]>::try_from(user.as_slice())
-        .map_err(|_| WalletStorageError::blob_decode("core_address_pool.user_identity_id"))?;
-    let friend_identity_id = <[u8; 32]>::try_from(friend.as_slice())
-        .map_err(|_| WalletStorageError::blob_decode("core_address_pool.friend_identity_id"))?;
+    let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
+    let friend_identity_id = super::id32("core_address_pool.friend_identity_id", &friend)?;
     Ok(Some(OwningAccount {
         account_type,
         account_index,
@@ -417,10 +415,8 @@ pub fn load_used_addresses(
         let address = dashcore::Address::from_script(&script, network)?;
         let account_index =
             crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
-        let user_identity_id = <[u8; 32]>::try_from(user.as_slice())
-            .map_err(|_| WalletStorageError::blob_decode("core_address_pool.user_identity_id"))?;
-        let friend_identity_id = <[u8; 32]>::try_from(friend.as_slice())
-            .map_err(|_| WalletStorageError::blob_decode("core_address_pool.friend_identity_id"))?;
+        let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
+        let friend_identity_id = super::id32("core_address_pool.friend_identity_id", &friend)?;
         out.push((
             address,
             OwningAccount {
@@ -521,14 +517,43 @@ mod tests {
     }
 
     #[test]
-    fn pool_type_discriminants_are_stable_and_distinct() {
-        let all = [
+    fn integer_discriminants_match_migration_domains() {
+        use std::collections::BTreeSet;
+
+        let pool_variants = [
             AddressPoolType::External,
             AddressPoolType::Internal,
             AddressPoolType::Absent,
             AddressPoolType::AbsentHardened,
         ];
-        let mapped: Vec<i64> = all.iter().copied().map(pool_type_to_i64).collect();
-        assert_eq!(mapped, vec![0, 1, 2, 3]);
+        for variant in pool_variants {
+            match variant {
+                AddressPoolType::External
+                | AddressPoolType::Internal
+                | AddressPoolType::Absent
+                | AddressPoolType::AbsentHardened => {}
+            }
+        }
+        let pool_discriminants: BTreeSet<_> = pool_variants
+            .iter()
+            .copied()
+            .map(pool_type_to_i64)
+            .collect();
+        assert_eq!(pool_discriminants, BTreeSet::from([0, 1, 2, 3]));
+        assert_eq!(pool_discriminants.len(), pool_variants.len());
+
+        let key_variants = [
+            PublicKeyType::ECDSA(Vec::new()),
+            PublicKeyType::EdDSA(Vec::new()),
+            PublicKeyType::BLS(Vec::new()),
+        ];
+        for variant in &key_variants {
+            match variant {
+                PublicKeyType::ECDSA(_) | PublicKeyType::EdDSA(_) | PublicKeyType::BLS(_) => {}
+            }
+        }
+        let key_discriminants: BTreeSet<_> = key_variants.iter().map(key_type_to_i64).collect();
+        assert_eq!(key_discriminants, BTreeSet::from([0, 1, 2]));
+        assert_eq!(key_discriminants.len(), key_variants.len());
     }
 }

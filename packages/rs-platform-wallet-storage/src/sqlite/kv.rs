@@ -263,6 +263,12 @@ mod tests {
 
     fn open_persister() -> (SqlitePersister, tempfile::TempDir) {
         let tmp = tempfile::tempdir().expect("tempdir");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o700))
+                .expect("secure tempdir permissions");
+        }
         let path = tmp.path().join("wallet.db");
         let cfg = crate::sqlite::config::SqlitePersisterConfig::new(&path);
         let p = SqlitePersister::open(cfg).expect("open persister");

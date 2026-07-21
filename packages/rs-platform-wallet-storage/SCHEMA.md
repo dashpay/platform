@@ -37,7 +37,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover V001; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004), are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover V001; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004) and the V005–V006 pool columns, are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -356,6 +356,18 @@ SQL lookups without blob decoding.
   that axis (including the provider key-material types).
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 
+### `pending_contact_crypto`
+
+Deferred, signer-dependent contact cryptography operations. The owner,
+contact, and operation kind form the deduplication key; `payload` carries the
+public-only ciphertext and key-index data needed when a signer becomes
+available.
+
+- PK: `(wallet_id, owner_identity_id, contact_id, kind)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- `kind` CHECK: sourced from
+  `sqlite::schema::pending_contact_crypto::KIND_LABELS`.
+
 ### `core_transactions`
 
 One row per transaction the wallet has seen. `height`, `block_hash`, and
@@ -439,6 +451,16 @@ bincode-encoded `Vec<u32>`.
 - PK: `(wallet_id, owner_id, contact_id)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - `state` CHECK: sourced from `sqlite::schema::contacts::CONTACT_STATE_LABELS`.
+
+### `ignored_senders`
+
+Reversible per-sender DashPay mute records. Each row suppresses all incoming
+contact requests from `sender_id` for one owner identity until the row is
+deleted; `ignored_at` records when the mute was applied.
+
+- PK: `(wallet_id, owner_id, sender_id)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- No enum-domain CHECK column.
 
 ### `platform_addresses`
 
@@ -575,10 +597,10 @@ before the address exists.
 
 ## Enum-domain CHECK constraints
 
-Four TEXT columns carry a `CHECK (col IN (...))` across four enum
+Five TEXT columns carry a `CHECK (col IN (...))` across five enum
 domains. The IN-list is built at migration time from
 `pub(crate) const *_LABELS` arrays declared next to each writer function.
-Three domains mirror an upstream Rust enum; the fourth (`contacts.state`)
+Four domains mirror a Rust enum; the fifth (`contacts.state`)
 is a synthetic lifecycle label naming which `ContactChangeSet` slot a row
 came from:
 
@@ -586,12 +608,13 @@ came from:
 |---|---|---|
 | `wallets` | `network` | `sqlite::schema::wallets::NETWORK_LABELS` |
 | `account_registrations` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
+| `pending_contact_crypto` | `kind` | `sqlite::schema::pending_contact_crypto::KIND_LABELS` |
 | `asset_locks` | `status` | `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS` |
 | `contacts` | `state` | `sqlite::schema::contacts::CONTACT_STATE_LABELS` |
 
 The const arrays are the single source of truth shared by the writer
 mapping functions (`network_to_str`, `account_type_db_label`,
-`status_str`, `contact_state_db_label`) and the migration's CHECK
+`kind_db_label`, `status_str`, `contact_state_db_label`) and the migration's CHECK
 clauses.
 Per-module `*_labels_match_enum` unit tests enforce set-equality
 between each const and the writer's codomain — drift (a renamed/added
@@ -601,10 +624,11 @@ in this document; the source files are canonical.
 
 ### Upstream-enum coupling
 
-Two of the persisted enums live in the external `rust-dashcore`
-crate (`key_wallet::Network`, `key_wallet::account::AccountType`); the
-third (`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`)
-is in-tree and carries a `# Schema coupling` rustdoc block.
+Two persisted enums live in the external `rust-dashcore` crate
+(`key_wallet::Network`, `key_wallet::account::AccountType`). The other two
+(`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus` and
+`platform_wallet::changeset::PendingContactCryptoKind`) live in-tree;
+`AssetLockStatus` also carries a `# Schema coupling` rustdoc block.
 
 Because the upstream definitions cannot be edited from this repository,
 the coupling is enforced from the local side instead, by three
@@ -664,7 +688,9 @@ having to grep this repo.
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full schema: all 21 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |
+| V001 | `V001__initial.rs` | Full base schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |
 | V002 | `V002__address_height_pin.rs` | Adds `platform_addresses.as_of_height` (the Platform-block-height pin reconciling proof-attested balances against the delta stream; `DEFAULT 0` = unknown provenance for pre-existing rows). Additive column, no new table. |
 | V003 | `V003__unified.rs` | Adds `core_address_pool` (per-index address-pool rows replacing `core_utxos` script-derivation for the address-reuse guard), `meta_data_versions` (per-`(wallet_id, domain)` cache-invalidation `seq`), and `meta_store_generation` (single-row store-generation token). Additive only. |
 | V004 | `V004__invitations.rs` | Adds `invitations` for DIP-13 DashPay invitation lifecycle records, keyed by wallet and outpoint. |
+| V005 | `V005__pool_public_key.rs` | Adds nullable `public_key` and `key_type` columns to `core_address_pool`, preserving typed pre-derived public keys that a watch-only account cannot regenerate (closes #4113). |
+| V006 | `V006__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |

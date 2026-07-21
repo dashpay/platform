@@ -133,11 +133,7 @@ pub(crate) fn all_platform_payment_registrations(
             });
         }
         let bytes: Vec<u8> = row.get(4)?;
-        let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
-            WalletStorageError::InvalidWalletIdLength {
-                actual: wid_bytes.len(),
-            }
-        })?;
+        let wallet_id = super::id32("account_registrations.wallet_id", &wid_bytes)?;
         out.entry(wallet_id)
             .or_default()
             .push(decode_platform_payment_row(idx, key_class, &bytes)?);

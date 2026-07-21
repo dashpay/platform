@@ -73,7 +73,7 @@ fn forward_version_rejected_destination_unchanged() {
 /// integrity-valid is rejected and the destination is left untouched.
 #[test]
 fn missing_schema_history_rejected_destination_unchanged() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let fake_src = tmp.path().join("empty.db");
     rusqlite::Connection::open(&fake_src).unwrap();
 
@@ -164,7 +164,7 @@ fn forward_version_rejected_before_staging() {
         .unwrap();
     }
 
-    let dest_dir = tempfile::tempdir().unwrap();
+    let dest_dir = common::secure_tempdir().unwrap();
     let dest = dest_dir.path().join("dest.db");
     fs::write(&dest, SENTINEL).unwrap();
 

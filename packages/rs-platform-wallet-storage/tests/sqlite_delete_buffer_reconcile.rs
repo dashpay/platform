@@ -88,7 +88,7 @@ fn buffered_only_delete_is_ok_and_no_resurrection() {
 /// whose only state lived in the buffer.
 #[test]
 fn pre_delete_backup_includes_buffered_writes() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let backup_dir = tmp.path().join("backups");
     let cfg = SqlitePersisterConfig::new(&path)
@@ -139,7 +139,7 @@ fn pre_delete_backup_includes_buffered_writes() {
 /// `delete_wallet` surfaces the original error.
 #[test]
 fn pre_flush_failure_preserves_buffer_and_skips_backup() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let backup_dir = tmp.path().join("backups");
     let cfg = SqlitePersisterConfig::new(&path)

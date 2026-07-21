@@ -16,11 +16,31 @@ use common::{ensure_wallet_meta, wid};
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
+
+#[test]
+fn open_rejects_group_or_other_writable_parent() {
+    let tmp = common::secure_tempdir().unwrap();
+    let parent = tmp.path().join("insecure");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let db_path = parent.join("wallet.db");
+
+    let result = SqlitePersister::open(SqlitePersisterConfig::new(&db_path));
+
+    assert!(
+        matches!(
+            result,
+            Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+        ),
+        "open must return the typed insecure-parent error"
+    );
+    assert!(!db_path.exists(), "the database must not be pre-created");
+}
 
 #[test]
 fn wal_and_shm_sidecars_are_chmodded_0o600() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db_path = tmp.path().join("wallet.db");
     let persister = SqlitePersister::open(SqlitePersisterConfig::new(&db_path)).expect("open");
 
@@ -73,7 +93,7 @@ fn wal_and_shm_sidecars_are_chmodded_0o600() {
 /// have mangled into the wrong sibling names.
 #[test]
 fn tc_code_011_a_non_ascii_db_path_sidecars_chmodded() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     // Valid-UTF-8 multi-byte prefix `ÿþ` + `.db` / `.db-wal` / `.db-shm`.
     // We still go through `OsString::from_vec` to mirror the production
     // codepath's `OsStr`/`OsString` API surface end-to-end.
@@ -117,7 +137,7 @@ fn tc_code_011_a_non_ascii_db_path_sidecars_chmodded() {
 /// race window.
 #[test]
 fn tc_code_011_b_no_sidecars_is_ok() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db_path = tmp.path().join("solo.db");
     std::fs::write(&db_path, b"x").unwrap();
     // No -wal / -shm planted on purpose.

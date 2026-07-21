@@ -19,7 +19,7 @@ fn open_err(cfg: SqlitePersisterConfig) -> WalletStorageError {
 
 #[test]
 fn second_open_on_same_path_is_refused() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
 
     let first = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("first open");
@@ -38,7 +38,7 @@ fn second_open_on_same_path_is_refused() {
 
 #[test]
 fn distinct_paths_open_concurrently() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let a = tmp.path().join("a.db");
     let b = tmp.path().join("b.db");
 
@@ -51,7 +51,7 @@ fn distinct_paths_open_concurrently() {
 fn second_open_via_noncanonical_path_is_refused() {
     // A `.`-segmented path canonicalizes to the same key as the plain
     // path, so the registry still catches the second open.
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let _first = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("first open");
 

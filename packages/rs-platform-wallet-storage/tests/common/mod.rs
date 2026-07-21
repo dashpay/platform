@@ -19,11 +19,22 @@ pub fn fresh_persister() -> (SqlitePersister, tempfile::TempDir, PathBuf) {
 }
 
 pub fn fresh_persister_with_mode(mode: FlushMode) -> (SqlitePersister, tempfile::TempDir, PathBuf) {
-    let tmp = tempfile::tempdir().expect("tempdir");
+    let tmp = secure_tempdir().expect("tempdir");
     let path = tmp.path().join("wallet.db");
     let cfg = SqlitePersisterConfig::new(&path).with_flush_mode(mode);
     let p = SqlitePersister::open(cfg).expect("open persister");
     (p, tmp, path)
+}
+
+/// Create a test directory that satisfies the persister's Unix parent policy.
+pub fn secure_tempdir() -> std::io::Result<tempfile::TempDir> {
+    let tmp = tempfile::tempdir()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(tmp.path(), std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(tmp)
 }
 
 /// Wallet id helper.

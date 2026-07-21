@@ -164,7 +164,7 @@ fn assert_full_data_preserved(conn: &Connection) {
 /// migrates it and preserves every pre-existing row.
 #[test]
 fn tc_b_031_populated_v001_migration_preserves_data() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     {
         let pre = ro_conn(&path);
@@ -194,7 +194,7 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
 /// NOT NULL violation and reads empty-but-valid.
 #[test]
 fn tc_b_036_empty_wallet_through_migration() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let state = p.load().unwrap();
@@ -213,7 +213,7 @@ fn tc_b_036_empty_wallet_through_migration() {
 /// schema changes are visible in the live file.
 #[test]
 fn tc_b_032_pre_migration_backup_created() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let backup_dir = tmp.path().join("backups");
     let p = SqlitePersister::open(
@@ -261,7 +261,7 @@ fn tc_b_032_pre_migration_backup_created() {
 /// reaches the identical end state as a direct migration (determinism).
 #[test]
 fn tc_b_033_backup_restorable_and_remigration_deterministic() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let backup_dir = tmp.path().join("backups");
     {
@@ -300,7 +300,7 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
 /// version; a forged row one version past it is refused.
 #[test]
 fn tc_b_034_forward_version_rejected_at_new_max() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("wallet.db");
     {
         let _p = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
@@ -380,7 +380,7 @@ fn migration_snapshot(conn: &Connection) -> Vec<i64> {
 #[test]
 fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
     // Reference: a fresh copy migrated straight through.
-    let clean_dir = tempfile::tempdir().unwrap();
+    let clean_dir = common::secure_tempdir().unwrap();
     let clean_path = copy_fixture(clean_dir.path());
     let clean_snapshot = {
         let p = SqlitePersister::open(SqlitePersisterConfig::new(&clean_path)).unwrap();
@@ -396,7 +396,7 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
     // Crash simulation: apply part of V003's DDL inside a transaction that is
     // rolled back before commit — exactly what a crash before the migration's
     // single COMMIT leaves behind (SQLite DDL is transactional).
-    let crash_dir = tempfile::tempdir().unwrap();
+    let crash_dir = common::secure_tempdir().unwrap();
     let crash_path = copy_fixture(crash_dir.path());
     {
         let conn = Connection::open(&crash_path).unwrap();
@@ -438,7 +438,7 @@ fn tc_b_035_interrupted_migration_recovers_to_clean_state() {
 /// rotates on migrate/restore, not a plain reopen).
 #[test]
 fn reopen_of_migrated_store_is_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = copy_fixture(tmp.path());
     let read = |conn: &Connection| -> (Vec<i64>, [u8; 16]) {
         let gen: Vec<u8> = conn

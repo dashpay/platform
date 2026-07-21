@@ -2,6 +2,8 @@
 
 //! CLI smoke tests for the maintenance binary.
 
+mod common;
+
 use std::process::Command;
 
 use assert_cmd::cargo::CommandCargoExt;
@@ -13,7 +15,7 @@ fn cli() -> Command {
 /// migrate on a fresh DB prints `applied: <N>` then `applied: 0`.
 #[test]
 fn tc056_migrate_idempotent() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     let out = cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
@@ -37,7 +39,7 @@ fn tc056_migrate_idempotent() {
 /// restore without --yes refuses (exit 2).
 #[test]
 fn tc062_restore_without_yes_refuses() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
@@ -67,7 +69,7 @@ fn tc062_restore_without_yes_refuses() {
 /// prune without --keep-last or --max-age is a usage error.
 #[test]
 fn tc065_prune_requires_a_rule() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     let dir = tmp.path().join("bk");
     std::fs::create_dir(&dir).unwrap();
@@ -88,7 +90,7 @@ fn tc065_prune_requires_a_rule() {
 /// unknown-subcommand usage error.
 #[test]
 fn inspect_subcommand_removed() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
@@ -110,7 +112,7 @@ fn inspect_subcommand_removed() {
 /// an unknown-subcommand usage error.
 #[test]
 fn tc072_delete_wallet_subcommand_removed() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
@@ -142,7 +144,7 @@ fn tc072_delete_wallet_subcommand_removed() {
 /// backup --out <dir> writes a timestamped file.
 #[test]
 fn tc059_backup_dir() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
@@ -172,7 +174,7 @@ fn tc059_backup_dir() {
 /// fresh DB without writing the `backups/auto/` sentinel snapshot.
 #[test]
 fn tc_code_030_1a_no_auto_backup_disables() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let db = tmp.path().join("w.db");
     let out = cli()
         .args(["--db", db.to_str().unwrap(), "migrate", "--no-auto-backup"])

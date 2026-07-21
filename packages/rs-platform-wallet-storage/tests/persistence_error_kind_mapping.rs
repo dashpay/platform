@@ -158,6 +158,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             },
         ),
         (
+            "InsecureParentDir",
+            WalletStorageError::InsecureParentDir { mode: 0o777 },
+        ),
+        (
             "WalletNotFound",
             WalletStorageError::WalletNotFound {
                 wallet_id: [0xCD; 32],
@@ -176,7 +180,10 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
         ),
         (
             "InvalidWalletIdLength",
-            WalletStorageError::InvalidWalletIdLength { actual: 12 },
+            WalletStorageError::InvalidWalletIdLength {
+                column: "wallets.wallet_id",
+                actual: 12,
+            },
         ),
         (
             "ConfigInvalid",

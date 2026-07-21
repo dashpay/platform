@@ -127,11 +127,7 @@ pub(crate) fn all_pending_contact_crypto(
     let mut out: BTreeMap<WalletId, Vec<PendingContactCrypto>> = BTreeMap::new();
     for r in rows {
         let (wid_bytes, payload) = r?;
-        let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
-            WalletStorageError::InvalidWalletIdLength {
-                actual: wid_bytes.len(),
-            }
-        })?;
+        let wallet_id = super::id32("pending_contact_crypto.wallet_id", &wid_bytes)?;
         let entry: PendingContactCrypto = blob::decode(&payload)?;
         out.entry(wallet_id).or_default().push(entry);
     }

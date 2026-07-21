@@ -22,6 +22,18 @@ pub mod token_balances;
 pub mod versions;
 pub mod wallets;
 
+pub(crate) fn id32(
+    column: &'static str,
+    bytes: &[u8],
+) -> Result<[u8; 32], crate::sqlite::error::WalletStorageError> {
+    <[u8; 32]>::try_from(bytes).map_err(|_| {
+        crate::sqlite::error::WalletStorageError::InvalidWalletIdLength {
+            column,
+            actual: bytes.len(),
+        }
+    })
+}
+
 /// Reject any `identity_id` in `touched` whose `identities` row does not
 /// belong to `wallet_id` (NULL wallet_id matches the all-zero sentinel),
 /// returning [`WalletStorageError::WalletIdMismatch`] on the first offender.
@@ -78,4 +90,22 @@ pub(crate) fn assert_identities_belong_to_wallet(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::id32;
+    use crate::sqlite::error::WalletStorageError;
+
+    #[test]
+    fn id32_reports_column_and_actual_length() {
+        let error = id32("example.owner_id", &[0u8; 7]).unwrap_err();
+        assert!(matches!(
+            error,
+            WalletStorageError::InvalidWalletIdLength {
+                column: "example.owner_id",
+                actual: 7
+            }
+        ));
+    }
 }

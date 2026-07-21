@@ -6,6 +6,9 @@
 //! marker and its data commit atomically. `meta_store_generation` holds the
 //! single store-generation token, stable across flushes and regenerated on
 //! restore.
+//!
+//! `read_seq` and `read_generation` are intentionally test-only until the
+//! first production cache-invalidation consumer needs these accessors.
 
 use rusqlite::{params, Transaction};
 

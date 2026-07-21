@@ -34,6 +34,9 @@
 /// source of truth.
 pub const SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
+#[cfg(any(feature = "sqlite", feature = "secrets"))]
+mod parent_permissions;
+
 #[cfg(feature = "kv")]
 pub mod kv;
 #[cfg(feature = "sqlite")]

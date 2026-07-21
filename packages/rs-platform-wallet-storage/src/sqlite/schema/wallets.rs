@@ -43,11 +43,7 @@ pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> 
     let mut out = Vec::new();
     for r in rows {
         let bytes = r?;
-        let wid = <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| {
-            WalletStorageError::InvalidWalletIdLength {
-                actual: bytes.len(),
-            }
-        })?;
+        let wid = super::id32("wallets.wallet_id", &bytes)?;
         out.push(wid);
     }
     Ok(out)

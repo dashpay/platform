@@ -82,7 +82,7 @@ fn restore_from_rejects_foreign_application_id_destination_untouched() {
     // untouched on rejection.
     let before = std::fs::read(&dest).expect("read dest before");
 
-    let src_tmp = tempfile::tempdir().unwrap();
+    let src_tmp = common::secure_tempdir().unwrap();
     let foreign = src_tmp.path().join("foreign.db");
     // Anything but the wallet-storage magic.
     write_foreign_refinery_db(&foreign, 0x0BAD_F00D_u32 as i32);
@@ -107,7 +107,7 @@ fn restore_from_rejects_foreign_application_id_destination_untouched() {
 
 #[test]
 fn open_rejects_foreign_application_id() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let foreign = tmp.path().join("foreign.db");
     write_foreign_refinery_db(&foreign, 0x0BAD_F00D_u32 as i32);
 

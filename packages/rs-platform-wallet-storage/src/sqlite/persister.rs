@@ -149,6 +149,8 @@ impl SqlitePersister {
     /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
     ///   `config.path` does not exist. The persister refuses to create
     ///   parent directories silently.
+    /// - [`WalletStorageError::InsecureParentDir`] — the database parent is
+    ///   group/other writable on Unix.
     /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
     ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
     ///   (no FK support compiled in).
@@ -188,16 +190,25 @@ impl SqlitePersister {
 
     fn open_inner(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
         validate_config(&config)?;
-        if let Some(parent) = config.path.parent() {
-            if !parent.as_os_str().is_empty() && !parent.exists() {
-                // Parent dir must exist — refuse to create it silently so
-                // "bad path" stays a typed error.
-                return Err(WalletStorageError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("database parent directory not found: {}", parent.display()),
-                )));
-            }
+        let parent = config
+            .path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        if !parent.exists() {
+            return Err(WalletStorageError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("database parent directory not found: {}", parent.display()),
+            )));
         }
+        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+            crate::parent_permissions::ParentPermissionsError::Io(source) => {
+                WalletStorageError::Io(source)
+            }
+            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+                WalletStorageError::InsecureParentDir { mode }
+            }
+        })?;
 
         // Pre-create owner-only (0600) with O_EXCL before rusqlite opens:
         // no umask window, and a planted symlink makes the create fail
@@ -921,6 +932,11 @@ impl PlatformWalletPersistence for SqlitePersister {
     ///         .as_nanos()
     /// ));
     /// std::fs::create_dir_all(&dir).unwrap();
+    /// #[cfg(unix)]
+    /// {
+    ///     use std::os::unix::fs::PermissionsExt;
+    ///     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    /// }
     /// let db_path = dir.join("wallets.db");
     ///
     /// let config = SqlitePersisterConfig::new(&db_path);

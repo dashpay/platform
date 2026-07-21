@@ -159,9 +159,7 @@ pub fn load_state(
         let key_id: i64 = row.get(1)?;
         blob::check_size(row.get::<_, i64>(2)?)?;
         let payload: Vec<u8> = row.get(3)?;
-        let id32 = <[u8; 32]>::try_from(identity_id_bytes.as_slice()).map_err(|_| {
-            WalletStorageError::blob_decode("identity_keys.identity_id is not 32 bytes")
-        })?;
+        let id32 = super::id32("identity_keys.identity_id", &identity_id_bytes)?;
         let identity_id = Identifier::from(id32);
         let key_id: KeyID =
             crate::sqlite::util::safe_cast::i64_to_u32("identity_keys.key_id", key_id)?;
