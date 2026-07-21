@@ -1,6 +1,6 @@
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
-use crate::handle::{Handle, PLATFORM_WALLET_STORAGE};
+use crate::handle::{Handle, CORE_SIGNED_TRANSACTION_V2_STORAGE, PLATFORM_WALLET_STORAGE};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
@@ -42,6 +42,15 @@ pub struct FFICoreTransaction {
     fee: u64,
 }
 
+/// Internal value behind the opaque V2 numeric handle. Keeping the originating
+/// CoreWallet with the signed transaction lets `free` perform the same safe
+/// reservation release as explicit abandon, even after the host discarded its
+/// transient CoreWallet handle.
+pub struct FFICoreSignedTransactionV2 {
+    pub(crate) wallet: platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
+    pub(crate) transaction: platform_wallet::SignedCoreTransaction,
+}
+
 impl FFICoreTransaction {
     pub(crate) fn bytes(&self) -> &[u8] {
         if self.tx_bytes.is_null() || self.tx_len == 0 {
@@ -52,6 +61,7 @@ impl FFICoreTransaction {
     }
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub enum CoreAccountTypeFFI {
     BIP44,
@@ -67,6 +77,61 @@ impl From<CoreAccountTypeFFI> for AccountTypePreference {
             CoreAccountTypeFFI::CoinJoin => AccountTypePreference::CoinJoin,
         }
     }
+}
+
+/// Atomically fund, reserve and sign a configured builder.
+///
+/// Unlike the deprecated `set_funding` + `build_signed` sequence, selection
+/// and insertion into the account ReservationSet cannot interleave with a
+/// competing finalizer. The wallet-manager lock is dropped before the host
+/// mnemonic resolver is invoked. This function consumes `builder` on every
+/// path after its pointer is accepted.
+///
+/// On success `out_transaction_handle` receives an opaque V2 handle. Consume
+/// it with `core_wallet_broadcast_signed_transaction_v2` or
+/// `core_wallet_abandon_signed_transaction_v2`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
+    builder: *mut FFITransactionBuilder,
+    wallet: Handle,
+    account_type: CoreAccountTypeFFI,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_transaction_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(builder);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_transaction_handle);
+    *out_transaction_handle = 0;
+
+    let ffi = Box::from_raw(builder);
+    let inner = *Box::from_raw(ffi.inner as *mut TransactionBuilder);
+    let wallet = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet, |w| w.clone()));
+
+    let builder_network: Network = ffi.network.into();
+    if builder_network != wallet.network() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "builder network does not match wallet network".to_string(),
+        );
+    }
+
+    let signer =
+        MnemonicResolverCoreSigner::new(core_signer_handle, wallet.wallet_id(), wallet.network());
+    let finalized = runtime().block_on(wallet.core().finalize_transaction(
+        inner,
+        account_type.into(),
+        account_index,
+        &signer,
+    ));
+    let finalized = unwrap_result_or_return!(finalized);
+    *out_transaction_handle =
+        CORE_SIGNED_TRANSACTION_V2_STORAGE.insert(FFICoreSignedTransactionV2 {
+            wallet: wallet.core().clone(),
+            transaction: finalized,
+        });
+    PlatformWalletFFIResult::ok()
 }
 
 impl CoreAccountTypeFFI {

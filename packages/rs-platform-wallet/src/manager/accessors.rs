@@ -10,7 +10,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::utxo::Utxo;
 use key_wallet::WalletCoreBalance;
 
-use crate::changeset::PlatformWalletPersistence;
+use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
@@ -257,6 +257,14 @@ pub struct AddressBanInfoSnapshot {
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
+    /// Persistence contracts attested by this manager's configured backend.
+    ///
+    /// The value is safe to query before wallets are loaded or created and is
+    /// immutable for the manager lifetime because the persistence backend is.
+    pub fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.persister.persistence_capabilities()
+    }
+
     /// The SDK instance.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
@@ -504,12 +512,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// re-matches compact filters from there.
     ///
     /// Unlike the `WalletInterface::update_wallet_synced_height` trait method
-    /// (which is forward-only and silently ignores a lower value), this writes
-    /// `core_wallet.update_synced_height` directly, which is an unconditional
-    /// set — so a **rewind** actually takes effect. A `from_height` at or above
-    /// the current checkpoint is written verbatim but arms no rescan: the
-    /// filter loop only rescans wallets strictly *behind* the committed height,
-    /// so a forward/equal set is a harmless no-op for the rescan purpose.
+    /// (which is forward-only and silently ignores a lower value), this calls
+    /// the core wallet's unconditional setter only after verifying that
+    /// `from_height` is strictly below the current checkpoint. Equal/forward
+    /// requests leave the checkpoint untouched; this API can never advance it.
     ///
     /// `synced_height` may regress here: that is safe because it is the
     /// filter-scan checkpoint, decoupled from the monotonic
@@ -517,13 +523,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// monotonic-max guarded (see `reconcile_dashpay_rescan`'s note), so a
     /// transient rewind cannot corrupt state or persist a lower cursor.
     ///
-    /// The rewound checkpoint lives in the in-memory `WalletManager`; it is not
-    /// itself persisted by this call, and that is fine for the feature: a
-    /// rescan completes in-session, and if the process dies mid-rescan the
-    /// wallet is simply still behind, so the next `start` re-arms the same
-    /// backfill from the persisted high-water. Requires SPV running for an
-    /// immediate effect; otherwise it takes effect when SPV next starts and its
-    /// filter loop first ticks.
+    /// The rewound checkpoint lives only in the in-memory `WalletManager`; this
+    /// call does not persist it. If the process dies before the rescan finishes,
+    /// the host must issue this request again after restart. Requires SPV
+    /// running for an immediate effect; otherwise it takes effect when SPV next
+    /// starts in the same process and its filter loop first ticks.
     ///
     /// Returns `false` when no wallet matches `wallet_id`.
     pub fn spv_rescan_filters_blocking(&self, wallet_id: &WalletId, from_height: u32) -> bool {
@@ -533,6 +537,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info_mut(wallet_id) else {
             return false;
         };
+        let current_height = info.core_wallet.metadata.synced_height;
+        if from_height >= current_height {
+            tracing::debug!(
+                wallet_id = %hex::encode(wallet_id),
+                from_height,
+                current_height,
+                "SPV rescan: ignored non-rewind checkpoint request"
+            );
+            return true;
+        }
         info.core_wallet.update_synced_height(from_height);
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
@@ -1116,5 +1130,103 @@ fn tx_record_snapshot(rec: &TransactionRecord) -> AccountTransactionSnapshot {
         value_delta_duffs: rec.net_amount,
         fee_duffs: rec.fee.unwrap_or(0),
         is_coinbase: rec.transaction.is_coin_base(),
+    }
+}
+
+#[cfg(test)]
+mod spv_rescan_tests {
+    use std::sync::Arc;
+
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    #[tokio::test]
+    async fn spv_rescan_only_rewinds_known_wallets() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            event_handler,
+        ));
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &mnemonic.to_seed(""),
+                WalletAccountCreationOptions::Default,
+                Some(100),
+            )
+            .await
+            .expect("wallet registration");
+        let wallet_id = wallet.wallet_id();
+
+        tokio::task::spawn_blocking(move || {
+            let initial_height = manager
+                .core_wallet_state_blocking(&wallet_id)
+                .expect("known wallet")
+                .synced_height;
+            let rewound_height = initial_height - 20;
+            assert!(manager.spv_rescan_filters_blocking(&wallet_id, rewound_height));
+            assert_eq!(
+                manager
+                    .core_wallet_state_blocking(&wallet_id)
+                    .expect("known wallet")
+                    .synced_height,
+                rewound_height
+            );
+
+            // Equal and forward requests are successful no-ops; neither may
+            // advance the filter checkpoint.
+            assert!(manager.spv_rescan_filters_blocking(&wallet_id, rewound_height));
+            assert!(manager.spv_rescan_filters_blocking(&wallet_id, initial_height + 20));
+            assert_eq!(
+                manager
+                    .core_wallet_state_blocking(&wallet_id)
+                    .expect("known wallet")
+                    .synced_height,
+                rewound_height
+            );
+
+            assert!(!manager.spv_rescan_filters_blocking(&[0xFF; 32], 40));
+        })
+        .await
+        .expect("blocking accessor task");
     }
 }
