@@ -1228,119 +1228,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 // ── Deferred build → broadcast/release core-send (BIP70/BIP270) ───────
 //
 // ADDITIVE surface over the immediate `coreWalletBroadcastTransaction` path:
-// a signed transaction built by [coreTxBuilderBuildSigned] can be registered
-// (reserving its UTXOs), its raw bytes handed to a merchant server, and only
-// then broadcast on ack — or its reservation released on nack/abandonment.
-// Backed by the process-global registry in `platform_wallet_ffi`
+// [coreWalletFinalizeSignedPayment] atomically funds, reserves, signs, and
+// registers a builder in one native call, returning the raw bytes to hand to a
+// merchant server; the reservation is then broadcast on ack — or released on
+// nack/abandonment. Backed by the process-global registry in `platform_wallet_ffi`
 // (`core_wallet_signed_payment_*`). See `SignedPaymentRegistry`.
-
-/// `core_wallet_signed_payment_register` — register a built+signed transaction
-/// (from [coreTxBuilderBuildSigned]) for deferred submission, holding its UTXO
-/// reservation. `accountType`/`accountIndex` are the funding account (0 BIP44,
-/// 1 BIP32, 2 CoinJoin). The passed `tx` is NOT consumed — free it separately
-/// with [coreTransactionFree].
-///
-/// Returns a big-endian BLOB the Kotlin side decodes into a
-/// `SignedCoreTransaction`:
-/// `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
-/// The raw tx bytes come back in this same call (no second native round trip).
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletRegisterSignedPayment(
-    mut env: JNIEnv,
-    _class: JClass,
-    core_handle: jlong,
-    tx: jlong,
-    account_type: jni::sys::jint,
-    account_index: jni::sys::jint,
-) -> jbyteArray {
-    guard(&mut env, ptr::null_mut(), |env| {
-        if tx == 0 {
-            throw_sdk_exception(env, 1, "transaction handle is 0");
-            return ptr::null_mut();
-        }
-        let Some(account_type) = core_account_type(account_type) else {
-            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
-            return ptr::null_mut();
-        };
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return ptr::null_mut();
-        }
-
-        let mut token: u64 = 0;
-        let mut fee: u64 = 0;
-        let mut out_txid: *mut c_char = ptr::null_mut();
-        let mut out_bytes_ptr: *const u8 = ptr::null();
-        let mut out_bytes_len: usize = 0;
-        let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_payment_register(
-                core_handle as Handle,
-                tx as *const platform_wallet_ffi::FFICoreTransaction,
-                account_type,
-                account_index as u32,
-                &mut token as *mut u64,
-                &mut fee as *mut u64,
-                &mut out_txid as *mut *mut c_char,
-                &mut out_bytes_ptr as *mut *const u8,
-                &mut out_bytes_len as *mut usize,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-        if out_txid.is_null() {
-            throw_sdk_exception(env, 1, "register returned a NULL txid");
-            return ptr::null_mut();
-        }
-        // Copy the txid out, then free the Rust-owned C string.
-        let txid = unsafe { CStr::from_ptr(out_txid) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
-
-        // Copy the raw tx bytes immediately: the pointer borrows the still-live
-        // transaction's own buffer.
-        let tx_bytes: &[u8] = if out_bytes_ptr.is_null() || out_bytes_len == 0 {
-            &[]
-        } else {
-            unsafe { std::slice::from_raw_parts(out_bytes_ptr, out_bytes_len) }
-        };
-
-        // Assemble the big-endian BLOB (matches the Kotlin ByteBuffer decoder).
-        let txid_bytes = txid.into_bytes();
-        let mut blob = Vec::with_capacity(8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
-        blob.extend_from_slice(&token.to_be_bytes());
-        blob.extend_from_slice(&fee.to_be_bytes());
-        blob.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
-        blob.extend_from_slice(&txid_bytes);
-        blob.extend_from_slice(&(tx_bytes.len() as u32).to_be_bytes());
-        blob.extend_from_slice(tx_bytes);
-        match env.byte_array_from_slice(&blob) {
-            Ok(array) => array.into_raw(),
-            Err(_) => {
-                // The registration already committed and is holding the funding
-                // reservation; release the token so it isn't orphaned to the
-                // 24-block TTL backstop when Kotlin never receives it.
-                let _ = unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
-                ptr::null_mut()
-            }
-        }
-    })
-}
 
 /// `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign, and
 /// register a builder for deferred (BIP70/BIP270) submission in ONE native
-/// operation. This is the concurrency-safe replacement for the deprecated
-/// `coreTxBuilderSetFunding` + `coreTxBuilderBuildSigned` +
-/// `coreWalletRegisterSignedPayment` sequence: selection and reservation commit
-/// as a single unit under the wallet-manager lock, so concurrent deferred builds
-/// (or a deferred build racing an immediate send) can no longer double-select an
-/// input. CONSUMES [builder]. `accountType`/`accountIndex` are the funding
-/// account (0 BIP44, 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a
-/// `MnemonicResolverHandle`.
+/// operation. Selection and reservation commit as a single unit under the
+/// wallet-manager lock, so concurrent deferred builds (or a deferred build
+/// racing an immediate send) can no longer double-select an input. CONSUMES
+/// [builder]. `accountType`/`accountIndex` are the funding account (0 BIP44,
+/// 1 BIP32, 2 CoinJoin); [coreSignerHandle] is a `MnemonicResolverHandle`.
 ///
-/// Returns the same big-endian BLOB `coreWalletRegisterSignedPayment` returns,
-/// decoded into a `SignedCoreTransaction`:
+/// Returns a big-endian BLOB decoded into a `SignedCoreTransaction`:
 /// `u64 token, u64 feeDuffs, u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]

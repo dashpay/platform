@@ -40,6 +40,9 @@ pub struct FFITransactionBuilder {
 pub struct FFICoreTransaction {
     tx_bytes: *mut u8,
     tx_len: usize,
+    // Part of the C ABI (the Swift host reads `FFICoreTransaction.fee`); the
+    // Rust side only writes it, so silence the never-read lint.
+    #[allow(dead_code)]
     fee: u64,
 }
 
@@ -59,11 +62,6 @@ impl FFICoreTransaction {
         } else {
             unsafe { std::slice::from_raw_parts(self.tx_bytes, self.tx_len) }
         }
-    }
-
-    /// The fee (duffs) `build_signed` computed for this transaction.
-    pub(crate) fn fee(&self) -> u64 {
-        self.fee
     }
 }
 

@@ -56,25 +56,6 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
     }
 
     /**
-     * Register a built+signed [tx] for deferred (BIP70/BIP270) submission,
-     * holding its UTXO reservation, and return the resulting
-     * [ManagedPlatformWallet.SignedCoreTransaction]. Does NOT consume [tx] — the
-     * caller still closes it. Decodes the single register BLOB
-     * (`token, feeDuffs, txid, rawTxBytes`) — one native round trip.
-     */
-    internal fun registerSignedPayment(
-        tx: CoreTransaction,
-    ): ManagedPlatformWallet.SignedCoreTransaction {
-        val blob = WalletManagerNative.coreWalletRegisterSignedPayment(
-            handle,
-            tx.handle,
-            tx.accountType.ffiValue,
-            tx.accountIndex,
-        )
-        return ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
-    }
-
-    /**
      * Broadcast the deferred payment behind [token] and return its txid. A
      * stale / already-broadcast / wrong-wallet token surfaces as
      * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken].
