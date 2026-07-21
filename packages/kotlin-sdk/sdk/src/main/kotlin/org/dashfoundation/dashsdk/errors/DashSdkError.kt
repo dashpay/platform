@@ -203,12 +203,17 @@ sealed class DashSdkError(
                  * cannot drift.
                  *
                  * DEPRECATED as a discriminator: superseded by the typed
-                 * code-31 mapping above; the marker match is retained only
-                 * for the transition window where an old native library
-                 * (pre-code-31) is paired with new Kotlin during partial
-                 * builds. Remove the fallback (and this constant's matcher
-                 * role) in the next minor release once the native artifacts
-                 * are guaranteed current.
+                 * code-31 mapping above. The marker match is retained for
+                 * the #4191 merge-order transition — a consumer pinned at
+                 * #4191's revision (marker classification, no native code
+                 * 31) or any Rust conversion path that flattens the signer
+                 * failure to text without the machine prefix still
+                 * classifies via the marker. It is NOT a mixed-artifact
+                 * escape hatch: an old native library paired with new
+                 * Kotlin is unsupported outright (the sign-completion JNI
+                 * arity changed from 3 to 4 args — every completion would
+                 * be a type-confused native call). Remove the fallback (and
+                 * this constant's matcher role) in the next minor release.
                  */
                 const val MESSAGE_MARKER = "no private key stored for"
             }
@@ -293,9 +298,10 @@ sealed class DashSdkError(
          * completion arrives TYPED as code 31
          * (`ErrorSigningKeyUnavailable`, dashpay/platform#4060 finding 7);
          * the legacy message-marker sniff on the catch-all codes is a
-         * deprecated transition fallback for old native libraries (never
+         * deprecated fallback for the #4191 merge-order transition (never
          * applied to the dedicated retry-semantics types, so those are
-         * never overridden).
+         * never overridden; mixed old-native/new-Kotlin artifacts are
+         * unsupported — see [PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER]).
          */
         private fun fromPlatformWalletNative(
             code: Int,
@@ -305,10 +311,13 @@ sealed class DashSdkError(
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
             6 -> // ErrorWalletOperation
-                // @Deprecated fallback: the marker sniff survives only for
-                // old-native/new-Kotlin partial builds; the typed code 31
-                // below is the real discriminator (#4060 finding 7). Remove
-                // with MESSAGE_MARKER's matcher role next minor release.
+                // @Deprecated fallback: the marker sniff survives for the
+                // #4191 merge-order transition (and any conversion path
+                // that lost the machine prefix); the typed code 31 below is
+                // the real discriminator (#4060 finding 7). NOT for mixed
+                // old-native/new-Kotlin builds — those are unsupported (the
+                // completion JNI arity changed). Remove with
+                // MESSAGE_MARKER's matcher role next minor release.
                 if (isSigningKeyUnavailable(message)) {
                     PlatformWallet.SigningKeyUnavailable(message, cause)
                 } else {

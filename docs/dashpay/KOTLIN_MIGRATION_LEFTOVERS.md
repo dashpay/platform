@@ -58,9 +58,11 @@ when the four stacked PRs collapse into one.
   "missing key" failure now travels as a typed completion code (rs-sdk-ffi
   `DashSDKSignerErrorCode::SigningKeyUnavailable` → platform-wallet code 31 →
   `DashSdkError.PlatformWallet.SigningKeyUnavailable`). The message-marker
-  sniff on the catch-all codes is retained ONLY for old-native/new-Kotlin
-  partial builds; delete it (and `MESSAGE_MARKER`'s matcher role) in the next
-  minor release. Accepted residual until rs-dpp grows a typed variant: the
+  sniff on the catch-all codes is retained ONLY for the #4191 merge-order
+  transition and for conversion paths that lose the machine prefix — NOT for
+  mixed old-native/new-Kotlin builds, which the completion JNI arity change
+  (3→4 args) makes unsupported outright; delete it (and `MESSAGE_MARKER`'s
+  matcher role) in the next minor release. Accepted residual until rs-dpp grows a typed variant: the
   Rust-internal segment rides the `signer_error:key_unavailable: ` prefix
   through `ProtocolError::Generic` (typed at both ABI edges, one Rust-owned
   constant bridging the string segment).

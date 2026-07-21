@@ -675,8 +675,11 @@ Recorded in `sdk-parity-manifest.json`; rationale here:
   `signer_error:key_unavailable: ` through `ProtocolError::Generic` (a typed
   rs-dpp variant was rejected for serialization blast radius — accepted
   residual). The Kotlin `MESSAGE_MARKER` text sniff survives ONLY as a
-  deprecated old-native fallback; remove it (and the marker's matcher role)
-  in the next minor release once native artifacts are guaranteed current.
+  deprecated fallback for the #4191 merge-order transition (marker-based
+  classification predating the typed code) and for conversion paths that
+  lose the machine prefix; mixed old-native/new-Kotlin artifacts are
+  unsupported outright (the sign-completion JNI arity changed 3→4 args).
+  Remove it (and the marker's matcher role) in the next minor release.
 
 ## 13. Explicitly out of scope
 

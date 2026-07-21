@@ -569,6 +569,13 @@ class WalletStorage(
             keystore.hasIdentityKeysKey(recordedAlias)
         ) {
             // Rung 2 — the blob is CURRENT under the recorded alias.
+            //
+            // TOCTOU window (pre-existing #4172 parity, accepted): the alias
+            // can rotate between the fingerprint read above and this
+            // decrypt. The stale decrypt then fails as a wrong-key crypto
+            // error and falls to the recovery ladder below (→ null when no
+            // former key opens it — a re-derive signal) — never stale
+            // plaintext, and never an uncaught crypto exception.
             return try {
                 keystore.decrypt(blob, alias = recordedAlias)
             } catch (e: UserNotAuthenticatedException) {

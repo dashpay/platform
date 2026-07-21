@@ -145,12 +145,14 @@ class DashSdkErrorTest {
     fun signingKeyUnavailableIsRecognizedByItsMessageMarker() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
         val marker = DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER
-        // DEPRECATED transition fallback: an OLD native library (pre the
-        // typed code 31) still returns the completion error as free text
-        // under the catch-all codes (ErrorUnknown = 99 via the blanket
+        // DEPRECATED fallback for the #4191 merge-order transition: at
+        // #4191's revision the completion error travels as free text under
+        // the catch-all codes (ErrorUnknown = 99 via the blanket
         // PlatformWalletError conversion, sometimes wrapped as
         // ErrorWalletOperation = 6) — both must keep surfacing typed until
-        // the fallback's removal (#4052, #4060 finding 7).
+        // the fallback's removal (#4052, #4060 finding 7). Mixed
+        // old-native/new-Kotlin artifacts are unsupported (JNI arity
+        // change), so that pairing is NOT what this covers.
         for (code in intArrayOf(6, 99)) {
             val mapped = DashSdkError.fromNative(
                 DashSDKException(offset + code, "Signing failed: $marker deadbeef00112233…"),

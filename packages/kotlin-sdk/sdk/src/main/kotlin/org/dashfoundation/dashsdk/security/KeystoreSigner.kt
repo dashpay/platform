@@ -149,9 +149,12 @@ class KeystoreSigner(
                 // completion ABI and comes back as platform-wallet code 31 →
                 // DashSdkError.PlatformWallet.SigningKeyUnavailable
                 // (dashpay/platform#4060 finding 7). The MESSAGE_MARKER text
-                // is ALSO kept during the transition window so an old native
-                // library paired with new Kotlin (partial builds) still maps
-                // via the deprecated message fallback.
+                // is ALSO kept for the #4191 merge-order transition (its
+                // marker-based classification predates the typed code) and
+                // as defense in depth for any conversion path that loses the
+                // machine prefix — NOT for mixed old-native/new-Kotlin
+                // builds, which the completion JNI arity change makes
+                // unsupported outright.
                 SignerNative.completeSign(
                     completionToken,
                     null,
