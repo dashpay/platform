@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
