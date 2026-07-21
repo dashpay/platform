@@ -402,6 +402,33 @@ class WalletStorageUpgradeMatrixTest {
     }
 
     /**
+     * The invalidation signal must also escape the former-RSA rung: a
+     * KeyPermanentlyInvalidatedException from the retained pre-alias-split key
+     * RETHROWS instead of collapsing to null ("not this key"), so the signer's
+     * classifier types the failure and the durable repair seeding (finding-3
+     * hook) fires for pre-alias-split blobs too — swallowing it here left
+     * legacy keys permanently invisible to reconstruction.
+     */
+    @Test
+    fun invalidatedFormerRsaKeyRethrowsInsteadOfNull() = runBlocking {
+        fake.scheme = FakeKeystoreManager.Scheme.FORMER_RSA
+        storage.storePrivateKey(pub, secret)
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
+
+        fake.throwInvalidatedOnLegacyRsaDecrypt = true
+        assertThrows(KeyPermanentlyInvalidatedException::class.java) {
+            runBlocking { storage.retrievePrivateKey(pub) }
+        }
+
+        // Once the invalidated key is gone (Keystore regen), recovery resumes
+        // the normal not-this-key path instead of failing typed forever.
+        fake.throwInvalidatedOnLegacyRsaDecrypt = false
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.NONE
+        assertNull(storage.retrievePrivateKey(pub))
+    }
+
+    /**
      * Defense in depth on the fast path: a fingerprint-matched blob whose
      * decrypt still fails with an unexpected crypto error (rotation race /
      * provider quirk) falls to the recovery ladder — and, with no former key
@@ -571,6 +598,7 @@ private class FakeKeystoreManager :
      */
     var policyFingerprintSuffix: String = ""
     var throwAuthOnLegacyRsaDecrypt: Boolean = false
+    var throwInvalidatedOnLegacyRsaDecrypt: Boolean = false
     var throwInvalidatedOnPolicyDecrypt: Boolean = false
     var throwBadPaddingOnPolicyDecrypt: Boolean = false
     var invalidatedCleanupRan: Boolean = false
@@ -708,6 +736,9 @@ private class FakeKeystoreManager :
         // Auth-gated former RSA key with a closed window throws before the padding
         // check (parity with AndroidKeyStore), independent of blob match.
         if (throwAuthOnLegacyRsaDecrypt) throw UserNotAuthenticatedException()
+        // An invalidated (lock-screen/biometric change) former RSA key also
+        // throws at cipher.init, before any padding check.
+        if (throwInvalidatedOnLegacyRsaDecrypt) throw KeyPermanentlyInvalidatedException()
         if (blob.ciphertext[0] == TAG_FORMER_RSA) return plaintextOfRsa(blob)
         throw BadPaddingException("former RSA key cannot open this blob")
     }

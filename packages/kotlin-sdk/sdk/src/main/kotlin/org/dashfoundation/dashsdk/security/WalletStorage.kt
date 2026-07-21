@@ -623,12 +623,19 @@ class WalletStorage(
      * the key is present but did not write the blob — presence alone is not proof
      * of origin, so that throw must be absorbed here rather than escaping
      * uncaught. `UserNotAuthenticatedException` is a closed-auth-window signal,
-     * never a wrong key, so it propagates unchanged.
+     * never a wrong key, so it propagates unchanged —
+     * and `KeyPermanentlyInvalidatedException` must propagate too: it means the
+     * retained former-RSA key EXISTS but was invalidated (lock-screen /
+     * biometric change), which is not "not this key" — swallowing it to `null`
+     * would hide the invalidation from the signer's classifier and the durable
+     * repair seeding (the finding-3 hook) for pre-alias-split blobs.
      */
     private fun tryFormerRsaRecovery(blob: KeystoreManager.EncryptedBlob): ByteArray? =
         try {
             keystore.decryptLegacyRsaKeysBlob(blob)
         } catch (e: UserNotAuthenticatedException) {
+            throw e
+        } catch (e: KeyPermanentlyInvalidatedException) {
             throw e
         } catch (e: GeneralSecurityException) {
             null
