@@ -99,7 +99,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockInsufficientFunds` (native code 26). Asset-lock coin
+         * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
          * selection came up short over the *permitted* funding set — the requested
          * amount plus the L1 fee exceeds the spendable funds the selector was
          * allowed to draw on. Raised strictly pre-broadcast (while BUILDING the
@@ -114,7 +114,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockCrossDomainConsentRequired` (native code 27). The default
+         * `ErrorAssetLockCrossDomainConsentRequired` (native code 30). The default
          * single-privacy-domain funding rule (dashpay/platform#4184) refused to
          * co-spend across privacy domains: the transparent domain (BIP44 + BIP32)
          * alone cannot cover the asset lock, but the wallet-wide union — adding
@@ -374,8 +374,8 @@ sealed class DashSdkError(
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
-            26 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
-            27 -> PlatformWallet.AssetLockCrossDomainConsentRequired(message, cause) // ErrorAssetLockCrossDomainConsentRequired
+            29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
+            30 -> PlatformWallet.AssetLockCrossDomainConsentRequired(message, cause) // ErrorAssetLockCrossDomainConsentRequired
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message
