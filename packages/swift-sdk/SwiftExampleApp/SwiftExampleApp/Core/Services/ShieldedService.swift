@@ -685,7 +685,10 @@ class ShieldedService: ObservableObject {
     /// `PersistentShieldedSyncState` rows would silently survive
     /// (the symptom the user reported when "Clear" left a row
     /// behind for a non-active wallet).
-    func clearLocalState(modelContext: ModelContext) async {
+    func clearLocalState(
+        modelContext: ModelContext,
+        resetRustStateForTesting: (() throws -> Void)? = nil
+    ) async {
         // Capture the manager before the soft-cleanup below
         // touches anything, so we can stop the background loop
         // first. (We used to capture `network` here too for the
@@ -713,8 +716,9 @@ class ShieldedService: ObservableObject {
         //    The single SQLite commitment-tree file stays open;
         //    the next `bindShielded` call repopulates the
         //    registries and the next sync re-saves notes via
-        //    the changeset path. Best-effort — failure logs but
-        //    doesn't abort the wipe.
+        //    the changeset path. This reset is load-bearing: if it
+        //    cannot run, abort the host-row wipe so the tree file and
+        //    SwiftData rows cannot diverge.
         //
         //    Re-binding scope after Clear: `clearShielded` drops
         //    EVERY wallet (not just the mirror's `firstWallet`)
@@ -743,14 +747,21 @@ class ShieldedService: ObservableObject {
         //    every wallet on any wallet-set change or network switch. We
         //    keep the WIPE scope global on purpose (see the class-level
         //    doc below) — this note is about the re-BIND scope.
-        if let managerForStop {
-            do {
+        do {
+            if let resetRustStateForTesting {
+                try resetRustStateForTesting()
+            } else {
+                guard let managerForStop else {
+                    lastError = "Failed to reset shielded state: no wallet manager is bound."
+                    SDKLogger.error(lastError ?? "")
+                    return
+                }
                 try managerForStop.clearShielded()
-            } catch {
-                SDKLogger.error(
-                    "ShieldedService.clearLocalState: clearShielded failed: \(error.localizedDescription)"
-                )
             }
+        } catch {
+            lastError = "Failed to reset shielded state: \(error.localizedDescription)"
+            SDKLogger.error(lastError ?? "")
+            return
         }
 
         // 2) Delete every shielded SwiftData row across all
