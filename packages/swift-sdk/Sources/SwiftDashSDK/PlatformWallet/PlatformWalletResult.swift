@@ -85,6 +85,24 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// structured signer completion code (dashpay/platform#4060 finding 7).
     /// Route to key repair; not retryable as-is.
     case errorSigningKeyUnavailable = 31
+    /// A deferred (BIP70/BIP270) reservation token has outlived its funding
+    /// reservation's lifetime: key-wallet's TTL may already have swept and
+    /// re-selected the inputs, so acting on it could touch a newer, unrelated
+    /// reservation. The call did NOT touch the network. NOT retryable in place —
+    /// rebuild the payment.
+    case errorStaleReservationToken = 34
+    /// A deferred reservation token is unknown, already broadcast, or already
+    /// released — the guard that turns a double-broadcast (or a broadcast after
+    /// release) into a typed error instead of a second send. The call did NOT
+    /// touch the network. NOT retryable: rebuild the payment. (Release is
+    /// idempotent and never surfaces this.)
+    case errorReservationTokenConsumed = 35
+    /// A deferred reservation token was minted against a different wallet
+    /// *generation* than the one broadcasting it (e.g. a wallet re-created under
+    /// the same id); its reservation lives in that other generation's reservation
+    /// set. The call did NOT touch the network and did NOT consume the rightful
+    /// owner's token. NOT retryable through this handle: rebuild the payment.
+    case errorReservationWalletMismatch = 36
     case notFound = 98
     case errorUnknown = 99
 
@@ -148,6 +166,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShutdownIncomplete
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE:
             self = .errorSigningKeyUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_STALE_RESERVATION_TOKEN:
+            self = .errorStaleReservationToken
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_RESERVATION_TOKEN_CONSUMED:
+            self = .errorReservationTokenConsumed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_RESERVATION_WALLET_MISMATCH:
+            self = .errorReservationWalletMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -280,6 +304,21 @@ public enum PlatformWalletError: LocalizedError {
     /// (dashpay/platform#4060 finding 7); route to key repair. Kotlin
     /// parity: `DashSdkError.PlatformWallet.SigningKeyUnavailable`.
     case signingKeyUnavailable(String)
+    /// A deferred (BIP70/BIP270) reservation token has outlived its funding
+    /// reservation's lifetime — key-wallet's TTL may already have swept and
+    /// re-selected the inputs. Nothing was broadcast. NOT retryable in place;
+    /// rebuild the payment. Sibling of `reservationTokenConsumed` and
+    /// `reservationWalletMismatch`, which this code used to conflate.
+    case staleReservationToken(String)
+    /// A deferred reservation token is unknown, already broadcast, or already
+    /// released — the double-broadcast guard. Nothing was broadcast. NOT
+    /// retryable; rebuild the payment.
+    case reservationTokenConsumed(String)
+    /// A deferred reservation token was minted against a different wallet
+    /// generation than the one broadcasting it (e.g. a wallet re-created under
+    /// the same id). Nothing was broadcast and the rightful owner's token was
+    /// not consumed. NOT retryable through this handle; rebuild the payment.
+    case reservationWalletMismatch(String)
     case notFound(String)
     case unknown(String)
 
@@ -304,6 +343,8 @@ public enum PlatformWalletError: LocalizedError {
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
              .signingKeyUnavailable(let m),
+             .staleReservationToken(let m), .reservationTokenConsumed(let m),
+             .reservationWalletMismatch(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -349,6 +390,12 @@ public enum PlatformWalletError: LocalizedError {
             self = .shutdownIncomplete(detail)
         case .errorSigningKeyUnavailable:
             self = .signingKeyUnavailable(detail)
+        case .errorStaleReservationToken:
+            self = .staleReservationToken(detail)
+        case .errorReservationTokenConsumed:
+            self = .reservationTokenConsumed(detail)
+        case .errorReservationWalletMismatch:
+            self = .reservationWalletMismatch(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
