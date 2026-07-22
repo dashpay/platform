@@ -574,9 +574,18 @@ mod limit_policy_regression {
             )
             .expect("apply contract");
 
-        for (i, (color, amount)) in [("blue", 2u64), ("green", 3), ("red", 5), ("yellow", 7)]
-            .iter()
-            .enumerate()
+        // Five colors so the range predicate below matches FOUR distinct
+        // values — one more than `max_query_limit` — otherwise the clamp
+        // case would pass even against an unbounded walk.
+        for (i, (color, amount)) in [
+            ("blue", 2u64),
+            ("green", 3),
+            ("red", 5),
+            ("white", 11),
+            ("yellow", 7),
+        ]
+        .iter()
+        .enumerate()
         {
             insert_widget(&drive, &data_contract, i, color, *amount);
         }
