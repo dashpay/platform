@@ -48,9 +48,10 @@ impl SecretStore {
         Ok(Self::File(EncryptedFileStore::open(path, passphrase)?))
     }
 
-    /// [`file`](SecretStore::file), but every Argon2id derivation this store
-    /// performs runs at the enforced FLOOR instead of the shipped 64 MiB
-    /// target — the vault unlock here AND the per-secret Tier-2 wrap inside
+    /// [`file`](SecretStore::file), but a fresh vault and every per-secret
+    /// Tier-2 wrap use the enforced FLOOR instead of the shipped 64 MiB target.
+    /// An existing vault still unlocks under the parameters in its header. The
+    /// floor also applies inside
     /// [`set_secret`](SecretStore::set_secret) /
     /// [`reprotect`](SecretStore::reprotect).
     ///
@@ -62,7 +63,8 @@ impl SecretStore {
     /// merely cheap to attack, so never point it at live secrets.
     ///
     /// Gated twice: by the `test-util` feature (or `cfg(test)`) at compile
-    /// time, and by a runtime panic in a build without `debug_assertions`.
+    /// time, and by a runtime panic outside debug builds and this crate's own
+    /// test harness.
     /// See [`EncryptedFileStore::open_mock`] for the full rationale.
     ///
     /// # Panics

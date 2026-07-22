@@ -398,12 +398,14 @@ Ordinary integration tests use `EncryptedFileStore::open` or
 `SecretStore::file` and therefore exercise the production Argon2id target.
 Downstream suites that would otherwise pay that cost throughout an end-to-end
 flow may enable the dev-only `test-util` feature and use
-`EncryptedFileStore::open_mock` or `SecretStore::file_mock`. Those constructors
-floor every vault and per-object Argon2id derivation through
-`KdfParams::floor_target`, the single choke point for weak-but-legal KDF
-parameters. Accidental production use is blocked twice: the constructors are
-compiled only for tests or with `test-util`, and `KdfParams::floor_target`
-panics when reached in a release build.
+`EncryptedFileStore::open_mock` or `SecretStore::file_mock`. For a fresh vault,
+those constructors select the floor Argon2id parameters; an existing vault
+retains the parameters recorded in its header. Per-object wrapping also uses
+the floor. `KdfParams::floor_target` is the single choke point for selecting
+these weak-but-legal parameters. Accidental production use is blocked twice:
+the constructors are compiled only for tests or with `test-util`, and
+`KdfParams::floor_target` panics outside debug builds and this crate's own test
+harness.
 
 Backend selection is an explicit operator decision; there is no
 automatic fallback between backends.

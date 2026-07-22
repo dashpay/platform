@@ -168,11 +168,11 @@ impl EncryptedFileStore {
         Self::open_inner(path.as_ref(), passphrase, KdfParams::default_target())
     }
 
-    /// [`open`](Self::open), but every Argon2id derivation this store
-    /// performs runs at the enforced FLOOR instead of the shipped 64 MiB
-    /// target — the fastest configuration the crate's own bounds check
-    /// still accepts. Covers both the vault-unlock derivation here and the
-    /// per-secret Tier-2 wrap inside
+    /// [`open`](Self::open), but fresh-vault creation and every per-secret
+    /// Tier-2 wrap use the enforced FLOOR instead of the shipped 64 MiB target
+    /// — the fastest configuration the crate's own bounds check still accepts.
+    /// An existing vault still unlocks under the parameters in its header. The
+    /// floor also applies inside
     /// [`SecretStore::set_secret`](crate::secrets::SecretStore::set_secret) /
     /// [`reprotect`](crate::secrets::SecretStore::reprotect).
     ///
@@ -228,7 +228,7 @@ impl EncryptedFileStore {
 
     /// Shared open/create core for [`open`](Self::open),
     /// [`open_unprotected`](Self::open_unprotected) and
-    /// [`open_mock`](Self::open_mock). Does NOT apply the blank-passphrase
+    /// [`open_mock`](Self::open_mock). Does not apply the passphrase-length
     /// guard — the public doors decide that. `kdf` is the params a FRESH
     /// vault is created under; an existing one keeps its own header.
     fn open_inner(

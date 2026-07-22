@@ -256,10 +256,10 @@ __test-helpers = ["sqlite"]
 # e2e tests that drive the #3692 manager-apply path; enabled in the integrated stack (dash-evo-tool).
 rehydration-apply = []
 # Exposes `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault
-# constructors that force every Argon2id derivation to the enforced floor so a
-# downstream test suite is not charged a production-strength KDF per call
-# (#4111). Enable it in `[dev-dependencies]` ONLY; the constructors panic in a
-# build without `debug_assertions`.
+# constructors that use the Argon2id floor for fresh-vault creation and
+# per-secret wrapping; existing vaults retain their header parameters. Enable
+# it in `[dev-dependencies]` ONLY. The constructors panic outside debug builds
+# and this crate's own test harness.
 test-util = []
 # Pass-through to `platform-wallet/shielded` so the feature-gated
 # `PlatformWalletChangeSet::shielded` field is visible to the exhaustive

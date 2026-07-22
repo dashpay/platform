@@ -104,9 +104,9 @@ impl SecretString {
     /// Returns only blank-ness — never a borrowed view of the plaintext —
     /// and uses [`str::trim`] (the Unicode `White_Space` property), so a
     /// NBSP (`U+00A0`) trims to blank but a ZWSP (`U+200B`, not
-    /// `White_Space`) does not. This is the enforcement primitive behind
-    /// the Tier-1 blank-passphrase guard and the Tier-2 blank-object-
-    /// password reject. Always available — **not** feature-gated.
+    /// `White_Space`) does not. Minimum-length enforcement uses
+    /// [`is_below_minimum_passphrase_len`](Self::is_below_minimum_passphrase_len)
+    /// instead. Always available — **not** feature-gated.
     pub fn is_blank(&self) -> bool {
         self.inner.trim().is_empty()
     }
