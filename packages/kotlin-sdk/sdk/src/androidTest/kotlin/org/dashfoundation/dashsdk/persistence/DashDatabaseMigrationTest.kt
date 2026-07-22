@@ -264,27 +264,68 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v7 → v8 adds the DIP-13 `invitations` table (additive). The new table
+     * must accept a row under its `outPointHex` primary key, reject a
+     * duplicate outpoint (upsert-in-place semantics rely on the PK), and
+     * default nothing — every column is NOT NULL by schema.
+     */
+    @Test
+    fun migrate7To8AddsInvitationsTable() {
+        helper.createDatabase(dbName, 7).close()
+
+        val db = helper.runMigrationsAndValidate(dbName, 8, true, DashDatabase.MIGRATION_7_8)
+        db.execSQL(
+            "INSERT INTO invitations (outPointHex, rawOutPoint, walletId, " +
+                "fundingIndexRaw, amountDuffs, expiryUnix, createdAtSecs, hasInviter, " +
+                "statusRaw, reclaimInFlight, createdAt, updatedAt) " +
+                "VALUES ('aa:1', x'AB', x'01', 0, 3000000, 10, 5, 1, 0, 0, 0, 0)",
+        )
+        db.query(
+            "SELECT amountDuffs, statusRaw, reclaimInFlight FROM invitations " +
+                "WHERE outPointHex = 'aa:1'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3_000_000L, c.getLong(0))
+            assertEquals(0, c.getInt(1))
+            assertEquals(0, c.getInt(2))
+        }
+        try {
+            db.execSQL(
+                "INSERT INTO invitations (outPointHex, rawOutPoint, walletId, " +
+                    "fundingIndexRaw, amountDuffs, expiryUnix, createdAtSecs, hasInviter, " +
+                    "statusRaw, reclaimInFlight, createdAt, updatedAt) " +
+                    "VALUES ('aa:1', x'AB', x'01', 0, 1, 1, 1, 0, 0, 0, 0, 0)",
+            )
+            org.junit.Assert.fail("expected an outPointHex PK violation")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            // expected
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            7,
+            8,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
+            DashDatabase.MIGRATION_7_8,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v7 schema. */
+    /** The full chain from v1 must also land on a valid v8 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            7,
+            8,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -292,6 +333,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
+            DashDatabase.MIGRATION_7_8,
         ).close()
     }
 }
