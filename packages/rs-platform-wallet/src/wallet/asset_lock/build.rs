@@ -99,7 +99,7 @@ enum PrivacyDomain {
 /// Classify a funds account into its [`PrivacyDomain`], or `None` for accounts
 /// that must never fund an asset lock (watch-only `DashpayExternalAccount` — a
 /// contact's coins the local mnemonic can't sign). Returning `None` here is what
-/// preserves the watch-only exclusion (finding 5b52d9844055) across every
+/// preserves the watch-only exclusion across every
 /// consent mode, replacing the old ad-hoc skip. Non-funds account types cannot
 /// appear in `all_funding_accounts()` and also map to `None` defensively.
 fn account_privacy_domain(managed_type: &ManagedAccountType) -> Option<PrivacyDomain> {
@@ -394,7 +394,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // domain (transparent + CoinJoin + DashPay-receiving). Watch-only
         // `DashpayExternalAccount` UTXOs are excluded here by
         // `account_privacy_domain` returning `None` — the same ownership carve-out
-        // as before (finding 5b52d9844055), now expressed through the domain map.
+        // as before, now expressed through the domain map.
         let mut transparent_total: u64 = 0;
         let mut union_total: u64 = 0;
         for acc in info.core_wallet.accounts.all_funding_accounts() {
@@ -465,7 +465,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // Watch-only `DashpayExternalAccount` UTXOs are never eligible in either
         // mode (`account_privacy_domain` returns `None`), so a naive `LargestFirst`
         // can no longer grab a contact's coins and sign them with the wrong local
-        // key (finding 5b52d9844055).
+        // key.
         let mut path_map: HashMap<DashAddress, DerivationPath> = HashMap::new();
         let mut extra_inputs: Vec<Utxo> = Vec::new();
         let mut selected_value: u64 = 0;
@@ -3238,7 +3238,7 @@ mod tests {
         assert_router_fix_records_spent_dashpay_input(DashpayLeg::ReceivingFunds).await;
     }
 
-    // -- Watch-only DashpayExternalAccount exclusion (finding 5b52d9844055) --
+    // -- Watch-only DashpayExternalAccount exclusion --
     //
     // A `DashpayExternalAccount` is created in production from a CONTACT's
     // decrypted xpub with `is_watch_only: true` (wallet/identity/network/
