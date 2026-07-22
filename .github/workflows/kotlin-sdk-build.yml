@@ -170,15 +170,10 @@ jobs:
 
             # Unlock the keyguard. With the screen kept on above, the device now
             # stays unlocked for the whole run instead of re-locking.
-            adb shell input keyevent KEYCODE_WAKEUP
-            adb shell wm dismiss-keyguard
-            adb shell input text 1234
-            adb shell input keyevent KEYCODE_ENTER
-            sleep 5
-
-            # Fail loudly if the device is still locked, so a spurious
-            # InvalidKeyException can't masquerade as a real test failure.
-            adb shell dumpsys trust | grep -q 'deviceLocked=0' || { echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1; }
+            # Credential acceptance and keyguard dismissal can race during a
+            # cold emulator boot. Retry the complete sequence atomically, then
+            # fail loudly before tests if the device never reaches unlocked.
+            for attempt in 1 2 3; do adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; adb shell input text 1234; adb shell input keyevent KEYCODE_ENTER; sleep 2; adb shell wm dismiss-keyguard; sleep 1; adb shell dumpsys trust | grep -q 'deviceLocked=0' && exit 0; done; echo "::error::Emulator is still locked (deviceLocked=1); Keystore-backed tests would fail spuriously."; adb shell dumpsys trust; exit 1
 
             ./gradlew :sdk:connectedDebugAndroidTest --stacktrace
 
