@@ -29,7 +29,17 @@
 //!   wallet under the same id whose in-memory `ReservationSet` no longer holds
 //!   the inputs, are both told apart: broadcasting through either is a
 //!   [`SignedPaymentError::WalletMismatch`] rather than a spend against stale
-//!   state.
+//!   state. That check happens at the registry lock, but the reservation
+//!   cleanup that follows it runs later, off the registry lock — so the
+//!   check-then-cleanup is *not* one atomic step against a same-id recreation.
+//!   The cleanup is made safe on its own: every reservation release
+//!   ([`CoreWallet::release_transaction_reservation`]) re-validates the
+//!   generation and mutates the `ReservationSet` under a single manager-lock
+//!   hold, acting only if the wallet still registered under the id is the same
+//!   generation the token captured (its per-generation balance `Arc`). A
+//!   recreation needs the manager write lock, so it cannot slip between that
+//!   check and the release; a stale token can therefore never free a re-created
+//!   generation's reservation.
 //! * A token has a bounded lifetime ([`RESERVATION_MAX_AGE_BLOCKS`]). Once the
 //!   wallet's `last_processed_height` has advanced far enough past the height at
 //!   which `build_signed` / `finalize_transaction` stamped the reservation that
@@ -1583,6 +1593,99 @@ mod tests {
             broadcaster.count.load(Ordering::SeqCst),
             0,
             "the network must not have been hit"
+        );
+    }
+
+    /// Replace the wallet's per-generation balance `Arc` under the manager write
+    /// lock, modelling a same-id remove-then-recreate: `wallet_id`, the manager
+    /// `Arc`, and the account `ReservationSet` (with the token's input still
+    /// reserved) are all preserved, only the generation marker is fresh. The
+    /// still-reserved input now conceptually belongs to the NEW generation.
+    async fn simulate_same_id_recreation<B: TransactionBroadcaster>(core: &CoreWallet<B>) {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.balance = Arc::new(crate::wallet::core::WalletBalance::new());
+    }
+
+    /// Regression for the non-atomic generation-validation + cleanup: a token's
+    /// generation is validated at the registry lock, but its reservation cleanup
+    /// runs later off that lock. If the wallet is removed and re-created under
+    /// the SAME id in that window, an unguarded release-by-outpoint would free
+    /// the NEW generation's reservation on the same input.
+    ///
+    /// This test recreates the generation (same id, fresh balance `Arc`) between
+    /// registration and the release, then releases the now-stale token and
+    /// asserts the reservation SURVIVES — the release, bound to the token's own
+    /// generation under the manager lock, refuses to touch the re-created
+    /// generation. Under the pre-fix unconditional release the rebuild below
+    /// would succeed (the leak the reviewer flagged); with the guard it must
+    /// still fail.
+    #[tokio::test]
+    async fn recreation_between_validation_and_cleanup_cannot_release_new_generation() {
+        let broadcaster = Arc::new(RecordingBroadcaster::new());
+        let (core, signer, outputs) =
+            funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
+        let registry = SignedPaymentRegistry::new();
+
+        let tx = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await
+        .expect("build should succeed");
+        let token = registry
+            .register(
+                core.clone(),
+                tx,
+                AccountTypePreference::BIP44,
+                0,
+                core.last_processed_height().await,
+            )
+            .await;
+
+        // Reservation held: a rebuild fails at input selection.
+        let blocked = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
+        assert!(
+            matches!(blocked, Err(PlatformWalletError::TransactionBuild(_))),
+            "rebuild must fail while the reservation is held, got {blocked:?}"
+        );
+
+        // Same-id wallet recreation between the token's validation and its
+        // cleanup: the wallet under this id is now a DIFFERENT generation.
+        simulate_same_id_recreation(&core).await;
+
+        // Old cleanup runs. The token is dropped, but its release must NOT touch
+        // the re-created generation's reservation.
+        registry.release(token).await;
+        assert_eq!(registry.outstanding(), 0, "the stale token is dropped");
+
+        // The (new generation's) reservation on the input SURVIVES: a rebuild
+        // still cannot reselect it. Pre-fix, the unconditional release-by-outpoint
+        // would have freed it and this rebuild would succeed.
+        let rebuilt = build_signed_tx(
+            &core,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs,
+            &signer,
+        )
+        .await;
+        assert!(
+            matches!(rebuilt, Err(PlatformWalletError::TransactionBuild(_))),
+            "a stale token's cleanup must NOT release a re-created generation's \
+             reservation, got {rebuilt:?}"
         );
     }
 }
