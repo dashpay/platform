@@ -28,6 +28,9 @@ fn kind_of(err: WalletStorageError) -> PersistenceErrorKind {
         PersistenceError::LockPoisoned => {
             panic!("LockPoisoned has no Backend.kind — test was given LockPoisoned by accident")
         }
+        PersistenceError::UnsupportedOperation { .. } => {
+            panic!("WalletStorageError conversion cannot yield UnsupportedOperation")
+        }
     }
 }
 
