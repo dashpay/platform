@@ -38,10 +38,13 @@ pub(crate) static SIGNED_PAYMENT_REGISTRY: Lazy<SignedPaymentRegistry<SpvBroadca
 /// failure, and consume the token.
 ///
 /// The token is consumed atomically before the send, so a repeated or
-/// concurrent broadcast of the same token gets `ErrorStaleReservationToken`
-/// rather than a second send. `core_handle` must resolve to the same wallet
-/// instance the token was minted against; a re-created wallet yields
-/// `ErrorStaleReservationToken`. Writes `out_txid` (a heap C string freed with
+/// concurrent broadcast of the same token gets `ErrorReservationTokenConsumed`
+/// (27) rather than a second send. `core_handle` must resolve to the same wallet
+/// *generation* the token was minted against; a wallet re-created under the same
+/// id yields `ErrorReservationWalletMismatch` (28). A token whose reservation
+/// may already have aged out of key-wallet's TTL yields
+/// `ErrorStaleReservationToken` (26). (These three used to be conflated under
+/// code 26.) Writes `out_txid` (a heap C string freed with
 /// `core_wallet_free_address`) on success.
 ///
 /// # Safety
