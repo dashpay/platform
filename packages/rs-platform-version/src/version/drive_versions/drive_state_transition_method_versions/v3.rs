@@ -25,8 +25,8 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3: DriveStateTransitionMethodV
                 // PROTOCOL_VERSION_12 chain replay.
                 document_purchase_transition: 1, // changed
                 document_replace_transition: 0,
-                document_transfer_transition: 1, // changed
-                document_update_price_transition: 0,
+                document_transfer_transition: 1,     // changed
+                document_update_price_transition: 1, // changed
                 token_burn_transition: 0,
                 token_mint_transition: 0,
                 token_transfer_transition: 0,
