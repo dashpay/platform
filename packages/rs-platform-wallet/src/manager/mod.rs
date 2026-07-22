@@ -64,6 +64,9 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// auto-started — call `start` after wallets are registered. See
     /// [`DashPaySyncManager`].
     pub(super) dashpay_sync_manager: Arc<DashPaySyncManager>,
+    /// Tracks asynchronous payment hooks so manager shutdown can close
+    /// admission and drain every task before host callback contexts are freed.
+    pub(super) dashpay_payment_handler: Arc<DashPayPaymentHandler>,
     /// Periodic shielded (Orchard) note sync coordinator (spends are
     /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
@@ -170,7 +173,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             app_handler,
             lock_handler,
             balance_handler,
-            dashpay_payment_handler,
+            Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
         ]));
 
         let spv = Arc::new(SpvRuntime::new(
@@ -206,6 +209,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             platform_address_sync_manager: platform_address_sync,
             identity_sync_manager: identity_sync,
             dashpay_sync_manager: dashpay_sync,
+            dashpay_payment_handler,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
@@ -427,7 +431,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Stop all background tasks and wait for them to exit.
     ///
-    /// **Quiesces** the periodic coordinators
+    /// Stops SPV and **quiesces** the periodic coordinators
     /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
     /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each
     /// loop *and draining any in-flight pass to completion*, including
@@ -437,7 +441,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// shutdown is required (e.g. on app termination); a dirty drop
     /// simply leaks the tasks until the runtime exits.
     ///
-    /// Ordering matters: cancel-only `stop()` would let a pass already
+    /// Ordering matters: SPV is stopped and joined first so it cannot dispatch
+    /// more wallet events. Payment-task admission is then closed and all
+    /// admitted work is joined. A cancel-only `stop()` would let a pass already
     /// inside `sync_now` keep running and call `persister.store(...)` /
     /// fire a host completion callback after the FFI's `destroy`
     /// returned and the host freed the persister / event-handler
@@ -446,6 +452,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// and only THEN cancel + join the event adapter, which is the sink
     /// those stores feed into.
     pub async fn shutdown(&self) {
+        if let Err(error) = self.spv_manager.stop().await {
+            tracing::warn!(?error, "SPV shutdown failed");
+        }
+
+        self.dashpay_payment_handler.quiesce().await;
         self.platform_address_sync_manager.quiesce().await;
         self.identity_sync_manager.quiesce().await;
         self.dashpay_sync_manager.quiesce().await;

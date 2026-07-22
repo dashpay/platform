@@ -47,6 +47,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "random-public-keys",
   "random-identities",
   "random-documents",
+  "fixtures-and-mocks",
   "all-system_contracts",
   "json-conversion",
   "platform-value-json",

@@ -65,6 +65,10 @@ pub enum QueryError {
         ProtocolVersion,
         FeatureVersion,
     ),
+
+    /// Server-side query capacity was exhausted.
+    #[error("query resource exhausted: {0}")]
+    ResourceExhausted(String),
 }
 
 impl From<QueryError> for ResponseException {

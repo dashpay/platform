@@ -101,6 +101,18 @@ Those implementations must nevertheless satisfy the same Rust callback semantics
 
 ## 4. Correctness blockers
 
+**Current status (manifest reconciliation):** C1-C3 are the release-blocker
+slices described in the implementation-state note above as implemented at
+source/test level. For Kotlin, the manifest marks all three SDK capabilities
+supported: C1 (`persistence.platform_address_identity`) has a restart-covering
+Room regression; C2 (`core.atomic_send`) has shared reservation/failure unit
+coverage plus the host `CORE-05` manual case, with restart correctly marked
+`not_applicable`; and C3 (`tokens.full_u64_domain`) has Kotlin/JNI/Room/app
+coverage plus a restart-covering device migration test. Swift still has open
+restart gates for C1 and C3, so the manifest remains authoritative. The
+“Required change” text below is retained as historical design rationale, not as
+a claim that these Kotlin changes remain unimplemented.
+
 ### C1 — Android platform-address balance persistence corrupts derivation indices
 
 The Android balance callback currently copies callback `accountIndex` and

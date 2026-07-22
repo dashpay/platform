@@ -364,10 +364,12 @@ class WalletStorage(
         privateKey: ByteArray,
         ownerWalletId: ByteArray?,
     ) {
-        val blob = keystore.encrypt(privateKey, alias = KeystoreManager.KEYS_ALIAS)
+        val encrypted = keystore.encryptForKeysAlias(privateKey)
+        val blob = encrypted.blob
+        val fingerprint = encrypted.keyFingerprint
         store.edit {
             it[privateKeyKey(pubkeyHex)] = encode(blob)
-            it[privateKeyFingerprintKey(pubkeyHex)] = keystore.keysAliasFingerprint()
+            it[privateKeyFingerprintKey(pubkeyHex)] = fingerprint
             if (ownerWalletId != null) {
                 val indexKey = ownerIndexKey(ownerWalletId.toHex())
                 it[indexKey] = (it[indexKey] ?: emptySet()) + pubkeyHex.lowercase()
@@ -381,7 +383,11 @@ class WalletStorage(
      * currently in the Keystore — see [KeystoreManager.keysAliasFingerprint].
      * A missing fingerprint (written before this check existed) is treated
      * as unusable rather than trusted, since a stale RSA-shaped blob is
-     * indistinguishable from a current one by shape alone.
+     * indistinguishable from a current one by shape alone. Read-only: it uses
+     * the non-generating [KeystoreManager.keysAliasFingerprintOrNull], so an
+     * absent alias (e.g. just deleted by invalidation cleanup) returns `false`
+     * without regenerating a keypair — a capability probe on the Rust signer
+     * callback must never block that thread or mutate Keystore state.
      */
     private fun isCurrentKeysBlob(
         pubkeyHex: String,
@@ -390,7 +396,8 @@ class WalletStorage(
     ): Boolean {
         if (!keystore.isKeysBlobDecryptable(decode(encoded))) return false
         val fingerprint = prefs[privateKeyFingerprintKey(pubkeyHex)] ?: return false
-        return fingerprint == keystore.keysAliasFingerprint()
+        val current = keystore.keysAliasFingerprintOrNull() ?: return false
+        return fingerprint == current
     }
 
     /**
@@ -403,13 +410,22 @@ class WalletStorage(
         store.data.first()[ownerIndexKey(walletId.toHex())] ?: emptySet()
 
     /**
-     * Decrypt the private key for [pubkeyHex]. Throws
+     * Decrypt the private key for [pubkeyHex]. A stable blob whose stored
+     * key fingerprint no longer matches the current [KeystoreManager.KEYS_ALIAS]
+     * returns `null`, allowing the caller to re-derive it instead of trying
+     * OAEP with an unrelated replacement key. Rotation can still occur
+     * between this check and decrypt; that race deliberately remains a
+     * fail-closed crypto exception rather than returning stale plaintext.
+     *
+     * Throws
      * `UserNotAuthenticatedException` when the auth window expired — the
      * caller (KeystoreSigner) routes through [BiometricGate] and retries.
      * Callers must zero the returned array after use.
      */
     suspend fun retrievePrivateKey(pubkeyHex: String): ByteArray? {
-        val encoded = store.data.first()[privateKeyKey(pubkeyHex)] ?: return null
+        val prefs = store.data.first()
+        val encoded = prefs[privateKeyKey(pubkeyHex)] ?: return null
+        if (!isCurrentKeysBlob(pubkeyHex, encoded, prefs)) return null
         return keystore.decrypt(decode(encoded), alias = KeystoreManager.KEYS_ALIAS)
     }
 
@@ -465,8 +481,10 @@ class WalletStorage(
      * current [KeystoreManager.KEYS_ALIAS] RSA scheme. Blobs written by the
      * pre-RSA AES-GCM scheme survive in the DataStore but lost their key
      * when the RSA pair replaced it, so signing with them can only fail —
-     * key-health treats them as missing and offers a re-derive. Structural
-     * check only: never decrypts, never prompts.
+     * key-health treats them as missing and offers a re-derive. Read-only: it
+     * never decrypts, prompts, or generates a keypair (an absent alias just
+     * returns `false`), so it is safe to call from the synchronous signer
+     * capability probe without blocking or mutating Keystore state.
      */
     suspend fun isPrivateKeyDecryptable(pubkeyHex: String): Boolean {
         val prefs = store.data.first()

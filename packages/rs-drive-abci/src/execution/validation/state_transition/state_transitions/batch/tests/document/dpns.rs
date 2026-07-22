@@ -966,6 +966,15 @@ mod dpns_username_transfer_tests {
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::util::hash::hash_double;
     use dpp::util::strings::convert_to_homograph_safe_chars;
+    use drive::query::drive_document_average_query::{
+        AverageMode, DocumentAverageRequest, DocumentAverageResponse,
+    };
+    use drive::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse,
+    };
+    use drive::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, SumMode,
+    };
     use drive::query::{InternalClauses, WhereClause, WhereOperator};
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
@@ -1186,6 +1195,235 @@ mod dpns_username_transfer_tests {
         assert_eq!(record_identity, expected_identity_id);
     }
 
+    /// Asserts the document history system contract does not exist in the
+    /// state: before protocol version 13 it must be entirely absent, exactly
+    /// as on a non-upgraded node.
+    fn assert_document_history_contract_absent(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) {
+        let (_fee_result, maybe_contract) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                dpp::system_data_contracts::SystemDataContract::DocumentHistory
+                    .id()
+                    .to_buffer(),
+                None,
+                false,
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+
+        assert!(
+            maybe_contract.is_none(),
+            "the document history contract must not exist before protocol version 13"
+        );
+    }
+
+    fn history_where_by_contract(source_data_contract_id: Identifier) -> WhereClause {
+        WhereClause {
+            field: "dataContractId".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(source_data_contract_id.to_buffer()),
+        }
+    }
+
+    fn history_where_created_between(from_ms: u64, to_ms: u64) -> WhereClause {
+        WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::Between,
+            value: Value::Array(vec![Value::U64(from_ms), Value::U64(to_ms)]),
+        }
+    }
+
+    /// Provable aggregate count of history documents matching the where
+    /// clauses (whole doctype when empty).
+    fn history_aggregate_count(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> u64 {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let request = DocumentCountRequest {
+            contract: &history_contract,
+            document_type,
+            where_clauses,
+            order_clauses: vec![],
+            mode: CountMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &platform.config.drive,
+        };
+
+        match platform
+            .drive
+            .execute_document_count_request(request, None, platform_version)
+            .expect("expected the count query to execute")
+        {
+            DocumentCountResponse::Aggregate(count) => count,
+            other => panic!("expected an aggregate count, got {:?}", other),
+        }
+    }
+
+    /// Provable aggregate sum of the `price` property over history documents
+    /// matching the where clauses (whole doctype when empty).
+    fn history_aggregate_price_sum(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> i64 {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let request = DocumentSumRequest {
+            contract: &history_contract,
+            document_type,
+            sum_property: "price".to_string(),
+            where_clauses,
+            order_clauses: vec![],
+            mode: SumMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &platform.config.drive,
+        };
+
+        match platform
+            .drive
+            .execute_document_sum_request(request, None, platform_version)
+            .expect("expected the sum query to execute")
+        {
+            DocumentSumResponse::Aggregate(sum) => sum,
+            other => panic!("expected an aggregate sum, got {:?}", other),
+        }
+    }
+
+    /// Provable `(count, sum)` average pair of the `price` property over
+    /// history documents matching the where clauses.
+    fn history_aggregate_price_average(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        where_clauses: Vec<WhereClause>,
+        platform_version: &PlatformVersion,
+    ) -> (u64, i64) {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let request = DocumentAverageRequest {
+            contract: &history_contract,
+            document_type,
+            sum_property: "price".to_string(),
+            where_clauses,
+            order_clauses: vec![],
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &platform.config.drive,
+        };
+
+        match platform
+            .drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("expected the average query to execute")
+        {
+            DocumentAverageResponse::Aggregate { count, sum } => (count, sum),
+            other => panic!("expected an aggregate average, got {:?}", other),
+        }
+    }
+
+    /// Queries the document history system contract for history documents of
+    /// the given history document type recorded for a source document.
+    fn query_history_documents(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        history_document_type_name: &str,
+        source_data_contract_id: Identifier,
+        source_document_id: Identifier,
+    ) -> Vec<Document> {
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let history_document_type = history_contract
+            .document_type_for_name(history_document_type_name)
+            .expect("expected the history document type");
+
+        let drive_query = DriveDocumentQuery {
+            contract: &history_contract,
+            document_type: history_document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: BTreeMap::from([
+                    (
+                        "dataContractId".to_string(),
+                        WhereClause {
+                            field: "dataContractId".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Identifier(source_data_contract_id.to_buffer()),
+                        },
+                    ),
+                    (
+                        "documentId".to_string(),
+                        WhereClause {
+                            field: "documentId".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Identifier(source_document_id.to_buffer()),
+                        },
+                    ),
+                ]),
+            },
+            offset: None,
+            limit: None,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time_ms: None,
+        };
+
+        platform
+            .drive
+            .query_documents(drive_query, None, false, None, None)
+            .expect("expected to query history documents")
+            .documents_owned()
+    }
+
     #[tokio::test]
     async fn test_dpns_username_transfer() {
         run_dpns_username_transfer_at_protocol_version(
@@ -1311,6 +1549,66 @@ mod dpns_username_transfer_tests {
                 query_domain_documents_by_record_identity(&platform, &dpns_contract, alice.id());
 
             assert_eq!(alice_documents.len(), 0);
+
+            // The transfer must be recorded in the document history contract,
+            // owned by the sender and pointing at the recipient
+            let history_documents = query_history_documents(
+                &platform,
+                "transfer",
+                dpns_contract.id(),
+                transferred_document.id(),
+            );
+
+            assert_eq!(history_documents.len(), 1);
+
+            let history_document = history_documents
+                .first()
+                .expect("expected a history document");
+
+            assert_eq!(history_document.owner_id(), alice.id());
+
+            assert_eq!(
+                history_document
+                    .properties()
+                    .get_identifier("toIdentityId")
+                    .expect("expected the recipient on the transfer record"),
+                bob.id()
+            );
+
+            assert!(history_document.created_at().is_some());
+
+            // Provable transfer counts: doctype-wide and per-contract in a
+            // time window
+            assert_eq!(
+                history_aggregate_count(&platform, "transfer", vec![], platform_version),
+                1
+            );
+
+            assert_eq!(
+                history_aggregate_count(
+                    &platform,
+                    "transfer",
+                    vec![
+                        history_where_by_contract(dpns_contract.id()),
+                        history_where_created_between(0, 9_999_999_999_999),
+                    ],
+                    platform_version,
+                ),
+                1
+            );
+
+            assert_eq!(
+                history_aggregate_count(
+                    &platform,
+                    "transfer",
+                    vec![
+                        history_where_by_contract(dpns_contract.id()),
+                        history_where_created_between(1, 2),
+                    ],
+                    platform_version,
+                ),
+                0
+            );
         } else {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
@@ -1331,6 +1629,9 @@ mod dpns_username_transfer_tests {
             let kept_document = alice_documents.first().expect("expected a document");
 
             assert_eq!(kept_document.owner_id(), alice.id());
+
+            // The document history contract itself must not even exist yet
+            assert_document_history_contract_absent(&platform, platform_version);
         }
 
         let issues = platform
@@ -1479,6 +1780,9 @@ mod dpns_username_transfer_tests {
 
             assert!(kept_document.properties().get("$price").is_none());
 
+            // The document history contract itself must not even exist yet
+            assert_document_history_contract_absent(&platform, platform_version);
+
             return;
         }
 
@@ -1502,6 +1806,24 @@ mod dpns_username_transfer_tests {
             .expect("expected to get back the price");
 
         assert_eq!(price, dash_to_credits!(0.1));
+
+        // The listing must be recorded in the document history contract
+        let pricing_history =
+            query_history_documents(&platform, "priceUpdate", dpns_contract.id(), document.id());
+
+        assert_eq!(pricing_history.len(), 1);
+
+        let pricing_document = pricing_history.first().expect("expected a pricing record");
+
+        assert_eq!(pricing_document.owner_id(), alice.id());
+
+        assert_eq!(
+            pricing_document
+                .properties()
+                .get_integer::<Credits>("price")
+                .expect("expected the price on the pricing record"),
+            dash_to_credits!(0.1)
+        );
 
         let alice_balance_before_sale = platform
             .drive
@@ -1615,6 +1937,110 @@ mod dpns_username_transfer_tests {
             .expect("expected bob's identity to exist");
 
         assert!(bob_balance_after_purchase < bob_balance_before_purchase - dash_to_credits!(0.1));
+
+        // The sale must be recorded in the document history contract, owned
+        // by the buyer, naming the seller and the price paid
+        let purchase_history = query_history_documents(
+            &platform,
+            "purchase",
+            dpns_contract.id(),
+            purchased_document.id(),
+        );
+
+        assert_eq!(purchase_history.len(), 1);
+
+        let purchase_document = purchase_history
+            .first()
+            .expect("expected a purchase record");
+
+        assert_eq!(purchase_document.owner_id(), bob.id());
+
+        assert_eq!(
+            purchase_document
+                .properties()
+                .get_identifier("sellerId")
+                .expect("expected the seller on the purchase record"),
+            alice.id()
+        );
+
+        assert_eq!(
+            purchase_document
+                .properties()
+                .get_integer::<Credits>("price")
+                .expect("expected the price on the purchase record"),
+            dash_to_credits!(0.1)
+        );
+
+        assert!(purchase_document.created_at().is_some());
+
+        // A sale is not a plain transfer: no transfer record may exist
+        let transfer_history = query_history_documents(
+            &platform,
+            "transfer",
+            dpns_contract.id(),
+            purchased_document.id(),
+        );
+
+        assert_eq!(transfer_history.len(), 0);
+
+        // Provable marketplace aggregates: exactly one sale for 0.1 dash was
+        // recorded, visible as O(1) doctype-wide count and volume
+        assert_eq!(
+            history_aggregate_count(&platform, "purchase", vec![], platform_version),
+            1
+        );
+
+        assert_eq!(
+            history_aggregate_price_sum(&platform, "purchase", vec![], platform_version),
+            dash_to_credits!(0.1) as i64
+        );
+
+        // Time-range aggregates on the byContract index: the sale falls in a
+        // wide window and average sale price = sum / count
+        let (window_count, window_sum) = history_aggregate_price_average(
+            &platform,
+            "purchase",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(0, 9_999_999_999_999),
+            ],
+            platform_version,
+        );
+
+        assert_eq!(
+            (window_count, window_sum),
+            (1, dash_to_credits!(0.1) as i64)
+        );
+
+        // ... and an empty window contains no sales
+        let (empty_count, empty_sum) = history_aggregate_price_average(
+            &platform,
+            "purchase",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(1, 2),
+            ],
+            platform_version,
+        );
+
+        assert_eq!((empty_count, empty_sum), (0, 0));
+
+        // The listing is aggregated the same way: average asking price
+        // between dates over priceUpdate records
+        let (listing_count, listing_sum) = history_aggregate_price_average(
+            &platform,
+            "priceUpdate",
+            vec![
+                history_where_by_contract(dpns_contract.id()),
+                history_where_created_between(0, 9_999_999_999_999),
+            ],
+            platform_version,
+        );
+
+        assert_eq!(
+            (listing_count, listing_sum),
+            (1, dash_to_credits!(0.1) as i64)
+        );
 
         let issues = platform
             .drive
@@ -1791,6 +2217,247 @@ mod dpns_username_transfer_tests {
                 .map(|(hash, (a, b, c))| format!("{}: {} {} {}", hash, a, b, c))
                 .collect::<Vec<_>>()
                 .join(" | ")
+        );
+    }
+
+    /// Transfers of a document type that did NOT subscribe to history must
+    /// not write anything into the document history contract, even at
+    /// PROTOCOL_VERSION_13.
+    #[tokio::test]
+    async fn test_document_transfer_without_history_subscription_records_nothing() {
+        let platform_version = PlatformVersion::latest();
+        let (mut platform, contract) = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure()
+            .with_crypto_card_game_transfer_only(Transferable::Always);
+
+        let mut rng = StdRng::seed_from_u64(441);
+
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) = setup_identity(&mut platform, 962, dash_to_credits!(0.5));
+
+        let (receiver, _, _) = setup_identity(&mut platform, 452, dash_to_credits!(0.5));
+
+        let card_document_type = contract
+            .document_type_for_name("card")
+            .expect("expected a card document type");
+
+        assert!(!card_document_type.documents_keep_transfer_history());
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut document = card_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::DoNotFillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document.set("attack", 4.into());
+        document.set("defense", 7.into());
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document.clone(),
+                card_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        document.set_revision(Some(2));
+
+        let documents_batch_transfer_transition =
+            BatchTransition::new_document_transfer_transition_from_document(
+                document.clone(),
+                card_document_type,
+                receiver.id(),
+                &key,
+                3,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition for transfer");
+
+        let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_transfer_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(50000000),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // The card document type did not subscribe to history, so nothing may
+        // have been recorded
+        let history_documents =
+            query_history_documents(&platform, "transfer", contract.id(), document.id());
+
+        assert_eq!(history_documents.len(), 0);
+    }
+
+    /// Documents in the document history contract can only ever be created by
+    /// the protocol itself: user creation is blocked by
+    /// `creationRestrictionMode: 2`.
+    #[tokio::test]
+    async fn test_document_history_contract_direct_writes_rejected() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+        let platform_version = platform_state
+            .current_platform_version()
+            .expect("expected to get current platform version");
+
+        let mut rng = StdRng::seed_from_u64(442);
+
+        let (identity, signer, key) = setup_identity(&mut platform, 963, dash_to_credits!(0.5));
+
+        let history_contract = Arc::clone(
+            &platform
+                .drive
+                .cache
+                .system_data_contracts
+                .load_document_history(),
+        );
+
+        let transfer_document_type = history_contract
+            .document_type_for_name("transfer")
+            .expect("expected the transfer document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let document = transfer_document_type
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let documents_batch_create_transition =
+            BatchTransition::new_document_creation_transition_from_document(
+                document,
+                transfer_document_type,
+                entropy.0,
+                &key,
+                2,
+                0,
+                None,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_transition = documents_batch_create_transition
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[documents_batch_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default_with_time(
+                    platform_state
+                        .last_committed_block_time_ms()
+                        .unwrap_or_default()
+                        + 3000,
+                ),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError {
+                error: ConsensusError::BasicError(BasicError::DocumentCreationNotAllowedError(_)),
+                ..
+            }]
         );
     }
 }

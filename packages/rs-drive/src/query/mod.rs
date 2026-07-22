@@ -42,11 +42,13 @@ pub use drive_document_count_query::{
     DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
 
-// `DocumentSumRequest` / `DocumentSumResponse` / `RangeSumOptions` are
+// `DocumentSumRequest` / `DocumentSumResponse` / range-sum options are
 // the server-side executor inputs and stay `server`-only (parallels
 // the count-side `DocumentCountRequest` etc. above).
 #[cfg(feature = "server")]
-pub use drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, RangeSumOptions};
+pub use drive_document_sum_query::{
+    DocumentSumRequest, DocumentSumResponse, RangeSumOptions, RangeSumWalkMode,
+};
 
 // `DocumentAverageRequest` / `DocumentAverageResponse` are the
 // server-side executor inputs for the average surface and stay
