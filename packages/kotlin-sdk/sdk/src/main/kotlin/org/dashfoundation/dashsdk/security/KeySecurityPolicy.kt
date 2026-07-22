@@ -11,8 +11,9 @@ package org.dashfoundation.dashsdk.security
  * auth model (e.g. an app-level PIN that decrypts the wallet) end up with
  * a *second*, redundant auth prompt at signing time — and signing fails
  * outside the ~30 s window entirely when no [BiometricGate] is wired.
- * [DEVICE_BOUND] lets such hosts opt into a non-gated (but still
- * hardware-backed, non-exportable) wrapping key instead.
+ * [DEVICE_BOUND] lets such hosts opt into a non-gated, non-exportable
+ * device-bound wrapping key instead (hardware-backed where the device
+ * provides it — see the storage-backing note below).
  *
  * ## Semantics
  *
@@ -31,6 +32,17 @@ package org.dashfoundation.dashsdk.security
  *   Keys remain bound to this device's Keystore (`setUnlockedDeviceRequired`
  *   still applies) — the host app is responsible for gating *access* to
  *   signing flows (PIN, biometrics, session policy) itself.
+ *
+ * ## Storage backing (not guaranteed hardware)
+ *
+ * "Device-bound" here means the AndroidKeyStore, non-exportable — NOT a
+ * guarantee of hardware-backed storage. Generation prefers StrongBox, falls
+ * back to the TEE, and — on a device whose AndroidKeyStore has no hardware
+ * backing at all — falls back to a **software-backed** AndroidKeyStore key
+ * (`generateWithLockScreenDegradation` never fails generation on a missing
+ * secure element). The key is always non-exportable and bound to this
+ * device's Keystore; it is hardware-isolated only where the hardware exists.
+ * [AUTH_GATED] shares the same backing characteristics.
  *
  * ## Choosing and switching
  *
@@ -68,8 +80,11 @@ enum class KeySecurityPolicy {
     AUTH_GATED,
 
     /**
-     * Identity-key decrypts are hardware-backed but not auth-gated; the
-     * host app supplies its own authentication model.
+     * Identity-key decrypts are device-bound and non-exportable but not
+     * auth-gated; the host app supplies its own authentication model. Backing
+     * is hardware-isolated (StrongBox/TEE) where the device provides it, with
+     * a software-AndroidKeyStore fallback otherwise — see the KDoc "Storage
+     * backing" note; it is not a hardware-storage guarantee.
      */
     DEVICE_BOUND,
 }
