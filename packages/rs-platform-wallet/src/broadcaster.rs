@@ -74,8 +74,17 @@ pub trait TransactionBroadcaster: Send + Sync {
 enum DapiSubmission {
     Accepted,
     AlreadyKnown,
-    Rejected { reason: String },
-    Uncertain { reason: String },
+    Rejected {
+        reason: String,
+    },
+    /// The request provably never left the process (e.g. the DAPI address
+    /// list is empty). Unlike `Uncertain`, nothing was submitted anywhere.
+    NeverSent {
+        reason: String,
+    },
+    Uncertain {
+        reason: String,
+    },
 }
 
 fn classify_dapi_response(txid: Txid, returned_txid: String) -> DapiSubmission {
@@ -91,12 +100,24 @@ fn classify_dapi_response(txid: Txid, returned_txid: String) -> DapiSubmission {
 }
 
 fn classify_dapi_error(
-    code: Option<dash_sdk::dapi_grpc::tonic::Code>,
+    error: &dash_sdk::dapi_client::DapiClientError,
     reason: String,
 ) -> DapiSubmission {
+    use dash_sdk::dapi_client::DapiClientError;
     use dash_sdk::dapi_grpc::tonic::Code;
 
-    match code {
+    // These fire before any request is dispatched: nothing reached the
+    // network, so the submission is provably never-sent rather than
+    // ambiguous. (`NoAvailableAddressesToRetry` is different — addresses
+    // were tried and banned, so an earlier attempt may have delivered.)
+    if matches!(
+        error,
+        DapiClientError::NoAvailableAddresses | DapiClientError::AddressList(_)
+    ) {
+        return DapiSubmission::NeverSent { reason };
+    }
+
+    match grpc_code(error) {
         Some(Code::AlreadyExists) => DapiSubmission::AlreadyKnown,
         Some(Code::InvalidArgument | Code::FailedPrecondition) => {
             DapiSubmission::Rejected { reason }
@@ -167,7 +188,8 @@ impl DapiCoreClient for SdkDapiCoreClient {
         match self.sdk.execute(request, settings).await.into_inner() {
             Ok(response) => classify_dapi_response(txid, response.transaction_id),
             Err(error) => {
-                classify_dapi_error(grpc_code(&error), format!("DAPI broadcast failed: {error}"))
+                let reason = format!("DAPI broadcast failed: {error}");
+                classify_dapi_error(&error, reason)
             }
         }
     }
@@ -203,31 +225,59 @@ impl DapiBroadcaster {
         Self { client }
     }
 
-    async fn reconcile_uncertain(
-        &self,
-        txid: Txid,
-        submit_reason: String,
-    ) -> Result<Txid, BroadcastError> {
-        match self.client.transaction_known(txid).await {
-            Ok(true) => Ok(txid),
-            Ok(false) => Err(BroadcastError::MaybeSent {
-                reason: format!("{submit_reason}; follow-up getTransaction did not find {txid}"),
-            }),
-            Err(lookup_reason) => Err(BroadcastError::MaybeSent {
-                reason: format!("{submit_reason}; {lookup_reason}"),
-            }),
+    /// Submit through DAPI and reconcile ambiguous responses via
+    /// `getTransaction`, keeping the never-sent case distinguishable so a
+    /// caller with another delivery channel (SPV) can still try it.
+    async fn submit_outcome(&self, transaction: &Transaction) -> DapiOutcome {
+        let txid = transaction.txid();
+        match self.client.submit(transaction).await {
+            DapiSubmission::Accepted | DapiSubmission::AlreadyKnown => DapiOutcome::Accepted,
+            DapiSubmission::Rejected { reason } => DapiOutcome::Rejected { reason },
+            // Nothing was submitted, so there is nothing to reconcile.
+            DapiSubmission::NeverSent { reason } => DapiOutcome::NeverSent { reason },
+            DapiSubmission::Uncertain { reason } => {
+                match self.client.transaction_known(txid).await {
+                    Ok(true) => DapiOutcome::Accepted,
+                    Ok(false) => DapiOutcome::Uncertain {
+                        reason: format!("{reason}; follow-up getTransaction did not find {txid}"),
+                    },
+                    Err(lookup_reason) => DapiOutcome::Uncertain {
+                        reason: format!("{reason}; {lookup_reason}"),
+                    },
+                }
+            }
         }
     }
+}
+
+/// Post-reconciliation DAPI outcome.
+#[derive(Debug)]
+enum DapiOutcome {
+    Accepted,
+    Rejected {
+        reason: String,
+    },
+    /// The transaction provably never left the process through DAPI.
+    NeverSent {
+        reason: String,
+    },
+    Uncertain {
+        reason: String,
+    },
 }
 
 #[async_trait]
 impl TransactionBroadcaster for DapiBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
         let txid = transaction.txid();
-        match self.client.submit(transaction).await {
-            DapiSubmission::Accepted | DapiSubmission::AlreadyKnown => Ok(txid),
-            DapiSubmission::Rejected { reason } => Err(BroadcastError::Rejected { reason }),
-            DapiSubmission::Uncertain { reason } => self.reconcile_uncertain(txid, reason).await,
+        match self.submit_outcome(transaction).await {
+            DapiOutcome::Accepted => Ok(txid),
+            DapiOutcome::Rejected { reason } => Err(BroadcastError::Rejected { reason }),
+            // With DAPI as the only channel, never-sent is definitive: no
+            // bytes reached the network, so the reservation is safe to
+            // release for an immediate retry.
+            DapiOutcome::NeverSent { reason } => Err(BroadcastError::Rejected { reason }),
+            DapiOutcome::Uncertain { reason } => Err(BroadcastError::MaybeSent { reason }),
         }
     }
 }
@@ -247,6 +297,11 @@ trait SpvChannel: Send + Sync {
 
     /// Broadcast through SPV peers and await dash-spv's network-acceptance
     /// verdict (a withheld peer announcing the txid back proves propagation).
+    ///
+    /// Error contract: `Err(BroadcastError::Rejected)` means the transaction
+    /// provably never entered the SPV send pipeline (client not started, or
+    /// zero connected peers checked before any dispatch); anything that may
+    /// follow a partial send is `Err(BroadcastError::MaybeSent)`.
     async fn broadcast_and_wait(
         &self,
         transaction: &Transaction,
@@ -292,18 +347,26 @@ impl SpvBroadcaster {
         Self { authority, spv }
     }
 
-    /// Resolve a DAPI-ambiguous submission through dash-spv's peer-echo
-    /// acceptance detection.
+    /// Resolve a DAPI-ambiguous or DAPI-unreachable submission through
+    /// dash-spv's peer-echo acceptance detection.
     ///
     /// The transaction is (re)broadcast to a subset of SPV peers while being
     /// withheld from the rest; a withheld peer announcing the txid back
     /// proves it propagated into network mempools. Resending a transaction
     /// Core may already have accepted is harmless — peers that already know
     /// it report it as a duplicate, which dash-spv also counts as acceptance.
+    ///
+    /// `dapi_never_sent` records whether the DAPI submission provably never
+    /// left the process. When the SPV path also provably never sent (its
+    /// pre-send checks failed), the combined outcome is a definitive
+    /// [`BroadcastError::Rejected`]: no bytes reached the network from either
+    /// channel, so the UTXO reservation is released instead of blocking a
+    /// retry with artificial insufficient funds.
     async fn spv_acceptance_fallback(
         &self,
         transaction: &Transaction,
         dapi_reason: String,
+        dapi_never_sent: bool,
     ) -> Result<Txid, BroadcastError> {
         let txid = transaction.txid();
         match self.spv.broadcast_and_wait(transaction, Some(SPV_ACCEPTANCE_TIMEOUT)).await {
@@ -311,17 +374,34 @@ impl SpvBroadcaster {
                 tracing::info!(
                     txid = %txid,
                     relayed_by,
-                    "DAPI submission was ambiguous; SPV peer echo confirmed network acceptance"
+                    "DAPI submission was inconclusive; SPV peer echo confirmed network acceptance"
                 );
                 Ok(txid)
             }
             // The p2p network has no negative signal (modern Dash Core
-            // removed BIP61 reject), so no-echo is the only failure shape.
+            // removed BIP61 reject), so no-echo is the only failure shape —
+            // and the transaction DID go out to SPV peers, so the outcome
+            // must stay ambiguous regardless of what DAPI did.
             Ok(BroadcastResult::Uncertain) => Err(BroadcastError::MaybeSent {
                 reason: format!(
                     "{dapi_reason}; SPV acceptance check saw no peer echo within {SPV_ACCEPTANCE_TIMEOUT:?}"
                 ),
             }),
+            // SPV provably never sent (per the SpvChannel error contract).
+            Err(BroadcastError::Rejected { reason: spv_reason }) => {
+                if dapi_never_sent {
+                    Err(BroadcastError::Rejected {
+                        reason: format!(
+                            "transaction never reached the network: {dapi_reason}; {spv_reason}"
+                        ),
+                    })
+                } else {
+                    // DAPI may have delivered it; keep the reservation.
+                    Err(BroadcastError::MaybeSent {
+                        reason: format!("{dapi_reason}; {spv_reason}"),
+                    })
+                }
+            }
             Err(spv_error) => Err(BroadcastError::MaybeSent {
                 reason: format!("{dapi_reason}; {spv_error}"),
             }),
@@ -332,8 +412,9 @@ impl SpvBroadcaster {
 #[async_trait]
 impl TransactionBroadcaster for SpvBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
-        match self.authority.broadcast(transaction).await {
-            Ok(txid) => {
+        let txid = transaction.txid();
+        match self.authority.submit_outcome(transaction).await {
+            DapiOutcome::Accepted => {
                 // Core acceptance is final for this API. SPV propagation/local
                 // apply is best-effort after that point; a failure is healed by
                 // normal SPV sync.
@@ -347,12 +428,19 @@ impl TransactionBroadcaster for SpvBroadcaster {
                 Ok(txid)
             }
             // A definitive Core rejection needs no second opinion.
-            Err(rejected @ BroadcastError::Rejected { .. }) => Err(rejected),
-            // DAPI ambiguous or unreachable (submit AND getTransaction
-            // reconciliation both inconclusive): fall back to the trustless
-            // SPV peer-echo acceptance authority.
-            Err(BroadcastError::MaybeSent { reason }) => {
-                self.spv_acceptance_fallback(transaction, reason).await
+            DapiOutcome::Rejected { reason } => Err(BroadcastError::Rejected { reason }),
+            // DAPI never dispatched (e.g. empty address list): the SPV path
+            // can still deliver and prove acceptance.
+            DapiOutcome::NeverSent { reason } => {
+                self.spv_acceptance_fallback(transaction, reason, true)
+                    .await
+            }
+            // DAPI ambiguous (submit AND getTransaction reconciliation both
+            // inconclusive): fall back to the trustless SPV peer-echo
+            // acceptance authority.
+            DapiOutcome::Uncertain { reason } => {
+                self.spv_acceptance_fallback(transaction, reason, false)
+                    .await
             }
         }
     }
@@ -614,6 +702,103 @@ mod tests {
         }
     }
 
+    /// DAPI-only broadcaster: a never-sent submission is definitive (safe to
+    /// release) and needs no getTransaction reconciliation.
+    #[tokio::test]
+    async fn never_sent_submission_is_definitive_without_lookup() {
+        let client = Arc::new(FakeDapiClient::new(
+            DapiSubmission::NeverSent {
+                reason: "no addresses".to_string(),
+            },
+            Ok(true),
+        ));
+        let result = dapi_broadcaster(client.clone())
+            .broadcast(&transaction())
+            .await;
+
+        assert!(matches!(result, Err(BroadcastError::Rejected { .. })));
+        assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// The reported stuck-reservation scenario: DAPI has no addresses AND
+    /// the SPV path provably never sent (client down / zero peers). Nothing
+    /// reached the network from either channel, so the outcome must be
+    /// `Rejected` — releasing the reservation — instead of `MaybeSent`
+    /// blocking the retry with artificial insufficient funds.
+    #[tokio::test]
+    async fn dapi_and_spv_both_never_sent_releases_reservation() {
+        let client = Arc::new(FakeDapiClient::new(
+            DapiSubmission::NeverSent {
+                reason: "no addresses".to_string(),
+            },
+            Ok(false),
+        ));
+        let spv = Arc::new(RelaySpy::with_acceptance(Err(BroadcastError::Rejected {
+            reason: "SPV broadcast not sent: client not started".to_string(),
+        })));
+        let broadcaster =
+            SpvBroadcaster::from_components(dapi_broadcaster(client.clone()), spv.clone());
+
+        let result = broadcaster.broadcast(&transaction()).await;
+
+        assert!(
+            matches!(result, Err(BroadcastError::Rejected { .. })),
+            "double never-sent must release the reservation, got {result:?}"
+        );
+        assert_eq!(spv.acceptance_calls.load(Ordering::SeqCst), 1);
+        // Never-sent skips getTransaction reconciliation entirely.
+        assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 0);
+    }
+
+    /// DAPI never sent but SPV delivered: the peer echo can still prove
+    /// acceptance, and a silent SPV outcome stays ambiguous (bytes DID go
+    /// out via SPV).
+    #[tokio::test]
+    async fn dapi_never_sent_defers_to_spv_verdict() {
+        for (verdict, expect_ok, expect_maybe_sent) in [
+            (Ok(BroadcastResult::Accepted { relayed_by: 1 }), true, false),
+            (Ok(BroadcastResult::Uncertain), false, true),
+        ] {
+            let client = Arc::new(FakeDapiClient::new(
+                DapiSubmission::NeverSent {
+                    reason: "no addresses".to_string(),
+                },
+                Ok(false),
+            ));
+            let spv = Arc::new(RelaySpy::with_acceptance(verdict));
+            let broadcaster =
+                SpvBroadcaster::from_components(dapi_broadcaster(client), spv.clone());
+
+            let result = broadcaster.broadcast(&transaction()).await;
+            assert_eq!(result.is_ok(), expect_ok, "got {result:?}");
+            if expect_maybe_sent {
+                assert!(matches!(result, Err(BroadcastError::MaybeSent { .. })));
+            }
+        }
+    }
+
+    /// DAPI ambiguous (possibly delivered) + SPV never-sent must NOT
+    /// release: the DAPI submission may already be in a mempool.
+    #[tokio::test]
+    async fn dapi_uncertain_with_spv_never_sent_keeps_reservation() {
+        let client = Arc::new(FakeDapiClient::new(
+            DapiSubmission::Uncertain {
+                reason: "timeout".to_string(),
+            },
+            Ok(false),
+        ));
+        let spv = Arc::new(RelaySpy::with_acceptance(Err(BroadcastError::Rejected {
+            reason: "SPV broadcast not sent: no connected peers".to_string(),
+        })));
+        let broadcaster = SpvBroadcaster::from_components(dapi_broadcaster(client), spv.clone());
+
+        let result = broadcaster.broadcast(&transaction()).await;
+        assert!(
+            matches!(result, Err(BroadcastError::MaybeSent { .. })),
+            "possibly-delivered DAPI submission must keep the reservation, got {result:?}"
+        );
+    }
+
     /// getTransaction reconciliation finding the tx settles the outcome
     /// without consulting SPV acceptance.
     #[tokio::test]
@@ -643,26 +828,53 @@ mod tests {
         assert_eq!(relay.calls.load(Ordering::SeqCst), 1);
     }
 
+    fn grpc_error(
+        code: dash_sdk::dapi_grpc::tonic::Code,
+    ) -> dash_sdk::dapi_client::DapiClientError {
+        use dash_sdk::dapi_client::transport::TransportError;
+        use dash_sdk::dapi_client::DapiClientError;
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        DapiClientError::Transport(TransportError::Grpc(Status::new(code, "test")))
+    }
+
     #[test]
     fn tonic_submission_codes_map_to_authoritative_states() {
         use dash_sdk::dapi_grpc::tonic::Code;
 
         assert!(matches!(
-            classify_dapi_error(Some(Code::AlreadyExists), "known".to_string()),
+            classify_dapi_error(&grpc_error(Code::AlreadyExists), "known".to_string()),
             DapiSubmission::AlreadyKnown
         ));
         for code in [Code::InvalidArgument, Code::FailedPrecondition] {
             assert!(matches!(
-                classify_dapi_error(Some(code), "rejected".to_string()),
+                classify_dapi_error(&grpc_error(code), "rejected".to_string()),
                 DapiSubmission::Rejected { .. }
             ));
         }
         for code in [Code::DeadlineExceeded, Code::Unavailable] {
             assert!(matches!(
-                classify_dapi_error(Some(code), "transport".to_string()),
+                classify_dapi_error(&grpc_error(code), "transport".to_string()),
                 DapiSubmission::Uncertain { .. }
             ));
         }
+    }
+
+    /// `NoAvailableAddresses` fires before any request is dispatched, so it
+    /// must classify never-sent — not ambiguous. (Regression for the stuck
+    /// UTXO reservation reported on the predecessor PR: unknown kept the
+    /// reservation and the retry failed with artificial insufficient funds.)
+    #[test]
+    fn empty_address_list_classifies_never_sent() {
+        use dash_sdk::dapi_client::DapiClientError;
+
+        assert!(matches!(
+            classify_dapi_error(
+                &DapiClientError::NoAvailableAddresses,
+                "no addresses".to_string()
+            ),
+            DapiSubmission::NeverSent { .. }
+        ));
     }
 
     #[test]
