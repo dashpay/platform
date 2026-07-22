@@ -3,8 +3,16 @@ use arc_swap::{ArcSwap, Guard};
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use dpp::ProtocolError;
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use std::sync::Arc;
+
+/// The protocol version at which the document history contract activates. Its
+/// schema uses index aggregation keywords (`averageable`, `rangeCountable`,
+/// ...) that earlier document meta-schemas do not recognize, so the contract
+/// is always loaded and validated under this version regardless of the
+/// version the cache is being (re)loaded at.
+pub const DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION: ProtocolVersion = 13;
 
 /// A wrapper around a system [`DataContract`] that tracks its activation version
 /// and allows atomic replacement.
@@ -66,6 +74,8 @@ pub struct SystemDataContracts {
     token_history: ActiveSystemDataContract,
     /// Search contract
     keyword_search: ActiveSystemDataContract,
+    /// Document history contract
+    document_history: ActiveSystemDataContract,
 }
 
 impl SystemDataContracts {
@@ -88,6 +98,11 @@ impl SystemDataContracts {
             load_system_data_contract(MasternodeRewards, platform_version)?;
         let token_history = load_system_data_contract(TokenHistory, platform_version)?;
         let keyword_search = load_system_data_contract(KeywordSearch, platform_version)?;
+        let document_history = load_system_data_contract(
+            DocumentHistory,
+            PlatformVersion::get(DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION)
+                .map_err(ProtocolError::from)?,
+        )?;
 
         // 2. Swap the cached Arcs — each swap is lock-free & O(1).
         self.withdrawals.store(withdrawals);
@@ -97,6 +112,7 @@ impl SystemDataContracts {
             .store(masternode_reward_shares);
         self.token_history.store(token_history);
         self.keyword_search.store(keyword_search);
+        self.document_history.store(document_history);
 
         Ok(())
     }
@@ -141,6 +157,14 @@ impl SystemDataContracts {
                 )?,
                 9,
             ),
+            document_history: ActiveSystemDataContract::new(
+                load_system_data_contract(
+                    SystemDataContract::DocumentHistory,
+                    PlatformVersion::get(DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION)
+                        .map_err(ProtocolError::from)?,
+                )?,
+                DOCUMENT_HISTORY_ACTIVATION_PROTOCOL_VERSION,
+            ),
         })
     }
 
@@ -174,11 +198,23 @@ impl SystemDataContracts {
         self.keyword_search.load()
     }
 
+    /// Returns the document history contract
+    pub fn load_document_history(&self) -> Guard<Arc<DataContract>> {
+        self.document_history.load()
+    }
+
     /// Returns the cached system contract whose deterministic identifier matches `id`,
-    /// if any. Returns `None` for user contracts and for any system contract whose
+    /// if any. Returns `None` for user contracts, for any system contract whose
     /// definition isn't held in this in-memory cache (e.g. `WalletUtils`, which lives
-    /// only in grovedb).
-    pub fn find_by_id(&self, id: Identifier) -> Option<Arc<DataContract>> {
+    /// only in grovedb), and for system contracts that are not yet active at the
+    /// given protocol version: before activation the contract does not exist in the
+    /// state, so pre-activation lookups must fall through to the billed grovedb
+    /// fetch and report it absent exactly like a non-upgraded node would.
+    pub fn find_by_id(
+        &self,
+        id: Identifier,
+        protocol_version: ProtocolVersion,
+    ) -> Option<Arc<DataContract>> {
         // Compare against each cached system contract's static `id_bytes`. The match
         // is `O(n)` over a small fixed set of variants — cheaper than building a map.
         let active = if id == SystemDataContract::Withdrawals.id() {
@@ -193,9 +229,14 @@ impl SystemDataContracts {
             &self.token_history
         } else if id == SystemDataContract::KeywordSearch.id() {
             &self.keyword_search
+        } else if id == SystemDataContract::DocumentHistory.id() {
+            &self.document_history
         } else {
             return None;
         };
+        if active.active_since_protocol_version > protocol_version {
+            return None;
+        }
         Some(Arc::clone(&active.load()))
     }
 }

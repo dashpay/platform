@@ -163,7 +163,15 @@ async fn test_epoch_fetch_future() {
     assert!(epoch.is_none());
 }
 
-/// Fetch current epoch from Platform.
+/// Fetching the "current" epoch through a proved request must fail closed.
+///
+/// `fetch_current` maps to a descending epoch query without an explicit start,
+/// which previously selected its upper bound from unsigned response metadata.
+/// Because that selector is not part of the authenticated state, a malicious
+/// node could cap the proof below the real chain tip and pass off a stale epoch
+/// as current. The proof verifier now rejects such queries until an
+/// authenticated current-epoch marker exists (security finding DS-CAND-374);
+/// callers must fetch a specific epoch by explicit index instead.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_epoch_fetch_current() {
     setup_logs();
@@ -171,14 +179,12 @@ async fn test_epoch_fetch_current() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_epoch_fetch_current").await;
 
-    // Given some current epoch
-    let expected_epoch = get_current_epoch(&sdk, &cfg).await;
-
-    let epoch = ExtendedEpochInfo::fetch_current(&sdk)
+    let error = ExtendedEpochInfo::fetch_current(&sdk)
         .await
-        .expect("fetch current epoch");
+        .expect_err("proved current-epoch fetch must fail closed");
 
-    assert_eq!(epoch.index(), expected_epoch);
-
-    tracing::info!(epoch = ?epoch, "current epoch");
+    assert!(
+        error.to_string().contains("explicit start epoch"),
+        "expected an explicit-start rejection, got: {error}"
+    );
 }

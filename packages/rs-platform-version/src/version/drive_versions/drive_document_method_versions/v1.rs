@@ -33,6 +33,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
         },
         insert: DriveDocumentInsertMethodVersions {
             add_document: 0,
+            add_history_operations: 0,
             add_document_for_contract: 0,
             add_document_for_contract_apply_and_add_to_operations: 0,
             add_document_for_contract_operations: 0,

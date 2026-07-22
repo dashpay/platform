@@ -10,6 +10,9 @@ use dpp::block::epoch::Epoch;
 use dpp::prelude::Identifier;
 use std::borrow::Cow;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::document::document_event::DocumentEvent;
+use dpp::document::DocumentV0Getters;
 use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::{DocumentPurchaseTransitionAction, DocumentPurchaseTransitionActionAccessorsV0};
@@ -127,6 +130,28 @@ impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction 
 
                 let new_document_owner_id = owner_id;
 
+                // If the document type subscribed to purchase history, record
+                // this sale in the document history system contract. The
+                // history document is owned and paid for by the buyer.
+                let document_history_operation = contract_fetch_info
+                    .contract
+                    .document_type_for_name(document_type_name.as_str())
+                    .ok()
+                    .filter(|document_type| document_type.documents_keep_purchase_history())
+                    .map(|_| {
+                        DocumentOperation(DocumentOperationType::DocumentHistory {
+                            source_data_contract_id: data_contract_id,
+                            source_document_type_name: document_type_name.clone(),
+                            source_document_id: document.id(),
+                            owner_id,
+                            nonce: identity_contract_nonce,
+                            event: DocumentEvent::Purchase {
+                                seller_id: original_owner_id,
+                                price: purchase_amount,
+                            },
+                        })
+                    });
+
                 super::rewrite_dpns_domain_identity_record_to_new_owner(
                     &mut document,
                     data_contract_id,
@@ -165,6 +190,10 @@ impl DriveHighLevelBatchOperationConverter for DocumentPurchaseTransitionAction 
                         added_balance: purchase_amount,
                     }),
                 ];
+
+                if let Some(document_history_operation) = document_history_operation {
+                    ops.push(document_history_operation);
+                }
 
                 if let Some((token_id, effect, cost)) = document_purchase_token_cost {
                     match effect {

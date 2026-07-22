@@ -17,6 +17,17 @@ pub type VerifiedCompactedAddressBalanceChanges = Vec<(
     BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
 )>;
 
+/// Proof envelope for compacted address balance changes.
+///
+/// The predecessor proof independently authenticates which range, if any,
+/// contains the requested height. The forward proof can then be verified
+/// against a query derived only from that authenticated result.
+#[derive(Debug, bincode::Encode, bincode::Decode)]
+pub(crate) struct CompactedAddressBalanceProof {
+    pub(crate) predecessor_proof: Vec<u8>,
+    pub(crate) forward_proof: Vec<u8>,
+}
+
 impl Drive {
     /// Verifies the proof of compacted address balance changes starting from a given block height.
     ///

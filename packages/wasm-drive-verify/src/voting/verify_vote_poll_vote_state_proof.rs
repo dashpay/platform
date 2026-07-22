@@ -2,7 +2,9 @@ use crate::utils::getters::VecU8ToUint8Array;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::{
+    PlatformDeserializable, PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::query::vote_poll_vote_state_query::{
@@ -11,6 +13,8 @@ use drive::query::vote_poll_vote_state_query::{
 use js_sys::{Array, Object, Reflect, Uint8Array};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+
+use super::bind_vote_poll_context;
 
 #[wasm_bindgen]
 pub struct VerifyVotePollVoteStateProofResult {
@@ -37,6 +41,7 @@ pub fn verify_vote_poll_vote_state_proof(
     contract_cbor: &Uint8Array,
     document_type_name: &str,
     index_name: &str,
+    expected_vote_poll_id: &Uint8Array,
     contested_document_resource_vote_poll_bytes: &Uint8Array,
     result_type: &str, // "documents" or "values"
     allow_include_locked_and_abstaining_vote_tally: bool,
@@ -53,19 +58,27 @@ pub fn verify_vote_poll_vote_state_proof(
         .map_err(|e| JsValue::from_str(&format!("Failed to deserialize contract: {:?}", e)))?;
     let contract_arc = Arc::new(contract);
 
-    // Parse the contested document resource vote poll identifier
-    let _contested_document_resource_vote_poll: Identifier =
-        Identifier::from_bytes(&contested_document_resource_vote_poll_bytes.to_vec())
-            .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
+    // A poll identifier alone cannot reconstruct its authenticated storage
+    // path. Require the full poll and bind it to the independently supplied
+    // contract and query context before proof verification.
+    let vote_poll = ContestedDocumentResourceVotePoll::deserialize_from_bytes(
+        &contested_document_resource_vote_poll_bytes.to_vec(),
+    )
+    .map_err(|e| JsValue::from_str(&format!("Invalid vote poll: {:?}", e)))?;
+    let expected_vote_poll_id = Identifier::from_bytes(&expected_vote_poll_id.to_vec())
+        .map_err(|e| JsValue::from_str(&format!("Invalid vote poll identifier: {:?}", e)))?;
+    let vote_poll = bind_vote_poll_context(
+        vote_poll,
+        expected_vote_poll_id,
+        contract_arc.id(),
+        document_type_name,
+        index_name,
+    )
+    .map_err(|error| JsValue::from_str(&error))?;
 
     // Create the query
     let query = ContestedDocumentVotePollDriveQuery {
-        vote_poll: ContestedDocumentResourceVotePoll {
-            contract_id: contract_arc.id(),
-            document_type_name: document_type_name.to_string(),
-            index_name: index_name.to_string(),
-            index_values: vec![],
-        },
+        vote_poll,
         result_type: if result_type == "documents" {
             ContestedDocumentVotePollDriveQueryResultType::Documents
         } else {
