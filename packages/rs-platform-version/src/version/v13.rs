@@ -11,7 +11,7 @@ use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STAT
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_validation_versions::v4::DPP_VALIDATION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
@@ -53,7 +53,7 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 ///   to the buyer.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
-    drive: DRIVE_VERSION_V8, // changed: DPNS domain records.identity rewrite on transfer/purchase
+    drive: DRIVE_VERSION_V8,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9, // changed: records shielded-spend transparent credits (Unshield net output, ShieldFromAssetLock surplus, identity-create fallback) into the recent per-block address-balance set
@@ -64,7 +64,7 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V3,
+        validation: DPP_VALIDATION_VERSIONS_V4,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
@@ -85,3 +85,46 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
         tenderdash_consensus_version: 1,
     },
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::v12::PLATFORM_V12;
+
+    #[test]
+    fn token_authorization_hardening_activates_only_at_v13() {
+        let v12_batch = &PLATFORM_V12
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+        let v13_batch = &PLATFORM_V13
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+
+        assert_eq!(v12_batch.token_base_transition_state_validation, 0);
+        assert_eq!(v13_batch.token_base_transition_state_validation, 1);
+        assert_eq!(v12_batch.token_base_transition_group_action_validation, 0);
+        assert_eq!(v13_batch.token_base_transition_group_action_validation, 1);
+        assert_eq!(v12_batch.token_config_update_transition_state_validation, 0);
+        assert_eq!(v13_batch.token_config_update_transition_state_validation, 1);
+        assert_eq!(
+            PLATFORM_V12
+                .dpp
+                .validation
+                .data_contract
+                .validate_token_config_groups_exist,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .dpp
+                .validation
+                .data_contract
+                .validate_token_config_groups_exist,
+            1
+        );
+    }
+}

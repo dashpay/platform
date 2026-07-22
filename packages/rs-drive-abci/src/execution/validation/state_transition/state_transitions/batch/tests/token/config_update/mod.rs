@@ -915,6 +915,116 @@ mod token_config_update_tests {
                 .expect("expected token configuration");
             assert_eq!(updated_token_config.main_control_group(), Some(0));
         }
+
+        #[tokio::test]
+        async fn test_token_config_update_preserves_required_main_group() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(91827);
+            let platform_state = platform.state.load();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_main_control_group(Some(0));
+                    token_configuration.set_main_control_group_can_be_modified(
+                        AuthorizedActionTakers::ContractOwner,
+                    );
+                    token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::MainGroup,
+                            admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1)].into(),
+                            required_power: 1,
+                        }),
+                    )]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MainControlGroup(None),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create token config update transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected serialized state transition")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::MainGroupIsNotDefinedError(_)),
+                    ..
+                }]
+            );
+
+            let stored_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            assert_eq!(
+                stored_contract
+                    .contract
+                    .expected_token_configuration(0)
+                    .expect("expected token configuration")
+                    .main_control_group(),
+                Some(0)
+            );
+        }
     }
 
     mod with_group {
@@ -3009,6 +3119,126 @@ mod token_config_update_tests {
                 .expected_token_configuration(0)
                 .expect("expected token configuration");
             assert_eq!(updated_token_config.max_supply(), None);
+        }
+
+        #[tokio::test]
+        async fn test_token_config_update_rejects_substitute_group_quorum() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(73119);
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (identity_2, _, _) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_max_supply_change_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [
+                        (
+                            0,
+                            Group::V0(GroupV0 {
+                                members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                                required_power: 2,
+                            }),
+                        ),
+                        (
+                            1,
+                            Group::V0(GroupV0 {
+                                members: [(identity.id(), 1)].into(),
+                                required_power: 1,
+                            }),
+                        ),
+                    ]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MaxSupply(Some(1_000_000)),
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(1)),
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create token config update transition");
+
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    ..
+                }]
+            );
+
+            let stored_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            assert_eq!(
+                stored_contract
+                    .contract
+                    .expected_token_configuration(0)
+                    .expect("expected token configuration")
+                    .max_supply(),
+                None
+            );
         }
     }
 }
