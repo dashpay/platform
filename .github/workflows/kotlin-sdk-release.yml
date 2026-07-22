@@ -14,7 +14,9 @@ on:
       tag:
         description: >-
           Existing kotlin-sdk-* tag to (re-)release (optional; defaults to
-          ref name). The Maven version is derived from this tag.
+          ref name). Accepts either the short tag (kotlin-sdk-vX.Y.Z) or a
+          full ref (refs/tags/kotlin-sdk-vX.Y.Z). The Maven version is derived
+          from this tag.
         required: false
 
 permissions:
@@ -25,6 +27,11 @@ jobs:
     name: Build release AAR (arm64-v8a + x86_64)
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    # Consumed by the gated maven-central-deploy job below.
+    outputs:
+      version: ${{ steps.sdk-version.outputs.version }}
+      tag_name: ${{ steps.sdk-version.outputs.tag_name }}
+      deploy: ${{ steps.maven-gate.outputs.deploy }}
 
     steps:
       - name: Checkout repository
@@ -33,6 +40,7 @@ jobs:
           # A manual dispatch runs on the branch/tag selected in the UI, not
           # on the `tag` input it will publish under — without this ref the
           # released AAR could be built from a different commit than the tag.
+          # A full `refs/tags/...` value is a valid checkout ref as-is.
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       # The Maven Central version comes from the tag and ONLY from the tag
@@ -45,6 +53,13 @@ jobs:
         env:
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
+          # A workflow_dispatch `tag` input may be given as a full ref
+          # (refs/tags/kotlin-sdk-vX.Y.Z). Strip that prefix BEFORE the
+          # kotlin-sdk-v* match, otherwise a full ref silently falls through
+          # to the AAR-only branch and no Maven version is derived. (A push's
+          # github.ref_name is already the short tag, so this is a no-op there.)
+          TAG="${TAG#refs/tags/}"
+          echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
           case "$TAG" in
             kotlin-sdk-v*)
               VERSION="${TAG#kotlin-sdk-v}"
@@ -71,6 +86,44 @@ jobs:
           esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Derived sdkVersion: ${VERSION:-<none — Maven Central deploy will be skipped>}"
+
+      # Precondition check runs HERE — right after version derivation and
+      # before the ~3-hour native build — so a misconfiguration (partial
+      # secrets) fails fast instead of after the long build. It only decides
+      # WHETHER to deploy; the actual deploy is a separate, environment-gated
+      # job (maven-central-deploy) that consumes this `deploy` output.
+      #
+      # The `secrets` context is mapped into env vars here because emptiness of
+      # the secret is what decides the gate. These names must be resolvable at
+      # repository/organization scope for this fail-fast check to see them; the
+      # human approval gate and (optionally) environment-scoped copies live on
+      # the maven-central environment — see packages/kotlin-sdk/PUBLISHING.md.
+      - name: Check Maven Central deploy preconditions
+        id: maven-gate
+        env:
+          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
+          PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
+          PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
+          GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: |
+          # All five secrets the staging + jreleaser steps actually consume:
+          # Portal user/token, and the GPG secret key, public key and
+          # passphrase (gradle signing needs key+passphrase; jreleaser's
+          # Active.ALWAYS signing needs all three GPG values).
+          if [ -z "$SDK_VERSION" ]; then
+            echo "::notice::Tag is not kotlin-sdk-vX.Y.Z, so no Maven version can be derived — Maven Central deploy skipped."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ] && [ -z "$GPG_PUBLIC_KEY" ] && [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::notice::Maven Central secrets are not configured on this repository (the Central Portal token is currently personal) — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ] || [ -z "$GPG_PUBLIC_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::Maven Central secrets are only partially configured — need ALL of JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD, JRELEASER_GPG_SECRET_KEY, JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE. Refusing to guess."
+            exit 1
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Free disk space
         run: |
@@ -133,44 +186,78 @@ jobs:
       - name: Attach AAR to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          tag_name: ${{ steps.sdk-version.outputs.tag_name }}
           files: packages/kotlin-sdk/sdk/build/outputs/aar/sdk-release.aar
           generate_release_notes: true
 
-      # ----- Maven Central deploy: same commit, same tag-derived version -----
-      # Gated on the Sonatype Central Portal credentials being configured as
-      # repository secrets. That token is currently personal (held by
-      # HashEngineering, the org.dashj publisher), so on repos/forks without
-      # the secrets these steps skip with a notice instead of failing and the
-      # release stays GitHub-AAR-only — see packages/kotlin-sdk/PUBLISHING.md.
-      # The `secrets` context is mapped into env vars here because emptiness
-      # of the secret is what decides the gate.
-      - name: Check Maven Central deploy preconditions
-        id: maven-gate
-        env:
-          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
-          PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
-          PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
-          GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
-          GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
-        run: |
-          # All five secrets the staging + jreleaser steps actually consume:
-          # Portal user/token, and the GPG secret key, public key and
-          # passphrase (gradle signing needs key+passphrase; jreleaser's
-          # Active.ALWAYS signing needs all three GPG values).
-          if [ -z "$SDK_VERSION" ]; then
-            echo "::notice::Tag is not kotlin-sdk-vX.Y.Z, so no Maven version can be derived — Maven Central deploy skipped."
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ] && [ -z "$GPG_PUBLIC_KEY" ] && [ -z "$GPG_PASSPHRASE" ]; then
-            echo "::notice::Maven Central secrets are not configured on this repository (the Central Portal token is currently personal) — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ] || [ -z "$GPG_PUBLIC_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
-            echo "::error::Maven Central secrets are only partially configured — need ALL of JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD, JRELEASER_GPG_SECRET_KEY, JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE. Refusing to guess."
-            exit 1
-          else
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          fi
+      # Hand the freshly built native libraries to the gated deploy job so it
+      # re-stages the SAME .so (same commit, same tag) without repeating the
+      # multi-hour cargo/NDK build. Only uploaded when a deploy will actually
+      # happen.
+      - name: Upload native libraries for the deploy job
+        if: steps.maven-gate.outputs.deploy == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlin-sdk-jnilibs
+          path: packages/kotlin-sdk/sdk/src/main/jniLibs
+          if-no-files-found: error
+          retention-days: 1
+
+  # -------------------------------------------------------------------------
+  # Maven Central deploy — the human gate.
+  #
+  # This job declares `environment: maven-central`, so GitHub's environment
+  # protection rules apply: with required reviewers configured on that
+  # environment (see packages/kotlin-sdk/PUBLISHING.md) the workflow PAUSES
+  # here and a reviewer must approve before anything is published to Maven
+  # Central — the deploy is irrevocable, so this approval is the human gate.
+  # It runs only when the build job decided a deploy is warranted (valid
+  # tag-derived version AND the secrets are configured); otherwise it is
+  # skipped and no reviewer is prompted. The Central secrets are referenced in
+  # this job's steps so they resolve from the maven-central environment when
+  # scoped there.
+  # -------------------------------------------------------------------------
+  maven-central-deploy:
+    name: Deploy to Maven Central (version from tag)
+    needs: build-and-release
+    if: needs.build-and-release.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: maven-central
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Same tag/commit the build job used, so the staged artifact is the
+          # exact source that produced the attached AAR.
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # No Rust/cargo here — the native libraries are downloaded below. The
+          # NDK is still needed because AGP strips the packaged .so at assemble
+          # time (ndkVersion is pinned in sdk/build.gradle.kts).
+          packages: >-
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;28.1.13356709
+
+      - name: Restore native libraries from the build job
+        uses: actions/download-artifact@v4
+        with:
+          name: kotlin-sdk-jnilibs
+          path: packages/kotlin-sdk/sdk/src/main/jniLibs
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       # Stages the signed release AAR + sources/javadoc jars into
       # sdk/build/staging-deploy. Task dependencies enforce the publish
@@ -178,10 +265,9 @@ jobs:
       # verifyJniLibsForRemotePublish hard-fails if the source tree lacks
       # libdash_sdk_jni.so for any required ABI.
       - name: Stage signed Maven artifacts (version from tag)
-        if: steps.maven-gate.outputs.deploy == 'true'
         working-directory: packages/kotlin-sdk
         env:
-          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
+          SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
           # Same ASCII-armored GPG key/passphrase jreleaser uses below; Gradle
           # signing reads them as the in-memory signingKey/signingPassword
           # project properties.
@@ -195,10 +281,9 @@ jobs:
       # verifyJniLibsForRemotePublish and verifyStagedAarForRemotePublish
       # first, so a stale or nativeless staged AAR can never be deployed.
       - name: Deploy to Maven Central (jreleaserDeploy, version from tag)
-        if: steps.maven-gate.outputs.deploy == 'true'
         working-directory: packages/kotlin-sdk
         env:
-          SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
+          SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
           JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}

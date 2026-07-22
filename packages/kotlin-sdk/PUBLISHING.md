@@ -11,21 +11,57 @@ versions go to the Sonatype snapshots repository.
 ## CI release path (preferred): the `kotlin-sdk-vX.Y.Z` tag
 
 Pushing a `kotlin-sdk-vX.Y.Z` tag runs
-`.github/workflows/kotlin-sdk-release.yml`, which from that ONE checkout:
+`.github/workflows/kotlin-sdk-release.yml`, which is split into two jobs:
 
-1. builds the native library and the release AAR and attaches the AAR to the
-   GitHub release for the tag (existing behavior), and
-2. stages the signed Maven artifacts and runs `jreleaserDeploy` with
-   `-PsdkVersion` **derived from the tag** (`kotlin-sdk-v0.1.0` → `0.1.0`).
+1. **`build-and-release`** builds the native library and the release AAR and
+   attaches the AAR to the GitHub release for the tag (existing behavior). It
+   derives `-PsdkVersion` **from the tag** (`kotlin-sdk-v0.1.0` → `0.1.0`) and
+   decides whether a Maven Central deploy is warranted.
+2. **`maven-central-deploy`** stages the signed Maven artifacts and runs
+   `jreleaserDeploy` under the tag-derived version. It runs only when job 1
+   decided a deploy is warranted, and it is gated by the **`maven-central`
+   environment** (see the human gate below).
 
 In CI the version is never passed by hand — it comes only from the tag — so
 the Maven Central artifact and the GitHub-release AAR are always the same
-commit under the same version. Tags that would derive a `-SNAPSHOT` version
-are rejected. A `kotlin-sdk-*` tag without the `vX.Y.Z` form still gets its
-GitHub-release AAR but skips the Maven deploy (there is no version to
-derive). The workflow's manual `workflow_dispatch` path is for
-re-runs/emergencies only: it takes an *existing* tag name, checks out that
-tag, and derives the version from it the same way — it has no version input.
+commit under the same version (the deploy job checks out the same tag and
+re-stages the native libraries the build job produced, rather than rebuilding
+them). Tags that would derive a `-SNAPSHOT` version are rejected. A
+`kotlin-sdk-*` tag without the `vX.Y.Z` form still gets its GitHub-release AAR
+but skips the Maven deploy (there is no version to derive). The workflow's
+manual `workflow_dispatch` path is for re-runs/emergencies only: it takes an
+*existing* tag name — either the short `kotlin-sdk-vX.Y.Z` form or a full
+`refs/tags/kotlin-sdk-vX.Y.Z` ref — checks out that tag, and derives the
+version from it the same way; it has no version input.
+
+### The human gate: the `maven-central` environment (required before secrets)
+
+A push of any `kotlin-sdk-v*` tag would otherwise publish **irrevocably** to
+Maven Central with no human review. To gate it, the `maven-central-deploy`
+job declares `environment: maven-central`. That means the deploy is only as
+safe as the environment's protection rules — **the environment must be
+created in repository settings with required reviewers *before* the Central
+secrets are installed**:
+
+1. Repo **Settings → Environments → New environment** named exactly
+   `maven-central`.
+2. Enable **Required reviewers** and add the people allowed to approve a
+   release (e.g. the `org.dashj` publisher). This is the human gate: the
+   workflow pauses at the deploy job until a reviewer approves, and the
+   approval is the last chance to stop an irrevocable publish.
+3. Only then install the Central secrets (below). Scoping them to the
+   `maven-central` environment (rather than repo-wide) keeps them out of every
+   other job — they are exposed only to the reviewer-gated deploy job.
+
+Because the fail-fast precondition check in the **build** job runs before the
+long native build (so a misconfiguration aborts early), it needs to *see* the
+secret names at repository/organization scope. Practical setup: keep the five
+secret **names** resolvable at repo/org scope for that presence check, and use
+the `maven-central` environment for the required-reviewer gate (and, if you
+prefer, environment-scoped copies of the values that override at deploy time).
+If a `kotlin-sdk-v*` tag is pushed while no reviewer approves, the deploy job
+simply waits and can be rejected — the GitHub-release AAR is already attached
+by job 1 regardless.
 
 **Secrets gate:** the Maven deploy steps only run when the Sonatype Central
 Portal credentials are configured as GitHub repository secrets. That Portal
