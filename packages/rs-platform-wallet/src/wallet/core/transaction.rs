@@ -21,6 +21,7 @@ use key_wallet::{Account, DerivationPath, ReservationToken, Utxo};
 
 use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
+use crate::wallet::reservations::reservation_expired;
 use crate::PlatformWalletError;
 
 fn map_builder_error(
@@ -376,7 +377,40 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     }
 
     /// Release a finalized transaction that the caller has chosen not to send.
+    ///
+    /// # Reservation age guard
+    ///
+    /// This is the abandon/free arm of the V2 finalized-transaction handle —
+    /// including the FFI broadcast/abandon *failure* paths (invalid or
+    /// wrong-generation wallet handle) that route their cleanup here, and the
+    /// host-language deinit/GC backstop
+    /// (`core_wallet_signed_transaction_v2_free`). A pinned handle can reach it
+    /// long after `finalize`, so it honors the **same** age bound as
+    /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction),
+    /// off the same shared [`reservation_expired`] predicate and the same
+    /// `last_processed_height` clock.
+    ///
+    /// Once the reservation has aged past
+    /// [`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS),
+    /// key-wallet's `ReservationSet` TTL may already have swept its outpoint and
+    /// let an unrelated build re-reserve it; releasing by outpoint now would free
+    /// that newer build's reservation (`ReservationSet::release` is
+    /// unconditional). So the aged path **skips** the by-outpoint release and
+    /// leaves the outpoint for the TTL to reclaim, dropping only the handle —
+    /// exactly the policy the deferred registry's `reconcile_removed_entry`
+    /// applies. Below the bound the reservation is provably still ours and is
+    /// released so an immediate rebuild can reselect the inputs.
     pub async fn abandon_transaction(&self, transaction: &SignedCoreTransaction) {
+        if reservation_expired(
+            transaction.reservation_height,
+            self.last_processed_height().await,
+        ) {
+            // Aged past the shared bound: the outpoint may have been swept and
+            // re-reserved by an unrelated build. Leave it for key-wallet's TTL;
+            // releasing it here could free that newer reservation. The handle
+            // itself is already dropped by the caller (FFI storage removal).
+            return;
+        }
         self.release_transaction_reservation(
             transaction.funding_account_type,
             transaction.funding_account_index,

@@ -327,6 +327,27 @@ mod tests {
         runtime().block_on(core.abandon_transaction(&retry));
     }
 
+    /// Prove the funding reservation is *still held*: a fresh finalize of the
+    /// same size cannot reselect the single fixture UTXO, so it fails at the
+    /// build stage. Used to show an aged abandon/free skipped the by-outpoint
+    /// release (leaving the input reserved for key-wallet's TTL).
+    fn assert_still_reserved(core: &TestCore, signer: &WalletSigner, tag: u8) {
+        let rebuild = runtime().block_on(core.finalize_transaction(
+            TransactionBuilder::new().add_output(
+                &Address::dummy(Network::Testnet, usize::from(tag)),
+                1_000_000,
+            ),
+            AccountTypePreference::BIP44,
+            0,
+            signer,
+        ));
+        assert!(
+            rebuild.is_err(),
+            "aged abandon/free must skip the release, leaving the input reserved; \
+             got {rebuild:?}"
+        );
+    }
+
     #[test]
     fn double_free_is_safe_and_releases_reservation() {
         let (core, signer) =
@@ -364,6 +385,56 @@ mod tests {
         );
         assert_released(&origin, &origin_signer, 45);
         CORE_WALLET_STORAGE.remove(other_handle);
+    }
+
+    /// The deinit/GC backstop (`core_wallet_signed_transaction_v2_free`) is the
+    /// exact path shumkov flagged: a `FinalizedCoreTransaction` never broadcast
+    /// or abandoned, freed by the host GC long after finalize. If the reservation
+    /// has aged past the guard bound the free must **skip** the by-outpoint
+    /// release — key-wallet's TTL may already have swept and re-reserved the
+    /// outpoint, and releasing it would free that newer build's reservation. The
+    /// handle is still torn down (the storage entry is removed) so a re-free is a
+    /// safe no-op.
+    #[test]
+    fn aged_v2_free_skips_reservation_release() {
+        let (core, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let transaction_handle = insert(&core, finalize(&core, &signer, 48));
+
+        // Age the pinned handle past the guard bound (still below the TTL, so the
+        // reservation is provably still held — only the software guard trips).
+        runtime().block_on(platform_wallet::test_support::age_core_past_reservation_guard(&core));
+
+        core_wallet_signed_transaction_v2_free(transaction_handle);
+
+        // The aged free skipped the release: the input is still reserved.
+        assert_still_reserved(&core, &signer, 49);
+        // Handle is gone regardless — a re-free is a harmless no-op.
+        core_wallet_signed_transaction_v2_free(transaction_handle);
+    }
+
+    /// The FFI broadcast/abandon *failure* paths (invalid or wrong-generation
+    /// wallet handle) route their cleanup through `abandon_transaction`, so they
+    /// inherit the same age guard: when the handle has aged out, the failure-path
+    /// cleanup must skip the by-outpoint release rather than free a possibly
+    /// re-reserved outpoint.
+    #[test]
+    fn aged_failure_path_abandon_skips_reservation_release() {
+        let (origin, signer) =
+            runtime().block_on(funded_spv_core_wallet(StandardAccountType::BIP44Account));
+        let transaction_handle = insert(&origin, finalize(&origin, &signer, 50));
+
+        runtime().block_on(platform_wallet::test_support::age_core_past_reservation_guard(&origin));
+
+        // Invalid wallet handle → routes through abandon_transaction, then returns
+        // ErrorInvalidHandle. The embedded aged reservation must be left alone.
+        let invalid =
+            unsafe { core_wallet_abandon_signed_transaction_v2(u64::MAX, transaction_handle) };
+        assert_eq!(
+            invalid.code,
+            PlatformWalletFFIResultCode::ErrorInvalidHandle
+        );
+        assert_still_reserved(&origin, &signer, 51);
     }
 
     #[test]

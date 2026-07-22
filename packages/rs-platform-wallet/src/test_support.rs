@@ -354,6 +354,37 @@ pub async fn funded_spv_core_wallet(
     )
 }
 
+/// Advance `core`'s `last_processed_height` to just past the reservation age
+/// guard bound ([`RESERVATION_MAX_AGE_BLOCKS`](crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS))
+/// but below key-wallet's `ReservationSet` TTL, so a handle finalized at the
+/// current height ages enough to trip the software guard while its underlying
+/// reservation is provably still held (no key-wallet sweep yet). Returns the new
+/// height.
+///
+/// FFI lifecycle tests use this to exercise the aged abandon/free skip-release
+/// path — the deinit/GC backstop and the broadcast/abandon failure paths that
+/// route their cleanup through `abandon_transaction`.
+pub async fn age_core_past_reservation_guard<B>(core: &crate::CoreWallet<B>) -> u32
+where
+    B: crate::broadcaster::TransactionBroadcaster + ?Sized,
+{
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let stamped = core
+        .last_processed_height()
+        .await
+        .expect("wallet present in manager");
+    let target = stamped + crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS + 2;
+    {
+        let mut wm = core.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_and_info_mut(&core.wallet_id())
+            .expect("wallet present in manager");
+        info.core_wallet.update_last_processed_height(target);
+    }
+    target
+}
+
 /// No-op persister satisfying [`PlatformWalletManager`] construction for tests
 /// that need a full [`PlatformWallet`] but no real persistence pipeline.
 pub struct NoopTestPersister;

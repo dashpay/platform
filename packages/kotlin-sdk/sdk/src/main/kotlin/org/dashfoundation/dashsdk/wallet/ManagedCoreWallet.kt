@@ -45,8 +45,13 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      * reservation age bound throws the typed
      * [StaleReservationToken][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]
      * (native code 34, shared with the deferred-token surface) instead of
-     * broadcasting against inputs key-wallet's TTL may have re-selected —
-     * rebuild the transaction; [abandonTransaction] works at any age.
+     * broadcasting against inputs key-wallet's TTL may have re-selected.
+     *
+     * On that refusal the handle has **already been consumed** by this call, so
+     * a follow-up [abandonTransaction] is an invalid-handle error, not a recovery
+     * path — there is nothing left to release, and the aged reservation is left
+     * for key-wallet's TTL to reclaim (releasing it by outpoint could free a
+     * newer build's reservation). Recover by rebuilding the transaction.
      */
     fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
         WalletManagerNative.coreWalletBroadcastSignedTransactionV2(
@@ -54,7 +59,15 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             tx.takeForBroadcast(),
         )
 
-    /** Consume without sending and release the selected inputs immediately. */
+    /**
+     * Consume a finalized transaction without sending. Below the reservation age
+     * bound this releases the selected inputs immediately so a rebuild can
+     * reselect them. If the handle has aged past the bound the by-outpoint
+     * release is skipped — key-wallet's TTL may already have swept and
+     * re-reserved the outpoint, so releasing it could free a newer build's
+     * reservation — and the aged reservation is left for the TTL to reclaim; the
+     * handle is torn down either way.
+     */
     fun abandonTransaction(tx: FinalizedCoreTransaction) {
         WalletManagerNative.coreWalletAbandonSignedTransactionV2(
             handle,

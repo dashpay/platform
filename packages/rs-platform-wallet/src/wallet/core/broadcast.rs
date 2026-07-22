@@ -39,8 +39,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// The stale reservation is deliberately left for key-wallet's TTL to
     /// reclaim rather than released by outpoint here (which could free a newer
     /// build's reservation); the caller must rebuild the payment. Abandon/free
-    /// ([`abandon_transaction`](Self::abandon_transaction)) skip this guard —
-    /// releasing an old reservation is always safe.
+    /// ([`abandon_transaction`](Self::abandon_transaction)) honor the same bound:
+    /// once aged they too skip the by-outpoint release and leave the outpoint for
+    /// the TTL, because releasing a swept-and-re-reserved outpoint could free a
+    /// newer build's reservation — only below the bound do they release.
     pub async fn broadcast_finalized_transaction(
         &self,
         transaction: &SignedCoreTransaction,
@@ -297,9 +299,26 @@ mod tests {
         for (addr, amount) in outputs {
             builder = builder.add_output(addr, *amount);
         }
-        core.finalize_transaction(builder, account_type, 0, signer)
+        try_finalize_tx(core, account_type, outputs, signer)
             .await
             .expect("finalize should succeed")
+    }
+
+    /// Like [`finalize_tx`] but surfaces the build error instead of panicking —
+    /// used to prove a *rebuild* fails when a still-held reservation keeps its
+    /// inputs out of the selectable pool.
+    async fn try_finalize_tx<B: TransactionBroadcaster>(
+        core: &CoreWallet<B>,
+        account_type: AccountTypePreference,
+        outputs: &[(DashAddress, u64)],
+        signer: &WalletSigner,
+    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
+        let mut builder = TransactionBuilder::new();
+        for (addr, amount) in outputs {
+            builder = builder.add_output(addr, *amount);
+        }
+        core.finalize_transaction(builder, account_type, 0, signer)
+            .await
     }
 
     /// Force the wallet's `last_processed_height` forward, simulating chain
@@ -339,11 +358,13 @@ mod tests {
     /// A V2 handle pinned while the wallet syncs past `RESERVATION_MAX_AGE_BLOCKS`
     /// beyond its reservation stamp must be refused with `StaleReservation`
     /// (never a send — the broadcaster is `AlwaysOk`, so a leaked send would
-    /// surface as `Ok`), yet must still abandon cleanly at any age: releasing an
-    /// old reservation returns the inputs so an immediate rebuild can reselect
-    /// them.
+    /// surface as `Ok`). An aged abandon/free must then **skip** the by-outpoint
+    /// release: key-wallet's TTL may already have swept and re-reserved the
+    /// outpoint, so releasing it could free a newer build's reservation. We prove
+    /// the skip by showing the input is still reserved after abandon — an
+    /// immediate rebuild cannot reselect it.
     #[tokio::test]
-    async fn aged_finalized_handle_refuses_broadcast_but_abandons() {
+    async fn aged_finalized_handle_refuses_broadcast_and_skips_release() {
         for account_type in [AccountTypePreference::BIP44, AccountTypePreference::BIP32] {
             let (core, signer, outputs) = funded_core_wallet(
                 account_type_standard(account_type),
@@ -367,11 +388,52 @@ mod tests {
                  {account_type:?}, got {sent:?}"
             );
 
-            // Abandon is always allowed, even for an aged handle. It releases the
-            // reservation so an immediate rebuild can reselect the same inputs.
+            // Aged abandon skips the by-outpoint release. The reservation is left
+            // for key-wallet's TTL, so the input stays reserved and a rebuild
+            // cannot reselect it (it would surface as a build/insufficient-funds
+            // error).
             core.abandon_transaction(&finalized).await;
-            let rebuilt = finalize_tx(&core, account_type, &outputs, &signer).await;
-            core.abandon_transaction(&rebuilt).await;
+            let rebuilt = try_finalize_tx(&core, account_type, &outputs, &signer).await;
+            assert!(
+                rebuilt.is_err(),
+                "aged abandon must skip the release, leaving the input reserved \
+                 for {account_type:?}, got {rebuilt:?}"
+            );
+        }
+    }
+
+    /// Below the guard bound the reservation is provably still ours (no sweep
+    /// possible yet), so abandon/free **do** release by outpoint — returning the
+    /// inputs so an immediate rebuild reselects them. This is the mirror of the
+    /// aged skip case.
+    #[tokio::test]
+    async fn below_bound_finalized_handle_abandon_releases() {
+        for account_type in [AccountTypePreference::BIP44, AccountTypePreference::BIP32] {
+            let (core, signer, outputs) = funded_core_wallet(
+                account_type_standard(account_type),
+                Arc::new(AlwaysOkBroadcaster),
+            )
+            .await;
+            let stamped = core
+                .last_processed_height()
+                .await
+                .expect("last processed height");
+            let finalized = finalize_tx(&core, account_type, &outputs, &signer).await;
+
+            // Aged, but one shy of the guard bound: still below both the guard and
+            // the TTL, so the reservation is unambiguously ours to release.
+            advance_processed_height(&core, stamped + RESERVATION_MAX_AGE_BLOCKS - 1).await;
+
+            core.abandon_transaction(&finalized).await;
+
+            // The release freed the input: an immediate rebuild reselects it.
+            let rebuilt = try_finalize_tx(&core, account_type, &outputs, &signer).await;
+            assert!(
+                rebuilt.is_ok(),
+                "below-bound abandon must release the input so a rebuild reselects \
+                 it for {account_type:?}, got {rebuilt:?}"
+            );
+            core.abandon_transaction(&rebuilt.expect("rebuild")).await;
         }
     }
 

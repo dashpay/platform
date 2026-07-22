@@ -54,6 +54,19 @@ pub(crate) const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 /// (captured inside the funding critical section, before the potentially-slow
 /// external signer ran), never sampled independently.
 ///
+/// Both *consuming* (broadcasting) and *releasing by outpoint* (abandon/free) a
+/// stale reservation are refused. Once the outpoint may already have been swept
+/// by key-wallet's TTL and re-reserved by an unrelated build, broadcasting would
+/// spend against that newer reservation and releasing would free it —
+/// `ReservationSet::release` removes an outpoint unconditionally, with no
+/// ownership/generation check. An aged reservation is therefore left for
+/// key-wallet's TTL to reclaim: the guarded broadcast
+/// ([`broadcast_finalized_transaction`](crate::CoreWallet::broadcast_finalized_transaction))
+/// returns `StaleReservation`, and the guarded abandon/free paths (the registry's
+/// `reconcile_removed_entry` and
+/// [`abandon_transaction`](crate::CoreWallet::abandon_transaction)) tear the
+/// handle/registry entry down without touching the `ReservationSet`.
+///
 /// An unknown *current* height means the wallet is gone from the manager, which
 /// disables the guard (`None` → not expired). That is safe only because every
 /// caller establishes liveness first and so never reaches here with a removed
