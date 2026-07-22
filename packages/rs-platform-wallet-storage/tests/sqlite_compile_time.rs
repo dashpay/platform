@@ -120,7 +120,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "identities.rs",
         "length(entry_blob), entry_blob, tombstoned",
     ),
-    // load_tombstoned_ids: the merge's positive tombstone signal (QA-002).
+    // load_tombstoned_ids supplies the merge's positive tombstone signal.
     (
         "identities.rs",
         "SELECT identity_id FROM identities WHERE",
