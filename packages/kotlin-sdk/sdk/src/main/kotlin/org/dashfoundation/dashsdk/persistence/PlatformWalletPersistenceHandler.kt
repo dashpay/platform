@@ -2652,18 +2652,41 @@ class PlatformWalletPersistenceHandler(
      * breadcrumbs cannot be safely repaired, so the repair fails without
      * clearing pending.
      *
+     * ## Durability (dashpay/platform#4060 blocker 3)
+     *
+     * The durable Room write (recording the storage identifier so the restart
+     * reconstruction does not resurrect the key) fails CLOSED: if it throws,
+     * the pending state is NOT cleared and the failure propagates, so the live
+     * session and a subsequent restart agree the repair is still pending. A
+     * swallowed durable-write failure that still cleared live pending state
+     * would let the session believe the repair was done while a restart's
+     * reconstruction resurrected it. Only after the blob is verified
+     * recoverable AND the durable write commits is the key dropped from
+     * [pendingIdentityKeys].
+     *
      * @param verifyRecoverable the real-decrypt probe
      *   (`WalletStorage.probeIdentityKeyRecoverability`) proving the just-written
      *   blob actually opens; injected by the manager (this handler holds no
      *   `WalletStorage`).
+     * @param persistDurableIdentifier the durable Room update (default: the
+     *   production `public_keys` write); a seam so a failed durable write —
+     *   which must NOT clear pending — is exercisable in tests.
      * @return the recorded storage identifier, or null when the deriver
      *   declined to store (pending left intact). Throws (pending left intact)
-     *   on a derivation/verification failure.
+     *   on a derivation/verification/durable-write failure.
      */
     internal suspend fun repairIdentityKeyDurably(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         verifyRecoverable: suspend (pubkeyHex: String) -> Boolean,
+        persistDurableIdentifier: suspend (storageIdentifier: String) -> Unit = { storageIdentifier ->
+            database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
+                if (row.privateKeyKeychainIdentifier != storageIdentifier) {
+                    database.publicKeyDao()
+                        .update(row.copy(privateKeyKeychainIdentifier = storageIdentifier))
+                }
+            }
+        },
     ): String? {
         val pubkeyHex = publicKeyData.toHex()
         val deriver = privateKeyDeriver
@@ -2709,16 +2732,16 @@ class PlatformWalletPersistenceHandler(
             )
         }
 
-        // Record the identifier on the Room rows so the durable pending-repair
-        // reconstruction does not resurrect this key on the next launch.
-        runCatching {
-            database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
-                if (row.privateKeyKeychainIdentifier != storageIdentifier) {
-                    database.publicKeyDao()
-                        .update(row.copy(privateKeyKeychainIdentifier = storageIdentifier))
-                }
-            }
-        }
+        // BLOCKER 3: the durable write fails CLOSED. Record the identifier on
+        // the Room rows so the restart reconstruction does not resurrect this
+        // key — but if that write throws, DO NOT clear pending. A swallowed
+        // failure that still cleared live state would resurrect the repair
+        // after restart while the session believed it was done. Let it
+        // propagate; pending stays intact and the repair is retryable.
+        persistDurableIdentifier(storageIdentifier)
+
+        // Durable write committed and blob verified — now it is safe to drop
+        // the pending-repair signal.
         markIdentityKeyRepaired(pubkeyHex)
         return storageIdentifier
     }

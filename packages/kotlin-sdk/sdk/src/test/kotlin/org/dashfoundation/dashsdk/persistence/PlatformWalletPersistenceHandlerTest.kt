@@ -1547,6 +1547,39 @@ class PlatformWalletPersistenceHandlerTest {
         assertNull(deriver.lastForceCall)
     }
 
+    @Test
+    fun repairWithFailedDurableWriteLeavesPendingIntact() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 33 }
+        seedIdentity(identityId)
+
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(3, 5)
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // BLOCKER 3: derive + verify succeed, but the durable Room write fails.
+        // Pending MUST stay so a restart and this session agree the repair is
+        // still outstanding — a swallowed failure would resurrect it after
+        // restart while the session believed it was done.
+        var thrown: Throwable? = null
+        try {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+                persistDurableIdentifier = { throw java.io.IOException("durable write failed") },
+            )
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue("durable-write failure must propagate, got $thrown", thrown is java.io.IOException)
+        assertNotNull(
+            "a failed durable write must NOT clear pending",
+            handler.pendingIdentityKeys.value[pubkey.toHex()],
+        )
+    }
+
     // ── Shielded load round-trip ──────────────────────────────────────
 
     @Test
