@@ -192,4 +192,62 @@ internal object DashpayNative {
         signerHandle: Long,
         coreSignerHandle: Long,
     ): Long
+
+    // ── DIP-13 invitations ────────────────────────────────────────────
+    //
+    // The invitation [uri] / returned link IS a bearer credential (the
+    // one-time voucher private key rides inside as a WIF). It must never
+    // be logged, persisted, or interpolated into an exception message on
+    // either side of this boundary.
+
+    /**
+     * Decode a `dashpay://invite` link into a read-only preview — no
+     * wallet, no network, no side effects. Returns a JSON object:
+     * `structurallyValid`, `isInstant`, `hasInviter`, `inviterUsername`
+     * (string or null), `amountDuffs` / `expiryUnix` (always 0 — the
+     * legacy link carries neither; the amount resolves at claim). A
+     * malformed link yields `structurallyValid: false`, not an exception.
+     * Gate contact features on a non-null `inviterUsername`, not on
+     * `hasInviter` (a metadata-only link sets the flag without a name).
+     * ← Swift `ManagedPlatformWallet.parseInvitation`.
+     */
+    external fun parseInvitation(uri: String): String?
+
+    /**
+     * Create a DashPay invitation voucher and return the shareable
+     * `dashpay://invite` link. Blocking (builds + broadcasts an L1 asset
+     * lock and waits for its InstantSend proof). The invitation row lands
+     * in Room via [NativePersistenceBridge.onPersistInvitationUpsert]
+     * before this returns. [inviterIdentityId] null ⇒ pure funding
+     * voucher; non-null (32 bytes) opts into the contact-bootstrap and
+     * requires a non-null [inviterUsername].
+     * ← Swift `ManagedPlatformWallet.createInvitation`.
+     */
+    external fun createInvitation(
+        walletHandle: Long,
+        amountDuffs: Long,
+        fundingAccountIndex: Int,
+        inviterIdentityId: ByteArray?,
+        inviterUsername: String?,
+        nowUnix: Int,
+        coreSignerHandle: Long,
+    ): String?
+
+    /**
+     * Claim a `dashpay://invite` link: register a NEW identity for the
+     * invitee funded by the imported voucher. Blocking (refetches the
+     * funding tx by txid, then waits for the Platform response).
+     * [pubkeysBlob] is the same rich key-row layout
+     * [IdentityNative.registerIdentityWithFunding] takes; no core signer
+     * (the asset-lock signature uses the link's raw voucher key).
+     * ← Swift `ManagedPlatformWallet.claimInvitation`.
+     */
+    external fun claimInvitation(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        nowUnix: Int,
+    ): IdentityRegistrationNativeResult
 }

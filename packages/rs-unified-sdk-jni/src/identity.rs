@@ -54,14 +54,14 @@ use std::ptr;
 /// Owns a managed-identity handle until it has been successfully embedded in
 /// the Java result object. This is established immediately after the FFI call,
 /// so native-error, JNI allocation failure, and unwinding paths all destroy it.
-struct ManagedIdentityHandleGuard(Handle);
+pub(crate) struct ManagedIdentityHandleGuard(pub(crate) Handle);
 
 impl ManagedIdentityHandleGuard {
-    fn handle(&self) -> Handle {
+    pub(crate) fn handle(&self) -> Handle {
         self.0
     }
 
-    fn disarm(&mut self) {
+    pub(crate) fn disarm(&mut self) {
         self.0 = 0;
     }
 }

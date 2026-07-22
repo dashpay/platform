@@ -384,6 +384,72 @@ class Dashpay internal constructor(private val walletHandle: Long,
         ContactRequestRef(handle)
     }
 
+    // ── DIP-13 invitations ────────────────────────────────────────────
+    //
+    // The invitation link (parse input / create output) IS a bearer
+    // credential — the one-time voucher private key rides inside as a
+    // WIF. Never log or persist it; the claim/reclaim flows re-derive
+    // everything they need from Rust-side state.
+
+    /**
+     * Decode a `dashpay://invite` link into a read-only [InvitationPreview]
+     * — no network, no side effects. A malformed link yields
+     * `structurallyValid == false`, never an exception, so the claim UI can
+     * render a clean "invalid invitation" state.
+     * ← Swift `ManagedPlatformWallet.parseInvitation`.
+     */
+    suspend fun parseInvitation(uri: String): InvitationPreview = gate.op {
+        val json = mapNativeErrors { DashpayNative.parseInvitation(uri) }
+        InvitationPreview.fromJson(json)
+    }
+
+    /**
+     * Create a DashPay invitation voucher and return the shareable
+     * `dashpay://invite` link. Blocking (builds + broadcasts an L1 asset
+     * lock at the DIP-13 invitation path and waits for its InstantSend
+     * proof); runs on IO. The sent-invitation row lands in Room via the
+     * persistence callback before this returns, so the "Sent invitations"
+     * `Flow` updates without any extra call.
+     * ← Swift `ManagedPlatformWallet.createInvitation`.
+     *
+     * Amount bounds (`MIN_INVITATION_DUFFS = 300_000`,
+     * `MAX_INVITATION_DUFFS = 5_000_000`) are enforced in Rust — a voucher
+     * below the floor could fund neither a claim nor a reclaim.
+     *
+     * Pass a non-null [inviterIdentityId] (32 bytes) + [inviterUsername]
+     * to opt into the contact-bootstrap (the link then carries the
+     * username so the invitee can send a contact request back); null for a
+     * pure funding voucher.
+     *
+     * **The returned link embeds the plaintext one-time voucher key.**
+     */
+    suspend fun createInvitation(
+        amountDuffs: Long,
+        fundingAccountIndex: Int,
+        inviterIdentityId: ByteArray?,
+        inviterUsername: String?,
+        coreSignerHandle: Long,
+        nowUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+    ): String = gate.op {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
+        require(inviterIdentityId == null || inviterIdentityId.size == 32) {
+            "inviterIdentityId must be 32 bytes when set"
+        }
+        require(inviterIdentityId == null || !inviterUsername.isNullOrEmpty()) {
+            "inviterUsername is required when inviterIdentityId is set"
+        }
+        val uri = mapNativeErrors {
+            DashpayNative.createInvitation(
+                walletHandle, amountDuffs, fundingAccountIndex,
+                inviterIdentityId, inviterUsername, nowUnix, coreSignerHandle,
+            )
+        }
+        checkNotNull(uri) { "native createInvitation returned no link" }
+    }
+
     // ── Profile / contactInfo writes (upstream #3841 parity) ──────────
 
     /**
@@ -544,6 +610,65 @@ class EstablishedContactRef internal constructor(handle: Long) : AutoCloseable {
         override fun run() {
             val h = handleRef.getAndSet(0)
             if (h != 0L) TokensNative.establishedContactDestroy(h)
+        }
+    }
+}
+
+/**
+ * Read-only preview of a `dashpay://invite` link, decoded off-chain by
+ * [Dashpay.parseInvitation] — mirror of Swift
+ * `ManagedPlatformWallet.InvitationPreview`.
+ *
+ * The legacy link carries neither the amount nor an expiry, so
+ * [amountDuffs] and [expiryUnix] are always 0 (the claim UI shows "—"; the
+ * amount resolves when the claim refetches the funding tx). Gate contact
+ * features on a non-null [inviterUsername], not on [hasInviter]: a
+ * metadata-only link (display-name/avatar without a `du` username) sets
+ * the flag while the username stays null.
+ */
+data class InvitationPreview(
+    /** The link decoded structurally; when false every other field is unset. */
+    val structurallyValid: Boolean,
+    /** The link carried an `islock` (InstantSend); false ⇒ ChainLock invite. */
+    val isInstant: Boolean,
+    /** The link carried inviter metadata (username, display name, or avatar). */
+    val hasInviter: Boolean,
+    /** Inviter DPNS username, or null (metadata-only or pure funding link). */
+    val inviterUsername: String?,
+    /** Always 0 — not on the wire; resolved at claim time. */
+    val amountDuffs: Long = 0,
+    /** Always 0 — the legacy link carries no expiry field. */
+    val expiryUnix: Int = 0,
+) {
+    companion object {
+        /** An all-unset preview — the malformed-link shape. */
+        val INVALID = InvitationPreview(
+            structurallyValid = false,
+            isInstant = false,
+            hasInviter = false,
+            inviterUsername = null,
+        )
+
+        /** Parse the compact JSON emitted by `DashpayNative.parseInvitation`. */
+        internal fun fromJson(json: String?): InvitationPreview {
+            if (json.isNullOrEmpty()) return INVALID
+            return try {
+                val obj = org.json.JSONObject(json)
+                InvitationPreview(
+                    structurallyValid = obj.optBoolean("structurallyValid", false),
+                    isInstant = obj.optBoolean("isInstant", false),
+                    hasInviter = obj.optBoolean("hasInviter", false),
+                    inviterUsername = if (obj.isNull("inviterUsername")) {
+                        null
+                    } else {
+                        obj.optString("inviterUsername").takeIf { it.isNotEmpty() }
+                    },
+                    amountDuffs = obj.optLong("amountDuffs", 0),
+                    expiryUnix = obj.optInt("expiryUnix", 0),
+                )
+            } catch (_: org.json.JSONException) {
+                INVALID
+            }
         }
     }
 }

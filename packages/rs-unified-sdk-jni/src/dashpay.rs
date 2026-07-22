@@ -18,12 +18,17 @@
 //! (the `getDashPayProfile` precedent — parsing happens Kotlin-side,
 //! keeping descriptors trivial); byte ids are lower-hex.
 
+use crate::identity::ManagedIdentityHandleGuard;
+use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error};
-use jni::objects::{JByteArray, JClass, JString};
-use jni::sys::{jboolean, jint, jlong, jstring};
+use jni::objects::{JByteArray, JClass, JString, JValue};
+use jni::sys::{jboolean, jint, jlong, jobject, jstring};
 use jni::JNIEnv;
+use platform_wallet_ffi::core_wallet_types::OutPointFFI;
 use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
 use platform_wallet_ffi::handle::Handle;
+use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::invitation::InvitationPreviewFFI;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::CStr;
 use std::os::raw::c_char;
@@ -888,5 +893,265 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_sendCon
             return 0;
         }
         request_handle as jlong
+    })
+}
+
+// ── DIP-13 invitations ────────────────────────────────────────────────
+//
+// The `uri` argument on parse/claim and the string returned by create ARE
+// the bearer credential (the voucher WIF rides inside). Neither may ever be
+// interpolated into a thrown exception message, log line, or debug output —
+// error text names the argument, never its value.
+
+/// Decode a `dashpay://invite` link into a read-only preview (bridges
+/// `platform_wallet_parse_invitation` — no wallet handle, no network, no
+/// side effects). Returns a compact JSON object:
+/// `structurallyValid`, `isInstant`, `hasInviter`, `inviterUsername`
+/// (string or null), plus `amountDuffs` / `expiryUnix`, which the legacy
+/// link never carries (always 0 — the amount resolves at claim time). A
+/// malformed link yields `structurallyValid: false`, not an exception.
+///
+/// Gate contact features on a non-null `inviterUsername`, not on
+/// `hasInviter`: a metadata-only link (display-name/avatar without `du`)
+/// sets the flag with a null username.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_parseInvitation(
+    mut env: JNIEnv,
+    _class: JClass,
+    uri: JString,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+                return ptr::null_mut();
+            }
+            Err(()) => return ptr::null_mut(),
+        };
+        let mut preview = InvitationPreviewFFI {
+            structurally_valid: false,
+            is_instant: false,
+            has_inviter: false,
+            inviter_id: [0u8; 32],
+            inviter_username: ptr::null_mut(),
+            amount_duffs: 0,
+            expiry_unix: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_parse_invitation(uri_c.as_ptr(), &mut preview)
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let username = unsafe { opt_cstr(preview.inviter_username) };
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(preview.inviter_username) };
+        let username_json = username
+            .as_deref()
+            .map(json_string)
+            .unwrap_or_else(|| "null".to_string());
+        let json = format!(
+            "{{\"structurallyValid\":{},\"isInstant\":{},\"hasInviter\":{},\
+             \"inviterUsername\":{},\"amountDuffs\":{},\"expiryUnix\":{}}}",
+            preview.structurally_valid,
+            preview.is_instant,
+            preview.has_inviter,
+            username_json,
+            preview.amount_duffs,
+            preview.expiry_unix,
+        );
+        new_jstring(env, json)
+    })
+}
+
+/// Create a DashPay invitation voucher and return the shareable
+/// `dashpay://invite` link (bridges `platform_wallet_create_invitation`).
+/// Blocking (builds + broadcasts an L1 asset lock and waits for its
+/// InstantSend proof). The invitation row lands in Room via the
+/// `onPersistInvitationUpsert` persistence callback before this returns —
+/// the funding outpoint out-param is deliberately ignored, as on iOS.
+///
+/// `inviterIdentityId` null ⇒ a pure funding voucher; non-null (32 bytes)
+/// opts into the contact-bootstrap and then requires a non-null
+/// `inviterUsername` (the link carries only the username; the invitee
+/// resolves the id via DPNS).
+///
+/// **The returned string embeds the plaintext one-time voucher key.**
+/// Callers must never log or persist it.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createInvitation(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    amount_duffs: jlong,
+    funding_account_index: jint,
+    inviter_identity_id: JByteArray,
+    inviter_username: JString,
+    now_unix: jint,
+    core_signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if amount_duffs <= 0 {
+            crate::support::throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            return ptr::null_mut();
+        }
+        if funding_account_index < 0 {
+            crate::support::throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if now_unix <= 0 {
+            crate::support::throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
+            return ptr::null_mut();
+        }
+        if core_signer_handle == 0 {
+            crate::support::throw_sdk_exception(env, 1, "coreSignerHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        let inviter_id = if inviter_identity_id.is_null() {
+            None
+        } else {
+            let Some(id) = read_id32(env, &inviter_identity_id, "inviterIdentityId") else {
+                return ptr::null_mut();
+            };
+            Some(id)
+        };
+        let username_c = match opt_jstring_to_cstring(env, "inviterUsername", &inviter_username) {
+            Ok(c) => c,
+            Err(()) => return ptr::null_mut(),
+        };
+        if inviter_id.is_some() && username_c.is_none() {
+            crate::support::throw_sdk_exception(
+                env,
+                1,
+                "inviterUsername is required when inviterIdentityId is set",
+            );
+            return ptr::null_mut();
+        }
+
+        let mut uri: *mut c_char = ptr::null_mut();
+        // Caller-owned POD out-param; the persistence callback records the
+        // row, so the outpoint is not surfaced to Kotlin (iOS discards it
+        // the same way).
+        let mut outpoint = OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_create_invitation(
+                wallet_handle as Handle,
+                amount_duffs as u64,
+                funding_account_index as u32,
+                inviter_id
+                    .as_ref()
+                    .map_or(ptr::null(), |id| id.as_ptr()),
+                username_c.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+                now_unix as u32,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                &mut uri as *mut *mut c_char,
+                &mut outpoint,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let value = unsafe { opt_cstr(uri) }.unwrap_or_default();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(uri) };
+        new_jstring(env, value)
+    })
+}
+
+/// Claim a `dashpay://invite` link: register a NEW identity for the invitee
+/// funded by the imported voucher (bridges
+/// `platform_wallet_claim_invitation`). Blocking (refetches the funding tx
+/// and waits for the Platform response). The caller has already derived +
+/// persisted the identity keys and built the rich registration rows
+/// (`RegistrationKeys` + `IdentityPubkeyCodec`); `pubkeysBlob` is the same
+/// layout `registerIdentityWithFunding` takes. No core signer: the
+/// asset-lock's outer signature uses the link's raw voucher key.
+///
+/// Returns an `IdentityRegistrationNativeResult` (identity id + managed
+/// handle), the `resumeIdentityWithExistingAssetLock` convention; the
+/// handle is transferred only after the result object is constructed.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimInvitation(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    uri: JString,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    signer_handle: jlong,
+    now_unix: jint,
+) -> jobject {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                crate::support::throw_sdk_exception(env, 1, "uri must not be null");
+                return ptr::null_mut();
+            }
+            Err(()) => return ptr::null_mut(),
+        };
+        if identity_index < 0 {
+            crate::support::throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if signer_handle == 0 {
+            crate::support::throw_sdk_exception(env, 1, "signerHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
+
+        let mut out_id = [0u8; 32];
+        let mut out_managed: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_claim_invitation(
+                wallet_handle as Handle,
+                uri_c.as_ptr(),
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                signer_handle as *mut SignerHandle,
+                now_unix as u32,
+                &mut out_id,
+                &mut out_managed,
+            )
+        };
+        let mut managed_guard = ManagedIdentityHandleGuard(out_managed);
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        let identity_id = match env.byte_array_from_slice(&out_id) {
+            Ok(value) => value,
+            Err(_) => {
+                crate::support::throw_sdk_exception(env, 99, "identity result byte[] allocation failed");
+                return ptr::null_mut();
+            }
+        };
+        let result_object = env.new_object(
+            "org/dashfoundation/dashsdk/ffi/IdentityRegistrationNativeResult",
+            "([BJ)V",
+            &[
+                JValue::Object(identity_id.as_ref()),
+                JValue::Long(managed_guard.handle() as jlong),
+            ],
+        );
+        match result_object {
+            Ok(value) => {
+                managed_guard.disarm();
+                value.into_raw()
+            }
+            Err(_) => {
+                let _ = env.exception_clear();
+                crate::support::throw_sdk_exception(env, 99, "identity result object allocation failed");
+                ptr::null_mut()
+            }
+        }
     })
 }

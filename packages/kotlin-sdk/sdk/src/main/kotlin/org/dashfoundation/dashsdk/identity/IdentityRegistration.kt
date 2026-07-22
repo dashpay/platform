@@ -27,6 +27,17 @@ internal fun interface ResumeIdentityNativeCall {
     ): IdentityRegistrationNativeResult
 }
 
+internal fun interface ClaimInvitationNativeCall {
+    fun call(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        nowUnix: Int,
+    ): IdentityRegistrationNativeResult
+}
+
 internal fun interface SyncContestedDpnsNativeCall {
     fun call(walletHandle: Long, identityId: ByteArray): Int
 }
@@ -54,6 +65,10 @@ class IdentityRegistration internal constructor(
     private val gate: org.dashfoundation.dashsdk.wallet.TeardownGate? = null,
     private val resumeNative: ResumeIdentityNativeCall =
         ResumeIdentityNativeCall(IdentityNative::resumeIdentityWithExistingAssetLock),
+    private val claimInvitationNative: ClaimInvitationNativeCall =
+        ClaimInvitationNativeCall(
+            org.dashfoundation.dashsdk.ffi.DashpayNative::claimInvitation,
+        ),
     private val destroyManagedIdentity: (Long) -> Unit = TokensNative::managedIdentityDestroy,
     private val syncContestedDpnsNative: SyncContestedDpnsNativeCall =
         SyncContestedDpnsNativeCall(IdentityNative::syncContestedDpnsNames),
@@ -170,6 +185,67 @@ class IdentityRegistration internal constructor(
             }
             check(native.identityId.size == 32) {
                 "native registration returned ${native.identityId.size}-byte identity id"
+            }
+            native.identityId.copyOf()
+        }
+    }
+
+    /**
+     * Claim a `dashpay://invite` link: register a NEW identity for the
+     * invitee funded by the imported voucher (DIP-13). Blocking (the SDK
+     * refetches the funding tx by txid, then waits for the Platform
+     * response). Works with no pre-existing identity — the fresh-invitee
+     * onboarding path. ← Swift `ManagedPlatformWallet.claimInvitation`.
+     *
+     * [keys] carries the full fresh-registration set (the base four
+     * auth/transfer keys PLUS the DashPay ENCRYPTION/DECRYPTION pair,
+     * `RegistrationKeys.buildRegistrationRows(includeDashPayKeys = true)`)
+     * — unlike asset-lock resume, a claim funds a brand-new transition, so
+     * the invitee gets DashPay capability from the start. Each row's
+     * private key must already be persisted (see
+     * [previewRegistrationKeySet]). No core signer: the asset-lock's outer
+     * signature uses the link's raw voucher key.
+     *
+     * The [uri] is a bearer credential (it embeds the one-time voucher
+     * key) — this wrapper never logs it and callers must not either.
+     *
+     * @return the 32-byte identity id of the newly-registered invitee
+     *   identity (already folded into Rust's manager and Room).
+     */
+    suspend fun claimInvitation(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        keys: RegistrationKeySet,
+        signerHandle: Long,
+        nowUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+    ): ByteArray = gate.op {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(keys.identityIndex == identityIndex) {
+            "claim keys use identityIndex ${keys.identityIndex}, expected $identityIndex"
+        }
+        val native = mapNativeErrors {
+            claimInvitationNative.call(
+                walletHandle = walletHandle,
+                uri = uri,
+                identityIndex = identityIndex,
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
+                signerHandle = signerHandle,
+                nowUnix = nowUnix,
+            )
+        }
+        // Adopt immediately. The standalone handle is only an FFI result;
+        // the identity itself is already folded into Rust's manager and Room.
+        val managed = ManagedIdentityResultHandle(
+            native.managedIdentityHandle,
+            destroyManagedIdentity,
+        )
+        managed.use {
+            check(native.managedIdentityHandle != 0L) {
+                "native claim returned a null managed-identity handle"
+            }
+            check(native.identityId.size == 32) {
+                "native claim returned ${native.identityId.size}-byte identity id"
             }
             native.identityId.copyOf()
         }
