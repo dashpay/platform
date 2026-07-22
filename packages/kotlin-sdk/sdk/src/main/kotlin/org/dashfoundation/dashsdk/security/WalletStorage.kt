@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.security.GeneralSecurityException
 import java.util.Base64
+import kotlin.coroutines.cancellation.CancellationException
 
 private val Context.secretsStore: DataStore<Preferences> by preferencesDataStore(
     name = "org.dashfoundation.wallet.secrets",
@@ -668,7 +669,7 @@ class WalletStorage(
         plain: ByteArray,
         sourceEncoded: String,
     ) {
-        runCatching {
+        try {
             val migrated = keystore.encryptForIdentityKeys(plain)
             store.edit {
                 val key = privateKeyKey(pubkeyHex)
@@ -682,6 +683,15 @@ class WalletStorage(
                     it[privateKeyAliasKey(pubkeyHex)] = migrated.alias
                 }
             }
+        } catch (cancellation: CancellationException) {
+            // NEVER swallow structured-concurrency cancellation: if the caller's
+            // coroutine was cancelled during the encrypt / store.edit suspend
+            // points, rethrow so the cancellation propagates. Only genuine
+            // rewrite failures below stay best-effort (retry on the next read).
+            throw cancellation
+        } catch (_: Throwable) {
+            // Best-effort: a rewrite failure must not lose the value the caller
+            // just recovered — migration retries on the next read.
         }
     }
 

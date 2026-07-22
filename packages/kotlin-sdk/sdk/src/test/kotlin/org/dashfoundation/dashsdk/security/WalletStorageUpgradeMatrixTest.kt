@@ -15,6 +15,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import javax.crypto.BadPaddingException
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Full upgrade-matrix coverage for [WalletStorage]'s layered identity-key
@@ -86,6 +87,36 @@ class WalletStorageUpgradeMatrixTest {
         // touches the legacy AES path.
         fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.NONE
         assertArrayEquals(secret, storage.retrievePrivateKey(pub))
+    }
+
+    /**
+     * dashpay/platform#4060 finding 4: the best-effort policy-alias migration
+     * must NEVER swallow a coroutine cancellation. If the caller's coroutine is
+     * cancelled during the migration rewrite (the encrypt / DataStore edit
+     * suspend points), the [CancellationException] must propagate so structured
+     * concurrency unwinds — only genuine rewrite failures stay best-effort.
+     */
+    @Test
+    fun migrationRethrowsCancellationInsteadOfSwallowingIt() = runBlocking {
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.AES
+        fake.scheme = FakeKeystoreManager.Scheme.LEGACY_AES
+        storage.storePrivateKey(pub, secret)
+
+        // The retrieve recovers the legacy value and then migrates it forward;
+        // model a cancellation landing exactly at the migration's encrypt.
+        fake.scheme = FakeKeystoreManager.Scheme.CURRENT
+        fake.onNextPolicyEncrypt = { throw CancellationException("cancelled mid-migration") }
+
+        var thrown: Throwable? = null
+        try {
+            storage.retrievePrivateKey(pub)
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue(
+            "migration must rethrow CancellationException, not swallow it (got $thrown)",
+            thrown is CancellationException,
+        )
     }
 
     /** Legacy AES key already deleted by an older build → stranded, reported undecryptable. */
