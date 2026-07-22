@@ -796,9 +796,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         // Only 0 (CBOR) and 1 (protobuf) are wire-decodable by the legacy dashj
         // decryptTxMetadata; anything else seals a document the legacy stack
         // can't read. Fail fast here with the correct bound instead of the stale
-        // 0..=255 range (dashpay/platform#4091). The Rust
-        // core `seal_tx_metadata` enforces the same invariant as the last line
-        // of defense.
+        // 0..=255 range. The Rust core `seal_tx_metadata` enforces the same
+        // invariant as the last line of defense.
         if !(0..=1).contains(&version) {
             throw_sdk_exception(
                 env,
@@ -807,8 +806,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             );
             return ptr::null_mut();
         }
+        // The JNI-owned plaintext copy. Wrapped in `Zeroizing` so it is scrubbed
+        // on drop, mirroring the inner FFI copy (`payload_vec` in
+        // `rs-platform-wallet-ffi/src/document.rs`). The inner copy is dropped
+        // before its broadcast `.await`; from here the whole broadcast happens
+        // synchronously *inside* the single FFI call below, so the earliest this
+        // buffer can be released is the instant that call returns — dropped
+        // explicitly there rather than left to linger (unscrubbed) to end of
+        // scope. This is the only plaintext copy in this function.
         let payload_bytes = match env.convert_byte_array(&payload) {
-            Ok(b) => b,
+            Ok(b) => zeroize::Zeroizing::new(b),
             Err(_) => {
                 let _ = env.exception_clear();
                 throw_sdk_exception(env, 1, "payload byte[] was null/invalid");
@@ -834,6 +841,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 &mut out_json as *mut *mut c_char,
             )
         };
+        // The FFI call has returned: the plaintext has been sealed into
+        // ciphertext and the broadcast has already completed. Scrub this copy
+        // now (as soon as possible), before result/JSON handling.
+        drop(payload_bytes);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
@@ -881,8 +892,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     guard(&mut env, ptr::null_mut(), |env| {
         // Informational stage breadcrumbs are DEBUG; only genuine failure paths
         // are WARN. The `sdkFetched=0` root cause is fixed (external-signable
-        // txMetadata derive, dashpay/platform#4091), so these no longer need to
-        // be loud. Android visibility: `JNI_OnLoad` installs `android_logger` at
+        // txMetadata derive), so these no longer need to be loud. Android visibility: `JNI_OnLoad` installs `android_logger` at
         // `LevelFilter::Info`, so DEBUG lines stay OUT of on-device logcat while
         // WARN error lines remain visible. NEVER log a raw handle value: only
         // whether each handle is nonzero — `mnemonic_resolver_handle` is a live
