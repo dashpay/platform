@@ -49,16 +49,17 @@ secrets are installed**:
    release (e.g. the `org.dashj` publisher). This is the human gate: the
    workflow pauses at the deploy job until a reviewer approves, and the
    approval is the last chance to stop an irrevocable publish.
-3. Only then install the Central secrets (below). Scoping them to the
-   `maven-central` environment (rather than repo-wide) keeps them out of every
-   other job — they are exposed only to the reviewer-gated deploy job.
-
-Because the fail-fast precondition check in the **build** job runs before the
-long native build (so a misconfiguration aborts early), it needs to *see* the
-secret names at repository/organization scope. Practical setup: keep the five
-secret **names** resolvable at repo/org scope for that presence check, and use
-the `maven-central` environment for the required-reviewer gate (and, if you
-prefer, environment-scoped copies of the values that override at deploy time).
+3. Only then install the Central secrets (below). Install the five secrets at
+   **repository/organization scope** so the build job's fail-fast precondition
+   check can see them (that check runs before the long native build, so a
+   misconfiguration aborts early — and it reads secrets at repo/org scope, not
+   from the environment). Do **not** scope them environment-only: that would
+   make the presence check compute `deploy=false` and silently disable
+   publishing (green build, only a `::notice`). The `maven-central` environment
+   provides the required-reviewer human gate; if you additionally want the
+   secret *values* withheld from the build job, add environment-scoped copies
+   that override at deploy time — but the repo/org-scoped names must remain for
+   the presence check.
 If a `kotlin-sdk-v*` tag is pushed while no reviewer approves, the deploy job
 simply waits and can be rejected — the GitHub-release AAR is already attached
 by job 1 regardless.
