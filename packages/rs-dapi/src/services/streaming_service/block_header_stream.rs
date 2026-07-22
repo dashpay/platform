@@ -321,9 +321,14 @@ impl StreamingServiceImpl {
                 biased;
                 _ = tx.closed() => break,
                 _ = &mut gate_deadline, if gated => {
-                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                    // Await the send so a full queue cannot silently discard
+                    // the terminal status (mirrors terminate_transaction_stream).
+                    // Delivering the error ends the gRPC stream, which drops the
+                    // receiver and stops the historical fetcher at its next
+                    // per-batch `is_closed` check.
+                    let _ = tx.send(Err(Status::resource_exhausted(
                         "block-header history handoff exceeded its time budget",
-                    )));
+                    ))).await;
                     break;
                 }
                 gate_change = delivery_gate.changed(), if gated => {
@@ -348,9 +353,11 @@ impl StreamingServiceImpl {
                                 if pending.len() >= MAX_HEADER_PENDING_EVENTS
                                     || next_bytes > MAX_HEADER_PENDING_BYTES
                                 {
-                                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                                    // Awaited for the same reason as the gate-deadline
+                                    // branch: the queue is full exactly when this fires.
+                                    let _ = tx.send(Err(Status::resource_exhausted(
                                         "live events exceeded the history handoff budget",
-                                    )));
+                                    ))).await;
                                     break;
                                 }
                                 pending_bytes = next_bytes;
@@ -373,9 +380,11 @@ impl StreamingServiceImpl {
                                 if pending.len() >= MAX_HEADER_PENDING_EVENTS
                                     || next_bytes > MAX_HEADER_PENDING_BYTES
                                 {
-                                    let _ = tx.try_send(Err(Status::resource_exhausted(
+                                    // Awaited for the same reason as the gate-deadline
+                                    // branch: the queue is full exactly when this fires.
+                                    let _ = tx.send(Err(Status::resource_exhausted(
                                         "live events exceeded the history handoff budget",
-                                    )));
+                                    ))).await;
                                     break;
                                 }
                                 pending_bytes = next_bytes;
