@@ -887,12 +887,21 @@ impl PlatformWalletPersistence for SqlitePersister {
         // invitations, account pools, and deferred-contact-crypto queue rows.
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
-        // full restore remains lossy. Shielded state lives in a separate store.
-        PersistenceCapabilities::ATOMIC_CHANGESETS
+        // full restore remains lossy. Shielded viewing keys are native when
+        // compiled in; notes, nullifiers, and sync state use ShieldedStore.
+        let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
-            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
+            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO);
+        #[cfg(feature = "shielded")]
+        {
+            capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            capabilities
+        }
     }
 
     /// Merge `changeset` into the per-wallet buffer.
@@ -926,6 +935,12 @@ impl PlatformWalletPersistence for SqlitePersister {
         self.flush_inner(&wallet_id)
     }
 
+    fn delete_wallet(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+        SqlitePersister::delete_wallet(self, wallet_id)
+            .map(|_| ())
+            .map_err(PersistenceError::from)
+    }
+
     /// Load every wallet's start-state from disk.
     ///
     /// Populates `platform_addresses` and the keyless per-wallet `wallets`
@@ -936,7 +951,8 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// The `tracing::info!` summary reports `wallets_rehydrated`.
     ///
     /// Fail-hard: any row that fails to decode (or has a malformed
-    /// `wallet_id`) aborts the whole load — corruption is never skipped.
+    /// `wallet_id`) aborts the whole load, except a corrupt shielded
+    /// viewing-key row, which is skipped for that one subwallet.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one
@@ -994,6 +1010,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
+
+        #[cfg(feature = "shielded")]
+        {
+            state.shielded.viewing_keys =
+                schema::shielded_viewing_keys::load_all(&conn).map_err(PersistenceError::from)?;
+        }
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
         let mut addresses_loaded: usize = 0;
@@ -1185,11 +1207,16 @@ impl PlatformWalletPersistence for SqlitePersister {
             );
         }
         let wallets_rehydrated = state.wallets.len();
+        #[cfg(feature = "shielded")]
+        let shielded_viewing_keys_loaded = state.shielded.viewing_keys.len();
+        #[cfg(not(feature = "shielded"))]
+        let shielded_viewing_keys_loaded = 0usize;
 
         tracing::info!(
             wallets_seen,
             addresses_loaded,
             wallets_rehydrated,
+            shielded_viewing_keys_loaded,
             wallets_pending_rehydration = 0usize,
             unimplemented = ?LOAD_UNIMPLEMENTED,
             "load() summary"
@@ -1317,6 +1344,10 @@ fn apply_changeset_to_tx(
     }
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
+    }
+    #[cfg(feature = "shielded")]
+    if let Some(shielded) = cs.shielded.as_ref() {
+        schema::shielded_viewing_keys::apply(tx, wallet_id, shielded)?;
     }
     if let Some(identities) = cs.identities.as_ref() {
         schema::identities::apply(tx, wallet_id, identities)?;

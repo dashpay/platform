@@ -17,6 +17,8 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::{AddressInfo, Network};
+#[cfg(feature = "shielded")]
+use platform_wallet::changeset::ShieldedChangeSet;
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, ContactChangeSet,
     ContactRequestEntry, CoreChangeSet, IdentityChangeSet, IdentityEntry, IdentityKeyEntry,
@@ -27,6 +29,8 @@ use platform_wallet::changeset::{
 };
 use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::SubwalletId;
 use platform_wallet_storage::sqlite::schema::versions::{self, Domain};
 
 fn one_external_info(seed_byte: u8) -> AddressInfo {
@@ -238,6 +242,12 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
                 removed: Default::default(),
             });
         }
+        #[cfg(feature = "shielded")]
+        Domain::ShieldedViewingKeys => {
+            let mut shielded = ShieldedChangeSet::default();
+            shielded.record_viewing_key(SubwalletId::new([0x0D; 32], 3), [0x0E; 96]);
+            cs.shielded = Some(shielded);
+        }
     }
     cs
 }
@@ -343,8 +353,8 @@ fn tc_b_013_every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
-        14,
-        "provider-key registrations ride the account-registrations domain — no new domain"
+        if cfg!(feature = "shielded") { 15 } else { 14 },
+        "every compiled persistence domain must be covered"
     );
     let mut covered = BTreeSet::new();
     for domain in Domain::ALL {

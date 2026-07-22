@@ -18,6 +18,8 @@ pub mod identity_keys;
 pub mod invitations;
 pub mod pending_contact_crypto;
 pub mod platform_addrs;
+#[cfg(feature = "shielded")]
+pub mod shielded_viewing_keys;
 pub mod token_balances;
 pub mod versions;
 pub mod wallets;
