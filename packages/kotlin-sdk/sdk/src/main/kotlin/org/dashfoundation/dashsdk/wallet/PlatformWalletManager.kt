@@ -2228,6 +2228,62 @@ class PlatformWalletManager(
 }
 
 /**
+ * A freshly generated one-time Orchard key for an L2 shielded invitation —
+ * the *inviter* side. Returned by [generateOneTimeOrchardKey].
+ *
+ * The inviter funds an Orchard note to [address]; a claimer handed
+ * [spendingKey] re-derives its viewing keys and spends that note via
+ * [PlatformWalletManager.shieldedIdentityCreateFromOneTimeKey]. All Orchard
+ * key material is generated in Rust — the app only ever sees these bytes.
+ */
+data class OneTimeOrchardKey(
+    /** The 32-byte one-time Orchard spending key (the claimer's spend authority). */
+    val spendingKey: ByteArray,
+    /** The 43-byte raw default Orchard payment address the inviter funds. */
+    val address: ByteArray,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is OneTimeOrchardKey) return false
+        return spendingKey.contentEquals(other.spendingKey) &&
+            address.contentEquals(other.address)
+    }
+
+    override fun hashCode(): Int = 31 * spendingKey.contentHashCode() + address.contentHashCode()
+}
+
+/**
+ * Generate a fresh one-time Orchard spending key together with the default
+ * Orchard address it funds — the *inviter* side of an L2 shielded invitation.
+ *
+ * Handle-less (process-local Orchard crypto). The inviter funds a note to the
+ * returned [OneTimeOrchardKey.address]; the claimer, handed
+ * [OneTimeOrchardKey.spendingKey], spends it. The spending key is exactly the
+ * 32-byte value [PlatformWalletManager.shieldedIdentityCreateFromOneTimeKey]
+ * accepts.
+ */
+fun generateOneTimeOrchardKey(): OneTimeOrchardKey {
+    val blob = mapNativeErrors { FundingNative.generateOneTimeOrchardKey() }
+    require(blob.size == 75) { "expected a 75-byte sk||address blob, got ${blob.size}" }
+    return OneTimeOrchardKey(
+        spendingKey = blob.copyOfRange(0, 32),
+        address = blob.copyOfRange(32, 75),
+    )
+}
+
+/**
+ * Derive the default 43-byte raw Orchard payment address from a 32-byte
+ * one-time Orchard [spendingKey] — the RNG-free counterpart of
+ * [generateOneTimeOrchardKey], for round-trip validation and recomputing the
+ * recipient an inviter must fund for a given key. Handle-less; throws if
+ * [spendingKey] is not a valid Orchard spending key.
+ */
+fun orchardAddressFromSpendingKey(spendingKey: ByteArray): ByteArray {
+    require(spendingKey.size == 32) { "spendingKey must be 32 bytes, got ${spendingKey.size}" }
+    return mapNativeErrors { FundingNative.orchardAddressFromSpendingKey(spendingKey) }
+}
+
+/**
  * Per-wallet seedless-unlock status — Swift `DashPayUnlockStatus`.
  * Published on [PlatformWalletManager.dashPayUnlockStatus]; drives the
  * DashPay tab's unlock banner.

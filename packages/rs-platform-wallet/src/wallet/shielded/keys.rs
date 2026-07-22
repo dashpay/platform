@@ -214,6 +214,80 @@ impl AccountViewingKeys {
     }
 }
 
+/// Length in bytes of a raw Orchard payment address: an 11-byte
+/// diversifier concatenated with a 32-byte `pk_d`. This is the encoding
+/// [`PaymentAddress::to_raw_address_bytes`] produces and the one
+/// `platform_wallet_manager_shielded_default_address` /
+/// `identity_create_from_one_time_key` speak.
+pub const ORCHARD_RAW_ADDRESS_LEN: usize = 43;
+
+/// Derive the default raw Orchard payment address (diversifier index 0,
+/// external scope) from a 32-byte Orchard spending key.
+///
+/// This is the standalone, RNG-free deriver behind
+/// [`generate_one_time_orchard_key`]. It runs the exact SK → FVK →
+/// default-address pipeline that [`OrchardKeySet::from_seed`] uses
+/// (`FullViewingKey::from(&sk)` then `address_at(0, External)`), and
+/// returns the same 43-byte raw encoding
+/// (`super::operations::identity_create_from_one_time_key` derives its
+/// scan key from `SpendingKey::from_bytes(sk)` identically). The *inviter*
+/// side of an L2 shielded invitation calls this to compute the Orchard
+/// recipient it must fund a note to for a given one-time spending key; it
+/// is also the cheap round-trip check for [`generate_one_time_orchard_key`].
+///
+/// # Errors
+///
+/// Returns [`PlatformWalletError::ShieldedKeyDerivation`] when `sk_bytes`
+/// is not a valid Orchard `SpendingKey` scalar — the same validity gate
+/// `identity_create_from_one_time_key` applies to a claimed key.
+pub fn orchard_address_from_spending_key(
+    sk_bytes: [u8; 32],
+) -> Result<[u8; ORCHARD_RAW_ADDRESS_LEN], PlatformWalletError> {
+    let sk: SpendingKey = Option::from(SpendingKey::from_bytes(sk_bytes)).ok_or_else(|| {
+        PlatformWalletError::ShieldedKeyDerivation(
+            "spending key is not a valid Orchard SpendingKey".to_string(),
+        )
+    })?;
+    let fvk = FullViewingKey::from(&sk);
+    Ok(fvk.address_at(0u32, Scope::External).to_raw_address_bytes())
+}
+
+/// Generate a fresh one-time Orchard spending key together with its default
+/// raw payment address.
+///
+/// Returns `(spending_key_32, default_address_43)`:
+/// - `spending_key_32` — a uniformly random, valid 32-byte Orchard
+///   `SpendingKey` scalar. These are exactly the bytes
+///   `identity_create_from_one_time_key` accepts as its one-time key: both
+///   sides round-trip through `SpendingKey::from_bytes`, which stores the
+///   scalar bytes verbatim, so `spending_key_32 == sk.to_bytes()`.
+/// - `default_address_43` — the address
+///   [`orchard_address_from_spending_key`] derives for that key (raw
+///   11-byte diversifier ‖ 32-byte `pk_d`).
+///
+/// This keeps all Orchard key material in Rust: the *inviter* funds a note
+/// to `default_address_43`, and a *claimer* handed `spending_key_32`
+/// re-derives the viewing keys and spends it.
+///
+/// The scalar is drawn from the OS CSPRNG ([`OsRng`](rand::rngs::OsRng))
+/// and re-rolled until it is a valid Orchard key — an invalid draw is
+/// negligibly rare and the same acceptance loop the `orchard` crate's own
+/// dummy-key generator runs.
+pub fn generate_one_time_orchard_key() -> ([u8; 32], [u8; ORCHARD_RAW_ADDRESS_LEN]) {
+    use rand::{rngs::OsRng, RngCore};
+
+    let mut rng = OsRng;
+    loop {
+        let mut sk_bytes = [0u8; 32];
+        rng.fill_bytes(&mut sk_bytes);
+        if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(sk_bytes)) {
+            let fvk = FullViewingKey::from(&sk);
+            let address = fvk.address_at(0u32, Scope::External).to_raw_address_bytes();
+            return (sk_bytes, address);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -404,6 +478,115 @@ mod tests {
         assert!(
             AccountViewingKeys::from_fvk_bytes(&[0xFFu8; 96]).is_err(),
             "non-canonical FVK bytes must be rejected"
+        );
+    }
+
+    /// Round-trip: a freshly generated one-time key's returned address is
+    /// exactly what [`orchard_address_from_spending_key`] re-derives from the
+    /// returned spending key. This is the invariant the inviter/claimer split
+    /// relies on — the inviter funds the returned address; the claimer, given
+    /// only the spending key, must re-derive the same recipient.
+    #[test]
+    fn one_time_key_generate_roundtrips_to_its_address() {
+        let (sk, address) = generate_one_time_orchard_key();
+        let rederived = orchard_address_from_spending_key(sk)
+            .expect("a freshly generated sk is a valid Orchard SpendingKey");
+        assert_eq!(
+            address, rederived,
+            "generated address must equal the deriver's output for the same sk"
+        );
+    }
+
+    /// Ownership: a real Orchard note sent to the generated address is
+    /// recognized by the generated key's incoming viewing key (the claimer
+    /// discovers it on scan) and its nullifier derives cleanly under that
+    /// key's full viewing key (the claimer can spend it). Mirrors the
+    /// note-shaping the foreign-key scan in `operations.rs` performs.
+    #[test]
+    fn generated_key_owns_a_note_sent_to_its_address() {
+        use grovedb_commitment_tree::{
+            ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, RandomSeed, Rho, Scope,
+            SpendingKey,
+        };
+
+        let (sk_bytes, address_bytes) = generate_one_time_orchard_key();
+
+        // Re-derive exactly the viewing keys a claimer would hold.
+        let sk: SpendingKey = Option::from(SpendingKey::from_bytes(sk_bytes))
+            .expect("generated sk is a valid Orchard SpendingKey");
+        let fvk = FullViewingKey::from(&sk);
+        let ivk = fvk.to_ivk(Scope::External);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // The generated raw address is precisely this recipient.
+        assert_eq!(
+            recipient.to_raw_address_bytes(),
+            address_bytes,
+            "the generated address is the key's default payment address"
+        );
+
+        // The claimer's IVK owns (recognizes) that address.
+        assert!(
+            ivk.diversifier_index(&recipient).is_some(),
+            "the generated key's ivk must own the generated address"
+        );
+
+        // Build a real note to the address (canonical rho / rseed, exactly as
+        // the foreign-key scan reconstructs one) and confirm it is well-formed
+        // and spendable under the generated fvk: the nullifier derives without
+        // panicking, which is the quantity the claimer's scan stamps.
+        let rho = (1u16..=u16::MAX)
+            .find_map(|n| {
+                let mut b = [0u8; 32];
+                b[0..2].copy_from_slice(&n.to_le_bytes());
+                Rho::from_bytes(&b).into_option()
+            })
+            .expect("a canonical rho exists");
+        let rseed = (1u16..=u16::MAX)
+            .find_map(|m| {
+                let mut b = [0u8; 32];
+                b[2..4].copy_from_slice(&m.to_le_bytes());
+                RandomSeed::from_bytes(b, &rho).into_option()
+            })
+            .expect("a canonical rseed exists");
+        let note = Note::from_parts(recipient, NoteValue::from_raw(10_000_000_000), rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+
+        let _cmx = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
+        let _nullifier = note.nullifier(&fvk).to_bytes();
+        assert_eq!(
+            note.recipient().to_raw_address_bytes(),
+            address_bytes,
+            "the note's recipient is the generated address"
+        );
+    }
+
+    /// Determinism: the deriver is a pure function of the spending key —
+    /// same sk in, same address out — and it agrees with what the generator
+    /// returned.
+    #[test]
+    fn address_from_spending_key_is_deterministic() {
+        let (sk, address) = generate_one_time_orchard_key();
+        let a = orchard_address_from_spending_key(sk).expect("valid sk");
+        let b = orchard_address_from_spending_key(sk).expect("valid sk");
+        assert_eq!(a, b, "same sk must derive the same address");
+        assert_eq!(
+            a, address,
+            "the deriver agrees with the generator for the generated sk"
+        );
+    }
+
+    /// Two generations draw distinct keys (the OS CSPRNG is not seeded to a
+    /// fixed value). A collision here would be a catastrophic RNG failure.
+    #[test]
+    fn generate_produces_distinct_keys() {
+        let (sk_a, addr_a) = generate_one_time_orchard_key();
+        let (sk_b, addr_b) = generate_one_time_orchard_key();
+        assert_ne!(sk_a, sk_b, "distinct draws must differ");
+        assert_ne!(
+            addr_a, addr_b,
+            "distinct keys must derive distinct addresses"
         );
     }
 }

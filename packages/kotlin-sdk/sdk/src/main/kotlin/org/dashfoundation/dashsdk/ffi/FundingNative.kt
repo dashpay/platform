@@ -141,6 +141,27 @@ internal object FundingNative {
         signerAddressHandle: Long,
     ): ByteArray
 
+    /**
+     * Generate a fresh one-time Orchard spending key + its default payment
+     * address (bridges `platform_wallet_generate_one_time_orchard_key`) — the
+     * *inviter* side of an L2 shielded invitation. Handle-less: a one-time key
+     * is process-local Orchard crypto, not bound to any wallet.
+     *
+     * Returns a single 75-byte blob: bytes `[0, 32)` are the 32-byte one-time
+     * spending key and bytes `[32, 75)` are the 43-byte raw default Orchard
+     * address to fund. The inviter funds a note to the address; a claimer given
+     * the spending key spends it via [shieldedIdentityCreateFromOneTimeKey].
+     */
+    external fun generateOneTimeOrchardKey(): ByteArray
+
+    /**
+     * Derive the default 43-byte raw Orchard address from a 32-byte one-time
+     * spending key (bridges `platform_wallet_orchard_address_from_spending_key`)
+     * — the RNG-free counterpart of [generateOneTimeOrchardKey]. Handle-less;
+     * throws if [spendingKey] is not a valid Orchard spending key.
+     */
+    external fun orchardAddressFromSpendingKey(spendingKey: ByteArray): ByteArray
+
     // ── Shielded outgoing spends (types 16/17/19) ─────────────────────
     //
     // Manager-handle calls like the funding submits above; each signs with
