@@ -496,10 +496,21 @@ impl Drive {
                 let effective_limit = if request.mode.is_aggregate() {
                     super::MAX_LIMIT_AS_FAILSAFE
                 } else {
-                    request
+                    let effective_limit = request
                         .limit
                         .unwrap_or(request.drive_config.default_query_limit as u32)
-                        .min(request.drive_config.max_query_limit as u32)
+                        .min(request.drive_config.max_query_limit as u32);
+                    // Fail closed instead of walking storage with a
+                    // zero bound (grovedb treats `limit: 0` as "return
+                    // nothing", which would masquerade as an empty
+                    // result set). Mirrors the sum-side
+                    // `effective_no_proof_distinct_limit` policy.
+                    if effective_limit == 0 {
+                        return Err(Error::Query(QuerySyntaxError::InvalidLimit(
+                            "effective distinct COUNT limit must be greater than zero".to_string(),
+                        )));
+                    }
+                    effective_limit
                 };
                 let options = RangeCountOptions {
                     distinct: request.mode.requires_distinct_walk(),

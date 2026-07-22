@@ -1652,6 +1652,89 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
     );
 }
 
+/// A `max_query_limit: 0` config (or an explicit `limit: 0`) must fail
+/// closed on the no-proof distinct walk instead of reaching storage
+/// with a zero bound, which grovedb treats as "return nothing" and
+/// which would masquerade as an empty result set. Mirrors the sum-side
+/// `effective_no_proof_distinct_limit` policy.
+#[test]
+fn test_range_distinct_no_proof_rejects_zero_effective_limit() {
+    use crate::config::DriveConfig;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::drive_document_count_query::drive_dispatcher::DocumentCountRequest;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    let drive = setup_drive_with_initial_state_structure(None);
+    let platform_version = PlatformVersion::latest();
+
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+    let document_schema = platform_value!({
+        "type": "object",
+        "properties": {
+            "color": {"type": "string", "position": 0, "maxLength": 32},
+        },
+        "indices": [{
+            "name": "byColor",
+            "properties": [{"color": "asc"}],
+            "countable": "countable",
+            "rangeCountable": true,
+        }],
+        "additionalProperties": false,
+    });
+    let schemas = platform_value!({ "widget": document_schema });
+    let data_contract = factory
+        .create_with_value_config(
+            dpp::tests::utils::generate_random_identifier_struct(),
+            0,
+            schemas,
+            None,
+            None,
+        )
+        .expect("expected to create data contract")
+        .data_contract_owned();
+    let document_type = data_contract
+        .document_type_for_name("widget")
+        .expect("widget doc type exists");
+
+    // The rejection fires in the dispatcher before any storage walk,
+    // so the contract does not need to be applied nor documents
+    // inserted for this check to be load-bearing.
+    let drive_config = DriveConfig {
+        max_query_limit: 0,
+        ..Default::default()
+    };
+    let request = DocumentCountRequest {
+        contract: &data_contract,
+        document_type,
+        where_clauses: vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        }],
+        order_clauses: Vec::new(),
+        mode: CountMode::GroupByRange,
+        limit: None,
+        prove: false,
+        drive_config: &drive_config,
+    };
+
+    let result = drive.execute_document_count_request(request, None, platform_version);
+    match result {
+        Err(Error::Query(QuerySyntaxError::InvalidLimit(msg))) => {
+            assert!(
+                msg.contains("greater than zero"),
+                "error must state the zero-limit rejection; got: {msg}"
+            );
+        }
+        other => panic!("expected InvalidLimit error, got {other:?}"),
+    }
+}
+
 /// `execute_document_count_per_in_value_no_proof` runs one GroveDB walk
 /// per `In` value, so its iteration cost is proportional to the array's
 /// length rather than the configured `max_query_limit`. That makes the
