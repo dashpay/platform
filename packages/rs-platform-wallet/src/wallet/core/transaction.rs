@@ -6,6 +6,7 @@
 //! resolver without pinning wallet state.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use dashcore::{Address, Transaction};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -265,19 +266,53 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         account_index: u32,
         transaction: &Transaction,
     ) {
+        // Validate the generation AND mutate the `ReservationSet` under one
+        // manager-lock hold. `ReservationSet::release` removes an outpoint
+        // unconditionally, and it is reached via `wallet_id` — an identity that a
+        // remove-then-recreate under the same id preserves. Between a token's
+        // generation validation and this cleanup the wallet could therefore have
+        // been re-created, and an unguarded release-by-outpoint could then free
+        // the NEW generation's reservation on the same input.
+        //
+        // Binding the release to this handle's own generation closes that
+        // window: the wallet registered under `wallet_id` is the same generation
+        // as `self` iff their per-generation balance `Arc`s are pointer-equal
+        // (`wallet_id` + the shared manager `Arc` are both preserved across a
+        // recreation; only the balance `Arc` is fresh — the same identity
+        // `is_same_generation` uses). A read lock is enough and makes this atomic
+        // against recreation: a recreate needs the manager *write* lock, so it
+        // cannot interleave between the pointer check and the release below.
         let manager = self.wallet_manager.read().await;
-        let managed = manager.get_wallet_info(&self.wallet_id).and_then(|info| {
-            managed_account(&info.core_wallet.accounts, account_type, account_index)
-        });
-        if let Some(managed) = managed {
-            managed.release_reservation(transaction);
-        } else {
+        let Some(info) = manager.get_wallet_info(&self.wallet_id) else {
             tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
                 ?account_type,
                 account_index,
-                "could not release finalized Core transaction reservation"
+                "could not release finalized Core transaction reservation: wallet not found"
             );
+            return;
+        };
+        if !Arc::ptr_eq(&info.balance, self.generation()) {
+            // The wallet under this id is a different (re-created) generation:
+            // releasing by outpoint could free ITS reservation. Leave it — the
+            // original generation's reservation ceased to exist with it.
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                ?account_type,
+                account_index,
+                "skipping reservation release: wallet was re-created under the same id \
+                 (different generation) since the token was minted"
+            );
+            return;
+        }
+        match managed_account(&info.core_wallet.accounts, account_type, account_index) {
+            Some(managed) => managed.release_reservation(transaction),
+            None => tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                ?account_type,
+                account_index,
+                "could not release finalized Core transaction reservation: account not found"
+            ),
         }
     }
 }
