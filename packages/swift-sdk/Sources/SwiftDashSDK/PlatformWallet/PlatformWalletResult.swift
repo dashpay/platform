@@ -241,6 +241,25 @@ public enum PlatformWalletError: LocalizedError {
     case assetLockNotTracked(String)
     case assetLockAlreadyConsumed(String)
     case assetLockFundingMismatch(String)
+    /// Asset-lock coin selection came up short over the *permitted* funding
+    /// set (dashpay/platform#4073 request 3): the requested amount plus the L1
+    /// fee exceeds the spendable funds the selector was allowed to draw on.
+    /// Raised strictly pre-broadcast (while building the asset-lock
+    /// transaction), so nothing reached the wire. The structured
+    /// `available`/`required` duff amounts travel in the message
+    /// (`"asset lock coin selection is short: available N duffs, required M
+    /// duffs"`). Distinct from `coreInsufficientFunds`, which is the atomic
+    /// Core-send selector rather than the asset-lock builder.
+    case assetLockInsufficientFunds(String)
+    /// The default single-privacy-domain funding rule (dashpay/platform#4184)
+    /// refused a cross-domain co-spend: the transparent domain (BIP44 + BIP32)
+    /// alone cannot cover the asset lock, but the wallet-wide union — adding
+    /// CoinJoin and/or DashPay-receiving funds — can. Combining them in one L1
+    /// transaction would irreversibly link those domains on-chain, so it is
+    /// gated behind explicit user consent. Prompt the user, then re-issue the
+    /// funding request with `allowCrossDomain: true`. The transparent / union /
+    /// required duff amounts travel in the message.
+    case assetLockCrossDomainConsentRequired(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -308,6 +327,8 @@ public enum PlatformWalletError: LocalizedError {
              .coreInsufficientFunds(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m),
+             .assetLockInsufficientFunds(let m),
+             .assetLockCrossDomainConsentRequired(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
@@ -346,6 +367,9 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
+        case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
+        case .errorAssetLockCrossDomainConsentRequired:
+            self = .assetLockCrossDomainConsentRequired(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
