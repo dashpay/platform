@@ -142,6 +142,34 @@ internal object FundingNative {
     ): ByteArray
 
     /**
+     * Create an identity funded from a ONE-TIME Orchard key, Type 20 (bridges
+     * `platform_wallet_manager_shielded_identity_create_from_one_time_key`) —
+     * the L2-invitation *claim* side. Like [shieldedIdentityCreateFromPool],
+     * but the Orchard spend authority is the invitation's single-use 32-byte
+     * spending key [oneTimeSk] rather than the wallet's own bound pool. The
+     * wallet derives the key's viewing keys, transiently scans the network for
+     * the note(s) funded to it, and spends them. [changeAddressRaw43] is the
+     * claimer's OWN 43-byte default Orchard address that receives any
+     * over-funding change note (zero for a well-formed invitation).
+     * [fundingBirthHeight] is an advisory hint: a negative value means "no
+     * hint". [pubkeysBlob] / [denomination] / [fallbackAddress] /
+     * [identityIndex] / [signerAddressHandle] match the pool variant. Blocks
+     * for the ~30s Halo 2 proof; returns the new 32-byte identity id.
+     */
+    external fun shieldedIdentityCreateFromOneTimeKey(
+        managerHandle: Long,
+        walletId: ByteArray,
+        oneTimeSk: ByteArray,
+        fundingBirthHeight: Int,
+        changeAddressRaw43: ByteArray,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        denomination: Long,
+        fallbackAddress: ByteArray,
+        signerAddressHandle: Long,
+    ): ByteArray
+
+    /**
      * Generate a fresh one-time Orchard spending key + its default payment
      * address (bridges `platform_wallet_generate_one_time_orchard_key`) — the
      * *inviter* side of an L2 shielded invitation. Handle-less: a one-time key

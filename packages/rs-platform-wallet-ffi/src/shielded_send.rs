@@ -811,6 +811,194 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     }
 }
 
+/// Sibling of [`platform_wallet_manager_shielded_identity_create_from_pool`], but
+/// the Orchard spend authority is a foreign one-time spending key rather than the
+/// wallet's own bound `OrchardKeySet`:
+/// - `one_time_sk_bytes` — the invitation's single-use 32-byte Orchard spending
+///   key. The wallet derives its fvk / ivk / ask, transiently scans the network
+///   for the note(s) funded to it, and spends them.
+/// - `change_address_raw43` — the claimer's OWN default Orchard address (43 raw
+///   bytes: 11-byte diversifier + 32-byte pk_d) that receives any over-funding
+///   change note. For a one-time invitation key the change is expected to be
+///   zero, but over-funding is handled.
+/// - `has_funding_birth_height` / `funding_birth_height` — an advisory birth-height
+///   hint (`false` → `None`, following the wallet-create birth-height override
+///   convention). The shielded tree has no height→note-index oracle, so the hint
+///   cannot seed the scan start today; the scan is value-bounded.
+///
+/// Everything else matches the pool sibling: `identity_pubkeys` /
+/// `identity_pubkeys_count` (same [`IdentityPubkeyFFI`] rows), `denomination` (a
+/// member of the versioned exit set), `send_to_address_on_creation_failure_bytes`
+/// (REQUIRED 21-byte `PlatformAddress` fallback bound into the sighash),
+/// `identity_index` (the local registration slot), and `signer_identity_handle`
+/// (the identity PoP signer). Blocks for the ~30 s Halo 2 proof.
+///
+/// On success the 32-byte new identity id is written to `out_identity_id`. As with
+/// the pool sibling, `out_identity_id` is ALSO written on the
+/// [`ErrorShieldedBroadcastUnconfirmed`] result code (the broadcast was accepted
+/// but its execution result couldn't be confirmed — the identity may exist on
+/// chain). On every other error code `out_identity_id` is left untouched.
+///
+/// [`ErrorShieldedBroadcastUnconfirmed`]: crate::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `one_time_sk_bytes` must point to exactly 32 readable bytes.
+/// - `change_address_raw43` must point to exactly 43 readable bytes.
+/// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous
+///   [`IdentityPubkeyFFI`] rows that outlive this call.
+/// - `send_to_address_on_creation_failure_bytes` must point to exactly 21
+///   readable bytes for the duration of this call.
+/// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle`
+///   (a `VTableSigner` with the callback variant) that outlives this call.
+/// - `out_identity_id` must point to 32 writable bytes. Written on `Success` AND
+///   on `ErrorShieldedBroadcastUnconfirmed` only.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_one_time_key(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    one_time_sk_bytes: *const u8,
+    has_funding_birth_height: bool,
+    funding_birth_height: u32,
+    change_address_raw43: *const u8,
+    identity_index: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    denomination: u64,
+    send_to_address_on_creation_failure_bytes: *const u8,
+    signer_identity_handle: *mut SignerHandle,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(one_time_sk_bytes);
+    check_ptr!(change_address_raw43);
+    check_ptr!(identity_pubkeys);
+    check_ptr!(send_to_address_on_creation_failure_bytes);
+    check_ptr!(signer_identity_handle);
+    check_ptr!(out_identity_id);
+    if identity_pubkeys_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`identity_pubkeys_count` must be >= 1",
+        );
+    }
+
+    // REQUIRED 21-byte fallback PlatformAddress (bound into the sighash).
+    let send_to_address_on_creation_failure = match parse_required_platform_address(
+        send_to_address_on_creation_failure_bytes,
+        "send_to_address_on_creation_failure_bytes",
+    ) {
+        Ok(addr) => addr,
+        Err(result) => return result,
+    };
+
+    // Copy the one-time spending key (32 bytes; the caller's safety contract
+    // guarantees the length — no companion length arg crosses the C ABI).
+    let mut one_time_sk = [0u8; 32];
+    std::ptr::copy_nonoverlapping(one_time_sk_bytes, one_time_sk.as_mut_ptr(), 32);
+
+    // Decode the claimer's own 43-byte default Orchard change address.
+    let mut change_raw = [0u8; 43];
+    std::ptr::copy_nonoverlapping(change_address_raw43, change_raw.as_mut_ptr(), 43);
+    let change_address = match OrchardAddress::from_raw_bytes(&change_raw) {
+        Ok(a) => a,
+        Err(_) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "change_address_raw43 is not a valid 43-byte Orchard address",
+            );
+        }
+    };
+
+    let funding_birth_height = if has_funding_birth_height {
+        Some(funding_birth_height)
+    } else {
+        None
+    };
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+    let public_keys: Vec<(
+        dpp::identity::IdentityPublicKey,
+        IdentityPublicKeyInCreation,
+    )> = keys_map
+        .into_values()
+        .map(|k| {
+            let in_creation: IdentityPublicKeyInCreation = (&k).into();
+            (k, in_creation)
+        })
+        .collect();
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    let signer_identity_addr = signer_identity_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack) — Halo 2 synthesis recurses
+    // past the iOS dispatch-thread stack.
+    let result = block_on_worker(async move {
+        // SAFETY: re-materialize the borrow under the caller's documented lifetime
+        // contract; valid for the duration of this synchronously-awaited task.
+        let identity_signer: &VTableSigner = &*(signer_identity_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        let r = wallet
+            .identity_create_from_one_time_key(
+                &coordinator,
+                one_time_sk,
+                funding_birth_height,
+                change_address,
+                identity_index,
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                identity_signer,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
+    });
+
+    match result {
+        Ok(identity_id) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::ok()
+        }
+        Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+            identity_id,
+            ref reason,
+        }) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+                format!(
+                    "shielded identity-create-from-one-time-key broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
+                ),
+            )
+        }
+        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
+            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+        ),
+        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
+            format!("shielded identity-create-from-one-time-key failed: {e}"),
+        ),
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded identity-create-from-one-time-key failed: {e}"),
+        ),
+    }
+}
+
 /// Shield: spend credits from a Platform Payment account into
 /// the bound shielded sub-wallet's pool.
 ///
