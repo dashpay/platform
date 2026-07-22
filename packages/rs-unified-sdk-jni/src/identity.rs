@@ -32,10 +32,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
-use crate::support::{
-    generic_asset_lock_recovery_allowed, guard, net_from_ord, take_pwffi_error,
-    throw_sdk_exception,
-};
+use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
@@ -521,15 +518,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resume
             throw_sdk_exception(env, 1, "signer handles must be non-zero");
             return ptr::null_mut();
         }
-        if !generic_asset_lock_recovery_allowed(consume_invitation_voucher != 0) {
-            throw_sdk_exception(
-                env,
-                1,
-                "generic identity recovery cannot consume invitation vouchers",
-            );
-            return ptr::null_mut();
-        }
-
         let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
             return ptr::null_mut();
         };
@@ -549,7 +537,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_resume
                 ffi_rows.len(),
                 signer_handle as *mut SignerHandle,
                 core_signer_handle as *mut MnemonicResolverHandle,
-                false,
+                consume_invitation_voucher != 0,
                 &mut out_id,
                 &mut out_managed,
             )

@@ -191,6 +191,70 @@ class IdentityRegistration internal constructor(
     }
 
     /**
+     * Reclaim an unclaimed DIP-13 invitation voucher by registering a NEW
+     * identity funded by it — the "register" reclaim target (the sibling
+     * of `IdentityCredits.reclaimInvitationAsTopUp`). The voucher's DASH
+     * was OP_RETURN-burned at create; the value returns as the new
+     * identity's credits. ← Swift
+     * `ManagedPlatformWallet.resumeIdentityWithAssetLock(consumeInvitationVoucher: true)`.
+     *
+     * Takes the raw outpoint (from the invitation row's `rawOutPoint`),
+     * not a [TrackedAssetLock] — invitation locks are deliberately
+     * excluded from the generic tracked-lock recovery model, and no
+     * funding-type or registration-index gate applies: the identity slot
+     * is freely chosen (next unused). [keys] carries the **base 4-key**
+     * registration set (`includeDashPayKeys = false`) — a reclaim sends
+     * no contact request, matching iOS's `authKeyCount = 4`.
+     * `consumeInvitationVoucher = true` is the explicit authorization
+     * Rust core requires; this is one of the two call sites that pass it.
+     *
+     * @return the 32-byte identity id of the newly-registered identity.
+     */
+    suspend fun reclaimInvitationAsNewIdentity(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        identityIndex: Int,
+        keys: RegistrationKeySet,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ByteArray = gate.op {
+        require(outPointTxid.size == 32) {
+            "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
+        }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(keys.identityIndex == identityIndex) {
+            "reclaim keys use identityIndex ${keys.identityIndex}, expected $identityIndex"
+        }
+        val native = mapNativeErrors {
+            resumeNative.call(
+                walletHandle = walletHandle,
+                outpointTxid = outPointTxid,
+                outpointVout = outPointVout,
+                identityIndex = identityIndex,
+                pubkeysBlob = IdentityPubkeyCodec.encode(keys.rows),
+                signerHandle = signerHandle,
+                coreSignerHandle = coreSignerHandle,
+                consumeInvitationVoucher = true,
+            )
+        }
+        val managed = ManagedIdentityResultHandle(
+            native.managedIdentityHandle,
+            destroyManagedIdentity,
+        )
+        managed.use {
+            check(native.managedIdentityHandle != 0L) {
+                "native reclaim returned a null managed-identity handle"
+            }
+            check(native.identityId.size == 32) {
+                "native reclaim returned ${native.identityId.size}-byte identity id"
+            }
+            native.identityId.copyOf()
+        }
+    }
+
+    /**
      * Claim a `dashpay://invite` link: register a NEW identity for the
      * invitee funded by the imported voucher (DIP-13). Blocking (the SDK
      * refetches the funding tx by txid, then waits for the Platform

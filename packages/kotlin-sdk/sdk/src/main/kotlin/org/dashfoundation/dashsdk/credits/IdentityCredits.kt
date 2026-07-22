@@ -118,6 +118,53 @@ class IdentityCredits internal constructor(
     }
 
     /**
+     * Reclaim an unclaimed DIP-13 invitation voucher as credits on an
+     * existing identity — the "top-up" reclaim target. Consumes the
+     * voucher's asset lock (the DASH was OP_RETURN-burned at create; the
+     * value returns as identity **credits**, never L1 Dash). The invitee
+     * can no longer claim afterwards. ← Swift
+     * `ManagedPlatformWallet.resumeTopUpWithAssetLock(consumeInvitationVoucher: true)`.
+     *
+     * Takes the raw outpoint (from the invitation row's `rawOutPoint` —
+     * txid wire order + vout), not a [TrackedAssetLock]: invitation locks
+     * are deliberately excluded from the generic tracked-lock recovery
+     * model. `consumeInvitationVoucher = true` is the explicit
+     * authorization Rust core requires to consume an invitation-typed
+     * lock; this is one of the two call sites in the SDK that pass it.
+     *
+     * A voucher already claimed (or already reclaimed) is rejected
+     * deterministically by Platform — the caller classifies that failure
+     * (see the reclaim sheet's outcome classifier).
+     *
+     * @return the identity's new credit balance.
+     */
+    suspend fun reclaimInvitationAsTopUp(
+        walletHandle: Long,
+        identityId: ByteArray,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        coreSignerHandle: Long,
+    ): Long = gate.op {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(outPointTxid.size == 32) {
+            "outPointTxid must be exactly 32 bytes, got ${outPointTxid.size}"
+        }
+        require(outPointVout >= 0) { "outPointVout must be non-negative, got $outPointVout" }
+        mapNativeErrors {
+            resumeTopUpNative.call(
+                walletHandle = walletHandle,
+                outpointTxid = outPointTxid,
+                outpointVout = outPointVout,
+                identityId = identityId,
+                coreSignerHandle = coreSignerHandle,
+                consumeInvitationVoucher = true,
+            )
+        }
+    }
+
+    /**
      * Transfer [amount] credits from [fromIdentityId] to [toIdentityId]
      * (both 32 bytes), signed via [signerHandle].
      */
