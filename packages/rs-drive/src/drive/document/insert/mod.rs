@@ -7,6 +7,8 @@
 // This module contains functionality for adding a document
 mod add_document;
 
+mod add_history_operations;
+
 // Module: add_document_for_contract
 // This module contains functionality for adding a document for a given contract
 mod add_document_for_contract;

@@ -114,6 +114,10 @@ impl<C> Platform<C> {
             self.transition_to_version_12(transaction, platform_version)?;
         }
 
+        if previous_protocol_version < 13 && platform_version.protocol_version >= 13 {
+            self.transition_to_version_13(block_info, transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -652,6 +656,40 @@ impl<C> Platform<C> {
 
         Ok(())
     }
+
+    /// When transitioning to version 13 we register the document history
+    /// contract, and re-store the DPNS contract whose v2 schema subscribes the
+    /// `domain` document type to transfer, purchase and pricing history.
+    fn transition_to_version_13(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let document_history_contract =
+            load_system_data_contract(SystemDataContract::DocumentHistory, platform_version)?;
+
+        self.drive.insert_contract(
+            &document_history_contract,
+            *block_info,
+            true,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+
+        self.drive.apply_contract(
+            &dpns_contract,
+            *block_info,
+            true,
+            None,
+            Some(transaction),
+            platform_version,
+        )?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -883,6 +921,97 @@ mod tests {
             contract_fetch_info.is_some(),
             "WalletUtils contract should exist after transition_to_version_6"
         );
+    }
+
+    #[test]
+    fn test_transition_to_version_13_inserts_document_history_contract_and_updates_dpns() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+        // A chain born at protocol version 12: DPNS v1 is stored and the
+        // domain document type is not subscribed to history
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        // The PV12 genesis must NOT contain the document history contract:
+        // it only comes into existence through this transition
+        let (_fee_result, pre_upgrade_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::DocumentHistory
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+        assert!(
+            pre_upgrade_fetch_info.is_none(),
+            "DocumentHistory contract must not exist before transition_to_version_13"
+        );
+
+        let result = platform.transition_to_version_13(&block_info, &transaction, platform_version);
+
+        assert!(result.is_ok(), "transition failed: {:?}", result.err());
+
+        // The document history contract must exist in the state
+        let (_fee_result, contract_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::DocumentHistory
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch contract");
+        assert!(
+            contract_fetch_info.is_some(),
+            "DocumentHistory contract should exist after transition_to_version_13"
+        );
+
+        // The stored DPNS contract must now be v2: the domain document type
+        // subscribes to transfer, purchase and pricing history
+        let (_fee_result, dpns_fetch_info) = platform
+            .drive
+            .get_contract_with_fetch_info_and_fee(
+                *dpp::data_contracts::SystemDataContract::DPNS
+                    .id()
+                    .as_bytes(),
+                None,
+                false,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch DPNS contract");
+
+        let dpns_fetch_info = dpns_fetch_info.expect("expected the DPNS contract to exist");
+
+        let domain = dpns_fetch_info
+            .contract
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+
+        assert!(domain.documents_keep_transfer_history());
+        assert!(domain.documents_keep_purchase_history());
+        assert!(domain.documents_keep_pricing_history());
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8

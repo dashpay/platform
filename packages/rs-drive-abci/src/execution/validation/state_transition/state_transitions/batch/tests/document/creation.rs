@@ -492,7 +492,8 @@ mod creation_tests {
                     processing_fee: 526140,
                     fee_refunds: FeeRefunds::default(),
                     removed_bytes_from_system: 0
-                }
+                },
+                address_balance_changes: std::collections::BTreeMap::new()
             }
         );
 

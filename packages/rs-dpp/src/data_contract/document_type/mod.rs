@@ -42,6 +42,9 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 pub(crate) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
+    pub const KEEPS_TRANSFER_HISTORY: &str = "keepsTransferHistory";
+    pub const KEEPS_PURCHASE_HISTORY: &str = "keepsPurchaseHistory";
+    pub const KEEPS_PRICING_HISTORY: &str = "keepsPricingHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";

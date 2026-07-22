@@ -228,4 +228,68 @@ mod shielded_pool_gating_tests {
         assert_eq!(block_end.record_shielded_pool_anchor, Some(0));
         assert_eq!(block_end.prune_shielded_pool_anchors, Some(0));
     }
+
+    // The v13 recorded-set expansion of the recent per-block address-balance set changes the
+    // committed state root, so it is gated to v13 via TWO method versions that both stay 0 before
+    // v13 and become 1 at v13:
+    //   - `record_added_balance_outputs`: v1 folds shielded-spend transparent credits (Unshield net
+    //     output, ShieldFromAssetLock surplus, identity-create fallback);
+    //   - `process_validation_result`: v1 records paid-invalid / unsuccessful-paid balance effects
+    //     that _v0 drops.
+    // Crucially the OUTER loop (`process_raw_state_transitions`) and the storage method
+    // (`store_address_balances_to_recent_block_storage`) are NOT bumped — their _v0 implementations
+    // did not change — so they stay 0 / Some(0) at BOTH versions.
+    #[test]
+    fn shielded_transparent_credit_recording_gated_to_v13() {
+        let v12 = PlatformVersion::get(12).expect("protocol version 12 must exist");
+        let v13 = PlatformVersion::get(13).expect("protocol version 13 must exist");
+        let stp12 = &v12.drive_abci.methods.state_transition_processing;
+        let stp13 = &v13.drive_abci.methods.state_transition_processing;
+
+        // The recording method version: v0 before v13 (drops shielded-spend), v1 from v13 (records).
+        assert_eq!(
+            stp12.record_added_balance_outputs, 0,
+            "v12 must use record_added_balance_outputs v0 (drops shielded-spend credits)"
+        );
+        assert_eq!(
+            stp13.record_added_balance_outputs, 1,
+            "v13 must use record_added_balance_outputs v1 (records shielded-spend credits)"
+        );
+
+        // The paid-invalid / unsuccessful-paid tracking version: v0 before v13 (drops those balance
+        // effects), v1 from v13 (records them).
+        assert_eq!(
+            stp12.process_validation_result, 0,
+            "v12 must use process_validation_result v0 (drops paid-invalid balance effects)"
+        );
+        assert_eq!(
+            stp13.process_validation_result, 1,
+            "v13 must use process_validation_result v1 (records paid-invalid balance effects)"
+        );
+
+        // The outer loop is UNCHANGED across the gate — its _v0 did not change, so it stays 0.
+        assert_eq!(
+            stp12.process_raw_state_transitions, 0,
+            "v12 outer loop stays process_raw_state_transitions v0"
+        );
+        assert_eq!(
+            stp13.process_raw_state_transitions, 0,
+            "v13 must NOT bump the unchanged outer loop"
+        );
+
+        // The storage method is UNCHANGED across the gate — we must not bump a method whose _v0
+        // implementation did not change. It stays Some(0) at both v12 and v13.
+        assert_eq!(
+            stp12.store_address_balances_to_recent_block_storage,
+            Some(0),
+            "v12 store method is Some(0)"
+        );
+        assert_eq!(
+            stp13.store_address_balances_to_recent_block_storage,
+            Some(0),
+            "v13 must NOT bump the unchanged store method"
+        );
+        // Cleanup mechanics likewise unchanged.
+        assert_eq!(stp13.cleanup_recent_block_storage_address_balances, Some(0));
+    }
 }

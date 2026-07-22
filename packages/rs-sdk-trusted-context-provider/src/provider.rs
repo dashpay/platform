@@ -17,6 +17,7 @@ use dpp::data_contract::TokenConfiguration;
     feature = "wallet-utils-contract",
     feature = "token-history-contract",
     feature = "keywords-contract",
+    feature = "document-history-contract",
     feature = "all-system-contracts"
 ))]
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
@@ -679,6 +680,7 @@ impl ContextProvider for TrustedHttpContextProvider {
             feature = "wallet-utils-contract",
             feature = "token-history-contract",
             feature = "keywords-contract",
+            feature = "document-history-contract",
             feature = "all-system-contracts"
         ))]
         {
@@ -762,6 +764,24 @@ impl ContextProvider for TrustedHttpContextProvider {
                 .map_err(|e| {
                     ContextProviderError::Generic(format!(
                         "Failed to load KeywordSearch contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(
+                feature = "document-history-contract",
+                feature = "all-system-contracts"
+            ))]
+            if *id == SystemDataContract::DocumentHistory.id() {
+                return load_system_data_contract(
+                    SystemDataContract::DocumentHistory,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load DocumentHistory contract: {}",
                         e
                     ))
                 });

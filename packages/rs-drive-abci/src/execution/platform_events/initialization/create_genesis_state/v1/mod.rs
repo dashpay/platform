@@ -34,7 +34,7 @@ impl<C> Platform<C> {
 
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
-        let system_data_contract_types = BTreeMap::from_iter([
+        let mut system_data_contract_types = BTreeMap::from_iter([
             (SystemDataContract::DPNS, system_data_contracts.load_dpns()),
             (
                 SystemDataContract::Withdrawals,
@@ -57,6 +57,16 @@ impl<C> Platform<C> {
                 system_data_contracts.load_keyword_search(),
             ),
         ]);
+
+        // The document history contract activates with protocol version 13: a
+        // chain born (or deterministically replayed) at an earlier version
+        // must produce the exact genesis state the pre-13 binaries produced
+        if platform_version.protocol_version >= 13 {
+            system_data_contract_types.insert(
+                SystemDataContract::DocumentHistory,
+                system_data_contracts.load_document_history(),
+            );
+        }
 
         for data_contract in system_data_contract_types.values() {
             self.register_system_data_contract_operations(
