@@ -2,6 +2,7 @@
 
 #[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -299,7 +300,8 @@ fn upsert_sync_state(
 /// # Reconstructed (safety-critical-correct)
 ///
 /// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row — the balance
-///   source (no-silent-zero); a row with a block `height` is confirmed.
+///   source (no-silent-zero); confirmation height comes from the matching
+///   transaction record, falling back to the UTXO row when no record exists.
 /// - **Transaction records** / **IS-locks** / **sync watermarks**: decoded
 ///   bit-exact, fail-hard on a corrupt blob.
 ///
@@ -319,8 +321,29 @@ pub fn load_state(
     WalletStorageError,
 > {
     let mut cs = CoreChangeSet::default();
-    let mut utxo_accounts: std::collections::HashMap<dashcore::OutPoint, OwningAccount> =
-        std::collections::HashMap::new();
+    let mut utxo_accounts: HashMap<dashcore::OutPoint, OwningAccount> = HashMap::new();
+
+    let mut transaction_heights: HashMap<dashcore::Txid, Option<u32>> = HashMap::new();
+    {
+        use dashcore::hashes::Hash;
+
+        let mut stmt = conn.prepare_cached(
+            "SELECT length(txid), txid, height FROM core_transactions WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "core_transactions.txid")?;
+            let txid_bytes: Vec<u8> = row.get(1)?;
+            let txid = dashcore::Txid::from_slice(&txid_bytes)?;
+            let height = row
+                .get::<_, Option<i64>>(2)?
+                .map(|height| {
+                    crate::sqlite::util::safe_cast::i64_to_u32("core_transactions.height", height)
+                })
+                .transpose()?;
+            transaction_heights.insert(txid, height);
+        }
+    }
 
     // Unspent UTXOs → new_utxos (the balance source).
     // Pre-read `length()` gates on `outpoint` and `script` before materializing
@@ -341,19 +364,24 @@ pub fn load_state(
             // col 3: length(script) — gate before materializing
             blob::check_size(row.get::<_, i64>(3)?)?;
             let script_bytes: Vec<u8> = row.get(4)?;
-            let height: Option<i64> = row.get(5)?;
+            let utxo_height = row
+                .get::<_, Option<i64>>(5)?
+                .map(|height| {
+                    crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.height", height)
+                })
+                .transpose()?;
             let outpoint = blob::decode_outpoint(&op_bytes)?;
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
-            let height_u32 = match height {
-                None => 0u32,
-                Some(h) => crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.height", h)?,
-            };
+            let height = transaction_heights
+                .get(&outpoint.txid)
+                .copied()
+                .unwrap_or(utxo_height);
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
             }
             let address = dashcore::Address::from_script(&script, network)?;
-            let confirmed = height.map(|h| h > 0).unwrap_or(false);
+            let confirmed = height.map(|height| height > 0).unwrap_or(false);
             let utxo = Utxo {
                 outpoint,
                 txout: dashcore::TxOut {
@@ -361,7 +389,7 @@ pub fn load_state(
                     script_pubkey: script,
                 },
                 address,
-                height: height_u32,
+                height: height.unwrap_or(0),
                 is_coinbase: false,
                 is_confirmed: confirmed,
                 is_instantlocked: false,
@@ -590,8 +618,38 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dashcore::address::Payload;
     use dashcore::hashes::Hash;
-    use dashcore::BlockHash;
+    use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+
+    fn transaction_record(txid: Txid, context: TransactionContext) -> TransactionRecord {
+        let mut record = TransactionRecord::new(
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+        record.txid = txid;
+        record
+    }
 
     fn sample_chain_lock(height: u32) -> ChainLock {
         ChainLock {
@@ -631,6 +689,81 @@ mod tests {
             matches!(err, WalletStorageError::BlobTooLarge { .. }),
             "expected BlobTooLarge from the pre-materialization gate, got {err:?}"
         );
+    }
+
+    #[test]
+    fn load_state_reconciles_utxo_height_from_confirmed_transaction_record() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x42u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let txid = Txid::from_byte_array([0x7Eu8; 32]);
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x23u8; 20])),
+        );
+        let outpoint = OutPoint { txid, vout: 0 };
+        let utxo = Utxo::new(
+            outpoint,
+            TxOut {
+                value: 150_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            0,
+            false,
+        );
+
+        {
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    new_utxos: vec![utxo],
+                    records: vec![transaction_record(txid, TransactionContext::Mempool)],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let confirmed_height = 321;
+        {
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    records: vec![transaction_record(
+                        txid,
+                        TransactionContext::InChainLockedBlock(BlockInfo::new(
+                            confirmed_height,
+                            BlockHash::from_byte_array([0x34u8; 32]),
+                            1_735_689_600,
+                        )),
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let loaded = state
+            .new_utxos
+            .iter()
+            .find(|candidate| candidate.outpoint == outpoint)
+            .expect("matching UTXO must be loaded");
+        assert_eq!(loaded.height, confirmed_height);
+        assert!(loaded.is_confirmed);
     }
 
     /// `load_used_addresses` (the address-reuse-guard rehydration path called
