@@ -1,5 +1,7 @@
 use super::VerifiedShieldedEncryptedNote;
-use crate::drive::shielded::paths::{shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY};
+use crate::drive::shielded::paths::{
+    shielded_credit_pool_path_vec, SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY,
+};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
@@ -42,11 +44,14 @@ impl Drive {
             )));
         }
 
-        // start_index must be chunk-aligned (multiple of max_elements)
-        let chunk_size = max_elements as u64;
-        if !start_index.is_multiple_of(chunk_size) {
+        // The query limit may span multiple MMR chunks, but the start only
+        // needs to align to one on-chain chunk. Treating `max_elements` as
+        // the alignment unit rejects valid resume points such as 2048 when
+        // a request is allowed to fetch 4 × 2048 notes.
+        let mmr_chunk_size = 1u64 << SHIELDED_NOTES_CHUNK_POWER;
+        if !start_index.is_multiple_of(mmr_chunk_size) {
             return Err(Error::Drive(DriveError::CorruptedElementType(
-                "start_index is not chunk-aligned; must be a multiple of max_elements",
+                "start_index is not chunk-aligned; must be a multiple of the shielded-notes MMR chunk size",
             )));
         }
 
@@ -387,5 +392,40 @@ mod tests {
 
         assert_eq!(tc_full, N);
         assert_eq!(tc_subset, N);
+    }
+
+    /// A multi-chunk request may resume at any MMR chunk boundary, not only
+    /// at a boundary of the full request size. This is the production shape
+    /// when a wallet watermark in the first chunk advances to 2100: the
+    /// wallet rewinds to 2048, while the query cap remains 4 × 2048.
+    #[test]
+    fn accepts_mmr_aligned_start_inside_multi_chunk_query_boundary() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        const N: u64 = 5;
+        insert_notes(&drive, N, platform_version);
+
+        let mmr_chunk_size: u64 = 1u64 << SHIELDED_NOTES_CHUNK_POWER;
+        let max_elements = (4 * mmr_chunk_size) as u32;
+        let start_index = mmr_chunk_size;
+        let limit = max_elements.min(u16::MAX as u32) as u16;
+        let path_query = notes_fetch_path_query(start_index, limit);
+        let proof = drive
+            .grove_get_proved_path_query_v1(&path_query, &mut vec![], &platform_version.drive)
+            .expect("should produce note-fetch proof from the second MMR chunk");
+
+        let (_, notes, total_count) = Drive::verify_shielded_encrypted_notes_v0(
+            proof.as_slice(),
+            start_index,
+            0,
+            max_elements,
+            false,
+            platform_version,
+        )
+        .expect("MMR-aligned resume point should verify for a multi-chunk request");
+
+        assert!(notes.is_empty());
+        assert_eq!(total_count, N);
     }
 }
