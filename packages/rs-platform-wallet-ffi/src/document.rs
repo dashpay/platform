@@ -397,7 +397,10 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
 /// from Platform state via `IdentityWallet::allocate_encryption_key_index`
 /// (serialized under the wallet's allocator mutex) BEFORE any key material is
 /// resolved — the allocation touches no secrets and never crosses the broadcast
-/// await with the master in scope.
+/// await with the master in scope. That allocation first runs the deterministic,
+/// network-free payload-size gate, so an oversized payload fails without
+/// reserving (and thus without consuming) an index — no allocator gap
+/// (dashpay/platform#4186 review).
 ///
 /// # Safety
 /// All pointers must be valid for the duration of the call; `payload` may be
@@ -457,17 +460,22 @@ unsafe fn create_encrypted_document_impl(
         // allocates the next index from authoritative Platform state, serialized
         // under the wallet's allocator mutex (dashpay/platform#4186 follow-up).
         // The allocation touches no secrets, so it can run on the worker before
-        // the master is resolved.
+        // the master is resolved. `allocate_encryption_key_index` runs the
+        // deterministic payload-size gate (network-free) BEFORE reserving, so an
+        // oversized payload fails without consuming an index — no allocator gap
+        // (dashpay/platform#4186 review).
         let resolved_index: u32 = match index {
             Some(i) => i,
             None => {
                 let iw = identity_wallet.clone();
                 let doc_type = document_type_str.clone();
+                let payload_len = payload_vec.len();
                 block_on_worker(async move {
                     iw.allocate_encryption_key_index(
                         &owner_id_for_async,
                         &contract_id_for_async,
                         &doc_type,
+                        payload_len,
                     )
                     .await
                 })
