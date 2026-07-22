@@ -121,6 +121,20 @@ state. Fatal failures (integrity check, encode error, mutex poison, …)
 return `kind: Fatal` (or `kind: Constraint` for SQL constraint violations)
 and drop the buffer.
 
+##### Connection mutex poison is permanent
+
+A `LockPoisoned` result means a panic occurred while the persister held its
+SQLite connection lock. The connection is never recovered because it may
+still contain a transaction interrupted by that panic. Drop the
+`SqlitePersister` and construct a fresh instance with `SqlitePersister::open`
+on the same path before attempting more work; the same-path open guard is
+released when the poisoned instance is dropped.
+
+Every later `store()`, `flush()`, `commit_writes()`, `load()`, and
+`delete_wallet()` call returns `LockPoisoned`. Detection also discards every
+buffered changeset because none can be made durable through the poisoned
+connection.
+
 The full classification lives on
 [`WalletStorageError::is_transient`](src/sqlite/error.rs) and the companion
 [`WalletStorageError::persistence_kind`](src/sqlite/error.rs) that selects

@@ -154,6 +154,19 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// unlinks — its own write is lost, nothing escalates. Correct file-handle
 /// semantics across the rename outweigh absolute lock coverage.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
+    let parent = dest_db_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+        crate::parent_permissions::ParentPermissionsError::Io(source) => {
+            WalletStorageError::Io(source)
+        }
+        crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+            WalletStorageError::InsecureParentDir { mode }
+        }
+    })?;
+
     // 1. Cheap early-out: sniff integrity + schema-history + version +
     //    wallet-identity against the source so an incompatible input fails
     //    before we stream the whole file. The authoritative, TOCTOU-safe

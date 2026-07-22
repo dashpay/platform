@@ -170,6 +170,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 default = ["sqlite", "cli", "secrets", "kv"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
+    "dep:libc",
     "dep:platform-wallet",
     "dep:serde",
     "dep:key-wallet",

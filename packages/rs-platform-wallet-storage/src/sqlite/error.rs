@@ -93,11 +93,11 @@ pub enum WalletStorageError {
         source: std::io::Error,
     },
 
-    /// The database file's parent directory is group/other writable, which
-    /// would let another local user replace the database despite mode `0600`.
+    /// A database ancestor is writable without the sticky bit or is owned by
+    /// neither the current user nor root, allowing replacement despite `0600`.
     #[error("database parent directory has insecure permissions")]
     InsecureParentDir {
-        /// Offending POSIX mode bits on the parent directory.
+        /// Offending POSIX mode bits on the ancestor directory.
         mode: u32,
     },
 
@@ -456,10 +456,6 @@ impl WalletStorageError {
             | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
-            // TODO(qa): `LockPoisoned` fatal classification has no e2e
-            // mutex-poison test; verified manually via
-            // `tests/sqlite_error_classification`. Re-check
-            // `handle_flush_error`'s fatal branch if you change it.
             | Self::LockPoisoned
             | Self::RestoreDestinationLocked
             | Self::InvalidWalletIdHex { .. }

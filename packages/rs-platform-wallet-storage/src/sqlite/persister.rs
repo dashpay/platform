@@ -149,8 +149,8 @@ impl SqlitePersister {
     /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
     ///   `config.path` does not exist. The persister refuses to create
     ///   parent directories silently.
-    /// - [`WalletStorageError::InsecureParentDir`] — the database parent is
-    ///   group/other writable on Unix.
+    /// - [`WalletStorageError::InsecureParentDir`] — a database ancestor has
+    ///   unsafe replacement permissions or ownership on Unix.
     /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
     ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
     ///   (no FK support compiled in).
@@ -356,6 +356,19 @@ impl SqlitePersister {
         auto_backup_dir: Option<&Path>,
         skip_backup: bool,
     ) -> Result<(), WalletStorageError> {
+        let parent = dest_db_path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+            crate::parent_permissions::ParentPermissionsError::Io(source) => {
+                WalletStorageError::Io(source)
+            }
+            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+                WalletStorageError::InsecureParentDir { mode }
+            }
+        })?;
+
         // Refuse to overwrite a database a live persister in this process is
         // still holding open: that handle's buffer/connection would silently
         // diverge from the restored bytes. Canonicalize to match how `open()`
@@ -596,6 +609,8 @@ impl SqlitePersister {
     }
 
     fn commit_writes_inner(&self) -> Result<CommitReport, PersistenceError> {
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
         let mut report = CommitReport {
             succeeded: Vec::new(),
             failed: Vec::new(),
@@ -627,9 +642,21 @@ impl SqlitePersister {
 
     /// Lock the write connection.
     pub(crate) fn conn(&self) -> Result<MutexGuard<'_, Connection>, WalletStorageError> {
-        self.conn
-            .lock()
-            .map_err(|_| WalletStorageError::LockPoisoned)
+        match self.conn.lock() {
+            Ok(conn) => Ok(conn),
+            Err(_) => {
+                self.buffer.discard_all()?;
+                Err(WalletStorageError::LockPoisoned)
+            }
+        }
+    }
+
+    fn ensure_connection_usable(&self) -> Result<(), WalletStorageError> {
+        if self.conn.is_poisoned() {
+            self.buffer.discard_all()?;
+            return Err(WalletStorageError::LockPoisoned);
+        }
+        Ok(())
     }
 
     // The `__test-helpers` feature uses Cargo's `__` prefix convention:
@@ -651,6 +678,8 @@ impl SqlitePersister {
     }
 
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
         let cs = self
             .buffer
             .take_for_flush(wallet_id)
@@ -687,9 +716,6 @@ impl SqlitePersister {
     /// Classify the failure: transient errors restore the buffer and
     /// surface as `FlushRetryable`; everything else drops the changeset
     /// and returns the original variant.
-    //
-    // TODO(qa): the fatal `LockPoisoned` branch has no e2e mutex-poison
-    // test; verified by hand — reconfirm if you touch the classification.
     fn handle_flush_error(
         &self,
         wallet_id: &WalletId,
@@ -876,6 +902,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
         self.buffer
             .store(wallet_id, changeset)
             .map_err(PersistenceError::from)?;
