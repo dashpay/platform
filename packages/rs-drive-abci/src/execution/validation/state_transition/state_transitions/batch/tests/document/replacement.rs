@@ -923,6 +923,7 @@ mod replacement_tests {
             &platform_ref,
             replayed_state_transition,
             CheckTxLevel::FirstTimeCheck,
+            &platform.check_tx_proof_verifier,
             platform_version,
         )
         .expect("expected check_tx to not return an Err");
