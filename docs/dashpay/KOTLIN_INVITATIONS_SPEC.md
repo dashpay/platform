@@ -4,8 +4,9 @@ Port the shipped iOS invitation feature (create + claim + reclaim + sent-invitat
 persistence, PR #4041, `docs/dashpay/DIP15_INVITATIONS_SPEC.md`) to the Kotlin SDK and
 KotlinExampleApp, on branch `feat/kotlin-dashpay-invitations` (base `v4.1-dev`).
 
-Status: **v3 — synced with owner (2026-07-22), all open questions resolved (§10).
-Implementation approved.** (v2 was the post-five-lens-review draft.)
+Status: **v3 — synced with owner (2026-07-22), all open questions resolved (§10);
+slices 1–5 implemented** (JVM + cargo gates green; instrumented + funded-testnet
+QA are the remaining environment-bound gates). (v2 was the post-review draft.)
 Reference implementation: `packages/swift-sdk` + SwiftExampleApp (source of truth per the
 parity doctrine in `packages/kotlin-sdk/CLAUDE.md`).
 Feature behavior spec: `docs/dashpay/DIP15_INVITATIONS_SPEC.md` §0/§0A/§0B (as-built truth).
