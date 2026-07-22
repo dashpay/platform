@@ -83,7 +83,11 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
     // Same count-and-records-together rule as the script encoding below: a
     // null array pointer encodes as count 0, never as a lying nonzero count
     // with no records — that would desync every field parseBlob reads after.
-    let inputs_count = if decoded.inputs.is_null() { 0 } else { decoded.inputs_count };
+    let inputs_count = if decoded.inputs.is_null() {
+        0
+    } else {
+        decoded.inputs_count
+    };
     blob.extend_from_slice(&(inputs_count as u32).to_be_bytes());
     if inputs_count > 0 {
         let inputs = std::slice::from_raw_parts(decoded.inputs, inputs_count);
@@ -94,7 +98,11 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
         }
     }
 
-    let outputs_count = if decoded.outputs.is_null() { 0 } else { decoded.outputs_count };
+    let outputs_count = if decoded.outputs.is_null() {
+        0
+    } else {
+        decoded.outputs_count
+    };
     blob.extend_from_slice(&(outputs_count as u32).to_be_bytes());
     if outputs_count > 0 {
         let outputs = std::slice::from_raw_parts(decoded.outputs, outputs_count);
@@ -389,7 +397,10 @@ mod tests {
         // and never dereferenced. Not passed to decoded_transaction_free.
         let blob = unsafe { encode_decoded_transaction(&decoded) };
 
-        let mut r = Reader { blob: &blob, pos: 0 };
+        let mut r = Reader {
+            blob: &blob,
+            pos: 0,
+        };
         assert_eq!(r.take(32), [0xABu8; 32]);
         assert_eq!(r.u32(), 0, "no inputs");
         assert_eq!(r.u32(), 1, "one output");
@@ -416,7 +427,10 @@ mod tests {
         // and never dereferenced. Not passed to decoded_transaction_free.
         let blob = unsafe { encode_decoded_transaction(&decoded) };
 
-        let mut r = Reader { blob: &blob, pos: 0 };
+        let mut r = Reader {
+            blob: &blob,
+            pos: 0,
+        };
         assert_eq!(r.take(32), [0xCDu8; 32]);
         assert_eq!(r.u32(), 0, "null inputs array must encode count 0");
         assert_eq!(r.u32(), 0, "null outputs array must encode count 0");
