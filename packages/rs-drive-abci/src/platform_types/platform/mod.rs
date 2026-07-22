@@ -8,6 +8,7 @@ use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 use std::fmt::{Debug, Formatter};
 
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
@@ -41,6 +42,8 @@ pub struct Platform<C> {
     pub config: PlatformConfig,
     /// Core RPC Client
     pub core_rpc: C,
+    /// CheckTx-only proof-verification admission control
+    pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
 }
 
 // @append_only
@@ -252,6 +255,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         };
 
         Ok(platform)
@@ -285,6 +289,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         })
     }
 }

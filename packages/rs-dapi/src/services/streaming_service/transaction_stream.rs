@@ -3,6 +3,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 
+use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
 use dapi_grpc::core::v0::transactions_with_proofs_response::Responses;
 use dapi_grpc::core::v0::{
     InstantSendLockMessages, RawTransactions, TransactionsWithProofsRequest,
@@ -22,7 +23,7 @@ use crate::DapiError;
 use crate::clients::{CoreClient, core_client};
 use crate::services::streaming_service::{
     FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
-    bloom::bloom_flags_from_int,
+    bloom::bloom_flags_from_int, validate_core_block_hash,
 };
 use crate::sync::WorkerTaskHandle;
 
@@ -306,6 +307,14 @@ impl StreamingServiceImpl {
         trace!("transactions_with_proofs=subscribe_begin");
         let req = request.into_inner();
         let count = req.count;
+        let from_block = req
+            .from_block
+            .ok_or_else(|| Status::invalid_argument("Must specify from_block"))?;
+
+        if let FromBlock::FromBlockHash(hash) = &from_block {
+            validate_core_block_hash(hash)?;
+        }
+
         let filter = match req.bloom_filter {
             Some(bloom_filter) => {
                 let (core_filter, flags) = parse_bloom_filter(bloom_filter)?;
@@ -317,9 +326,6 @@ impl StreamingServiceImpl {
             None => FilterType::CoreAllTxs,
         };
 
-        let from_block = req
-            .from_block
-            .ok_or_else(|| Status::invalid_argument("Must specify from_block"))?;
         validate_transaction_from_block_shape(&from_block)?;
 
         let stream_permit = self

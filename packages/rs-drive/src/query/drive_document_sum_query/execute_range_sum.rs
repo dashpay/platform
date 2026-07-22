@@ -14,6 +14,7 @@
 
 use super::{DriveDocumentSumQuery, RangeSumOptions, RangeSumWalkMode, SumEntry};
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::{WhereClause, WhereOperator};
@@ -149,7 +150,9 @@ impl DriveDocumentSumQuery<'_> {
         }
 
         let RangeSumWalkMode::Distinct(distinct_limit) = options.walk_mode else {
-            unreachable!("aggregate range sums return before the distinct storage walk")
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "aggregate range sums must return before the distinct storage walk",
+            )));
         };
         let path_query = self.distinct_sum_path_query(
             Some(distinct_limit),

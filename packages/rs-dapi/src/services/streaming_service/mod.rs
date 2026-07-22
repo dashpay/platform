@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Semaphore, broadcast};
 use tokio::time::{Duration, sleep};
+use tonic::Status;
 use tracing::{debug, trace};
 
 pub(crate) use masternode_list_sync::MasternodeListSync;
@@ -29,6 +30,18 @@ pub(crate) use zmq_listener::{ZmqEvent, ZmqListener};
 const MAX_ACTIVE_TRANSACTION_STREAMS: usize = 64;
 const MAX_ACTIVE_BLOCK_HEADER_STREAMS: usize = 64;
 const MAX_ACTIVE_MASTERNODE_STREAMS: usize = 64;
+
+const CORE_BLOCK_HASH_SIZE: usize = 32;
+
+fn validate_core_block_hash(hash: &[u8]) -> Result<(), Status> {
+    if hash.len() != CORE_BLOCK_HASH_SIZE {
+        return Err(Status::invalid_argument(format!(
+            "fromBlockHash must be exactly {CORE_BLOCK_HASH_SIZE} bytes"
+        )));
+    }
+
+    Ok(())
+}
 
 /// Streaming service implementation with ZMQ integration.
 ///
@@ -494,6 +507,22 @@ pub(crate) fn summarize_zmq_event(event: &ZmqEvent) -> String {
         }
         ZmqEvent::HashBlock { hash } => {
             format!("HashBlock {}", short_hex(hash, 12))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn core_block_hash_must_be_exact_width() {
+        assert!(validate_core_block_hash(&[0; CORE_BLOCK_HASH_SIZE]).is_ok());
+
+        for length in [0, 1, 31, 33, 64 * 1024] {
+            let status = validate_core_block_hash(&vec![0; length])
+                .expect_err("expected invalid block hash length");
+            assert_eq!(status.code(), tonic::Code::InvalidArgument);
         }
     }
 }

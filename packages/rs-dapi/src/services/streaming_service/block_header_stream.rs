@@ -17,7 +17,7 @@ use tracing::{debug, trace, warn};
 
 use crate::DapiError;
 use crate::services::streaming_service::{
-    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
+    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle, validate_core_block_hash,
 };
 use crate::sync::WorkerTaskHandle;
 
@@ -94,13 +94,10 @@ impl StreamingServiceImpl {
                 }
                 FromBlock::FromBlockHeight(height)
             }
-            Some(FromBlock::FromBlockHash(ref hash)) if hash.len() != 32 => {
-                debug!("block_headers=invalid_from_block_hash_length");
-                return Err(Status::invalid_argument(
-                    "fromBlockHash must be exactly 32 bytes",
-                ));
+            Some(FromBlock::FromBlockHash(hash)) => {
+                validate_core_block_hash(&hash)?;
+                FromBlock::FromBlockHash(hash)
             }
-            Some(from_block) => from_block,
             None => {
                 debug!("block_headers=missing_from_block");
                 return Err(Status::invalid_argument("from_block is required"));
