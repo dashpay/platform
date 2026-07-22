@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Redeem
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -23,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -51,6 +54,7 @@ import org.dashfoundation.example.navigation.DashPayAddContact
 import org.dashfoundation.example.navigation.DashPayContacts
 import org.dashfoundation.example.navigation.DashPayHidden
 import org.dashfoundation.example.navigation.DashPayIgnored
+import org.dashfoundation.example.navigation.DashPayInvitations
 import org.dashfoundation.example.navigation.DashPayProfile
 import org.dashfoundation.example.navigation.DashPayRequests
 import org.dashfoundation.example.navigation.IdentitiesHome
@@ -113,6 +117,24 @@ fun DashPayTabScreen(navController: NavHostController) {
     var isRefreshing by remember { mutableStateOf(false) }
     var unlockError by remember { mutableStateOf<String?>(null) }
 
+    // Claim-invitation sheet, seeded either by the toolbar action or a
+    // parked deep link. The pending URI is consumed (cleared) only when the
+    // sheet is actually seeded — a walletless tap keeps it parked (deviation
+    // from iOS, which drops the link; see AppUiState.pendingInviteUri).
+    val appUiState = container.appUiState
+    var claimSheetUri by remember { mutableStateOf<String?>(null) }
+    var showClaimSheet by remember { mutableStateOf(false) }
+    val pendingInvite by appUiState.pendingInviteUri.collectAsStateWithLifecycle()
+    val claimInFlight by appUiState.invitationClaimInFlight.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingInvite, walletsMap, claimInFlight, showClaimSheet) {
+        val uri = pendingInvite
+        if (uri != null && walletsMap.isNotEmpty() && !claimInFlight && !showClaimSheet) {
+            appUiState.pendingInviteUri.value = null
+            claimSheetUri = uri
+            showClaimSheet = true
+        }
+    }
+
     fun refresh() {
         scope.launch {
             isRefreshing = true
@@ -126,6 +148,22 @@ fun DashPayTabScreen(navController: NavHostController) {
             TopAppBar(
                 title = { Text("DashPay") },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            claimSheetUri = null
+                            showClaimSheet = true
+                        },
+                        enabled = walletsMap.isNotEmpty(),
+                        modifier = Modifier.testTag("dashpay.claimInvitation"),
+                    ) {
+                        Icon(Icons.Default.Redeem, contentDescription = "Claim invitation")
+                    }
+                    IconButton(
+                        onClick = { navController.navigate(DashPayInvitations) },
+                        modifier = Modifier.testTag("dashpay.openSentInvitations"),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Sent invitations")
+                    }
                     IconButton(onClick = { refresh() }, modifier = Modifier.testTag("dashpay.refresh")) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
@@ -234,6 +272,15 @@ fun DashPayTabScreen(navController: NavHostController) {
     }
 
     ErrorAlertDialog(message = unlockError, onDismiss = { unlockError = null })
+
+    if (showClaimSheet) {
+        ModalBottomSheet(onDismissRequest = { if (!claimInFlight) showClaimSheet = false }) {
+            ClaimInvitationSheet(
+                initialUri = claimSheetUri,
+                onClose = { showClaimSheet = false },
+            )
+        }
+    }
 }
 
 @Composable

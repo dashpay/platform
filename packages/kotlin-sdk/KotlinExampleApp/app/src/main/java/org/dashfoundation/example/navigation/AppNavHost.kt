@@ -39,6 +39,7 @@ import org.dashfoundation.example.ui.dashpay.DashPayProfileScreen
 import org.dashfoundation.example.ui.dashpay.DashPayTabScreen
 import org.dashfoundation.example.ui.dashpay.HiddenContactsScreen
 import org.dashfoundation.example.ui.dashpay.IgnoredContactsScreen
+import org.dashfoundation.example.ui.dashpay.InvitationsScreen
 import org.dashfoundation.example.ui.identity.DpnsTestScreen
 import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
 import org.dashfoundation.example.ui.identity.IdentityDetailScreen
@@ -444,6 +445,8 @@ fun AppNavHost(
         composable<DashPayHidden> { entry ->
             HiddenContactsScreen(entry.toRoute<DashPayHidden>().ownerIdentityIdHex, navController)
         }
+
+        composable<DashPayInvitations> { InvitationsScreen() }
 
         // ── Diagnostics graph ──────────────────────────────────────────
 

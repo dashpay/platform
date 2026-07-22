@@ -227,6 +227,9 @@ import kotlinx.serialization.Serializable
 /** Hidden established-contacts list (← `HiddenContactsView.swift`). */
 @Serializable data class DashPayHidden(val ownerIdentityIdHex: String)
 
+/** Sent-invitations list (← `InvitationsView.swift`); hosts create/reclaim. */
+@Serializable object DashPayInvitations
+
 // ── Contracts graph ────────────────────────────────────────────────────
 
 /** Fetch-a-contract screen (← `LocalDataContractsView.swift`). */
