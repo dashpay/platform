@@ -28,14 +28,14 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
   restore_default_keychain() {
     if [ -n "${PREV_DEFAULT_KEYCHAIN:-}" ] && [ -e "$PREV_DEFAULT_KEYCHAIN" ]; then
-      security default-keychain -s "$PREV_DEFAULT_KEYCHAIN" || true
+      security default-keychain -d user -s "$PREV_DEFAULT_KEYCHAIN" || true
     fi
   }
   trap restore_default_keychain EXIT
   security create-keychain -p "" "$CI_KEYCHAIN" 2>/dev/null || true
   security unlock-keychain -p "" "$CI_KEYCHAIN"
   security set-keychain-settings "$CI_KEYCHAIN"   # no auto-lock timeout
-  security default-keychain -s "$CI_KEYCHAIN"
+  security default-keychain -d user -s "$CI_KEYCHAIN"
 fi
 
 # Pick a concrete iOS Simulator for the `xcodebuild test` run. A name

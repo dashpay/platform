@@ -1468,20 +1468,14 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
 
-        let epoch_u16 = try_u32_to_u16(mtd.epoch).map_err(|_| {
-            Into::<Error>::into(drive::error::Error::Proof(ProofError::InvalidMetadata(
-                format!(
-                    "platform returned an epoch {} that was higher than maximum of a 16 bit integer",
-                    mtd.epoch
-                ),
-            )))
-        })?;
-
         let block_info = BlockInfo {
             time_ms: mtd.time_ms,
             height: mtd.height,
             core_height: mtd.core_chain_locked_height,
-            epoch: epoch_u16.try_into()?,
+            // Response metadata is not part of the authenticated state ID.
+            // Current proof consumers do not require an epoch, so do not
+            // propagate an unsigned selector into the verification context.
+            epoch: Default::default(),
         };
 
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
@@ -1562,12 +1556,20 @@ impl FromProof<platform::GetEpochsInfoRequest> for ExtendedEpochInfos {
             get_epochs_info_request::Version::V0(v0) => (v0.start_epoch, v0.count, v0.ascending),
         };
 
-        let current_epoch: EpochIndex = try_u32_to_u16(mtd.epoch)?;
         let start_epoch: Option<EpochIndex> = if let Some(epoch) = start_epoch {
             Some(try_u32_to_u16(epoch)?)
         } else {
             None
         };
+        if start_epoch.is_none() && !ascending {
+            return Err(Error::RequestError {
+                error: "proved descending epoch queries require an explicit start epoch"
+                    .to_string(),
+            });
+        }
+        // This argument is consulted only for descending queries without an
+        // explicit start, which are rejected above. Avoid unsigned metadata.
+        let current_epoch: EpochIndex = 0;
         let count = try_u32_to_u16(count)?;
 
         let (root_hash, epoch_info) = Drive::verify_epoch_infos(
@@ -2327,7 +2329,11 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByIdsRequest> for Propose
 
         let epoch_index = match epoch {
             Some(index) => try_u32_to_u16(index)?,
-            None => try_u32_to_u16(mtd.epoch)?,
+            None => {
+                return Err(Error::RequestError {
+                    error: "proved proposer queries require an explicit epoch".to_string(),
+                })
+            }
         };
 
         let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
@@ -2392,7 +2398,11 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
 
         let epoch_index = match epoch {
             Some(index) => try_u32_to_u16(index)?,
-            None => try_u32_to_u16(mtd.epoch)?,
+            None => {
+                return Err(Error::RequestError {
+                    error: "proved proposer queries require an explicit epoch".to_string(),
+                })
+            }
         };
         let checked_limit = limit.map(try_u32_to_u16).transpose()?;
 
@@ -5024,9 +5034,9 @@ mod tests {
     }
 
     #[test]
-    fn epochs_info_rejects_overflowing_metadata_epoch() {
-        // mtd.epoch > u16::MAX triggers `try_u32_to_u16(mtd.epoch)` error
-        // *before* the start_epoch check.
+    fn epochs_info_ascending_without_start_ignores_metadata_epoch() {
+        // Ascending queries without a start are request-derived from epoch 0,
+        // so unsigned metadata must not participate in query selection.
         use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
         use platform::get_epochs_info_response::{
             get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
@@ -5057,7 +5067,50 @@ mod tests {
                 &provider,
             )
             .unwrap_err();
-        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+        assert!(
+            !matches!(err, Error::RequestError { .. }),
+            "metadata epoch unexpectedly influenced the request: {err:?}"
+        );
+    }
+
+    #[test]
+    fn epochs_info_descending_requires_explicit_start_epoch() {
+        use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(10)),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest {
+            version: Some(platform::get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    start_epoch: None,
+                    count: 1,
+                    ascending: false,
+                    prove: true,
+                },
+            )),
+        };
+        let provider = unreachable_provider();
+
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+
+        match err {
+            Error::RequestError { error } => assert!(error.contains("explicit start epoch")),
+            other => panic!("expected explicit-epoch request error, got: {other:?}"),
+        }
     }
 
     #[test]
@@ -5454,8 +5507,9 @@ mod tests {
     }
 
     #[test]
-    fn evonodes_proposed_epoch_blocks_by_ids_falls_back_to_metadata_epoch_overflow() {
-        // epoch None -> fall back to mtd.epoch which is overflowing.
+    fn evonodes_proposed_epoch_blocks_by_ids_requires_explicit_epoch() {
+        // An omitted epoch must fail before unsigned metadata can select the
+        // proof query.
         use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_ids_request::GetEvonodesProposedEpochBlocksByIdsRequestV0;
         use platform::get_evonodes_proposed_epoch_blocks_response::{
             get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
@@ -5513,6 +5567,42 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn evonodes_proposed_epoch_blocks_by_range_requires_explicit_epoch() {
+        use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::GetEvonodesProposedEpochBlocksByRangeRequestV0;
+        use platform::get_evonodes_proposed_epoch_blocks_response::{
+            get_evonodes_proposed_epoch_blocks_response_v0::Result as V0Result,
+            GetEvonodesProposedEpochBlocksResponseV0, Version,
+        };
+        let response = platform::GetEvonodesProposedEpochBlocksResponse {
+            version: Some(Version::V0(GetEvonodesProposedEpochBlocksResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(99_999)),
+            })),
+        };
+        let request: platform::GetEvonodesProposedEpochBlocksByRangeRequest =
+            GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: None,
+                limit: None,
+                start: None,
+                prove: true,
+            }
+            .into();
+        let provider = unreachable_provider();
+        let err = <ProposerBlockCounts as FromProof<
+            platform::GetEvonodesProposedEpochBlocksByRangeRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
     }
 
     #[test]

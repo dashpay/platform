@@ -37,8 +37,18 @@ impl DapiServer {
         let platform_service = self.platform_service.clone();
         let core_service = self.core_service.clone();
 
-        const PLATFORM_MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
-        const CORE_MAX_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
+        // Coarse DoS backstop on the *encoded* Platform request. Must stay
+        // strictly above every per-method app-layer budget plus protobuf
+        // envelope overhead, so that oversized-but-parseable requests reach
+        // the app-layer validators and get their precise errors instead of
+        // dying here with tonic's generic decode-limit status. The largest
+        // legitimate payloads are `getPathElements` (MAX_PATH_QUERY_BYTES,
+        // 64 KiB of raw components, ~65 KiB encoded) and broadcast state
+        // transitions (`max_state_transition_size`, 20 KiB).
+        const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
+        // Same principle for Core: sized above the largest app-layer budget
+        // (raw transaction wire cap, 400 KB) plus envelope overhead.
+        const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let builder = dapi_grpc::tonic::transport::Server::builder()
@@ -67,12 +77,12 @@ impl DapiServer {
         builder
             .add_service(
                 PlatformServer::new(platform_service)
-                    .max_decoding_message_size(PLATFORM_MAX_DECODING_BYTES)
+                    .max_decoding_message_size(MAX_PLATFORM_DECODING_BYTES)
                     .max_encoding_message_size(MAX_ENCODING_BYTES),
             )
             .add_service(
                 CoreServer::new(core_service)
-                    .max_decoding_message_size(CORE_MAX_DECODING_BYTES)
+                    .max_decoding_message_size(MAX_CORE_DECODING_BYTES)
                     .max_encoding_message_size(MAX_ENCODING_BYTES),
             )
             .serve(addr)

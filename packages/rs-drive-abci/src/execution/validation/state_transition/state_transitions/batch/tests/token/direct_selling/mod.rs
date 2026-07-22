@@ -18,9 +18,13 @@ mod token_selling_tests {
 
     #[tokio::test]
     async fn test_successful_direct_purchase_single_price() {
+        // PROTOCOL_VERSION_13: 48_640 credits more in fees than PV12 — the
+        // PV13 genesis registers the document history contract and stores the
+        // larger DPNS v2 schema, which changes the contracts-subtree node
+        // sizes and therefore the byte-billed contract reads.
         run_successful_direct_purchase_single_price_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            699_868_122_220,
+            699_868_073_580,
         )
         .await;
     }

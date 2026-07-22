@@ -1859,6 +1859,7 @@ name = "data-contracts"
 version = "4.0.0"
 dependencies = [
  "dashpay-contract",
+ "document-history-contract",
  "dpns-contract",
  "keyword-search-contract",
  "masternode-reward-shares-contract",
@@ -2053,6 +2054,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
+]
+
+[[package]]
+name = "document-history-contract"
+version = "4.0.0"
+dependencies = [
+ "platform-value",
+ "platform-version",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

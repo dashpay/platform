@@ -38,6 +38,7 @@ all-system-contracts = [
     "wallet-utils-contract",
     "token-history-contract",
     "keywords-contract",
+    "document-history-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -47,6 +48,7 @@ dashpay-contract = ["dpp/dashpay-contract"]
 wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
+document-history-contract = ["dpp/document-history-contract"]
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.12", features = ["json"] }

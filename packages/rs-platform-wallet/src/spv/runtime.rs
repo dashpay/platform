@@ -1,6 +1,7 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -23,6 +24,28 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
+
+const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Join a stopped SPV runner, escalating to cancellation after `timeout` but
+/// never returning until Tokio confirms that the task has terminated.
+async fn join_spv_task(mut handle: JoinHandle<()>, timeout: Duration) {
+    match tokio::time::timeout(timeout, &mut handle).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            tracing::warn!(?error, "SPV background run loop join error");
+        }
+        Err(_) => {
+            tracing::warn!("SPV stop: background run loop did not unwind in time; aborting it");
+            handle.abort();
+            if let Err(error) = handle.await {
+                if !error.is_cancelled() {
+                    tracing::warn!(?error, "SPV background run loop abort join error");
+                }
+            }
+        }
+    }
+}
 
 /// SPV client runtime — owns the `DashSpvClient` and drives sync.
 ///
@@ -217,17 +240,7 @@ impl SpvRuntime {
 
         let handle = self.task.lock().expect("spv task mutex poisoned").take();
         if let Some(handle) = handle {
-            let abort = handle.abort_handle();
-            if tokio::time::timeout(std::time::Duration::from_secs(15), handle)
-                .await
-                .is_err()
-            {
-                tracing::warn!(
-                    "SPV stop: background run loop did not unwind within 15s; aborting it"
-                );
-
-                abort.abort();
-            }
+            join_spv_task(handle, SPV_STOP_TIMEOUT).await;
         }
 
         stop_result
@@ -412,6 +425,40 @@ impl SpvRuntime {
             .update_config(config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct DropFlag(Arc<AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timed_out_spv_task_is_aborted_and_joined_before_return() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let dropped_in_task = Arc::clone(&dropped);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            let _flag = DropFlag(dropped_in_task);
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        started_rx.await.expect("SPV task should start");
+
+        join_spv_task(handle, SPV_STOP_TIMEOUT).await;
+
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "abort must be joined so task-owned callback state is dropped"
+        );
     }
 }
 
