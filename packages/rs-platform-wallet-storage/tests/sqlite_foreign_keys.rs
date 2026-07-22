@@ -81,8 +81,8 @@ fn tc048_setnull_on_tx_delete() {
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-         VALUES (?1, ?2, 100, X'00', NULL, 0, 1, ?3)",
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 100, X'00', 0, 1, ?3)",
         rusqlite::params![w.as_slice(), &outpoint, &txid[..]],
     )
     .unwrap();

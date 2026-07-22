@@ -63,8 +63,8 @@ fn blob_gate_core_utxos_load_state_rejects_oversize_script() {
     let conn = persister.lock_conn_for_test();
     conn.execute(
         "INSERT INTO core_utxos \
-            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-         VALUES (?1, ?2, 0, ?3, NULL, 0, 0, NULL)",
+            (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 0, ?3, 0, 0, NULL)",
         params![w.as_slice(), tiny_op.as_slice(), oversize_script.as_slice()],
     )
     .expect("insert oversize script row");
@@ -154,8 +154,8 @@ fn blob_gate_core_state_load_used_addresses_rejects_oversize_script() {
     let conn = persister.lock_conn_for_test();
     conn.execute(
         "INSERT INTO core_utxos \
-            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-         VALUES (?1, ?2, 0, ?3, NULL, 0, 0, NULL)",
+            (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 0, ?3, 0, 0, NULL)",
         params![w.as_slice(), tiny_op.as_slice(), oversize_script.as_slice()],
     )
     .expect("insert oversize utxo script row");

@@ -37,7 +37,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover V001; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004) and the V005–V006 pool columns, are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover V001; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004), the V005–V006 pool columns, and V007's `core_utxos.height` removal are not yet reflected here — see the [Migrations](#migrations) log for those changes.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -694,3 +694,4 @@ having to grep this repo.
 | V004 | `V004__invitations.rs` | Adds `invitations` for DIP-13 DashPay invitation lifecycle records, keyed by wallet and outpoint. |
 | V005 | `V005__pool_public_key.rs` | Adds nullable `public_key` and `key_type` columns to `core_address_pool`, preserving typed pre-derived public keys that a watch-only account cannot regenerate (closes #4113). |
 | V006 | `V006__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |
+| V007 | `V007__drop_core_utxos_height.rs` | Drops `core_utxos.height`; UTXO confirmation height is sourced solely from `core_transactions.height` (#4178). |

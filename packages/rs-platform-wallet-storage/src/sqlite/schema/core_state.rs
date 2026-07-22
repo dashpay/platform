@@ -173,12 +173,11 @@ pub fn apply(
 }
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
-        (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL) \
+        (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
-        height = excluded.height, \
         account_index = excluded.account_index, \
         spent = excluded.spent";
 
@@ -213,7 +212,6 @@ fn execute_upsert_utxo(
         &op[..],
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
-        i64::from(utxo.height),
         account_index,
         spent,
     ])?;
@@ -301,7 +299,7 @@ fn upsert_sync_state(
 ///
 /// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row — the balance
 ///   source (no-silent-zero); confirmation height comes from the matching
-///   transaction record, falling back to the UTXO row when no record exists.
+///   transaction record. A missing record or height loads as unconfirmed.
 /// - **Transaction records** / **IS-locks** / **sync watermarks**: decoded
 ///   bit-exact, fail-hard on a corrupt blob.
 ///
@@ -352,7 +350,7 @@ pub fn load_state(
     // `BlobTooLarge` error can be returned from the loop body directly.
     {
         let mut stmt = conn.prepare(
-            "SELECT length(outpoint), outpoint, value, length(script), script, height \
+            "SELECT length(outpoint), outpoint, value, length(script), script \
              FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
@@ -364,18 +362,9 @@ pub fn load_state(
             // col 3: length(script) — gate before materializing
             blob::check_size(row.get::<_, i64>(3)?)?;
             let script_bytes: Vec<u8> = row.get(4)?;
-            let utxo_height = row
-                .get::<_, Option<i64>>(5)?
-                .map(|height| {
-                    crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.height", height)
-                })
-                .transpose()?;
             let outpoint = blob::decode_outpoint(&op_bytes)?;
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
-            let height = transaction_heights
-                .get(&outpoint.txid)
-                .copied()
-                .unwrap_or(utxo_height);
+            let height = transaction_heights.get(&outpoint.txid).copied().flatten();
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
@@ -566,7 +555,6 @@ pub struct UnspentRow {
     pub outpoint: dashcore::OutPoint,
     pub value: u64,
     pub script: Vec<u8>,
-    pub height: Option<u32>,
     pub account_index: u32,
 }
 
@@ -578,36 +566,27 @@ pub fn list_unspent_utxos(
     wallet_id: &WalletId,
 ) -> Result<BTreeMap<u32, Vec<UnspentRow>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT outpoint, value, script, height, account_index \
+        "SELECT outpoint, value, script, account_index \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         let op_bytes: Vec<u8> = row.get(0)?;
         let value: i64 = row.get(1)?;
         let script: Vec<u8> = row.get(2)?;
-        let height: Option<i64> = row.get(3)?;
-        let account_index: i64 = row.get(4)?;
-        Ok((op_bytes, value, script, height, account_index))
+        let account_index: i64 = row.get(3)?;
+        Ok((op_bytes, value, script, account_index))
     })?;
     let mut by_account: BTreeMap<u32, Vec<UnspentRow>> = BTreeMap::new();
     for r in rows {
-        let (op_bytes, value, script_bytes, height, account_index) = r?;
+        let (op_bytes, value, script_bytes, account_index) = r?;
         let outpoint = blob::decode_outpoint(&op_bytes)?;
         let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
-        let height = match height {
-            None => None,
-            Some(h) => Some(crate::sqlite::util::safe_cast::i64_to_u32(
-                "core_utxos.height",
-                h,
-            )?),
-        };
         let account_index =
             crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.account_index", account_index)?;
         let row = UnspentRow {
             outpoint,
             value,
             script: script_bytes,
-            height,
             account_index,
         };
         by_account.entry(account_index).or_default().push(row);
@@ -766,6 +745,58 @@ mod tests {
         assert!(loaded.is_confirmed);
     }
 
+    #[test]
+    fn load_state_defaults_utxo_without_transaction_record_to_unconfirmed() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x43u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let txid = Txid::from_byte_array([0x7Fu8; 32]);
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x24u8; 20])),
+        );
+        let outpoint = OutPoint { txid, vout: 0 };
+        let utxo = Utxo::new(
+            outpoint,
+            TxOut {
+                value: 175_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            address,
+            777,
+            false,
+        );
+
+        {
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    new_utxos: vec![utxo],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+        }
+
+        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        let loaded = state
+            .new_utxos
+            .iter()
+            .find(|candidate| candidate.outpoint == outpoint)
+            .expect("matching UTXO must be loaded");
+        assert_eq!(loaded.height, 0);
+        assert!(!loaded.is_confirmed);
+    }
+
     /// `load_used_addresses` (the address-reuse-guard rehydration path called
     /// from `persister.rs`) must surface `AddressDecode` — carrying the
     /// upstream `dashcore::address::Error` — when a stored `core_utxos.script`
@@ -785,8 +816,8 @@ mod tests {
         let bad_script = [0x6au8];
         conn.execute(
             "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, height, account_index, spent) \
-             VALUES (?1, ?2, 0, ?3, NULL, 0, 0)",
+                (wallet_id, outpoint, value, script, account_index, spent) \
+             VALUES (?1, ?2, 0, ?3, 0, 0)",
             params![&w[..], &[0u8; 36][..], &bad_script[..]],
         )
         .unwrap();

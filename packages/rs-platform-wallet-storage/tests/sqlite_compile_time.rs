@@ -73,11 +73,11 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "SELECT key_index, length(public_key), public_key, length(node_id), node_id",
     ),
     // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
-    ("core_state.rs", "SELECT outpoint, value, script, height"),
+    ("core_state.rs", "SELECT outpoint, value, script, account_index"),
     // load_state unspent-UTXO reader: pre-read length() gates on outpoint and script.
     (
         "core_state.rs",
-        "SELECT length(outpoint), outpoint, value, length(script), script, height",
+        "SELECT length(outpoint), outpoint, value, length(script), script",
     ),
     ("core_state.rs", "SELECT DISTINCT script FROM core_utxos"),
     // Pool reader: verbatim used-set with owner columns, a one-shot read-only

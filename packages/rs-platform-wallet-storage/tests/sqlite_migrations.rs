@@ -96,7 +96,7 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "core_utxos",
-            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) VALUES (?1, ?2, 0, X'00', NULL, 0, 0, NULL)",
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) VALUES (?1, ?2, 0, X'00', 0, 0, NULL)",
             &[&wallet_id.as_slice(), &outpoint],
         ),
         (
@@ -223,6 +223,21 @@ fn tc029_migration_fingerprint_stable() {
     let b = mig::embedded_migrations_fingerprint();
     assert_eq!(a, b);
     assert!(!mig::embedded_migrations().is_empty());
+}
+
+/// `core_transactions.height` is the sole persisted confirmation-height source.
+#[test]
+fn tc030_core_utxos_height_column_removed() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let conn = persister.lock_conn_for_test();
+    let mut stmt = conn.prepare("PRAGMA table_info(core_utxos)").unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get(1))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+
+    assert!(!columns.iter().any(|column| column == "height"));
 }
 
 /// load() on empty post-migrate DB is empty.
