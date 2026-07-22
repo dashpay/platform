@@ -520,8 +520,9 @@ macro_rules! match_grpc_methods {
 /// Every other syntactically valid or malformed path shares one finite bucket.
 // KEEP IN SYNC with packages/dapi-grpc/protos/{core,platform}/v0/*.proto —
 // an rpc missing here still serves fine but its metrics degrade to the
-// `grpc_unknown` bucket (dapi-grpc emits no file descriptor set, so this
-// cannot be asserted by a test without build-graph changes).
+// `grpc_unknown` bucket. Enforced by
+// `known_grpc_endpoint_covers_every_served_rpc`, which walks dapi-grpc's
+// FILE_DESCRIPTOR_SET, so forgetting to extend this list fails CI.
 fn known_grpc_endpoint(path: &str) -> &'static str {
     match_grpc_methods!(
         path,
@@ -531,9 +532,9 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
             "getMasternodeStatus",
             "getBlock",
             "getBestBlockHeight",
+            "getEstimatedTransactionFee",
             "broadcastTransaction",
             "getTransaction",
-            "getEstimatedTransactionFee",
             "subscribeToBlockHeadersWithChainLocks",
             "subscribeToTransactionsWithProofs",
             "subscribeToMasternodeList",
@@ -862,6 +863,57 @@ mod tests {
     fn endpoint_label_jsonrpc_without_hint() {
         let result = endpoint_label("JSON-RPC", "/rpc", None);
         assert_eq!(result, "jsonrpc_unknown");
+    }
+
+    /// Walks dapi-grpc's FILE_DESCRIPTOR_SET and asserts every rpc of the two
+    /// services this server exposes resolves to a real label. Adding an rpc
+    /// to the protos without extending `known_grpc_endpoint` fails here
+    /// instead of silently degrading the new method's metrics to
+    /// `grpc_unknown`.
+    #[test]
+    fn known_grpc_endpoint_covers_every_served_rpc() {
+        use dapi_grpc::Message;
+        use prost_types::FileDescriptorSet;
+
+        const SERVED_SERVICES: [&str; 2] = [
+            "org.dash.platform.dapi.v0.Core",
+            "org.dash.platform.dapi.v0.Platform",
+        ];
+
+        let mut seen_services = 0;
+        for descriptor_bytes in [
+            dapi_grpc::core::v0::FILE_DESCRIPTOR_SET,
+            dapi_grpc::platform::v0::FILE_DESCRIPTOR_SET,
+        ] {
+            let set = FileDescriptorSet::decode(descriptor_bytes)
+                .expect("dapi-grpc descriptor set should decode");
+            for file in &set.file {
+                for service in &file.service {
+                    let service_full = format!("{}.{}", file.package(), service.name());
+                    if !SERVED_SERVICES.contains(&service_full.as_str()) {
+                        continue;
+                    }
+                    seen_services += 1;
+                    assert!(
+                        !service.method.is_empty(),
+                        "descriptor for {service_full} lists no methods"
+                    );
+                    for method in &service.method {
+                        let path = format!("/{}/{}", service_full, method.name());
+                        assert_ne!(
+                            known_grpc_endpoint(&path),
+                            "grpc_unknown",
+                            "{path} is served but missing from the known_grpc_endpoint \
+                             allowlist — add it so its metrics don't degrade to grpc_unknown"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            seen_services, 2,
+            "expected to find both served services in the descriptor sets"
+        );
     }
 
     #[test]
