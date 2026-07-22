@@ -46,6 +46,66 @@ pub fn verify_state_transition_was_executed_with_proof(
     known_contracts_js: &JsValue,
     platform_version_number: u32,
 ) -> Result<VerifyStateTransitionWasExecutedWithProofResult, JsValue> {
+    verify_state_transition_with_proof_internal(
+        state_transition_js,
+        block_height,
+        block_time_ms,
+        block_core_height,
+        proof,
+        known_contracts_js,
+        platform_version_number,
+        Drive::verify_state_transition_was_executed_with_proof,
+    )
+}
+
+/// Like `verifyStateTransitionWasExecutedWithProof`, but for transition
+/// families whose proof cannot be bound to execution (balance top-ups,
+/// credit transfers/withdrawals, address funds movements, shields,
+/// no-history token operations) it returns a verified snapshot of the
+/// affected state at the proof's block instead of failing. Snapshot results
+/// are NOT evidence that the transition executed.
+#[wasm_bindgen(js_name = "verifyStateTransitionAffectedStateWithProof")]
+pub fn verify_state_transition_affected_state_with_proof(
+    state_transition_js: &JsValue,
+    block_height: u64,
+    block_time_ms: u64,
+    block_core_height: u32,
+    proof: &Uint8Array,
+    known_contracts_js: &JsValue,
+    platform_version_number: u32,
+) -> Result<VerifyStateTransitionWasExecutedWithProofResult, JsValue> {
+    verify_state_transition_with_proof_internal(
+        state_transition_js,
+        block_height,
+        block_time_ms,
+        block_core_height,
+        proof,
+        known_contracts_js,
+        platform_version_number,
+        Drive::verify_state_transition_affected_state_with_proof,
+    )
+}
+
+type StateTransitionVerifier =
+    fn(
+        &StateTransition,
+        &BlockInfo,
+        &[u8],
+        &ContractLookupFn,
+        &PlatformVersion,
+    ) -> Result<(drive::verify::RootHash, StateTransitionProofResult), drive::error::Error>;
+
+#[allow(clippy::too_many_arguments)]
+fn verify_state_transition_with_proof_internal(
+    state_transition_js: &JsValue,
+    block_height: u64,
+    block_time_ms: u64,
+    block_core_height: u32,
+    proof: &Uint8Array,
+    known_contracts_js: &JsValue,
+    platform_version_number: u32,
+    verifier: StateTransitionVerifier,
+) -> Result<VerifyStateTransitionWasExecutedWithProofResult, JsValue> {
     let proof_vec = proof.to_vec();
 
     // Parse state transition from JS
@@ -69,7 +129,7 @@ pub fn verify_state_transition_was_executed_with_proof(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+    let (root_hash, proof_result) = verifier(
         &state_transition,
         &block_info,
         &proof_vec,

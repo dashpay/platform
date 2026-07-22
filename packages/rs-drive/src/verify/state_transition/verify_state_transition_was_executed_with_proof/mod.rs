@@ -59,10 +59,58 @@ impl Drive {
                 block_info,
                 proof,
                 known_contracts_provider_fn,
+                v0::StateTransitionProofSemantics::ExecutionEvidence,
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Verifies the state a state transition affects, using a provided proof.
+    ///
+    /// This behaves exactly like
+    /// [`verify_state_transition_was_executed_with_proof`](Self::verify_state_transition_was_executed_with_proof)
+    /// for transition types whose proof can be bound to execution. For the
+    /// transition families where the current proof format cannot establish
+    /// request-specific completion (balance top-ups, credit transfers and
+    /// withdrawals, address funds movements, shields, and no-history token
+    /// burn/mint/transfer), it returns a verified snapshot of the affected
+    /// state instead of failing: the queried keys are derived from the
+    /// transition, and the values are authenticated as of the proof's block.
+    ///
+    /// # Important
+    ///
+    /// A snapshot result is **not** evidence that the transition executed.
+    /// Callers must treat these results as height-pinned state snapshots
+    /// (e.g. for balance reconciliation), never as execution confirmation.
+    pub fn verify_state_transition_affected_state_with_proof(
+        state_transition: &StateTransition,
+        block_info: &BlockInfo,
+        proof: &[u8],
+        known_contracts_provider_fn: &ContractLookupFn,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, StateTransitionProofResult), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_affected_state_with_proof
+        {
+            0 => Drive::verify_state_transition_was_executed_with_proof_v0(
+                state_transition,
+                block_info,
+                proof,
+                known_contracts_provider_fn,
+                v0::StateTransitionProofSemantics::AllowAffectedState,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_state_transition_affected_state_with_proof".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),

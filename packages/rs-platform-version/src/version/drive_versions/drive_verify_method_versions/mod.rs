@@ -148,6 +148,7 @@ pub struct DriveVerifySingleDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyStateTransitionMethodVersions {
     pub verify_state_transition_was_executed_with_proof: FeatureVersion,
+    pub verify_state_transition_affected_state_with_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

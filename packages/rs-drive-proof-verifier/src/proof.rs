@@ -1480,7 +1480,15 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
-        let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+        // Affected-state semantics: transition families whose proof cannot be
+        // bound to execution (balance top-ups, credit transfers/withdrawals,
+        // address funds movements, shields, no-history token operations)
+        // yield a verified snapshot of the affected keys at the proof's block
+        // instead of an error. SDK flows must treat those results as
+        // height-pinned snapshots, never as execution evidence; use
+        // `verify_state_transition_was_executed_with_proof` directly for
+        // strict execution-evidence semantics.
+        let (root_hash, result) = Drive::verify_state_transition_affected_state_with_proof(
             &state_transition,
             &block_info,
             &proof.grovedb_proof,
