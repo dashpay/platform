@@ -518,6 +518,10 @@ macro_rules! match_grpc_methods {
 
 /// Return a label only for methods compiled into the two public Tonic services.
 /// Every other syntactically valid or malformed path shares one finite bucket.
+// KEEP IN SYNC with packages/dapi-grpc/protos/{core,platform}/v0/*.proto —
+// an rpc missing here still serves fine but its metrics degrade to the
+// `grpc_unknown` bucket (dapi-grpc emits no file descriptor set, so this
+// cannot be asserted by a test without build-graph changes).
 fn known_grpc_endpoint(path: &str) -> &'static str {
     match_grpc_methods!(
         path,
@@ -619,7 +623,9 @@ pub fn platform_events_active_sessions_dec() {
 }
 
 #[inline]
-pub fn platform_events_command(op: &str) {
+pub fn platform_events_command(op: &'static str) {
+    // `&'static str` keeps this label bounded by construction — request-derived
+    // strings cannot reach the registry (same rationale as `MethodLabel`).
     PLATFORM_EVENTS_COMMANDS.with_label_values(&[op]).inc();
 }
 
