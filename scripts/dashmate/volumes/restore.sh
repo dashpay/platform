@@ -43,7 +43,10 @@ for metadata in "${metadata_entries[@]}"; do
     exit 1
   }
 
-  for label in "${label_entries[@]}"; do
+  # ${arr[@]+...} guard: bash 3.2 (macOS stock) treats expanding an empty
+  # array as an unbound variable under `set -u`, so a label-less volume
+  # would abort the restore.
+  for label in ${label_entries[@]+"${label_entries[@]}"}; do
     key=$(jq -er '.key | select(type == "string")' <<<"$label")
     value=$(jq -er '.value | select(type == "string")' <<<"$label")
     [[ $key =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] || {
