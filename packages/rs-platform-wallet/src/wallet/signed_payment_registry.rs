@@ -58,7 +58,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use dashcore::{Transaction, Txid};
-use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::core::CoreWallet;
@@ -143,11 +143,15 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     core: CoreWallet<B>,
     /// The signed transaction to broadcast.
     tx: Transaction,
-    /// The funding account whose reservation must be released on a rejected
-    /// broadcast or an explicit release. `None` for a CoinJoin funding, which
-    /// has no standard-account reservation to reconcile (it rides the
-    /// TTL backstop), mirroring `CoreAccountTypeFFI::as_standard_account_type`.
-    account_type: Option<StandardAccountType>,
+    /// The releasable funding-account handle — the account whose reservation
+    /// `finalize` took and which a rejected broadcast or an explicit release
+    /// must reconcile. An [`AccountTypePreference`] (not the narrower
+    /// `StandardAccountType`) so CoinJoin-funded deferred payments retain a
+    /// releasable handle too: `finalize` reserves the selected inputs for EVERY
+    /// account variant, so a CoinJoin token must be able to release them
+    /// immediately on rejection/abandon rather than stranding them until the
+    /// key-wallet TTL backstop.
+    account_type: AccountTypePreference,
     account_index: u32,
     /// Wallet `last_processed_height` captured at registration — the exact clock
     /// `build_signed` / `finalize_transaction` stamps the funding reservation
@@ -220,7 +224,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         &self,
         core: CoreWallet<B>,
         tx: Transaction,
-        account_type: Option<StandardAccountType>,
+        account_type: AccountTypePreference,
         account_index: u32,
         registered_height: Option<u32>,
     ) -> ReservationToken {
@@ -300,19 +304,18 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             return Err(SignedPaymentError::StaleReservationToken(token));
         }
 
-        let txid = match entry.account_type {
-            Some(account_type) => {
-                entry
-                    .core
-                    .broadcast_transaction_releasing_reservation(
-                        account_type,
-                        entry.account_index,
-                        &entry.tx,
-                    )
-                    .await?
-            }
-            None => entry.core.broadcast_transaction(&entry.tx).await?,
-        };
+        // One releasing-broadcast path for every funding variant, CoinJoin
+        // included: a definitive rejection releases the reservation for an
+        // immediate rebuild, an ambiguous outcome keeps it, and the release is
+        // bound to the token's own wallet generation.
+        let txid = entry
+            .core
+            .broadcast_payment_releasing_reservation(
+                entry.account_type,
+                entry.account_index,
+                &entry.tx,
+            )
+            .await?;
         Ok(txid)
     }
 
@@ -321,7 +324,8 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// outpoint may already have been swept and re-selected by an unrelated
     /// build, so releasing it by outpoint could free that newer reservation —
     /// drop it without touching the `ReservationSet` (key-wallet's TTL reclaims
-    /// the original). Otherwise release the standard-account reservation.
+    /// the original). Otherwise release the funding-account reservation (any
+    /// variant, CoinJoin included), bound to the token's own wallet generation.
     async fn reconcile_removed_entry(entry: RegisteredPayment<B>) {
         if reservation_expired(
             entry.registered_height,
@@ -329,12 +333,10 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         ) {
             return;
         }
-        if let Some(account_type) = entry.account_type {
-            entry
-                .core
-                .release_payment_reservation(account_type, entry.account_index, &entry.tx)
-                .await;
-        }
+        entry
+            .core
+            .release_transaction_reservation(entry.account_type, entry.account_index, &entry.tx)
+            .await;
     }
 
     /// Release the funding reservation behind `token` and drop it. Idempotent:
@@ -430,12 +432,24 @@ mod tests {
     use key_wallet::signer::Signer;
     use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
     use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     use super::{SignedPaymentError, SignedPaymentRegistry, RESERVATION_MAX_AGE_BLOCKS};
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::test_support::{funded_wallet_manager, AlwaysMaybeSentBroadcaster, WalletSigner};
     use crate::wallet::core::CoreWallet;
+
+    /// The [`AccountTypePreference`] a `build_signed_tx` funding account maps to
+    /// — the registry now retains the full account handle (CoinJoin included),
+    /// so the tests register with the preference rather than the narrower
+    /// `StandardAccountType`.
+    fn preference(account_type: StandardAccountType) -> AccountTypePreference {
+        match account_type {
+            StandardAccountType::BIP44Account => AccountTypePreference::BIP44,
+            StandardAccountType::BIP32Account => AccountTypePreference::BIP32,
+        }
+    }
     use crate::PlatformWalletError;
 
     /// Broadcaster that records the exact bytes handed to it and succeeds,
@@ -497,6 +511,19 @@ mod tests {
     ) -> (CoreWallet<B>, WalletSigner, Vec<(DashAddress, u64)>) {
         let (wallet_manager, wallet_id, balance, signer) =
             funded_wallet_manager(account_type).await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let core = CoreWallet::new(sdk, wallet_manager, wallet_id, broadcaster, balance);
+        let recipient = DashAddress::dummy(Network::Testnet, 42);
+        (core, signer, vec![(recipient, 1_000_000u64)])
+    }
+
+    /// A testnet `CoreWallet` whose CoinJoin account 0 holds the funded UTXO —
+    /// the fixture for the CoinJoin-funded deferred-payment reservation tests.
+    async fn funded_coinjoin_core_wallet<B: TransactionBroadcaster>(
+        broadcaster: Arc<B>,
+    ) -> (CoreWallet<B>, WalletSigner, Vec<(DashAddress, u64)>) {
+        let (wallet_manager, wallet_id, balance, signer) =
+            crate::test_support::funded_coinjoin_wallet_manager().await;
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let core = CoreWallet::new(sdk, wallet_manager, wallet_id, broadcaster, balance);
         let recipient = DashAddress::dummy(Network::Testnet, 42);
@@ -589,7 +616,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -631,7 +658,7 @@ mod tests {
                 .register(
                     core.clone(),
                     tx,
-                    Some(account_type),
+                    preference(account_type),
                     0,
                     core.last_processed_height().await,
                 )
@@ -657,6 +684,92 @@ mod tests {
         }
     }
 
+    /// Regression for the deferred CoinJoin reservation leak: a CoinJoin-funded
+    /// deferred payment reserves its inputs (finalize reserves for EVERY account
+    /// variant), so releasing/abandoning it must free that reservation
+    /// immediately — not strand it until key-wallet's 24-block TTL. Before the
+    /// fix the registry entry carried only a `StandardAccountType`, so a CoinJoin
+    /// funding (which has none) reconciled nothing on release.
+    ///
+    /// Uses the production `finalize_transaction` path (the atomic
+    /// select+reserve+sign the FFI runs), which is the only builder that funds a
+    /// CoinJoin account, then registers/releases through the registry exactly as
+    /// `core_wallet_signed_payment_finalize` / `_release` do. The CoinJoin
+    /// funding path is a sweep (`SelectionStrategy::All`): the single output
+    /// drains the input minus fee, so no change address is derived — the only
+    /// shape a non-standard CoinJoin account can fund.
+    #[tokio::test]
+    async fn coinjoin_funded_release_frees_the_reservation_immediately() {
+        // A CoinJoin sweep of the funded account to a single recipient.
+        fn sweep_builder(recipient: &DashAddress) -> TransactionBuilder {
+            TransactionBuilder::new()
+                .set_selection_strategy(SelectionStrategy::All)
+                .add_output(recipient, 1_000_000)
+        }
+
+        let broadcaster = Arc::new(RecordingBroadcaster::new());
+        let (core, signer, outputs) = funded_coinjoin_core_wallet(broadcaster).await;
+        let recipient = outputs[0].0.clone();
+        let registry = SignedPaymentRegistry::new();
+
+        // finalize: atomic select + reserve + sign against the CoinJoin account.
+        let finalized = core
+            .finalize_transaction(
+                sweep_builder(&recipient),
+                AccountTypePreference::CoinJoin,
+                0,
+                &signer,
+            )
+            .await
+            .expect("coinjoin finalize should succeed");
+
+        let token = registry
+            .register(
+                core.clone(),
+                finalized.transaction().clone(),
+                AccountTypePreference::CoinJoin,
+                0,
+                Some(finalized.reservation_height()),
+            )
+            .await;
+
+        // Reservation held: a second CoinJoin finalize finds no unreserved input.
+        let blocked = core
+            .finalize_transaction(
+                sweep_builder(&recipient),
+                AccountTypePreference::CoinJoin,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                blocked,
+                Err(PlatformWalletError::CoreInsufficientFunds { .. })
+            ),
+            "rebuild must fail while the CoinJoin reservation is held, got {blocked:?}"
+        );
+
+        // Abandon/nack: the release MUST free the CoinJoin reservation now, not
+        // strand it until the TTL backstop.
+        registry.release(token).await;
+        assert_eq!(registry.outstanding(), 0, "token consumed after release");
+
+        let rebuilt = core
+            .finalize_transaction(
+                sweep_builder(&recipient),
+                AccountTypePreference::CoinJoin,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            rebuilt.is_ok(),
+            "releasing a CoinJoin-funded token must free its reservation immediately, \
+             got {rebuilt:?}"
+        );
+    }
+
     /// A second broadcast of the same token is a typed `StaleToken` error, never
     /// a second send.
     #[tokio::test]
@@ -679,7 +792,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -722,7 +835,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -756,7 +869,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -818,7 +931,7 @@ mod tests {
             .register(
                 core_a.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core_a.last_processed_height().await,
             )
@@ -864,7 +977,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -920,7 +1033,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -979,7 +1092,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let height = core.last_processed_height().await;
                 registry
-                    .register(core, tx, Some(StandardAccountType::BIP44Account), 0, height)
+                    .register(core, tx, AccountTypePreference::BIP44, 0, height)
                     .await
             }));
         }
@@ -1036,7 +1149,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -1101,7 +1214,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -1151,7 +1264,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -1211,7 +1324,7 @@ mod tests {
             .register(
                 core_a.clone(),
                 tx_a,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core_a.last_processed_height().await,
             )
@@ -1229,7 +1342,7 @@ mod tests {
             .register(
                 core_b.clone(),
                 tx_b,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core_b.last_processed_height().await,
             )
@@ -1290,7 +1403,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core.last_processed_height().await,
             )
@@ -1363,7 +1476,7 @@ mod tests {
             .register(
                 core_a.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 core_a.last_processed_height().await,
             )
@@ -1450,7 +1563,7 @@ mod tests {
             .register(
                 core.clone(),
                 tx,
-                Some(StandardAccountType::BIP44Account),
+                AccountTypePreference::BIP44,
                 0,
                 Some(reservation_height),
             )
