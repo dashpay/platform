@@ -158,6 +158,7 @@ where
             platform_ref,
             state_transition,
             check_tx_level,
+            &self.check_tx_proof_verifier,
             platform_version,
         )?;
 

@@ -186,4 +186,40 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
         XCTAssertEqual(vm.coreSendTotalDuffs, 100_000)
         XCTAssertTrue(vm.canSend)
     }
+
+    // MARK: - Authoritative Core broadcast outcome
+
+    func test_acceptedBroadcastOutcome_showsSuccess() {
+        let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+
+        vm.applyCoreBroadcastOutcome(.accepted(txid: "abc"), recipientCount: 1)
+
+        XCTAssertEqual(vm.successMessage, "Payment sent")
+        XCTAssertNil(vm.error)
+    }
+
+    func test_rejectedBroadcastOutcome_doesNotShowSuccess() {
+        let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+
+        vm.applyCoreBroadcastOutcome(
+            .rejected(txid: "abc", reason: "mempool policy"),
+            recipientCount: 1
+        )
+
+        XCTAssertNil(vm.successMessage)
+        XCTAssertEqual(vm.error, "Payment rejected by Dash Core: mempool policy")
+    }
+
+    func test_unknownBroadcastOutcome_warnsAgainstRetry() {
+        let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
+
+        vm.applyCoreBroadcastOutcome(
+            .unknown(txid: "abc", reason: "request timed out"),
+            recipientCount: 1
+        )
+
+        XCTAssertNil(vm.successMessage)
+        XCTAssertTrue(vm.error?.contains("do not retry") == true)
+        XCTAssertTrue(vm.error?.contains("abc") == true)
+    }
 }

@@ -56,6 +56,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify self-hosted Swift runner policy
+        run: python3 .github/scripts/check-swift-self-hosted-runner.py
+
       - uses: dorny/paths-filter@v4
         id: filter-js
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -188,6 +191,7 @@ jobs:
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
+              - packages/document-history-contract/**
               - packages/dpns-contract/**
               - packages/keyword-search-contract/**
               - packages/masternode-reward-shares-contract/**
@@ -342,7 +346,17 @@ jobs:
     # At most one of the two Rust jobs runs (none for e.g. Swift-only PRs);
     # skipped jobs report result 'skipped', not 'failure', so this only
     # blocks on a Rust job that actually ran and failed.
-    if: ${{ always() && needs.changes.outputs.swift-sdk-changed == 'true' && needs.changes.result != 'failure' && needs.rs-workspace-tests.result != 'failure' && needs.rs-wallet-tests.result != 'failure' }}
+    # Untrusted fork PRs must not reach the self-hosted Swift runner — same
+    # trusted-fork policy as the callee guard in swift-sdk-build.yml.
+    if: >-
+      ${{ always()
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository
+          || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && needs.changes.outputs.swift-sdk-changed == 'true'
+      && needs.changes.result != 'failure'
+      && needs.rs-workspace-tests.result != 'failure'
+      && needs.rs-wallet-tests.result != 'failure' }}
     secrets: inherit
     uses: ./.github/workflows/swift-sdk-build.yml
 

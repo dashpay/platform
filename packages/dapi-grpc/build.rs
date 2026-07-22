@@ -466,6 +466,10 @@ impl MappingConfig {
         let builder = typ
             .configure(tonic_prost_build::configure())
             .out_dir(out_dir.clone())
+            // Emit the FileDescriptorSet alongside the generated code so
+            // consumers can enumerate the served rpcs at test time (e.g.
+            // rs-dapi asserts its metrics allowlist covers every method).
+            .file_descriptor_set_path(out_dir.join("descriptor.bin"))
             .protoc_arg("--experimental_allow_proto3_optional");
 
         Self {
