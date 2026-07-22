@@ -557,4 +557,67 @@ mod limit_policy_regression {
             "error must name the rejected limit; got: {msg}"
         );
     }
+
+    #[test]
+    fn range_distinct_sum_no_proof_applies_default_explicit_and_max_limits() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        for (i, (color, amount)) in [("blue", 2u64), ("green", 3), ("red", 5), ("yellow", 7)]
+            .iter()
+            .enumerate()
+        {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig {
+            default_query_limit: 2,
+            max_query_limit: 3,
+            ..Default::default()
+        };
+        let make_request = |limit| DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![WhereClause {
+                field: "color".to_string(),
+                operator: WhereOperator::GreaterThan,
+                value: Value::Text("blue".to_string()),
+            }],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByRange,
+            limit,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        for (requested, expected) in [(None, 2), (Some(1), 1), (Some(10_000), 3)] {
+            let response = drive
+                .execute_document_sum_request(make_request(requested), None, platform_version)
+                .expect("bounded no-proof distinct SUM should succeed");
+            let entries = match response {
+                DocumentSumResponse::Entries(entries) => entries,
+                other => panic!("expected Entries response, got {other:?}"),
+            };
+            assert_eq!(
+                entries.len(),
+                expected,
+                "unexpected entry count for requested limit {requested:?}"
+            );
+        }
+    }
 }
