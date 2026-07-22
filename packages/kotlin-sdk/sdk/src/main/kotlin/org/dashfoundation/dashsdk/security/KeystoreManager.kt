@@ -850,20 +850,30 @@ open class KeystoreManager(
         internal fun lockBoundKeyParamsSupported(deviceSecure: Boolean): Boolean = deviceSecure
 
         /**
-         * Whether [t]'s cause chain is the KeyMint "generate_key needs a secure
-         * lock screen" rejection: an `android.security` `KeyStoreException`
-         * that either NAMES the failure (message references `generate_key` or a
-         * lock-screen requirement) or sits in the cause chain OF a
-         * key-generation `ProviderException` (message "Keystore key generation
-         * failed") AND carries the observed KeyMint rejection's numeric code
-         * (internal Keystore code 4 / KeyMint 10309, observed on-device after
-         * the lock screen was removed).
+         * Whether [t]'s cause chain is the KeyMint "needs a secure lock screen"
+         * rejection: an `android.security` `KeyStoreException` that either NAMES
+         * the lock-screen requirement (message references a lock screen) or sits
+         * in the cause chain OF a key-generation `ProviderException` (message
+         * "Keystore key generation failed") AND carries the observed KeyMint
+         * rejection's numeric code (internal Keystore code 4 / KeyMint 10309,
+         * observed on-device after the lock screen was removed).
+         *
+         * The classification is ONLY these two authoritative signals — the
+         * lock-screen numeric code, or explicit lock-screen text. A bare
+         * `generate_key` mention is deliberately NOT a signal
+         * (dashpay/platform#4060 blocker 2): `generate_key` appears in the
+         * message of every KeyMint generation failure, including transient ones
+         * on a device that DOES have a lock screen. Matching it would silently
+         * and permanently downgrade an AUTH_GATED key to DEVICE_BOUND on a
+         * transient failure instead of retrying — so only the lock-screen code
+         * or text is trusted.
          *
          * Deliberately narrow: a bare nested `KeyStoreException` with an
-         * unrelated message (e.g. a signature failure that happens to be
-         * wrapped by a key-gen ProviderException) does NOT classify — the
-         * consideration window opens only at the matched ProviderException and
-         * still requires a message or numeric-code match, so unrelated
+         * unrelated message (e.g. a signature failure, or a transient
+         * generate_key failure, that happens to be wrapped by a key-gen
+         * ProviderException) does NOT classify — the consideration window opens
+         * only at the matched ProviderException and still requires a
+         * lock-screen message or the rejection numeric code, so unrelated
          * Keystore failures never trigger the degraded retry. Used only as the
          * retry/redirect decision for [generateWithLockScreenDegradation] and
          * [resolveIdentityKeysWriteAlias]. Pure and JVM-testable — matches by
@@ -906,8 +916,13 @@ open class KeystoreManager(
         }
 
         private fun keyStoreMessageNamesLockScreen(msg: String): Boolean =
-            msg.contains("generate_key", ignoreCase = true) ||
-                msg.contains("lock screen", ignoreCase = true)
+            // Only the explicit lock-screen requirement is authoritative. A
+            // bare "generate_key" is NOT matched (dashpay/platform#4060 blocker
+            // 2) — it names the failing operation, not its cause, and a
+            // transient generation failure on a locked device carries it too.
+            // "lock screen" also covers "secure lock screen".
+            msg.contains("lock screen", ignoreCase = true) ||
+                msg.contains("lockscreen", ignoreCase = true)
 
         /**
          * Reflectively read `getNumericErrorCode()` (API 33+ on the real

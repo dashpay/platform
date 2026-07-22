@@ -55,20 +55,46 @@ class KeystoreKeyGenPolicyTest {
     @Test
     fun classifiesWrappedKeystoreGenerationFailure() {
         // The exact on-device shape: a key-gen ProviderException wrapping a
-        // Keystore system error from generate_key.
+        // Keystore system error carrying the lock-screen rejection numeric code
+        // (the real android.security.KeyStoreException exposes it via
+        // getNumericErrorCode(), API 33+). It is the numeric code — not the
+        // incidental "generate_key" mention in the text — that classifies
+        // (dashpay/platform#4060 blocker 2).
         val failure = ProviderException(
             "Keystore key generation failed",
-            SimulatedKeyStoreException(
+            SimulatedNumericKeyStoreException(
                 "System error (internal Keystore code: 4 message: In generate_key. 10309)",
+                numericErrorCode = 4,
             ),
         )
         assertTrue(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
     }
 
     @Test
-    fun classifiesDirectGenerateKeyKeystoreError() {
+    fun doesNotClassifyBareGenerateKeyWithoutLockScreenSignal() {
+        // Blocker 2: a bare "generate_key" mention is NOT a lock-screen signal.
+        // A transient KeyMint generation failure names generate_key too; if it
+        // classified, an AUTH_GATED key would be permanently downgraded to
+        // DEVICE_BOUND instead of being retried.
         val failure = SimulatedKeyStoreException("Keymint error In generate_key")
-        assertTrue(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
+        assertFalse(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
+    }
+
+    @Test
+    fun doesNotClassifyTransientGenerateKeyUnderKeyGenProviderException() {
+        // Blocker 2, the dangerous shape: a key-gen ProviderException wrapping a
+        // transient generate_key Keystore failure on a device that HAS a lock
+        // screen — no lock-screen text, no rejection numeric code. It must NOT
+        // classify, so the AUTH_GATED write is retried, not silently and
+        // permanently degraded to DEVICE_BOUND.
+        val failure = ProviderException(
+            "Keystore key generation failed",
+            SimulatedNumericKeyStoreException(
+                "System error: In generate_key. Failed to generate key (transient)",
+                numericErrorCode = -8, // KeyMint SECURE_HW_COMMUNICATION_FAILED-style transient, not the lock-screen code
+            ),
+        )
+        assertFalse(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
     }
 
     @Test
