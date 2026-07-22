@@ -61,7 +61,10 @@ export default function createHttpApiServerFactory() {
           try {
             const { execute } = await import('@oclif/core');
             return await execute({ dir: import.meta.url, args: argv });
-          } catch {
+          } catch (error) {
+            // Log the real failure for the operator; the client still only
+            // sees the generic error so no internals leak over the API.
+            console.error('Helper API status request failed:', error);
             throw server.error(-32603, 'Status request failed');
           }
         });
