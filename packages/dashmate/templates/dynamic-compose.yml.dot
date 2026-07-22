@@ -5,7 +5,7 @@ services:
     command:
       - dashd
       {{~ it.core.docker.commandArgs :arg }}
-      - {{=arg}}
+      - {{=JSON.stringify(arg)}}
       {{~}}
     {{? it.core.log.filePath !== null }}
     volumes:
