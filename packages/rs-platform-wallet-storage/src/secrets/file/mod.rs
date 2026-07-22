@@ -247,9 +247,8 @@ impl EncryptedFileStore {
         // create do not fail on a not-yet-existing dir.
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
-        // Refuse a group/other-WRITABLE parent: directory write governs
-        // rename/unlink, so a writable parent lets another local user
-        // replace the vault despite its own 0600 (the A1 guarantee).
+        // Refuse unsafe permissions or ownership anywhere above the vault:
+        // an attacker who can replace an ancestor can replace the 0600 file.
         crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
             crate::parent_permissions::ParentPermissionsError::Io(source) => {
                 SecretStoreError::io_at(parent, source)
@@ -683,9 +682,9 @@ fn build_fresh_vault(
 }
 
 /// Derive the key from `passphrase` and verify it against the vault's
-/// token *before* any entry is touched. A wrong passphrase fails the
-/// token's AEAD tag (constant-time) and yields `WrongPassphrase` with
-/// no plaintext.
+/// token *before* any entry is touched. An authentication failure means either
+/// a wrong passphrase or a corrupted vault header; both yield
+/// `WrongPassphrase` with no plaintext.
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,
@@ -2172,6 +2171,7 @@ mod tests {
     fn writable_parent_dir_is_refused() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let sub = dir.path().join("vaultdir");
         fs::create_dir(&sub).unwrap();
         // Group-writable (0o770) trips the write-bit check. Build the path

@@ -419,9 +419,10 @@ downcast-recoverable, like `WrongPassphrase`); `UnsupportedEnvelopeVersion`
 joins the secret-free `BadStoreFormat` group. `VaultTooLarge` surfaces when
 the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
 oversized secret at the write boundary before it can inflate the shared
-vault; `InsecureParentDir` refuses a vault whose parent directory is
-group/other-writable (a writable parent governs rename/replace despite the
-file's own `0600`); `Encrypt` is the (effectively unreachable) AEAD
+vault; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
+ownership or a group/other-writable component without the sticky bit (an
+attacker who can replace an ancestor can replace the `0600` file); `Encrypt`
+is the (effectively unreachable) AEAD
 encrypt-side failure, kept typed so a write failure is never mislabeled a
 key-derivation error. For the OS arm,
 `keyring_core::Error` projects best-effort into
@@ -438,6 +439,15 @@ item — one AEAD tag cannot disambiguate the two. Treat `WrongPassword` on
 the OS arm as "wrong password or corrupted item." On the file arm it is
 unambiguous: the vault's own per-entry tag has already authenticated the
 stored bytes before the envelope is parsed.
+
+**`WrongPassphrase` on the file arm is ambiguous at the vault header.** The
+Tier-1 header's verification token has no integrity check independent of the
+passphrase-derived key. Its AEAD tag therefore cannot distinguish an incorrect
+vault passphrase from corruption of the header salt, KDF parameters, nonce, or
+ciphertext. Treat file-arm `WrongPassphrase` as "wrong passphrase or corrupted
+header." This ambiguity is limited to the Tier-1 header; after the header is
+verified, the vault's per-entry authentication keeps Tier-2 `WrongPassword`
+unambiguous on the file arm as described above.
 
 The internal SPI projection `From<SecretStoreError> for
 keyring_core::Error` keeps the `WrongPassphrase` / `AlreadyLocked` variants
