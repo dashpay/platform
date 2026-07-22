@@ -783,6 +783,152 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
+/// Create an identity funded from a ONE-TIME Orchard key, Type 20 (bridges
+/// `platform_wallet_manager_shielded_identity_create_from_one_time_key`) — the
+/// L2-invitation *claim* side.
+///
+/// Sibling of [`Java_..._shieldedIdentityCreateFromPool`], but the Orchard spend
+/// authority is a foreign `one_time_sk` (32 bytes) rather than the wallet's own
+/// bound pool. `change_address_raw43` is the claimer's OWN 43-byte default Orchard
+/// address (receives any over-funding change note). `funding_birth_height` is an
+/// advisory hint: a negative value means "no hint" (`None`); a non-negative value
+/// is passed through as `Some(u32)`. Everything else — `pubkeys_blob` (the SAME
+/// shared rich registration key-row blob ID-08 uses, built by `IdentityPubkeyCodec`
+/// and decoded by `decode_registration_pubkeys_blob`), `denomination`,
+/// `fallback_address`, `identity_index`, `signer_handle` — matches the pool
+/// sibling. Blocks for the ~30 s Halo 2 proof; returns the tagged create payload
+/// (`[0|1] || identity_id || diagnostic_utf8`, written on success AND on the
+/// unconfirmed-broadcast fallback) exactly like the pool sibling.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedIdentityCreateFromOneTimeKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    one_time_sk: JByteArray,
+    funding_birth_height: jint,
+    change_address_raw43: JByteArray,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    denomination: jlong,
+    fallback_address: JByteArray,
+    signer_handle: jlong,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if denomination <= 0 {
+            throw_sdk_exception(env, 1, "denomination must be positive");
+            return ptr::null_mut();
+        }
+        if signer_handle == 0 {
+            throw_sdk_exception(env, 1, "signerHandle must be non-null");
+            return ptr::null_mut();
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(sk) = read_id32(env, &one_time_sk, "oneTimeSk") else {
+            return ptr::null_mut();
+        };
+        let Some(change_raw) = read_recipient43(env, &change_address_raw43) else {
+            return ptr::null_mut();
+        };
+
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+
+        // The 21-byte fallback PlatformAddress (1 variant tag + 20 hash),
+        // REQUIRED for Type-20 — validated exactly here.
+        let fallback = match read_opt_bytes(env, &fallback_address) {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                throw_sdk_exception(env, 1, "fallbackAddress must not be null");
+                return ptr::null_mut();
+            }
+            Err(()) => return ptr::null_mut(),
+        };
+        if fallback.len() != 21 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!("fallbackAddress must be 21 bytes, got {}", fallback.len()),
+            );
+            return ptr::null_mut();
+        }
+
+        // A negative birth-height means "no hint" (`None`); non-negative is a
+        // `Some(u32)` advisory value.
+        let (has_birth, birth_val): (bool, u32) = if funding_birth_height < 0 {
+            (false, 0)
+        } else {
+            (true, funding_birth_height as u32)
+        };
+
+        // Same rich rows as ID-01 / ID-08 — the caller stamps each key's DPP
+        // role and any contract bounds; this path just marshals them.
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
+
+        let mut out_id = [0u8; 32];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_identity_create_from_one_time_key(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                sk.as_ptr(),
+                has_birth,
+                birth_val,
+                change_raw.as_ptr(),
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                denomination as u64,
+                fallback.as_ptr(),
+                signer_handle as *mut SignerHandle,
+                &mut out_id as *mut [u8; 32],
+            )
+        };
+        // `decoded` / `ffi_rows` / `fallback` / `sk` / `change_raw` own the
+        // pointed-to buffers through the blocking FFI call above.
+        //
+        // ErrorShieldedBroadcastUnconfirmed (17) is NOT routed through
+        // take_pwffi_error: the C ABI writes `out_id` on that outcome too —
+        // the identity may already be live on-chain, so the host must
+        // retain the id and hold its derivation slot instead of retrying
+        // into a duplicate. Return a tagged variable-length payload
+        // (`[0|1] || identity_id || diagnostic_utf8`) so Kotlin can surface
+        // a typed unconfirmed result without losing the id or native error.
+        let unconfirmed = result.code
+            == platform_wallet_ffi::error::PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed;
+        let mut diagnostic = Vec::new();
+        if unconfirmed {
+            // Preserve the native diagnostic (the underlying DAPI /
+            // result-proof confirmation failure) before freeing — the
+            // registration controller surfaces it, and Swift keeps both
+            // fields.
+            let mut result = result;
+            if !result.message.is_null() {
+                diagnostic = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                    .to_bytes()
+                    .to_vec();
+            }
+            unsafe { platform_wallet_ffi::error::platform_wallet_ffi_result_free(&mut result) };
+        } else if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let mut packed = Vec::with_capacity(33 + diagnostic.len());
+        packed.push(u8::from(unconfirmed));
+        packed.extend_from_slice(&out_id);
+        packed.extend_from_slice(&diagnostic);
+        env.byte_array_from_slice(&packed)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// Generate a fresh one-time Orchard spending key + its default payment
 /// address (bridges `platform_wallet_generate_one_time_orchard_key`) — the
 /// *inviter* side of an L2 shielded invitation.

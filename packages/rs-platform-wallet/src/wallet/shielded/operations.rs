@@ -1535,6 +1535,252 @@ where
     }
 }
 
+// -------------------------------------------------------------------------
+// IdentityCreateFromShieldedPool from a ONE-TIME Orchard key (Type 20, L2
+// invitations — the claim side)
+// -------------------------------------------------------------------------
+
+/// Create a brand-new Platform identity funded from a ONE-TIME Orchard spending
+/// key (the L2-invitation *claim* side).
+///
+/// Unlike [`identity_create_from_shielded_pool`], the spend authority is NOT the
+/// wallet's own [`OrchardKeySet`]; it is a foreign `one_time_sk` — the single-use
+/// Orchard spending key an invitation was funded to. The op:
+/// 1. derives the full-viewing / incoming-viewing / spend-authorizing keys from
+///    `one_time_sk`,
+/// 2. transiently scans the network for the note(s) that key owns (they are not
+///    tracked in any subwallet store — see [`super::sync::scan_notes_for_foreign_key`]),
+/// 3. selects notes covering exactly `denomination` (the exact-equality model —
+///    the fee is metered FROM the denomination) and gates on
+///    `denomination > predicted_fee`,
+/// 4. witnesses the selected notes against a Platform-recorded anchor from the
+///    shared (fully-marked) commitment tree — the SAME anchor probe the
+///    pool-funded op uses (so a wallet that hasn't synced past the funding
+///    position gets the retryable [`PlatformWalletError::ShieldedMerkleWitnessUnavailable`]),
+/// 5. feeds the key-agnostic Type-20 builder with the one-time key's fvk/ask, and
+/// 6. broadcasts + waits with the same fetch-by-derived-id fallback.
+///
+/// The whole denomination leaves the pool; any spent value above it re-enters as
+/// a single change note to `change_address` (the claimer's OWN default Orchard
+/// address — over-funding is expected to be zero for a one-time invitation key,
+/// but is handled). There is NO wallet-side note reservation to take or release:
+/// the spent notes belong to the foreign key, not to any subwallet, so an
+/// unconfirmed broadcast simply leaves the on-chain nullifiers as the
+/// authoritative no-reuse guarantee.
+///
+/// `funding_birth_height` is an advisory hint only (see
+/// [`super::sync::scan_notes_for_foreign_key`] — the tree has no height→position
+/// oracle, so it cannot seed the scan start today).
+///
+/// Returns the new identity's id and the proof-verified [`Identity`]; the caller
+/// registers that identity in its local `IdentityManager`.
+#[allow(clippy::too_many_arguments)]
+pub async fn identity_create_from_one_time_key<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    one_time_sk: [u8; 32],
+    funding_birth_height: Option<u32>,
+    change_address: &OrchardAddress,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    prover: &P,
+) -> Result<(Identifier, Identity), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    use grovedb_commitment_tree::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey};
+
+    if public_keys.is_empty() {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "identity-create-from-one-time-key requires at least one public key".to_string(),
+        ));
+    }
+
+    // Derive the Orchard key material from the one-time spending key. `from_bytes`
+    // returns a `CtOption`; an invalid scalar means the caller handed us a
+    // non-key, which is a hard input error.
+    let sk: SpendingKey = Option::from(SpendingKey::from_bytes(one_time_sk)).ok_or_else(|| {
+        PlatformWalletError::ShieldedKeyDerivation(
+            "one-time spending key is not a valid Orchard SpendingKey".to_string(),
+        )
+    })?;
+    let fvk = FullViewingKey::from(&sk);
+    let ask = SpendAuthorizingKey::from(&sk);
+    let ivk = fvk.to_ivk(Scope::External);
+
+    // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
+    // block_height is the proof-tip height, not per-note inclusion height), so the
+    // transient scan always starts at position 0 and bounds itself by value
+    // coverage. Logged so the hint is observable and not silently dropped.
+    if let Some(h) = funding_birth_height {
+        debug!(
+            funding_birth_height = h,
+            "identity_create_from_one_time_key: birth-height hint (advisory; scan is value-bounded)"
+        );
+    }
+
+    let num_keys = public_keys.len();
+
+    // Transient scan: re-derive the one-time key's note(s) from the network.
+    let discovered = super::sync::scan_notes_for_foreign_key(sdk, &fvk, &ivk, denomination).await?;
+    if discovered.is_empty() {
+        // No note decrypts under this key — nothing was funded to it (or the
+        // wallet hasn't synced far enough to see it yet).
+        return Err(PlatformWalletError::ShieldedNoUnspentNotes);
+    }
+
+    // Exact-equality selection over the transiently-scanned set: cover exactly
+    // `denomination`, gate on `denomination > predicted_fee`. Surfaces
+    // `ShieldedInsufficientBalance { available, required }` when the key's notes
+    // don't cover the denomination, mirroring the pool-funded neighbor.
+    let (selected_refs, total_input, predicted_fee) =
+        select_notes_for_denomination(&discovered, denomination, 2, num_keys, sdk.version())?;
+    let selected_notes: Vec<ShieldedNote> = selected_refs.into_iter().cloned().collect();
+
+    info!(
+        denomination,
+        predicted_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        keys = num_keys,
+        "IdentityCreateFromOneTimeKey"
+    );
+
+    // Snapshot the submitted keys for the defensive empty-`public_keys` fill (the
+    // binding signature committed exactly these; same pattern as the pool op).
+    let submitted_public_keys: BTreeMap<u32, IdentityPublicKey> = public_keys
+        .iter()
+        .map(|(key, _)| (key.id(), key.clone()))
+        .collect();
+
+    // Witness the selected notes against a Platform-recorded anchor from the
+    // shared, fully-marked commitment tree (identical probe to the pool op).
+    let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
+
+    let build = build_identity_create_from_shielded_pool_transition(
+        public_keys,
+        denomination,
+        send_to_address_on_creation_failure,
+        spends,
+        change_address,
+        &fvk,
+        &ask,
+        anchor,
+        prover,
+        identity_signer,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .await
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    let identity_id = build.identity_id;
+
+    // Re-assemble the transition from the PoP-signed keys + bundle params
+    // (preserving the per-key signatures) and broadcast. The broadcast/wait
+    // classification mirrors `identity_create_from_shielded_pool` verbatim, minus
+    // the note-reservation bookkeeping (there is no subwallet reservation to
+    // release — the spent notes belong to the foreign one-time key).
+    let st = sdk
+        .identity_create_from_shielded_pool_transition(
+            build.public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            build.bundle,
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    match st.broadcast(sdk, None).await {
+        Ok(()) => {}
+        Err(e) if broadcast_definitely_failed(&e) => {
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+        }
+        Err(e) => {
+            warn!(
+                derived_id = %identity_id,
+                error = %e,
+                "IdentityCreateFromOneTimeKey: broadcast returned no verdict; the transition may \
+                 have been admitted — falling through to the result wait"
+            );
+        }
+    }
+
+    let proof_result = match st
+        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .await
+    {
+        Ok(result) => result,
+        Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
+            return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
+        }
+        Err(wait_err) => {
+            warn!(
+                derived_id = %identity_id,
+                error = %wait_err,
+                "IdentityCreateFromOneTimeKey: broadcast accepted but result confirmation failed; \
+                 falling back to fetching the identity by its derived id"
+            );
+            match fetch_identity_with_retries(sdk, identity_id).await {
+                Some(mut identity) => {
+                    info!(
+                        derived_id = %identity_id,
+                        "IdentityCreateFromOneTimeKey: result confirmation failed but the identity \
+                         was found on chain by its derived id; treating as success"
+                    );
+                    if identity.public_keys().is_empty() {
+                        identity.set_public_keys(submitted_public_keys.clone());
+                    }
+                    return Ok((identity.id(), identity));
+                }
+                None => {
+                    return Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                        identity_id,
+                        reason: wait_err.to_string(),
+                    });
+                }
+            }
+        }
+    };
+
+    let identity = match proof_result {
+        StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(mut identity, _n) => {
+            if identity.id() != identity_id {
+                warn!(
+                    derived_id = %identity_id,
+                    verified_id = %identity.id(),
+                    "IdentityCreateFromOneTimeKey: derived id differs from proof-verified id; using \
+                     the proof-verified id"
+                );
+            }
+            if identity.public_keys().is_empty() {
+                identity.set_public_keys(submitted_public_keys);
+            }
+            identity
+        }
+        other => {
+            warn!(
+                derived_id = %identity_id,
+                result = %other,
+                "IdentityCreateFromOneTimeKey: unexpected proof-result variant; synthesizing the \
+                 identity from the derived id + submitted keys so the local row still lands"
+            );
+            Identity::new_with_id_and_keys(identity_id, submitted_public_keys, sdk.version())
+                .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
+        }
+    };
+
+    info!(
+        denomination,
+        identity_id = %identity.id(),
+        "IdentityCreateFromOneTimeKey broadcast succeeded"
+    );
+    Ok((identity.id(), identity))
+}
+
 /// Whether a failed identity-create should release the notes reserved for it.
 ///
 /// `false` ONLY for [`PlatformWalletError::ShieldedBroadcastUnconfirmed`]: the broadcast was
@@ -3367,5 +3613,227 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+/// Unit tests for the ONE-TIME-key claim path
+/// ([`identity_create_from_one_time_key`] / [`super::sync::scan_notes_for_foreign_key`]).
+///
+/// The full op needs a live SDK note stream, so these cover the network-free
+/// pieces the crate ADDS: deriving a note owned by a foreign one-time spending
+/// key (the scan's per-note conversion — value / cmx / nullifier / serialization),
+/// the exact-equality selection over the transiently-scanned set (exact / over /
+/// under / no-note), and witnessing that foreign note against a Platform-recorded
+/// anchor in the shared marked tree. The key-agnostic Type-20 BUILD with a
+/// foreign key is proven by rs-dpp's own green builder tests
+/// (`SpendingKey::from_bytes([..]) → fvk/ask → build … succeeds`).
+#[cfg(test)]
+mod one_time_key_tests {
+    use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use dpp::version::PlatformVersion;
+    use grovedb_commitment_tree::{
+        ExtractedNoteCommitment, FullViewingKey, Note, NoteValue, RandomSeed, Rho, Scope,
+        SpendingKey,
+    };
+
+    /// Smallest member of the versioned exit-denomination set (0.1 DASH).
+    const DENOMINATION: u64 = 10_000_000_000;
+
+    /// A fixed, valid one-time Orchard spending key for the tests.
+    const ONE_TIME_SK: [u8; 32] = [0x24; 32];
+
+    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("one_time_key_{tag}_{nanos}.sqlite"))
+    }
+
+    fn filler_cmx(b: u8) -> [u8; 32] {
+        let mut c = [0u8; 32];
+        c[0] = b;
+        c
+    }
+
+    /// The full-viewing key of the one-time spending key.
+    fn one_time_fvk() -> FullViewingKey {
+        let sk: SpendingKey = Option::from(SpendingKey::from_bytes(ONE_TIME_SK))
+            .expect("fixed one-time SK is a valid Orchard SpendingKey");
+        FullViewingKey::from(&sk)
+    }
+
+    /// Build one real Orchard note OWNED BY the one-time key, shaped exactly as
+    /// [`super::sync::scan_notes_for_foreign_key`] would produce it: `cmx` is the
+    /// note's real commitment, `nullifier` is derived under the one-time key's
+    /// fvk, and `note_data` is the canonical 115-byte serialization.
+    fn one_time_note(value: u64, position: u64) -> ShieldedNote {
+        let fvk = one_time_fvk();
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        // rho / rseed must be canonical Pallas base-field elements — scan
+        // deterministically (mirrors the existing note builders in this file).
+        let rho = (1u16..=u16::MAX)
+            .find_map(|n| {
+                let mut b = [0u8; 32];
+                b[0..2].copy_from_slice(&n.to_le_bytes());
+                Rho::from_bytes(&b).into_option()
+            })
+            .expect("a canonical rho exists");
+        let rseed = (1u16..=u16::MAX)
+            .find_map(|m| {
+                let mut b = [0u8; 32];
+                b[2..4].copy_from_slice(&m.to_le_bytes());
+                RandomSeed::from_bytes(b, &rho).into_option()
+            })
+            .expect("a canonical rseed exists");
+
+        let note = Note::from_parts(recipient, NoteValue::from_raw(value), rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+        let cmx = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
+        let nullifier = note.nullifier(&fvk).to_bytes();
+
+        let mut note_data = Vec::with_capacity(115);
+        note_data.extend_from_slice(&note.recipient().to_raw_address_bytes());
+        note_data.extend_from_slice(&note.value().inner().to_le_bytes());
+        note_data.extend_from_slice(&note.rho().to_bytes());
+        note_data.extend_from_slice(note.rseed().as_bytes());
+
+        ShieldedNote {
+            position,
+            cmx,
+            nullifier,
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data,
+        }
+    }
+
+    /// The scan's per-note conversion is correct: a note owned by the one-time
+    /// key round-trips through the wallet's 115-byte serialization, and its
+    /// nullifier matches the one derived under that key's fvk (what the scan
+    /// stamps). This is the piece [`super::sync::scan_notes_for_foreign_key`]
+    /// runs on every discovered note.
+    #[test]
+    fn foreign_key_note_roundtrips_and_nullifier_matches() {
+        let note = one_time_note(DENOMINATION, 0);
+
+        // `note_data` deserializes back to an equal note.
+        let decoded = deserialize_note(&note.note_data).expect("serialized note is valid");
+        assert_eq!(
+            decoded.value().inner(),
+            DENOMINATION,
+            "value survives round-trip"
+        );
+
+        // The stamped nullifier is exactly the one the one-time key's fvk derives.
+        let fvk = one_time_fvk();
+        assert_eq!(
+            note.nullifier,
+            decoded.nullifier(&fvk).to_bytes(),
+            "stamped nullifier must match the fvk-derived nullifier"
+        );
+
+        // The stored cmx is the note's real extracted commitment.
+        assert_eq!(
+            note.cmx,
+            ExtractedNoteCommitment::from(decoded.commitment()).to_bytes(),
+            "stored cmx must be the note's real commitment"
+        );
+    }
+
+    /// Exact-equality selection over the transiently-scanned set: exact funding
+    /// (zero change), over-funding (change = excess routed to change_address),
+    /// under-funding (typed `ShieldedInsufficientBalance`), and no-note (empty →
+    /// `ShieldedNoUnspentNotes`, the op's fail-fast on an unfunded key).
+    #[test]
+    fn select_for_claim_exact_over_under_and_no_note() {
+        let version = PlatformVersion::latest();
+
+        // Exact: one note equal to the denomination → zero change.
+        let exact = vec![one_time_note(DENOMINATION, 0)];
+        let (sel, total, fee) =
+            select_notes_for_denomination(&exact, DENOMINATION, 2, 1, version).expect("exact");
+        assert_eq!(sel.len(), 1);
+        assert_eq!(total, DENOMINATION);
+        assert_eq!(total - DENOMINATION, 0, "exact funding leaves zero change");
+        assert!(fee < DENOMINATION, "fee must leave a positive balance");
+
+        // Over-funded: the excess above the denomination becomes the change note.
+        let excess = 7_000_000_000u64;
+        let over = vec![one_time_note(DENOMINATION + excess, 0)];
+        let (sel, total, _) =
+            select_notes_for_denomination(&over, DENOMINATION, 2, 1, version).expect("over");
+        assert_eq!(sel.len(), 1);
+        assert_eq!(
+            total - DENOMINATION,
+            excess,
+            "over-funding routes the excess to change_address"
+        );
+
+        // Under-funded: a single note below the denomination.
+        let under = vec![one_time_note(DENOMINATION - 1, 0)];
+        match select_notes_for_denomination(&under, DENOMINATION, 2, 1, version) {
+            Err(PlatformWalletError::ShieldedInsufficientBalance {
+                available,
+                required,
+            }) => {
+                assert_eq!(available, DENOMINATION - 1);
+                assert_eq!(required, DENOMINATION);
+            }
+            other => panic!("expected ShieldedInsufficientBalance, got {other:?}"),
+        }
+
+        // No note found for the key: empty set → ShieldedNoUnspentNotes (the same
+        // error the op raises on `discovered.is_empty()`).
+        match select_notes_for_denomination(&[], DENOMINATION, 2, 1, version) {
+            Err(PlatformWalletError::ShieldedNoUnspentNotes) => {}
+            other => panic!("expected ShieldedNoUnspentNotes, got {other:?}"),
+        }
+    }
+
+    /// The witness half: a note owned by the one-time key, appended to the shared
+    /// fully-marked tree, is witnessable and produces a `SpendableNote` against a
+    /// Platform-recorded anchor — the same probe the op runs before the build.
+    #[test]
+    fn foreign_key_note_witnesses_against_recorded_anchor() {
+        let path = temp_tree_path("witness");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = one_time_note(DENOMINATION, 0);
+
+        // One block, checkpointed on its boundary: depth-0 root is recorded.
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.append_commitment(&filler_cmx(0xA1), true).unwrap();
+        store.append_commitment(&filler_cmx(0xA2), true).unwrap();
+        store.checkpoint_tree(3).unwrap();
+        let root_depth0 = store.tree_anchor().unwrap();
+
+        let recorded: HashSet<[u8; 32]> = [root_depth0].into_iter().collect();
+
+        let (spends, anchor) =
+            select_recorded_spends(&store, std::slice::from_ref(&note), &recorded)
+                .expect("the one-time key's note witnesses against the recorded anchor");
+
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            spends.len(),
+            1,
+            "the one-time key's single note is spendable"
+        );
+        assert_eq!(
+            spends[0].note.value().inner(),
+            DENOMINATION,
+            "the witnessed SpendableNote carries the funded value"
+        );
+        assert_eq!(
+            anchor.to_bytes(),
+            root_depth0,
+            "the spend is built against the Platform-recorded anchor"
+        );
     }
 }

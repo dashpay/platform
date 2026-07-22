@@ -38,7 +38,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info};
 
 use super::keys::AccountViewingKeys;
-use super::store::{ShieldedStore, SubwalletId};
+use super::store::{ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
 
@@ -797,6 +797,68 @@ pub(crate) async fn balances_across<S: ShieldedStore>(
         out.insert(*id, notes.iter().map(|n| n.value).sum());
     }
     Ok(out)
+}
+
+/// Transiently scan the shielded-note set for a FOREIGN Orchard key (the
+/// L2-invitation *claim* path).
+///
+/// Streams the on-chain encrypted notes with `ivk` as the driver key and
+/// collects every note that decrypts under it into a store [`ShieldedNote`]
+/// (position, cmx, per-`fvk` nullifier, value, and the 115-byte serialized
+/// note). Unlike the regular sync path this touches NO store: the notes belong
+/// to a one-time invitation spending key that is not tracked in any subwallet,
+/// so they are re-derived from the network on demand and never persisted here.
+///
+/// The scan stops early as soon as the accumulated value reaches
+/// `stop_at_value` — a one-time invitation key holds exactly its funding, so
+/// there is no reason to keep streaming past the note(s) that fund it. If the
+/// key's value never reaches `stop_at_value`, the whole tree is scanned and
+/// whatever was found is returned; the caller's note selection then surfaces
+/// the typed insufficient-value error.
+///
+/// Note: shielded notes are indexed by tree POSITION and this tree exposes no
+/// height→position oracle (a chunk's `block_height` is the proof-tip height, not
+/// a per-note inclusion height — see [`ShieldedChunkBatch`]), so the scan always
+/// starts at position 0. A caller's birth-height hint therefore cannot seed the
+/// start today; the value-coverage early-stop above is the effective bound.
+///
+/// [`ShieldedChunkBatch`]: dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch
+pub(crate) async fn scan_notes_for_foreign_key(
+    sdk: &Arc<dash_sdk::Sdk>,
+    fvk: &grovedb_commitment_tree::FullViewingKey,
+    ivk: &grovedb_commitment_tree::IncomingViewingKey,
+    stop_at_value: u64,
+) -> Result<Vec<ShieldedNote>, PlatformWalletError> {
+    use grovedb_commitment_tree::PreparedIncomingViewingKey;
+
+    let prepared = PreparedIncomingViewingKey::new(ivk);
+    let stream = sync_shielded_notes_stream(sdk, &prepared, 0, None);
+    futures::pin_mut!(stream);
+
+    let mut found: Vec<ShieldedNote> = Vec::new();
+    let mut total: u64 = 0;
+    while let Some(batch) = stream.next().await {
+        let batch = batch.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
+        for dn in batch.decrypted {
+            let value = dn.note.value().inner();
+            let nullifier = dn.note.nullifier(fvk).to_bytes();
+            found.push(ShieldedNote {
+                position: dn.position,
+                cmx: dn.cmx,
+                nullifier,
+                block_height: batch.block_height,
+                is_spent: false,
+                value,
+                note_data: serialize_note(&dn.note),
+            });
+            total = total.saturating_add(value);
+        }
+        // A one-time key holds exactly its funding — stop once it's covered.
+        if total >= stop_at_value {
+            break;
+        }
+    }
+    Ok(found)
 }
 
 /// One decrypted note discovered during a sync pass.
