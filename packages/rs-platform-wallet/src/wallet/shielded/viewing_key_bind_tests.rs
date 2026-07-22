@@ -129,7 +129,7 @@ where
         balance,
         Arc::new(tokio::sync::Notify::new()),
         persister as Arc<dyn PlatformWalletPersistence>,
-        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv, sdk)),
+        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
     )
 }
 

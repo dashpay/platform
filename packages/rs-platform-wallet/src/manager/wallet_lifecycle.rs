@@ -437,10 +437,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         // Build the PlatformWallet handle.
-        let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(
-            Arc::clone(&self.spv_manager),
-            Arc::clone(&self.sdk),
-        ));
+        let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
+            &self.spv_manager,
+        )));
 
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
         let platform_wallet = PlatformWallet::new(

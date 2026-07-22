@@ -271,10 +271,7 @@ pub async fn funded_spv_core_wallet(
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
     ));
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-    let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(
-        spv,
-        Arc::clone(&sdk),
-    ));
+    let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(spv));
     (
         crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, balance),
         signer,

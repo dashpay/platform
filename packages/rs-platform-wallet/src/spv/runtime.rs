@@ -59,17 +59,6 @@ pub struct SpvRuntime {
     task: Mutex<Option<JoinHandle<()>>>,
     peer_tracker: Arc<PeerTracker>,
 }
-/// Classify a best-effort SPV relay/local-apply failure.
-///
-/// This method runs only after DAPI/Core has accepted the transaction, so an
-/// SPV failure can never mean the transaction itself was rejected. The caller
-/// logs this diagnostic and preserves the authoritative accepted result.
-fn classify_spv_broadcast_error(error: dash_spv::error::SpvError) -> BroadcastError {
-    BroadcastError::MaybeSent {
-        reason: format!("SPV relay/local apply failed: {error}"),
-    }
-}
-
 /// Classify a failure from the SPV acceptance-check path
 /// ([`SpvRuntime::broadcast_transaction_and_wait`]).
 ///
@@ -158,37 +147,17 @@ impl SpvRuntime {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
-    /// Relay a Core-accepted transaction to connected SPV peers and inject it
-    /// into dash-spv's local message pipeline.
-    pub(crate) async fn broadcast_transaction(
-        &self,
-        tx: &Transaction,
-    ) -> Result<(), BroadcastError> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref().ok_or(BroadcastError::MaybeSent {
-            reason: "SPV relay/local apply skipped: client not started".to_string(),
-        })?;
-
-        client
-            .broadcast_transaction(tx)
-            .await
-            .map_err(classify_spv_broadcast_error)?;
-
-        Ok(())
-    }
-
     /// Broadcast a transaction through SPV peers and wait for dash-spv's
     /// network-acceptance verdict.
     ///
     /// dash-spv withholds the transaction from a subset of connected peers;
-    /// an `inv` announcement of the txid from a withheld peer proves the
-    /// transaction relayed through the network into mempools and resolves
+    /// an `inv` announcement of the txid from a withheld peer, an InstantSend
+    /// lock, or a confirmation proves the transaction propagated and resolves
     /// [`BroadcastResult::Accepted`]. No signal within `timeout` resolves
     /// [`BroadcastResult::Uncertain`] (the p2p network has no negative
     /// signal — modern Dash Core removed the BIP61 `reject` message).
-    ///
-    /// Used as the trustless acceptance authority when DAPI/Core submission
-    /// is ambiguous or unreachable.
+    /// dash-spv also injects the transaction into its local mempool pipeline
+    /// as part of the broadcast, so no separate relay step is needed.
     ///
     /// Error contract (consumed by `SpvChannel`): failures that provably
     /// precede any send — an unstarted client, or dash-spv's
@@ -515,7 +484,7 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_broadcast_error, classify_spv_send_error, SpvRuntime};
+    use super::{classify_spv_send_error, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::events::PlatformEventManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -530,33 +499,6 @@ mod tests {
             output: vec![],
             special_transaction_payload: None,
         }
-    }
-
-    /// SPV runs only after Core acceptance, so an unavailable local relay can
-    /// never downgrade the transaction to rejected.
-    #[tokio::test]
-    async fn broadcast_on_unstarted_client_is_relay_failure() {
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
-            Network::Testnet,
-        )));
-        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
-
-        let result = runtime.broadcast_transaction(&dummy_tx()).await;
-        assert!(
-            matches!(result, Err(BroadcastError::MaybeSent { .. })),
-            "unstarted client must stay a relay diagnostic, got {result:?}"
-        );
-    }
-
-    /// Even a zero-peer relay failure happens after authoritative Core
-    /// acceptance and therefore remains a best-effort relay diagnostic.
-    #[test]
-    fn not_connected_classifies_relay_failure() {
-        let result = classify_spv_broadcast_error(SpvError::Network(NetworkError::NotConnected));
-        assert!(
-            matches!(result, BroadcastError::MaybeSent { .. }),
-            "NotConnected must not downgrade Core acceptance, got {result:?}"
-        );
     }
 
     /// An unstarted client fails the acceptance-check path before any bytes
@@ -607,25 +549,6 @@ mod tests {
             assert!(
                 matches!(result, BroadcastError::MaybeSent { .. }),
                 "non-NotConnected errors must stay MaybeSent, got {result:?}"
-            );
-        }
-    }
-
-    /// Every other dash-spv error may follow a partial peer send and must
-    /// stay `MaybeSent`, keeping the reservation for the TTL backstop.
-    #[test]
-    fn any_other_spv_error_classifies_maybe_sent() {
-        for error in [
-            SpvError::Network(NetworkError::Timeout),
-            SpvError::Network(NetworkError::PeerDisconnected),
-            SpvError::Network(NetworkError::ConnectionFailed("reset by peer".to_string())),
-            SpvError::Config("bad config".to_string()),
-        ] {
-            let rendered = error.to_string();
-            let result = classify_spv_broadcast_error(error);
-            assert!(
-                matches!(result, BroadcastError::MaybeSent { .. }),
-                "{rendered} must classify MaybeSent, got {result:?}"
             );
         }
     }

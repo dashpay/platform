@@ -1565,7 +1565,7 @@ mod plan_withdrawal_seam_tests {
         let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
         let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
         let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
-        let broadcaster = Arc::new(SpvBroadcaster::new(spv, Arc::clone(&sdk)));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
         let asset_locks = Arc::new(AssetLockManager::new(
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
