@@ -18,6 +18,11 @@ use dashcore::Txid;
 use dashcore::{Network, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
+// Only the `#[cfg(test)]` CoinJoin fixture needs the trait (for
+// `next_address_with_info` on a non-standard account); gate it to match so a
+// `test-utils`-only build does not flag it unused.
+#[cfg(test)]
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
@@ -236,6 +241,77 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     assert!(
         result.is_relevant,
         "funding tx should be relevant to {account_type:?}"
+    );
+    assert!(result.is_new_transaction);
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+
+    let balance = Arc::new(WalletBalance::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        balance: Arc::clone(&balance),
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+    };
+
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+
+    (Arc::new(RwLock::new(wm)), wallet_id, balance, signer)
+}
+
+/// Like [`funded_wallet_manager`] but funds the wallet's CoinJoin account 0
+/// (created by `WalletAccountCreationOptions::Default`) with a single spendable
+/// UTXO. Lets the deferred-payment tests exercise a CoinJoin-funded reservation,
+/// which has no `StandardAccountType` yet must still be released immediately on
+/// rejection/abandon rather than stranded until the TTL backstop.
+///
+/// Only the crate's own `#[cfg(test)]` unit tests consume it, so it is gated on
+/// `cfg(test)` directly — under the `test-utils` feature alone (the FFI crate's
+/// build) it would compile with no user and trip `dead_code`.
+#[cfg(test)]
+pub(crate) async fn funded_coinjoin_wallet_manager() -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Arc<WalletBalance>,
+    WalletSigner,
+) {
+    let mut ctx = TestWalletContext::new_random();
+
+    let coinjoin_xpub = ctx
+        .wallet
+        .accounts
+        .coinjoin_accounts
+        .get(&0)
+        .expect("default wallet has CoinJoin account 0")
+        .account_xpub;
+    // CoinJoin is a non-standard account type: its addresses come from the
+    // single external pool via `next_address_with_info`, not the standard
+    // receive/change split that `next_receive_address` serves.
+    let receive_address = ctx
+        .managed_wallet
+        .first_coinjoin_managed_account_mut()
+        .expect("coinjoin managed account")
+        .next_address_with_info(Some(&coinjoin_xpub), true)
+        .expect("coinjoin receive address")
+        .address;
+
+    let funding_tx = Transaction::dummy(&receive_address, 0..1, &[10_000_000]);
+    let result = ctx
+        .check_transaction(
+            &funding_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
+        .await;
+    assert!(
+        result.is_relevant,
+        "funding tx should be relevant to the CoinJoin account"
     );
     assert!(result.is_new_transaction);
 
