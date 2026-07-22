@@ -28,8 +28,9 @@ private-key material is ever written to that file.**
   [SECRETS.md](./SECRETS.md).
 - **Backup, restore, and migration handled for you.** Backups use
   SQLite's online backup API (safe under a concurrent writer); restores
-  run under `BEGIN EXCLUSIVE` so peers back off instead of racing the
-  swap; schema migrations apply automatically on every open.
+  use SQLite exclusive locking plus `BEGIN EXCLUSIVE` so peers back off
+  instead of racing the swap; schema migrations apply automatically on every
+  open.
 - **A flush contract you can build retries on.** Transient SQLite
   failures return a *retryable* error with the buffered changeset intact;
   fatal and constraint failures are reported distinctly and drop the
@@ -79,6 +80,16 @@ database without writing custom code.
 
 ---
 
+## Testing
+
+Run `cargo test -p platform-wallet-storage --all-features` for complete
+crate coverage. A plain package test does not enable `rehydration-apply` and
+therefore skips the end-to-end #3968 regressions
+`rehydration_routes_via_real_sql_resolver` and
+`rehydration_routes_used_addresses_to_owning_account`.
+
+---
+
 ## Technical details
 
 ### Library usage
@@ -104,10 +115,10 @@ auto-backup dir at `<db_dir>/backups/auto/`.
 
 The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
 Schema migrations are versioned Rust files under `migrations/`, applied via
-[`refinery`](https://github.com/rust-db/refinery) on every `open`. The full
-`V001`–`V006` set is still unreleased and may be edited in place, except that
-`V001` stays byte-identical so its refinery checksum cannot diverge on an
-existing store. Once the schema ships, migrations become append-only.
+[`refinery`](https://github.com/rust-db/refinery) on every `open`. The current
+migration set is still unreleased, so every migration may be edited in place
+until the crate's first release. Once the schema ships, migrations become
+append-only.
 
 #### Flush semantics (store / flush)
 
@@ -268,15 +279,19 @@ Exit codes: `0` success, `1` runtime error, `2` usage error, `3` validation
 failure (e.g. corrupt backup source).
 
 **Restore exclusion.** `restore` opens a short-lived writer connection on
-the destination DB and holds a SQLite-native `BEGIN EXCLUSIVE` transaction
-across the entire restore body. This interlocks with every other SQLite
-peer — sibling `SqlitePersister` handles, bare `rusqlite::Connection`
-instances, the CLI — so concurrent writes back off via SQLite's
-`busy_timeout` instead of racing the atomic swap. If a peer holds the
+the destination DB in exclusive locking mode and holds a `BEGIN EXCLUSIVE`
+transaction through validation and staging. This interlocks with every other
+SQLite peer — sibling `SqlitePersister` handles, bare `rusqlite::Connection`
+instances, the CLI — so concurrent reads and writes back off via SQLite's
+`busy_timeout` instead of racing the staged work. If a peer holds the
 destination busy for longer than the timeout, `restore` returns
 `WalletStorageError::RestoreDestinationLocked`. The lock conn is released
 BEFORE the rename so SQLite's file handle on the old inode goes away before
 the new DB takes its place.
+
+Restore validation establishes structure, not provenance: a valid backup is
+trusted as much as the live database. Protect backup directories from
+untrusted replacement or modification.
 
 ### Cargo features
 
@@ -316,8 +331,8 @@ directly via `WalletStorageError::is_transient`.
 
 ### Schema
 
-The schema is defined by the complete [`migrations/`](./migrations/) set,
-`V001` through `V006`. `V001` creates the 23-table base schema; later
+The schema is defined by the complete [`migrations/`](./migrations/) set.
+`V001` creates the 23-table base schema; later
 migrations add tables and columns for address pools, metadata versions,
 invitations, typed public keys, and reservation timestamps. Foreign-key
 enforcement is enabled and

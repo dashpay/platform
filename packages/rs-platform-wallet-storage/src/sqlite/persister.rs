@@ -325,7 +325,7 @@ impl SqlitePersister {
     /// # Cross-process rollback caveat
     ///
     /// The pre-restore auto-backup is taken BEFORE the restore body's
-    /// `BEGIN EXCLUSIVE`, so under concurrent cross-process access the
+    /// exclusive SQLite lock, so under concurrent cross-process access the
     /// rollback point may miss writes a peer committed in between. Callers
     /// must serialize restore intent across processes.
     ///
@@ -349,7 +349,9 @@ impl SqlitePersister {
     /// Library consumers should prefer [`restore_from`](Self::restore_from)
     /// — it's safe by default. This entry point exists so the CLI's
     /// `--no-auto-backup` flag can deliver on its name regardless of
-    /// `auto_backup_dir`.
+    /// `auto_backup_dir`. Source validation does not authenticate backup
+    /// provenance; the source-trust warning on [`restore_from`](Self::restore_from)
+    /// applies here equally.
     pub fn restore_from_skip_backup(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -407,7 +409,7 @@ impl SqlitePersister {
             drop(dest_conn);
         }
         // No row-count fingerprint guards the snapshot→EXCLUSIVE window:
-        // `backup::restore_from`'s `BEGIN EXCLUSIVE` covers the body, and a
+        // `backup::restore_from`'s exclusive SQLite lock covers the body, and a
         // count would miss in-place UPDATEs and give false confidence.
         // Callers needing a quiesced point serialize restore intent.
         backup::restore_from(dest_db_path, src_backup)
@@ -1371,14 +1373,59 @@ pub(crate) fn run_auto_backup(
 }
 
 fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
+    #[cfg(unix)]
+    let mut missing_components = Vec::new();
     if !dir.exists() {
-        std::fs::create_dir_all(dir).map_err(|source| {
+        #[cfg(unix)]
+        {
+            let mut component = dir;
+            while !component.exists() && !component.as_os_str().is_empty() {
+                missing_components.push(component.to_path_buf());
+                let Some(parent) = component.parent() else {
+                    break;
+                };
+                component = parent;
+            }
+        }
+        #[cfg(unix)]
+        let create_result = {
+            use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(true).mode(0o700).create(dir)
+        };
+        #[cfg(not(unix))]
+        let create_result = std::fs::create_dir_all(dir);
+        create_result.map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
+            dir: dir.to_path_buf(),
+            source,
+        })?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if missing_components.is_empty() {
+            missing_components.push(dir.to_path_buf());
+        }
+        for component in missing_components {
+            std::fs::set_permissions(&component, std::fs::Permissions::from_mode(0o700)).map_err(
+                |source| WalletStorageError::AutoBackupDirUnwritable {
+                    dir: component,
+                    source,
+                },
+            )?;
+        }
+    }
+    crate::parent_permissions::check_parent_perms(dir).map_err(|error| match error {
+        crate::parent_permissions::ParentPermissionsError::Io(source) => {
             WalletStorageError::AutoBackupDirUnwritable {
                 dir: dir.to_path_buf(),
                 source,
             }
-        })?;
-    }
+        }
+        crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+            WalletStorageError::InsecureParentDir { mode }
+        }
+    })?;
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the
     // worst case is a later typed error instead of this early one.

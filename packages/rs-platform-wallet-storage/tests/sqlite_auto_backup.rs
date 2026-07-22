@@ -47,6 +47,48 @@ fn tc051_pre_delete_backup_taken() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn auto_backup_directory_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let backup_dir = tmp.path().join("nested").join("auto");
+    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(backup_dir.clone()));
+    let persister = SqlitePersister::open(cfg).unwrap();
+    let w = wid(0xE4);
+    ensure_wallet_meta(&persister, &w);
+
+    persister.delete_wallet(w).expect("delete with auto-backup");
+
+    let mode = std::fs::metadata(&backup_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700, "auto-backup directory must be owner-only");
+}
+
+#[cfg(unix)]
+#[test]
+fn auto_backup_rejects_replaceable_ancestor() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = common::secure_tempdir().unwrap();
+    let replaceable = tmp.path().join("replaceable");
+    std::fs::create_dir(&replaceable).unwrap();
+    std::fs::set_permissions(&replaceable, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let backup_dir = replaceable.join("backups");
+    let path = tmp.path().join("w.db");
+    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(backup_dir));
+    let persister = SqlitePersister::open(cfg).unwrap();
+    let w = wid(0x35);
+    ensure_wallet_meta(&persister, &w);
+
+    let result = persister.delete_wallet(w);
+    assert!(
+        matches!(result, Err(WalletStorageError::InsecureParentDir { .. })),
+        "replaceable backup ancestor must be rejected; got {result:?}"
+    );
+}
+
 /// TC-052: delete_wallet with auto_backup_dir = None returns AutoBackupDisabled.
 #[test]
 fn tc052_delete_wallet_auto_backup_disabled() {

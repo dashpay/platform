@@ -12,6 +12,36 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 
+struct CreatedDestinationGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl CreatedDestinationGuard {
+    fn new(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            armed: false,
+        }
+    }
+
+    fn arm(&mut self) {
+        self.armed = true;
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for CreatedDestinationGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 /// Fsync `path`'s parent dir on Unix so the rename's dentry update is
 /// durable across power loss (`persist` only fsyncs the file inode; the
 /// dentry is journalled separately). No-op on non-Unix.
@@ -131,8 +161,9 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// # Atomicity
 ///
 /// Validation runs against the source and again against the STAGED bytes,
-/// under a SQLite-native `BEGIN EXCLUSIVE` on `dest_db_path` that blocks
-/// every other SQLite peer (which advisory flock could not). The
+/// under SQLite `locking_mode=EXCLUSIVE` plus `BEGIN EXCLUSIVE` on
+/// `dest_db_path`, blocking every other SQLite peer (which advisory flock
+/// could not). The
 /// store-generation token is rotated INTO the staged temp before the swap,
 /// so the single commit point brings in the restored bytes and the fresh
 /// token together — a peer never observes restored content carrying the
@@ -143,6 +174,8 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// now-stale WAL/SHM siblings are unlinked only AFTER the swap succeeds (so a
 /// leftover `-wal` can't shadow the restored DB); the parent dir is fsynced
 /// afterward. See the numbered steps in the body for the per-phase rationale.
+/// When the destination did not exist, an owner-only placeholder may remain if
+/// failure occurs before exclusion is acquired or after it is released.
 ///
 /// # Lock-release-before-rename trade-off
 ///
@@ -153,6 +186,12 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// window where a peer could write into the old inode the rename then
 /// unlinks — its own write is lost, nothing escalates. Correct file-handle
 /// semantics across the rename outweigh absolute lock coverage.
+///
+/// # Source trust
+///
+/// Integrity, wallet application identity, and schema compatibility do not
+/// authenticate provenance. Restore trusts a valid source as much as the live
+/// database; protect the backup directory from replacement or modification.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
     let parent = dest_db_path
         .parent()
@@ -184,33 +223,58 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     crate::sqlite::migrations::assert_schema_history_well_formed(&src)?;
     drop(src);
 
-    // 2. SQLite-native exclusion: `BEGIN EXCLUSIVE` on a short-lived
-    //    writer conn blocks every other SQLite peer until it drops (which
-    //    advisory flock could not — it doesn't interlock with SQLite). The
-    //    conn is dropped before `persist` (see lock-release trade-off).
-    let mut dest_lock_conn: Option<rusqlite::Connection> = if dest_db_path.exists() {
-        let conn =
-            crate::sqlite::conn::open_conn(dest_db_path, crate::sqlite::conn::Access::ReadWrite)?;
-        // The destination has no persister yet (the persister is the
-        // caller), so apply our own busy_timeout for a backoff window.
-        conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        // BUSY after busy_timeout becomes `RestoreDestinationLocked` so
-        // callers keep their existing branch.
-        match conn.execute_batch("BEGIN EXCLUSIVE") {
-            Ok(()) => Some(conn),
-            Err(rusqlite::Error::SqliteFailure(err, _))
-                if matches!(
-                    err.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                ) =>
-            {
-                return Err(WalletStorageError::RestoreDestinationLocked);
-            }
-            Err(other) => return Err(WalletStorageError::Sqlite(other)),
+    // 2. SQLite-native exclusion: exclusive locking mode makes readers back
+    //    off even when the destination uses WAL, where BEGIN EXCLUSIVE alone
+    //    excludes writers but normally permits readers. For a missing
+    //    destination, create an owner-only placeholder first so a peer cannot
+    //    create and write the path during staging. A failure before lock
+    //    release removes a placeholder created by this call while exclusion
+    //    is still held. The short-lived connection is dropped before
+    //    `persist` (see lock-release trade-off).
+    let mut dest_lock_conn: Option<rusqlite::Connection>;
+    let mut created_destination = None;
+    if !dest_db_path.exists() {
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
-    } else {
-        None
+        match options.open(dest_db_path) {
+            Ok(file) => {
+                created_destination = Some(CreatedDestinationGuard::new(dest_db_path));
+                apply_secure_permissions(dest_db_path)?;
+                drop(file);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(WalletStorageError::Io(error)),
+        }
+    }
+
+    let conn =
+        crate::sqlite::conn::open_conn(dest_db_path, crate::sqlite::conn::Access::ReadWrite)?;
+    // The destination has no persister yet (the persister is the
+    // caller), so apply our own busy_timeout for a backoff window.
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.pragma_update(None, "locking_mode", "EXCLUSIVE")?;
+    // BUSY after busy_timeout becomes `RestoreDestinationLocked` so
+    // callers keep their existing branch.
+    dest_lock_conn = match conn.execute_batch("BEGIN EXCLUSIVE") {
+        Ok(()) => Some(conn),
+        Err(rusqlite::Error::SqliteFailure(err, _))
+            if matches!(
+                err.code,
+                rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+            ) =>
+        {
+            return Err(WalletStorageError::RestoreDestinationLocked);
+        }
+        Err(other) => return Err(WalletStorageError::Sqlite(other)),
     };
+    if let Some(guard) = created_destination.as_mut() {
+        guard.arm();
+    }
 
     // 3. Stage the source into a NamedTempFile in the destination's parent
     //    dir (unguessable name, no symlink-plant TOCTOU).
@@ -273,7 +337,12 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     // 7. Release the EXCLUSIVE lock before the rename/unlinks: on Windows /
     //    some FUSE mounts `remove_file` on a still-open file returns
     //    `PermissionDenied`, and the rename window wants a clean close (see
-    //    lock-release trade-off above).
+    //    lock-release trade-off above). Stop failure cleanup from removing a
+    //    path after this point: a peer may legitimately acquire it once the
+    //    lock is gone. If persist then fails, the owner-only placeholder stays.
+    if let Some(guard) = created_destination.as_mut() {
+        guard.disarm();
+    }
     if let Some(conn) = dest_lock_conn.take() {
         let _ = conn.execute_batch("ROLLBACK");
         drop(conn);
