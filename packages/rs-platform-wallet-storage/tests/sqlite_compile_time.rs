@@ -64,7 +64,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "accounts.rs",
-        "SELECT wallet_id, account_index, key_class, length(account_xpub_bytes), account_xpub_bytes",
+        "SELECT length(wallet_id), wallet_id, account_index, key_class,",
     ),
     // Provider platform-node-key reader: pre-read length() gates on both
     // fixed-width key columns.
@@ -84,7 +84,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     // scan per wallet.
     (
         "core_pool.rs",
-        "SELECT script, account_type, account_index, user_identity_id, friend_identity_id",
+        "SELECT script, account_type, account_index,",
     ),
     // Typed-pool reader: one-shot read-only scan of pre-derived platform-node
     // keys per wallet, during `load()` rehydration.
@@ -95,7 +95,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     // Full-rehydration readers — one-shot SELECTs in `load_state`.
     (
         "accounts.rs",
-        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id,",
+        "SELECT account_type, account_index, key_class,",
     ),
     (
         "core_state.rs",

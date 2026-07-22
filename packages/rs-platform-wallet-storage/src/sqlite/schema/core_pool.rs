@@ -11,7 +11,7 @@
 //! from the `account_address_pools` changeset snapshots; the UTXO writer reads
 //! it back to attribute an outpoint to its owning account.
 
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, Transaction};
 
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -307,27 +307,33 @@ pub(crate) fn owning_account_for_script(
     // key_class / identity pair / pool_type share the same `script_pubkey`
     // for reused keys); an explicit PK-ordered tie-break makes the pick
     // deterministic instead of relying on SQLite's arbitrary `LIMIT 1` row.
-    let row = conn
-        .prepare_cached(
-            "SELECT account_type, account_index, user_identity_id, friend_identity_id \
-             FROM core_address_pool \
-             WHERE wallet_id = ?1 AND script = ?2 \
-             ORDER BY account_type, account_index, key_class, user_identity_id, \
-                      friend_identity_id, pool_type, address_index ASC \
-             LIMIT 1",
-        )?
-        .query_row(params![wallet_id.as_slice(), script], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, Vec<u8>>(2)?,
-                row.get::<_, Vec<u8>>(3)?,
-            ))
-        })
-        .optional()?;
-    let Some((account_type, index, user, friend)) = row else {
+    let mut stmt = conn.prepare_cached(
+        "SELECT account_type, account_index, length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id \
+         FROM core_address_pool \
+         WHERE wallet_id = ?1 AND script = ?2 \
+         ORDER BY account_type, account_index, key_class, user_identity_id, \
+                  friend_identity_id, pool_type, address_index ASC \
+         LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice(), script])?;
+    let Some(row) = rows.next()? else {
         return Ok(None);
     };
+    let account_type = row.get::<_, String>(0)?;
+    let index = row.get::<_, i64>(1)?;
+    blob::check_fixed_width(
+        row.get::<_, i64>(2)?,
+        32,
+        "core_address_pool.user_identity_id",
+    )?;
+    let user = row.get::<_, Vec<u8>>(3)?;
+    blob::check_fixed_width(
+        row.get::<_, i64>(4)?,
+        32,
+        "core_address_pool.friend_identity_id",
+    )?;
+    let friend = row.get::<_, Vec<u8>>(5)?;
     let account_index =
         crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
     let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
@@ -389,25 +395,33 @@ pub fn load_used_addresses(
     // Order by script then the pool PK so the first row per script is the
     // tie-break winner; a `HashSet` on script drops the trailing duplicates.
     let mut stmt = conn.prepare(
-        "SELECT script, account_type, account_index, user_identity_id, friend_identity_id \
+        "SELECT script, account_type, account_index, \
+                length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id \
          FROM core_address_pool \
          WHERE wallet_id = ?1 AND used = 1 \
          ORDER BY script, account_type, account_index, key_class, user_identity_id, \
                   friend_identity_id, pool_type, address_index",
     )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        Ok((
-            row.get::<_, Vec<u8>>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)?,
-            row.get::<_, Vec<u8>>(3)?,
-            row.get::<_, Vec<u8>>(4)?,
-        ))
-    })?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for r in rows {
-        let (raw_script, account_type, index, user, friend) = r?;
+    while let Some(row) = rows.next()? {
+        let raw_script = row.get::<_, Vec<u8>>(0)?;
+        let account_type = row.get::<_, String>(1)?;
+        let index = row.get::<_, i64>(2)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            32,
+            "core_address_pool.user_identity_id",
+        )?;
+        let user = row.get::<_, Vec<u8>>(4)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(5)?,
+            32,
+            "core_address_pool.friend_identity_id",
+        )?;
+        let friend = row.get::<_, Vec<u8>>(6)?;
         if !seen.insert(raw_script.clone()) {
             continue;
         }

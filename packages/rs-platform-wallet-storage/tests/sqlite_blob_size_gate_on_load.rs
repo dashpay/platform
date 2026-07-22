@@ -24,6 +24,13 @@ fn oversize_blob() -> Vec<u8> {
     vec![0u8; platform_wallet_storage::SIZE_LIMIT_BYTES + 1]
 }
 
+fn p2pkh_script() -> Vec<u8> {
+    let mut script = vec![0x76, 0xa9, 0x14];
+    script.extend([0x11; 20]);
+    script.extend([0x88, 0xac]);
+    script
+}
+
 // ── global SQLITE_LIMIT_LENGTH backstop ─────────────────────────────────────
 
 /// Every connection opened by this crate via `open_conn` must have
@@ -133,6 +140,77 @@ fn blob_gate_core_pool_load_used_addresses_rejects_oversize_script() {
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge for oversize pool script, got {err:?}"
+    );
+}
+
+#[test]
+fn blob_gate_core_pool_owning_account_rejects_oversize_user_identity_id() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE3);
+    ensure_wallet_meta(&persister, &w);
+
+    let script = p2pkh_script();
+    let oversize_id = oversize_blob();
+    let zero_id = [0u8; 32];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used) \
+         VALUES (?1, 'dashpay_receiving', 0, 0, ?2, ?3, 0, 0, ?4, 0)",
+        params![
+            w.as_slice(),
+            oversize_id.as_slice(),
+            &zero_id[..],
+            script.as_slice()
+        ],
+    )
+    .expect("insert pool row with oversize user identity id");
+    conn.execute(
+        "INSERT INTO core_utxos \
+            (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+         VALUES (?1, ?2, 0, ?3, NULL, 0, 0, NULL)",
+        params![w.as_slice(), &[0x01u8], script.as_slice()],
+    )
+    .expect("insert matching UTXO");
+
+    let err = core_state::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+        .expect_err("ownership lookup must reject an oversize user identity id");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+}
+
+#[test]
+fn blob_gate_core_pool_load_used_addresses_rejects_oversize_friend_identity_id() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xE4);
+    ensure_wallet_meta(&persister, &w);
+
+    let script = p2pkh_script();
+    let oversize_id = oversize_blob();
+    let zero_id = [0u8; 32];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used) \
+         VALUES (?1, 'dashpay_receiving', 0, 0, ?2, ?3, 0, 0, ?4, 1)",
+        params![
+            w.as_slice(),
+            &zero_id[..],
+            oversize_id.as_slice(),
+            script.as_slice()
+        ],
+    )
+    .expect("insert used pool row with oversize friend identity id");
+
+    let err = core_pool::load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+        .expect_err("used-address load must reject an oversize friend identity id");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
     );
 }
 
@@ -288,6 +366,94 @@ fn blob_gate_accounts_load_state_rejects_oversize_xpub_bytes() {
 
     let err = accounts::load_state(&conn, &w)
         .expect_err("load_state must reject an oversize account_xpub_bytes blob");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+}
+
+#[test]
+fn blob_gate_accounts_bulk_platform_payment_rejects_oversize_wallet_id() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let oversize_id = oversize_blob();
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        params![oversize_id.as_slice()],
+    )
+    .expect("insert wallet with oversize id");
+    conn.execute(
+        "INSERT INTO account_registrations \
+            (wallet_id, account_type, account_index, account_xpub_bytes) \
+         VALUES (?1, 'platform_payment', 0, ?2)",
+        params![oversize_id.as_slice(), &[0x00u8]],
+    )
+    .expect("insert platform payment row with oversize wallet id");
+
+    let err = platform_wallet_storage::sqlite::schema::platform_addrs::load_all(&conn)
+        .expect_err("bulk account load must reject an oversize wallet id");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+}
+
+#[test]
+fn blob_gate_accounts_ecdsa_reader_rejects_oversize_user_identity_id() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xA2);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_id = oversize_blob();
+    let zero_id = [0u8; 32];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO account_registrations \
+            (wallet_id, account_type, account_index, user_identity_id, \
+             friend_identity_id, account_xpub_bytes) \
+         VALUES (?1, 'dashpay_receiving', 0, ?2, ?3, ?4)",
+        params![
+            w.as_slice(),
+            oversize_id.as_slice(),
+            &zero_id[..],
+            &[0x00u8]
+        ],
+    )
+    .expect("insert account row with oversize user identity id");
+
+    let err = accounts::load_state(&conn, &w)
+        .expect_err("ECDSA account load must reject an oversize user identity id");
+    assert!(
+        matches!(err, WalletStorageError::BlobTooLarge { .. }),
+        "expected BlobTooLarge, got {err:?}"
+    );
+}
+
+#[test]
+fn blob_gate_accounts_provider_reader_rejects_oversize_friend_identity_id() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xA3);
+    ensure_wallet_meta(&persister, &w);
+
+    let oversize_id = oversize_blob();
+    let zero_id = [0u8; 32];
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO account_registrations \
+            (wallet_id, account_type, account_index, user_identity_id, \
+             friend_identity_id, account_xpub_bytes) \
+         VALUES (?1, 'provider_operator', 0, ?2, ?3, ?4)",
+        params![
+            w.as_slice(),
+            &zero_id[..],
+            oversize_id.as_slice(),
+            &[0x00u8]
+        ],
+    )
+    .expect("insert provider row with oversize friend identity id");
+
+    let err = accounts::load_state(&conn, &w)
+        .expect_err("provider account load must reject an oversize friend identity id");
     assert!(
         matches!(err, WalletStorageError::BlobTooLarge { .. }),
         "expected BlobTooLarge, got {err:?}"
