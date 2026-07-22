@@ -315,11 +315,8 @@ impl SpvBroadcaster {
                 );
                 Ok(txid)
             }
-            Ok(BroadcastResult::Rejected { code, reason }) => Err(BroadcastError::Rejected {
-                reason: format!(
-                    "SPV peer rejected the transaction ({code:?}: {reason}); DAPI was ambiguous: {dapi_reason}"
-                ),
-            }),
+            // The p2p network has no negative signal (modern Dash Core
+            // removed BIP61 reject), so no-echo is the only failure shape.
             Ok(BroadcastResult::Uncertain) => Err(BroadcastError::MaybeSent {
                 reason: format!(
                     "{dapi_reason}; SPV acceptance check saw no peer echo within {SPV_ACCEPTANCE_TIMEOUT:?}"
@@ -579,13 +576,6 @@ mod tests {
     async fn dapi_ambiguity_resolved_by_spv_peer_echo() {
         let cases: Vec<(Result<BroadcastResult, BroadcastError>, _)> = vec![
             (Ok(BroadcastResult::Accepted { relayed_by: 1 }), "accepted"),
-            (
-                Ok(BroadcastResult::Rejected {
-                    code: dashcore::network::message_network::RejectReason::Fee,
-                    reason: "insufficient fee".to_string(),
-                }),
-                "rejected",
-            ),
             (Ok(BroadcastResult::Uncertain), "uncertain"),
             (
                 Err(BroadcastError::MaybeSent {
@@ -616,10 +606,6 @@ mod tests {
             assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 1);
             match label {
                 "accepted" => assert!(result.is_ok(), "{label}: got {result:?}"),
-                "rejected" => assert!(
-                    matches!(result, Err(BroadcastError::Rejected { .. })),
-                    "{label}: got {result:?}"
-                ),
                 _ => assert!(
                     matches!(result, Err(BroadcastError::MaybeSent { .. })),
                     "{label}: got {result:?}"

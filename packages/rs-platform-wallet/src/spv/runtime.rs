@@ -160,9 +160,9 @@ impl SpvRuntime {
     /// dash-spv withholds the transaction from a subset of connected peers;
     /// an `inv` announcement of the txid from a withheld peer proves the
     /// transaction relayed through the network into mempools and resolves
-    /// [`BroadcastResult::Accepted`]. A p2p `reject` resolves
-    /// [`BroadcastResult::Rejected`]; no signal within `timeout` resolves
-    /// [`BroadcastResult::Uncertain`].
+    /// [`BroadcastResult::Accepted`]. No signal within `timeout` resolves
+    /// [`BroadcastResult::Uncertain`] (the p2p network has no negative
+    /// signal — modern Dash Core removed the BIP61 `reject` message).
     ///
     /// Used as the trustless acceptance authority when DAPI/Core submission
     /// is ambiguous or unreachable. Errors (client not started, event bus
