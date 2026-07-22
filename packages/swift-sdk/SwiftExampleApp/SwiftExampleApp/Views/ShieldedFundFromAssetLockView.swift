@@ -110,6 +110,15 @@ struct ShieldedFundFromAssetLockView: View {
     /// fight the formatter on partial input.
     @State private var recipientHex: String = ""
     @State private var amountDash: String = "0.001"
+    /// Cross-privacy-domain co-spend consent (dashpay/platform#4184). Off by
+    /// default: the L1 asset-lock funding is confined to the transparent
+    /// BIP44/BIP32 domain. When the transparent slice alone can't cover the
+    /// lock, the funding call fails with `.errorAssetLockCrossDomainConsentRequired`;
+    /// flipping this on and resubmitting re-issues with `allowCrossDomain: true`,
+    /// widening funding to the wallet-wide signable union (CoinJoin +
+    /// DashPay-receiving). See the TODO on `crossDomainConsentSection` for the
+    /// fuller catch-30-and-retry UX this stand-in stands in for.
+    @State private var allowCrossDomain: Bool = false
     /// Platform-branch amount in DASH (parsed to credits, 1e11/DASH).
     /// Kept separate from `amountDash` so the Core (duffs) and
     /// Platform (credits) unit systems never share a text buffer.
@@ -174,6 +183,7 @@ struct ShieldedFundFromAssetLockView: View {
                         coreFundingSection
                         recipientSection
                         amountSection
+                        crossDomainConsentSection
                     case .platformBalance:
                         platformAccountSection
                         platformAmountSection
@@ -258,6 +268,35 @@ struct ShieldedFundFromAssetLockView: View {
                 "The selected Core account's UTXOs are locked into an asset lock; "
                     + "the locked DASH becomes shielded credits on the destination "
                     + "Orchard address."
+            )
+        }
+    }
+
+    /// Cross-privacy-domain co-spend consent (dashpay/platform#4184).
+    ///
+    /// TODO(dashpay/platform#4184 follow-up): this is a minimal stand-in, not
+    /// the intended UX. The proper flow submits with `allowCrossDomain: false`,
+    /// catches `.errorAssetLockCrossDomainConsentRequired` (result code 30),
+    /// shows the transparent/union/required duff breakdown parsed from the
+    /// error message, and only then offers a consent prompt that retries with
+    /// `allowCrossDomain: true` — rather than asking the user to pre-consent
+    /// blind. A fuller version would also let the funding picker surface
+    /// CoinJoin / DashPay-receiving balances so the user can see what the
+    /// union adds. Tracked as a follow-up to file (see the PR description); the
+    /// PR is held for rust-dashcore#912 (atomic multi-account reservation)
+    /// before this UX lands.
+    private var crossDomainConsentSection: some View {
+        Section {
+            Toggle("Allow cross-domain funds", isOn: $allowCrossDomain)
+        } header: {
+            Text("Privacy")
+        } footer: {
+            Text(
+                "Off: fund the asset lock only from your transparent "
+                    + "(BIP44/BIP32) balance. On: if that alone can't cover the "
+                    + "lock, also draw CoinJoin and DashPay-receiving funds — this "
+                    + "combines those funds in one on-chain transaction and links "
+                    + "them together. Only enable after you understand that trade-off."
             )
         }
     }
@@ -688,7 +727,8 @@ struct ShieldedFundFromAssetLockView: View {
                     amountDuffs: duffs,
                     recipients: [
                         ShieldedFundFromAssetLockRecipient(recipientRaw43: recipient)
-                    ]
+                    ],
+                    allowCrossDomain: allowCrossDomain
                 )
             }
         }
