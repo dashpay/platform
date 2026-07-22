@@ -1,11 +1,11 @@
 //! Unified additive migration for `platform-wallet-storage` (#3968).
 //!
-//! Additive-only: V001 stays byte-identical so refinery's applied-migration
-//! checksum for version 1 never diverges on an existing store. Numbered V003,
-//! not V002: PR #4019 (ADDR-09, `V002__address_height_pin.rs`) independently
-//! claimed version 2 and landed on this branch first — two migrations cannot
-//! share a version number (refinery's `refinery_schema_history` collides on
-//! it), so this one sequences after. V003 lifts `max_supported_version()`
+//! The entire migration set remains editable in place until this crate's first
+//! release. Numbered V003, not V002: PR #4019 (ADDR-09,
+//! `V002__address_height_pin.rs`) independently claimed version 2 — two
+//! migrations cannot share a version number (refinery's
+//! `refinery_schema_history` collides on it), so this one sequences after.
+//! V003 lifts `max_supported_version()`
 //! from 2 to 3 automatically (the value is derived from the embedded list)
 //! and lands three concerns in one migration event:
 //!
