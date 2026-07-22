@@ -328,6 +328,13 @@ impl SqlitePersister {
     /// `BEGIN EXCLUSIVE`, so under concurrent cross-process access the
     /// rollback point may miss writes a peer committed in between. Callers
     /// must serialize restore intent across processes.
+    ///
+    /// # Source trust
+    ///
+    /// Restore verifies SQLite integrity, wallet application identity, and
+    /// schema compatibility, but not backup provenance. It trusts a valid
+    /// source file as much as the live database; protect the backup directory
+    /// from untrusted replacement or modification.
     pub fn restore_from(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -877,8 +884,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         // transaction. The current schema also has lossless token balances,
         // invitations, account pools, and deferred-contact-crypto queue rows.
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
-        // `load()` still reports `ClientStartState::wallets` in
-        // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
+        // token balances and the DashPay overlay have no load readers, so a
+        // full restore remains lossy. Shielded state lives in a separate store.
         PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
