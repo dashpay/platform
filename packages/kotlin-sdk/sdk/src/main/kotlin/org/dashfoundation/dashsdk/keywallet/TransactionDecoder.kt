@@ -33,7 +33,16 @@ class DecodedTransaction(
          * reverse for explorer-style display (see [prevTxidDisplayHex]).
          */
         val prevTxid: ByteArray,
-        /** Previous output's index. */
+        /**
+         * Previous output's index — the raw u32 bits carried in a signed
+         * [Int]. Kotlin has no unsigned field type in this API surface, so
+         * the wire value is preserved bit-for-bit rather than range-checked:
+         * indices above `Int.MAX_VALUE` appear negative, and in particular
+         * the coinbase sentinel `0xFFFFFFFF` appears as `-1` (the Swift
+         * wrapper's `UInt32` shows the same value as `4294967295`). Compare
+         * against literal bit patterns, or use [prevVoutUnsigned] for the
+         * numeric u32 value.
+         */
         val prevVout: Int,
         /**
          * Sender address recovered from a P2PKH-shaped scriptSig; null for
@@ -46,6 +55,13 @@ class DecodedTransaction(
          */
         val address: String?,
     ) {
+        /**
+         * [prevVout] widened to its unsigned u32 numeric value
+         * (0..4294967295) — the coinbase sentinel reads as `4294967295L`
+         * here, matching the Swift wrapper's `UInt32` rendering.
+         */
+        val prevVoutUnsigned: Long get() = prevVout.toLong() and 0xFFFFFFFFL
+
         /** Explorer-style (reversed, hex) rendering of [prevTxid]. */
         val prevTxidDisplayHex: String get() = displayHex(prevTxid)
     }

@@ -35,11 +35,12 @@
 //!   u64    value_duffs
 //!   u16    address_len           (0 = non-standard script, no address)
 //!   u8[address_len] address      (UTF-8 base58)
-//!   u32    script_len
+//!   u32    script_len          (0 = null or empty script; a nonzero
+//!                               length is always followed by its bytes)
 //!   u8[script_len] script_pubkey
 //! ```
 
-use crate::support::{guard, throw_sdk_exception};
+use crate::support::{guard, net_from_ord, throw_sdk_exception};
 use dash_network::ffi::FFINetwork;
 use jni::objects::{JByteArray, JClass};
 use jni::sys::{jbyteArray, jint};
@@ -48,18 +49,6 @@ use key_wallet_ffi::tx_decode::{
     decoded_transaction_free, transaction_decode, DecodedTransactionFFI,
 };
 use std::ffi::CStr;
-
-/// FFINetwork ordinal → enum (0=Mainnet, 2=Devnet, 3=Regtest, else
-/// Testnet). Matches `transactions::net_from_ord` and Kotlin's
-/// `Network.ffiValue`.
-fn net_from_ord(ord: i32) -> FFINetwork {
-    match ord {
-        0 => FFINetwork::Mainnet,
-        2 => FFINetwork::Devnet,
-        3 => FFINetwork::Regtest,
-        _ => FFINetwork::Testnet,
-    }
-}
 
 /// Append `u16 len + bytes` for an optional C string (null → len 0).
 /// An `Address` rendering is never empty, so 0 unambiguously means "none".
@@ -91,9 +80,13 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
     let mut blob = Vec::with_capacity(256);
     blob.extend_from_slice(&decoded.txid);
 
-    blob.extend_from_slice(&(decoded.inputs_count as u32).to_be_bytes());
-    if !decoded.inputs.is_null() {
-        let inputs = std::slice::from_raw_parts(decoded.inputs, decoded.inputs_count);
+    // Same count-and-records-together rule as the script encoding below: a
+    // null array pointer encodes as count 0, never as a lying nonzero count
+    // with no records — that would desync every field parseBlob reads after.
+    let inputs_count = if decoded.inputs.is_null() { 0 } else { decoded.inputs_count };
+    blob.extend_from_slice(&(inputs_count as u32).to_be_bytes());
+    if inputs_count > 0 {
+        let inputs = std::slice::from_raw_parts(decoded.inputs, inputs_count);
         for input in inputs {
             blob.extend_from_slice(&input.prev_txid);
             blob.extend_from_slice(&input.prev_vout.to_be_bytes());
@@ -101,14 +94,21 @@ unsafe fn encode_decoded_transaction(decoded: &DecodedTransactionFFI) -> Vec<u8>
         }
     }
 
-    blob.extend_from_slice(&(decoded.outputs_count as u32).to_be_bytes());
-    if !decoded.outputs.is_null() {
-        let outputs = std::slice::from_raw_parts(decoded.outputs, decoded.outputs_count);
+    let outputs_count = if decoded.outputs.is_null() { 0 } else { decoded.outputs_count };
+    blob.extend_from_slice(&(outputs_count as u32).to_be_bytes());
+    if outputs_count > 0 {
+        let outputs = std::slice::from_raw_parts(decoded.outputs, outputs_count);
         for output in outputs {
             blob.extend_from_slice(&output.value_duffs.to_be_bytes());
             push_cstr_opt(&mut blob, output.address);
-            blob.extend_from_slice(&(output.script_pubkey_len as u32).to_be_bytes());
-            if !output.script_pubkey.is_null() && output.script_pubkey_len > 0 {
+            // Length and bytes must be written (or omitted) together: a
+            // null script pointer encodes as length 0, never as a nonzero
+            // length with no bytes, so a defensive-null upstream can't
+            // shift every field that follows in the blob.
+            if output.script_pubkey.is_null() || output.script_pubkey_len == 0 {
+                blob.extend_from_slice(&0u32.to_be_bytes());
+            } else {
+                blob.extend_from_slice(&(output.script_pubkey_len as u32).to_be_bytes());
                 blob.extend_from_slice(std::slice::from_raw_parts(
                     output.script_pubkey,
                     output.script_pubkey_len,
@@ -365,11 +365,61 @@ mod tests {
     }
 
     #[test]
-    fn net_from_ord_matches_kotlin_ffi_values() {
-        assert_eq!(net_from_ord(0), FFINetwork::Mainnet);
-        assert_eq!(net_from_ord(1), FFINetwork::Testnet);
-        assert_eq!(net_from_ord(2), FFINetwork::Devnet);
-        assert_eq!(net_from_ord(3), FFINetwork::Regtest);
-        assert_eq!(net_from_ord(-1), FFINetwork::Testnet, "unknown → Testnet");
+    fn null_script_pointer_encodes_as_length_zero() {
+        use key_wallet_ffi::tx_decode::DecodedTxOutputFFI;
+
+        // Hand-built pointer graph: one output whose script pointer is
+        // null but whose length field LIES (nonzero). The encoder must
+        // write length 0 — never a nonzero length without bytes — so the
+        // fields after the script can't shift.
+        let mut output = DecodedTxOutputFFI {
+            address: std::ptr::null_mut(),
+            value_duffs: 42,
+            script_pubkey: std::ptr::null_mut(),
+            script_pubkey_len: 7,
+        };
+        let decoded = DecodedTransactionFFI {
+            txid: [0xABu8; 32],
+            inputs: std::ptr::null_mut(),
+            inputs_count: 0,
+            outputs: &mut output,
+            outputs_count: 1,
+        };
+        // SAFETY: stack-built graph; null pointers are the case under test
+        // and never dereferenced. Not passed to decoded_transaction_free.
+        let blob = unsafe { encode_decoded_transaction(&decoded) };
+
+        let mut r = Reader { blob: &blob, pos: 0 };
+        assert_eq!(r.take(32), [0xABu8; 32]);
+        assert_eq!(r.u32(), 0, "no inputs");
+        assert_eq!(r.u32(), 1, "one output");
+        assert_eq!(r.u64(), 42);
+        assert_eq!(r.str_opt(), None, "no address");
+        assert_eq!(r.u32(), 0, "null script pointer must encode length 0");
+        assert_eq!(r.pos, blob.len(), "no trailing bytes");
+    }
+
+    #[test]
+    fn null_array_pointers_encode_as_count_zero() {
+        // Same hazard one level up: null inputs/outputs arrays whose count
+        // fields LIE (nonzero). The encoder must write count 0 — a nonzero
+        // count with no records would desync everything parseBlob reads
+        // after it.
+        let decoded = DecodedTransactionFFI {
+            txid: [0xCDu8; 32],
+            inputs: std::ptr::null_mut(),
+            inputs_count: 3,
+            outputs: std::ptr::null_mut(),
+            outputs_count: 2,
+        };
+        // SAFETY: stack-built graph; the null arrays are the case under test
+        // and never dereferenced. Not passed to decoded_transaction_free.
+        let blob = unsafe { encode_decoded_transaction(&decoded) };
+
+        let mut r = Reader { blob: &blob, pos: 0 };
+        assert_eq!(r.take(32), [0xCDu8; 32]);
+        assert_eq!(r.u32(), 0, "null inputs array must encode count 0");
+        assert_eq!(r.u32(), 0, "null outputs array must encode count 0");
+        assert_eq!(r.pos, blob.len(), "no trailing bytes");
     }
 }
