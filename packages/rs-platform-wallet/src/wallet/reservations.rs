@@ -4,8 +4,8 @@
 //! funding account's `ReservationSet` and leaves the reservation held on
 //! success, expecting the transaction to be broadcast. When the broadcast
 //! *fails* the reservation must be reconciled here: released for an immediate
-//! retry when the transaction provably never reached the network, kept (for
-//! the reservation-TTL backstop or a later sync) when it may have.
+//! retry when Core definitively rejected the transaction, kept (for the
+//! reservation-TTL backstop or a later sync) when acceptance is unknown.
 //!
 //! Every build-then-broadcast path must go through
 //! [`broadcast_releasing_on_rejection`] so the cleanup exists once instead of
@@ -25,8 +25,8 @@ use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 /// Broadcast `tx` and reconcile the funding account's UTXO reservation on
 /// failure.
 ///
-/// On [`BroadcastError::Rejected`] — the transaction provably never reached
-/// the network — the inputs reserved by the preceding `build_signed` are
+/// On [`BroadcastError::Rejected`] — Core definitively did not accept the
+/// transaction — the inputs reserved by the preceding `build_signed` are
 /// released so an immediate retry can reselect them instead of failing with
 /// spurious insufficient funds until the reservation-TTL backstop. On
 /// [`BroadcastError::MaybeSent`] the reservation is intentionally kept:

@@ -405,4 +405,43 @@ final class ErrorHandlingTests: XCTestCase {
         let failureResult: Result<String, Error> = .failure(TestError())
         XCTAssertEqual(failureResult.errorMessage, "Test failure")
     }
+
+    // MARK: - Core broadcast outcome mapping
+
+    func testCoreBroadcastOutcomeMapping() throws {
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .success,
+                txid: "accepted-id",
+                reason: ""
+            ),
+            .accepted(txid: "accepted-id")
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastRejected,
+                txid: "rejected-id",
+                reason: "policy"
+            ),
+            .rejected(txid: "rejected-id", reason: "policy")
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastUnconfirmed,
+                txid: "unknown-id",
+                reason: "timeout"
+            ),
+            .unknown(txid: "unknown-id", reason: "timeout")
+        )
+    }
+
+    func testCoreBroadcastOutcomeRejectsOperationalResultCode() {
+        XCTAssertThrowsError(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorInvalidHandle,
+                txid: "unused",
+                reason: "invalid handle"
+            )
+        )
+    }
 }

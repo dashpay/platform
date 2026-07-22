@@ -66,6 +66,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorAssetLockNotTracked = 23
     case errorAssetLockAlreadyConsumed = 24
     case errorAssetLockFundingMismatch = 25
+    /// Core definitively rejected the transaction. Its reserved inputs were
+    /// released and a corrected transaction may be submitted again.
+    case errorTransactionBroadcastRejected = 26
     case notFound = 98
     case errorUnknown = 99
 
@@ -123,6 +126,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockAlreadyConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH:
             self = .errorAssetLockFundingMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED:
+            self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -235,6 +240,9 @@ public enum PlatformWalletError: LocalizedError {
     /// reservation TTL or a later sync reconciles the outcome. Do NOT
     /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
     case transactionBroadcastUnconfirmed(String)
+    /// Core definitively rejected the transaction and its input reservation
+    /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
+    case transactionBroadcastRejected(String)
     /// Definitively-failed address-nonce race (shield, or identity
     /// top-up-from-addresses): Platform rejected the transition because the
     /// submitted address nonce raced its expected value. The transition did
@@ -262,6 +270,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
              .transactionBroadcastUnconfirmed(let m),
+             .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .notFound(let m), .unknown(let m):
             return m
@@ -300,6 +309,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)
+        case .errorTransactionBroadcastRejected:
+            self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:
             self = .addressNonceMismatch(detail)
         case .notFound:               self = .notFound(detail)

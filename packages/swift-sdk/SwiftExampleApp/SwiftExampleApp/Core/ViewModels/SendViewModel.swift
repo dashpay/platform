@@ -524,11 +524,11 @@ class SendViewModel: ObservableObject {
                     accountType: .bip44,
                     accountIndex: senderAccountIndex
                 )
-                // Broadcast lives on the core wallet; grab it locally.
-                let _ = try platformWallet.coreWallet().broadcastTransaction(signedTx)
-                successMessage = recipients.count > 1
-                    ? "Payment sent to \(recipients.count) recipients"
-                    : "Payment sent"
+                // Core acceptance, rather than a successful peer socket write,
+                // is the boundary for showing payment success.
+                let outcome = try platformWallet.coreWallet()
+                    .broadcastTransactionWithOutcome(signedTx)
+                applyCoreBroadcastOutcome(outcome, recipientCount: recipients.count)
 
             case .platformToPlatform:
                 guard let addressWallet = platformAddressWallet else {
@@ -829,6 +829,29 @@ class SendViewModel: ObservableObject {
                 + "the next shielded sync to confirm. Do not retry."
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+
+    /// Apply the authoritative Core broadcast outcome to the send UI. Kept as
+    /// a small pure state transition so rejected/unknown can be regression
+    /// tested without constructing a live wallet or transaction.
+    func applyCoreBroadcastOutcome(
+        _ outcome: CoreTransactionBroadcastOutcome,
+        recipientCount: Int
+    ) {
+        switch outcome {
+        case .accepted:
+            error = nil
+            successMessage = recipientCount > 1
+                ? "Payment sent to \(recipientCount) recipients"
+                : "Payment sent"
+        case .rejected(_, let reason):
+            successMessage = nil
+            error = "Payment rejected by Dash Core: \(reason)"
+        case .unknown(let txid, let reason):
+            successMessage = nil
+            error = "Payment status could not be verified (\(txid)). "
+                + "It may already have been accepted; do not retry. \(reason)"
         }
     }
 }
