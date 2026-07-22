@@ -21,10 +21,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
+
+const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
 const MAX_PATH_COMPONENTS: usize = 256;
 const MAX_GROVEDB_KEY_BYTES: usize = 255;
@@ -147,6 +150,7 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
+    pub state_transition_wait_permits: Arc<Semaphore>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
     workers: Workers,
@@ -206,6 +210,9 @@ impl PlatformServiceImpl {
                 invalidation_subscription,
             ),
             subscriber_manager,
+            state_transition_wait_permits: Arc::new(Semaphore::new(
+                MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
             workers,
         }
     }
