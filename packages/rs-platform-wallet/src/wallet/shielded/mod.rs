@@ -53,7 +53,10 @@ pub use activity::{
 };
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
-pub use keys::{AccountViewingKeys, OrchardKeySet};
+pub use keys::{
+    generate_one_time_orchard_key, orchard_address_from_spending_key, AccountViewingKeys,
+    OrchardKeySet, ORCHARD_RAW_ADDRESS_LEN,
+};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{

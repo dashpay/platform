@@ -50,7 +50,9 @@ use dpp::shielded::{
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
-use platform_wallet::wallet::shielded::CachedOrchardProver;
+use platform_wallet::wallet::shielded::{
+    generate_one_time_orchard_key, orchard_address_from_spending_key, CachedOrchardProver,
+};
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
@@ -1358,6 +1360,87 @@ fn resolve_wallet_and_coordinator(
         )
     })?;
     Ok((wallet, coordinator))
+}
+
+// ---------------------------------------------------------------------------
+// One-time Orchard key generation (inviter side of L2 shielded invitations)
+// ---------------------------------------------------------------------------
+
+/// Generate a fresh one-time Orchard spending key and its default payment
+/// address — the *inviter* side of an L2 shielded invitation.
+///
+/// Handle-less: a one-time key is process-local Orchard crypto, not bound
+/// to any wallet. Writes the 32-byte spending key to `out_sk_32` and the 43
+/// raw bytes of its default Orchard address (11-byte diversifier + 32-byte
+/// `pk_d`, the same encoding
+/// [`platform_wallet_manager_shielded_default_address`] returns) to
+/// `out_address_43`.
+///
+/// The inviter funds a note to `out_address_43`; a claimer handed the 32
+/// bytes in `out_sk_32` spends it via
+/// [`platform_wallet_manager_shielded_identity_create_from_one_time_key`]
+/// (which accepts exactly these spending-key bytes).
+///
+/// Always succeeds (the generator re-rolls until it draws a valid scalar).
+///
+/// [`platform_wallet_manager_shielded_default_address`]: crate::platform_wallet_manager_shielded_default_address
+///
+/// # Safety
+/// - `out_sk_32` must point at 32 writable bytes.
+/// - `out_address_43` must point at 43 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_generate_one_time_orchard_key(
+    out_sk_32: *mut u8,
+    out_address_43: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_sk_32);
+    check_ptr!(out_address_43);
+
+    let (sk, address) = generate_one_time_orchard_key();
+    std::ptr::copy_nonoverlapping(sk.as_ptr(), out_sk_32, 32);
+    std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Derive the default raw Orchard payment address (43 bytes) from a 32-byte
+/// Orchard spending key — the RNG-free counterpart of
+/// [`platform_wallet_generate_one_time_orchard_key`].
+///
+/// Handle-less. On success the 43 raw address bytes (11-byte diversifier +
+/// 32-byte `pk_d`) are written to `out_address_43`. Returns
+/// [`ErrorInvalidParameter`] if `sk_bytes_32` is not a valid Orchard
+/// `SpendingKey` scalar. Used for round-trip validation and to recompute
+/// the recipient an inviter must fund for a given one-time key.
+///
+/// [`ErrorInvalidParameter`]: crate::error::PlatformWalletFFIResultCode::ErrorInvalidParameter
+///
+/// # Safety
+/// - `sk_bytes_32` must point at 32 readable bytes.
+/// - `out_address_43` must point at 43 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_orchard_address_from_spending_key(
+    sk_bytes_32: *const u8,
+    out_address_43: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(sk_bytes_32);
+    check_ptr!(out_address_43);
+
+    let mut sk = [0u8; 32];
+    std::ptr::copy_nonoverlapping(sk_bytes_32, sk.as_mut_ptr(), 32);
+
+    match orchard_address_from_spending_key(sk) {
+        Ok(address) => {
+            std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
+            PlatformWalletFFIResult::ok()
+        }
+        // An invalid scalar is a bad caller-supplied key, not an internal
+        // fault — surface it as an invalid parameter (the typed
+        // `ShieldedKeyDerivation` message is preserved verbatim).
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            e.to_string(),
+        ),
+    }
 }
 
 #[cfg(test)]

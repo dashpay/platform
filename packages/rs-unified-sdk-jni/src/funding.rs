@@ -783,6 +783,75 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     })
 }
 
+/// Generate a fresh one-time Orchard spending key + its default payment
+/// address (bridges `platform_wallet_generate_one_time_orchard_key`) — the
+/// *inviter* side of an L2 shielded invitation.
+///
+/// Handle-less: a one-time key is process-local Orchard crypto, not bound to
+/// any wallet. Returns a single 75-byte array carrying both halves:
+/// `bytes[0..32]` is the 32-byte one-time spending key, `bytes[32..75]` is
+/// the 43-byte raw default Orchard address the inviter funds a note to. The
+/// Kotlin wrapper splits the blob back into the two arrays.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_generateOneTimeOrchardKey(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut sk = [0u8; 32];
+        let mut addr = [0u8; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_generate_one_time_orchard_key(
+                sk.as_mut_ptr(),
+                addr.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // sk ‖ addr — a 75-byte blob the Kotlin side slices into (sk32, addr43).
+        let mut out = [0u8; 75];
+        out[..32].copy_from_slice(&sk);
+        out[32..].copy_from_slice(&addr);
+        env.byte_array_from_slice(&out)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Derive the default 43-byte raw Orchard address from a 32-byte one-time
+/// spending key (bridges `platform_wallet_orchard_address_from_spending_key`).
+///
+/// Handle-less, RNG-free counterpart of
+/// [`Java_..._generateOneTimeOrchardKey`]. Returns the 43-byte address;
+/// throws an `SdkException` (invalid-parameter) if `spendingKey` is not a
+/// valid Orchard spending key.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_orchardAddressFromSpendingKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    spending_key: JByteArray,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(sk) = read_id32(env, &spending_key, "spendingKey") else {
+            return ptr::null_mut();
+        };
+        let mut addr = [0u8; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_orchard_address_from_spending_key(
+                sk.as_ptr(),
+                addr.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&addr)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// Shielded → shielded transfer (Type 16) — bridges
 /// `platform_wallet_manager_shielded_transfer`.
 ///
