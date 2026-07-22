@@ -99,7 +99,12 @@ impl TokenBaseTransitionActionStateValidationV1 for TokenBaseTransitionAction {
                         StateError::ModificationOfGroupActionMainParametersNotPermittedError(
                             ModificationOfGroupActionMainParametersNotPermittedError::new(
                                 original_group_action.event().event_name(),
-                                original_group_action.event().event_name(),
+                                format!(
+                                    "{} at contract {} token position {}",
+                                    original_group_action.event().event_name(),
+                                    self.data_contract_id(),
+                                    self.token_position()
+                                ),
                                 changed_fields,
                             ),
                         ),

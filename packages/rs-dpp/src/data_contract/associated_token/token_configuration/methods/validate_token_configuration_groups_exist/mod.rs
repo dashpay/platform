@@ -28,7 +28,9 @@ impl TokenConfiguration {
     ///
     /// # Versioning
     /// - This function dispatches to version-specific validation logic based on the `platform_version`.
-    /// - Currently supports `validate_token_config_groups_exist_v0` for version `0`.
+    /// - Supports `validate_token_config_groups_exist_v0` for version `0` and
+    ///   `validate_token_config_groups_exist_v1` for version `1` (adds the change-control rules
+    ///   missed by v0 and prospective-config group references).
     pub fn validate_token_config_groups_exist(
         &self,
         groups: &BTreeMap<GroupContractPosition, Group>,
