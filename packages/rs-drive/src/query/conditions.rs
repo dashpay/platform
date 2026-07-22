@@ -948,9 +948,9 @@ impl<'a> WhereClause {
                         if left_to_right {
                             if starts_at_key < key {
                                 if included {
-                                    query.insert_range(key..starts_at_key);
+                                    query.insert_range(starts_at_key..key);
                                 } else {
-                                    query.insert_range_after_to(key..starts_at_key);
+                                    query.insert_range_after_to(starts_at_key..key);
                                 }
                             }
                         } else if starts_at_key > key {
@@ -977,9 +977,9 @@ impl<'a> WhereClause {
                                 query.insert_key(key);
                             } else if starts_at_key < key {
                                 if included {
-                                    query.insert_range_inclusive(key..=starts_at_key);
+                                    query.insert_range_inclusive(starts_at_key..=key);
                                 } else {
-                                    query.insert_range_after_to_inclusive(key..=starts_at_key);
+                                    query.insert_range_after_to_inclusive(starts_at_key..=key);
                                 }
                             }
                         } else if starts_at_key > key || (included && starts_at_key == key) {
@@ -1711,9 +1711,88 @@ mod tests {
     };
     use crate::query::InternalClauses;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+    use dpp::document::DocumentV0;
     use dpp::platform_value::Value;
+    use dpp::prelude::Identifier;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::LATEST_PLATFORM_VERSION;
+    use grovedb::Query;
+    use std::collections::BTreeMap;
+
+    fn cursor_document(field: &str, value: Value) -> dpp::document::Document {
+        DocumentV0 {
+            id: Identifier::from([3u8; 32]),
+            owner_id: Identifier::from([4u8; 32]),
+            properties: BTreeMap::from([(field.to_string(), value)]),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into()
+    }
+
+    #[test]
+    fn ascending_less_than_ranges_start_at_the_cursor() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("document type exists");
+        let cursor_value = Value::Text("m".to_string());
+        let upper_value = Value::Text("z".to_string());
+        let cursor_key = document_type
+            .serialize_value_for_key("name", &cursor_value, LATEST_PLATFORM_VERSION)
+            .unwrap();
+        let upper_key = document_type
+            .serialize_value_for_key("name", &upper_value, LATEST_PLATFORM_VERSION)
+            .unwrap();
+
+        for (operator, cursor_included) in [
+            (LessThan, true),
+            (LessThan, false),
+            (LessThanOrEquals, true),
+            (LessThanOrEquals, false),
+        ] {
+            let clause = WhereClause {
+                field: "name".to_string(),
+                operator,
+                value: upper_value.clone(),
+            };
+            let start_at = Some((
+                cursor_document("name", cursor_value.clone()),
+                cursor_included,
+            ));
+            let actual = clause
+                .to_path_query(document_type, &start_at, true, LATEST_PLATFORM_VERSION)
+                .unwrap();
+            let mut expected = Query::new_with_direction(true);
+
+            match (operator, cursor_included) {
+                (LessThan, true) => expected.insert_range(cursor_key.clone()..upper_key.clone()),
+                (LessThan, false) => {
+                    expected.insert_range_after_to(cursor_key.clone()..upper_key.clone())
+                }
+                (LessThanOrEquals, true) => {
+                    expected.insert_range_inclusive(cursor_key.clone()..=upper_key.clone())
+                }
+                (LessThanOrEquals, false) => {
+                    expected.insert_range_after_to_inclusive(cursor_key.clone()..=upper_key.clone())
+                }
+                _ => unreachable!(),
+            }
+
+            assert_eq!(actual.items, expected.items);
+        }
+    }
 
     #[test]
     fn test_allowed_sup_query_pairs() {
