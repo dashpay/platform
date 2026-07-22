@@ -169,6 +169,8 @@ impl PlatformAddressWallet {
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
+                // Non-shielded funding always uses the single BIP44 account.
+                None,
             )
             .await?
         {

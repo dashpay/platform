@@ -316,12 +316,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// (43-byte raw Orchard address). `coreSignerHandle` is the manager's
 /// `MnemonicResolverHandle` (asset-lock outer ST signature); `surplusOutput`
 /// is the optional 21-byte remainder platform address (null = none).
-/// `allowCrossDomain` is the cross-privacy-domain co-spend consent
-/// (dashpay/platform#4184): `false` (default) confines the L1 asset-lock funding
-/// to the transparent BIP44/BIP32 domain; `true` — set only after the user
-/// consents — lets it also draw CoinJoin / DashPay-receiving funds. A refusal
-/// surfaces as the typed `ErrorAssetLockCrossDomainConsentRequired` code. The
-/// ~30s Halo 2 proof runs inside the call; nothing is returned on success.
+/// `fundingPath` is an optional UTF-8 BIP32 derivation-path string
+/// (dashpay/platform#4184) naming the SINGLE funds account whose UTXOs fund the
+/// lock: null (the default) funds from the unmixed BIP44 account at
+/// `fundingAccountIndex`; an explicit account-level path (e.g. the DIP-9 CoinJoin
+/// account path) funds strictly from that one account, with no union across
+/// accounts and no consent gate. A shortfall surfaces as the typed
+/// `ErrorAssetLockInsufficientFunds` code. The ~30s Halo 2 proof runs inside the
+/// call; nothing is returned on success.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedFundFromAssetLock(
@@ -334,7 +336,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
     recipient_raw43: JByteArray,
     surplus_output: JByteArray,
     core_signer_handle: jlong,
-    allow_cross_domain: jboolean,
+    funding_path: JString,
 ) {
     guard(&mut env, (), |env| {
         // Reject sign errors at the boundary — negatives would otherwise
@@ -361,6 +363,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let (surplus_ptr, surplus_len) = surplus
             .as_ref()
             .map_or((ptr::null(), 0usize), |v| (v.as_ptr(), v.len()));
+        // Optional BIP32 derivation-path string naming the single funds account
+        // (null = the unmixed BIP44 account). Passed to the FFI as UTF-8 bytes
+        // (without the trailing NUL) + length.
+        let funding_path = match read_cstring_opt(env, &funding_path, "fundingPath") {
+            Ok(v) => v,
+            Err(()) => return,
+        };
+        let (funding_path_ptr, funding_path_len) = funding_path
+            .as_ref()
+            .map_or((ptr::null(), 0usize), |c| {
+                let b = c.as_bytes();
+                (b.as_ptr(), b.len())
+            });
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_manager_shielded_fund_from_asset_lock(
                 manager_handle as Handle,
@@ -371,7 +386,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 surplus_ptr,
                 surplus_len,
                 core_signer_handle as *mut MnemonicResolverHandle,
-                allow_cross_domain != 0,
+                funding_path_ptr,
+                funding_path_len,
             )
         };
         let _ = take_pwffi_error(env, result);

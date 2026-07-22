@@ -173,6 +173,8 @@ impl IdentityWallet {
                 AssetLockFundingType::IdentityRegistration,
                 identity_index,
                 asset_lock_signer,
+                // Non-shielded funding always uses the single BIP44 account.
+                None,
             )
             .await?
         {
@@ -428,6 +430,8 @@ impl IdentityWallet {
                 AssetLockFundingType::IdentityTopUp,
                 identity_index,
                 asset_lock_signer,
+                // Non-shielded funding always uses the single BIP44 account.
+                None,
             )
             .await?
         {

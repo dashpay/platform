@@ -76,6 +76,8 @@ pub unsafe extern "C" fn asset_lock_manager_build_transaction(
             funding,
             identity_index,
             &signer,
+            // Non-shielded funding always uses the single BIP44 account.
+            None,
         ))
     });
     let result = unwrap_option_or_return!(option);
@@ -149,6 +151,8 @@ pub unsafe extern "C" fn asset_lock_manager_create_funded_proof(
             funding,
             identity_index,
             &signer,
+            // Non-shielded funding always uses the single BIP44 account.
+            None,
         ))
     });
     let result = unwrap_option_or_return!(option);

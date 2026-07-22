@@ -127,13 +127,16 @@ impl PlatformWallet {
     ///   shielded seed pool passes `Some(CL_FALLBACK_TIMEOUT)` so a
     ///   `FinalityTimeout` surfaces as its unconfirmed-ancestor pacing
     ///   signal (see `seed_pool.rs`).
-    /// * `cross_domain` — Cross-privacy-domain co-spend consent for the
-    ///   asset-lock funding coin selection (dashpay/platform#4184). Defaults
-    ///   should be [`crate::CrossDomainConsent::Denied`]; pass
-    ///   [`crate::CrossDomainConsent::Allowed`] only after the user has
-    ///   consented to draw the L1 lock from CoinJoin / DashPay-receiving funds
-    ///   in addition to transparent BIP44/BIP32 funds. Ignored for the
-    ///   `FromExistingAssetLock` resume path (no fresh coin selection occurs).
+    /// * `funding_path` — The account-level derivation path of the SINGLE funds
+    ///   account whose UTXOs fund the L1 asset lock, for the fresh
+    ///   `FromWalletBalance` build. `None` funds from the unmixed BIP44 account
+    ///   (the default); `Some(path)` funds strictly from the one funds account
+    ///   whose account-level path equals `path` — e.g. the DIP-9 CoinJoin
+    ///   account, to shield previously-mixed coins (dashpay/platform#4073). There
+    ///   is no union across accounts and no privacy-domain consent gate: the
+    ///   caller names exactly one funding source (dashpay/platform#4184).
+    ///   Ignored for the `FromExistingAssetLock` resume path (no fresh coin
+    ///   selection occurs).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
@@ -147,7 +150,7 @@ impl PlatformWallet {
         dummy_outputs: usize,
         settings: Option<PutSettings>,
         cl_wait: Option<Duration>,
-        cross_domain: crate::CrossDomainConsent,
+        funding_path: Option<::key_wallet::bip32::DerivationPath>,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -216,12 +219,12 @@ impl PlatformWallet {
             tracked_out_point,
         } = match self
             .asset_locks
-            .resolve_funding_with_is_timeout_fallback_with_consent(
+            .resolve_funding_with_is_timeout_fallback(
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
-                cross_domain,
+                funding_path,
             )
             .await?
         {

@@ -36,81 +36,13 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 
-/// Caller consent for co-spending Core funds across privacy domains in a single
-/// asset-lock funding transaction (dashpay/platform#4184).
-///
-/// The multi-account shielded-funding builder unions spendable UTXOs across the
-/// wallet's funds accounts. Those accounts fall into distinct **privacy domains**
-/// (see [`PrivacyDomain`]); combining inputs from more than one domain into one
-/// L1 transaction irreversibly links those domains on-chain — and, because the
-/// key-wallet builder derives change only on transparent (BIP44/BIP32) accounts,
-/// a spend of non-transparent funds also emits transparent change. Shielding the
-/// resulting credit output afterward cannot undo that linkage.
-///
-/// The builder therefore defaults to [`CrossDomainConsent::Denied`] and confines
-/// selection to a single domain. [`CrossDomainConsent::Allowed`] is the explicit,
-/// per-request opt-in a host threads through only after obtaining user consent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CrossDomainConsent {
-    /// Default. Confine funding selection to a single privacy domain (the
-    /// transparent BIP44/BIP32 domain, which uniquely owns the change path). If
-    /// the transparent domain alone cannot cover the amount but the wallet-wide
-    /// union could, the builder returns
-    /// [`crate::error::PlatformWalletError::AssetLockCrossDomainConsentRequired`]
-    /// rather than silently linking domains.
-    Denied,
-    /// Explicit opt-in: allow the wallet-wide union of every spendable funding
-    /// domain (BIP44 + BIP32 + CoinJoin + DashPay-receiving) in one L1
-    /// transaction. Only pass this after the caller/user has consented to the
-    /// cross-domain linkage.
-    Allowed,
-}
-
-impl CrossDomainConsent {
-    /// Map a C-ABI `bool` opt-in flag (from the FFI boundary) to the typed
-    /// consent. `true` == the host obtained user consent to cross privacy
-    /// domains; `false` (the default) confines selection to one domain.
-    pub fn from_allow_flag(allow_cross_domain: bool) -> Self {
-        if allow_cross_domain {
-            Self::Allowed
-        } else {
-            Self::Denied
-        }
-    }
-}
-
-/// The privacy domain a funds account belongs to, for cross-domain co-spend
-/// gating (dashpay/platform#4184). Ordinary BIP44 and BIP32 funds share the one
-/// transparent domain (the reviewer's "ordinary BIP44/BIP32 funds"): it holds
-/// the primary funding account and is the sole source of change, so it is the
-/// only domain that can fund a lock without creating a cross-domain change
-/// output. CoinJoin (mixed) and DashPay-receiving (contact-scoped) funds are each
-/// their own domain.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum PrivacyDomain {
-    /// Ordinary BIP44 + BIP32 funds. Owns the change path.
-    Transparent,
-    /// DIP-9 CoinJoin mixed outputs.
-    CoinJoin,
-    /// DashPay receiving-funds account (ours; signable).
-    DashpayReceiving,
-}
-
-/// Classify a funds account into its [`PrivacyDomain`], or `None` for accounts
-/// that must never fund an asset lock (watch-only `DashpayExternalAccount` — a
-/// contact's coins the local mnemonic can't sign). Returning `None` here is what
-/// preserves the watch-only exclusion across every
-/// consent mode, replacing the old ad-hoc skip. Non-funds account types cannot
-/// appear in `all_funding_accounts()` and also map to `None` defensively.
-fn account_privacy_domain(managed_type: &ManagedAccountType) -> Option<PrivacyDomain> {
-    match managed_type {
-        ManagedAccountType::Standard { .. } => Some(PrivacyDomain::Transparent),
-        ManagedAccountType::CoinJoin { .. } => Some(PrivacyDomain::CoinJoin),
-        ManagedAccountType::DashpayReceivingFunds { .. } => Some(PrivacyDomain::DashpayReceiving),
-        // Watch-only contact coins — never signable locally, always excluded.
-        ManagedAccountType::DashpayExternalAccount { .. } => None,
-        _ => None,
-    }
+/// Whether a funds account can *sign* an asset-lock funding spend. Watch-only
+/// `DashpayExternalAccount`s hold a contact's coins the local mnemonic cannot
+/// sign, so they must never fund an asset lock — even when a caller names their
+/// derivation path explicitly. Every other funds-account type is locally
+/// signable.
+fn is_signable_funding_account(managed_type: &ManagedAccountType) -> bool {
+    !matches!(managed_type, ManagedAccountType::DashpayExternalAccount { .. })
 }
 
 // ---------------------------------------------------------------------------
@@ -141,10 +73,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   Keychain-resolver vtable so private keys never cross the FFI
     ///   boundary.
     ///
-    /// Uses the default [`CrossDomainConsent::Denied`] privacy-domain rule: for
-    /// shielded funding, selection is confined to the transparent (BIP44/BIP32)
-    /// domain. Call [`Self::build_asset_lock_transaction_with_consent`] to opt
-    /// into a cross-domain union after obtaining user consent.
+    /// * `funding_path` — **Shielded funding only.** The account-level
+    ///   derivation path of the SINGLE funds account whose UTXOs fund the lock.
+    ///   `None` (the default) funds from the unmixed BIP44 account at
+    ///   `account_index`. `Some(path)` funds strictly from the one funds account
+    ///   whose account-level path equals `path` (e.g. the DIP-9 CoinJoin
+    ///   account), with change routed to the BIP44 account at `account_index`
+    ///   (non-Standard accounts such as CoinJoin cannot derive their own change
+    ///   — see [`Self::build_asset_lock_tx_from_selected_account`]). Both cases
+    ///   go through the single-account selector, so there is no union across
+    ///   accounts and no privacy-domain consent gate: the caller names exactly
+    ///   one funding source. Ignored for every non-shielded funding type, which
+    ///   always uses the single BIP44 account at `account_index` via the pinned
+    ///   key-wallet builder.
     pub async fn build_asset_lock_transaction<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
@@ -152,31 +93,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
-    ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
-        self.build_asset_lock_transaction_with_consent(
-            amount_duffs,
-            account_index,
-            funding_type,
-            identity_index,
-            signer,
-            CrossDomainConsent::Denied,
-        )
-        .await
-    }
-
-    /// Cross-domain-aware form of [`Self::build_asset_lock_transaction`]. The
-    /// extra `cross_domain` argument controls, for shielded funding only, whether
-    /// coin selection may co-spend across privacy domains (see
-    /// [`CrossDomainConsent`]). Every non-shielded funding type keeps the
-    /// single-BIP44-account path regardless of `cross_domain`.
-    pub async fn build_asset_lock_transaction_with_consent<S: ExtendedPubKeySigner>(
-        &self,
-        amount_duffs: u64,
-        account_index: u32,
-        funding_type: AssetLockFundingType,
-        identity_index: u32,
-        signer: &S,
-        cross_domain: CrossDomainConsent,
+        funding_path: Option<DerivationPath>,
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
         if amount_duffs == 0 {
             return Err(PlatformWalletError::AssetLockTransaction(
@@ -225,28 +142,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // 3. Fund the asset lock.
         //
-        // Shielded funding (`AssetLockShieldedAddressTopUp`) must be able to
-        // draw on previously-mixed CoinJoin coins, which live on the DIP-9
-        // CoinJoin derivation account — the pinned key-wallet
-        // `build_asset_lock_with_signer` funds from a SINGLE BIP44 account
-        // only, so those coins counted in the balance but could not be
-        // shielded (dashpay/platform#4073). Route shielded funding through the
-        // union-of-accounts builder; every other funding type keeps the
-        // single-BIP44-account path (spending mixed CoinJoin coins into an
-        // identity registration would de-anonymize them — a deliberate
-        // privacy choice left out of scope here). The union builder itself
-        // applies the single-privacy-domain rule per `cross_domain`
-        // (dashpay/platform#4184).
+        // Shielded funding (`AssetLockShieldedAddressTopUp`) goes through the
+        // single-account selector: `Some(path)` funds strictly from the named
+        // account (e.g. the DIP-9 CoinJoin account, whose previously-mixed coins
+        // the pinned BIP44-only `build_asset_lock_with_signer` cannot reach —
+        // dashpay/platform#4073), and `None` funds from the unmixed BIP44
+        // account. No union across accounts, no consent gate. Every non-shielded
+        // funding type instead uses the single BIP44 account at `account_index`
+        // via the pinned builder and ignores `funding_path` (spending mixed
+        // CoinJoin coins into an identity registration would de-anonymize them,
+        // so non-shielded funding never leaves the BIP44 account).
         if funding_type == AssetLockFundingType::AssetLockShieldedAddressTopUp {
             return self
-                .build_asset_lock_tx_from_all_funding_accounts(
+                .build_asset_lock_tx_from_selected_account(
                     wallet,
                     info,
                     account_index,
                     vec![funding],
                     DEFAULT_FEE_PER_KB,
                     signer,
-                    cross_domain,
+                    funding_path,
                 )
                 .await;
         }
@@ -296,69 +211,50 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// Build + sign an asset-lock transaction whose funding inputs are drawn
-    /// from the eligible spendable Core funds accounts (BIP44 + BIP32, plus
-    /// CoinJoin + DashPay-receiving when the caller consents), not just the
-    /// single BIP44 account at `account_index`.
+    /// **strictly from a single funds account** named by its account-level
+    /// derivation `funding_path` — e.g. the DIP-9 CoinJoin account — instead of
+    /// the BIP44 account at `account_index`.
     ///
-    /// ## Privacy-domain gate (dashpay/platform#4184)
+    /// This is the shielded-funding path for an *explicit* non-default funding
+    /// source (the dashpay/platform#4184 re-scope). There is no union across
+    /// accounts and no privacy-domain consent gate: the caller selects exactly
+    /// one account by path, and only that account's UTXOs fund the lock. If the
+    /// selected account cannot cover the lock (+ fee), the build fails with
+    /// [`PlatformWalletError::AssetLockInsufficientFunds`] rather than silently
+    /// topping up from another account.
     ///
-    /// The eligible set is governed by `cross_domain`. Funds accounts fall into
-    /// distinct **privacy domains** (see [`PrivacyDomain`]): the transparent
-    /// BIP44/BIP32 domain, the CoinJoin (mixed) domain, and the DashPay-receiving
-    /// domain. By default ([`CrossDomainConsent::Denied`]) selection is confined
-    /// to the transparent domain — it holds the primary account and is the only
-    /// domain that can supply change without linking domains (key-wallet derives
-    /// change only on transparent accounts). If the transparent domain alone
-    /// cannot cover the amount but the wallet-wide union could, the method returns
-    /// [`PlatformWalletError::AssetLockCrossDomainConsentRequired`]. With
-    /// [`CrossDomainConsent::Allowed`] the full signable union participates — the
-    /// original dashpay/platform#4073 behaviour — so a host can shield
-    /// previously-mixed CoinJoin coins after obtaining explicit user consent.
+    /// ## Why the pinned single-account builder can't do this (dashpay/platform#4073)
     ///
-    /// ## Why the union path exists (dashpay/platform#4073)
+    /// `ManagedWalletInfo::build_asset_lock_with_signer` funds from exactly ONE
+    /// BIP44 *standard* account (`standard_bip44_accounts[account_index]`), so
+    /// previously-mixed CoinJoin coins — which live on the DIP-9 CoinJoin
+    /// account — are unreachable through it. This method composes the key-wallet
+    /// `TransactionBuilder` directly: it seeds the selected account's spendable
+    /// UTXOs as explicit inputs (`add_inputs`) and signs with a resolver over
+    /// that account's addresses. The credit-output key is still derived from the
+    /// shielded-topup account exactly as the single-account builder does (peek
+    /// path → signer pubkey → mark used), so the returned `DerivationPath` lines
+    /// up with the credit-output script the caller already peeked.
     ///
-    /// The pinned key-wallet `ManagedWalletInfo::build_asset_lock_with_signer`
-    /// funds an asset lock from exactly ONE BIP44 standard account: it calls
-    /// `TransactionBuilder::set_funding` on
-    /// `standard_bip44_accounts[account_index]` and signs with a
-    /// single-account path resolver (`funds_acc.address_derivation_path`).
-    /// Previously-mixed CoinJoin coins live on the DIP-9 CoinJoin derivation
-    /// account (`coinjoin_accounts`), so they are counted in the wallet
-    /// balance (which sums `all_funding_accounts`) yet were invisible to the
-    /// asset-lock coin selector — shielding failed with a coin-selection
-    /// "Insufficient funds" even though the wallet-wide balance covered the
-    /// amount.
+    /// ## Change routing (structural BIP44 dependency)
     ///
-    /// This method keeps `account_index` as the PRIMARY account (its
-    /// reservation ledger gates concurrent primary-account builds, and change
-    /// flows back to it via `set_funding`'s change address) but ADDS the
-    /// spendable UTXOs of every other funds account as explicit builder
-    /// inputs (`add_inputs`), and signs with a resolver that spans all funds
-    /// accounts. The credit-output key is still derived from the
-    /// shielded-topup account exactly as the single-account builder does
-    /// (peek path → signer pubkey → mark used), so the returned
-    /// `DerivationPath` lines up with the credit-output script the caller
-    /// already peeked.
+    /// The pinned key-wallet derives change addresses only for *Standard*
+    /// (BIP44/BIP32) accounts — `ManagedCoreFundsAccount::next_change_address`
+    /// hard-errors ("Cannot generate change address for non-standard account
+    /// type") for CoinJoin / DashPay-receiving accounts. A lock funded from a
+    /// non-Standard account therefore MUST route its change to a Standard
+    /// account; this method uses the BIP44 account at `account_index` as that
+    /// change sink (the same change model the previous multi-account builder
+    /// used). When the selected account is itself the BIP44 `account_index`
+    /// account, this reduces to funding and change on that one account.
     ///
-    /// ## Interim caveat (superseded by the upstream fix)
+    /// ## Reservations
     ///
-    /// The clean long-term fix belongs upstream in key-wallet
-    /// (`build_asset_lock_with_signer` gathering inputs + reservations across
-    /// accounts). Until that pin bump lands, this workspace composition makes
-    /// CoinJoin funds shieldable today. `TransactionBuilder::set_funding`
-    /// captures only the PRIMARY account's `ReservationSet` (the type is
-    /// `pub(crate)` in key-wallet, so this crate cannot reserve per-account),
-    /// so inputs selected from non-primary accounts are recorded in the
-    /// primary account's reservation ledger rather than their own. They are
-    /// therefore not protected against a concurrent build on their own
-    /// account for the brief window before the broadcast tx is processed back
-    /// into the wallet (which releases the outpoints from every account's
-    /// ledger). Shielded funding is single-flighted under `shield_guard` and
-    /// the whole build runs under the wallet write lock, and the app issues no
-    /// concurrent non-shielded spend on the CoinJoin/BIP32 accounts, so the
-    /// race window is not reachable in practice.
+    /// The whole build runs under the wallet write lock and shielded funding is
+    /// single-flighted under `shield_guard`, so no concurrent build can race the
+    /// selected account's UTXOs; the builder runs without a reservation set.
     #[allow(clippy::too_many_arguments)]
-    async fn build_asset_lock_tx_from_all_funding_accounts<S: ExtendedPubKeySigner>(
+    async fn build_asset_lock_tx_from_selected_account<S: ExtendedPubKeySigner>(
         &self,
         wallet: &Wallet,
         info: &mut PlatformWalletInfo,
@@ -366,140 +262,102 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         credit_output_fundings: Vec<CreditOutputFunding>,
         fee_per_kb: u64,
         signer: &S,
-        cross_domain: CrossDomainConsent,
+        funding_path: Option<DerivationPath>,
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
-        use std::collections::{HashMap, HashSet};
+        use std::collections::HashMap;
 
         let target_duffs: u64 = credit_output_fundings.iter().map(|f| f.output.value).sum();
         let height = info.core_wallet.last_processed_height();
-        let allow_cross_domain = matches!(cross_domain, CrossDomainConsent::Allowed);
-        tracing::debug!(
-            target_duffs,
-            height,
-            primary_account_index = account_index,
-            allow_cross_domain,
-            funding_accounts = info.core_wallet.accounts.all_funding_accounts().len(),
-            "multi-account asset-lock funding: enumerating spendable funds accounts"
-        );
+        let network = info.core_wallet.network();
 
-        // Single-privacy-domain gate (dashpay/platform#4184). Total the spendable
-        // value per privacy domain: `transparent_total` is the BIP44/BIP32 domain
-        // (which holds the primary account and is the ONLY domain that can supply
-        // change without linking domains), and `union_total` sums every SIGNABLE
-        // domain (transparent + CoinJoin + DashPay-receiving). Watch-only
-        // `DashpayExternalAccount` UTXOs are excluded here by
-        // `account_privacy_domain` returning `None` — the same ownership carve-out
-        // as before, now expressed through the domain map.
-        let mut transparent_total: u64 = 0;
-        let mut union_total: u64 = 0;
-        for acc in info.core_wallet.accounts.all_funding_accounts() {
-            let Some(domain) = account_privacy_domain(acc.managed_account_type()) else {
-                continue;
-            };
-            let acc_spendable: u64 = acc
-                .spendable_utxos(height)
-                .into_iter()
-                .fold(0u64, |sum, u| sum.saturating_add(u.value()));
-            union_total = union_total.saturating_add(acc_spendable);
-            if domain == PrivacyDomain::Transparent {
-                transparent_total = transparent_total.saturating_add(acc_spendable);
-            }
-        }
+        // Resolve the target account-level path: an explicit `funding_path`, or
+        // (the default) the unmixed BIP44 account at `account_index`. Routing the
+        // default through this same builder keeps error typing uniform — a
+        // shortfall always surfaces as the typed `AssetLockInsufficientFunds`
+        // (via `map_builder_error`), the pre-existing shielded-funding contract.
+        let funding_path = match funding_path {
+            Some(p) => p,
+            None => info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&account_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "BIP44 account {account_index} not found for default asset-lock funding"
+                    ))
+                })?
+                .managed_account_type()
+                .to_account_type()
+                .derivation_path(network)
+                .map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "failed to derive the unmixed BIP44 account-level path: {e}"
+                    ))
+                })?,
+        };
 
-        // Default rule: confine selection to the transparent domain. If a single
-        // transparent-domain spend cannot cover the lock but adding
-        // CoinJoin/DashPay-receiving funds would, refuse with a typed, actionable
-        // error rather than silently crossing domains (which would irreversibly
-        // link them and emit BIP44 change from non-transparent inputs). The host
-        // obtains user consent and re-issues with `CrossDomainConsent::Allowed`.
-        // Note: coin selection accounts for the L1 fee, so `transparent_total`
-        // being >= `target_duffs` here is necessary but not sufficient; a
-        // fee-driven shortfall surfaces from the builder below and is
-        // reclassified to consent-required at that site when the union covers
-        // the fee-inclusive amount. This gate handles the plain-amount case
-        // early, before any selection work.
-        if !allow_cross_domain && transparent_total < target_duffs && union_total >= target_duffs {
-            tracing::debug!(
-                transparent_total,
-                union_total,
-                target_duffs,
-                "multi-account asset-lock funding: refusing cross-domain co-spend without consent"
-            );
-            return Err(PlatformWalletError::AssetLockCrossDomainConsentRequired {
-                transparent_available: transparent_total,
-                cross_domain_available: union_total,
-                required: target_duffs,
-            });
-        }
-
-        // Snapshot the primary account's spendable outpoints so the union
-        // sweep below does not add them twice: `set_funding` already seeds
-        // them, and `add_inputs` must contribute only the OTHER accounts.
-        let primary_outpoints: HashSet<OutPoint> = info
-            .core_wallet
-            .accounts
-            .standard_bip44_accounts
-            .get(&account_index)
-            .map(|a| {
-                a.spendable_utxos(height)
-                    .into_iter()
-                    .map(|u| u.outpoint)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        // Build, from an immutable borrow of the ELIGIBLE funds accounts:
-        //   (a) an owned `Address -> DerivationPath` resolver covering every
-        //       spendable input across the eligible accounts, so signing can
-        //       resolve a key for an input selected from any of them; and
-        //   (b) the explicit extra inputs (eligible non-primary accounts).
-        //
-        // Eligibility follows the privacy-domain gate: with consent, every
-        // signable domain participates (the full union — the dashpay/platform#4073
-        // behaviour); by default only the transparent (BIP44/BIP32) domain does.
-        // Watch-only `DashpayExternalAccount` UTXOs are never eligible in either
-        // mode (`account_privacy_domain` returns `None`), so a naive `LargestFirst`
-        // can no longer grab a contact's coins and sign them with the wrong local
-        // key.
+        // Immutable pass over the funds accounts: find the ONE account whose
+        // account-level derivation path equals `funding_path`, and collect its
+        // spendable UTXOs plus an `Address -> DerivationPath` resolver so signing
+        // can resolve a key for any input selected from it. Watch-only
+        // `DashpayExternalAccount`s are never fundable (the local mnemonic can't
+        // sign them) — refuse even when their path is named explicitly.
         let mut path_map: HashMap<DashAddress, DerivationPath> = HashMap::new();
-        let mut extra_inputs: Vec<Utxo> = Vec::new();
+        let mut selected_inputs: Vec<Utxo> = Vec::new();
         let mut selected_value: u64 = 0;
-        let mut selected_count: usize = 0;
+        let mut matched = false;
         for acc in info.core_wallet.accounts.all_funding_accounts() {
-            let Some(domain) = account_privacy_domain(acc.managed_account_type()) else {
-                continue;
-            };
-            if !allow_cross_domain && domain != PrivacyDomain::Transparent {
+            let acc_path = acc
+                .managed_account_type()
+                .to_account_type()
+                .derivation_path(network)
+                .map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "failed to derive account-level path for a funds account: {e}"
+                    ))
+                })?;
+            if acc_path != funding_path {
                 continue;
             }
+            if !is_signable_funding_account(acc.managed_account_type()) {
+                return Err(PlatformWalletError::AssetLockTransaction(format!(
+                    "funding derivation path {funding_path} names a watch-only account whose \
+                     coins the local wallet cannot sign; choose a signable funds account"
+                )));
+            }
+            matched = true;
             for utxo in acc.spendable_utxos(height) {
                 selected_value = selected_value.saturating_add(utxo.value());
-                selected_count += 1;
                 if let Some(path) = acc.address_derivation_path(&utxo.address) {
                     path_map.insert(utxo.address.clone(), path);
                 }
-                if !primary_outpoints.contains(&utxo.outpoint) {
-                    extra_inputs.push(utxo.clone());
-                }
+                selected_inputs.push(utxo.clone());
             }
         }
+        if !matched {
+            return Err(PlatformWalletError::AssetLockTransaction(format!(
+                "no spendable funds account matches funding derivation path {funding_path}"
+            )));
+        }
         tracing::debug!(
-            selected_count,
+            target_duffs,
+            height,
+            %funding_path,
             selected_value,
-            transparent_total,
-            union_total,
-            allow_cross_domain,
-            primary_count = primary_outpoints.len(),
-            extra_count = extra_inputs.len(),
+            selected_inputs = selected_inputs.len(),
             resolver_entries = path_map.len(),
-            "multi-account asset-lock funding: eligible UTXO set assembled"
+            "single-account asset-lock funding: selected account UTXO set assembled"
         );
 
+        // Change must land on a Standard (BIP44) account: non-Standard accounts
+        // (CoinJoin / DashPay-receiving) cannot derive change. Route it to the
+        // BIP44 account at `account_index`.
         let acc = wallet
             .get_bip44_account(account_index)
             .ok_or_else(|| {
                 PlatformWalletError::AssetLockTransaction(format!(
-                    "BIP44 account {account_index} not found for asset-lock funding"
+                    "BIP44 account {account_index} not found for asset-lock change routing"
                 ))
             })?
             .clone();
@@ -508,85 +366,65 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map(|f| f.output.clone())
             .collect();
 
-        // Seed the primary account (inputs + change address + reservations),
-        // then append the union of the other accounts' spendable inputs. The
-        // `&mut` borrow of the primary account is scoped to this block; the
-        // returned builder owns cloned inputs / reservations / change address,
-        // so no account borrow is held across the signer await below.
-        let builder = {
-            let primary_funds = info
+        // Derive the change address from the BIP44 account (scoped `&mut`
+        // borrow; the builder below owns the cloned change address, so no
+        // account borrow is held across the signer await).
+        let change_addr = {
+            let change_acc = info
                 .core_wallet
                 .accounts
                 .standard_bip44_accounts
                 .get_mut(&account_index)
                 .ok_or_else(|| {
                     PlatformWalletError::AssetLockTransaction(format!(
-                        "managed BIP44 account {account_index} not found for asset-lock funding"
+                        "managed BIP44 account {account_index} not found for asset-lock change routing"
                     ))
                 })?;
-            TransactionBuilder::new()
-                .set_fee_rate(FeeRate::new(fee_per_kb))
-                .set_current_height(height)
-                // LargestFirst, NOT the `TransactionBuilder::new()` default
-                // `BranchAndBound`. This is load-bearing, not an optimization:
-                // BranchAndBound routes to a recursive exact-match subset-sum
-                // (`CoinSelector::find_exact_match`) whose search space is
-                // EXPONENTIAL in the number of sub-target UTXOs. The
-                // single-BIP44-account path tolerates it (a handful of UTXOs),
-                // but a CoinJoin account holds many small mixed denominations
-                // (0.001 / 0.01 / 0.1 DASH ...); feeding that whole set to
-                // BranchAndBound hangs the FFI call for minutes with no logs and
-                // no broadcast (observed on-device, dashpay/platform#4073
-                // follow-up). LargestFirst uses the linear greedy accumulator
-                // (`accumulate_coins_with_size`), which also minimizes the input
-                // count — fewer signer round-trips (each input is one resolver
-                // upcall) and a smaller tx/fee.
-                .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .set_special_payload(TransactionPayload::AssetLockPayloadType(
-                    AssetLockPayload::new(credit_outputs),
-                ))
-                .set_funding(primary_funds, &acc)
-                .add_inputs(extra_inputs)
-                .require_final_inputs()
+            change_acc
+                .next_change_address(Some(&acc.account_xpub), true)
+                .map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "failed to derive change address on BIP44 account {account_index}: {e}"
+                    ))
+                })?
         };
+
+        let builder = TransactionBuilder::new()
+            .set_fee_rate(FeeRate::new(fee_per_kb))
+            .set_current_height(height)
+            // LargestFirst, NOT the `TransactionBuilder::new()` default
+            // `BranchAndBound`. This is load-bearing, not an optimization:
+            // BranchAndBound routes to a recursive exact-match subset-sum
+            // (`CoinSelector::find_exact_match`) whose search space is
+            // EXPONENTIAL in the number of sub-target UTXOs. A CoinJoin account
+            // holds many small mixed denominations (0.001 / 0.01 / 0.1 DASH ...);
+            // feeding that whole set to BranchAndBound hangs the FFI call for
+            // minutes with no logs and no broadcast (observed on-device,
+            // dashpay/platform#4073 follow-up). LargestFirst uses the linear
+            // greedy accumulator (`accumulate_coins_with_size`), which also
+            // minimizes the input count — fewer signer round-trips (each input is
+            // one resolver upcall) and a smaller tx/fee.
+            .set_selection_strategy(SelectionStrategy::LargestFirst)
+            .set_special_payload(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload::new(credit_outputs),
+            ))
+            .set_change_address(change_addr)
+            .add_inputs(selected_inputs)
+            .require_final_inputs();
 
         tracing::debug!(
             target_duffs,
-            "multi-account asset-lock funding: selecting + signing (LargestFirst)"
+            "single-account asset-lock funding: selecting + signing (LargestFirst)"
         );
         let (transaction, fee) = builder
             .build_signed(signer, move |addr| path_map.get(&addr).cloned())
             .await
-            .map_err(|e| {
-                let mapped = map_builder_error(e, target_duffs);
-                // Fee-band consent reclassification: the pre-selection gate
-                // compares domain totals against the fee-EXCLUSIVE target, so a
-                // transparent total in [target, target+fee) slips past it and
-                // then fails selection on the fee. When the union would cover
-                // the fee-inclusive `required` that selection reported, the
-                // actionable answer is still consent — reclassify to the
-                // consent-required error so hosts prompt instead of
-                // dead-ending on "insufficient funds".
-                match mapped {
-                    PlatformWalletError::AssetLockInsufficientFunds { available, required }
-                        if !allow_cross_domain
-                            && union_total > available
-                            && union_total >= required =>
-                    {
-                        PlatformWalletError::AssetLockCrossDomainConsentRequired {
-                            transparent_available: available,
-                            cross_domain_available: union_total,
-                            required,
-                        }
-                    }
-                    other => other,
-                }
-            })?;
+            .map_err(|e| map_builder_error(e, target_duffs))?;
         tracing::debug!(
             selected_inputs = transaction.input.len(),
             fee,
             txid = %transaction.txid(),
-            "multi-account asset-lock funding: transaction built + signed"
+            "single-account asset-lock funding: transaction built + signed"
         );
 
         // Derive the single credit-output key from the shielded-topup account,
@@ -629,7 +467,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         tracing::debug!(
             selected_inputs = transaction.input.len(),
-            "multi-account asset-lock funding: credit-output key derived; returning built tx"
+            "single-account asset-lock funding: credit-output key derived; returning built tx"
         );
         Ok((transaction, path))
     }
@@ -1051,6 +889,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   the registration index identifying which identity is being topped up).
     /// * `signer` — External ECDSA signer (Swift Keychain-backed in
     ///   production via `MnemonicResolverCoreSigner`).
+    /// * `funding_path` — Shielded funding only: the account-level derivation
+    ///   path of the single funds account to draw from (`None` = the unmixed
+    ///   BIP44 account at `account_index`). See
+    ///   [`Self::build_asset_lock_transaction`]. Ignored by non-shielded
+    ///   funding types.
     pub async fn create_funded_asset_lock_proof<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
@@ -1058,39 +901,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
-    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
-        self.create_funded_asset_lock_proof_with_consent(
-            amount_duffs,
-            account_index,
-            funding_type,
-            identity_index,
-            signer,
-            CrossDomainConsent::Denied,
-        )
-        .await
-    }
-
-    /// Cross-domain-aware form of [`Self::create_funded_asset_lock_proof`]. The
-    /// `cross_domain` consent is threaded down to the shielded union builder;
-    /// non-shielded funding types ignore it (they never leave the single BIP44
-    /// account). See [`CrossDomainConsent`].
-    pub async fn create_funded_asset_lock_proof_with_consent<S: ExtendedPubKeySigner>(
-        &self,
-        amount_duffs: u64,
-        account_index: u32,
-        funding_type: AssetLockFundingType,
-        identity_index: u32,
-        signer: &S,
-        cross_domain: CrossDomainConsent,
+        funding_path: Option<DerivationPath>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
-            .broadcast_funded_asset_lock_with_consent(
+            .broadcast_funded_asset_lock(
                 amount_duffs,
                 account_index,
                 funding_type,
                 identity_index,
                 signer,
-                cross_domain,
+                funding_path,
             )
             .await?;
         let proof = self
@@ -1107,6 +927,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// lock (e.g. the inviter-side invitation row) between the broadcast and
     /// the potentially long proof wait in
     /// [`Self::wait_for_funded_asset_lock_proof`].
+    ///
+    /// `funding_path` (shielded funding only) selects the single funds account
+    /// to draw from; `None` = the unmixed BIP44 account at `account_index`. See
+    /// [`Self::build_asset_lock_transaction`].
     pub(crate) async fn broadcast_funded_asset_lock<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
@@ -1114,28 +938,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
-    ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
-        self.broadcast_funded_asset_lock_with_consent(
-            amount_duffs,
-            account_index,
-            funding_type,
-            identity_index,
-            signer,
-            CrossDomainConsent::Denied,
-        )
-        .await
-    }
-
-    /// Cross-domain-aware form of [`Self::broadcast_funded_asset_lock`]. Threads
-    /// `cross_domain` to the shielded union builder (see [`CrossDomainConsent`]).
-    pub(crate) async fn broadcast_funded_asset_lock_with_consent<S: ExtendedPubKeySigner>(
-        &self,
-        amount_duffs: u64,
-        account_index: u32,
-        funding_type: AssetLockFundingType,
-        identity_index: u32,
-        signer: &S,
-        cross_domain: CrossDomainConsent,
+        funding_path: Option<DerivationPath>,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         // Serialize build→persist so a concurrent build cannot interleave its
         // pool snapshot with ours. The snapshot is collected from live wallet
@@ -1168,13 +971,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // 1. Build the asset lock transaction.
         let (tx, path) = self
-            .build_asset_lock_transaction_with_consent(
+            .build_asset_lock_transaction(
                 amount_duffs,
                 account_index,
                 funding_type,
                 identity_index,
                 signer,
-                cross_domain,
+                funding_path,
             )
             .await?;
 
@@ -1385,7 +1188,7 @@ mod tests {
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
-    use super::CrossDomainConsent;
+    use key_wallet::bip32::DerivationPath;
     use crate::{AssetLockFundingType, PlatformWalletError};
 
     /// prior-no-utxos-846 (dashpay/platform#4074): the zero-spendable-candidate
@@ -1545,6 +1348,7 @@ mod tests {
                 AssetLockFundingType::IdentityInvitation,
                 0,
                 &signer,
+                None,
             )
             .await;
 
@@ -1582,6 +1386,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -1617,6 +1422,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -1642,6 +1448,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -1677,6 +1484,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -1751,6 +1559,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -1783,6 +1592,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -1895,6 +1705,7 @@ mod tests {
                     AssetLockFundingType::IdentityInvitation,
                     0,
                     &signer_a,
+                    None,
                 )
                 .await
         });
@@ -1918,6 +1729,7 @@ mod tests {
                     AssetLockFundingType::IdentityInvitation,
                     0,
                     &signer,
+                    None,
                 )
                 .await
         });
@@ -2002,6 +1814,7 @@ mod tests {
                 AssetLockFundingType::IdentityInvitation,
                 0,
                 &signer,
+                None,
             )
             .await;
         match result {
@@ -2042,6 +1855,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -2073,6 +1887,7 @@ mod tests {
                 AssetLockFundingType::IdentityInvitation,
                 0,
                 &signer,
+                None,
             )
             .await
             .expect("broadcast half should succeed");
@@ -2127,6 +1942,7 @@ mod tests {
                 AssetLockFundingType::IdentityInvitation,
                 0,
                 &signer,
+                None,
             )
             .await
             .expect("invitation broadcast half succeeds");
@@ -2141,6 +1957,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         match refused {
@@ -2170,6 +1987,7 @@ mod tests {
                     reclaim_target,
                     0,
                     &signer,
+                    None,
                 ),
             )
             .await;
@@ -2275,68 +2093,95 @@ mod tests {
         (bip44, coinjoin)
     }
 
-    /// The bug: shielded asset-lock funding must be able to spend
-    /// previously-mixed CoinJoin coins, not just the BIP44 slice. Split the
-    /// balance so NEITHER account alone can fund the lock (0.09 DASH each) and
-    /// require 0.15 DASH — coin selection must reach across both the BIP44 and
-    /// the DIP-9 CoinJoin account, and the mixed inputs must each be signed
-    /// under their own account's derivation path.
-    ///
-    /// Because BIP44 and CoinJoin are DIFFERENT privacy domains, this union is a
-    /// cross-domain co-spend and requires explicit consent (dashpay/platform#4184);
-    /// the test therefore drives the `CrossDomainConsent::Allowed` path.
+    /// The account-level derivation path of CoinJoin account 0 in the split
+    /// fixture — the `funding_path` a caller passes to fund a shielded lock
+    /// strictly from previously-mixed CoinJoin coins (dashpay/platform#4184).
+    async fn coinjoin_account_path(
+        manager: &AssetLockManager<AlwaysRejectedBroadcaster>,
+    ) -> DerivationPath {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let wm = manager.wallet_manager.read().await;
+        let (_, info) = wm
+            .get_wallet_and_info(&manager.wallet_id)
+            .expect("wallet present");
+        let network = info.core_wallet.network();
+        info.core_wallet
+            .accounts
+            .coinjoin_accounts
+            .get(&0)
+            .expect("coinjoin account 0 present")
+            .managed_account_type()
+            .to_account_type()
+            .derivation_path(network)
+            .expect("coinjoin account-level path")
+    }
+
+    /// dashpay/platform#4073, re-scoped by #4184: shielded asset-lock funding
+    /// must be able to spend previously-mixed CoinJoin coins — but now the caller
+    /// names that one account EXPLICITLY by its account-level derivation path,
+    /// with no union and no consent gate. Fund 0.15 DASH from a CoinJoin account
+    /// that holds 0.2 DASH: the inputs must come solely from CoinJoin (each signed
+    /// under its own path), the BIP44 slice must be untouched, and the change must
+    /// land on the transparent BIP44 account (CoinJoin cannot sink change).
     #[tokio::test]
-    async fn shielded_asset_lock_funds_from_bip44_and_coinjoin_union() {
-        // 0.09 DASH on BIP44, 0.09 DASH on CoinJoin; require 0.15 DASH.
-        let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
+    async fn shielded_asset_lock_funds_from_explicit_coinjoin_path() {
+        // 0.09 DASH on BIP44, 0.2 DASH on CoinJoin; require 0.15 DASH from CoinJoin.
+        let (manager, signer) = split_asset_lock_manager(9_000_000, 20_000_000).await;
         let (bip44_outpoints, coinjoin_outpoints) = account_outpoints(&manager).await;
+        let coinjoin_path = coinjoin_account_path(&manager).await;
 
         let (tx, _path) = manager
-            .build_asset_lock_transaction_with_consent(
+            .build_asset_lock_transaction(
                 15_000_000,
                 0,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
-                CrossDomainConsent::Allowed,
+                Some(coinjoin_path),
             )
             .await
-            .expect("shielded asset lock must fund from the BIP44 + CoinJoin union");
+            .expect("shielded asset lock must fund from the named CoinJoin account");
 
-        // Neither account alone covers 0.15 DASH, so both must be selected.
         let spent: std::collections::HashSet<OutPoint> =
             tx.input.iter().map(|i| i.previous_output).collect();
-        assert!(
-            spent.iter().any(|o| bip44_outpoints.contains(o)),
-            "expected at least one BIP44 input, tx spent {spent:?}"
-        );
         assert!(
             spent.iter().any(|o| coinjoin_outpoints.contains(o)),
             "expected at least one CoinJoin input (the #4073 fix), tx spent {spent:?}"
         );
+        assert!(
+            !spent.iter().any(|o| bip44_outpoints.contains(o)),
+            "explicit CoinJoin funding must NOT reach BIP44 inputs, tx spent {spent:?}"
+        );
 
-        // Per-account signing: every selected input, regardless of which
-        // account's derivation path it needed, must carry a signature.
+        // Change must land on the transparent BIP44 account (the OP_RETURN burn
+        // is the AssetLock output; any non-OP_RETURN output is wallet change).
+        let has_change = tx.output.iter().any(|o| !o.script_pubkey.is_op_return());
+        assert!(has_change, "a CoinJoin-funded lock must return change to BIP44");
+
+        // Per-account signing: every selected input must carry a signature.
         assert!(!tx.input.is_empty(), "asset lock must have selected inputs");
         for (i, txin) in tx.input.iter().enumerate() {
             assert!(
                 !txin.script_sig.is_empty(),
-                "input {i} ({}) has an empty script_sig — the cross-account \
-                 resolver failed to derive/sign its key",
+                "input {i} ({}) has an empty script_sig — the resolver failed to \
+                 derive/sign its key",
                 txin.previous_output
             );
         }
     }
 
-    /// The widening is deliberately scoped to shielded funding: spending mixed
-    /// CoinJoin coins into an identity registration would de-anonymize them.
-    /// With the balance split 0.09/0.09, an identity-registration lock for
-    /// 0.15 DASH must still fail (BIP44 alone is short and non-shielded funding
-    /// never reaches the union), regardless of consent.
+    /// The explicit-account funding is deliberately scoped to shielded funding:
+    /// spending mixed CoinJoin coins into an identity registration would
+    /// de-anonymize them. With 0.09 DASH on BIP44 and 0.2 DASH on CoinJoin, an
+    /// identity-registration lock for 0.15 DASH must still fail — BIP44 alone is
+    /// short, and a non-shielded funding type IGNORES `funding_path`, so naming
+    /// the CoinJoin account cannot pull those coins.
     #[tokio::test]
-    async fn non_shielded_asset_lock_stays_single_bip44_account() {
-        let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
+    async fn non_shielded_asset_lock_ignores_funding_path() {
+        let (manager, signer) = split_asset_lock_manager(9_000_000, 20_000_000).await;
+        let coinjoin_path = coinjoin_account_path(&manager).await;
 
+        // Default (None): BIP44 alone is short, so it fails.
         let identity = manager
             .build_asset_lock_transaction(
                 15_000_000,
@@ -2344,6 +2189,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         assert!(
@@ -2352,86 +2198,82 @@ mod tests {
              is short of 0.15 DASH, got {identity:?}"
         );
 
-        // Even with cross-domain consent, non-shielded funding stays single-BIP44.
-        let identity_consented = manager
-            .build_asset_lock_transaction_with_consent(
+        // Even when the CoinJoin account is named explicitly, non-shielded
+        // funding ignores `funding_path` and stays on the single BIP44 account.
+        let identity_pathed = manager
+            .build_asset_lock_transaction(
                 15_000_000,
                 0,
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
-                CrossDomainConsent::Allowed,
+                Some(coinjoin_path),
             )
             .await;
         assert!(
-            identity_consented.is_err(),
-            "identity registration must ignore cross-domain consent, got {identity_consented:?}"
+            identity_pathed.is_err(),
+            "identity registration must ignore an explicit funding_path, got {identity_pathed:?}"
         );
     }
 
-    /// Privacy-domain gate (dashpay/platform#4184): shielded funding whose
-    /// transparent (BIP44) slice alone cannot cover the amount, but whose
-    /// BIP44 + CoinJoin union can, must be REFUSED by default with the typed
-    /// [`PlatformWalletError::AssetLockCrossDomainConsentRequired`] — and must
-    /// SUCCEED once the caller passes `CrossDomainConsent::Allowed`.
+    /// No auto-union (dashpay/platform#4184 re-scope): funding never combines
+    /// accounts. With 0.09 DASH on BIP44 and 0.09 DASH on CoinJoin and a 0.15
+    /// DASH lock, NEITHER the default (BIP44) nor an explicit CoinJoin path can
+    /// cover it — each account alone is short, and there is no union to fall back
+    /// on. Both must fail with the typed `AssetLockInsufficientFunds`.
     #[tokio::test]
-    async fn shielded_asset_lock_cross_domain_refused_without_consent() {
-        // 0.09 DASH BIP44 (transparent) + 0.09 DASH CoinJoin; require 0.15 DASH.
-        // Transparent alone (0.09) is short; the union (0.18) covers it.
+    async fn shielded_asset_lock_never_unions_accounts() {
+        // 0.09 DASH BIP44 + 0.09 DASH CoinJoin; require 0.15 DASH.
         let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
+        let coinjoin_path = coinjoin_account_path(&manager).await;
 
-        // Default (Denied): refused with the typed cross-domain error carrying
-        // the transparent-vs-union availability.
-        let refused = manager
+        // Default (None => BIP44): BIP44 alone is short, and CoinJoin is NOT
+        // auto-added.
+        let default_funded = manager
             .build_asset_lock_transaction(
                 15_000_000,
                 0,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
+                None,
             )
             .await;
-        match refused {
-            Err(PlatformWalletError::AssetLockCrossDomainConsentRequired {
-                transparent_available,
-                cross_domain_available,
-                required,
-            }) => {
-                assert_eq!(transparent_available, 9_000_000, "transparent = BIP44 slice");
-                assert_eq!(cross_domain_available, 18_000_000, "union = BIP44 + CoinJoin");
-                assert_eq!(required, 15_000_000);
-            }
-            other => panic!(
-                "default funding must refuse the cross-domain co-spend with a typed \
-                 AssetLockCrossDomainConsentRequired, got {other:?}"
+        assert!(
+            matches!(
+                default_funded,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
             ),
-        }
+            "default BIP44 funding must not silently union in CoinJoin, got {default_funded:?}"
+        );
 
-        // With consent: the union funds it.
-        let consented = manager
-            .build_asset_lock_transaction_with_consent(
+        // Explicit CoinJoin path: CoinJoin alone is short, and BIP44 is NOT
+        // auto-added either.
+        let coinjoin_funded = manager
+            .build_asset_lock_transaction(
                 15_000_000,
                 0,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
-                CrossDomainConsent::Allowed,
+                Some(coinjoin_path),
             )
             .await;
         assert!(
-            consented.is_ok(),
-            "shielded funding must succeed once cross-domain consent is granted, got {consented:?}"
+            matches!(
+                coinjoin_funded,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "explicit CoinJoin funding must not silently union in BIP44, got {coinjoin_funded:?}"
         );
     }
 
-    /// Privacy-domain gate happy path: when the transparent (BIP44) domain ALONE
-    /// covers the shielded lock, funding succeeds under the DEFAULT
-    /// (`CrossDomainConsent::Denied`) rule with no consent needed — and spends
-    /// only transparent inputs, never the CoinJoin coins.
+    /// Default happy path: with `funding_path = None`, a shielded lock funds from
+    /// the unmixed BIP44 account (the tested single-account builder) and never
+    /// touches the CoinJoin coins.
     #[tokio::test]
-    async fn shielded_asset_lock_single_transparent_domain_needs_no_consent() {
-        // 0.2 DASH BIP44 (transparent) + 0.09 DASH CoinJoin; require 0.15 DASH.
-        // Transparent alone covers it, so no cross-domain co-spend is needed.
+    async fn shielded_asset_lock_default_funds_from_bip44() {
+        // 0.2 DASH BIP44 + 0.09 DASH CoinJoin; require 0.15 DASH from BIP44.
         let (manager, signer) = split_asset_lock_manager(20_000_000, 9_000_000).await;
         let (bip44_outpoints, coinjoin_outpoints) = account_outpoints(&manager).await;
 
@@ -2442,19 +2284,20 @@ mod tests {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
+                None,
             )
             .await
-            .expect("transparent-domain-only shielded funding needs no consent");
+            .expect("default (unmixed BIP44) shielded funding must succeed");
 
         let spent: std::collections::HashSet<OutPoint> =
             tx.input.iter().map(|i| i.previous_output).collect();
         assert!(
             spent.iter().any(|o| bip44_outpoints.contains(o)),
-            "must spend transparent BIP44 inputs, tx spent {spent:?}"
+            "must spend unmixed BIP44 inputs, tx spent {spent:?}"
         );
         assert!(
             !spent.iter().any(|o| coinjoin_outpoints.contains(o)),
-            "default single-domain rule must NOT reach CoinJoin coins, tx spent {spent:?}"
+            "the default (unmixed BIP44) path must NOT reach CoinJoin coins, tx spent {spent:?}"
         );
         for (i, txin) in tx.input.iter().enumerate() {
             assert!(
@@ -2465,26 +2308,25 @@ mod tests {
         }
     }
 
-    /// A shielded lock exceeding even the UNION balance surfaces the typed
-    /// [`PlatformWalletError::AssetLockInsufficientFunds`], and its `available`
-    /// reflects the whole spendable balance (both accounts), not the BIP44
-    /// slice — the pre-#4073 symptom was `available` reporting only the BIP44
-    /// portion. Driven with `CrossDomainConsent::Allowed` so the shortfall is
-    /// measured over the full union (not the transparent slice) and the
-    /// cross-domain gate does not pre-empt it.
+    /// A shielded lock that exceeds the SELECTED account's balance surfaces the
+    /// typed [`PlatformWalletError::AssetLockInsufficientFunds`], and its
+    /// `available` reflects only that one account (there is no union). Here the
+    /// CoinJoin account holds 0.09 DASH and the caller names it explicitly while
+    /// asking for 1.0 DASH.
     #[tokio::test]
-    async fn shielded_asset_lock_union_shortfall_is_typed() {
-        // Union spendable is 0.18 DASH; ask for 1.0 DASH.
+    async fn shielded_asset_lock_selected_account_shortfall_is_typed() {
+        // 0.09 DASH BIP44 + 0.09 DASH CoinJoin; ask for 1.0 DASH from CoinJoin.
         let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
+        let coinjoin_path = coinjoin_account_path(&manager).await;
 
         let result = manager
-            .build_asset_lock_transaction_with_consent(
+            .build_asset_lock_transaction(
                 100_000_000,
                 0,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
-                CrossDomainConsent::Allowed,
+                Some(coinjoin_path),
             )
             .await;
 
@@ -2493,124 +2335,12 @@ mod tests {
                 available,
                 required,
             }) => {
-                // `available` must reflect the union (both 0.09 UTXOs), i.e.
-                // strictly more than the BIP44-only slice the old path saw.
-                assert!(
-                    available > 9_000_000,
-                    "available ({available}) should reflect the BIP44 + CoinJoin \
-                     union (> the 9_000_000 BIP44 slice)"
-                );
-                assert!(
-                    available <= 18_000_000,
-                    "available ({available}) cannot exceed the 18_000_000 union"
-                );
-                assert!(
-                    required >= 100_000_000,
-                    "required ({required}) should be at least the requested amount"
-                );
-            }
-            other => panic!(
-                "expected typed AssetLockInsufficientFunds carrying the union \
-                 available/required, got {other:?}"
-            ),
-        }
-    }
-
-    /// Fee-band reclassification: the transparent domain covers the requested
-    /// amount but not amount + fee, while the union does. The pre-selection
-    /// gate (fee-exclusive) does not fire, transparent-only selection then
-    /// fails on the fee — and that shortfall must surface as the typed
-    /// consent-required error (the union unlocks it), NOT as a dead-end
-    /// insufficient-funds.
-    #[tokio::test]
-    async fn shielded_asset_lock_fee_band_reclassifies_to_consent_required() {
-        // Transparent = 0.09 DASH, CoinJoin = 0.09 DASH; ask for exactly the
-        // transparent balance so only the fee is short.
-        let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
-
-        let result = manager
-            .build_asset_lock_transaction_with_consent(
-                9_000_000,
-                0,
-                AssetLockFundingType::AssetLockShieldedAddressTopUp,
-                0,
-                &signer,
-                CrossDomainConsent::Denied,
-            )
-            .await;
-
-        match result {
-            Err(PlatformWalletError::AssetLockCrossDomainConsentRequired {
-                transparent_available,
-                cross_domain_available,
-                required,
-            }) => {
-                assert_eq!(
-                    transparent_available, 9_000_000,
-                    "transparent_available should be the transparent slice"
-                );
-                assert_eq!(
-                    cross_domain_available, 18_000_000,
-                    "cross_domain_available should be the full union"
-                );
-                // key-wallet reports `required` as the plain target here (the
-                // fee shortfall is why selection failed, but the error carries
-                // the requested amount) — the reclassification must not depend
-                // on a fee-inclusive `required`.
-                assert!(
-                    required >= 9_000_000,
-                    "required ({required}) must be at least the 9_000_000 target"
-                );
-            }
-            other => panic!(
-                "fee-band shortfall the union can cover must ask for consent, got {other:?}"
-            ),
-        }
-
-        // And consent does unlock exactly this request.
-        manager
-            .build_asset_lock_transaction_with_consent(
-                9_000_000,
-                0,
-                AssetLockFundingType::AssetLockShieldedAddressTopUp,
-                0,
-                &signer,
-                CrossDomainConsent::Allowed,
-            )
-            .await
-            .expect("the fee-band request must succeed once consent is granted");
-    }
-
-    /// Denied + both domains short: when even the union cannot cover the
-    /// request, consent would not help, so the error stays the typed
-    /// insufficient-funds (code path distinct from consent-required) with the
-    /// transparent slice as `available` — the permitted funding set under the
-    /// default rule.
-    #[tokio::test]
-    async fn shielded_asset_lock_denied_union_shortfall_stays_insufficient() {
-        // Union spendable is 0.18 DASH; ask for 1.0 DASH with consent Denied.
-        let (manager, signer) = split_asset_lock_manager(9_000_000, 9_000_000).await;
-
-        let result = manager
-            .build_asset_lock_transaction_with_consent(
-                100_000_000,
-                0,
-                AssetLockFundingType::AssetLockShieldedAddressTopUp,
-                0,
-                &signer,
-                CrossDomainConsent::Denied,
-            )
-            .await;
-
-        match result {
-            Err(PlatformWalletError::AssetLockInsufficientFunds {
-                available,
-                required,
-            }) => {
+                // `available` must reflect ONLY the named CoinJoin account
+                // (0.09 DASH) — never the wallet-wide union.
                 assert!(
                     available <= 9_000_000,
-                    "available ({available}) must reflect the permitted \
-                     transparent slice under Denied, not the union"
+                    "available ({available}) must reflect only the named CoinJoin \
+                     account, not a union"
                 );
                 assert!(
                     required >= 100_000_000,
@@ -2618,8 +2348,7 @@ mod tests {
                 );
             }
             other => panic!(
-                "a shortfall consent cannot fix must stay AssetLockInsufficientFunds, \
-                 got {other:?}"
+                "expected typed AssetLockInsufficientFunds for the named account, got {other:?}"
             ),
         }
     }
@@ -2658,6 +2387,10 @@ mod tests {
             .expect("setup runtime");
         let (manager, signer) =
             setup_rt.block_on(split_asset_lock_manager_many_coinjoin(9_000_000, &coinjoin));
+        // The many-UTXO selection lives on the CoinJoin account; name it
+        // explicitly so the build funds the 0.2 DASH lock from those 40 mixed
+        // denominations (0.09 BIP44 alone is short).
+        let coinjoin_path = setup_rt.block_on(coinjoin_account_path(&manager));
 
         let (result_tx, result_rx) = mpsc::channel();
         // Detached: NOT joined anywhere, so a hung build can't wedge runtime
@@ -2668,16 +2401,13 @@ mod tests {
                 .build()
                 .expect("worker runtime");
             let outcome = rt
-                .block_on(manager.build_asset_lock_transaction_with_consent(
+                .block_on(manager.build_asset_lock_transaction(
                     20_000_000,
                     0,
                     AssetLockFundingType::AssetLockShieldedAddressTopUp,
                     0,
                     &signer,
-                    // 0.09 BIP44 (transparent) is short of 0.2; the CoinJoin coins
-                    // that trigger the many-UTXO selection are a cross-domain
-                    // co-spend, so drive the consented path.
-                    CrossDomainConsent::Allowed,
+                    Some(coinjoin_path),
                 ))
                 .map(|(tx, _path)| tx);
             let _ = result_tx.send(outcome);
@@ -2768,19 +2498,20 @@ mod tests {
             (before, values)
         };
 
+        // 0.09 BIP44 is short of 0.2; name the CoinJoin account (2.0 DASH UTXO)
+        // so the lock funds from mixed coins, with change routed to BIP44.
+        let coinjoin_path = coinjoin_account_path(&manager).await;
         let (tx, _path) = manager
-            .build_asset_lock_transaction_with_consent(
+            .build_asset_lock_transaction(
                 20_000_000,
                 0,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
-                // 0.09 BIP44 (transparent) is short of 0.2; funding from the
-                // 2.0 CoinJoin UTXO is a cross-domain co-spend.
-                CrossDomainConsent::Allowed,
+                Some(coinjoin_path),
             )
             .await
-            .expect("build multi-account asset lock");
+            .expect("build CoinJoin-funded asset lock");
 
         let sum_spent: u64 = tx
             .input
@@ -3002,6 +2733,32 @@ mod tests {
         map.values().any(|a| a.utxos.contains_key(outpoint))
     }
 
+    /// The account-level derivation path of the DashPay funds account of `leg`
+    /// (the first account in the leg's map), for use as an explicit
+    /// `funding_path`.
+    async fn dashpay_account_path(
+        manager: &AssetLockManager<AlwaysRejectedBroadcaster>,
+        leg: DashpayLeg,
+    ) -> DerivationPath {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let wm = manager.wallet_manager.read().await;
+        let (_, info) = wm
+            .get_wallet_and_info(&manager.wallet_id)
+            .expect("wallet present");
+        let network = info.core_wallet.network();
+        let map = match leg {
+            DashpayLeg::ReceivingFunds => &info.core_wallet.accounts.dashpay_receival_accounts,
+            DashpayLeg::ExternalAccount => &info.core_wallet.accounts.dashpay_external_accounts,
+        };
+        map.values()
+            .next()
+            .expect("dashpay account present")
+            .managed_account_type()
+            .to_account_type()
+            .derivation_path(network)
+            .expect("dashpay account-level path")
+    }
+
     /// `true` iff `account_type` is the DashPay funds variant matching `leg`.
     fn record_matches_dashpay_leg(account_type: &key_wallet::AccountType, leg: DashpayLeg) -> bool {
         match leg {
@@ -3054,16 +2811,17 @@ mod tests {
             (before, values)
         };
 
+        // 0.09 BIP44 is short of 0.2; name the DashPay-receiving account (2.0
+        // DASH UTXO) so the lock funds from it, with change routed to BIP44.
+        let dashpay_path = dashpay_account_path(&manager, leg).await;
         let (tx, _path) = manager
-            .build_asset_lock_transaction_with_consent(
+            .build_asset_lock_transaction(
                 20_000_000,
                 0,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
-                // 0.09 BIP44 (transparent) is short of 0.2; funding from the
-                // 2.0 DashPay-receiving UTXO is a cross-domain co-spend.
-                CrossDomainConsent::Allowed,
+                Some(dashpay_path),
             )
             .await
             .expect("build DashPay-funded asset lock");
@@ -3236,12 +2994,11 @@ mod tests {
     // fixture derived it from the test wallet's own seed, making it locally
     // signable and MASKING this defect.
 
-    /// The union-of-accounts asset-lock builder must NOT select watch-only
+    /// Default (unmixed BIP44) shielded funding must never select watch-only
     /// `DashpayExternalAccount` UTXOs. The external account here holds the
     /// LARGEST UTXO (0.5 DASH) while signable BIP44 (0.15 DASH) alone covers the
-    /// 0.1-DASH shield, so a naive `LargestFirst` over the union would grab the
-    /// external UTXO FIRST (the pre-fix bug). The build must instead succeed from
-    /// BIP44 alone and leave every external UTXO unspent.
+    /// 0.1-DASH shield; the build must succeed from BIP44 alone and leave every
+    /// external UTXO unspent (default funding never leaves the BIP44 account).
     #[tokio::test]
     async fn asset_lock_funding_excludes_watch_only_dashpay_external_utxos() {
         let (manager, signer) =
@@ -3261,6 +3018,7 @@ mod tests {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
+                None,
             )
             .await
             .expect("asset lock must build from signable BIP44 funds alone");
@@ -3281,8 +3039,8 @@ mod tests {
     /// Watch-only external coins must not be *borrowed* to cover a shortfall.
     /// Signable BIP44 (0.05 DASH) alone is too small for the 0.1-DASH shield;
     /// the only way to cover it would be to (wrongly) spend the 0.5-DASH
-    /// watch-only external UTXO. The build must FAIL with the typed
-    /// insufficient-funds error rather than emit an invalid-signature input.
+    /// watch-only external UTXO. Default funding must FAIL with the typed
+    /// insufficient-funds error rather than reach the external coins.
     #[tokio::test]
     async fn asset_lock_funding_cannot_borrow_watch_only_dashpay_external_utxos() {
         let (manager, signer) =
@@ -3296,6 +3054,7 @@ mod tests {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
+                None,
             )
             .await;
 
@@ -3306,6 +3065,32 @@ mod tests {
             ),
             "must not fund an asset lock from watch-only external coins; got {result:?}"
         );
+
+        // Naming the watch-only external account EXPLICITLY by path must also be
+        // refused — the local mnemonic cannot sign its coins — with the typed
+        // account-operation error, not insufficient-funds.
+        let external_path = dashpay_account_path(&manager, DashpayLeg::ExternalAccount).await;
+        let pathed = manager
+            .build_asset_lock_transaction(
+                10_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(external_path),
+            )
+            .await;
+        match pathed {
+            Err(PlatformWalletError::AssetLockTransaction(msg)) => {
+                assert!(
+                    msg.contains("watch-only"),
+                    "explicit watch-only funding path must be refused as watch-only, got: {msg}"
+                );
+            }
+            other => panic!(
+                "naming a watch-only external account by path must be refused, got {other:?}"
+            ),
+        }
     }
 
     /// Heavy-mixer CoinJoin discovery (dashpay/dash-wallet#1507): the CoinJoin

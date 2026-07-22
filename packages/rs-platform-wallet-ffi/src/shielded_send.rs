@@ -51,7 +51,6 @@ use dpp::shielded::{
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use platform_wallet::CrossDomainConsent;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
@@ -127,6 +126,40 @@ unsafe fn parse_required_platform_address(
             format!("{field_name} is required ({PLATFORM_ADDRESS_LEN} PlatformAddress bytes)"),
         )),
     }
+}
+
+/// Decode an OPTIONAL BIP32 derivation-path string from a raw `(ptr, len)` pair
+/// over the C ABI. A null pointer or zero length is `None` (the default: fund
+/// from the unmixed BIP44 account). Otherwise the bytes are parsed as a UTF-8
+/// BIP32 path (e.g. `"m/44'/5'/0'"`); invalid UTF-8 or a malformed path is a
+/// hard `ErrorInvalidParameter`.
+///
+/// # Safety
+/// `ptr`, when non-null, must point to `len` readable bytes for the duration of
+/// the call.
+unsafe fn parse_optional_derivation_path(
+    ptr: *const u8,
+    len: usize,
+) -> Result<Option<key_wallet::bip32::DerivationPath>, PlatformWalletFFIResult> {
+    use std::str::FromStr;
+    if ptr.is_null() || len == 0 {
+        return Ok(None);
+    }
+    let bytes = std::slice::from_raw_parts(ptr, len);
+    let text = std::str::from_utf8(bytes).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("funding_path is not valid UTF-8: {e}"),
+        )
+    })?;
+    key_wallet::bip32::DerivationPath::from_str(text)
+        .map(Some)
+        .map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invalid funding_path derivation path {text:?}: {e}"),
+            )
+        })
 }
 
 /// Kick off the Halo 2 proving-key build on a background tokio
@@ -922,14 +955,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// for a future DPP-side Orchard multi-output bundle change; today
 /// the orchestration rejects anything but a single recipient.
 ///
-/// `allow_cross_domain` is the cross-privacy-domain co-spend consent
-/// (dashpay/platform#4184). Pass `false` by default: the L1 asset-lock funding
-/// is confined to the transparent BIP44/BIP32 privacy domain. Pass `true` ONLY
-/// after the user has consented to also drawing CoinJoin / DashPay-receiving
-/// funds into the lock (an irreversible on-chain linkage between those domains).
-/// When `false` and only the wallet-wide union could cover the amount, the call
-/// fails with the typed `ErrorAssetLockCrossDomainConsentRequired` code so the
-/// host can prompt for consent and re-issue.
+/// `funding_path_ptr` / `funding_path_len` optionally supply a UTF-8 BIP32
+/// derivation-path string (e.g. `"m/44'/5'/0'"`) naming the SINGLE funds account
+/// whose UTXOs fund the L1 asset lock (dashpay/platform#4184). Pass `null` / `0`
+/// for the default — the unmixed BIP44 account at `account_index`. Pass an
+/// explicit account-level path (e.g. the DIP-9 CoinJoin account path) to shield
+/// previously-mixed coins from that one account. There is no union across
+/// accounts and no consent gate: exactly one funding source participates, and if
+/// it cannot cover the lock the call fails with `ErrorAssetLockInsufficientFunds`.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
@@ -937,6 +970,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 ///   Orchard payment address: 11-byte diversifier + 32-byte pk_d).
 /// - `surplus_output_ptr`, when non-null, must point to
 ///   `surplus_output_len` readable bytes for the duration of the call.
+/// - `funding_path_ptr`, when non-null, must point to `funding_path_len`
+///   readable bytes (UTF-8) for the duration of the call.
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle` produced by
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains
@@ -952,7 +987,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     surplus_output_ptr: *const u8,
     surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
-    allow_cross_domain: bool,
+    funding_path_ptr: *const u8,
+    funding_path_len: usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(recipient_raw_43);
@@ -979,6 +1015,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         "surplus_output",
     ) {
         Ok(s) => s,
+        Err(result) => return result,
+    };
+
+    let funding_path = match parse_optional_derivation_path(funding_path_ptr, funding_path_len) {
+        Ok(p) => p,
         Err(result) => return result,
     };
 
@@ -1029,10 +1070,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 // User-facing funding: wait for the ChainLock indefinitely —
                 // a broadcast asset lock is pending finality, never failed.
                 None,
-                // Cross-privacy-domain co-spend consent (dashpay/platform#4184):
-                // the host sets this only after the user opts into drawing the
-                // L1 lock from CoinJoin / DashPay-receiving funds.
-                CrossDomainConsent::from_allow_flag(allow_cross_domain),
+                // Single funds account named by the caller's derivation path
+                // (dashpay/platform#4184); `None` = the unmixed BIP44 account.
+                funding_path,
             )
             .await
     });
@@ -1188,9 +1228,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 // a broadcast asset lock is pending finality, never failed.
                 None,
                 // Resume replays an already-broadcast lock (no fresh coin
-                // selection), so the cross-domain consent is inert here — the
-                // default single-domain rule is correct.
-                CrossDomainConsent::Denied,
+                // selection), so the funding-source path is inert here.
+                None,
             )
             .await
     });
