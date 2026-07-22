@@ -188,6 +188,7 @@ jobs:
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
+              - packages/document-history-contract/**
               - packages/dpns-contract/**
               - packages/keyword-search-contract/**
               - packages/masternode-reward-shares-contract/**
