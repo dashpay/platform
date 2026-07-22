@@ -123,7 +123,7 @@ where
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
     ));
     PlatformWallet::new(
-        Arc::clone(&sdk),
+        sdk,
         wallet_id,
         wallet_manager,
         balance,

@@ -1,16 +1,16 @@
 //! Transaction broadcasting abstraction.
 //!
-//! Network acceptance, not a socket write, is what counts as success. Two
-//! implementations establish it, chosen by how the wallet runs:
+//! Network acceptance, not a socket write, is what counts as success for the
+//! production path:
 //!
 //! - [`SpvBroadcaster`] (production, SPV wallets): pure P2P via dash-spv's
 //!   acceptance detection (rust-dashcore#913) — the transaction is sent to a
 //!   subset of peers while withheld from the rest, and a withheld peer
 //!   announcing the txid back, an InstantSend lock, or a confirmation proves
 //!   the network accepted it. Trustless; no DAPI involvement.
-//! - [`DapiBroadcaster`] (standalone wallets without an SPV runtime):
-//!   submission through DAPI's Core `sendrawtransaction` bridge, with
-//!   ambiguous responses reconciled via `getTransaction`.
+//! - [`DapiBroadcaster`] (fallback for wallets without an SPV runtime):
+//!   submission via DAPI's gRPC endpoint, with every failure conservatively
+//!   classified as [`BroadcastError::MaybeSent`].
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -72,215 +72,55 @@ pub trait TransactionBroadcaster: Send + Sync {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError>;
 }
 
-#[derive(Debug)]
-enum DapiSubmission {
-    Accepted,
-    AlreadyKnown,
-    Rejected {
-        reason: String,
-    },
-    /// The request provably never left the process (e.g. the DAPI address
-    /// list is empty). Unlike `Uncertain`, nothing was submitted anywhere.
-    NeverSent {
-        reason: String,
-    },
-    Uncertain {
-        reason: String,
-    },
-}
-
-fn classify_dapi_response(txid: Txid, returned_txid: String) -> DapiSubmission {
-    if returned_txid == txid.to_string() {
-        DapiSubmission::Accepted
-    } else {
-        DapiSubmission::Uncertain {
-            reason: format!(
-                "DAPI returned transaction id '{returned_txid}' for submitted transaction {txid}"
-            ),
-        }
-    }
-}
-
-fn classify_dapi_error(
-    error: &dash_sdk::dapi_client::DapiClientError,
-    reason: String,
-) -> DapiSubmission {
-    use dash_sdk::dapi_client::DapiClientError;
-    use dash_sdk::dapi_grpc::tonic::Code;
-
-    // These fire before any request is dispatched: nothing reached the
-    // network, so the submission is provably never-sent rather than
-    // ambiguous. (`NoAvailableAddressesToRetry` is different — addresses
-    // were tried and banned, so an earlier attempt may have delivered.)
-    if matches!(
-        error,
-        DapiClientError::NoAvailableAddresses | DapiClientError::AddressList(_)
-    ) {
-        return DapiSubmission::NeverSent { reason };
-    }
-
-    match grpc_code(error) {
-        Some(Code::AlreadyExists) => DapiSubmission::AlreadyKnown,
-        Some(Code::InvalidArgument | Code::FailedPrecondition) => {
-            DapiSubmission::Rejected { reason }
-        }
-        _ => DapiSubmission::Uncertain { reason },
-    }
-}
-
-#[async_trait]
-trait DapiCoreClient: Send + Sync {
-    async fn submit(&self, transaction: &Transaction) -> DapiSubmission;
-
-    async fn transaction_known(&self, txid: Txid) -> Result<bool, String>;
-}
-
-struct SdkDapiCoreClient {
-    sdk: Arc<dash_sdk::Sdk>,
-}
-
-fn broadcast_request_settings() -> dash_sdk::dapi_client::RequestSettings {
-    dash_sdk::dapi_client::RequestSettings {
-        retries: Some(0),
-        ..dash_sdk::dapi_client::RequestSettings::default()
-    }
-}
-
-impl SdkDapiCoreClient {
-    fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
-        Self { sdk }
-    }
-}
-
-fn grpc_code(
-    error: &dash_sdk::dapi_client::DapiClientError,
-) -> Option<dash_sdk::dapi_grpc::tonic::Code> {
-    use dash_sdk::dapi_client::transport::TransportError;
-    use dash_sdk::dapi_client::DapiClientError;
-
-    match error {
-        DapiClientError::Transport(TransportError::Grpc(status)) => Some(status.code()),
-        DapiClientError::NoAvailableAddressesToRetry(error) => match error.as_ref() {
-            TransportError::Grpc(status) => Some(status.code()),
-        },
-        _ => None,
-    }
-}
-
-#[async_trait]
-impl DapiCoreClient for SdkDapiCoreClient {
-    async fn submit(&self, transaction: &Transaction) -> DapiSubmission {
-        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner};
-        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
-        use dashcore::consensus;
-
-        let txid = transaction.txid();
-        let request = BroadcastTransactionRequest {
-            transaction: consensus::serialize(transaction),
-            allow_high_fees: false,
-            bypass_limits: false,
-        };
-
-        // A broadcast is deliberately single-attempt. If the SDK retried after
-        // a lost success response, a later node could report a conflict and we
-        // could incorrectly release inputs for a transaction already accepted
-        // by the first node.
-        let settings = broadcast_request_settings();
-
-        match self.sdk.execute(request, settings).await.into_inner() {
-            Ok(response) => classify_dapi_response(txid, response.transaction_id),
-            Err(error) => {
-                let reason = format!("DAPI broadcast failed: {error}");
-                classify_dapi_error(&error, reason)
-            }
-        }
-    }
-
-    async fn transaction_known(&self, txid: Txid) -> Result<bool, String> {
-        match self.sdk.get_transaction(&txid.to_string()).await {
-            Ok(Some(fetched)) if fetched.transaction.txid() == txid => Ok(true),
-            Ok(Some(fetched)) => Err(format!(
-                "DAPI getTransaction returned {} while reconciling {}",
-                fetched.transaction.txid(),
-                txid
-            )),
-            Ok(None) => Ok(false),
-            Err(error) => Err(format!("DAPI getTransaction failed: {error}")),
-        }
-    }
-}
-
-/// Broadcasts transactions through Platform's DAPI Core bridge.
+/// Broadcasts transactions via Platform's DAPI gRPC endpoint.
+///
+/// Used by default when no SPV runtime is available.
 pub struct DapiBroadcaster {
-    client: Arc<dyn DapiCoreClient>,
+    sdk: Arc<dash_sdk::Sdk>,
 }
 
 impl DapiBroadcaster {
     pub fn new(sdk: Arc<dash_sdk::Sdk>) -> Self {
-        Self {
-            client: Arc::new(SdkDapiCoreClient::new(sdk)),
-        }
+        Self { sdk }
     }
-
-    #[cfg(test)]
-    fn from_client(client: Arc<dyn DapiCoreClient>) -> Self {
-        Self { client }
-    }
-
-    /// Submit through DAPI and reconcile ambiguous responses via
-    /// `getTransaction`, keeping the never-sent case distinguishable so a
-    /// caller with another delivery channel (SPV) can still try it.
-    async fn submit_outcome(&self, transaction: &Transaction) -> DapiOutcome {
-        let txid = transaction.txid();
-        match self.client.submit(transaction).await {
-            DapiSubmission::Accepted | DapiSubmission::AlreadyKnown => DapiOutcome::Accepted,
-            DapiSubmission::Rejected { reason } => DapiOutcome::Rejected { reason },
-            // Nothing was submitted, so there is nothing to reconcile.
-            DapiSubmission::NeverSent { reason } => DapiOutcome::NeverSent { reason },
-            DapiSubmission::Uncertain { reason } => {
-                match self.client.transaction_known(txid).await {
-                    Ok(true) => DapiOutcome::Accepted,
-                    Ok(false) => DapiOutcome::Uncertain {
-                        reason: format!("{reason}; follow-up getTransaction did not find {txid}"),
-                    },
-                    Err(lookup_reason) => DapiOutcome::Uncertain {
-                        reason: format!("{reason}; {lookup_reason}"),
-                    },
-                }
-            }
-        }
-    }
-}
-
-/// Post-reconciliation DAPI outcome.
-#[derive(Debug)]
-enum DapiOutcome {
-    Accepted,
-    Rejected {
-        reason: String,
-    },
-    /// The transaction provably never left the process through DAPI.
-    NeverSent {
-        reason: String,
-    },
-    Uncertain {
-        reason: String,
-    },
 }
 
 #[async_trait]
 impl TransactionBroadcaster for DapiBroadcaster {
     async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
-        let txid = transaction.txid();
-        match self.submit_outcome(transaction).await {
-            DapiOutcome::Accepted => Ok(txid),
-            DapiOutcome::Rejected { reason } => Err(BroadcastError::Rejected { reason }),
-            // With DAPI as the only channel, never-sent is definitive: no
-            // bytes reached the network, so the reservation is safe to
-            // release for an immediate retry.
-            DapiOutcome::NeverSent { reason } => Err(BroadcastError::Rejected { reason }),
-            DapiOutcome::Uncertain { reason } => Err(BroadcastError::MaybeSent { reason }),
-        }
+        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
+        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
+        use dashcore::consensus;
+
+        let tx_bytes = consensus::serialize(transaction);
+
+        let request = BroadcastTransactionRequest {
+            transaction: tx_bytes,
+            allow_high_fees: false,
+            bypass_limits: false,
+        };
+
+        // Every DAPI failure is classified `MaybeSent`: `sdk.execute` retries
+        // across nodes internally (RequestSettings::default()), so the error
+        // surfaced here is only the *last* attempt's — an earlier attempt may
+        // have delivered the transaction even though the response was lost
+        // (the classic shape being a node that accepts the tx while its gRPC
+        // response times out, followed by a retry that fails differently).
+        // Distinguishing a genuinely pre-send rejection would require
+        // disabling the internal retries and inspecting transport errors;
+        // until then the conservative classification keeps reserved inputs
+        // safe from double-spends at the cost of holding them for the
+        // reservation TTL.
+        let _response = self
+            .sdk
+            .execute(request, RequestSettings::default())
+            .await
+            .into_inner()
+            .map_err(|e| BroadcastError::MaybeSent {
+                reason: format!("DAPI broadcast failed: {}", e),
+            })?;
+
+        Ok(transaction.txid())
     }
 }
 
@@ -386,41 +226,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
-    use dashcore::hashes::Hash;
-
     use super::*;
-
-    struct FakeDapiClient {
-        submission: Mutex<Option<DapiSubmission>>,
-        known: Result<bool, String>,
-        lookup_calls: AtomicUsize,
-    }
-
-    impl FakeDapiClient {
-        fn new(submission: DapiSubmission, known: Result<bool, String>) -> Self {
-            Self {
-                submission: Mutex::new(Some(submission)),
-                known,
-                lookup_calls: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    #[async_trait]
-    impl DapiCoreClient for FakeDapiClient {
-        async fn submit(&self, _transaction: &Transaction) -> DapiSubmission {
-            self.submission
-                .lock()
-                .expect("submission mutex")
-                .take()
-                .expect("one submission")
-        }
-
-        async fn transaction_known(&self, _txid: Txid) -> Result<bool, String> {
-            self.lookup_calls.fetch_add(1, Ordering::SeqCst);
-            self.known.clone()
-        }
-    }
 
     struct AcceptanceSpy {
         calls: AtomicUsize,
@@ -460,160 +266,6 @@ mod tests {
             output: Vec::new(),
             special_transaction_payload: None,
         }
-    }
-
-    fn dapi_broadcaster(client: Arc<FakeDapiClient>) -> DapiBroadcaster {
-        DapiBroadcaster::from_client(client)
-    }
-
-    #[tokio::test]
-    async fn accepted_and_already_known_are_successful_without_lookup() {
-        for submission in [DapiSubmission::Accepted, DapiSubmission::AlreadyKnown] {
-            let client = Arc::new(FakeDapiClient::new(submission, Ok(false)));
-            let result = dapi_broadcaster(client.clone())
-                .broadcast(&transaction())
-                .await;
-
-            assert!(result.is_ok());
-            assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 0);
-        }
-    }
-
-    #[tokio::test]
-    async fn explicit_rejection_is_not_reconciled() {
-        let client = Arc::new(FakeDapiClient::new(
-            DapiSubmission::Rejected {
-                reason: "policy rejection".to_string(),
-            },
-            Ok(true),
-        ));
-        let result = dapi_broadcaster(client.clone())
-            .broadcast(&transaction())
-            .await;
-
-        assert!(matches!(result, Err(BroadcastError::Rejected { .. })));
-        assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
-    async fn uncertain_submission_is_accepted_only_when_lookup_finds_it() {
-        for (known, accepted) in [(Ok(true), true), (Ok(false), false)] {
-            let client = Arc::new(FakeDapiClient::new(
-                DapiSubmission::Uncertain {
-                    reason: "timeout".to_string(),
-                },
-                known,
-            ));
-            let result = dapi_broadcaster(client.clone())
-                .broadcast(&transaction())
-                .await;
-
-            assert_eq!(result.is_ok(), accepted);
-            if !accepted {
-                assert!(matches!(result, Err(BroadcastError::MaybeSent { .. })));
-            }
-            assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 1);
-        }
-    }
-
-    #[tokio::test]
-    async fn lookup_failure_keeps_uncertain_submission_unknown() {
-        let client = Arc::new(FakeDapiClient::new(
-            DapiSubmission::Uncertain {
-                reason: "timeout".to_string(),
-            },
-            Err("lookup unavailable".to_string()),
-        ));
-        let result = dapi_broadcaster(client).broadcast(&transaction()).await;
-
-        assert!(matches!(result, Err(BroadcastError::MaybeSent { .. })));
-    }
-
-    /// DAPI-only broadcaster: a never-sent submission is definitive (safe to
-    /// release) and needs no getTransaction reconciliation.
-    #[tokio::test]
-    async fn never_sent_submission_is_definitive_without_lookup() {
-        let client = Arc::new(FakeDapiClient::new(
-            DapiSubmission::NeverSent {
-                reason: "no addresses".to_string(),
-            },
-            Ok(true),
-        ));
-        let result = dapi_broadcaster(client.clone())
-            .broadcast(&transaction())
-            .await;
-
-        assert!(matches!(result, Err(BroadcastError::Rejected { .. })));
-        assert_eq!(client.lookup_calls.load(Ordering::SeqCst), 0);
-    }
-
-    fn grpc_error(
-        code: dash_sdk::dapi_grpc::tonic::Code,
-    ) -> dash_sdk::dapi_client::DapiClientError {
-        use dash_sdk::dapi_client::transport::TransportError;
-        use dash_sdk::dapi_client::DapiClientError;
-        use dash_sdk::dapi_grpc::tonic::Status;
-
-        DapiClientError::Transport(TransportError::Grpc(Status::new(code, "test")))
-    }
-
-    #[test]
-    fn tonic_submission_codes_map_to_authoritative_states() {
-        use dash_sdk::dapi_grpc::tonic::Code;
-
-        assert!(matches!(
-            classify_dapi_error(&grpc_error(Code::AlreadyExists), "known".to_string()),
-            DapiSubmission::AlreadyKnown
-        ));
-        for code in [Code::InvalidArgument, Code::FailedPrecondition] {
-            assert!(matches!(
-                classify_dapi_error(&grpc_error(code), "rejected".to_string()),
-                DapiSubmission::Rejected { .. }
-            ));
-        }
-        for code in [Code::DeadlineExceeded, Code::Unavailable] {
-            assert!(matches!(
-                classify_dapi_error(&grpc_error(code), "transport".to_string()),
-                DapiSubmission::Uncertain { .. }
-            ));
-        }
-    }
-
-    /// `NoAvailableAddresses` fires before any request is dispatched, so it
-    /// must classify never-sent — not ambiguous. (Regression for the stuck
-    /// UTXO reservation reported on the predecessor PR: unknown kept the
-    /// reservation and the retry failed with artificial insufficient funds.)
-    #[test]
-    fn empty_address_list_classifies_never_sent() {
-        use dash_sdk::dapi_client::DapiClientError;
-
-        assert!(matches!(
-            classify_dapi_error(
-                &DapiClientError::NoAvailableAddresses,
-                "no addresses".to_string()
-            ),
-            DapiSubmission::NeverSent { .. }
-        ));
-    }
-
-    #[test]
-    fn dapi_submission_disables_sdk_retries() {
-        assert_eq!(broadcast_request_settings().retries, Some(0));
-    }
-
-    #[test]
-    fn empty_or_mismatched_response_txid_requires_reconciliation() {
-        let expected = transaction().txid();
-        for returned in [String::new(), Txid::all_zeros().to_string()] {
-            assert!(matches!(
-                classify_dapi_response(expected, returned),
-                DapiSubmission::Uncertain { .. }
-            ));
-        }
-        assert!(matches!(
-            classify_dapi_response(expected, expected.to_string()),
-            DapiSubmission::Accepted
-        ));
     }
 
     /// The SPV broadcaster maps dash-spv's verdict directly: peer-echo
