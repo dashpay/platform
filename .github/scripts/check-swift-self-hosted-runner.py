@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify that untrusted fork pull requests cannot reach the Swift self-hosted runner.
 
-Defense in depth for DS-CAND-103. For pull_request events GitHub evaluates
+Defense in depth. For pull_request events GitHub evaluates
 workflow YAML from the PR merge commit, so a malicious fork can edit the
 guards this script checks — and this script itself. The authoritative trust
 boundary is therefore server-side: the repository Actions setting that
