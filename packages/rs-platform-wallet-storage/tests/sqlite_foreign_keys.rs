@@ -65,62 +65,6 @@ fn tc047_delete_wallet_cascade() {
     assert_eq!(n, 0);
 }
 
-/// deleting a core_transactions row sets `spent_in_txid = NULL` on UTXOs.
-#[test]
-fn tc048_setnull_on_tx_delete() {
-    let (persister, _tmp, _path) = fresh_persister();
-    let w = wid(0xC2);
-    ensure_wallet_meta(&persister, &w);
-    let conn = persister.lock_conn_for_test();
-    let txid = [4u8; 32];
-    let outpoint = vec![0u8; 36];
-    conn.execute(
-        "INSERT INTO core_transactions (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
-         VALUES (?1, ?2, 1, NULL, NULL, 0, X'01')",
-        rusqlite::params![w.as_slice(), &txid[..]],
-    )
-    .unwrap();
-    conn.execute(
-        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
-         VALUES (?1, ?2, 100, X'00', NULL, 0, 1, ?3)",
-        rusqlite::params![w.as_slice(), &outpoint, &txid[..]],
-    )
-    .unwrap();
-    conn.execute(
-        "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
-        rusqlite::params![w.as_slice(), &txid[..]],
-    )
-    .unwrap();
-
-    // The UTXO row must SURVIVE the tx delete — the single-column trigger
-    // clears `spent_in_txid` only. A future change that turns it into a
-    // cascading DELETE must fail here, not pass silently.
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-            rusqlite::params![w.as_slice(), &outpoint],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(count, 1, "UTXO row must survive the transaction delete");
-
-    let (wallet_id, value, account_index, spent_in): (Vec<u8>, i64, i64, Option<Vec<u8>>) = conn
-        .query_row(
-            "SELECT wallet_id, value, account_index, spent_in_txid \
-             FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
-            rusqlite::params![w.as_slice(), &outpoint],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .unwrap();
-    assert_eq!(wallet_id, w.as_slice(), "wallet_id must be preserved");
-    assert_eq!(value, 100, "value must be preserved");
-    assert_eq!(account_index, 0, "account_index must be preserved");
-    assert!(
-        spent_in.is_none(),
-        "spent_in_txid should have been set to NULL"
-    );
-}
-
 /// TC-049: `identity_keys` rows carry TWO `ON DELETE CASCADE` parents
 /// (`wallet_id -> wallets`, `identity_id -> identities`).
 /// Deleting the wallet must purge the child via that dual-cascade — both

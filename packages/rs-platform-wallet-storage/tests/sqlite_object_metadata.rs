@@ -526,9 +526,8 @@ fn det_write_before_parent_then_create_then_delete() {
     assert_eq!(p.get(&scope, "alias").unwrap(), None);
 }
 
-/// The meta_* triggers coexist with the `setnull_core_utxos_on_tx_delete`
-/// trigger during delete_wallet: a wallet with core_transactions +
-/// core_utxos (a UTXO spent_in that tx) deletes cleanly, leaving nothing.
+/// Wallet deletion cascades through core transactions and UTXOs alongside
+/// the metadata cleanup triggers.
 #[test]
 fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
     use rusqlite::params;
@@ -549,9 +548,9 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
         .expect("seed core_transactions");
         conn.execute(
             "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
-             VALUES (?1, ?2, 1000, X'00', 0, 1, ?3)",
-            params![w.as_slice(), outpoint.as_slice(), txid.as_slice()],
+                (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 1000, X'00', 1)",
+            params![w.as_slice(), outpoint.as_slice()],
         )
         .expect("seed core_utxos");
     }
@@ -1018,7 +1017,7 @@ fn delete_wallet_leaves_no_surviving_rows() {
         let stmts: &[(&str, &[&dyn rusqlite::ToSql])] = &[
             ("INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard_bip44', 0, X'00')", &[&a.as_slice()]),
             ("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, X'00')", &[&a.as_slice(), &txid]),
-            ("INSERT INTO core_utxos (wallet_id, outpoint, value, script, account_index, spent) VALUES (?1, ?2, 0, X'00', 0, 0)", &[&a.as_slice(), &outpoint]),
+            ("INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) VALUES (?1, ?2, 0, X'00', 0)", &[&a.as_slice(), &outpoint]),
             ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", &[&a.as_slice(), &txid]),
             ("INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 1, 1)", &[&a.as_slice()]),
             ("INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)", &[&a.as_slice(), &idy.as_slice()]),

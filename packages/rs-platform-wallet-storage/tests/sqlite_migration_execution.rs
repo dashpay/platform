@@ -111,18 +111,12 @@ fn assert_full_data_preserved(conn: &Connection) {
         ),
         1
     );
-    let (utxos, acct): (i64, i64) = conn
-        .query_row(
-            "SELECT COUNT(*), MAX(account_index) FROM core_utxos WHERE wallet_id = ?1",
-            rusqlite::params![full.as_slice()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(utxos, 1, "UTXO preserved");
-    assert_eq!(
-        acct, 0,
-        "pre-existing UTXO keeps account_index=0 (R7 one-way backfill)"
+    let utxos = count(
+        conn,
+        "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+        &full,
     );
+    assert_eq!(utxos, 1, "UTXO preserved");
     assert_eq!(
         count(
             conn,

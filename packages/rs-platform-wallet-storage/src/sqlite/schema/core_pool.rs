@@ -295,9 +295,7 @@ pub struct OwningAccount {
 }
 
 /// Full owning-account identity for a UTXO, matched by its `script_pubkey`
-/// against a pool row. `None` when no pool row covers the script — the caller
-/// then falls back to the one-way historical-attribution default (R7): funds
-/// are never dropped, only conservatively bucketed.
+/// against a pool row. `None` when no pool row covers the script.
 pub(crate) fn owning_account_for_script(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -346,18 +344,6 @@ pub(crate) fn owning_account_for_script(
     }))
 }
 
-/// Owning account index for a UTXO, matched by its `script_pubkey` against a
-/// pool row. `None` when no pool row covers the script — the UTXO writer
-/// then falls back to account 0 (the one-way historical-attribution default,
-/// R7): funds are never dropped, only conservatively bucketed.
-pub fn account_index_for_script(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    script: &[u8],
-) -> Result<Option<u32>, WalletStorageError> {
-    Ok(owning_account_for_script(tx, wallet_id, script)?.map(|o| o.account_index))
-}
-
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
 /// (`used = 1`), each paired with its owning account. This is the
 /// *known-owner* reuse-guard source: the pool row carries the account
@@ -367,10 +353,11 @@ pub fn account_index_for_script(
 /// partial pool snapshot never enumerates) must surface both sources, never
 /// drop the historical ones.
 ///
-/// A `script` reused across accounts yields several rows; the owner is picked
-/// by the same PK-ordered tie-break as [`owning_account_for_script`]
-/// (`account_type` first), so both resolvers attribute a shared script
-/// identically. `network` turns each stored `script` back into an
+/// A `script` reused across accounts yields several rows; this reader applies
+/// the same PK-ordered tie-break as [`owning_account_for_script`] among rows
+/// marked used. An unused row can therefore own a UTXO while a different used
+/// row supplies the reuse guard, which preserves each resolver's distinct
+/// source contract. `network` turns each stored `script` back into an
 /// [`Address`](dashcore::Address); a script that isn't a valid address is a
 /// hard error — corruption is never silently dropped, matching
 /// [`crate::sqlite::schema::core_state::load_used_addresses`].
@@ -456,12 +443,14 @@ mod tests {
         conn
     }
 
-    /// `account_index_for_script` is deterministic when several pool rows
-    /// share one script: the PK-ordered tie-break (`account_type` first) picks
-    /// the same row regardless of insert order, closing the `LIMIT 1`-without-
-    /// `ORDER BY` non-determinism.
+    /// UTXO ownership considers every pool row, while the reuse guard selects
+    /// only rows explicitly marked used.
     #[test]
-    fn account_index_for_script_is_deterministic_on_shared_script() {
+    fn shared_script_resolvers_apply_their_distinct_source_filters() {
+        use dashcore::address::Payload;
+        use dashcore::hashes::Hash;
+        use dashcore::PubkeyHash;
+
         let mut conn = migrated_conn();
         let w = [0x77u8; 32];
         conn.execute(
@@ -469,7 +458,11 @@ mod tests {
             params![&w[..]],
         )
         .unwrap();
-        let script = [0xABu8; 25];
+        let address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0xAB; 20])),
+        );
+        let script = address.script_pubkey();
         let tx = conn.transaction().unwrap();
         // Same script under two account types with different account_index.
         // Insert the later-sorting `standard_bip44` FIRST so a bare `LIMIT 1`
@@ -479,22 +472,32 @@ mod tests {
                 (wallet_id, account_type, account_index, key_class, pool_type, \
                  address_index, script, used) \
              VALUES (?1, 'standard_bip44', 9, 0, 0, 0, ?2, 1)",
-            params![&w[..], &script[..]],
+            params![&w[..], script.as_bytes()],
         )
         .unwrap();
         tx.execute(
             "INSERT INTO core_address_pool \
                 (wallet_id, account_type, account_index, key_class, pool_type, \
                  address_index, script, used) \
-             VALUES (?1, 'coinjoin', 4, 0, 0, 0, ?2, 1)",
-            params![&w[..], &script[..]],
+             VALUES (?1, 'coinjoin', 4, 0, 0, 0, ?2, 0)",
+            params![&w[..], script.as_bytes()],
         )
         .unwrap();
         // ORDER BY account_type ASC: 'coinjoin' < 'standard_bip44', so the
         // coinjoin row (account_index 4) is the deterministic winner.
-        let got = account_index_for_script(&tx, &w, &script).unwrap();
-        assert_eq!(got, Some(4), "tie-break must pick the account_type-min row");
+        let got = owning_account_for_script(&tx, &w, script.as_bytes())
+            .unwrap()
+            .expect("shared script owner");
+        assert_eq!(
+            got.account_index, 4,
+            "tie-break must pick the account_type-min row"
+        );
         tx.commit().unwrap();
+
+        let used = load_used_addresses(&conn, &w, dashcore::Network::Testnet).unwrap();
+        assert_eq!(used.len(), 1);
+        assert_eq!(used[0].0, address);
+        assert_eq!(used[0].1.account_index, 9);
     }
 
     /// A stored `script` that parses as bytes but not as an address must
