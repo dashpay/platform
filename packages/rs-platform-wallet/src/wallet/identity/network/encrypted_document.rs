@@ -98,6 +98,34 @@ where
     Ok(next)
 }
 
+/// [`reserve_next_index`] with the deterministic payload-size gate run FIRST, so
+/// an over-large payload — one that MUST fail — never consumes an index.
+///
+/// The size check ([`ensure_tx_metadata_payload_fits`]) is a pure, deterministic
+/// bound (`payload_len <= MAX_TX_METADATA_PLAINTEXT_LEN`) that needs no network
+/// and no key material. Running it before the allocator is touched means an
+/// oversized payload returns the typed
+/// [`PlatformWalletError::TxMetadataPayloadTooLarge`] WITHOUT seeding the
+/// high-water or advancing it — no index is reserved, so the allocator leaves no
+/// gap for a request that was always going to be rejected. Only once the payload
+/// is known to fit do we (lazily, under the lock) seed/hand out the next index
+/// (dashpay/platform#4186 review: validate size before allocating the index).
+pub(crate) async fn reserve_next_index_checked<S>(
+    allocator: &tokio::sync::Mutex<std::collections::HashMap<Identifier, u32>>,
+    owner: &Identifier,
+    payload_len: usize,
+    seed: S,
+) -> Result<u32, PlatformWalletError>
+where
+    S: std::future::Future<Output = Result<u32, PlatformWalletError>>,
+{
+    // Deterministic, network-free size gate BEFORE any allocation: an oversized
+    // payload fails here, so `seed` is never polled and the high-water is never
+    // seeded/advanced — no consumed index, no gap.
+    ensure_tx_metadata_payload_fits(payload_len)?;
+    reserve_next_index(allocator, owner, seed).await
+}
+
 /// Where one encrypted-document call derives the per-document txMetadata AES
 /// key from. Selected by the CALLER (the FFI layer) from the wallet's shape —
 /// the same capability convention as the identity discovery / key-preview
@@ -358,27 +386,44 @@ impl IdentityWallet {
     /// each carry a fresh random IV, decrypt independently, and are BOTH
     /// returned. A duplicate index is not even an extra decrypt attempt (the
     /// reader never guesses indices); no document is overwritten or shadowed.
+    ///
+    /// ## Size validated BEFORE allocating (no index consumed on failure)
+    /// `payload_len` is the plaintext length of the document about to be sealed.
+    /// It is checked against
+    /// [`MAX_TX_METADATA_PLAINTEXT_LEN`](crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN)
+    /// up front — a pure,
+    /// network-free bound — via [`reserve_next_index_checked`], so an oversized
+    /// payload (which the deterministic 4063-byte limit MUST reject) fails with
+    /// [`PlatformWalletError::TxMetadataPayloadTooLarge`] WITHOUT ever counting on
+    /// Platform or advancing the allocator's high-water. An always-doomed request
+    /// therefore leaves no index gap (dashpay/platform#4186 review).
     pub async fn allocate_encryption_key_index(
         &self,
         owner_identity_id: &Identifier,
         contract_id: &Identifier,
         document_type_name: &str,
+        payload_len: usize,
     ) -> Result<u32, PlatformWalletError> {
-        reserve_next_index(&self.enc_key_index_allocator, owner_identity_id, async {
-            let count = self
-                .count_owned_txmetadata_documents(
-                    contract_id,
-                    owner_identity_id,
-                    document_type_name,
-                )
-                .await?;
-            let index = next_encryption_key_index_from_count(count);
-            breadcrumb(&format!(
-                "allocate_encryption_key_index: seeded owner={owner_identity_id} \
-                 existing_count={count} next_index={index}"
-            ));
-            Ok(index)
-        })
+        reserve_next_index_checked(
+            &self.enc_key_index_allocator,
+            owner_identity_id,
+            payload_len,
+            async {
+                let count = self
+                    .count_owned_txmetadata_documents(
+                        contract_id,
+                        owner_identity_id,
+                        document_type_name,
+                    )
+                    .await?;
+                let index = next_encryption_key_index_from_count(count);
+                breadcrumb(&format!(
+                    "allocate_encryption_key_index: seeded owner={owner_identity_id} \
+                     existing_count={count} next_index={index}"
+                ));
+                Ok(index)
+            },
+        )
         .await
     }
 
@@ -905,5 +950,55 @@ mod allocator_tests {
         let mut got = [i1, i2];
         got.sort_unstable();
         assert_eq!(got, [1, 2], "the two racing indices must be exactly 1 and 2");
+    }
+
+    /// An oversized payload on the auto-index path fails with the typed
+    /// `TxMetadataPayloadTooLarge` BEFORE the allocator is touched: the seed is
+    /// never polled, so the high-water is neither seeded nor advanced — no index
+    /// is consumed and no gap is left (dashpay/platform#4186 review). A
+    /// subsequent well-sized reservation for the same owner still starts at the
+    /// legacy `1 + count(0) == 1`, proving nothing was reserved by the doomed
+    /// request.
+    #[tokio::test]
+    async fn oversized_payload_does_not_advance_highwater() {
+        use crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN;
+
+        let alloc = empty_allocator();
+        let owner = Identifier::from([8u8; 32]);
+
+        // 4064 bytes (MAX + 1) is the first rejected length. The seed panics if
+        // polled — proving the size gate short-circuits before any allocation.
+        let result = reserve_next_index_checked(
+            &alloc,
+            &owner,
+            MAX_TX_METADATA_PLAINTEXT_LEN + 1,
+            async { unreachable!("seed must not run when the payload is oversized") },
+        )
+        .await;
+        match result {
+            Err(PlatformWalletError::TxMetadataPayloadTooLarge { len, max }) => {
+                assert_eq!(len, MAX_TX_METADATA_PLAINTEXT_LEN + 1);
+                assert_eq!(max, MAX_TX_METADATA_PLAINTEXT_LEN);
+            }
+            other => panic!("expected TxMetadataPayloadTooLarge, got {other:?}"),
+        }
+
+        // High-water NOT advanced: the owner was never inserted into the map.
+        assert!(
+            alloc.lock().await.get(&owner).is_none(),
+            "an oversized payload must not seed/advance the allocator high-water"
+        );
+
+        // The next well-sized reservation still seeds fresh at 1 — no gap was
+        // left by the rejected oversized request.
+        let index = reserve_next_index_checked(&alloc, &owner, 0, async {
+            Ok(next_encryption_key_index_from_count(0))
+        })
+        .await
+        .expect("well-sized reservation seeds ok");
+        assert_eq!(
+            index, 1,
+            "the first index after a rejected oversized payload must still be 1 (no gap)"
+        );
     }
 }
