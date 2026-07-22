@@ -276,11 +276,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // broadcast once (that's what `Broadcast` means), so it may
                 // still be in a mempool or already mined — in which case the
                 // network reports "already known" / "already in block
-                // chain". The broadcaster can't distinguish that from a real
-                // rejection (DAPI classifies every failure as `MaybeSent`),
-                // so we log and proceed to `wait_for_proof` regardless
-                // rather than failing the resume on a tx that is actually
-                // fine. If the tx really was mined, `wait_for_proof`
+                // chain". DAPI reconciles ambiguous responses with
+                // `getTransaction`, but a resumed lock still treats a
+                // re-broadcast error as best-effort: the original submission
+                // may already be mined or known to a different node. We log
+                // and proceed to `wait_for_proof` regardless. If the tx really
+                // was mined, `wait_for_proof`
                 // resolves immediately from the SPV/persisted record.
                 if let Err(e) = self.broadcaster.broadcast(&tx).await {
                     tracing::debug!(
