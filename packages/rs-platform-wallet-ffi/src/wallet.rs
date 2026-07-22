@@ -433,7 +433,7 @@ pub unsafe extern "C" fn platform_wallet_destroy(handle: Handle) -> PlatformWall
 mod destroy_tests {
     use super::*;
     use crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY;
-    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use platform_wallet::test_support::test_platform_wallet_manager;
 
     fn dummy_tx() -> dashcore::Transaction {
@@ -475,7 +475,7 @@ mod destroy_tests {
                 .register(
                     core.clone(),
                     dummy_tx(),
-                    Some(StandardAccountType::BIP44Account),
+                    AccountTypePreference::BIP44,
                     0,
                     // This test exercises only the destroy-time sweep, not the
                     // age guard, so the reservation height is irrelevant here.

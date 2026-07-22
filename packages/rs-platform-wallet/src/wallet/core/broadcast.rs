@@ -1,11 +1,10 @@
 use dashcore::Transaction;
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
 use super::SignedCoreTransaction;
-use crate::broadcaster::TransactionBroadcaster;
-use crate::wallet::reservations::{
-    broadcast_releasing_on_rejection, release_reservation_after_rejected_broadcast,
-};
+use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::wallet::reservations::broadcast_releasing_on_rejection;
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -89,39 +88,46 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         .map_err(Into::into)
     }
 
-    /// Release the funding account's UTXO reservation for `transaction` without
-    /// broadcasting — the "payment abandoned / merchant server nacked" arm of
-    /// the deferred build → broadcast/release lifecycle
-    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry)).
+    /// Broadcast a raw signed `transaction` for the deferred-payment
+    /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry), reconciling the
+    /// funding reservation on failure.
     ///
-    /// `build_signed` reserves the selected inputs and leaves the reservation
-    /// held; when the caller decides never to broadcast, this returns those
-    /// inputs to spendable so a later build can reselect them. Idempotent at the
-    /// account layer (releasing an already-released reservation is a no-op), and
-    /// best-effort: a missing wallet/account is logged, not surfaced, since
-    /// there is nothing actionable to reconcile.
+    /// Same policy as
+    /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction):
+    /// a definitive [`BroadcastError::Rejected`] releases the reservation for an
+    /// immediate rebuild; an ambiguous `MaybeSent` keeps it. Unlike the
+    /// `StandardAccountType`-typed
+    /// [`broadcast_transaction_releasing_reservation`](Self::broadcast_transaction_releasing_reservation)
+    /// used by the immediate send path, this takes an [`AccountTypePreference`]
+    /// so it ALSO reconciles a CoinJoin-funded deferred payment — one whose
+    /// `build_signed`/`finalize` reserved the selected inputs but which has no
+    /// `StandardAccountType`, and which previously kept its reservation held
+    /// until the TTL backstop.
     ///
-    /// `account_type`/`account_index` identify the funding account handed to
-    /// `set_funding` when the transaction was built.
+    /// The release delegates to
+    /// [`release_transaction_reservation`](Self::release_transaction_reservation),
+    /// so it acts only on the wallet *generation* this handle names (a wallet
+    /// re-created under the same id between build and broadcast cannot have its
+    /// reservation freed by this token).
     ///
-    /// Named distinctly from the `AccountTypePreference`-typed
-    /// [`release_transaction_reservation`](Self::release_transaction_reservation)
-    /// (the finalized-transaction abandon path); this `StandardAccountType`
-    /// form serves the deferred [`SignedPaymentRegistry`](crate::SignedPaymentRegistry).
-    pub async fn release_payment_reservation(
+    /// `account_type`/`account_index` identify the funding account handed to the
+    /// builder when the transaction was finalized.
+    pub(crate) async fn broadcast_payment_releasing_reservation(
         &self,
-        account_type: StandardAccountType,
+        account_type: AccountTypePreference,
         account_index: u32,
         transaction: &Transaction,
-    ) {
-        release_reservation_after_rejected_broadcast(
-            &self.wallet_manager,
-            &self.wallet_id,
-            account_type,
-            account_index,
-            transaction,
-        )
-        .await
+    ) -> Result<dashcore::Txid, PlatformWalletError> {
+        match self.broadcaster.broadcast(transaction).await {
+            Ok(txid) => Ok(txid),
+            Err(error) => {
+                if matches!(error, BroadcastError::Rejected { .. }) {
+                    self.release_transaction_reservation(account_type, account_index, transaction)
+                        .await;
+                }
+                Err(error.into())
+            }
+        }
     }
 }
 

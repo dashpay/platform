@@ -247,7 +247,12 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
         crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.register(
             wallet.core().clone(),
             finalized.transaction().clone(),
-            account_type.as_standard_account_type(),
+            // Retain the FULL account handle (CoinJoin included), not just the
+            // `StandardAccountType` subset: `finalize` reserved the selected
+            // inputs regardless of variant, so a CoinJoin-funded deferred payment
+            // must be able to release them immediately on rejection/abandon
+            // rather than stranding them until the 24-block TTL.
+            account_type.into(),
             account_index,
             // Baseline the age guard on the reservation's OWN stamp height,
             // captured inside finalize's funding critical section before the
