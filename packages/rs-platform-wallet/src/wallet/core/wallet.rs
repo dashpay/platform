@@ -97,6 +97,17 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             && Arc::ptr_eq(&self.balance, &other.balance)
     }
 
+    /// This handle's per-generation balance `Arc` — the generation-identity
+    /// marker (see [`is_same_generation`](Self::is_same_generation)). The
+    /// manager stores the same `Arc` in `PlatformWalletInfo.balance`, so a
+    /// reservation-cleanup path can, **under the manager lock**, compare this
+    /// against the wallet currently registered under `wallet_id` and act only if
+    /// they are the same generation — binding a validate-then-mutate to one lock
+    /// hold and refusing to touch a generation re-created under the same id.
+    pub(crate) fn generation(&self) -> &Arc<WalletBalance> {
+        &self.balance
+    }
+
     pub async fn set_gap_limit(
         &self,
         account_type: AccountTypePreference,
