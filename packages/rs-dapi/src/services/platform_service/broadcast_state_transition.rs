@@ -215,6 +215,10 @@ fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
         ));
     }
 
+    // `latest()` is a static upper bound, not the network's active version:
+    // every released version so far shares the same limit, and if a future
+    // version raises it, latest ≥ active keeps this a pure pre-filter —
+    // Drive still enforces the active version's limit authoritatively.
     let max_size = PlatformVersion::latest()
         .system_limits
         .max_state_transition_size as usize;
