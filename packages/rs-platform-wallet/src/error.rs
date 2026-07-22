@@ -77,42 +77,17 @@ pub enum PlatformWalletError {
     /// UI) can render a precise shortfall instead of a stringly-typed
     /// "Insufficient funds" message.
     ///
-    /// After dashpay/platform#4073 the `available` figure reflects the spendable
-    /// funds the coin selector was actually allowed to draw on for shielded
-    /// funding. Under the default single-privacy-domain rule (dashpay/platform#4184)
-    /// that is the transparent domain (BIP44 + BIP32); with explicit cross-domain
-    /// consent it is the wallet-wide union (BIP44 + BIP32 + CoinJoin + DashPay).
-    /// Either way a shortfall here means the *permitted* funding set is short —
-    /// not that funds are stranded on an unreachable derivation account. When the
-    /// wider union WOULD cover the amount but the default domain does not, the
-    /// selector returns [`Self::AssetLockCrossDomainConsentRequired`] instead of
-    /// this variant.
+    /// For shielded fund-from-asset-lock the `available` figure reflects the
+    /// single funds account the caller selected by derivation path (the unmixed
+    /// BIP44 account by default, or an explicit account such as CoinJoin). A
+    /// shortfall here means that one account is short — funding never unions
+    /// across accounts, so a different source must be named explicitly rather
+    /// than combined automatically.
     #[error(
         "asset lock coin selection is short: available {available} duffs, \
          required {required} duffs"
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
-
-    /// The default single-privacy-domain funding rule (dashpay/platform#4184)
-    /// refused to co-spend across privacy domains. The transparent domain
-    /// (BIP44 + BIP32) alone cannot cover the asset lock, but the wallet-wide
-    /// union — adding CoinJoin and/or DashPay-receiving funds — can. Combining
-    /// them in one L1 transaction would irreversibly link those domains on-chain
-    /// (and, because the key-wallet builder derives change only on transparent
-    /// accounts, emit BIP44 change from non-transparent inputs), so it is gated
-    /// behind explicit caller/user consent. Re-issue the funding request with
-    /// cross-domain consent to proceed.
-    #[error(
-        "asset lock funding needs cross-privacy-domain co-spend: transparent \
-         domain has {transparent_available} duffs, wallet-wide union has \
-         {cross_domain_available} duffs, required {required} duffs; re-issue with \
-         cross-domain consent to combine privacy domains"
-    )]
-    AssetLockCrossDomainConsentRequired {
-        transparent_available: u64,
-        cross_domain_available: u64,
-        required: u64,
-    },
 
     #[error("Transaction broadcast failed: {0}")]
     TransactionBroadcast(String),

@@ -393,42 +393,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// carries the *exact* outpoint that timed out (no
     /// `find_tracked_unproven_lock` BTreeMap walk needed), so the
     /// `IsTimeout` outcome is built directly from the error payload.
+    ///
+    /// `funding_path` selects the single funds account for shielded
+    /// fund-from-asset-lock's fresh `FromWalletBalance` build (`None` = the
+    /// unmixed BIP44 account at the funding `account_index`; `Some(path)` = the
+    /// one funds account whose account-level path equals `path`, e.g. CoinJoin).
+    /// Non-shielded funding ignores it, and the `FromExistingAssetLock` resume
+    /// path ignores it too (the lock is already on-chain, so no fresh coin
+    /// selection occurs). See [`Self::build_asset_lock_transaction`].
     pub(crate) async fn resolve_funding_with_is_timeout_fallback<AS>(
         &self,
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
         asset_lock_signer: &AS,
-    ) -> Result<FundingResolution, PlatformWalletError>
-    where
-        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
-    {
-        // Non-shielded funding never leaves the single BIP44 account, so the
-        // default single-privacy-domain rule applies. Shielded fund-from-asset-lock
-        // routes through the consent-bearing variant instead.
-        self.resolve_funding_with_is_timeout_fallback_with_consent(
-            funding,
-            funding_type,
-            destination_index,
-            asset_lock_signer,
-            crate::CrossDomainConsent::Denied,
-        )
-        .await
-    }
-
-    /// Cross-domain-aware form of
-    /// [`Self::resolve_funding_with_is_timeout_fallback`]. `cross_domain` is
-    /// threaded to the shielded union builder for the `FromWalletBalance` path;
-    /// the `FromExistingAssetLock` resume path ignores it (the lock is already
-    /// on-chain, so no fresh coin selection occurs). See
-    /// [`crate::CrossDomainConsent`].
-    pub(crate) async fn resolve_funding_with_is_timeout_fallback_with_consent<AS>(
-        &self,
-        funding: AssetLockFunding,
-        funding_type: AssetLockFundingType,
-        destination_index: u32,
-        asset_lock_signer: &AS,
-        cross_domain: crate::CrossDomainConsent,
+        funding_path: Option<::key_wallet::bip32::DerivationPath>,
     ) -> Result<FundingResolution, PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -439,13 +418,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index,
             } => {
                 match self
-                    .create_funded_asset_lock_proof_with_consent(
+                    .create_funded_asset_lock_proof(
                         amount_duffs,
                         account_index,
                         funding_type,
                         destination_index,
                         asset_lock_signer,
-                        cross_domain,
+                        funding_path,
                     )
                     .await
                 {

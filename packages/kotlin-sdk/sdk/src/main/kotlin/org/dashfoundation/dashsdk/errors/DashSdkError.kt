@@ -114,20 +114,6 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorAssetLockCrossDomainConsentRequired` (native code 30). The default
-         * single-privacy-domain funding rule (dashpay/platform#4184) refused to
-         * co-spend across privacy domains: the transparent domain (BIP44 + BIP32)
-         * alone cannot cover the asset lock, but the wallet-wide union — adding
-         * CoinJoin and/or DashPay-receiving funds — can. Combining them in one L1
-         * transaction would irreversibly link those domains on-chain, so it is
-         * gated behind explicit user consent. Prompt the user, then re-issue the
-         * funding request with cross-domain consent enabled. The transparent /
-         * union / required duff amounts travel in [message].
-         */
-        class AssetLockCrossDomainConsentRequired(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause)
-
-        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -375,7 +361,6 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
-            30 -> PlatformWallet.AssetLockCrossDomainConsentRequired(message, cause) // ErrorAssetLockCrossDomainConsentRequired
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message

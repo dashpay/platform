@@ -550,6 +550,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 4,
                 &signer,
+                None,
             )
             .await
             .expect("build asset lock");
@@ -691,6 +692,7 @@ mod tests {
                 AssetLockFundingType::IdentityTopUp,
                 TOPUP_INDEX,
                 &signer,
+                None,
             )
             .await
             .expect("build top-up asset lock");

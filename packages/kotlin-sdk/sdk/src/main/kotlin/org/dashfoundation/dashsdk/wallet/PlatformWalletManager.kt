@@ -1400,14 +1400,15 @@ class PlatformWalletManager(
      * @param fundingAccountIndex the Core BIP44 account funding the lock.
      * @param amountDuffs the L1 lock amount in duffs.
      * @param surplusOutput optional 21-byte remainder platform address.
-     * @param allowCrossDomain cross-privacy-domain co-spend consent
-     *   (dashpay/platform#4184). Defaults to `false`, which confines the L1
-     *   asset-lock funding to the transparent BIP44/BIP32 domain. Pass `true`
-     *   ONLY after the user has explicitly consented to also drawing CoinJoin /
-     *   DashPay-receiving funds into the lock (an irreversible on-chain linkage).
-     *   When `false` and only the wider union could cover the amount, this throws
-     *   [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockCrossDomainConsentRequired];
-     *   the caller should prompt for consent and retry with `true`.
+     * @param fundingPath optional UTF-8 BIP32 derivation-path string
+     *   (dashpay/platform#4184) naming the single funds account whose UTXOs fund
+     *   the lock. Defaults to `null`, which funds from the unmixed BIP44 account
+     *   at [fundingAccountIndex]. Pass an explicit account-level path (e.g. the
+     *   DIP-9 CoinJoin account path) to fund strictly from that one account — to
+     *   shield previously-mixed CoinJoin coins, for instance. There is no union
+     *   across accounts and no consent gate: exactly one funding source
+     *   participates, and if it cannot cover the lock this throws
+     *   [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockInsufficientFunds].
      */
     suspend fun shieldedFundFromAssetLock(
         walletId: ByteArray,
@@ -1415,7 +1416,7 @@ class PlatformWalletManager(
         amountDuffs: Long,
         fundingAccountIndex: Int = 0,
         surplusOutput: ByteArray? = null,
-        allowCrossDomain: Boolean = false,
+        fundingPath: String? = null,
     ): Unit = teardownGate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {
@@ -1430,7 +1431,7 @@ class PlatformWalletManager(
                 recipientRaw43,
                 surplusOutput,
                 mnemonicResolverHandle,
-                allowCrossDomain,
+                fundingPath,
             )
         }
     }

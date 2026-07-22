@@ -278,6 +278,8 @@ impl IdentityWallet {
                 AssetLockFundingType::IdentityInvitation,
                 0,
                 asset_lock_signer,
+                // Non-shielded funding always uses the single BIP44 account.
+                None,
             )
             .await?;
 
