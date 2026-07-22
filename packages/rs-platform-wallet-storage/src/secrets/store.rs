@@ -39,7 +39,8 @@ impl SecretStore {
     /// Open (or prepare to create) a file-backed vault at `path`,
     /// unlocked by `passphrase`. `path` is the vault file itself
     /// (operator picks the filename); the parent directory is
-    /// materialized on the first write.
+    /// materialized on the first write. The trimmed passphrase must contain at
+    /// least [`MIN_PASSPHRASE_LEN`](super::MIN_PASSPHRASE_LEN) bytes.
     pub fn file(
         path: impl AsRef<std::path::Path>,
         passphrase: super::SecretString,
@@ -81,7 +82,7 @@ impl SecretStore {
     /// (the key derives from an empty passphrase under the public salt): use
     /// it where the stored secrets carry their own Tier-2 object password,
     /// or as a staging step before [`EncryptedFileStore::rekey`] to a real
-    /// passphrase. [`file`](SecretStore::file) rejects a blank passphrase;
+    /// passphrase. [`file`](SecretStore::file) rejects sub-floor passphrases;
     /// this is the explicit keyless alternative.
     pub fn file_unprotected(path: impl AsRef<std::path::Path>) -> Result<Self, SecretStoreError> {
         Ok(Self::File(EncryptedFileStore::open_unprotected(path)?))
@@ -112,7 +113,7 @@ impl SecretStore {
     /// envelope; `Some(pw)` seals the bytes under the object password `pw`
     /// (Argon2id + XChaCha20-Poly1305) **before** they reach the backend, so
     /// a protected object stays confidential even under a full backend
-    /// compromise. A blank `pw` is rejected
+    /// compromise. A password below the minimum length is rejected
     /// ([`BlankPassphrase`](SecretStoreError::BlankPassphrase)).
     ///
     /// **No recovery (availability):** if a protected object's password is
@@ -121,8 +122,8 @@ impl SecretStore {
     ///
     /// **Entropy is the caller's:** a protected object's confidentiality
     /// rests entirely on the password's entropy against an offline Argon2id
-    /// attacker who already holds the backend. This crate enforces only
-    /// non-blank; strength estimation / policy is the caller's job.
+    /// attacker who already holds the backend. This crate enforces only the
+    /// minimum length; strength estimation and policy are the caller's job.
     ///
     /// The write is a same-slot overwrite that leaves the prior value intact
     /// on a crash: on the `File` arm via the vault's atomic replace; on the
@@ -298,7 +299,7 @@ impl SecretStore {
     ///
     /// **Entropy is the caller's:** the `new` password's entropy is the
     /// whole confidentiality guarantee for the re-protected object; this
-    /// crate enforces only non-blank, not strength.
+    /// crate enforces only the minimum length, not strength.
     ///
     /// **Atomicity:** on the `File` arm the read → rewrap → write runs under
     /// the store's single lock, so a concurrent `set`/`delete` can't interleave
@@ -500,12 +501,35 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = file_store(dir.path());
         let err = s
-            .reprotect(&wid(1), "seed", None, Some(&SecretString::new("pw")))
+            .reprotect(&wid(1), "seed", None, Some(&SecretString::new("password")))
             .unwrap_err();
         assert!(
             matches!(err, SecretStoreError::NoEntry),
             "expected NoEntry on absent reprotect, got {err:?}"
         );
+    }
+
+    #[test]
+    fn reprotect_rejects_sub_minimum_object_password() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = file_store(dir.path());
+        let w = wid(2);
+        s.set(&w, "seed", &SecretBytes::from_slice(b"original"))
+            .unwrap();
+
+        let short = SecretString::new("1234567");
+        let err = s
+            .reprotect(&w, "seed", None, Some(&short))
+            .expect_err("seven-byte object password must be rejected");
+        assert!(matches!(err, SecretStoreError::BlankPassphrase));
+        assert_eq!(
+            s.get(&w, "seed").unwrap().unwrap().expose_secret(),
+            b"original"
+        );
+
+        let minimum = SecretString::new("12345678");
+        s.reprotect(&w, "seed", None, Some(&minimum))
+            .expect("eight-byte object password must be accepted");
     }
 
     #[test]
@@ -558,8 +582,8 @@ mod tests {
         // AlreadyLocked, losslessly on the public path.
         let dir = tempfile::tempdir().unwrap();
         let path = secure_vault_path(dir.path());
-        let _s1 = SecretStore::file(&path, SecretString::new("pw")).unwrap();
-        let err = SecretStore::file(&path, SecretString::new("pw")).unwrap_err();
+        let _s1 = SecretStore::file(&path, SecretString::new("password")).unwrap();
+        let err = SecretStore::file(&path, SecretString::new("password")).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::AlreadyLocked),
             "got {err:?}"
@@ -676,11 +700,20 @@ mod tests {
 
     use keyring_core::mock;
 
+    /// Pad nonblank fixture labels to the production length floor.
+    fn test_password(s: &str) -> SecretString {
+        let mut value = s.to_owned();
+        while value.trim().len() < crate::secrets::MIN_PASSPHRASE_LEN {
+            value.push('-');
+        }
+        SecretString::new(value)
+    }
+
     fn protected(w: &WalletId, label: &str, pw: &str, secret: &[u8]) -> Vec<u8> {
         envelope::wrap_with_params(
             w,
             label,
-            Some(&SecretString::new(pw)),
+            Some(&test_password(pw)),
             secret,
             KdfParams::floor_target(),
         )
@@ -799,7 +832,7 @@ mod tests {
         assert!(
             matches!(
                 b.store
-                    .get_secret(&w, "p1", Some(&SecretString::new("nope")))
+                    .get_secret(&w, "p1", Some(&test_password("nope")))
                     .unwrap_err(),
                 SecretStoreError::WrongPassword
             ),
@@ -929,7 +962,7 @@ mod tests {
     /// A consumer bug alone fails closed in BOTH directions.
     fn run_both_det_bug_directions(b: &Backend) {
         let w = wid(3);
-        let pw = SecretString::new("pw");
+        let pw = test_password("pw");
         // (a) over-supply a password on a genuinely unprotected object.
         b.place_raw(&w, "u", &unprotected(&w, "u", b"x"));
         assert!(matches!(
@@ -958,7 +991,7 @@ mod tests {
     /// byte — identical scheme-1 blobs diverge solely on the password arg.
     fn run_expectation_not_inferred(b: &Backend) {
         let w = wid(4);
-        let pw = SecretString::new("pw");
+        let pw = test_password("pw");
         let blob = protected(&w, "a", "pw", b"seed");
         b.place_raw(&w, "a", &blob);
         b.place_raw(&w, "b", &blob);
@@ -1016,7 +1049,7 @@ mod tests {
         use crate::secrets::wire::envelope::{Envelope, Payload};
 
         let w = wid(6);
-        let pw = SecretString::new("pw");
+        let pw = test_password("pw");
         let blob = protected(&w, "x", "pw", b"real-seed");
         let (env, _): (Envelope, usize) = bincode::decode_from_slice(&blob, WIRE_CONFIG).unwrap();
         let flipped = match env.payload {
@@ -1061,8 +1094,8 @@ mod tests {
     /// step verified through the strict read.
     fn run_pw_lifecycle(b: &Backend) {
         let w = wid(10);
-        let pw1 = SecretString::new("pw-one");
-        let pw2 = SecretString::new("pw-two");
+        let pw1 = test_password("pw-one");
+        let pw2 = test_password("pw-two");
 
         // ADD: start unprotected, enrol a password.
         b.store
@@ -1147,7 +1180,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             b.store
-                .get_secret(&w, "seed", Some(&SecretString::new("guess")))
+                .get_secret(&w, "seed", Some(&test_password("guess")))
                 .unwrap_err(),
             SecretStoreError::WrongPassword
         ));
@@ -1181,7 +1214,7 @@ mod tests {
         );
         assert!(matches!(
             b.store
-                .get_secret(&w, "seed", Some(&SecretString::new("pw")))
+                .get_secret(&w, "seed", Some(&test_password("pw")))
                 .unwrap_err(),
             SecretStoreError::ExpectedProtectedButUnsealed
         ));
@@ -1225,8 +1258,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = file_store(dir.path());
         let w = wid(14);
-        let old = SecretString::new("old-pw");
-        let new = SecretString::new("new-pw");
+        let old = test_password("old-pw");
+        let new = test_password("new-pw");
 
         s.set_secret(&w, "seed", &SecretBytes::from_slice(b"REAL"), Some(&old))
             .unwrap();
@@ -1265,8 +1298,8 @@ mod tests {
         let mock = mock::Store::new().unwrap();
         let store = SecretStore::Os(mock.clone());
         let w = wid(15);
-        let old = SecretString::new("old-pw");
-        let new = SecretString::new("new-pw");
+        let old = test_password("old-pw");
+        let new = test_password("new-pw");
         store
             .set_secret(&w, "seed", &SecretBytes::from_slice(b"REAL"), Some(&old))
             .unwrap();

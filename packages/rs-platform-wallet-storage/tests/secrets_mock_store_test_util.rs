@@ -32,8 +32,11 @@ fn secure_vault_path(dir: &std::path::Path) -> std::path::PathBuf {
 #[test]
 fn file_mock_is_reachable_and_round_trips_from_downstream() {
     let dir = tempfile::tempdir().unwrap();
-    let store = SecretStore::file_mock(secure_vault_path(dir.path()), SecretString::new("pw"))
-        .expect("mock vault opens");
+    let store = SecretStore::file_mock(
+        secure_vault_path(dir.path()),
+        SecretString::new("test-password"),
+    )
+    .expect("mock vault opens");
 
     let wallet = WalletId::from([7u8; 32]);
     let pw = SecretString::new("object-pw");

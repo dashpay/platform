@@ -51,16 +51,16 @@ pub enum SecretStoreError {
     WrongPassword,
 
     /// A vault passphrase (Tier-1 `open`/`rekey`) or an object password
-    /// (Tier-2 enrol/unwrap) was blank — empty or all-whitespace — rejected
-    /// via [`SecretString::is_blank`]. CWE-521.
+    /// (Tier-2 enrol/unwrap) was shorter than [`MIN_PASSPHRASE_LEN`] after
+    /// trimming. CWE-521.
     ///
     /// Neutral wording: the variant covers both Tier-1 vault passphrases and
     /// Tier-2 per-object passwords; the caller's context determines which.
     /// Tier-1 callers wanting a deliberately keyless vault should use
     /// [`EncryptedFileStore::open_unprotected`](crate::secrets::EncryptedFileStore::open_unprotected).
     ///
-    /// [`SecretString::is_blank`]: crate::secrets::SecretString::is_blank
-    #[error("passphrase or password must not be blank")]
+    /// [`MIN_PASSPHRASE_LEN`]: crate::secrets::MIN_PASSPHRASE_LEN
+    #[error("passphrase or password is blank or too short")]
     BlankPassphrase,
 
     /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
@@ -587,7 +587,7 @@ mod tests {
         assert_eq!(E::WrongPassword.to_string(), "wrong object password");
         assert_eq!(
             E::BlankPassphrase.to_string(),
-            "passphrase or password must not be blank"
+            "passphrase or password is blank or too short"
         );
         assert_eq!(
             E::ExpectedProtectedButUnsealed.to_string(),

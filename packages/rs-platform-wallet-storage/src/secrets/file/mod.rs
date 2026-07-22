@@ -58,7 +58,7 @@ use format::{EntryBody, Vault};
 
 use super::error::SecretStoreError;
 
-use super::secret::{SecretBytes, SecretString, MIN_PASSPHRASE_LEN};
+use super::secret::{SecretBytes, SecretString};
 use super::validate::{validated_label, WalletId};
 
 /// Service-prefix for vault entries: the full `service` string is
@@ -162,13 +162,8 @@ impl EncryptedFileStore {
         path: impl AsRef<Path>,
         passphrase: SecretString,
     ) -> Result<Self, SecretStoreError> {
-        // Tier-1 baseline: reject a blank passphrase (empty / all-whitespace)
-        // BEFORE touching the filesystem. A blank passphrase derives a key
-        // from a public salt only — obfuscation, not confidentiality
-        // (obfuscation, not confidentiality). This is an INTENDED behavioural break for any caller
-        // that relied on `SecretString::empty()`; a deliberate keyless vault
-        // must use [`open_unprotected`](Self::open_unprotected). No vault
-        // file is created or altered for a blank passphrase.
+        // Reject a sub-floor passphrase before touching the filesystem. A
+        // deliberate keyless vault uses `open_unprotected` instead.
         reject_weak_passphrase(&passphrase)?;
         Self::open_inner(path.as_ref(), passphrase, KdfParams::default_target())
     }
@@ -221,8 +216,8 @@ impl EncryptedFileStore {
     /// confidentiality**: use it only where the stored secrets carry their
     /// own Tier-2 object password, or as a staging step before
     /// [`rekey`](Self::rekey) to a real passphrase. This is the explicit
-    /// keyless door, distinct from [`open`](Self::open) (which now rejects a
-    /// blank passphrase).
+    /// keyless door, distinct from [`open`](Self::open), which enforces the
+    /// passphrase length floor.
     pub fn open_unprotected(path: impl AsRef<Path>) -> Result<Self, SecretStoreError> {
         Self::open_inner(
             path.as_ref(),
@@ -346,10 +341,8 @@ impl EncryptedFileStore {
     /// The vault is one shared fault domain: a corrupt entry blocks rekeying
     /// every wallet in the vault until that entry is manually removed.
     pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
-        // Reject a blank target passphrase: `rekey` always advances to a
-        // REAL passphrase (the empty→real migration uses this). The resident
-        // vault, key, and on-disk file are untouched on rejection. To make a
-        // vault keyless, use `open_unprotected` on a fresh path instead.
+        // Rekey always advances to a passphrase meeting the same floor as
+        // open. Rejection leaves the resident and on-disk vault unchanged.
         reject_weak_passphrase(&new_passphrase)?;
         let (new_vault, new_key) = build_fresh_vault(&new_passphrase, self.kdf)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
@@ -642,13 +635,9 @@ fn lock_path_for(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Reject a blank (empty / all-whitespace) or sub-floor passphrase →
-/// [`SecretStoreError::BlankPassphrase`]. The floor is the coarse
-/// [`MIN_PASSPHRASE_LEN`] (1 today = merely non-blank); the real entropy
-/// policy is the consumer's (see `SECRETS.md`). A blank check alone closes
-/// the length term keeps the floor wired for a future bump.
+/// Reject a passphrase below the configured post-trim length floor.
 fn reject_weak_passphrase(passphrase: &SecretString) -> Result<(), SecretStoreError> {
-    if passphrase.is_blank() || passphrase.trimmed().len() < MIN_PASSPHRASE_LEN {
+    if passphrase.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
     }
     Ok(())
@@ -1481,7 +1470,7 @@ mod tests {
             let s = store_at(&path);
             entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
             let pre = fs::read(&path).unwrap();
-            s.rekey(SecretString::new("pw-new")).unwrap();
+            s.rekey(SecretString::new("password-new")).unwrap();
             assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
             let new_bytes = fs::read(&path).unwrap();
             assert_ne!(pre, new_bytes);
@@ -1567,7 +1556,7 @@ mod tests {
         let original_bytes = fs::read(&path).unwrap();
 
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o500)).unwrap();
-        let result = s.rekey(SecretString::new("pw-new"));
+        let result = s.rekey(SecretString::new("password-new"));
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
 
         assert!(result.is_err(), "rekey should have failed: {result:?}");
@@ -1688,7 +1677,7 @@ mod tests {
         // Rekey re-encrypts every entry under the new key — the
         // corrupt entry fails AEAD-open under the (correct) old key,
         // and we project that as Corruption.
-        let err = s.rekey(SecretString::new("pw-new")).unwrap_err();
+        let err = s.rekey(SecretString::new("password-new")).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::Corruption),
             "unexpected error: {err:?}"
@@ -1770,6 +1759,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn open_accepts_minimum_and_rejects_shorter_passphrases() {
+        let short_dir = tempfile::tempdir().unwrap();
+        let short_path = vault_path(short_dir.path());
+        let err = EncryptedFileStore::open(&short_path, SecretString::new("1234567"))
+            .expect_err("seven-byte passphrase must be rejected");
+        assert!(matches!(err, SecretStoreError::BlankPassphrase));
+        assert!(!short_path.exists(), "rejection must not create a vault");
+
+        let minimum_dir = tempfile::tempdir().unwrap();
+        let minimum_path = vault_path(minimum_dir.path());
+        EncryptedFileStore::open(&minimum_path, SecretString::new("12345678"))
+            .expect("eight-byte passphrase must be accepted");
+    }
+
     /// A blank passphrase is rejected at `rekey`; the resident
     /// vault, key, and on-disk file are UNCHANGED — the original passphrase
     /// still reads every entry, live and after reopen.
@@ -1814,7 +1818,8 @@ mod tests {
                 b"keyless-seed"
             );
         }
-        let err = EncryptedFileStore::open(&path, SecretString::new("real")).unwrap_err();
+        let err =
+            EncryptedFileStore::open(&path, SecretString::new("real-passphrase")).unwrap_err();
         assert!(
             matches!(err, SecretStoreError::WrongPassphrase),
             "real-pass open of a keyless vault must fail, got {err:?}"
@@ -2091,7 +2096,7 @@ mod tests {
         let rekeyer = std::thread::spawn(move || {
             // Alternate passphrases so consecutive rekeys change the
             // resident key, keeping the race window real.
-            let passphrases = ["pw-A", "pw-B"];
+            let passphrases = ["password-A", "password-B"];
             for i in 0..REKEY_ITERS {
                 rekeyer_store
                     .rekey(SecretString::new(passphrases[i % 2]))
