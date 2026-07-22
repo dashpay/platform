@@ -11,6 +11,7 @@ use dashcore_rpc::dashcore::consensus::encode::{
 };
 use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
+use tokio::task::JoinSet;
 use tokio::time::{Duration, sleep};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
@@ -22,12 +23,13 @@ use crate::services::streaming_service::{
 use crate::sync::WorkerTaskHandle;
 
 const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
-const MAX_HISTORICAL_HEADERS_PER_STREAM: usize = 10_000;
 const MAX_HEADER_PENDING_EVENTS: usize = 256;
 const MAX_HEADER_PENDING_BYTES: usize = 8 * 1024 * 1024;
 const HEADER_GATE_MAX_TIMEOUT: Duration = Duration::from_secs(180);
-const MAX_DELIVERED_HEADER_HASHES: usize =
-    MAX_HISTORICAL_HEADERS_PER_STREAM + MAX_HEADER_PENDING_EVENTS;
+/// Bounded FIFO window of recently replayed header hashes used to deduplicate
+/// the replay→live handoff. Live events can only overlap the tail of the
+/// replay, so the window does not need to cover the whole replayed range.
+const MAX_DELIVERED_HEADER_HASHES: usize = 10_000 + MAX_HEADER_PENDING_EVENTS;
 
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
 type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
@@ -38,6 +40,13 @@ type DeliveryGateSender = watch::Sender<bool>;
 type DeliveryGateReceiver = watch::Receiver<bool>;
 
 const MAX_HEADERS_PER_BATCH: usize = 500;
+
+/// Per-stream resources handed to the historical header worker.
+struct HeaderHistoryWorkerContext {
+    delivered_hashes: Option<DeliveredHashSet>,
+    gate: Option<DeliveryGateSender>,
+    stream_permit: Option<OwnedSemaphorePermit>,
+}
 
 struct BoundedDeliveredHashes {
     hashes: HashSet<Vec<u8>>,
@@ -138,10 +147,13 @@ impl StreamingServiceImpl {
         self.spawn_fetch_historical_headers(
             from_block,
             Some(count as usize),
-            None,
+            HeaderHistoryWorkerContext {
+                delivered_hashes: None,
+                gate: None,
+                stream_permit: Some(stream_permit),
+            },
             tx,
             None,
-            Some(stream_permit),
         )
         .await?;
 
@@ -166,27 +178,41 @@ impl StreamingServiceImpl {
                 tx.clone(),
                 delivered_hashes.clone(),
                 delivery_gate_rx.clone(),
-                stream_permit,
             )
             .await;
         if let Err(status) = self.send_initial_chainlock(tx.clone()).await {
             live_worker.abort().await;
             return Err(status);
         }
+
+        let mut local_workers = JoinSet::new();
         if let Err(status) = self
             .spawn_fetch_historical_headers(
                 from_block,
                 None,
-                Some(delivered_hashes),
-                tx,
-                Some(delivery_gate_tx),
-                None,
+                HeaderHistoryWorkerContext {
+                    delivered_hashes: Some(delivered_hashes),
+                    gate: Some(delivery_gate_tx),
+                    stream_permit: None,
+                },
+                tx.clone(),
+                Some(&mut local_workers),
             )
             .await
         {
             live_worker.abort().await;
             return Err(status);
         }
+
+        let sub_id = subscriber_id.clone();
+        self.workers.spawn(Self::block_header_stream_coordinator(
+            stream_permit,
+            local_workers,
+            live_worker,
+            tx,
+            sub_id,
+        ));
+
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
             subscriber_id = subscriber_id.as_str(),
@@ -195,24 +221,77 @@ impl StreamingServiceImpl {
         Ok(Response::new(stream))
     }
 
+    /// Coordinator for combined mode: owns the stream admission permit for the
+    /// whole life of the stream. The permit must outlive the historical worker
+    /// as well as the live worker: releasing it as soon as the live worker
+    /// exits would let repeated connect/disconnect cycles recycle all stream
+    /// permits while replay tasks are still running against Core.
+    async fn block_header_stream_coordinator(
+        stream_permit: OwnedSemaphorePermit,
+        mut local_workers: JoinSet<Result<(), DapiError>>,
+        live_worker: WorkerTaskHandle,
+        tx: BlockHeaderResponseSender,
+        sub_id: String,
+    ) -> Result<(), DapiError> {
+        let _stream_permit = stream_permit;
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = tx.closed() => {
+                    debug!(subscriber_id=&sub_id, "block_headers=stream_closed_cancelling_workers");
+                    local_workers.shutdown().await;
+                    live_worker.abort().await;
+                    return Ok(());
+                }
+                result = local_workers.join_next() => {
+                    match result {
+                        None => break, // historical replay completed
+                        Some(Ok(Ok(()))) => { /* task completed successfully */ }
+                        Some(Ok(Err(e))) => {
+                            // The historical worker already delivered its
+                            // terminal error to the stream; just clean up.
+                            debug!(error = %e, subscriber_id=&sub_id, "block_headers=worker_task_failed");
+                            local_workers.shutdown().await;
+                            live_worker.abort().await;
+                            return Err(e);
+                        }
+                        Some(Err(e)) => {
+                            debug!(error = %e, subscriber_id=&sub_id, "block_headers=worker_task_join_failed");
+                            local_workers.shutdown().await;
+                            live_worker.abort().await;
+                            return Err(DapiError::TaskJoin(e));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Replay is done; keep holding the permit until the client goes
+        // away, then stop the live worker.
+        tx.closed().await;
+        live_worker.abort().await;
+
+        Ok(())
+    }
+
     async fn spawn_fetch_historical_headers(
         &self,
         from_block: FromBlock,
         limit: Option<usize>,
-        delivered_hashes: Option<DeliveredHashSet>,
+        context: HeaderHistoryWorkerContext,
         tx: BlockHeaderResponseSender,
-        gate: Option<DeliveryGateSender>,
-        stream_permit: Option<OwnedSemaphorePermit>,
+        workers: Option<&mut JoinSet<Result<(), DapiError>>>, // defaults to self.workers if None
     ) -> Result<(), Status> {
         let service = self.clone();
 
-        self.workers.spawn(async move {
-            let _stream_permit = stream_permit;
+        let worker = async move {
+            let _stream_permit = context.stream_permit;
             let result = service
-                .fetch_historical_blocks(from_block, limit, delivered_hashes, tx.clone())
+                .fetch_historical_blocks(from_block, limit, context.delivered_hashes, tx.clone())
                 .await;
 
-            if let Some(gate) = gate {
+            if let Some(gate) = context.gate {
                 let _ = gate.send(true);
             }
             // watch receivers wake via the send above; no separate notification needed.
@@ -228,7 +307,13 @@ impl StreamingServiceImpl {
                     Err(DapiError::from(status))
                 }
             }
-        });
+        };
+
+        if let Some(workers) = workers {
+            workers.spawn(worker);
+        } else {
+            self.workers.spawn(worker);
+        }
 
         Ok(())
     }
@@ -238,7 +323,6 @@ impl StreamingServiceImpl {
         tx: BlockHeaderResponseSender,
         delivered_hashes: DeliveredHashSet,
         delivery_gate: DeliveryGateReceiver,
-        stream_permit: OwnedSemaphorePermit,
     ) -> (String, WorkerTaskHandle) {
         let filter = FilterType::CoreAllBlocks;
         let block_handle = self.subscriber_manager.add_subscription(filter).await;
@@ -258,7 +342,6 @@ impl StreamingServiceImpl {
         );
 
         let worker = self.workers.spawn(async move {
-            let _stream_permit = stream_permit;
             Self::block_header_worker(
                 block_handle,
                 chainlock_handle,
@@ -714,12 +797,6 @@ impl StreamingServiceImpl {
             return Err(Status::invalid_argument("count exceeds chain tip"));
         }
 
-        if desired > MAX_HISTORICAL_HEADERS_PER_STREAM {
-            return Err(Status::resource_exhausted(format!(
-                "historical range {desired} exceeds maximum of {MAX_HISTORICAL_HEADERS_PER_STREAM}"
-            )));
-        }
-
         Ok((start_height, desired))
     }
 }
@@ -741,5 +818,69 @@ mod tests {
         assert!(delivered.mark_delivered(third.clone()));
         assert!(!delivered.mark_delivered(second));
         assert!(delivered.mark_delivered(first));
+    }
+
+    #[tokio::test]
+    async fn should_hold_stream_permit_until_replay_worker_stops() {
+        use super::*;
+        use crate::sync::Workers;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tokio::sync::Semaphore;
+        use tokio::time::timeout;
+
+        struct DropFlag(Arc<AtomicBool>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .expect("initial permit");
+        let (tx, rx) = mpsc::channel(8);
+
+        let workers = Workers::new();
+        let live_worker = workers.spawn(async {
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        // Historical worker that never finishes on its own; the flag flips
+        // only once the task is actually torn down.
+        let replay_stopped = Arc::new(AtomicBool::new(false));
+        let mut local_workers = JoinSet::new();
+        let guard = DropFlag(replay_stopped.clone());
+        local_workers.spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        let coordinator = tokio::spawn(StreamingServiceImpl::block_header_stream_coordinator(
+            permit,
+            local_workers,
+            live_worker,
+            tx,
+            "subscriber".to_string(),
+        ));
+
+        // While the client is connected and replay is running, the permit is held.
+        tokio::task::yield_now().await;
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+
+        // Client disconnects while the historical worker is still running.
+        drop(rx);
+        timeout(Duration::from_secs(5), coordinator)
+            .await
+            .expect("coordinator should finish after disconnect")
+            .expect("coordinator task should not panic")
+            .expect("coordinator should exit cleanly");
+
+        // The permit is only released after the historical worker is gone.
+        assert!(replay_stopped.load(Ordering::SeqCst));
+        assert!(semaphore.try_acquire_owned().is_ok());
     }
 }

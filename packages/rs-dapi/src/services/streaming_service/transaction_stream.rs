@@ -28,7 +28,6 @@ use crate::services::streaming_service::{
 use crate::sync::WorkerTaskHandle;
 
 const TRANSACTION_STREAM_BUFFER: usize = 512;
-const MAX_TRANSACTION_HISTORY_BLOCKS: usize = 2_000;
 const MAX_TRANSACTION_PENDING_EVENTS: usize = 512;
 const MAX_TRANSACTION_PENDING_BYTES: usize = 8 * 1024 * 1024;
 const MAX_MEMPOOL_TXS_PER_STREAM: usize = 4_096;
@@ -256,10 +255,10 @@ impl StreamingServiceImpl {
         let _ = tx.send(Err(Status::resource_exhausted(message))).await;
     }
 
-    async fn validate_transaction_history_range(
+    /// Preflight check that the requested replay start exists on the chain.
+    async fn validate_transaction_history_start(
         &self,
         from_block: &dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
-        limit: Option<usize>,
     ) -> Result<(), Status> {
         use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
         use std::str::FromStr;
@@ -287,14 +286,6 @@ impl StreamingServiceImpl {
 
         if start > best_height {
             return Err(Status::not_found(format!("Block {start} not found")));
-        }
-
-        let available = best_height.saturating_sub(start).saturating_add(1);
-        let desired = limit.map_or(available, |requested| requested.min(available));
-        if desired > MAX_TRANSACTION_HISTORY_BLOCKS {
-            return Err(Status::resource_exhausted(format!(
-                "transaction history is limited to {MAX_TRANSACTION_HISTORY_BLOCKS} blocks per stream"
-            )));
         }
 
         Ok(())
@@ -334,8 +325,7 @@ impl StreamingServiceImpl {
             .try_acquire_owned()
             .map_err(|_| Status::resource_exhausted("too many active transaction streams"))?;
 
-        self.validate_transaction_history_range(&from_block, (count > 0).then_some(count as usize))
-            .await?;
+        self.validate_transaction_history_start(&from_block).await?;
 
         let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
         if count > 0 {
@@ -807,7 +797,6 @@ impl StreamingServiceImpl {
         filter: FilterType,
         tx: TxResponseSender,
         state: TransactionStreamState,
-        stream_permit: OwnedSemaphorePermit,
     ) -> (String, WorkerTaskHandle) {
         let tx_subscription_handle = self
             .subscriber_manager
@@ -830,7 +819,6 @@ impl StreamingServiceImpl {
         );
 
         let worker = self.workers.spawn(async move {
-            let _stream_permit = stream_permit;
             Self::transaction_worker(
                 tx_subscription_handle,
                 merkle_block_subscription_handle,
@@ -855,7 +843,7 @@ impl StreamingServiceImpl {
 
         // Will spawn worker thread, gated until historical replay is done
         let (subscriber_id, live_worker) = self
-            .start_live_transaction_stream(filter.clone(), tx.clone(), state.clone(), stream_permit)
+            .start_live_transaction_stream(filter.clone(), tx.clone(), state.clone())
             .await;
 
         // We need our own worker pool so that we can open the gate once historical sync is done
@@ -891,38 +879,86 @@ impl StreamingServiceImpl {
                 .map_err(DapiError::from),
         );
 
-        // Now, thread that will wait for all local workers  to complete and disable the gate
         let sub_id = subscriber_id.clone();
-        self.workers.spawn(async move {
-        while let Some(result) = local_workers.join_next().await {
-            match result {
-                Ok(Ok(())) => { /* task completed successfully */ }
-                Ok(Err(e)) => {
-                    debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
-                    coordinator_state.cancel();
-                    // return error back to caller
-                    let status =  e.to_status();
-                    let _ = tx.send(Err(status)).await; // ignore returned value
+        self.workers.spawn(Self::transaction_stream_coordinator(
+            stream_permit,
+            local_workers,
+            live_worker,
+            tx,
+            coordinator_state,
+            gate_sender,
+            sub_id,
+        ));
+
+        debug!(subscriber_id, "transactions_with_proofs=stream_ready");
+        Ok(())
+    }
+
+    /// Coordinator for combined mode: drains the local (replay) workers, opens
+    /// the gate when replay is done, and owns the stream admission permit. The
+    /// permit must outlive every child worker: releasing it as soon as the
+    /// live worker exits would let repeated connect/disconnect cycles recycle
+    /// all stream permits while replay tasks are still running against Core.
+    async fn transaction_stream_coordinator(
+        stream_permit: OwnedSemaphorePermit,
+        mut local_workers: JoinSet<Result<(), DapiError>>,
+        live_worker: WorkerTaskHandle,
+        tx: TxResponseSender,
+        state: TransactionStreamState,
+        gate_sender: GateSender,
+        sub_id: String,
+    ) -> Result<(), DapiError> {
+        let _stream_permit = stream_permit;
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = tx.closed() => {
+                    debug!(subscriber_id=&sub_id, "transactions_with_proofs=stream_closed_cancelling_workers");
+                    state.cancel();
+                    local_workers.shutdown().await;
                     live_worker.abort().await;
-                    return Err(e);
+                    return Ok(());
                 }
-                Err(e) => {
-                    debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
-                    coordinator_state.cancel();
-                    live_worker.abort().await;
-                    return Err(DapiError::TaskJoin(e));
+                result = local_workers.join_next() => {
+                    match result {
+                        None => break, // all local workers completed
+                        Some(Ok(Ok(()))) => { /* task completed successfully */ }
+                        Some(Ok(Err(e))) => {
+                            debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
+                            state.cancel();
+                            local_workers.shutdown().await;
+                            // Await the terminal send so a full queue cannot discard it.
+                            let status = e.to_status();
+                            let _ = tx.send(Err(status)).await; // ignore returned value
+                            live_worker.abort().await;
+                            return Err(e);
+                        }
+                        Some(Err(e)) => {
+                            debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
+                            state.cancel();
+                            local_workers.shutdown().await;
+                            live_worker.abort().await;
+                            return Err(DapiError::TaskJoin(e));
+                        }
+                    }
                 }
             }
         }
-        if !coordinator_state.is_cancelled() {
+
+        if !state.is_cancelled() {
             TransactionStreamState::open_gate(&gate_sender);
-            debug!(subscriber_id=&sub_id, "transactions_with_proofs=historical_sync_completed_gate_opened");
+            debug!(
+                subscriber_id = &sub_id,
+                "transactions_with_proofs=historical_sync_completed_gate_opened"
+            );
         }
 
-        Ok(())
-    });
+        // Replay is done; keep holding the permit until the client goes
+        // away, then stop the live worker.
+        tx.closed().await;
+        live_worker.abort().await;
 
-        debug!(subscriber_id, "transactions_with_proofs=stream_ready");
         Ok(())
     }
 
@@ -989,11 +1025,6 @@ impl StreamingServiceImpl {
 
         if count_target == 0 {
             return Ok(());
-        }
-        if count_target > MAX_TRANSACTION_HISTORY_BLOCKS {
-            return Err(Status::resource_exhausted(format!(
-                "transaction history is limited to {MAX_TRANSACTION_HISTORY_BLOCKS} blocks per stream"
-            )));
         }
         let core_client = self.core_client.clone();
 
@@ -1597,6 +1628,127 @@ mod tests {
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&tx_a.txid()));
         assert!(matches.contains(&tx_c.txid()));
+    }
+
+    #[tokio::test]
+    async fn should_hold_stream_permit_until_replay_workers_stop() {
+        use crate::sync::Workers;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tokio::sync::Semaphore;
+
+        struct DropFlag(Arc<AtomicBool>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .expect("initial permit");
+        let state = TransactionStreamState::new();
+        let (tx, rx) = mpsc::channel(8);
+
+        let workers = Workers::new();
+        let live_worker = workers.spawn(async {
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        // Replay worker that never finishes on its own; the flag flips only
+        // once the task is actually torn down.
+        let replay_stopped = Arc::new(AtomicBool::new(false));
+        let mut local_workers = JoinSet::new();
+        let guard = DropFlag(replay_stopped.clone());
+        local_workers.spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        let gate_sender = state.gate_sender.clone();
+        let coordinator = tokio::spawn(StreamingServiceImpl::transaction_stream_coordinator(
+            permit,
+            local_workers,
+            live_worker,
+            tx,
+            state.clone(),
+            gate_sender,
+            "subscriber".to_string(),
+        ));
+
+        // While the client is connected and replay is running, the permit is held.
+        tokio::task::yield_now().await;
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+
+        // Client disconnects while the replay worker is still running.
+        drop(rx);
+        timeout(Duration::from_secs(5), coordinator)
+            .await
+            .expect("coordinator should finish after disconnect")
+            .expect("coordinator task should not panic")
+            .expect("coordinator should exit cleanly");
+
+        // The permit is only released after every replay worker is gone.
+        assert!(replay_stopped.load(Ordering::SeqCst));
+        assert!(state.is_cancelled());
+        assert!(semaphore.try_acquire_owned().is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_open_gate_after_replay_and_hold_permit_until_disconnect() {
+        use crate::sync::Workers;
+        use tokio::sync::Semaphore;
+
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .expect("initial permit");
+        let state = TransactionStreamState::new();
+        let (tx, rx) = mpsc::channel(8);
+
+        let workers = Workers::new();
+        let live_worker = workers.spawn(async {
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        let mut local_workers = JoinSet::new();
+        local_workers.spawn(async { Ok::<(), DapiError>(()) });
+
+        let gate_sender = state.gate_sender.clone();
+        let coordinator = tokio::spawn(StreamingServiceImpl::transaction_stream_coordinator(
+            permit,
+            local_workers,
+            live_worker,
+            tx,
+            state.clone(),
+            gate_sender,
+            "subscriber".to_string(),
+        ));
+
+        // Replay completes: the gate opens, but the permit stays held while
+        // the client remains connected.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !state.is_gate_open() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "gate should open after replay completes"
+            );
+            sleep(Duration::from_millis(10)).await;
+        }
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+
+        drop(rx);
+        timeout(Duration::from_secs(5), coordinator)
+            .await
+            .expect("coordinator should finish after disconnect")
+            .expect("coordinator task should not panic")
+            .expect("coordinator should exit cleanly");
+        assert!(semaphore.try_acquire_owned().is_ok());
     }
 
     #[tokio::test]
