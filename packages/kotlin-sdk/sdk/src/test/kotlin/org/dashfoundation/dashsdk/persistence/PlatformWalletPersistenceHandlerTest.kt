@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.wallet.PlatformWalletPersistenceCapabilities
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
@@ -1388,6 +1389,162 @@ class PlatformWalletPersistenceHandlerTest {
             isPrivateKeyDecryptable = { false },
         )
         assertEquals(liveReason, handler.pendingIdentityKeys.value[pubkey.toHex()]!!.reason)
+    }
+
+    // ── Durable, pubkey-verified repair (#4060 blockers 1 & 3) ─────────
+
+    /**
+     * Models the production [org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver]:
+     * a persist-time derive fails (returns null → the key seeds as pending),
+     * while a repair (`force`) derives the KEYPAIR and verifies the derived
+     * PUBLIC key equals `publicKeyData` BEFORE storing — a wrong slot throws
+     * [IdentityKeyDerivationMismatchException] without persisting anything.
+     */
+    private class VerifyingRepairDeriver : PrivateKeyDeriver {
+        var lastForceCall: Triple<ByteArray, Int, Int>? = null
+        val storedFor = mutableSetOf<String>()
+
+        override fun deriveAndStore(
+            walletId: ByteArray,
+            publicKeyData: ByteArray,
+            identityIndex: Int,
+            keyIndex: Int,
+            force: Boolean,
+        ): DerivedKeyStoreResult? {
+            if (!force) {
+                // Persist-time failure → the key is recorded watch-only +
+                // pending (breadcrumbs still land on the row).
+                return null
+            }
+            lastForceCall = Triple(walletId, identityIndex, keyIndex)
+            val derivedPublic = fakePubkeyFor(identityIndex, keyIndex)
+            // BLOCKER 1: verify BEFORE persistence; wrong slot → no store.
+            if (!derivedPublic.contentEquals(publicKeyData)) {
+                throw org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException(
+                    "derived pubkey for slot $identityIndex/$keyIndex does not match request",
+                )
+            }
+            storedFor.add(publicKeyData.toHex())
+            return DerivedKeyStoreResult("privkey." + publicKeyData.toHex(), wasNewlyCreated = true)
+        }
+
+        override fun deleteUnownedStored(
+            pubkeyHexes: Collection<String>,
+            excludingWalletId: ByteArray,
+        ): Set<String> = emptySet()
+
+        companion object {
+            /** Deterministic stand-in for the Rust keypair public half. */
+            fun fakePubkeyFor(identityIndex: Int, keyIndex: Int): ByteArray =
+                ByteArray(33).also { it[0] = identityIndex.toByte(); it[1] = keyIndex.toByte() }
+        }
+    }
+
+    @Test
+    fun repairWithCorrectBreadcrumbsDerivesVerifiesAndClearsPending() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 30 }
+        seedIdentity(identityId)
+
+        // upsertIdentityKey records breadcrumbs 3/5; the pubkey MUST be the
+        // one those breadcrumbs derive, so the repair verification passes.
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(3, 5)
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull("persist-time failure seeds pending", handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        var probed = false
+        val id = handler.repairIdentityKeyDurably(
+            walletId = walletId,
+            publicKeyData = pubkey,
+            verifyRecoverable = { probed = true; true },
+        )
+
+        assertEquals("privkey." + pubkey.toHex(), id)
+        // Derived from the PERSISTED breadcrumbs (3/5), not any caller index.
+        assertEquals(Triple(walletId.toHex(), 3, 5), deriver.lastForceCall!!.let {
+            Triple(it.first.toHex(), it.second, it.third)
+        })
+        assertTrue("blob decrypt verified", probed)
+        // Pending cleared and the row now carries the durable identifier.
+        assertNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertEquals("privkey." + pubkey.toHex(), row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun repairWithMismatchedBreadcrumbsIsRejectedAndLeavesPending() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 31 }
+        seedIdentity(identityId)
+
+        // The row's breadcrumbs (3/5) derive fakePubkeyFor(3,5), which is NOT
+        // this pubkey — modelling wrong/corrupt breadcrumbs. The repair must
+        // reject rather than persist a different, unusable key.
+        val pubkey = ByteArray(33) { 77 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        var probed = false
+        var thrown: Throwable? = null
+        try {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { probed = true; true },
+            )
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue(
+            "wrong-slot repair must throw IdentityKeyDerivationMismatchException, got $thrown",
+            thrown is org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException,
+        )
+
+        // Nothing persisted, blob never even probed, pending intact.
+        assertFalse("verification must not run after a derive-mismatch", probed)
+        assertTrue(deriver.storedFor.isEmpty())
+        assertNotNull(
+            "a rejected repair must NOT clear pending",
+            handler.pendingIdentityKeys.value[pubkey.toHex()],
+        )
+        val row = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)
+        assertNull(row!!.privateKeyKeychainIdentifier)
+    }
+
+    @Test
+    fun repairWithoutPersistedBreadcrumbsFailsAndLeavesPending() = runTest {
+        val deriver = VerifyingRepairDeriver()
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, deriver)
+        val identityId = ByteArray(32) { 32 }
+        seedIdentity(identityId)
+
+        // A key persisted WITHOUT derivation breadcrumbs (derivationIndicesIsSome
+        // = false) — the correct slot is unknown, so repair must fail closed.
+        val pubkey = ByteArray(33) { 44 }
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            false, 0, 0, 0, ByteArray(32), null,
+        )
+        handler.onChangesetEnd(walletId, success = true)
+        var thrown: Throwable? = null
+        try {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+            )
+        } catch (t: Throwable) {
+            thrown = t
+        }
+        assertTrue(
+            "repair without breadcrumbs must fail with SigningKeyUnavailable, got $thrown",
+            thrown is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+        )
+        assertNull(deriver.lastForceCall)
     }
 
     // ── Shielded load round-trip ──────────────────────────────────────

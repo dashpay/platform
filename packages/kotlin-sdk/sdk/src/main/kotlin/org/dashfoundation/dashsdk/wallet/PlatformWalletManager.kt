@@ -453,91 +453,75 @@ class PlatformWalletManager(
     val signerHandle: Long get() = signer.nativeHandle
 
     /**
-     * Re-derive the canonical identity-authentication private key at
-     * `(identityIndex, keyIndex)` from this wallet's mnemonic and re-encrypt
-     * it into [walletStorage] under [publicKeyData]'s hex — the repair action
-     * behind `WalletKeyHealthSheet` (port of the iOS re-derive path in
-     * `WalletKeyHealthSheet.swift`, which calls
-     * `deriveIdentityAuthKeyAtSlot`).
+     * Re-derive the canonical identity-authentication private key for
+     * [publicKeyData] from this wallet's mnemonic and re-encrypt it into
+     * [walletStorage] under its hex — the repair action behind
+     * `WalletKeyHealthSheet` (port of the iOS re-derive path in
+     * `WalletKeyHealthSheet.swift`, which calls `deriveIdentityAuthKeyAtSlot`).
      *
-     * The whole `mnemonic → seed → path → key` derivation runs in Rust via
-     * the resolver-keyed FFI ([IdentityKeyPrivateKeyDeriver], the CLAUDE.md
-     * "one allowed exception"); Kotlin only encrypts the returned scalar.
-     * Returns the recorded storage identifier (e.g. `privkey.<pubkeyHex>`),
-     * or throws on a derivation / storage failure.
+     * The derivation slot is read from the PERSISTED `public_keys` row's
+     * derivation breadcrumbs — NEVER from a caller-supplied key id
+     * (dashpay/platform#4060 blocker 1): a wrong index derives a DIFFERENT
+     * valid scalar that round-trips through encrypt/decrypt fine and would
+     * persist an unusable key. The whole `mnemonic → seed → path → key`
+     * derivation runs in Rust via the resolver-keyed FFI
+     * ([IdentityKeyPrivateKeyDeriver], the CLAUDE.md "one allowed exception");
+     * Kotlin only encrypts the returned scalar. Returns the recorded storage
+     * identifier (e.g. `privkey.<pubkeyHex>`), or throws on a
+     * derivation / verification failure.
      *
      * FORCE-replaces the stored entry (never trusts the shape+fingerprint
-     * usability short-circuit) and then VERIFIES the write with the
-     * real-decrypt probe ([WalletStorage.probeIdentityKeyRecoverability])
-     * before declaring success — a blob that does not actually decrypt fails
-     * the repair with a typed
-     * [DashSdkError.PlatformWallet.SigningKeyUnavailable]
-     * (dashpay/platform#4060 finding 6).
+     * usability short-circuit), but first VERIFIES the derived PUBLIC key
+     * equals [publicKeyData] BEFORE persisting — a mismatched slot fails the
+     * repair without storing anything or clearing pending. After the store it
+     * VERIFIES the blob with the real-decrypt probe
+     * ([WalletStorage.probeIdentityKeyRecoverability]); a blob that does not
+     * actually decrypt fails the repair with a typed
+     * [DashSdkError.PlatformWallet.SigningKeyUnavailable].
      *
-     * Only after verification is the key dropped from [pendingIdentityKeys]
-     * via the persistence handler (the repair stores the private key
-     * directly through the deriver, bypassing `onPersistIdentityKeyUpsert` —
-     * the only persist path that clears pending — so it must clear the entry
-     * itself), and the Room rows' `privateKeyKeychainIdentifier` updated so
-     * the durable pending-repair reconstruction does not resurrect the key.
+     * Only after both verifications is the key dropped from
+     * [pendingIdentityKeys] and the Room rows' `privateKeyKeychainIdentifier`
+     * updated so the durable pending-repair reconstruction does not resurrect
+     * the key. The full orchestration lives in
+     * [PlatformWalletPersistenceHandler.repairIdentityKeyDurably] (this
+     * manager cannot be constructed on the JVM; the handler is unit-testable).
      */
     suspend fun repairIdentityKey(
         walletId: ByteArray,
         publicKeyData: ByteArray,
-        identityIndex: Int,
-        keyIndex: Int,
     ): String? = teardownGate.op {
-        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
-        require(keyIndex >= 0) { "keyIndex must be non-negative, got $keyIndex" }
+        // The whole repair — read the PERSISTED derivation breadcrumbs,
+        // force-re-derive, verify the derived public key matches
+        // [publicKeyData] before persisting, verify the stored blob decrypts,
+        // durably record the identifier, and only then clear pending — lives
+        // in the persistence handler ([repairIdentityKeyDurably]) so it is
+        // unit-testable (this manager cannot be constructed on the JVM) and
+        // shares the handler's authoritative pending-key state. The manager
+        // only supplies the wallet-scoped collaborators: the resolver-keyed
+        // deriver (already wired into the handler) and the real-decrypt probe.
+        //
         // deriveAndStore is a synchronous JNI call keyed on the manager's
-        // resolver handle — the gate keeps teardown from freeing it
+        // resolver handle — the teardownGate keeps teardown from freeing it
         // mid-derive (callers run on their own Compose scopes).
         //
-        // force = true (dashpay/platform#4060 finding 6): storeIfAbsent's
-        // shape+fingerprint usability short-circuit can be satisfied by a
-        // blob that does not actually decrypt, silently skipping the
-        // re-derive a repair exists to perform. The forced path routes
-        // through WalletStorage.replacePrivateKey, which unconditionally
-        // replaces blob + fingerprint + alias tag in one atomic edit.
-        val storageIdentifier = identityKeyDeriver.deriveAndStore(
+        // NB (dashpay/platform#4060 blocker 1): the derivation indices are NOT
+        // caller-supplied — a caller passing the DPP key id would derive a
+        // different valid scalar that round-trips fine and persists an
+        // unusable key. They come from the row's derivation breadcrumbs, and
+        // the derived public key is checked against [publicKeyData] before any
+        // store.
+        persistenceHandler.repairIdentityKeyDurably(
             walletId = walletId,
             publicKeyData = publicKeyData,
-            identityIndex = identityIndex,
-            keyIndex = keyIndex,
-            force = true,
-        )?.identifier
-        if (storageIdentifier != null) {
-            val pubkeyHex = publicKeyData.toHex()
-            // VERIFY with the real-decrypt probe before declaring success: a
-            // wrong-key crypto failure fails the repair with a typed error.
-            // UserNotAuthenticatedException counts as verified inside the
-            // probe (key present, opens after auth — this manager holds no
-            // BiometricGate on this path, and the just-written fingerprint
-            // rules out the wrong-key-behind-locked-gate ambiguity because
-            // we wrote the blob ourselves under the captured public key).
-            val verified = walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
-            if (!verified) {
-                throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
-                    "identity-key repair stored a blob that does not decrypt " +
-                        "for pubkey $pubkeyHex (identityIndex=$identityIndex, " +
-                        "keyIndex=$keyIndex) — the key remains unusable; " +
-                        "re-run the repair after resolving the Keystore state",
-                )
-            }
-            // Record the identifier on the Room rows too, so the durable
-            // pending-repair reconstruction (finding 5) does not resurrect
-            // this key on the next launch.
-            runCatching {
-                database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
-                    if (row.privateKeyKeychainIdentifier != storageIdentifier) {
-                        database.publicKeyDao()
-                            .update(row.copy(privateKeyKeychainIdentifier = storageIdentifier))
-                    }
-                }
-            }
-            persistenceHandler.markIdentityKeyRepaired(pubkeyHex)
-        }
-        storageIdentifier
+            verifyRecoverable = { pubkeyHex ->
+                // UserNotAuthenticatedException counts as verified inside the
+                // probe (key present, opens after auth — this manager holds no
+                // BiometricGate on this path, and the just-written fingerprint
+                // rules out the wrong-key-behind-locked-gate ambiguity because
+                // the blob was written under the captured public key).
+                walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+            },
+        )
     }
 
     /**

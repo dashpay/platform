@@ -170,11 +170,17 @@ fun WalletKeyHealthSheet(
                                             scope.launch {
                                                 runCatching {
                                                     withContext(Dispatchers.IO) {
+                                                        // The repair reads the derivation slot
+                                                        // from the persisted breadcrumbs on the
+                                                        // key's row — the example app must NOT
+                                                        // pass an index (e.g. the DPP key id):
+                                                        // a wrong slot derives a different valid
+                                                        // scalar that round-trips fine and
+                                                        // persists an unusable key
+                                                        // (dashpay/platform#4060 blocker 1).
                                                         activeManager.repairIdentityKey(
                                                             walletId = walletId,
                                                             publicKeyData = key.publicKeyData,
-                                                            identityIndex = report.identityIndex,
-                                                            keyIndex = key.keyId,
                                                         )
                                                     }
                                                 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.ffi.AccountSpecData
 import org.dashfoundation.dashsdk.ffi.ContactProfileRestoreData
 import org.dashfoundation.dashsdk.ffi.ContactRequestRestoreData
@@ -2628,6 +2629,98 @@ class PlatformWalletPersistenceHandler(
      */
     internal fun markIdentityKeyRepaired(publicKeyHex: String) {
         _pendingIdentityKeys.update(clearPendingKeyDelta(publicKeyHex))
+    }
+
+    /**
+     * Re-derive, verify, and durably repair the identity key identified by
+     * [publicKeyData] — the orchestration behind
+     * `PlatformWalletManager.repairIdentityKey`, hoisted here so it is
+     * unit-testable (the manager cannot be constructed on the JVM) and so it
+     * shares this handler's authoritative [pendingIdentityKeys] state.
+     *
+     * ## Derivation source (dashpay/platform#4060 blocker 1)
+     *
+     * The derivation indices are read from the PERSISTED `public_keys` row's
+     * derivation breadcrumbs ([PublicKeyEntity.derivationIdentityIndex] /
+     * [PublicKeyEntity.derivationKeyIndex]) — NEVER from a caller-supplied
+     * key id. A caller-supplied index (e.g. the DPP key id) can derive a
+     * DIFFERENT valid scalar that round-trips through encrypt/decrypt fine;
+     * the deriver's [PrivateKeyDeriver.deriveAndStore] `force` path then
+     * proves the derived PUBLIC key equals [publicKeyData] BEFORE persisting
+     * and throws [org.dashfoundation.dashsdk.security.IdentityKeyDerivationMismatchException]
+     * on mismatch (nothing persisted, pending state untouched). A row with no
+     * breadcrumbs cannot be safely repaired, so the repair fails without
+     * clearing pending.
+     *
+     * @param verifyRecoverable the real-decrypt probe
+     *   (`WalletStorage.probeIdentityKeyRecoverability`) proving the just-written
+     *   blob actually opens; injected by the manager (this handler holds no
+     *   `WalletStorage`).
+     * @return the recorded storage identifier, or null when the deriver
+     *   declined to store (pending left intact). Throws (pending left intact)
+     *   on a derivation/verification failure.
+     */
+    internal suspend fun repairIdentityKeyDurably(
+        walletId: ByteArray,
+        publicKeyData: ByteArray,
+        verifyRecoverable: suspend (pubkeyHex: String) -> Boolean,
+    ): String? {
+        val pubkeyHex = publicKeyData.toHex()
+        val deriver = privateKeyDeriver
+            ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair for $pubkeyHex has no private-key deriver wired; " +
+                    "the key remains unusable and pending state is left intact",
+            )
+
+        // BLOCKER 1: read the derivation indices from the persisted row, never
+        // from the caller. A row lacking breadcrumbs cannot be safely repaired
+        // (we would have to guess the slot), so fail WITHOUT clearing pending.
+        val breadcrumbs = database.publicKeyDao().getByPublicKeyData(publicKeyData)
+            .firstNotNullOfOrNull { row ->
+                val identityIndex = row.derivationIdentityIndex
+                val keyIndex = row.derivationKeyIndex
+                if (identityIndex != null && keyIndex != null) identityIndex to keyIndex else null
+            } ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "cannot repair identity key $pubkeyHex: no derivation breadcrumbs are " +
+                    "persisted for it (derivationIdentityIndex/derivationKeyIndex are " +
+                    "null) — the correct slot is unknown; pending state left intact",
+            )
+        val (identityIndex, keyIndex) = breadcrumbs
+
+        // force = true routes through WalletStorage.replacePrivateKey and, in
+        // the production deriver, derives the KEYPAIR and verifies the derived
+        // public key equals publicKeyData BEFORE any store — a mismatch throws
+        // IdentityKeyDerivationMismatchException here, so nothing below runs
+        // and pending is never cleared (BLOCKER 1).
+        val storageIdentifier = deriver.deriveAndStore(
+            walletId = walletId,
+            publicKeyData = publicKeyData,
+            identityIndex = identityIndex,
+            keyIndex = keyIndex,
+            force = true,
+        )?.identifier ?: return null
+
+        // Independent confirmation the stored blob actually decrypts.
+        if (!verifyRecoverable(pubkeyHex)) {
+            throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair stored a blob that does not decrypt for pubkey " +
+                    "$pubkeyHex (slot $identityIndex/$keyIndex) — the key remains " +
+                    "unusable; pending state left intact",
+            )
+        }
+
+        // Record the identifier on the Room rows so the durable pending-repair
+        // reconstruction does not resurrect this key on the next launch.
+        runCatching {
+            database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
+                if (row.privateKeyKeychainIdentifier != storageIdentifier) {
+                    database.publicKeyDao()
+                        .update(row.copy(privateKeyKeychainIdentifier = storageIdentifier))
+                }
+            }
+        }
+        markIdentityKeyRepaired(pubkeyHex)
+        return storageIdentifier
     }
 
     /**
