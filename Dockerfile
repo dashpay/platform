@@ -450,7 +450,7 @@ ARG SDK_TEST_DATA
 ARG SHIELDED_TEST_DATA
 ARG ADDITIONAL_FEATURES=""
 
-SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-e", "-c"]
 
 WORKDIR /platform
 
@@ -462,9 +462,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    set -ex; \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     export FEATURES_FLAG=""; \
@@ -491,8 +491,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package drive-abci \
     ${FEATURES_FLAG} \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
     Cargo.lock \
@@ -642,8 +641,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
@@ -653,8 +653,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package wasm-dpp \
     --target wasm32-unknown-unknown \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 
 # Rust deps
@@ -873,7 +872,7 @@ USER node
 #
 FROM deps AS build-rs-dapi
 
-SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-e", "-c"]
 
 WORKDIR /platform
 
@@ -885,9 +884,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    set -ex; \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
@@ -898,8 +897,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --profile "$CARGO_BUILD_PROFILE" \
     --package rs-dapi \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
     Cargo.lock \
