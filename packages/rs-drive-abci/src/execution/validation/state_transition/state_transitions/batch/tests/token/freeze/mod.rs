@@ -106,6 +106,164 @@ mod token_freeze_tests {
         }
 
         #[tokio::test]
+        async fn test_token_freeze_already_frozen_error_names_target_not_actor() {
+            // Regression: a second freeze of an already-frozen account must be
+            // rejected with `IdentityTokenAccountAlreadyFrozenError` that names
+            // the FREEZE TARGET (identity_to_freeze_id), not the acting /
+            // authority identity (the transition owner). The validator used to
+            // pass `owner_id`, which made the rejection message name the actor
+            // and misled callers into thinking the wrong target was submitted.
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, _, _) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            // First freeze of identity_2 — succeeds.
+            let freeze_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                identity_2.id(),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create freeze transition");
+
+            let freeze_serialized_transition = freeze_transition
+                .serialize_to_bytes()
+                .expect("expected freeze serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[freeze_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Second freeze of the same (now-frozen) identity_2 — rejected.
+            let freeze_again_transition = BatchTransition::new_token_freeze_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                identity_2.id(),
+                None,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create second freeze transition");
+
+            let freeze_again_serialized_transition = freeze_again_transition
+                .serialize_to_bytes()
+                .expect("expected second freeze serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[freeze_again_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            match processing_result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error:
+                        ConsensusError::StateError(StateError::IdentityTokenAccountAlreadyFrozenError(
+                            e,
+                        )),
+                    ..
+                }] => {
+                    assert_eq!(
+                        e.identity_id(),
+                        &identity_2.id(),
+                        "already-frozen error must name the freeze target, not the actor",
+                    );
+                    assert_ne!(
+                        e.identity_id(),
+                        &identity.id(),
+                        "already-frozen error must NOT name the acting/authority identity",
+                    );
+                }
+                other => panic!(
+                    "expected IdentityTokenAccountAlreadyFrozenError, got {:?}",
+                    other
+                ),
+            }
+        }
+
+        #[tokio::test]
         async fn test_token_freeze_identity_does_not_exist() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()

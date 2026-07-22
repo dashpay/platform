@@ -54,9 +54,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_json(
             match serde_json::to_value(&contract) {
                 Ok(json_value) => match serde_json::to_string(&json_value) {
                     Ok(json_string) => match CString::new(json_string) {
-                        Ok(c_str) => {
-                            DashSDKResult::success(c_str.into_raw() as *mut std::os::raw::c_void)
-                        }
+                        Ok(c_str) => DashSDKResult::success_string(c_str.into_raw()),
                         Err(e) => DashSDKResult::error(FFIError::from(e).into()),
                     },
                     Err(e) => DashSDKResult::error(FFIError::from(e).into()),

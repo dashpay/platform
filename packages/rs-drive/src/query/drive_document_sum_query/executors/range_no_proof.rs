@@ -15,7 +15,7 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Range-sum walk against a `rangeSummable: true` index. Returns
     /// a summed entry or per-distinct-value entries depending on
-    /// `options.return_distinct_sums_in_range`.
+    /// `options.walk_mode`.
     #[allow(clippy::too_many_arguments)]
     pub fn execute_document_sum_range_no_proof(
         &self,

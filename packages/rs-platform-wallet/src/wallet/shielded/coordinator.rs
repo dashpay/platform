@@ -513,6 +513,36 @@ impl NetworkShieldedCoordinator {
                     ))
                 });
             }
+            // Verify the reset actually landed to 0 leaves under the SAME
+            // write guard. `reset_commitment_tree` can theoretically report
+            // Ok while leaving the on-disk tree populated (e.g. a checkpoint
+            // that didn't take, or a shardtree reopen that re-materialized a
+            // cached frontier). Without this check `clear()` would return Ok,
+            // the host would wipe its own Room/SwiftData rows, and the next
+            // cold resync would gate-skip every re-downloaded position against
+            // the still-full tree — the exact "Clear did nothing, tree frozen
+            // at N/N, zero notes scanned" symptom. Turning a silent no-op into
+            // a hard error makes the host fail closed (keep its rows) and
+            // surfaces the failure instead of masking it.
+            if first_err.is_none() {
+                match store.tree_size() {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        tracing::error!(
+                            remaining_leaves = n,
+                            "commitment tree still populated after reset_commitment_tree"
+                        );
+                        first_err = Some(crate::error::PlatformWalletError::ShieldedStoreError(
+                            format!("commitment tree still has {n} leaves after reset"),
+                        ));
+                    }
+                    Err(e) => {
+                        first_err = Some(crate::error::PlatformWalletError::ShieldedStoreError(
+                            format!("tree_size check after reset failed: {e}"),
+                        ));
+                    }
+                }
+            }
         }
         if let Some(e) = first_err {
             return Err(e);
@@ -1327,6 +1357,66 @@ mod tests {
         );
         assert!(coordinator.accounts.read().await.is_empty());
         assert!(coordinator.persisters.read().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ON-DISK durability of `clear()` — the regression guard for the
+    /// "Clear resets the in-memory tree but not the persisted SQLite" bug.
+    ///
+    /// The prior test asserts `tree_size() == 0` on the SAME store handle,
+    /// which passes even if `clear()` only reset an in-memory shardtree /
+    /// frontier and left the on-disk `commitment_tree_*` rows intact. This
+    /// test instead reopens the persisted file through a COMPLETELY FRESH
+    /// `FileBackedShieldedStore` (independent connection, cold frontier) after
+    /// `clear()` and asserts both the tree AND the per-subwallet watermark
+    /// read back empty — proving the reset reached disk. Without the on-disk
+    /// reset + WAL checkpoint, this fresh handle would reload the full tree
+    /// (the on-device "tap Clear, relaunch, still 867/867" symptom).
+    #[tokio::test]
+    async fn clear_resets_the_persisted_on_disk_store_not_just_memory() {
+        let dir = temp_dir("clear_ondisk");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        // Build a non-trivial tree AND advance the watermark, then checkpoint
+        // — the exact durable state a real sync leaves behind.
+        {
+            let mut store = coordinator.store().write().await;
+            for i in 0..8u8 {
+                store.append_commitment(&[i + 1; 32], true).unwrap();
+            }
+            store.checkpoint_tree(8).unwrap();
+            store.set_last_synced_note_index(id, 8).unwrap();
+            assert_eq!(store.tree_size().unwrap(), 8);
+            assert_eq!(store.last_synced_note_index(id).unwrap(), 8);
+        }
+
+        coordinator.clear().await.expect("clear should succeed");
+
+        // Reopen the persisted file with a FRESH handle: this reads the
+        // on-disk tables cold (no shared in-memory frontier), so a non-zero
+        // size here would mean clear() never wrote the disk.
+        let reopened = FileBackedShieldedStore::open_path(&db_path, 100)
+            .expect("reopen persisted store after clear");
+        assert_eq!(
+            reopened.tree_size().unwrap(),
+            0,
+            "on-disk commitment tree must read 0 through a fresh handle after clear — \
+             a non-zero size means clear() only reset the in-memory tree"
+        );
+        // The watermark is in-memory per store handle (rebuilt from the host's
+        // Room/SwiftData on bind, which the host wipes separately), so a fresh
+        // handle starts it at 0 by construction; assert it to pin the contract
+        // that a cold reopen is caught up to nothing.
+        assert_eq!(
+            reopened.last_synced_note_index(id).unwrap(),
+            0,
+            "a freshly reopened store must have no per-subwallet watermark"
+        );
+        drop(reopened);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

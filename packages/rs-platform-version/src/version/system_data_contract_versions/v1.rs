@@ -9,4 +9,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V1: SystemDataContractVersions =
         wallet: 1,
         token_history: 1,
         keyword_search: 1,
+        document_history: 1,
     };

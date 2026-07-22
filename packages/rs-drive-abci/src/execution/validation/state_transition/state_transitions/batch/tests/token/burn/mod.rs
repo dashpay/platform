@@ -3685,9 +3685,13 @@ mod token_burn_tests {
     /// (see commit message of the version bump for the recorded delta).
     #[tokio::test]
     async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads() {
+        // PROTOCOL_VERSION_13: 4_367_880 (up from 4_319_240 at PV12) — the
+        // PV13 genesis registers the document history contract and stores the
+        // larger DPNS v2 schema, which changes the contracts-subtree node
+        // sizes and therefore the byte-billed group-action contract reads.
         run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            4_319_240,
+            4_367_880,
         )
         .await;
     }

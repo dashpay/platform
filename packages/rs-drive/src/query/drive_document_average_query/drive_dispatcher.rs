@@ -1322,7 +1322,7 @@ mod tests {
 
     /// Flat-summed range cross-check: `Aggregate + range` on a PCPS
     /// index resolves to `DocumentSumMode::RangeNoProof` with
-    /// `return_distinct_sums_in_range = false`. The joint executor
+    /// `walk_mode = RangeSumWalkMode::Aggregate`. The joint executor
     /// folds visited PCPS elements via `count_sum_value_or_default()`
     /// in Rust (no engine-side combined accumulator exists). Pin parity
     /// vs. the independent count + sum aggregate dispatch — this is the
@@ -1409,7 +1409,7 @@ mod tests {
 
     /// Compound-summed range cross-check: `GroupByIn + In + range` on
     /// a PCPS index resolves to `DocumentSumMode::RangeNoProof` with
-    /// `return_distinct_sums_in_range = false`. The joint executor's
+    /// `walk_mode = RangeSumWalkMode::Aggregate`. The joint executor's
     /// distinct path query expresses the multi-In outer walk as a
     /// single grovedb call (atomicity inherent) and folds each
     /// In-branch's PCPS elements into one `(count, sum)` pair via

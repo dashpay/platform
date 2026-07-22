@@ -1,0 +1,304 @@
+{
+  "transfer": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "documentsCountable": true,
+    "indices": [
+      {
+        "name": "byDocument",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "documentId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byContract",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "countable": "countable",
+        "rangeCountable": true
+      },
+      {
+        "name": "from",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "to",
+        "properties": [
+          {
+            "toIdentityId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "dataContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The data contract of the transferred document",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "documentTypeName": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The document type of the transferred document",
+        "position": 1
+      },
+      "documentId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The transferred document",
+        "position": 2,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "toIdentityId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identity the document was transferred to",
+        "position": 3,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      }
+    },
+    "required": [
+      "dataContractId",
+      "documentTypeName",
+      "documentId",
+      "toIdentityId",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "purchase": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "documentsAverageable": "price",
+    "indices": [
+      {
+        "name": "byDocument",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "documentId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
+      },
+      {
+        "name": "byContract",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
+      },
+      {
+        "name": "buyer",
+        "properties": [
+          {
+            "$ownerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "seller",
+        "properties": [
+          {
+            "sellerId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ]
+      },
+      {
+        "name": "byPrice",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "price": "asc"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "dataContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The data contract of the purchased document",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "documentTypeName": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The document type of the purchased document",
+        "position": 1
+      },
+      "documentId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The purchased document",
+        "position": 2,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "sellerId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The identity that sold the document",
+        "position": 3,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "price": {
+        "type": "integer",
+        "description": "The price paid for the document in credits. Unbounded integer so the property is sum-aggregatable (i64); actual values are consensus-validated non-negative credit amounts written only by the protocol",
+        "position": 4
+      }
+    },
+    "required": [
+      "dataContractId",
+      "documentTypeName",
+      "documentId",
+      "sellerId",
+      "price",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  },
+  "priceUpdate": {
+    "type": "object",
+    "$comment": "Time-range aggregates over these records are weighted by listing events: a document relisted N times in the window contributes N records. They are activity-weighted averages, not time-weighted prices.",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 2,
+    "documentsCountable": true,
+    "indices": [
+      {
+        "name": "byDocument",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "documentId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
+      },
+      {
+        "name": "byContract",
+        "properties": [
+          {
+            "dataContractId": "asc"
+          },
+          {
+            "$createdAt": "asc"
+          }
+        ],
+        "averageable": "price",
+        "rangeAverageable": true
+      }
+    ],
+    "properties": {
+      "dataContractId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The data contract of the listed document",
+        "position": 0,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "documentTypeName": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "The document type of the listed document",
+        "position": 1
+      },
+      "documentId": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 32,
+        "maxItems": 32,
+        "description": "The listed document",
+        "position": 2,
+        "contentMediaType": "application/x.dash.dpp.identifier"
+      },
+      "price": {
+        "type": "integer",
+        "description": "The new asking price for the document in credits. Unbounded integer so the property is sum-aggregatable (i64); actual values are consensus-validated non-negative credit amounts written only by the protocol",
+        "position": 3
+      }
+    },
+    "required": [
+      "dataContractId",
+      "documentTypeName",
+      "documentId",
+      "price",
+      "$createdAt",
+      "$createdAtBlockHeight"
+    ],
+    "additionalProperties": false
+  }
+}

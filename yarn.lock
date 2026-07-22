@@ -1720,6 +1720,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/document-history-contract@workspace:packages/document-history-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/document-history-contract@workspace:packages/document-history-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/dp-services-ctl@github:dashevo/js-dp-services-ctl#v0.19-dev":
   version: 0.19.0-dev.1
   resolution: "@dashevo/dp-services-ctl@https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"

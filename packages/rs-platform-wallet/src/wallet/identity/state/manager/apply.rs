@@ -38,7 +38,8 @@ impl IdentityManager {
     /// as applying it once. If the identity already exists in either
     /// bucket, the scalar fields are updated in place; balance/revision
     /// are gated on `entry.revision >= existing.identity.revision()`
-    /// matching the merge policy on `IdentityChangeSet`.
+    /// matching the merge policy on `IdentityChangeSet`. Contested DPNS
+    /// labels are a complete canonical snapshot and are assigned wholesale.
     pub(crate) fn apply_identity_entry(&mut self, entry: IdentityEntry) {
         use dpp::identity::accessors::IdentitySettersV0;
 
@@ -59,11 +60,7 @@ impl IdentityManager {
                     existing.dpns_names.push(name);
                 }
             }
-            for label in entry.contested_dpns_names {
-                if !existing.contested_dpns_names.contains(&label) {
-                    existing.contested_dpns_names.push(label);
-                }
-            }
+            existing.contested_dpns_names = entry.contested_dpns_names;
             existing
                 .dashpay_payments_mut()
                 .extend(entry.dashpay_payments);
@@ -202,5 +199,54 @@ impl IdentityManager {
         if let Some(managed) = self.locate_mut(identity_id) {
             managed.identity.public_keys_mut().remove(&key_id);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::changeset::IdentityEntry;
+    use crate::wallet::identity::state::managed_identity::IdentityStatus;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn entry(id: Identifier, labels: &[&str]) -> IdentityEntry {
+        IdentityEntry {
+            id,
+            balance: 0,
+            revision: 0,
+            identity_index: None,
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: labels.iter().map(|label| (*label).to_owned()).collect(),
+            status: IdentityStatus::Unknown,
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: BTreeMap::new(),
+            contact_profiles: BTreeMap::new(),
+            ignored_senders: BTreeSet::new(),
+        }
+    }
+
+    #[test]
+    fn contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty() {
+        let id = Identifier::from([0x52; 32]);
+        let mut manager = IdentityManager::default();
+        manager.apply_identity_entry(entry(id, &["old", "retained"]));
+        manager.apply_identity_entry(entry(id, &["retained", "new"]));
+        assert_eq!(
+            manager
+                .locate_mut(&id)
+                .expect("identity must exist")
+                .contested_dpns_names,
+            ["retained", "new"]
+        );
+
+        manager.apply_identity_entry(entry(id, &[]));
+        assert!(manager
+            .locate_mut(&id)
+            .expect("identity must exist")
+            .contested_dpns_names
+            .is_empty());
     }
 }

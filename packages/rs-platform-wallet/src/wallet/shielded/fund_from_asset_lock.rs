@@ -142,7 +142,7 @@ impl PlatformWallet {
         cl_wait: Option<Duration>,
     ) -> Result<(), PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         P: OrchardProver,
     {
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus

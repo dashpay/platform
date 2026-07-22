@@ -16,7 +16,7 @@ use tracing::{debug, trace, warn};
 
 use crate::DapiError;
 use crate::services::streaming_service::{
-    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
+    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle, validate_core_block_hash,
 };
 
 const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
@@ -51,11 +51,10 @@ impl StreamingServiceImpl {
                 }
                 FromBlock::FromBlockHeight(height)
             }
-            Some(FromBlock::FromBlockHash(ref hash)) if hash.is_empty() => {
-                debug!("block_headers=empty_from_block_hash");
-                return Err(Status::invalid_argument("fromBlockHash cannot be empty"));
+            Some(FromBlock::FromBlockHash(hash)) => {
+                validate_core_block_hash(&hash)?;
+                FromBlock::FromBlockHash(hash)
             }
-            Some(from_block) => from_block,
             None => {
                 debug!("block_headers=missing_from_block");
                 return Err(Status::invalid_argument("from_block is required"));

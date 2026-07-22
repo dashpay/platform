@@ -305,6 +305,22 @@ pub(crate) unsafe fn decode_identity_pubkeys(
         let pubkey_bytes: Vec<u8> =
             slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
         let contract_bounds = decode_contract_bounds(row, purpose, i, "identity_pubkeys")?;
+        // Reject duplicate key IDs explicitly. A plain `insert` into the
+        // `BTreeMap` would silently last-wins, dropping the earlier row — the
+        // surviving key is still structurally validated, but the caller asked
+        // to register two keys and only got one, which is a caller bug worth
+        // surfacing rather than hiding. All callers (the four Android
+        // registration paths and the invitation-claim path) build a distinct
+        // key set, so a collision is always a mistake.
+        if keys_map.contains_key(&row.key_id) {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!(
+                    "identity_pubkeys[{i}] has a duplicate key id {}",
+                    row.key_id
+                ),
+            ));
+        }
         keys_map.insert(
             row.key_id,
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
@@ -813,5 +829,104 @@ mod tests {
         unsafe { platform_wallet_derive_identity_keys_for_index_free(&mut out) };
         assert!(out.items.is_null());
         assert_eq!(out.count, 0);
+    }
+
+    /// Build an `IdentityPubkeyFFI` borrowing `pubkey` for the caller's
+    /// lifetime. AUTHENTICATION / MASTER (discriminants 0/0/0) so no contract
+    /// bounds are required — the raw byte values match the DPP `Purpose` /
+    /// `SecurityLevel` reprs.
+    fn ffi_row(key_id: u32, pubkey: &[u8]) -> IdentityPubkeyFFI {
+        IdentityPubkeyFFI {
+            key_id,
+            key_type: 0,       // KeyType::ECDSA_SECP256K1
+            purpose: 0,        // Purpose::AUTHENTICATION
+            security_level: 0, // SecurityLevel::MASTER
+            pubkey_bytes: pubkey.as_ptr(),
+            pubkey_len: pubkey.len(),
+            read_only: false,
+            contract_bounds_kind: 0,
+            contract_bounds_id: ptr::null(),
+            contract_bounds_document_type: ptr::null(),
+        }
+    }
+
+    /// Two rows sharing a key id must be rejected, not silently collapsed to
+    /// last-wins in the `BTreeMap`. This is the exact decoder the invitation-
+    /// claim path (`platform_wallet_claim_invitation`) runs, so the guard
+    /// covers that fifth caller too — not only the four Android registration
+    /// paths.
+    #[test]
+    fn decode_identity_pubkeys_rejects_duplicate_key_ids() {
+        let pk_a = [0x02u8; 33];
+        let pk_b = [0x03u8; 33];
+        let rows = [ffi_row(0, &pk_a), ffi_row(0, &pk_b)];
+        // SAFETY: `rows` (and the pubkey arrays it borrows) outlive the call.
+        let mut err = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect_err("duplicate key id must be rejected");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+    }
+
+    /// A distinct key set still decodes cleanly after the duplicate guard —
+    /// proves the refactor didn't regress the common path.
+    #[test]
+    fn decode_identity_pubkeys_accepts_distinct_key_ids() {
+        let pk_a = [0x02u8; 33];
+        let pk_b = [0x03u8; 33];
+        let rows = [ffi_row(0, &pk_a), ffi_row(1, &pk_b)];
+        // SAFETY: `rows` (and the pubkey arrays it borrows) outlive the call.
+        let map = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect("distinct key ids must decode");
+        assert_eq!(map.len(), 2);
+    }
+
+    /// An ENCRYPTION key with no contract bounds is still rejected after the
+    /// refactor (Drive scopes those keys to a contract, so an unbounded one is
+    /// unusable). Confirms `decode_contract_bounds`' guard survives.
+    #[test]
+    fn decode_identity_pubkeys_rejects_unbounded_encryption_key() {
+        let pk = [0x02u8; 33];
+        let mut enc = ffi_row(4, &pk);
+        enc.purpose = 1; // Purpose::ENCRYPTION
+        enc.security_level = 3; // SecurityLevel::MEDIUM
+                                // contract_bounds_kind stays 0 → unbounded → rejected.
+        let rows = [ffi_row(0, &pk), enc];
+        // SAFETY: `rows` (and the pubkey array it borrows) outlive the call.
+        let mut err = unsafe { decode_identity_pubkeys(rows.as_ptr(), rows.len()) }
+            .expect_err("unbounded encryption key must be rejected");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+    }
+
+    #[test]
+    fn decode_identity_pubkeys_rejects_invalid_role_discriminants() {
+        let pk = [0x02u8; 33];
+
+        for (field, row) in [
+            ("key_type", {
+                let mut row = ffi_row(0, &pk);
+                row.key_type = u8::MAX;
+                row
+            }),
+            ("purpose", {
+                let mut row = ffi_row(0, &pk);
+                row.purpose = u8::MAX;
+                row
+            }),
+            ("security_level", {
+                let mut row = ffi_row(0, &pk);
+                row.security_level = u8::MAX;
+                row
+            }),
+        ] {
+            let mut err = unsafe { decode_identity_pubkeys(&row, 1) }
+                .expect_err("invalid role byte must be rejected");
+            assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+            let message = unsafe { CStr::from_ptr(err.message) }
+                .to_str()
+                .expect("error message is UTF-8");
+            assert!(message.contains(field), "{message}");
+            unsafe { platform_wallet_ffi_result_free(&mut err) };
+        }
     }
 }

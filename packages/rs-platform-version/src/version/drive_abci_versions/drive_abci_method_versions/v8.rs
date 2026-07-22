@@ -114,10 +114,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
         process_raw_state_transitions: 0,
+        process_validation_result: 0,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
+        record_added_balance_outputs: 0,
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,

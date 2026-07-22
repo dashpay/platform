@@ -18,11 +18,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ContractFetchOutcome, Error> {
-        if let Some(system_contract) = self
-            .cache
-            .system_data_contracts
-            .find_by_id(Identifier::new(contract_id))
-        {
+        if let Some(system_contract) = self.cache.system_data_contracts.find_by_id(
+            Identifier::new(contract_id),
+            platform_version.protocol_version,
+        ) {
             return Ok(ContractFetchOutcome::System(system_contract));
         }
 
