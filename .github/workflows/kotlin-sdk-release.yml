@@ -39,14 +39,52 @@ jobs:
       sha: ${{ steps.resolve-sha.outputs.sha }}
 
     steps:
+      # A workflow_dispatch `tag` input is free-form and actions/checkout would
+      # happily resolve it to a BRANCH (or any ref), which would let a manual
+      # run publish a Maven version derived from a moving branch instead of an
+      # immutable tag. Resolve the ref HERE and hard-fail unless it names an
+      # existing tag, then hand the checkout an explicit refs/tags/<tag> ref so
+      # it can never bind to a branch. The tag-push trigger is already
+      # tag-bound (github.ref is refs/tags/kotlin-sdk-*) and skips the lookup.
+      - name: Resolve and validate release ref
+        id: release-ref
+        env:
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+          PUSH_REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$DISPATCH_TAG" ]; then
+            # Accept either the short tag or a full refs/tags/ ref; reject
+            # anything else (a bare branch name, refs/heads/..., or a slashed
+            # ref) before it can reach checkout.
+            TAG="${DISPATCH_TAG#refs/tags/}"
+            case "$TAG" in
+              refs/*|*/*)
+                echo "::error::Release ref '$DISPATCH_TAG' is not a plain tag name — provide an existing kotlin-sdk-* tag (optionally as refs/tags/kotlin-sdk-vX.Y.Z)."
+                exit 1
+                ;;
+            esac
+            # The tags ref namespace is checked explicitly, so a branch that
+            # happens to share the input's name can never satisfy this guard.
+            if ! gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+              echo "::error::No existing tag 'refs/tags/${TAG}' in ${REPO}. workflow_dispatch can only (re-)release an existing tag, never a branch or arbitrary ref."
+              exit 1
+            fi
+            echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
+          else
+            # Tag-push trigger: github.ref is already refs/tags/kotlin-sdk-*.
+            echo "checkout_ref=${PUSH_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # A manual dispatch runs on the branch/tag selected in the UI, not
-          # on the `tag` input it will publish under — without this ref the
-          # released AAR could be built from a different commit than the tag.
-          # A full `refs/tags/...` value is a valid checkout ref as-is.
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          # Always an explicit refs/tags/<tag> (validated above) or the
+          # tag-push github.ref — never the raw dispatch input — so the
+          # released AAR is built from the tag's commit and a manual run can
+          # never build from a branch.
+          ref: ${{ steps.release-ref.outputs.checkout_ref }}
 
       - name: Resolve built commit SHA
         id: resolve-sha
@@ -96,40 +134,23 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Derived sdkVersion: ${VERSION:-<none — Maven Central deploy will be skipped>}"
 
-      # Precondition check runs HERE — right after version derivation and
-      # before the ~3-hour native build — so a misconfiguration (partial
-      # secrets) fails fast instead of after the long build. It only decides
-      # WHETHER to deploy; the actual deploy is a separate, environment-gated
-      # job (maven-central-deploy) that consumes this `deploy` output.
-      #
-      # The `secrets` context is mapped into env vars here because emptiness of
-      # the secret is what decides the gate. These names must be resolvable at
-      # repository/organization scope for this fail-fast check to see them; the
-      # human approval gate and (optionally) environment-scoped copies live on
-      # the maven-central environment — see packages/kotlin-sdk/PUBLISHING.md.
-      - name: Check Maven Central deploy preconditions
+      # Decides WHETHER a Maven Central deploy should be attempted, based SOLELY
+      # on the tag-derived version. This job is deliberately UNPROTECTED, so it
+      # must not read any publishing credential — otherwise the maven-central
+      # environment approval gate would not actually protect the secrets. The
+      # all-or-nothing secret precondition therefore lives in the gated
+      # maven-central-deploy job, which is the only place the Maven Central /
+      # GPG secrets are referenced. Deciding the version gate here still lets a
+      # non-releasable tag (kotlin-sdk-* without a vX.Y.Z version) skip the
+      # deploy job entirely so no reviewer is ever prompted for it.
+      - name: Decide whether to deploy to Maven Central
         id: maven-gate
         env:
           SDK_VERSION: ${{ steps.sdk-version.outputs.version }}
-          PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
-          PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
-          GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
-          GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
         run: |
-          # All five secrets the staging + jreleaser steps actually consume:
-          # Portal user/token, and the GPG secret key, public key and
-          # passphrase (gradle signing needs key+passphrase; jreleaser's
-          # Active.ALWAYS signing needs all three GPG values).
           if [ -z "$SDK_VERSION" ]; then
             echo "::notice::Tag is not kotlin-sdk-vX.Y.Z, so no Maven version can be derived — Maven Central deploy skipped."
             echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ] && [ -z "$GPG_PUBLIC_KEY" ] && [ -z "$GPG_PASSPHRASE" ]; then
-            echo "::notice::Maven Central secrets are not configured on this repository (the Central Portal token is currently personal) — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ] || [ -z "$GPG_PUBLIC_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
-            echo "::error::Maven Central secrets are only partially configured — need ALL of JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD, JRELEASER_GPG_SECRET_KEY, JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE. Refusing to guess."
-            exit 1
           else
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
@@ -210,7 +231,11 @@ jobs:
           name: kotlin-sdk-jnilibs
           path: packages/kotlin-sdk/sdk/src/main/jniLibs
           if-no-files-found: error
-          retention-days: 1
+          # The deploy job can sit pending human approval on the maven-central
+          # environment for far longer than a day, so this artifact must
+          # outlive any realistic approval pause; download-artifact fails once
+          # it expires.
+          retention-days: 90
 
   # -------------------------------------------------------------------------
   # Maven Central deploy — the human gate.
@@ -220,11 +245,14 @@ jobs:
   # environment (see packages/kotlin-sdk/PUBLISHING.md) the workflow PAUSES
   # here and a reviewer must approve before anything is published to Maven
   # Central — the deploy is irrevocable, so this approval is the human gate.
-  # It runs only when the build job decided a deploy is warranted (valid
-  # tag-derived version AND the secrets are configured); otherwise it is
-  # skipped and no reviewer is prompted. The Central secrets are referenced in
-  # this job's steps so they resolve from the maven-central environment when
-  # scoped there.
+  # It runs only when the build job derived a releasable version (a
+  # kotlin-sdk-vX.Y.Z tag); a non-releasable tag skips it and prompts no
+  # reviewer. The Central / GPG secrets are referenced ONLY in this job's
+  # steps, so they resolve from the maven-central environment when scoped
+  # there and are never exposed to the unprotected build job. The all-or-
+  # nothing secret precondition runs as the first step below (after approval),
+  # so a partial-secret misconfiguration fails loudly instead of half-
+  # publishing, and a repo with no secrets configured yet skips the publish.
   # -------------------------------------------------------------------------
   maven-central-deploy:
     name: Deploy to Maven Central (version from tag)
@@ -235,7 +263,33 @@ jobs:
     environment: maven-central
 
     steps:
+      # All five secrets the staging + jreleaser steps consume: Portal
+      # user/token, and the GPG secret key, public key and passphrase (gradle
+      # signing needs key+passphrase; jreleaser's Active.ALWAYS signing needs
+      # all three GPG values). This is the ONLY place these secrets are
+      # referenced, so the emptiness check now lives behind the environment
+      # gate rather than in the unprotected build job.
+      - name: Check Maven Central publishing secrets
+        id: secrets-gate
+        env:
+          PORTAL_USER: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
+          PORTAL_TOKEN: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
+          GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
+          GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$PORTAL_USER" ] && [ -z "$PORTAL_TOKEN" ] && [ -z "$GPG_SECRET_KEY" ] && [ -z "$GPG_PUBLIC_KEY" ] && [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::notice::Maven Central secrets are not configured on the maven-central environment (the Central Portal token is currently personal) — Maven Central deploy skipped. See packages/kotlin-sdk/PUBLISHING.md."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          elif [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_TOKEN" ] || [ -z "$GPG_SECRET_KEY" ] || [ -z "$GPG_PUBLIC_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::Maven Central secrets are only partially configured — need ALL of JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME, JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD, JRELEASER_GPG_SECRET_KEY, JRELEASER_GPG_PUBLIC_KEY and JRELEASER_GPG_PASSPHRASE. Refusing to guess."
+            exit 1
+          else
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.secrets-gate.outputs.proceed == 'true'
         uses: actions/checkout@v4
         with:
           # Pin to the exact SHA the build job resolved, NOT the tag ref: the
@@ -246,12 +300,14 @@ jobs:
           ref: ${{ needs.build-and-release.outputs.sha }}
 
       - name: Set up JDK 17
+        if: steps.secrets-gate.outputs.proceed == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
+        if: steps.secrets-gate.outputs.proceed == 'true'
         uses: android-actions/setup-android@v3
         with:
           # No Rust/cargo here — the native libraries are downloaded below. The
@@ -263,12 +319,14 @@ jobs:
             ndk;28.1.13356709
 
       - name: Restore native libraries from the build job
+        if: steps.secrets-gate.outputs.proceed == 'true'
         uses: actions/download-artifact@v4
         with:
           name: kotlin-sdk-jnilibs
           path: packages/kotlin-sdk/sdk/src/main/jniLibs
 
       - name: Setup Gradle
+        if: steps.secrets-gate.outputs.proceed == 'true'
         uses: gradle/actions/setup-gradle@v4
 
       # Stages the signed release AAR + sources/javadoc jars into
@@ -277,6 +335,7 @@ jobs:
       # verifyJniLibsForRemotePublish hard-fails if the source tree lacks
       # libdash_sdk_jni.so for any required ABI.
       - name: Stage signed Maven artifacts (version from tag)
+        if: steps.secrets-gate.outputs.proceed == 'true'
         working-directory: packages/kotlin-sdk
         env:
           SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
@@ -293,6 +352,7 @@ jobs:
       # verifyJniLibsForRemotePublish and verifyStagedAarForRemotePublish
       # first, so a stale or nativeless staged AAR can never be deployed.
       - name: Deploy to Maven Central (jreleaserDeploy, version from tag)
+        if: steps.secrets-gate.outputs.proceed == 'true'
         working-directory: packages/kotlin-sdk
         env:
           SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
