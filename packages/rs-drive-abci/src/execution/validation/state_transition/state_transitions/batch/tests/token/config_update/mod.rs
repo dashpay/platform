@@ -231,6 +231,7 @@ mod token_config_update_tests {
                         },
                         platform_version,
                     )
+                    .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
                     .map_err(|e| e.to_string())
                     .expect("expected to verify state transition");
 

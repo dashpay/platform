@@ -40,6 +40,12 @@ pub enum Error {
     /// Invalid Proved Response error
     #[error("Invalid Proved Response error: {0}")]
     InvalidProvedResponse(String),
+    /// The proof authenticated only the state the transition affects (a
+    /// height-pinned snapshot), while the caller required evidence that this
+    /// specific transition executed. Use the `*_affected_state` wait APIs to
+    /// accept snapshot outcomes explicitly.
+    #[error("proof authenticates the transition's affected state only, not its execution: {0}")]
+    ExecutionNotProved(String),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
