@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// Create a DashPay invitation (DIP-13): pick an amount, optionally opt into the
 /// contact-bootstrap, fund a one-time asset-lock voucher, and share the resulting
-/// `dashpay://invite` link (as text + QR) so a friend with no Dash can register
+/// invitation applink (as text + QR) so a friend with no Dash can register
 /// their own identity from it.
 ///
 /// The returned link **contains the voucher private key** — it is a bearer

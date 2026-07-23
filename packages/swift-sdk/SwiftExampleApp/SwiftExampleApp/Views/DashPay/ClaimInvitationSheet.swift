@@ -131,7 +131,7 @@ struct ClaimInvitationSheet: View {
 
     @ViewBuilder private var inputSection: some View {
         Section {
-            TextField("dashpay://invite?…", text: $uri, axis: .vertical)
+            TextField("https://invitations.dashpay.io/applink?…", text: $uri, axis: .vertical)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .lineLimit(2...4)

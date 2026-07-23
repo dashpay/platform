@@ -2008,7 +2008,7 @@ extension ManagedPlatformWallet {
 
     // MARK: - DashPay invitations (DIP-13)
 
-    /// Read-only preview of a `dashpay://invite` link, decoded via
+    /// Read-only preview of a invitation applink, decoded via
     /// `parseInvitation(uri:)` without claiming it. Drives the claim sheet's
     /// pre-claim summary + the contact-bootstrap decision.
     public struct InvitationPreview: Sendable {
@@ -2041,7 +2041,7 @@ extension ManagedPlatformWallet {
 
     /// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
     /// at the invitation derivation path and return a shareable
-    /// `dashpay://invite` link.
+    /// invitation applink.
     ///
     /// **The returned link contains the voucher private key — it is a bearer
     /// credential.** Do NOT log it, and copy it with a sensitive-pasteboard flag
@@ -2201,7 +2201,7 @@ extension ManagedPlatformWallet {
     }
 
     /// Read-only preview of a DashPay invitation link (DIP-13): decode a
-    /// `dashpay://invite` URI and surface its metadata WITHOUT claiming it — no
+    /// invitation applink URI and surface its metadata WITHOUT claiming it — no
     /// network, no identity registered. The claim UI uses this to show the
     /// amount, sender, and expiry before the user commits, and to decide whether
     /// to offer the "establish contact with <sender>?" bootstrap.
