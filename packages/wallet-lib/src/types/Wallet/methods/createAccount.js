@@ -27,6 +27,21 @@ async function createAccount(accountOpts) {
   if (this.walletType === WALLET_TYPES.SINGLE_ADDRESS) { baseOpts.privateKey = this.privateKey; }
   const opts = Object.assign(baseOpts, accountOpts);
 
+  if (!this.offlineMode) {
+    const chainStore = this.storage.getDefaultChainStore();
+    const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
+    const blockHeadersProvider = this.transport?.client?.blockHeadersProvider;
+
+    if (blockHeadersProvider && !this.blockHeadersProviderInitializationPromise) {
+      this.blockHeadersProviderInitializationPromise = blockHeadersProvider
+        .initializeChainWith(blockHeaders, lastSyncedHeaderHeight);
+    }
+
+    if (this.blockHeadersProviderInitializationPromise) {
+      await this.blockHeadersProviderInitializationPromise;
+    }
+  }
+
   const account = new Account(this, opts);
 
   // Add default derivation paths
@@ -35,14 +50,6 @@ async function createAccount(accountOpts) {
   // Issue additional derivation paths in case we have transactions in the store
   // at the moment of initialization (from persistent storage)
   account.createPathsForTransactions();
-
-  // Add block headers from storage into the SPV chain if there are any
-  const chainStore = this.storage.getDefaultChainStore();
-  const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
-  if (!this.offlineMode && blockHeaders.length > 0) {
-    const { blockHeadersProvider } = this.transport.client;
-    blockHeadersProvider.initializeChainWith(blockHeaders, lastSyncedHeaderHeight);
-  }
 
   this.accounts.push(account);
 

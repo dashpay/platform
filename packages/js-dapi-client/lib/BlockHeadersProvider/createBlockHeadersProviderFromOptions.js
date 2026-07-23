@@ -83,8 +83,8 @@ function createBlockHeadersProviderFromOptions(options, coreMethods, logger) {
   if (!blockHeadersProvider) {
     blockHeadersProvider = new BlockHeadersProvider(
       {},
-      createHistoricalSyncStream,
       createContinuousSyncStream,
+      createHistoricalSyncStream,
     );
   }
 

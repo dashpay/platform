@@ -1,5 +1,3 @@
-const EventEmitter = require('events');
-
 const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
 const createBlockHeadersProviderFromOptions = require('../../../lib/BlockHeadersProvider/createBlockHeadersProviderFromOptions');
 
@@ -16,37 +14,6 @@ describe('#createBlockHeadersProviderFromOptions', () => {
   it('should create BlockHeadersProvider with default options', () => {
     const provider = createBlockHeadersProviderFromOptions(options, coreMethodsMock);
     expect(provider).to.be.instanceOf(BlockHeadersProvider);
-  });
-
-  it('should use the finite stream factory for historical sync by default', async function shouldUseFiniteStreamByDefault() {
-    const clock = this.sinon.useFakeTimers();
-    const historicalStream = new EventEmitter();
-    historicalStream.cancel = this.sinon.stub();
-
-    const subscribeToBlockHeadersWithChainLocks = this.sinon.stub()
-      .returns(historicalStream);
-    const provider = createBlockHeadersProviderFromOptions(
-      options,
-      { subscribeToBlockHeadersWithChainLocks },
-    );
-
-    let returnedStream;
-
-    try {
-      returnedStream = await provider.createHistoricalSyncStream(5, 10);
-
-      expect(subscribeToBlockHeadersWithChainLocks)
-        .to.have.been.calledOnceWithExactly({
-          fromBlockHeight: 5,
-          count: 10,
-        });
-      expect(returnedStream).to.equal(historicalStream);
-    } finally {
-      if (returnedStream && returnedStream !== historicalStream) {
-        returnedStream.cancel();
-        clock.runAll();
-      }
-    }
   });
 
   it('should create BlockHeadersProvider from \'blockHeadersProvider\' option', () => {

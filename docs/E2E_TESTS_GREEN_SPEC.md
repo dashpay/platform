@@ -2,9 +2,10 @@
 
 ## Status
 
-Approved by the user and implemented. Post-implementation correctness,
-standards, testing, maintainability, reliability, and adversarial reviews were
-folded into the change. PR CI validation remains outstanding.
+The initial design was approved and implemented. The first PR run disproved
+one browser diagnosis and exposed the missing genesis initialization described
+below. The amendment was independently reviewed, user-aligned, implemented,
+and locally verified. Fresh PR E2E validation remains pending.
 
 ## Independent spec review findings applied
 
@@ -23,9 +24,11 @@ must-fix findings are incorporated below:
 3. Startup uses the five-minute convergence timeout already established by
    local setup, instead of relying on the helper's one-minute default on loaded
    CI runners.
-4. The block-header red test explicitly cancels a mistakenly returned
-   reconnecting wrapper in `finally`; otherwise its ten-minute timer could keep
-   Mocha alive after the expected assertion failure.
+4. The amended wallet design awaits and memoizes provider initialization.
+   This prevents historical synchronization from racing WASM/genesis setup and
+   prevents a second account from initializing the wallet-shared provider
+   again. `getAccount` also memoizes account creation by index while that await
+   is pending, preserving one account object per index.
 5. Direct functional ownership now includes `wasm-sdk`, prerequisite workflows
    are enumerated, and Dashmate E2Es require the JS build to succeed before
    they try to download its artifact.
@@ -59,12 +62,13 @@ schedule, or a manual dispatch:
    unavailable Tenderdash service.
 2. On the latest rerun, the network survived because the next mined block
    happened to arrive after Core synchronization. Both browser batches then
-   failed deterministically during wallet bootstrap with
-   `Client already closed - cannot .close()`. The default block-header provider
-   passes its historical and continuous stream factories to
-   `BlockHeadersProvider` in reverse order. A finite historical read therefore
-   becomes an unbounded reconnecting stream and reaches an invalid double-close
-   path during cancellation.
+   failed deterministically during wallet bootstrap. A new wallet has no
+   stored block headers, and `createAccount` only initializes the SPV chain
+   when stored headers are present. The subsequent height-1 historical batch
+   is therefore treated as an unauthenticated remote checkpoint and rejected.
+   In Chrome, the finite gRPC-web response is already closed when that
+   rejection tries to cancel it, so `Client already closed - cannot .close()`
+   masks the underlying SPV initialization error.
 3. A PR that fixes either path does not normally run the affected E2Es.
    `.github/workflows/tests.yml` gates Docker builds and all platform,
    functional, and Dashmate E2Es on `version-changed`, even when the E2E
@@ -95,14 +99,20 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   corroborating that timing currently decides whether the startup race
   manifests. Only the resulting CI run can prove that the proposed gate closes
   it.
+- PR run `30017112796`, job `89243212550`: the Core convergence gate worked
+  and the local network remained healthy, but browser shard 1 reproduced the
+  close stack during a new wallet's `before all` hook. Source tracing showed
+  that the close originates from rejection of the first historical headers,
+  before the provider has a genesis root.
 
 ### Local deterministic reproduction
 
-Calling the default provider's historical factory with
-`fromBlockHeight = 5, count = 10` sends only `{ fromBlockHeight: 5 }` through
-the continuous reconnecting path. This reproduces the factory inversion
-without a live network. The existing unit tests only assert provider type and
-options, so they do not detect callback semantics.
+`createAccount` can be reproduced without a live network by supplying an
+online mock transport and an empty chain store, then creating an unsynchronized
+account. The current implementation never calls
+`blockHeadersProvider.initializeChainWith([], -1)`. The provider later sets a
+pending start height of 1, and `SpvChain.addHeaders` explicitly rejects a batch
+whose head equals that unauthenticated checkpoint.
 
 A full local E2E run is not a safe baseline on this checkout: another checkout
 has a long-running Dashmate network on the host, and this checkout lacks the
@@ -112,8 +122,8 @@ tests will pin both deterministic contracts locally.
 
 ## Goals
 
-- A default browser wallet bootstrap uses a finite historical block-header
-  stream with both `fromBlockHeight` and `count`.
+- A new online wallet initializes its SPV chain from the configured network's
+  genesis before processing height-1 historical headers.
 - A local Dashmate group does not start mining until every Core node reports
   the same height and block hash.
 - Changes to the explicit direct E2E-facing package and orchestration set
@@ -133,32 +143,55 @@ tests will pin both deterministic contracts locally.
 
 ## Chosen approach
 
-### 1. Restore the block-header factory contract
+### 1. Initialize an empty wallet's SPV chain from genesis
 
-In
-`packages/js-dapi-client/lib/BlockHeadersProvider/createBlockHeadersProviderFromOptions.js`,
-construct the default `BlockHeadersProvider` with:
+In `packages/wallet-lib/src/types/Wallet/Wallet.js` and
+`packages/wallet-lib/src/types/Wallet/methods/createAccount.js`, initialize the
+online wallet's block-header provider once per wallet for both populated and
+empty stores.
+`BlockHeadersProvider.initializeChainWith` already defines the desired
+semantics: an empty array initializes the chain from the network genesis,
+whereas a populated array restores the authenticated stored checkpoint.
+Offline wallets must continue to skip provider initialization.
 
-1. `createHistoricalSyncStream`
-2. `createContinuousSyncStream`
+Store the initialization promise on `Wallet`, and await it before
+`account.init` can start. Reuse the same promise for subsequent accounts. This
+preserves the provider's existing single-initialization contract, handles
+concurrent callers, and propagates initialization failure instead of detaching
+an unhandled rejection.
 
-This matches the constructor contract and the already-correct
-`blockHeadersProviderOptions` branch. No stream implementation or close
-semantics change is needed.
+The initialization is conditional on the transport exposing the DAPI client's
+block-header provider. Wallet-lib's public transport contract does not require
+that internal client, so custom transports must retain their existing
+unsynchronized-account behavior. While initialization is pending, `getAccount`
+stores the account-creation promise by index so concurrent requests cannot
+construct duplicate accounts for the same derivation path.
 
-Add a unit regression to
-`createBlockHeadersProviderFromOptions.spec.js` that creates the default
-provider, calls its historical factory with a concrete height and count, and
-asserts that `subscribeToBlockHeadersWithChainLocks` receives both values and
-returns the finite stream directly. The test must be run against the current
-ordering first and observed failing. Because the broken branch returns a
-`ReconnectableStream` with a ten-minute timer, retain the returned value and
-cancel any wrapper in `finally` so the intentional red assertion cannot hang
-the test process.
+Add focused regressions proving that:
 
-Why this boundary: it fixes the earliest violated contract. Making cancellation
-silently tolerate double-close would hide the fact that historical sync is
-using the wrong stream kind and may never terminate.
+- an online empty store calls `initializeChainWith([], -1)`;
+- an online populated store still forwards the stored headers and height; and
+- account creation remains pending until a deferred initialization resolves;
+- two accounts share one provider initialization; and
+- concurrent `getAccount` requests for one index return the same account;
+- initialization rejection propagates before an account is stored;
+- a custom online transport without a block-header provider remains usable for
+  an unsynchronized account; and
+- an offline wallet with no transport/provider creates an unsynchronized
+  account successfully.
+
+Also add a `BlockHeadersProvider` integration regression that initializes from
+an empty array, feeds the exact regtest height-1 batch, and observes a valid
+historical chain. The DAPI integration suite runs under Karma, so this pins the
+browser-relevant SPV behavior rather than only asserting a spy call.
+
+Run the empty-store test against the current conditional first and observe it
+fail, then add the once-per-wallet initialization and rerun it.
+
+Why this boundary: genesis initialization is the earliest missing invariant.
+Making cancellation idempotent would only reveal the SPV rejection, and
+changing SPV to trust height 1 would weaken its authenticated-checkpoint
+protection.
 
 ### 2. Add a Core-tip convergence gate before mining
 
@@ -299,14 +332,16 @@ Treat separately to keep this PR tied to E2E reliability.
 
 ### Make stream cancellation or gRPC close idempotent
 
-This would suppress the thrown error after the historical and continuous
-factories were already confused. It leaves a finite history operation backed
-by an infinite reconnecting stream, so it is not a root-cause fix.
+This would suppress the browser-visible masking error but leave the new
+wallet's chain uninitialized. The historical batch would still be rejected.
 
-### Configure a custom provider only in platform-test-suite
+### Swap the default provider's stream factories
 
-This bypasses the broken default for one caller and leaves every other default
-consumer exposed. Fix the shared factory contract once.
+The factory's no-options fallback does pass its callbacks in reverse order, but
+`DAPIClient` populates `blockHeadersProviderOptions` by default and the browser
+E2E uses that already-correct branch. It is a separate latent bug, not the
+failing path, so its initial change and test will be removed from this focused
+PR.
 
 ### Wait an arbitrary number of seconds or shorten the miner interval
 
@@ -361,7 +396,8 @@ dashmate group start (local)
   -> wait for Platform readiness
 
 browser wallet bootstrap
-  -> default BlockHeadersProvider
+  -> createAccount initializes empty store from network genesis
+  -> default BlockHeadersProvider has an authenticated chain root
   -> finite historical stream(fromBlockHeight, count)
   -> continuous reconnecting stream(fromBlockHeight), only after history
 ```
@@ -385,22 +421,36 @@ browser wallet bootstrap
 - The path list drifts as the test architecture changes: workflow changes
   themselves are included, causing the revised orchestration to exercise its
   own E2E path.
-- A caller supplies `blockHeadersProviderOptions`: behavior is unchanged and
-  already uses the correct callback order.
+- An online wallet restores an empty store: the existing empty-array provider
+  contract initializes network genesis instead of a remote checkpoint.
+- A wallet creates multiple or concurrent accounts: all callers await one
+  shared initialization promise, so the provider is not initialized twice.
+- Concurrent requests for the same account index: `getAccount` returns its
+  in-flight creation promise instead of constructing duplicate accounts.
+- A custom online transport has no DAPI client internals: account creation
+  skips provider initialization, preserving the public transport contract.
+- Provider initialization fails: callers receive the failure and no account is
+  added to the wallet.
+- An offline wallet creates an account: it still avoids all transport and
+  provider access.
 
 ## Verification plan
 
 ### Red-to-green unit proof
 
-1. Add the default historical-stream regression and run it before the callback
-   swap. Record the failure showing the finite `{ fromBlockHeight, count }`
-   request was not forwarded.
-2. Swap the callbacks and rerun the same test. Record it passing, then run the
-   complete `js-dapi-client` coverage suite and its Karma browser suite.
-3. Add the local-start ordering regression and run it before adding the
+1. Add the empty-store account regression and run it before changing the
+   conditional. Record the failure showing that genesis initialization was
+   skipped. Add deferred-initialization and multiple-account cases to pin
+   ordering and once-only behavior.
+2. Initialize the provider once per wallet for empty and populated online
+   stores, await the shared promise, and rerun the focused tests.
+3. Add a DAPI provider integration case that starts at genesis and accepts a
+   height-1 regtest batch. Run it in Node and Karma, then run the complete
+   wallet-lib unit suite and relevant DAPI browser suite.
+4. Add the local-start ordering regression and run it before adding the
    convergence task. Record the missing convergence call, incomplete client
    array, or premature miner call.
-4. Add the convergence task and DI registration, rerun the same test, then run
+5. Add the convergence task and DI registration, rerun the same test, then run
    the complete Dashmate unit suite.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
