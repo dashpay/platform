@@ -90,7 +90,7 @@ jobs:
             ${{ env.HOME }}/.dashmate
             **/.env
             dashmate_volumes_dump
-          key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+          key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}/${{ hashFiles('.github/actions/local-network/action.yaml', 'packages/dapi/.env.example', 'packages/rs-drive-abci/.env.local', 'scripts/setup_local_network.sh', 'scripts/configure_test_suite.sh', 'scripts/configure_dotenv.sh', 'scripts/dashmate/volumes/**') }}
         if: inputs.restore_local_network_data == true
 
       - name: Restore dashmate volumes
@@ -110,7 +110,7 @@ jobs:
         env:
           DEBUG: 1
           DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD: true
-        if: steps.local-network-data.outputs.cache-hit == 'false'
+        if: steps.local-network-data.outputs.cache-hit != 'true'
 
       - name: Show Docker logs
         if: ${{ failure() }}

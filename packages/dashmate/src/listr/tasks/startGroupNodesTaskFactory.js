@@ -4,12 +4,13 @@ import { NETWORK_LOCAL } from '../../constants.js';
 import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
 const { PrivateKey } = DashCoreLib;
+const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
 
 /**
  *
  * @param {DockerCompose} dockerCompose
  * @param {waitForCorePeersConnected} waitForCorePeersConnected
- * @param {waitForMasternodesSync} waitForMasternodesSync
+ * @param {waitForNodesToHaveTheSameHeight} waitForNodesToHaveTheSameHeight
  * @param {createRpcClient} createRpcClient
  * @param {Docker} docker
  * @param {startNodeTask} startNodeTask
@@ -21,7 +22,7 @@ const { PrivateKey } = DashCoreLib;
 export default function startGroupNodesTaskFactory(
   dockerCompose,
   waitForCorePeersConnected,
-  waitForMasternodesSync,
+  waitForNodesToHaveTheSameHeight,
   createRpcClient,
   docker,
   startNodeTask,
@@ -35,9 +36,14 @@ export default function startGroupNodesTaskFactory(
    * @return {Object}
    */
   function startGroupNodesTask(configGroup) {
+    let coreRpcClients = [];
+
     const minerConfig = configGroup.find((config) => (
       config.get('core.miner.enable')
     ));
+    const isLocalMinerEnabled = () => (
+      minerConfig && minerConfig.get('network') === NETWORK_LOCAL
+    );
 
     const platformBuildConfig = configGroup.find((config) => (
       isServiceBuildRequired(config)
@@ -63,28 +69,36 @@ export default function startGroupNodesTaskFactory(
       },
       {
         title: 'Wait for Core peers to be connected',
-        enabled: () => minerConfig && minerConfig.get('network') === NETWORK_LOCAL,
-        task: () => {
-          const tasks = configGroup.map((config) => ({
-            title: `Checking ${config.getName()} peers`,
-            task: async () => {
-              const rpcClient = createRpcClient({
-                port: config.get('core.rpc.port'),
-                user: 'dashmate',
-                pass: config.get('core.rpc.users.dashmate.password'),
-                host: await getConnectionHost(config, 'core', 'core.rpc.host'),
-              });
+        enabled: isLocalMinerEnabled,
+        task: async () => {
+          coreRpcClients = await Promise.all(configGroup.map(async (config) => (
+            createRpcClient({
+              port: config.get('core.rpc.port'),
+              user: 'dashmate',
+              pass: config.get('core.rpc.users.dashmate.password'),
+              host: await getConnectionHost(config, 'core', 'core.rpc.host'),
+            })
+          )));
 
-              await waitForCorePeersConnected(rpcClient);
-            },
+          const tasks = configGroup.map((config, index) => ({
+            title: `Checking ${config.getName()} peers`,
+            task: () => waitForCorePeersConnected(coreRpcClients[index]),
           }));
 
           return new Listr(tasks, { concurrent: true });
         },
       },
       {
+        title: 'Wait for Core nodes to have the same height',
+        enabled: isLocalMinerEnabled,
+        task: () => waitForNodesToHaveTheSameHeight(
+          coreRpcClients,
+          WAIT_FOR_NODES_TIMEOUT,
+        ),
+      },
+      {
         title: 'Start a miner',
-        enabled: () => minerConfig && minerConfig.get('network') === NETWORK_LOCAL,
+        enabled: isLocalMinerEnabled,
         task: async () => {
           let minerAddress = minerConfig.get('core.miner.address');
 
