@@ -209,12 +209,12 @@ signature or the numeric value of a result code are **breaking** for C/Swift/JNI
 consumers and must be called out here.
 
 - **C-ABI break:** `platform_wallet_manager_shielded_fund_from_asset_lock`
-  gained a trailing `bool allow_cross_domain` parameter (cross-privacy-domain
-  co-spend consent). Callers linking the old symbol must be recompiled against
-  the regenerated header; passing `false` reproduces the previous
-  single-privacy-domain behaviour. Adds result codes
-  `ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS = 29` and
-  `ERROR_ASSET_LOCK_CROSS_DOMAIN_CONSENT_REQUIRED = 30`.
+  gained a trailing `funding_path_ptr: *const u8, funding_path_len: usize`
+  parameter — a UTF-8 BIP32 derivation path selecting the single source
+  account (a null pointer / zero length = the unmixed BIP44 account). Callers
+  linking the old symbol must be recompiled against the regenerated header;
+  a null path reproduces the previous single-account behaviour. Adds result
+  code `ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS = 29`.
 
 ## License
 
