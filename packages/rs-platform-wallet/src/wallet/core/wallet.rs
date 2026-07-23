@@ -84,10 +84,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// This is the single generation identity shared by BOTH deferred-payment
     /// paths — the registry-token path
-    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry)) and the V2
-    /// finalized-transaction handle path — so neither acts on a re-created
-    /// wallet's `ReservationSet` while an old handle still names the old
-    /// generation.
+    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry), `dashpay/platform#4185`)
+    /// and the V2 finalized-transaction handle path (`dashpay/platform#4196`) —
+    /// so neither acts on a re-created wallet's `ReservationSet` while an old
+    /// handle still names the old generation.
     pub fn is_same_generation<O: TransactionBroadcaster + ?Sized>(
         &self,
         other: &CoreWallet<O>,

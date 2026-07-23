@@ -480,6 +480,9 @@ mod destroy_tests {
                     // This test exercises only the destroy-time sweep, not the
                     // age guard, so the reservation height is irrelevant here.
                     None,
+                    // The dummy tx reserved nothing, so there is no funding token
+                    // to owner-guard against — the destroy sweep drops the entry.
+                    None,
                 )
                 .await;
             assert_eq!(SIGNED_PAYMENT_REGISTRY.outstanding(), baseline + 1);
