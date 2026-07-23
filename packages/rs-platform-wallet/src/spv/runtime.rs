@@ -12,7 +12,7 @@ use dashcore::{QuorumHash, Transaction};
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
-use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
+use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
 
 use key_wallet_manager::WalletManager;
 
@@ -81,6 +81,17 @@ fn classify_spv_broadcast_error(error: dash_spv::error::SpvError) -> BroadcastEr
         other => BroadcastError::MaybeSent {
             reason: format!("SPV broadcast failed: {}", other),
         },
+    }
+}
+
+/// Convert dash-spv's network-level broadcast outcome into the wallet
+/// broadcaster contract.
+fn classify_spv_broadcast_result(result: BroadcastResult) -> Result<(), BroadcastError> {
+    match result {
+        BroadcastResult::Accepted { .. } => Ok(()),
+        BroadcastResult::Uncertain => Err(BroadcastError::MaybeSent {
+            reason: "SPV broadcast outcome is uncertain".to_string(),
+        }),
     }
 }
 
@@ -167,12 +178,12 @@ impl SpvRuntime {
             reason: "SPV client not started".to_string(),
         })?;
 
-        client
-            .broadcast_transaction(tx)
+        let result = client
+            .broadcast_transaction_and_wait(tx, None)
             .await
             .map_err(classify_spv_broadcast_error)?;
 
-        Ok(())
+        classify_spv_broadcast_result(result)
     }
 
     /// Look up a quorum public key via the SPV masternode state.
@@ -475,11 +486,12 @@ mod tests {
     use std::sync::Arc;
 
     use dash_spv::error::{NetworkError, SpvError};
+    use dash_spv::BroadcastResult;
     use dashcore::Network;
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_broadcast_error, SpvRuntime};
+    use super::{classify_spv_broadcast_error, classify_spv_broadcast_result, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::events::PlatformEventManager;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -545,5 +557,20 @@ mod tests {
                 "{rendered} must classify MaybeSent, got {result:?}"
             );
         }
+    }
+
+    #[test]
+    fn accepted_broadcast_result_succeeds() {
+        let result = classify_spv_broadcast_result(BroadcastResult::Accepted { relayed_by: 1 });
+        assert!(result.is_ok(), "Accepted must succeed, got {result:?}");
+    }
+
+    #[test]
+    fn uncertain_broadcast_result_classifies_maybe_sent() {
+        let result = classify_spv_broadcast_result(BroadcastResult::Uncertain);
+        assert!(
+            matches!(result, Err(BroadcastError::MaybeSent { .. })),
+            "Uncertain must classify MaybeSent, got {result:?}"
+        );
     }
 }
