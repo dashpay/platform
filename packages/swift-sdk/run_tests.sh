@@ -1,10 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 
-# This script  builds the sdk using `build_ios.sh` for all targets,
-# then runs the DashSDKFFI tests, and finally runs the
-# ExampleApp tests on a selected iOS Simulator
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR" || exit 1
 
@@ -50,10 +46,8 @@ if [ -z "$SIM_NAME" ]; then
   exit 1
 fi
 
-bash build_ios.sh --target all --profile dev
+bash build_ios.sh --target tests --profile dev
 
-swift package clean
-swift build
 swift test
 
 xcodebuild test \
