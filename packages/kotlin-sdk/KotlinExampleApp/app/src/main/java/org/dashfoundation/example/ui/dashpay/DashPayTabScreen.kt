@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +31,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,8 +44,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.wallet.DashPayUnlockStatus
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
@@ -76,9 +83,8 @@ import org.dashfoundation.example.util.toHex
  * cleaner Compose fit), so `dashpay.segment` / `dashpay.profileHeader` /
  * `dashpay.usernamePrompt` are not reproduced here.
  *
- * Deviation: the active-identity selection is in-memory (`remember(network)`),
- * so it resets on a network switch (matching iOS) but is not persisted across
- * launches (iOS uses `@AppStorage`).
+ * The active identity is persisted per network and restored only after the
+ * network manager has finished loading its wallets.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,31 +98,62 @@ fun DashPayTabScreen(navController: NavHostController) {
     val walletsMap by remember(manager) {
         manager?.wallets ?: MutableStateFlow(emptyMap<String, ManagedPlatformWallet>())
     }.collectAsStateWithLifecycle()
+    val restorationState by container.dashPayActiveIdentityRestorationCoordinator.state
+        .collectAsStateWithLifecycle()
 
     val allWalletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }.collectAsStateWithLifecycle(emptyList())
 
-    // Eligible = wallet-backed identities whose wallet is loaded (← Swift
-    // eligibleIdentities). Sorted by creation for a stable picker order.
-    val eligible = remember(allWalletOwned, walletsMap) {
-        allWalletOwned
-            .filter { it.walletId != null && walletsMap.containsKey(it.walletId!!.toHex()) }
-            .sortedBy { it.createdAt.time }
+    val managerMatchesNetwork = manager?.network == network
+    val eligible = remember(allWalletOwned, walletsMap, managerMatchesNetwork) {
+        if (managerMatchesNetwork) {
+            eligibleDashPayIdentities(allWalletOwned, walletsMap.keys)
+        } else {
+            emptyList()
+        }
     }
 
-    var selectedIdBase58 by remember(network) { mutableStateOf<String?>(null) }
-    val activeIdentity = remember(eligible, selectedIdBase58) {
-        eligible.firstOrNull { Base58.encode(it.identityId) == selectedIdBase58 } ?: eligible.firstOrNull()
+    var preferenceRetryKey by remember(network) { mutableIntStateOf(0) }
+    val selection = rememberDashPayActiveIdentitySelection(
+        network = network,
+        store = container.dashPayActiveIdentityStore,
+        eligible = eligible,
+        retryKey = preferenceRetryKey,
+    )
+    val restorationScreenState = dashPayRestorationScreenState(
+        network = network,
+        managerMatchesNetwork = managerMatchesNetwork,
+        restorationState = restorationState,
+    )
+    val restorationReady =
+        restorationScreenState == DashPayActiveIdentityRestorationState.Ready(network)
+    val restorationFailure =
+        restorationScreenState as? DashPayActiveIdentityRestorationState.Failed
+    val selectionReady = selection as? DashPayActiveIdentitySelection.Ready
+    val selectionFailure = selection as? DashPayActiveIdentitySelection.Failed
+    val contentReady = managerMatchesNetwork && restorationReady && selectionReady != null
+
+    var pendingSelectionId by remember(network) { mutableStateOf<String?>(null) }
+    var selectionWriteError by remember(network) { mutableStateOf<String?>(null) }
+    LaunchedEffect(selectionReady?.selectedIdentityIdBase58, pendingSelectionId) {
+        if (
+            pendingSelectionId != null &&
+            selectionReady?.selectedIdentityIdBase58 == pendingSelectionId
+        ) {
+            pendingSelectionId = null
+        }
     }
 
-    var isRefreshing by remember { mutableStateOf(false) }
+    var isRefreshing by remember(network) { mutableStateOf(false) }
     var unlockError by remember { mutableStateOf<String?>(null) }
 
     fun refresh() {
+        if (!contentReady) return
+        val activeManager = manager ?: return
         scope.launch {
             isRefreshing = true
-            manager?.let { runCatching { it.dashPaySyncNow() } }
+            runCatching { activeManager.dashPaySyncNow() }
             isRefreshing = false
         }
     }
@@ -126,7 +163,11 @@ fun DashPayTabScreen(navController: NavHostController) {
             TopAppBar(
                 title = { Text("DashPay") },
                 actions = {
-                    IconButton(onClick = { refresh() }, modifier = Modifier.testTag("dashpay.refresh")) {
+                    IconButton(
+                        onClick = { refresh() },
+                        enabled = contentReady,
+                        modifier = Modifier.testTag("dashpay.refresh"),
+                    ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                     }
                 },
@@ -147,6 +188,32 @@ fun DashPayTabScreen(navController: NavHostController) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 when {
+                    restorationFailure != null -> BlockingState(
+                        message = "DashPay identity restoration failed.",
+                        detail = restorationFailure.error.message,
+                        onRetry = {
+                            scope.launch {
+                                try {
+                                    container.activateManager()
+                                } catch (error: CancellationException) {
+                                    throw error
+                                } catch (_: Exception) {
+                                    // The coordinator publishes the retryable failure state.
+                                }
+                            }
+                        },
+                    )
+                    !restorationReady -> BlockingState(
+                        message = "Restoring DashPay identity…",
+                    )
+                    selectionFailure != null -> BlockingState(
+                        message = "Saved DashPay identity could not be loaded.",
+                        detail = selectionFailure.error.message,
+                        onRetry = { preferenceRetryKey++ },
+                    )
+                    selectionReady == null -> BlockingState(
+                        message = "Loading saved DashPay identity…",
+                    )
                     walletsMap.isEmpty() -> EmptyState(
                         title = "No wallet loaded",
                         message = "Load or create a wallet to use DashPay.",
@@ -154,7 +221,7 @@ fun DashPayTabScreen(navController: NavHostController) {
                         buttonTestTag = "dashpay.openWallets",
                         onClick = { navController.navigate(WalletsHome) },
                     )
-                    eligible.isEmpty() || activeIdentity == null -> EmptyState(
+                    eligible.isEmpty() || selectionReady.activeIdentity == null -> EmptyState(
                         title = "No identities yet",
                         message = "Register an identity to start using DashPay.",
                         buttonTitle = "Open Identities",
@@ -162,18 +229,35 @@ fun DashPayTabScreen(navController: NavHostController) {
                         onClick = { navController.navigate(IdentitiesHome) },
                     )
                     else -> {
-                        val identity = activeIdentity
+                        val identity = selectionReady.activeIdentity
                         val identityHex = identity.identityId.toHex()
                         val managed = identity.walletId?.let { manager?.wallet(forWalletId = it) }
 
                         if (eligible.size > 1) {
-                            AccessiblePicker(
-                                label = "Identity",
-                                options = eligible,
+                            DashPayActiveIdentityPicker(
+                                eligible = eligible,
                                 selected = identity,
-                                optionLabel = { pickerLabel(it.identityId, it.mainDpnsName ?: it.dpnsName) },
-                                testTag = "dashpay.identityPicker",
-                            ) { selectedIdBase58 = Base58.encode(it.identityId) }
+                                enabled = pendingSelectionId == null,
+                            ) { selectedIdentity ->
+                                if (pendingSelectionId != null) return@DashPayActiveIdentityPicker
+                                val selectedId = Base58.encode(selectedIdentity.identityId)
+                                pendingSelectionId = selectedId
+                                selectionWriteError = null
+                                scope.launch {
+                                    try {
+                                        container.dashPayActiveIdentityStore.select(
+                                            network,
+                                            selectedId,
+                                        )
+                                    } catch (error: CancellationException) {
+                                        throw error
+                                    } catch (error: Exception) {
+                                        pendingSelectionId = null
+                                        selectionWriteError =
+                                            error.message ?: "Failed to save active identity"
+                                    }
+                                }
+                            }
                         }
 
                         BalanceRow(
@@ -233,7 +317,115 @@ fun DashPayTabScreen(navController: NavHostController) {
         }
     }
 
-    ErrorAlertDialog(message = unlockError, onDismiss = { unlockError = null })
+    val displayedError = selectionWriteError ?: unlockError
+    ErrorAlertDialog(
+        message = displayedError,
+        onDismiss = {
+            if (selectionWriteError != null) {
+                selectionWriteError = null
+            } else {
+                unlockError = null
+            }
+        },
+    )
+}
+
+sealed interface DashPayActiveIdentitySelection {
+    data object Loading : DashPayActiveIdentitySelection
+
+    data class Ready(
+        val selectedIdentityIdBase58: String?,
+        val activeIdentity: IdentityEntity?,
+    ) : DashPayActiveIdentitySelection
+
+    data class Failed(
+        val error: Throwable,
+    ) : DashPayActiveIdentitySelection
+}
+
+internal fun dashPayRestorationScreenState(
+    network: Network,
+    managerMatchesNetwork: Boolean,
+    restorationState: DashPayActiveIdentityRestorationState,
+): DashPayActiveIdentityRestorationState =
+    when {
+        restorationState is DashPayActiveIdentityRestorationState.Failed &&
+            restorationState.network == network ->
+            restorationState
+        !managerMatchesNetwork -> DashPayActiveIdentityRestorationState.Loading(network)
+        restorationState == DashPayActiveIdentityRestorationState.Ready(network) ->
+            restorationState
+        else -> DashPayActiveIdentityRestorationState.Loading(network)
+    }
+
+@Composable
+fun rememberDashPayActiveIdentitySelection(
+    network: Network,
+    store: DashPayActiveIdentityStore,
+    eligible: List<IdentityEntity>,
+    retryKey: Int = 0,
+): DashPayActiveIdentitySelection {
+    val preferenceFlow = remember(network, store, retryKey) {
+        store.observe(network)
+    }
+    return rememberDashPayActiveIdentitySelection(
+        network = network,
+        retryKey = retryKey,
+        preferenceFlow = preferenceFlow,
+        eligible = eligible,
+    )
+}
+
+@Composable
+internal fun rememberDashPayActiveIdentitySelection(
+    network: Network,
+    retryKey: Int,
+    preferenceFlow: Flow<DashPayActiveIdentityPreference>,
+    eligible: List<IdentityEntity>,
+): DashPayActiveIdentitySelection =
+    key(network, retryKey, preferenceFlow) {
+        val preference by preferenceFlow.collectAsStateWithLifecycle(
+            initialValue = DashPayActiveIdentityPreference.Loading,
+        )
+        remember(preference, eligible) {
+            when (val currentPreference = preference) {
+                DashPayActiveIdentityPreference.Loading ->
+                    DashPayActiveIdentitySelection.Loading
+                is DashPayActiveIdentityPreference.Failed ->
+                    DashPayActiveIdentitySelection.Failed(currentPreference.error)
+                is DashPayActiveIdentityPreference.Ready ->
+                    DashPayActiveIdentitySelection.Ready(
+                        selectedIdentityIdBase58 = currentPreference.identityIdBase58,
+                        activeIdentity = resolveActiveDashPayIdentity(
+                            eligible,
+                            currentPreference.identityIdBase58,
+                        ),
+                    )
+            }
+        }
+    }
+
+@Composable
+fun DashPayActiveIdentityPicker(
+    eligible: List<IdentityEntity>,
+    selected: IdentityEntity,
+    enabled: Boolean,
+    onSelected: (IdentityEntity) -> Unit,
+) {
+    AccessiblePicker(
+        label = "Identity",
+        options = eligible,
+        selected = selected,
+        optionLabel = { identity ->
+            pickerLabel(
+                identity.identityId,
+                identity.mainDpnsName ?: identity.dpnsName,
+            )
+        },
+        testTag = "dashpay.identityPicker",
+        enabled = enabled,
+        onSelected = onSelected,
+    )
 }
 
 @Composable
@@ -357,6 +549,36 @@ private fun BannerRow(
         Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
         if (action != null) {
             Button(onClick = action, enabled = actionEnabled) { Text("Unlock") }
+        }
+    }
+}
+
+@Composable
+private fun BlockingState(
+    message: String,
+    detail: String? = null,
+    onRetry: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (onRetry == null) {
+            CircularProgressIndicator()
+        }
+        Text(message, style = MaterialTheme.typography.titleMedium)
+        detail?.takeIf { it.isNotBlank() }?.let { errorDetail ->
+            Text(
+                errorDetail,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        onRetry?.let { retry ->
+            Button(onClick = retry) {
+                Text("Retry")
+            }
         }
     }
 }

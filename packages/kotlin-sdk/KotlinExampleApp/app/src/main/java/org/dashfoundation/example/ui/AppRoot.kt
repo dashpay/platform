@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CancellationException
 import org.dashfoundation.example.di.AppContainer.BootstrapState
 import org.dashfoundation.example.di.LocalAppContainer
 
@@ -48,7 +49,17 @@ fun AppRoot() {
     LaunchedEffect(Unit) {
         container.appState.sdk.collect { sdk ->
             if (sdk != null && container.bootstrapState.value is BootstrapState.Ready) {
-                container.activateManager()
+                try {
+                    container.activateManager()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    android.util.Log.e(
+                        "AppRoot",
+                        "Failed to restore the active network's wallet manager",
+                        error,
+                    )
+                }
             }
         }
     }
