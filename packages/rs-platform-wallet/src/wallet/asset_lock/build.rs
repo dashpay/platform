@@ -96,7 +96,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// drain semantics (see [`AssetLockBuildAmount`]). CoinJoin funding is
     /// drain-only — the key-wallet builder rejects a non-drain CoinJoin
     /// build.
-    pub async fn build_asset_lock_transaction_with_funding<S: Signer>(
+    pub async fn build_asset_lock_transaction_with_funding<S: ExtendedPubKeySigner>(
         &self,
         amount: AssetLockBuildAmount,
         funding_account: AssetLockFundingAccount,
@@ -642,7 +642,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Funding-parameterized form of [`Self::create_funded_asset_lock_proof`]
     /// — same build → broadcast → proof pipeline with the account family and
     /// amount semantics of [`Self::build_asset_lock_transaction_with_funding`].
-    pub async fn create_funded_asset_lock_proof_with_funding<S: Signer>(
+    pub async fn create_funded_asset_lock_proof_with_funding<S: ExtendedPubKeySigner>(
         &self,
         amount: AssetLockBuildAmount,
         funding_account: AssetLockFundingAccount,
@@ -694,7 +694,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// Funding-parameterized form of [`Self::broadcast_funded_asset_lock`].
-    pub(crate) async fn broadcast_funded_asset_lock_with_funding<S: Signer>(
+    pub(crate) async fn broadcast_funded_asset_lock_with_funding<S: ExtendedPubKeySigner>(
         &self,
         amount: AssetLockBuildAmount,
         funding_account: AssetLockFundingAccount,
