@@ -20,6 +20,7 @@ use crate::identity::verify_identity_keys_by_identity_id::partial_identity_to_js
 #[wasm_bindgen]
 pub struct VerifyStateTransitionWasExecutedWithProofResult {
     root_hash: Vec<u8>,
+    execution_proved: bool,
     proof_result: JsValue,
 }
 
@@ -28,6 +29,17 @@ impl VerifyStateTransitionWasExecutedWithProofResult {
     #[wasm_bindgen(getter)]
     pub fn root_hash(&self) -> Uint8Array {
         self.root_hash.to_uint8array()
+    }
+
+    /// Whether the proof established that this specific transition executed.
+    /// When `false`, `proof_result` is a verified snapshot of the state the
+    /// transition affects at the proof's block (transition families whose
+    /// proofs cannot be bound to execution: balance top-ups, credit
+    /// transfers/withdrawals, address funds movements, shields, no-history
+    /// token operations) — NOT evidence that the transition executed.
+    #[wasm_bindgen(getter)]
+    pub fn execution_proved(&self) -> bool {
+        self.execution_proved
     }
 
     #[wasm_bindgen(getter)]
@@ -69,7 +81,7 @@ pub fn verify_state_transition_was_executed_with_proof(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+    let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
         &state_transition,
         &block_info,
         &proof_vec,
@@ -78,11 +90,14 @@ pub fn verify_state_transition_was_executed_with_proof(
     )
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
+    let execution_proved = outcome.is_execution_proved();
+
     // Convert proof result to JS value
-    let proof_result_js = convert_proof_result_to_js(&proof_result)?;
+    let proof_result_js = convert_proof_result_to_js(outcome.result())?;
 
     Ok(VerifyStateTransitionWasExecutedWithProofResult {
         root_hash: root_hash.to_vec(),
+        execution_proved,
         proof_result: proof_result_js,
     })
 }

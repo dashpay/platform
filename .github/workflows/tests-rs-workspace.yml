@@ -239,7 +239,7 @@ jobs:
           if [ -d target/llvm-cov-target ]; then
             du -sh target/llvm-cov-target || true
             for attempt in 1 2 3; do
-              if rm -rf target/llvm-cov-target; then
+              if rm -rf target/llvm-cov-target && [ ! -e target/llvm-cov-target ]; then
                 break
               fi
               echo "::warning::Coverage cleanup attempt ${attempt} failed; retrying"

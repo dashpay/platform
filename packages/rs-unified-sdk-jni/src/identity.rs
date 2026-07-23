@@ -33,8 +33,7 @@
 
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{
-    generic_asset_lock_recovery_allowed, guard, net_from_ord, take_pwffi_error,
-    throw_sdk_exception,
+    generic_asset_lock_recovery_allowed, guard, net_from_ord, take_pwffi_error, throw_sdk_exception,
 };
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};

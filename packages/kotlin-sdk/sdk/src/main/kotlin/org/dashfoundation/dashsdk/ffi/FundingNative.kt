@@ -119,8 +119,9 @@ internal object FundingNative {
     /**
      * Create an identity funded from the shielded pool, Type 20 (bridges
      * `platform_wallet_manager_shielded_identity_create_from_pool`). Spends a
-     * note of the fixed exit [denomination] (credits — one of the on-chain
-     * 0.1/0.3/0.5/1.0 DASH set) from the wallet's bound Orchard pool
+     * note of the fixed exit [denomination] (credits — a member of the
+     * ACTIVE protocol version's on-chain set: 0.1/0.3/0.5/1.0 DASH through
+     * PV12, 0.03/0.1/0.25/0.5/1.0 DASH from PV13) from the wallet's bound Orchard pool
      * ([account]) to fund a new identity at [identityIndex]. [pubkeysBlob] is
      * the same flat registration-key blob ID-08 uses; [fallbackAddress] is
      * the REQUIRED 21-byte PlatformAddress that receives the value (minus a

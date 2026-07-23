@@ -365,6 +365,19 @@ class SystemQueries internal constructor(private val sdk: Sdk) {
         }
     }
 
+    /**
+     * Refresh the SDK's protocol version from the connected network — port of
+     * iOS `SDK.refreshProtocolVersion`. Drives a proven `getEpochsInfo` query
+     * and ratchets the SDK's auto-detected version up to the network's; the
+     * result propagates to every clone of the underlying `Sdk` (including a
+     * `PlatformWalletManager`'s), so fee-sensitive flows pick it up. Call on
+     * app start and after every network switch. Returns the version after the
+     * (possible) ratchet, or null.
+     */
+    suspend fun refreshProtocolVersion(): Int? = sdk.queryGate.op {
+        mapNativeErrors { QueriesNative.refreshProtocolVersion(sdk.handle) }?.toIntOrNull()
+    }
+
     /** Protocol-version upgrade state (per-version tallies) as JSON, or null. */
     suspend fun protocolVersionUpgradeState(): String? = sdk.queryGate.op {
         mapNativeErrors { QueriesNative.protocolVersionUpgradeState(sdk.handle) }

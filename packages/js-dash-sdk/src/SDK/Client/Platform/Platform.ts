@@ -15,7 +15,7 @@ import publishContract from './methods/contracts/publish';
 import updateContract from './methods/contracts/update';
 import createContract from './methods/contracts/create';
 import getContract from './methods/contracts/get';
-import getContractHistory from './methods/contracts/history';
+import getContractHistory, { historyUnproved as getContractHistoryUnproved } from './methods/contracts/history';
 
 import getIdentity from './methods/identities/get';
 import registerIdentity from './methods/identities/register';
@@ -96,6 +96,7 @@ interface DataContracts {
   create: Function,
   get: Function,
   history: Function,
+  historyUnproved: Function,
 }
 
 /**
@@ -169,6 +170,7 @@ export class Platform {
       create: createContract.bind(this),
       get: getContract.bind(this),
       history: getContractHistory.bind(this),
+      historyUnproved: getContractHistoryUnproved.bind(this),
     };
     this.names = {
       register: registerName.bind(this),

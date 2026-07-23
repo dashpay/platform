@@ -8,8 +8,10 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 
 // PROTOCOL_VERSION_13: enable DPNS username transfers and sales and activate
 // the token authorization/configuration validators that bind confirmations to
-// stored intent and resolve group authority fail-closed. v8 remains unchanged
-// for PROTOCOL_VERSION_12 chain replay.
+// stored intent and resolve group authority fail-closed. Also revises the
+// shielded identity-create exit-denomination set (adds 0.03 and 0.25 DASH,
+// retires 0.3 DASH). v8 remains unchanged for PROTOCOL_VERSION_12 chain
+// replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -330,11 +332,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
             shielded_per_action_processing_fee: 22_000_000,
             shielded_implicit_fee_cap: 20_000_000_000,
             // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
+            // v13 revises the v8 set: adds 0.03 and 0.25 DASH, retires 0.3 DASH.
             shielded_identity_create_denominations: &[
-                10_000_000_000,
-                30_000_000_000,
-                50_000_000_000,
-                100_000_000_000,
+                3_000_000_000,   // 0.03 DASH
+                10_000_000_000,  // 0.1 DASH
+                25_000_000_000,  // 0.25 DASH
+                50_000_000_000,  // 0.5 DASH
+                100_000_000_000, // 1 DASH
             ],
         },
     };

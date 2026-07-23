@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +13,7 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::consensus::Decodable as _;
 use dashcore_rpc::dashcore::{Block, InstantLock, Transaction, hashes::Hash};
 use futures::TryFutureExt;
-use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
+use tokio::sync::{Mutex as AsyncMutex, OwnedSemaphorePermit, mpsc, watch};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
@@ -25,8 +25,14 @@ use crate::services::streaming_service::{
     FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
     bloom::bloom_flags_from_int, validate_core_block_hash,
 };
+use crate::sync::WorkerTaskHandle;
 
 const TRANSACTION_STREAM_BUFFER: usize = 512;
+const MAX_TRANSACTION_PENDING_EVENTS: usize = 512;
+const MAX_TRANSACTION_PENDING_BYTES: usize = 8 * 1024 * 1024;
+const MAX_MEMPOOL_TXS_PER_STREAM: usize = 4_096;
+const MAX_MEMPOOL_RAW_BYTES_PER_STREAM: usize = 16 * 1024 * 1024;
+const MAX_DELIVERED_IDS_PER_STREAM: usize = 65_536;
 /// Maximum duration to keep the delivery gate closed while replaying historical data.
 const GATE_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -34,11 +40,68 @@ type TxResponseResult = Result<TransactionsWithProofsResponse, Status>;
 type TxResponseSender = mpsc::Sender<TxResponseResult>;
 type TxResponseStream = ReceiverStream<TxResponseResult>;
 type TxResponse = Response<TxResponseStream>;
-type DeliveredTxSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
-type DeliveredBlockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
-type DeliveredInstantLockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveredTxSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
+type DeliveredBlockSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
+type DeliveredInstantLockSet = Arc<AsyncMutex<BoundedDeliveredIds>>;
 type GateSender = watch::Sender<bool>;
 type GateReceiver = watch::Receiver<bool>;
+
+struct TransactionHistoryWorkerContext {
+    state: Option<TransactionStreamState>,
+    stream_permit: Option<OwnedSemaphorePermit>,
+}
+
+struct BoundedDeliveredIds {
+    ids: HashSet<Vec<u8>>,
+    order: VecDeque<Vec<u8>>,
+    capacity: usize,
+}
+
+impl BoundedDeliveredIds {
+    fn new(capacity: usize) -> Self {
+        Self {
+            ids: HashSet::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    fn mark_delivered(&mut self, id: Vec<u8>) -> bool {
+        if self.ids.contains(&id) {
+            return false;
+        }
+
+        if self.ids.len() >= self.capacity
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.ids.remove(&oldest);
+        }
+
+        self.ids.insert(id.clone());
+        self.order.push_back(id);
+        true
+    }
+
+    fn contains(&self, id: &[u8]) -> bool {
+        self.ids.contains(id)
+    }
+}
+
+fn validate_transaction_from_block_shape(
+    from_block: &dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
+) -> Result<(), Status> {
+    use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
+
+    match from_block {
+        FromBlock::FromBlockHeight(0) => Err(Status::invalid_argument(
+            "Minimum value for `fromBlockHeight` is 1",
+        )),
+        FromBlock::FromBlockHash(hash) if hash.len() != 32 => Err(Status::invalid_argument(
+            "fromBlockHash must be exactly 32 bytes",
+        )),
+        _ => Ok(()),
+    }
+}
 
 #[derive(Clone)]
 struct TransactionStreamState {
@@ -47,17 +110,28 @@ struct TransactionStreamState {
     delivered_instant_locks: DeliveredInstantLockSet,
     gate_sender: GateSender,
     gate_receiver: GateReceiver,
+    cancellation_sender: GateSender,
+    cancellation_receiver: GateReceiver,
 }
 
 impl TransactionStreamState {
     fn new() -> Self {
         let (gate_sender, gate_receiver) = watch::channel(false);
+        let (cancellation_sender, cancellation_receiver) = watch::channel(false);
         Self {
-            delivered_txs: Arc::new(AsyncMutex::new(HashSet::new())),
-            delivered_blocks: Arc::new(AsyncMutex::new(HashSet::new())),
-            delivered_instant_locks: Arc::new(AsyncMutex::new(HashSet::new())),
+            delivered_txs: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
+            delivered_blocks: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
+            delivered_instant_locks: Arc::new(AsyncMutex::new(BoundedDeliveredIds::new(
+                MAX_DELIVERED_IDS_PER_STREAM,
+            ))),
             gate_sender,
             gate_receiver,
+            cancellation_sender,
+            cancellation_receiver,
         }
     }
 
@@ -72,6 +146,27 @@ impl TransactionStreamState {
     /// This is decoupled for easier handling between tasks.
     fn open_gate(sender: &GateSender) {
         let _ = sender.send(true);
+    }
+
+    fn cancel(&self) {
+        let _ = self.cancellation_sender.send(true);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        *self.cancellation_receiver.borrow()
+    }
+
+    async fn wait_for_cancellation(&self) {
+        if self.is_cancelled() {
+            return;
+        }
+
+        let mut receiver = self.cancellation_receiver.clone();
+        while !*receiver.borrow() {
+            if receiver.changed().await.is_err() {
+                break;
+            }
+        }
     }
 
     async fn wait_for_gate_open(&self) {
@@ -107,7 +202,7 @@ impl TransactionStreamState {
             "transaction_stream=mark_transaction_delivered"
         );
         let mut guard = self.delivered_txs.lock().await;
-        guard.insert(txid.to_vec())
+        guard.mark_delivered(txid.to_vec())
     }
 
     async fn mark_transactions_delivered<I>(&self, txids: I)
@@ -120,7 +215,7 @@ impl TransactionStreamState {
                 txid = txid_to_hex(&txid),
                 "transaction_stream=mark_transaction_delivered"
             );
-            guard.insert(txid);
+            guard.mark_delivered(txid);
         }
     }
 
@@ -132,7 +227,7 @@ impl TransactionStreamState {
 
     async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
         let mut guard = self.delivered_blocks.lock().await;
-        let inserted = guard.insert(block_hash.to_vec());
+        let inserted = guard.mark_delivered(block_hash.to_vec());
         trace!(
             block_hash = %hex::encode(block_hash),
             inserted,
@@ -143,11 +238,59 @@ impl TransactionStreamState {
 
     async fn mark_instant_lock_delivered(&self, txid: &[u8]) -> bool {
         let mut guard = self.delivered_instant_locks.lock().await;
-        guard.insert(txid.to_vec())
+        guard.mark_delivered(txid.to_vec())
     }
 }
 
 impl StreamingServiceImpl {
+    async fn terminate_transaction_stream(
+        tx: &TxResponseSender,
+        state: &TransactionStreamState,
+        message: &'static str,
+    ) {
+        // Stop the history/mempool/live producers before reserving a queue slot for
+        // the terminal status. Awaiting the send guarantees a full queue cannot
+        // silently discard the resource-exhausted response.
+        state.cancel();
+        let _ = tx.send(Err(Status::resource_exhausted(message))).await;
+    }
+
+    /// Preflight check that the requested replay start exists on the chain.
+    async fn validate_transaction_history_start(
+        &self,
+        from_block: &dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
+    ) -> Result<(), Status> {
+        use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
+        use std::str::FromStr;
+
+        let best_height = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
+
+        let start = match from_block {
+            FromBlock::FromBlockHash(hash) => {
+                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hex::encode(hash))
+                    .map_err(|error| {
+                        Status::invalid_argument(format!("Invalid block hash: {error}"))
+                    })?;
+                self.core_client
+                    .get_block_header_info(&block_hash)
+                    .await
+                    .map_err(Status::from)?
+                    .height as usize
+            }
+            FromBlock::FromBlockHeight(height) => *height as usize,
+        };
+
+        if start > best_height {
+            return Err(Status::not_found(format!("Block {start} not found")));
+        }
+
+        Ok(())
+    }
+
     pub async fn subscribe_to_transactions_with_proofs_impl(
         &self,
         request: Request<TransactionsWithProofsRequest>,
@@ -165,7 +308,7 @@ impl StreamingServiceImpl {
 
         let filter = match req.bloom_filter {
             Some(bloom_filter) => {
-                let (core_filter, flags) = parse_bloom_filter(&bloom_filter)?;
+                let (core_filter, flags) = parse_bloom_filter(bloom_filter)?;
                 FilterType::CoreBloomFilter(
                     std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
                     flags,
@@ -174,14 +317,27 @@ impl StreamingServiceImpl {
             None => FilterType::CoreAllTxs,
         };
 
+        validate_transaction_from_block_shape(&from_block)?;
+
+        let stream_permit = self
+            .transaction_stream_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("too many active transaction streams"))?;
+
+        self.validate_transaction_history_start(&from_block).await?;
+
         let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
         if count > 0 {
             // Historical mode
             self.spawn_fetch_transactions_history(
-                Some(from_block),
+                from_block,
                 Some(count as usize),
                 filter,
-                None,
+                TransactionHistoryWorkerContext {
+                    state: None,
+                    stream_permit: Some(stream_permit),
+                },
                 tx,
                 None,
             )
@@ -189,7 +345,7 @@ impl StreamingServiceImpl {
 
             debug!("transactions_with_proofs=historical_stream_ready");
         } else {
-            self.handle_transactions_combined_mode(from_block, filter, tx)
+            self.handle_transactions_combined_mode(from_block, filter, tx, stream_permit)
                 .await?;
         }
 
@@ -208,12 +364,20 @@ impl StreamingServiceImpl {
         let block_handle_id = block_handle.id().to_string();
 
         let mut pending: Vec<(StreamingEvent, String)> = Vec::new();
+        let mut pending_bytes = 0usize;
         // Gate stays closed until historical replay finishes; queue live events until it opens.
         let mut gated = !state.is_gate_open();
+        let gate_wait = state.wait_for_gate_open();
+        tokio::pin!(gate_wait);
+        let cancellation_wait = state.wait_for_cancellation();
+        tokio::pin!(cancellation_wait);
 
         loop {
             tokio::select! {
-                _ = state.wait_for_gate_open(), if gated => {
+                biased;
+                _ = tx.closed() => break,
+                _ = &mut cancellation_wait => break,
+                _ = &mut gate_wait, if gated => {
                     gated = !state.is_gate_open();
                     // gated changed from true to false, flush pending events
                     if !gated
@@ -226,11 +390,25 @@ impl StreamingServiceImpl {
                         ).await {
                             break;
                         }
+                    pending_bytes = 0;
                 }
                 message = block_handle.recv() => {
                     match message {
                         Some(event) => {
                             if gated {
+                                let event_bytes = event.retained_bytes();
+                                let next_bytes = pending_bytes.saturating_add(event_bytes);
+                                if pending.len() >= MAX_TRANSACTION_PENDING_EVENTS
+                                    || next_bytes > MAX_TRANSACTION_PENDING_BYTES
+                                {
+                                    Self::terminate_transaction_stream(
+                                        &tx,
+                                        &state,
+                                        "live events exceeded the history handoff budget",
+                                    ).await;
+                                    break;
+                                }
+                                pending_bytes = next_bytes;
                                 pending.push((event, block_handle_id.clone()));
                                 continue;
                             }
@@ -256,6 +434,19 @@ impl StreamingServiceImpl {
                     match message {
                         Some(event) => {
                             if gated {
+                                let event_bytes = event.retained_bytes();
+                                let next_bytes = pending_bytes.saturating_add(event_bytes);
+                                if pending.len() >= MAX_TRANSACTION_PENDING_EVENTS
+                                    || next_bytes > MAX_TRANSACTION_PENDING_BYTES
+                                {
+                                    Self::terminate_transaction_stream(
+                                        &tx,
+                                        &state,
+                                        "live events exceeded the history handoff budget",
+                                    ).await;
+                                    break;
+                                }
+                                pending_bytes = next_bytes;
                                 pending.push((event, tx_handle_id.clone()));
                                 continue;
                             }
@@ -606,7 +797,7 @@ impl StreamingServiceImpl {
         filter: FilterType,
         tx: TxResponseSender,
         state: TransactionStreamState,
-    ) -> String {
+    ) -> (String, WorkerTaskHandle) {
         let tx_subscription_handle = self
             .subscriber_manager
             .add_subscription(filter.clone())
@@ -627,7 +818,7 @@ impl StreamingServiceImpl {
             "transactions_with_proofs=merkle_subscription_created"
         );
 
-        self.workers.spawn(async move {
+        let worker = self.workers.spawn(async move {
             Self::transaction_worker(
                 tx_subscription_handle,
                 merkle_block_subscription_handle,
@@ -638,7 +829,7 @@ impl StreamingServiceImpl {
             .await
         });
 
-        subscriber_id
+        (subscriber_id, worker)
     }
 
     async fn handle_transactions_combined_mode(
@@ -646,11 +837,12 @@ impl StreamingServiceImpl {
         from_block: dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
         filter: FilterType,
         tx: TxResponseSender,
+        stream_permit: OwnedSemaphorePermit,
     ) -> Result<(), Status> {
         let state = TransactionStreamState::new();
 
         // Will spawn worker thread, gated until historical replay is done
-        let subscriber_id = self
+        let (subscriber_id, live_worker) = self
             .start_live_transaction_stream(filter.clone(), tx.clone(), state.clone())
             .await;
 
@@ -661,68 +853,126 @@ impl StreamingServiceImpl {
         let core_client = self.core_client.clone();
 
         // this will add new worked to the local_workers pool
-        self.spawn_fetch_transactions_history(
-            Some(from_block),
-            None,
-            filter.clone(),
-            Some(state.clone()),
-            tx.clone(),
-            Some(&mut local_workers),
-        )
-        .await?;
+        if let Err(status) = self
+            .spawn_fetch_transactions_history(
+                from_block,
+                None,
+                filter.clone(),
+                TransactionHistoryWorkerContext {
+                    state: Some(state.clone()),
+                    stream_permit: None,
+                },
+                tx.clone(),
+                Some(&mut local_workers),
+            )
+            .await
+        {
+            live_worker.abort().await;
+            return Err(status);
+        }
 
         let gate_sender = state.gate_sender.clone();
+        let coordinator_state = state.clone();
 
         local_workers.spawn(
             Self::fetch_mempool_transactions_worker(filter.clone(), tx.clone(), state, core_client)
                 .map_err(DapiError::from),
         );
 
-        // Now, thread that will wait for all local workers  to complete and disable the gate
         let sub_id = subscriber_id.clone();
-        self.workers.spawn(async move {
-        while let Some(result) = local_workers.join_next().await {
-            match result {
-                Ok(Ok(())) => { /* task completed successfully */ }
-                Ok(Err(e)) => {
-                    debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
-                    // return error back to caller
-                    let status =  e.to_status();
-                    let _ = tx.send(Err(status)).await; // ignore returned value
-                    return Err(e);
+        self.workers.spawn(Self::transaction_stream_coordinator(
+            stream_permit,
+            local_workers,
+            live_worker,
+            tx,
+            coordinator_state,
+            gate_sender,
+            sub_id,
+        ));
+
+        debug!(subscriber_id, "transactions_with_proofs=stream_ready");
+        Ok(())
+    }
+
+    /// Coordinator for combined mode: drains the local (replay) workers, opens
+    /// the gate when replay is done, and owns the stream admission permit. The
+    /// permit must outlive every child worker: releasing it as soon as the
+    /// live worker exits would let repeated connect/disconnect cycles recycle
+    /// all stream permits while replay tasks are still running against Core.
+    async fn transaction_stream_coordinator(
+        stream_permit: OwnedSemaphorePermit,
+        mut local_workers: JoinSet<Result<(), DapiError>>,
+        live_worker: WorkerTaskHandle,
+        tx: TxResponseSender,
+        state: TransactionStreamState,
+        gate_sender: GateSender,
+        sub_id: String,
+    ) -> Result<(), DapiError> {
+        let _stream_permit = stream_permit;
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = tx.closed() => {
+                    debug!(subscriber_id=&sub_id, "transactions_with_proofs=stream_closed_cancelling_workers");
+                    state.cancel();
+                    local_workers.shutdown().await;
+                    live_worker.abort().await;
+                    return Ok(());
                 }
-                Err(e) => {
-                    debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
-                    return Err(DapiError::TaskJoin(e));
+                result = local_workers.join_next() => {
+                    match result {
+                        None => break, // all local workers completed
+                        Some(Ok(Ok(()))) => { /* task completed successfully */ }
+                        Some(Ok(Err(e))) => {
+                            debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
+                            state.cancel();
+                            local_workers.shutdown().await;
+                            // Await the terminal send so a full queue cannot discard it.
+                            let status = e.to_status();
+                            let _ = tx.send(Err(status)).await; // ignore returned value
+                            live_worker.abort().await;
+                            return Err(e);
+                        }
+                        Some(Err(e)) => {
+                            debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
+                            state.cancel();
+                            local_workers.shutdown().await;
+                            live_worker.abort().await;
+                            return Err(DapiError::TaskJoin(e));
+                        }
+                    }
                 }
             }
         }
-        TransactionStreamState::open_gate(&gate_sender);
-        debug!(subscriber_id=&sub_id, "transactions_with_proofs=historical_sync_completed_gate_opened");
 
-        Ok(())
-    });
+        if !state.is_cancelled() {
+            TransactionStreamState::open_gate(&gate_sender);
+            debug!(
+                subscriber_id = &sub_id,
+                "transactions_with_proofs=historical_sync_completed_gate_opened"
+            );
+        }
 
-        debug!(subscriber_id, "transactions_with_proofs=stream_ready");
+        // Replay is done; keep holding the permit until the client goes
+        // away, then stop the live worker.
+        tx.closed().await;
+        live_worker.abort().await;
+
         Ok(())
     }
 
     /// Spawns new thread that fetches historical transactions starting from the specified block.
     async fn spawn_fetch_transactions_history(
         &self,
-        from_block: Option<dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock>,
+        from_block: dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
         limit: Option<usize>,
         filter: FilterType,
-        state: Option<TransactionStreamState>,
+        context: TransactionHistoryWorkerContext,
         tx: TxResponseSender,
         workers: Option<&mut JoinSet<Result<(), DapiError>>>, // defaults to self.workers if None
     ) -> Result<(), Status> {
         use std::str::FromStr;
-
-        let from_block = match from_block {
-            Some(block) => block,
-            None => return Ok(()),
-        };
 
         let best_height = self
             .core_client
@@ -778,15 +1028,19 @@ impl StreamingServiceImpl {
         }
         let core_client = self.core_client.clone();
 
-        let worker = Self::process_transactions_from_height(
-            start_height,
-            count_target,
-            filter,
-            state,
-            tx,
-            core_client,
-        )
-        .map_err(DapiError::from);
+        let worker = async move {
+            let _stream_permit = context.stream_permit;
+            Self::process_transactions_from_height(
+                start_height,
+                count_target,
+                filter,
+                context.state,
+                tx,
+                core_client,
+            )
+            .await
+            .map_err(DapiError::from)
+        };
 
         if let Some(workers) = workers {
             workers.spawn(worker);
@@ -812,26 +1066,41 @@ impl StreamingServiceImpl {
             .await
             .map_err(Status::from)?;
 
+        if txids.len() > MAX_MEMPOOL_TXS_PER_STREAM {
+            return Err(Status::resource_exhausted(
+                "mempool snapshot exceeds the per-stream transaction limit",
+            ));
+        }
+
         if txids.is_empty() {
             trace!("transactions_with_proofs=mempool_empty");
             return Ok(());
         }
 
         let mut matching: Vec<Vec<u8>> = Vec::new();
+        let mut matching_bytes = 0usize;
 
         for txid in txids {
-            let tx = match core_client.get_raw_transaction(txid).await {
-                Ok(tx) => tx,
+            if tx.is_closed() || state.is_cancelled() {
+                return Ok(());
+            }
+
+            let transaction = match core_client.get_raw_transaction(txid).await {
+                Ok(transaction) => transaction,
                 Err(err) => {
                     debug!(error = %err, "transactions_with_proofs=mempool_tx_fetch_failed");
                     continue;
                 }
             };
 
+            if tx.is_closed() || state.is_cancelled() {
+                return Ok(());
+            }
+
             let matches = match &filter {
                 FilterType::CoreAllTxs => true,
                 FilterType::CoreBloomFilter(bloom, flags) => {
-                    super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags)
+                    super::bloom::matches_transaction(Arc::clone(bloom), &transaction, *flags)
                 }
                 _ => false,
             };
@@ -840,17 +1109,24 @@ impl StreamingServiceImpl {
                 continue;
             }
 
-            let tx_bytes = serialize(&tx);
-            let txid_bytes = tx.txid().to_byte_array();
+            let tx_bytes = serialize(&transaction);
+            let next_bytes = matching_bytes
+                .checked_add(tx_bytes.len())
+                .filter(|total| *total <= MAX_MEMPOOL_RAW_BYTES_PER_STREAM)
+                .ok_or_else(|| {
+                    Status::resource_exhausted("mempool snapshot exceeds the per-stream byte limit")
+                })?;
+            let txid_bytes = transaction.txid().to_byte_array();
 
             if !state.mark_transaction_delivered(&txid_bytes).await {
                 trace!(
-                    txid = %tx.txid(),
+                    txid = %transaction.txid(),
                     "transactions_with_proofs=skip_duplicate_mempool_transaction"
                 );
                 continue;
             }
 
+            matching_bytes = next_bytes;
             matching.push(tx_bytes);
         }
 
@@ -897,6 +1173,13 @@ impl StreamingServiceImpl {
         );
 
         for i in 0..count {
+            if tx.is_closed()
+                || state
+                    .as_ref()
+                    .is_some_and(TransactionStreamState::is_cancelled)
+            {
+                return Ok(());
+            }
             let height = (start_height + i) as u32;
             let hash = match core_client.get_block_hash(height).await {
                 Ok(h) => h,
@@ -1053,7 +1336,7 @@ fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u
     Ok(serialize(&mb))
 }
 fn parse_bloom_filter(
-    bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+    bloom_filter: dapi_grpc::core::v0::BloomFilter,
 ) -> Result<
     (
         dashcore_rpc::dashcore::bloom::BloomFilter,
@@ -1061,6 +1344,8 @@ fn parse_bloom_filter(
     ),
     Status,
 > {
+    use dashcore_rpc::dashcore::bloom::{MAX_BLOOM_FILTER_SIZE, MAX_HASH_FUNCS};
+
     trace!(
         n_hash_funcs = bloom_filter.n_hash_funcs,
         n_tweak = bloom_filter.n_tweak,
@@ -1077,6 +1362,13 @@ fn parse_bloom_filter(
         ));
     }
 
+    if bloom_filter.v_data.len() > MAX_BLOOM_FILTER_SIZE {
+        debug!("transactions_with_proofs=bloom_filter_too_large");
+        return Err(Status::invalid_argument(format!(
+            "bloom filter data exceeds {MAX_BLOOM_FILTER_SIZE} bytes"
+        )));
+    }
+
     if bloom_filter.n_hash_funcs == 0 {
         debug!("transactions_with_proofs=bloom_filter_no_hash_funcs");
         return Err(Status::invalid_argument(
@@ -1084,13 +1376,20 @@ fn parse_bloom_filter(
         ));
     }
 
-    // Create filter from bloom filter parameters
-    let bloom_filter_clone = bloom_filter.clone();
-    let flags = bloom_flags_from_int(bloom_filter_clone.n_flags);
+    if bloom_filter.n_hash_funcs > MAX_HASH_FUNCS {
+        debug!("transactions_with_proofs=bloom_filter_too_many_hash_funcs");
+        return Err(Status::invalid_argument(format!(
+            "number of hash functions exceeds {MAX_HASH_FUNCS}"
+        )));
+    }
+
+    // Move the already-decoded data into the Core filter after validating the
+    // narrow BIP37 limits, avoiding attacker-sized intermediate copies.
+    let flags = bloom_flags_from_int(bloom_filter.n_flags);
     let core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
-        bloom_filter_clone.v_data.clone(),
-        bloom_filter_clone.n_hash_funcs,
-        bloom_filter_clone.n_tweak,
+        bloom_filter.v_data,
+        bloom_filter.n_hash_funcs,
+        bloom_filter.n_tweak,
         flags,
     )
     .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
@@ -1160,6 +1459,39 @@ mod tests {
         block
     }
 
+    fn proto_bloom_filter(bytes: usize, n_hash_funcs: u32) -> dapi_grpc::core::v0::BloomFilter {
+        dapi_grpc::core::v0::BloomFilter {
+            v_data: vec![0; bytes],
+            n_hash_funcs,
+            n_tweak: 0,
+            n_flags: 0,
+        }
+    }
+
+    #[test]
+    fn should_validate_transaction_history_selector_shape_before_stream_setup() {
+        use dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock;
+
+        assert!(validate_transaction_from_block_shape(&FromBlock::FromBlockHeight(1)).is_ok());
+        assert!(validate_transaction_from_block_shape(&FromBlock::FromBlockHeight(0)).is_err());
+        assert!(
+            validate_transaction_from_block_shape(&FromBlock::FromBlockHash(vec![0; 32])).is_ok()
+        );
+        assert!(
+            validate_transaction_from_block_shape(&FromBlock::FromBlockHash(vec![0; 31])).is_err()
+        );
+    }
+
+    #[test]
+    fn should_enforce_bip37_bloom_filter_bounds_before_construction() {
+        use dashcore_rpc::dashcore::bloom::{MAX_BLOOM_FILTER_SIZE, MAX_HASH_FUNCS};
+
+        assert!(parse_bloom_filter(proto_bloom_filter(MAX_BLOOM_FILTER_SIZE, 1)).is_ok());
+        assert!(parse_bloom_filter(proto_bloom_filter(MAX_BLOOM_FILTER_SIZE + 1, 1)).is_err());
+        assert!(parse_bloom_filter(proto_bloom_filter(1, MAX_HASH_FUNCS)).is_ok());
+        assert!(parse_bloom_filter(proto_bloom_filter(1, MAX_HASH_FUNCS + 1)).is_err());
+    }
+
     #[tokio::test]
     async fn should_dedupe_transactions_blocks_and_instant_locks() {
         let state = TransactionStreamState::new();
@@ -1176,6 +1508,56 @@ mod tests {
         assert!(state.mark_instant_lock_delivered(&lock_txid).await);
         assert!(!state.mark_instant_lock_delivered(&lock_txid).await);
         assert!(state.has_transaction_been_delivered(&lock_txid).await);
+    }
+
+    #[test]
+    fn should_check_duplicate_before_evicting_oldest_delivery_id() {
+        let mut delivered = BoundedDeliveredIds::new(2);
+        let first = vec![1; 32];
+        let second = vec![2; 32];
+        let third = vec![3; 32];
+
+        assert!(delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(second.clone()));
+        assert!(!delivered.mark_delivered(first.clone()));
+        assert!(delivered.mark_delivered(third));
+        assert!(delivered.contains(&second));
+        assert!(!delivered.mark_delivered(second));
+        assert!(!delivered.contains(&first));
+    }
+
+    #[tokio::test]
+    async fn should_preserve_terminal_status_when_response_queue_is_full() {
+        let state = TransactionStreamState::new();
+        let (tx, mut rx) = mpsc::channel(1);
+        tx.send(Ok(TransactionsWithProofsResponse { responses: None }))
+            .await
+            .expect("queue should accept first response");
+
+        let terminal_sender = {
+            let state = state.clone();
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                StreamingServiceImpl::terminate_transaction_stream(
+                    &tx,
+                    &state,
+                    "history handoff exhausted",
+                )
+                .await;
+            })
+        };
+
+        tokio::task::yield_now().await;
+        assert!(state.is_cancelled());
+        assert!(!terminal_sender.is_finished());
+        assert!(rx.recv().await.expect("queued response").is_ok());
+        terminal_sender.await.expect("terminal sender task");
+        let status = rx
+            .recv()
+            .await
+            .expect("terminal response")
+            .expect_err("terminal response should be an error");
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::ResourceExhausted);
     }
 
     #[tokio::test]
@@ -1246,6 +1628,127 @@ mod tests {
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&tx_a.txid()));
         assert!(matches.contains(&tx_c.txid()));
+    }
+
+    #[tokio::test]
+    async fn should_hold_stream_permit_until_replay_workers_stop() {
+        use crate::sync::Workers;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use tokio::sync::Semaphore;
+
+        struct DropFlag(Arc<AtomicBool>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .expect("initial permit");
+        let state = TransactionStreamState::new();
+        let (tx, rx) = mpsc::channel(8);
+
+        let workers = Workers::new();
+        let live_worker = workers.spawn(async {
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        // Replay worker that never finishes on its own; the flag flips only
+        // once the task is actually torn down.
+        let replay_stopped = Arc::new(AtomicBool::new(false));
+        let mut local_workers = JoinSet::new();
+        let guard = DropFlag(replay_stopped.clone());
+        local_workers.spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        let gate_sender = state.gate_sender.clone();
+        let coordinator = tokio::spawn(StreamingServiceImpl::transaction_stream_coordinator(
+            permit,
+            local_workers,
+            live_worker,
+            tx,
+            state.clone(),
+            gate_sender,
+            "subscriber".to_string(),
+        ));
+
+        // While the client is connected and replay is running, the permit is held.
+        tokio::task::yield_now().await;
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+
+        // Client disconnects while the replay worker is still running.
+        drop(rx);
+        timeout(Duration::from_secs(5), coordinator)
+            .await
+            .expect("coordinator should finish after disconnect")
+            .expect("coordinator task should not panic")
+            .expect("coordinator should exit cleanly");
+
+        // The permit is only released after every replay worker is gone.
+        assert!(replay_stopped.load(Ordering::SeqCst));
+        assert!(state.is_cancelled());
+        assert!(semaphore.try_acquire_owned().is_ok());
+    }
+
+    #[tokio::test]
+    async fn should_open_gate_after_replay_and_hold_permit_until_disconnect() {
+        use crate::sync::Workers;
+        use tokio::sync::Semaphore;
+
+        let semaphore = Arc::new(Semaphore::new(1));
+        let permit = semaphore
+            .clone()
+            .try_acquire_owned()
+            .expect("initial permit");
+        let state = TransactionStreamState::new();
+        let (tx, rx) = mpsc::channel(8);
+
+        let workers = Workers::new();
+        let live_worker = workers.spawn(async {
+            std::future::pending::<()>().await;
+            Ok::<(), DapiError>(())
+        });
+
+        let mut local_workers = JoinSet::new();
+        local_workers.spawn(async { Ok::<(), DapiError>(()) });
+
+        let gate_sender = state.gate_sender.clone();
+        let coordinator = tokio::spawn(StreamingServiceImpl::transaction_stream_coordinator(
+            permit,
+            local_workers,
+            live_worker,
+            tx,
+            state.clone(),
+            gate_sender,
+            "subscriber".to_string(),
+        ));
+
+        // Replay completes: the gate opens, but the permit stays held while
+        // the client remains connected.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !state.is_gate_open() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "gate should open after replay completes"
+            );
+            sleep(Duration::from_millis(10)).await;
+        }
+        assert!(semaphore.clone().try_acquire_owned().is_err());
+
+        drop(rx);
+        timeout(Duration::from_secs(5), coordinator)
+            .await
+            .expect("coordinator should finish after disconnect")
+            .expect("coordinator task should not panic")
+            .expect("coordinator should exit cleanly");
+        assert!(semaphore.try_acquire_owned().is_ok());
     }
 
     #[tokio::test]

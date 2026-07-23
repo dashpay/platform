@@ -968,6 +968,7 @@ fn executed_transition_result_proof_roundtrips() {
         &|_| Ok(None),
         platform_version,
     )
+    .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
     .expect(
         "the honest result proof must verify — absence-proof verification rejects the unbounded \
          all-keys identity sub-query",

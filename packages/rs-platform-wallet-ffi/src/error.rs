@@ -168,6 +168,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
     ErrorAssetLockFundingMismatch = 25,
+    /// Maps `PlatformWalletError::TransactionBroadcast`. Core definitively
+    /// rejected the transaction, so its UTXO reservation was released and the
+    /// host may safely retry after addressing the rejection reason.
+    ErrorTransactionBroadcastRejected = 26,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -307,6 +311,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // so hosts can distinguish it from a definitive rejection.
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            }
+            PlatformWalletError::TransactionBroadcast(..) => {
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
@@ -764,6 +771,24 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
             "TransactionBroadcastUnconfirmed should map to its dedicated code (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn transaction_broadcast_rejected_maps_to_dedicated_code() {
+        let rejected = PlatformWalletError::TransactionBroadcast(
+            "mandatory-script-verify-flag-failed".to_string(),
+        );
+        let rendered = rejected.to_string();
+        let result: PlatformWalletFFIResult = rejected.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected,
+            "TransactionBroadcast should map to its dedicated rejection code"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()
