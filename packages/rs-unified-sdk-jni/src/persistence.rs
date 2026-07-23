@@ -47,7 +47,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use crate::support::JVM;
+use crate::support::{net_from_ord, JVM};
 use jni::objects::{GlobalRef, JByteArray, JObject, JString, JValue};
 use jni::JNIEnv;
 use platform_wallet_ffi::{
@@ -3759,18 +3759,6 @@ unsafe extern "C" fn tramp_get_core_tx_record_free(
 }
 
 // ── Shared low-level helpers ──────────────────────────────────────────
-
-/// FFINetwork ordinal → the crate's `FFINetwork` enum. Out-of-range
-/// ordinals fall back to Testnet (matches sdk.rs's default arm).
-fn net_from_ord(ord: i32) -> platform_wallet_ffi::FFINetwork {
-    use platform_wallet_ffi::FFINetwork;
-    match ord {
-        0 => FFINetwork::Mainnet,
-        2 => FFINetwork::Devnet,
-        3 => FFINetwork::Regtest,
-        _ => FFINetwork::Testnet,
-    }
-}
 
 /// Build a `&[T]` from a raw `(ptr, count)` pair, treating null as empty.
 ///

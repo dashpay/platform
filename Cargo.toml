@@ -85,7 +85,7 @@ opt-level = 3
 [profile.dev-ios]
 inherits = "dev"
 panic = "abort"
-lto = "thin"
+debug = "line-tables-only"
 
 # Android counterparts for the `rs-unified-sdk-jni` cdylib, used ONLY by
 # `packages/kotlin-sdk/build_android.sh`. Unlike iOS, panic stays

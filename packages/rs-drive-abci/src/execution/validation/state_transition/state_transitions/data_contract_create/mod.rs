@@ -1827,6 +1827,112 @@ mod tests {
             }
 
             #[tokio::test]
+            #[ignore = "documents missing creation-time guard: base_supply > max_supply is currently allowed (no production guard exists). Such a token is created already over its cap, base_supply is immutable, and every mint is then blocked by TokenMintPastMaxSupplyError. Remove #[ignore] once the guard is added in data_contract_create/basic_structure (alongside the base_supply > i64::MAX check)."]
+            async fn test_data_contract_creation_with_base_supply_over_max_supply_should_cause_error(
+            ) {
+                // INTENDED behavior: a contract whose base_supply exceeds its own
+                // max_supply must be REJECTED at creation. Today there is no guard
+                // comparing the two (the create validator only rejects
+                // base_supply > i64::MAX, data_contract_create/basic_structure/v0/mod.rs),
+                // so this currently FAILS: the contract is created with total supply equal
+                // to base_supply, already over the cap. This is the real validation-path
+                // analogue of the gap (it runs an actual DataContractCreateTransition
+                // through process_raw_state_transitions, not the setup_contract helper).
+                let platform_version = PlatformVersion::latest();
+                let mut platform = TestPlatformBuilder::new()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let platform_state = platform.state.load();
+
+                let (identity, signer, key) =
+                    setup_identity(&mut platform, 958, dash_to_credits!(1.0));
+
+                let mut data_contract = json_document_to_contract_with_ids(
+                    "tests/supporting_files/contract/basic-token/basic-token.json",
+                    None,
+                    None,
+                    false, //no need to validate the data contracts in tests for drive
+                    platform_version,
+                )
+                .expect("expected to get json based contract");
+
+                {
+                    let token_config = data_contract
+                        .tokens_mut()
+                        .expect("expected tokens")
+                        .get_mut(&0)
+                        .expect("expected first token");
+                    // base_supply (100_000) exceeds max_supply (50_000): inconsistent.
+                    token_config.set_base_supply(100000);
+                    token_config.set_max_supply(Some(50000));
+                }
+
+                let identity_id = identity.id();
+
+                let data_contract_id = DataContract::generate_data_contract_id_v0(identity_id, 1);
+
+                let data_contract_create_transition =
+                    DataContractCreateTransition::new_from_data_contract(
+                        data_contract,
+                        1,
+                        &identity.into_partial_identity_info(),
+                        key.id(),
+                        &signer,
+                        platform_version,
+                        None,
+                    )
+                    .await
+                    .expect("expect to create data contract create transition");
+
+                let token_id = calculate_token_id(data_contract_id.as_bytes(), 0);
+
+                let serialized = data_contract_create_transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize");
+
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[serialized],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                // INTENDED: creation is rejected during basic structure validation,
+                // before paid execution can run.
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(_)
+                    )]
+                );
+
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("expected to commit transaction");
+
+                // INTENDED: the token must not exist, so its supply is absent (not the
+                // over-cap value). This is non-vacuous: today the token IS created with
+                // supply Some(100000), failing this assertion.
+                let total_supply = platform
+                    .drive
+                    .fetch_token_total_supply(token_id, None, platform_version)
+                    .expect("expected to fetch total supply");
+                assert_eq!(total_supply, None);
+            }
+
+            #[tokio::test]
             async fn test_data_contract_creation_with_single_token_needing_group_that_does_not_exist(
             ) {
                 let platform_version = PlatformVersion::latest();

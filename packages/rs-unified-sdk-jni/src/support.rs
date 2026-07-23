@@ -1,5 +1,6 @@
 //! Shared JNI plumbing: JVM caching, panic guards, exception throwing.
 
+use dash_network::ffi::FFINetwork;
 use jni::objects::JThrowable;
 use jni::{JNIEnv, JavaVM};
 use platform_wallet_ffi::error::{
@@ -26,6 +27,22 @@ use std::sync::OnceLock;
 /// stay in 1–10. Must stay in lockstep with
 /// `DashSdkError.PLATFORM_WALLET_CODE_OFFSET` on the Kotlin side.
 pub const PWFFI_CODE_OFFSET: i32 = 1000;
+
+/// FFINetwork ordinal → enum (0=Mainnet, 2=Devnet, 3=Regtest, else
+/// Testnet). Must stay in lockstep with Kotlin's `Network.ffiValue`.
+///
+/// This is the single shared mapping for every JNI module:
+/// `rs_sdk_ffi::FFINetwork` and `platform_wallet_ffi::FFINetwork` are both
+/// re-exports of this same `dash_network::ffi::FFINetwork`, so the one
+/// helper serves callers regardless of which FFI crate they talk to.
+pub fn net_from_ord(ord: i32) -> FFINetwork {
+    match ord {
+        0 => FFINetwork::Mainnet,
+        2 => FFINetwork::Devnet,
+        3 => FFINetwork::Regtest,
+        _ => FFINetwork::Testnet,
+    }
+}
 
 /// Android's generic crash-recovery APIs must never authorize consumption of
 /// a bearer invitation voucher. That authority belongs exclusively to the
@@ -117,11 +134,21 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 
 #[cfg(test)]
 mod tests {
-    use super::generic_asset_lock_recovery_allowed;
+    use super::{generic_asset_lock_recovery_allowed, net_from_ord};
+    use dash_network::ffi::FFINetwork;
 
     #[test]
     fn generic_asset_lock_recovery_rejects_invitation_authority() {
         assert!(generic_asset_lock_recovery_allowed(false));
         assert!(!generic_asset_lock_recovery_allowed(true));
+    }
+
+    #[test]
+    fn net_from_ord_matches_kotlin_ffi_values() {
+        assert_eq!(net_from_ord(0), FFINetwork::Mainnet);
+        assert_eq!(net_from_ord(1), FFINetwork::Testnet);
+        assert_eq!(net_from_ord(2), FFINetwork::Devnet);
+        assert_eq!(net_from_ord(3), FFINetwork::Regtest);
+        assert_eq!(net_from_ord(-1), FFINetwork::Testnet, "unknown → Testnet");
     }
 }

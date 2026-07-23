@@ -14,6 +14,8 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
 
+const STATE_TRANSITION_HASH_SIZE: usize = 32;
+
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
     pub async fn wait_for_state_transition_result_impl(
@@ -32,14 +34,20 @@ impl PlatformServiceImpl {
 
         // Validate state transition hash
         let state_transition_hash = v0.state_transition_hash;
-        if state_transition_hash.is_empty() {
-            return Err(DapiError::InvalidArgument(
-                "state transition hash is not specified".to_string(),
-            ));
-        }
+        validate_state_transition_hash(&state_transition_hash)?;
+
+        let _wait_permit = self
+            .state_transition_wait_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                DapiError::ResourceExhausted(
+                    "too many pending state transition result waits".to_string(),
+                )
+            })?;
 
         // Convert hash to commonly used representations
-        let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
+        let hash_hex = hex::encode_upper(&state_transition_hash);
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
         let span = tracing::trace_span!("wait_for_state_transition_result", tx = %hash_hex);
@@ -285,6 +293,17 @@ impl PlatformServiceImpl {
     }
 }
 
+fn validate_state_transition_hash(hash: &[u8]) -> Result<(), DapiError> {
+    if hash.len() != STATE_TRANSITION_HASH_SIZE {
+        return Err(DapiError::InvalidArgument(format!(
+            "state transition hash must be {STATE_TRANSITION_HASH_SIZE} bytes, got {}",
+            hash.len()
+        )));
+    }
+
+    Ok(())
+}
+
 /// Convert a `DapiError` into the gRPC error response expected by waitForStateTransitionResult callers.
 pub(super) fn build_wait_for_state_transition_error_response(
     error: &DapiError,
@@ -315,6 +334,18 @@ pub(super) fn build_wait_for_state_transition_error_response(
 mod tests {
     use super::*;
     use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+
+    #[test]
+    fn state_transition_hash_must_be_exact_width() {
+        assert!(validate_state_transition_hash(&[0; STATE_TRANSITION_HASH_SIZE]).is_ok());
+
+        for length in [0, 1, 31, 33, 20 * 1024] {
+            assert!(matches!(
+                validate_state_transition_hash(&vec![0; length]),
+                Err(DapiError::InvalidArgument(message)) if message.contains("must be 32 bytes")
+            ));
+        }
+    }
 
     /// Extract the `StateTransitionBroadcastError` from a
     /// `WaitForStateTransitionResultResponse`, unwrapping the V0 / Error layers.

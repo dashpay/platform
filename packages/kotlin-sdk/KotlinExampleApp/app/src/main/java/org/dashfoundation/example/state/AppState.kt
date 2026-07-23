@@ -39,6 +39,18 @@ class AppState(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    /**
+     * The connected network's protocol version, learned via
+     * `Sdk.system.refreshProtocolVersion()` after every SDK (re)build —
+     * port of the iOS `AppState.platformProtocolVersion`. Null until the
+     * refresh completes (or if it failed); consumers gating behavior on a
+     * protocol version (e.g. the shielded denomination picker in
+     * `CreateIdentityScreen`) should fall back to the currently-active
+     * network behavior when null.
+     */
+    private val _platformProtocolVersion = MutableStateFlow<Int?>(null)
+    val platformProtocolVersion: StateFlow<Int?> = _platformProtocolVersion.asStateFlow()
+
     private val _useDockerSetup = MutableStateFlow(false)
     val useDockerSetup: StateFlow<Boolean> = _useDockerSetup.asStateFlow()
 
@@ -96,6 +108,27 @@ class AppState(
             )
             val old = _sdk.value
             _sdk.value = newSdk
+            // Eagerly learn the network's protocol version (iOS
+            // `refreshProtocolVersion(for:)` parity): reset first so a
+            // network switch never carries the previous network's
+            // version, then refresh off the UI path. Non-fatal — the
+            // SDK still ratchets from response metadata if this fails.
+            _platformProtocolVersion.value = null
+            scope.launch {
+                try {
+                    val version = newSdk.system.refreshProtocolVersion()
+                    // Drop a stale result if the SDK was swapped again
+                    // while the refresh was in flight.
+                    if (version != null && _sdk.value === newSdk) {
+                        _platformProtocolVersion.value = version
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w(
+                        "AppState",
+                        "protocol version refresh failed (non-fatal): ${e.message}",
+                    )
+                }
+            }
             // Suspending close: awaits queries already in flight against
             // the old instance (they run under Sdk.queryGate), so the
             // native handle is never freed mid-JNI-call. New queries

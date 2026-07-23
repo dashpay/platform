@@ -14,10 +14,11 @@ use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::PRICE;
 use dpp::fee::Credits;
 use dpp::group::group_action_status::GroupActionStatus;
-use dpp::identity::PartialIdentity;
+use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{AddressNonce, Identifier};
-use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -27,9 +28,6 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
-use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
-use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionWitnessSigned};
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
@@ -44,8 +42,12 @@ use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_met
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
+use dpp::state_transition::address_credit_withdrawal_transition::accessors::AddressCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedIdentityFullWithAddressInfos, VerifiedIdentityWithAddressInfos, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
@@ -69,8 +71,8 @@ impl Drive {
         proof: &[u8],
         known_contracts_provider_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, StateTransitionProofResult), Error> {
-        match state_transition {
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
+        let (root_hash, result) = match state_transition {
             StateTransition::DataContractCreate(data_contract_create) => {
                 // we expect to get a contract that matches the state transition
                 let keeps_history = data_contract_create
@@ -486,19 +488,21 @@ impl Drive {
                                         ),
                                     ))
                                 } else {
-                                    let (root_hash, Some(balance)) =
-                                        Drive::verify_token_balance_for_identity_id(
-                                            proof,
-                                            token_id.into_buffer(),
-                                            owner_id.into_buffer(),
-                                            false,
-                                            platform_version,
-                                        )?
-                                    else {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
-                                            format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
-                                    };
-                                    Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                                    {
+                                        let (root_hash, Some(balance)) =
+                                            Drive::verify_token_balance_for_identity_id(
+                                                proof,
+                                                token_id.into_buffer(),
+                                                owner_id.into_buffer(),
+                                                false,
+                                                platform_version,
+                                            )?
+                                        else {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(
+                                                    format!("proof did not contain token balance for identity {} expected to exist because of state transition (token burn)", owner_id))));
+                                        };
+                                        Ok((root_hash, VerifiedTokenBalance(owner_id, balance)))
+                                    }
                                 }
                             }
                             TokenTransition::Mint(token_mint_transition) => {
@@ -544,48 +548,52 @@ impl Drive {
                                         ),
                                     ))
                                 } else {
-                                    let recipient_id =
-                                        token_mint_transition.recipient_id(token_config)?;
-                                    let (root_hash, Some(balance)) =
-                                        Drive::verify_token_balance_for_identity_id(
-                                            proof,
-                                            token_id.into_buffer(),
-                                            recipient_id.into_buffer(),
-                                            false,
-                                            platform_version,
-                                        )?
-                                    else {
-                                        return Err(Error::Proof(ProofError::IncorrectProof(
-                                                format!("proof did not contain token balance for identity {} expected to exist because of state transition (token mint)", recipient_id))));
-                                    };
-                                    Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+                                    {
+                                        let recipient_id =
+                                            token_mint_transition.recipient_id(token_config)?;
+                                        let (root_hash, Some(balance)) =
+                                            Drive::verify_token_balance_for_identity_id(
+                                                proof,
+                                                token_id.into_buffer(),
+                                                recipient_id.into_buffer(),
+                                                false,
+                                                platform_version,
+                                            )?
+                                        else {
+                                            return Err(Error::Proof(ProofError::IncorrectProof(
+                                                    format!("proof did not contain token balance for identity {} expected to exist because of state transition (token mint)", recipient_id))));
+                                        };
+                                        Ok((root_hash, VerifiedTokenBalance(recipient_id, balance)))
+                                    }
                                 }
                             }
                             TokenTransition::Transfer(token_transfer_transition) => {
                                 if keeps_historical_document.keeps_transfer_history() {
                                     historical_query()
                                 } else {
-                                    let recipient_id = token_transfer_transition.recipient_id();
-                                    let identity_ids =
-                                        [owner_id.to_buffer(), recipient_id.to_buffer()];
-                                    let (root_hash, balances): (
-                                        RootHash,
-                                        BTreeMap<Identifier, Option<TokenAmount>>,
-                                    ) = Drive::verify_token_balances_for_identity_ids(
-                                        proof,
-                                        token_id.into_buffer(),
-                                        &identity_ids,
-                                        false,
-                                        platform_version,
-                                    )?;
+                                    {
+                                        let recipient_id = token_transfer_transition.recipient_id();
+                                        let identity_ids =
+                                            [owner_id.to_buffer(), recipient_id.to_buffer()];
+                                        let (root_hash, balances): (
+                                            RootHash,
+                                            BTreeMap<Identifier, Option<TokenAmount>>,
+                                        ) = Drive::verify_token_balances_for_identity_ids(
+                                            proof,
+                                            token_id.into_buffer(),
+                                            &identity_ids,
+                                            false,
+                                            platform_version,
+                                        )?;
 
-                                    let balances = balances.into_iter().map(|(id, maybe_balance)| {
-                                            let balance = maybe_balance.ok_or(Error::Proof(ProofError::IncorrectProof(
-                                                format!("proof did not contain token balance for identity {} expected to exist because of state transition (token transfer)", id))))?;
-                                            Ok((id, balance))
-                                        }).collect::<Result<_, Error>>()?;
+                                        let balances = balances.into_iter().map(|(id, maybe_balance)| {
+                                                    let balance = maybe_balance.ok_or(Error::Proof(ProofError::IncorrectProof(
+                                                        format!("proof did not contain token balance for identity {} expected to exist because of state transition (token transfer)", id))))?;
+                                                    Ok((id, balance))
+                                                }).collect::<Result<_, Error>>()?;
 
-                                    Ok((root_hash, VerifiedTokenIdentitiesBalances(balances)))
+                                        Ok((root_hash, VerifiedTokenIdentitiesBalances(balances)))
+                                    }
                                 }
                             }
                             TokenTransition::Freeze(token_freeze_transition) => {
@@ -817,10 +825,29 @@ impl Drive {
                     platform_version,
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain identity {} expected to exist because of state transition (create)", identity_create_transition.identity_id()))))?;
+                let expected_keys: BTreeMap<KeyID, IdentityPublicKey> = identity_create_transition
+                    .public_keys()
+                    .iter()
+                    .map(|key| {
+                        let stored_key: IdentityPublicKey = key.into();
+                        (stored_key.id(), stored_key)
+                    })
+                    .collect();
+                if expected_keys.len() != identity_create_transition.public_keys().len() {
+                    return Err(Error::Proof(ProofError::InvalidTransition(
+                        "identity create transition contains duplicate public key ids".to_string(),
+                    )));
+                }
+                if identity.public_keys() != &expected_keys {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "identity create proof contains public keys that do not match the transition"
+                            .to_string(),
+                    )));
+                }
                 Ok((root_hash, VerifiedIdentity(identity)))
             }
             StateTransition::IdentityTopUp(identity_top_up_transition) => {
-                // we expect to get a new balance and revision
+                // snapshot of the identity's balance and revision at the proof's block
                 let identity_id = identity_top_up_transition.identity_id();
                 let (root_hash, Some((balance, revision))) =
                     Drive::verify_identity_balance_and_revision_for_identity_id(
@@ -831,7 +858,7 @@ impl Drive {
                     )?
                 else {
                     return Err(Error::Proof(ProofError::IncorrectProof(
-                        format!("proof did not contain balance for identity {} expected to exist because of state transition (top up)", identity_id))));
+                            format!("proof did not contain balance for identity {} expected to exist because of state transition (top up)", identity_id))));
                 };
                 Ok((
                     root_hash,
@@ -845,26 +872,28 @@ impl Drive {
                 ))
             }
             StateTransition::IdentityCreditWithdrawal(identity_credit_withdrawal_transition) => {
-                // we expect to get an identity that matches the state transition
-                let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
-                    proof,
-                    identity_credit_withdrawal_transition
-                        .identity_id()
-                        .into_buffer(),
-                    false,
-                    platform_version,
-                )?;
-                let balance = balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain balance for identity {} expected to exist because of state transition (withdrawal)", identity_credit_withdrawal_transition.identity_id()))))?;
-                Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: identity_credit_withdrawal_transition.identity_id(),
-                        loaded_public_keys: Default::default(),
-                        balance: Some(balance),
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
-                ))
+                {
+                    // snapshot of the identity's balance at the proof's block
+                    let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                        proof,
+                        identity_credit_withdrawal_transition
+                            .identity_id()
+                            .into_buffer(),
+                        false,
+                        platform_version,
+                    )?;
+                    let balance = balance.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain balance for identity {} expected to exist because of state transition (withdrawal)", identity_credit_withdrawal_transition.identity_id()))))?;
+                    Ok((
+                        root_hash,
+                        VerifiedPartialIdentity(PartialIdentity {
+                            id: identity_credit_withdrawal_transition.identity_id(),
+                            loaded_public_keys: Default::default(),
+                            balance: Some(balance),
+                            revision: None,
+                            not_found_public_keys: Default::default(),
+                        }),
+                    ))
+                }
             }
             StateTransition::IdentityUpdate(identity_update_transition) => {
                 // we expect to get an identity that matches the state transition
@@ -880,10 +909,50 @@ impl Drive {
                     platform_version,
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain update for identity {} expected to exist because of state transition (update)", identity_update_transition.identity_id()))))?;
+
+                if identity.revision != Some(identity_update_transition.revision()) {
+                    return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                        "identity update proof contains revision {:?}, expected {}",
+                        identity.revision,
+                        identity_update_transition.revision()
+                    ))));
+                }
+
+                for key in identity_update_transition.public_keys_to_add() {
+                    let expected_key: IdentityPublicKey = key.into();
+                    if identity.loaded_public_keys.get(&expected_key.id()) != Some(&expected_key) {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "identity update proof does not contain the expected state for added key {}",
+                            expected_key.id()
+                        ))));
+                    }
+                }
+
+                for key_id in identity_update_transition.public_key_ids_to_disable() {
+                    let Some(proved_key) = identity.loaded_public_keys.get(key_id) else {
+                        return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                            "identity update proof does not contain disabled key {}",
+                            key_id
+                        ))));
+                    };
+                    // The proof may be generated at a block later than the one that
+                    // executed the update; `disabled_at` never changes afterwards, so
+                    // require the key to be disabled at or before the proof's block
+                    // rather than exactly at it.
+                    match proved_key.disabled_at() {
+                        Some(disabled_at) if disabled_at <= block_info.time_ms => {}
+                        _ => {
+                            return Err(Error::Proof(ProofError::IncorrectProof(format!(
+                                "identity update proof contains an unexpected disabled timestamp for key {}",
+                                key_id
+                            ))));
+                        }
+                    }
+                }
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::IdentityCreditTransfer(identity_credit_transfer) => {
-                // we expect to get an identity that matches the state transition
+                // snapshot of the sender's and recipient's balances at the proof's block
                 let (root_hash_identity, balance_identity) =
                     Drive::verify_identity_balance_for_identity_id(
                         proof,
@@ -1006,6 +1075,27 @@ impl Drive {
                 )?;
                 let identity = identity.ok_or(Error::Proof(ProofError::IncorrectProof(format!("proof did not contain identity {} expected to exist because of state transition (create from addresses)", identity_id))))?;
 
+                let expected_keys: BTreeMap<KeyID, IdentityPublicKey> = st
+                    .public_keys()
+                    .iter()
+                    .map(|key| {
+                        let stored_key: IdentityPublicKey = key.into();
+                        (stored_key.id(), stored_key)
+                    })
+                    .collect();
+                if expected_keys.len() != st.public_keys().len() {
+                    return Err(Error::Proof(ProofError::InvalidTransition(
+                        "identity create from addresses transition contains duplicate public key ids"
+                            .to_string(),
+                    )));
+                }
+                if identity.public_keys() != &expected_keys {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "identity create from addresses proof contains public keys that do not match the transition"
+                            .to_string(),
+                    )));
+                }
+
                 let addresses_to_check = st
                     .inputs()
                     .keys()
@@ -1071,6 +1161,7 @@ impl Drive {
                 ))
             }
             StateTransition::AddressFundsTransfer(st) => {
+                // snapshot of the input and output addresses at the proof's block
                 use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
                 use dpp::state_transition::StateTransitionWitnessSigned;
                 let (root_hash, address_balances): (
@@ -1086,7 +1177,7 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(address_balances)))
             }
             StateTransition::AddressFundingFromAssetLock(st) => {
-                // Verify balances for output addresses after funding
+                // snapshot of the input and output addresses at the proof's block
                 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
                 let (root_hash, balances): (
                     RootHash,
@@ -1101,7 +1192,7 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::AddressCreditWithdrawal(st) => {
-                // Verify balances for input addresses after withdrawal
+                // snapshot of the input and output addresses at the proof's block
                 use dpp::state_transition::StateTransitionWitnessSigned;
                 let addresses_to_check = st
                     .inputs()
@@ -1120,6 +1211,7 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::Shield(st) => {
+                // snapshot of the input addresses at the proof's block
                 use dpp::state_transition::StateTransitionWitnessSigned;
                 let (root_hash, balances): (
                     RootHash,
@@ -1797,7 +1889,126 @@ impl Drive {
                     VerifiedIdentityWithShieldedNullifiers(identity, statuses),
                 ))
             }
-        }
+        }?;
+
+        let outcome = if Self::state_transition_proof_binds_execution(
+            state_transition,
+            known_contracts_provider_fn,
+        )? {
+            StateTransitionProofOutcome::ExecutionProved(result)
+        } else {
+            StateTransitionProofOutcome::AffectedState(result)
+        };
+
+        Ok((root_hash, outcome))
+    }
+
+    /// Whether a valid proof for this state transition binds the execution of
+    /// this specific transition (`ExecutionProved`) or can only authenticate
+    /// the state the transition affects at the committed block
+    /// (`AffectedState`).
+    ///
+    /// This classifier is deliberately an exhaustive `match` over every
+    /// transition family — and, for tokens, over the contract's keeps-history
+    /// configuration and group usage — so adding a new variant fails to
+    /// compile until it is classified here: no transition can silently
+    /// inherit the stronger `ExecutionProved` guarantee.
+    fn state_transition_proof_binds_execution(
+        state_transition: &StateTransition,
+        known_contracts_provider_fn: &ContractLookupFn,
+    ) -> Result<bool, Error> {
+        let binds = match state_transition {
+            // The created contract's id derives from its owner and entropy,
+            // and the proven body must equal the transition's declared
+            // contract, which cannot exist without this create executing.
+            StateTransition::DataContractCreate(_) => true,
+            // The proven contract body equaling the update's target does not
+            // prove that THIS update executed: the proven version may predate
+            // the request, whose signature and nonce are not in the proof.
+            StateTransition::DataContractUpdate(_) => false,
+            StateTransition::Batch(batch) => match batch.first_transition() {
+                // The verifier errors on an empty batch before the tag is
+                // consulted; classify fail-closed regardless.
+                None => false,
+                // Document proofs bind the exact document (or its absence
+                // after deletion), including contested status and history.
+                Some(BatchedTransitionRef::Document(_)) => true,
+                Some(BatchedTransitionRef::Token(token_transition)) => {
+                    let data_contract_id = token_transition.data_contract_id();
+                    let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
+                        Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in token verification",
+                            data_contract_id
+                        ))),
+                    )?;
+                    let token_config = contract.expected_token_configuration(
+                        token_transition.base().token_contract_position(),
+                    )?;
+                    let keeps = token_config.keeps_history();
+                    // A group action's proof binds the action id and the
+                    // signer's recorded participation; a history-keeping
+                    // token's proof binds the exact historical document.
+                    // Without either, only the resulting state is proven.
+                    let grouped = token_transition.base().using_group_info().is_some();
+                    match token_transition {
+                        TokenTransition::Burn(_) => keeps.keeps_burning_history() || grouped,
+                        TokenTransition::Mint(_) => keeps.keeps_minting_history() || grouped,
+                        TokenTransition::Transfer(_) => keeps.keeps_transfer_history(),
+                        TokenTransition::Freeze(_) | TokenTransition::Unfreeze(_) => {
+                            keeps.keeps_freezing_history() || grouped
+                        }
+                        TokenTransition::DirectPurchase(_) => keeps.keeps_direct_purchase_history(),
+                        TokenTransition::SetPriceForDirectPurchase(_) => {
+                            keeps.keeps_direct_pricing_history() || grouped
+                        }
+                        TokenTransition::DestroyFrozenFunds(_)
+                        | TokenTransition::EmergencyAction(_)
+                        | TokenTransition::ConfigUpdate(_)
+                        | TokenTransition::Claim(_) => true,
+                    }
+                }
+            },
+            // The proven identity holds exactly the transition's declared
+            // key set, which cannot exist without this create executing.
+            StateTransition::IdentityCreate(_) => true,
+            // Balance/revision snapshots: values as of the proof's block,
+            // not bindable to one specific top-up/withdrawal/transfer.
+            StateTransition::IdentityTopUp(_) => false,
+            StateTransition::IdentityCreditWithdrawal(_) => false,
+            StateTransition::IdentityCreditTransfer(_) => false,
+            // Binds the transition's revision and its exact key additions
+            // and disabling timestamps.
+            StateTransition::IdentityUpdate(_) => true,
+            // The proven vote is stored under the masternode's identity and
+            // must equal the transition's declared vote.
+            StateTransition::MasternodeVote(_) => true,
+            // Current identity and address balances, without the requested
+            // amounts, nonces, or the submitted request itself.
+            StateTransition::IdentityCreditTransferToAddresses(_) => false,
+            StateTransition::IdentityTopUpFromAddresses(_) => false,
+            // Binds the created identity's declared public keys.
+            StateTransition::IdentityCreateFromAddresses(_) => true,
+            // Address funds families: post-state address balances only.
+            StateTransition::AddressFundsTransfer(_) => false,
+            StateTransition::AddressFundingFromAssetLock(_) => false,
+            StateTransition::AddressCreditWithdrawal(_) => false,
+            StateTransition::Shield(_) => false,
+            // Nullifier-spend proofs bind the exact Orchard actions of this
+            // transition.
+            StateTransition::Unshield(_) => true,
+            StateTransition::ShieldedTransfer(_) => true,
+            StateTransition::ShieldedWithdrawal(_) => true,
+            // Only the consumed outpoint (and current surplus-address state)
+            // is proven; competing shields over the same outpoint share the
+            // same query and result.
+            StateTransition::ShieldFromAssetLock(_) => false,
+            // Spent nullifiers plus the resulting identity do not bind the
+            // complete Orchard request, denomination context, or fallback
+            // address.
+            StateTransition::IdentityCreateFromShieldedPool(_) => false,
+        };
+
+        Ok(binds)
     }
 
     /// Reconstruct the prove side's merged multi-root query and verify it STRICTLY.
@@ -1863,10 +2074,13 @@ mod tests {
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
     use dpp::document::DocumentV0Getters;
-    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::Identity;
     use dpp::prelude::DataContract;
-    use dpp::state_transition::proof_result::StateTransitionProofResult;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use dpp::state_transition::proof_result::{
+        StateTransitionProofOutcome, StateTransitionProofResult,
+    };
     use dpp::state_transition::StateTransition;
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
@@ -1962,7 +2176,9 @@ mod tests {
         let (root_hash, proof_result) = result.unwrap();
         assert_ne!(root_hash, [0u8; 32], "root hash should not be all zeros");
         match proof_result {
-            StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
+            StateTransitionProofOutcome::ExecutionProved(
+                StateTransitionProofResult::VerifiedDataContract(verified_contract),
+            ) => {
                 assert_eq!(
                     verified_contract.id(),
                     contract.id(),
@@ -1994,7 +2210,6 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected to serialize contract");
 
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
         let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {
@@ -2022,11 +2237,19 @@ mod tests {
             result.err()
         );
         let (_root_hash, proof_result) = result.unwrap();
+        // The proven contract body equaling the update's target does not
+        // prove that THIS update executed (the version may predate the
+        // request), so the outcome is a snapshot, not execution evidence.
         match proof_result {
-            StateTransitionProofResult::VerifiedDataContract(verified_contract) => {
+            StateTransitionProofOutcome::AffectedState(
+                StateTransitionProofResult::VerifiedDataContract(verified_contract),
+            ) => {
                 assert_eq!(verified_contract.id(), contract.id());
             }
-            other => panic!("expected VerifiedDataContract, got {:?}", other),
+            other => panic!(
+                "expected AffectedState(VerifiedDataContract), got {:?}",
+                other
+            ),
         }
     }
 
@@ -2049,6 +2272,7 @@ mod tests {
         let st = StateTransition::IdentityCreate(IdentityCreateTransition::V0(
             IdentityCreateTransitionV0 {
                 identity_id: identity.id(),
+                public_keys: identity.public_keys().values().map(Into::into).collect(),
                 ..Default::default()
             },
         ));
@@ -2070,11 +2294,45 @@ mod tests {
         );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
-            StateTransitionProofResult::VerifiedIdentity(verified_identity) => {
+            StateTransitionProofOutcome::ExecutionProved(
+                StateTransitionProofResult::VerifiedIdentity(verified_identity),
+            ) => {
                 assert_eq!(verified_identity.id(), identity.id());
             }
             other => panic!("expected VerifiedIdentity, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn verify_identity_create_rejects_unrelated_public_keys() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let proof = drive
+            .prove_full_identity(identity.id().to_buffer(), None, &platform_version.drive)
+            .expect("expected to prove full identity");
+
+        use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_create_transition::v0::IdentityCreateTransitionV0;
+        let st = StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+            IdentityCreateTransitionV0 {
+                identity_id: identity.id(),
+                public_keys: vec![],
+                ..Default::default()
+            },
+        ));
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            &|_id| Ok(None),
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Proof(ProofError::IncorrectProof(_)))
+        ));
     }
 
     // -----------------------------------------------------------------------
@@ -2082,7 +2340,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn verify_identity_top_up_happy_path() {
+    fn verify_identity_top_up_returns_affected_state_snapshot() {
         let (drive, identity) = setup_drive_and_identity();
         let platform_version = PlatformVersion::latest();
         let identity_id = identity.id().to_buffer();
@@ -2102,33 +2360,30 @@ mod tests {
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
-        let result = Drive::verify_state_transition_was_executed_with_proof(
+        // A top-up proof cannot be bound to the transition's execution, so
+        // the outcome must be tagged as an affected-state snapshot, never as
+        // execution evidence.
+        let (_root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             &st,
             &BlockInfo::default(),
             &proof,
             known_contracts_provider_fn,
             platform_version,
-        );
+        )
+        .expect("expected verification to succeed");
 
-        assert!(
-            result.is_ok(),
-            "expected verification to succeed, got: {:?}",
-            result.err()
-        );
-        let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+        match outcome {
+            StateTransitionProofOutcome::AffectedState(
+                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
+            ) => {
                 assert_eq!(partial_identity.id, identity.id());
-                assert!(
-                    partial_identity.balance.is_some(),
-                    "balance should be present"
-                );
-                assert!(
-                    partial_identity.revision.is_some(),
-                    "revision should be present"
-                );
+                assert!(partial_identity.balance.is_some());
+                assert!(partial_identity.revision.is_some());
             }
-            other => panic!("expected VerifiedPartialIdentity, got {:?}", other),
+            other => panic!(
+                "expected AffectedState(VerifiedPartialIdentity), got {:?}",
+                other
+            ),
         }
     }
 
@@ -2137,7 +2392,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn verify_identity_credit_withdrawal_happy_path() {
+    fn verify_identity_credit_withdrawal_returns_affected_state_snapshot() {
         let (drive, identity) = setup_drive_and_identity();
         let platform_version = PlatformVersion::latest();
         let identity_id = identity.id().to_buffer();
@@ -2158,29 +2413,26 @@ mod tests {
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
-        let result = Drive::verify_state_transition_was_executed_with_proof(
+        let (_root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             &st,
             &BlockInfo::default(),
             &proof,
             known_contracts_provider_fn,
             platform_version,
-        );
+        )
+        .expect("expected verification to succeed");
 
-        assert!(
-            result.is_ok(),
-            "expected verification to succeed, got: {:?}",
-            result.err()
-        );
-        let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+        match outcome {
+            StateTransitionProofOutcome::AffectedState(
+                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
+            ) => {
                 assert_eq!(partial_identity.id, identity.id());
-                assert!(
-                    partial_identity.balance.is_some(),
-                    "balance should be present after withdrawal verification"
-                );
+                assert!(partial_identity.balance.is_some());
             }
-            other => panic!("expected VerifiedPartialIdentity, got {:?}", other),
+            other => panic!(
+                "expected AffectedState(VerifiedPartialIdentity), got {:?}",
+                other
+            ),
         }
     }
 
@@ -2215,7 +2467,7 @@ mod tests {
         let st = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
                 identity_id: identity.id(),
-                revision: 1,
+                revision: identity.revision(),
                 ..Default::default()
             },
         ));
@@ -2237,7 +2489,9 @@ mod tests {
         );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
-            StateTransitionProofResult::VerifiedPartialIdentity(partial_identity) => {
+            StateTransitionProofOutcome::ExecutionProved(
+                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
+            ) => {
                 assert_eq!(partial_identity.id, identity.id());
                 assert!(
                     !partial_identity.loaded_public_keys.is_empty(),
@@ -2248,12 +2502,176 @@ mod tests {
         }
     }
 
+    #[test]
+    fn verify_identity_update_rejects_unrelated_revision() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let keys_path_query = key_request.into_path_query();
+        let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let merged = grovedb::PathQuery::merge(
+            vec![&keys_path_query, &revision_path_query],
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to merge path queries");
+        let proof = drive
+            .grove_get_proved_path_query(&merged, None, &mut vec![], &platform_version.drive)
+            .expect("expected to prove identity keys and revision");
+
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        let st = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+            IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: identity.revision() + 1,
+                ..Default::default()
+            },
+        ));
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            &|_id| Ok(None),
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Proof(ProofError::IncorrectProof(_)))
+        ));
+    }
+
+    #[test]
+    fn verify_identity_update_rejects_active_key_as_disabled() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let keys_path_query = key_request.into_path_query();
+        let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let merged = grovedb::PathQuery::merge(
+            vec![&keys_path_query, &revision_path_query],
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to merge path queries");
+        let proof = drive
+            .grove_get_proved_path_query(&merged, None, &mut vec![], &platform_version.drive)
+            .expect("expected to prove identity keys and revision");
+        let key_id = *identity
+            .public_keys()
+            .keys()
+            .next()
+            .expect("identity should have a public key");
+
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        let st = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+            IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: identity.revision(),
+                disable_public_keys: vec![key_id],
+                ..Default::default()
+            },
+        ));
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &proof,
+            &|_id| Ok(None),
+            platform_version,
+        );
+
+        assert!(matches!(
+            result,
+            Err(Error::Proof(ProofError::IncorrectProof(_)))
+        ));
+    }
+
+    #[test]
+    fn verify_identity_update_accepts_key_disabled_before_proof_block() {
+        let (drive, identity) = setup_drive_and_identity();
+        let platform_version = PlatformVersion::latest();
+        let identity_id = identity.id().to_buffer();
+        let key_id = *identity
+            .public_keys()
+            .keys()
+            .next()
+            .expect("identity should have a public key");
+
+        // Disable the key at time 50, then verify against a proof served at a
+        // later block: `disabled_at` never changes afterwards, so retried or
+        // later proofs must still verify.
+        let disabled_at: u64 = 50;
+        drive
+            .disable_identity_keys(
+                identity_id,
+                vec![key_id],
+                disabled_at,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to disable identity key");
+
+        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let keys_path_query = key_request.into_path_query();
+        let revision_path_query = Drive::identity_revision_query(&identity_id);
+        let merged = grovedb::PathQuery::merge(
+            vec![&keys_path_query, &revision_path_query],
+            &platform_version.drive.grove_version,
+        )
+        .expect("expected to merge path queries");
+        let proof = drive
+            .grove_get_proved_path_query(&merged, None, &mut vec![], &platform_version.drive)
+            .expect("expected to prove identity keys and revision");
+
+        use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+        use dpp::state_transition::state_transitions::identity::identity_update_transition::v0::IdentityUpdateTransitionV0;
+        let st = StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(
+            IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: identity.revision(),
+                disable_public_keys: vec![key_id],
+                ..Default::default()
+            },
+        ));
+
+        let later_block = BlockInfo {
+            time_ms: disabled_at + 10_000,
+            ..Default::default()
+        };
+        let (_root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &later_block,
+            &proof,
+            &|_id| Ok(None),
+            platform_version,
+        )
+        .expect("expected verification to accept a key disabled before the proof block");
+
+        match result {
+            StateTransitionProofOutcome::ExecutionProved(
+                StateTransitionProofResult::VerifiedPartialIdentity(partial_identity),
+            ) => {
+                assert_eq!(partial_identity.id, identity.id());
+            }
+            other => panic!(
+                "expected ExecutionProved(VerifiedPartialIdentity), got {:?}",
+                other
+            ),
+        }
+    }
+
     // -----------------------------------------------------------------------
     // IdentityCreditTransfer
     // -----------------------------------------------------------------------
 
     #[test]
-    fn verify_identity_credit_transfer_happy_path() {
+    fn verify_identity_credit_transfer_returns_affected_state_snapshot() {
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
 
@@ -2283,8 +2701,6 @@ mod tests {
             )
             .expect("expected to add recipient identity");
 
-        // The transfer verification calls verify_identity_balance_for_identity_id twice
-        // with verify_subset_of_proof=true, so we need a merged proof of both balances.
         let proof = drive
             .prove_many_identity_balances(
                 &[sender.id().to_buffer(), recipient.id().to_buffer()],
@@ -2307,31 +2723,31 @@ mod tests {
 
         let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
 
-        let result = Drive::verify_state_transition_was_executed_with_proof(
+        let (_root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             &st,
             &BlockInfo::default(),
             &proof,
             known_contracts_provider_fn,
             platform_version,
-        );
+        )
+        .expect("expected verification to succeed");
 
-        assert!(
-            result.is_ok(),
-            "expected verification to succeed, got: {:?}",
-            result.err()
-        );
-        let (_root_hash, proof_result) = result.unwrap();
-        match proof_result {
-            StateTransitionProofResult::VerifiedBalanceTransfer(
-                sender_partial,
-                recipient_partial,
+        match outcome {
+            StateTransitionProofOutcome::AffectedState(
+                StateTransitionProofResult::VerifiedBalanceTransfer(
+                    sender_identity,
+                    recipient_identity,
+                ),
             ) => {
-                assert_eq!(sender_partial.id, sender.id());
-                assert_eq!(recipient_partial.id, recipient.id());
-                assert!(sender_partial.balance.is_some());
-                assert!(recipient_partial.balance.is_some());
+                assert_eq!(sender_identity.id, sender.id());
+                assert_eq!(recipient_identity.id, recipient.id());
+                assert!(sender_identity.balance.is_some());
+                assert!(recipient_identity.balance.is_some());
             }
-            other => panic!("expected VerifiedBalanceTransfer, got {:?}", other),
+            other => panic!(
+                "expected AffectedState(VerifiedBalanceTransfer), got {:?}",
+                other
+            ),
         }
     }
 
@@ -2566,7 +2982,9 @@ mod tests {
         );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
-            StateTransitionProofResult::VerifiedDocuments(docs) => {
+            StateTransitionProofOutcome::ExecutionProved(
+                StateTransitionProofResult::VerifiedDocuments(docs),
+            ) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);
@@ -2685,7 +3103,9 @@ mod tests {
         );
         let (_root_hash, proof_result) = result.unwrap();
         match proof_result {
-            StateTransitionProofResult::VerifiedDocuments(docs) => {
+            StateTransitionProofOutcome::ExecutionProved(
+                StateTransitionProofResult::VerifiedDocuments(docs),
+            ) => {
                 assert_eq!(docs.len(), 1, "expected exactly one document entry");
                 let (returned_id, maybe_doc) = docs.into_iter().next().unwrap();
                 assert_eq!(returned_id, doc_id);
@@ -3017,7 +3437,6 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected to serialize contract");
 
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
         let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {
@@ -3367,11 +3786,8 @@ mod tests {
         );
 
         assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
-            ),
-            "expected error for address funds transfer with empty proof, got: {:?}",
+            matches!(result, Err(Error::Proof(_)) | Err(Error::GroveDB(_))),
+            "expected a proof error for an empty proof, got: {:?}",
             result
         );
     }
@@ -3414,11 +3830,8 @@ mod tests {
         );
 
         assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
-            ),
-            "expected error for address credit withdrawal with empty proof, got: {:?}",
+            matches!(result, Err(Error::Proof(_)) | Err(Error::GroveDB(_))),
+            "expected a proof error for an empty proof, got: {:?}",
             result
         );
     }
@@ -3461,11 +3874,8 @@ mod tests {
         );
 
         assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
-            ),
-            "expected error for address credit withdrawal (with change) empty proof, got: {:?}",
+            matches!(result, Err(Error::Proof(_)) | Err(Error::GroveDB(_))),
+            "expected a proof error for an empty proof, got: {:?}",
             result
         );
     }
@@ -3508,11 +3918,8 @@ mod tests {
         );
 
         assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
-            ),
-            "expected error for address funding from asset lock with empty proof, got: {:?}",
+            matches!(result, Err(Error::Proof(_)) | Err(Error::GroveDB(_))),
+            "expected a proof error for an empty proof, got: {:?}",
             result
         );
     }
@@ -3552,11 +3959,8 @@ mod tests {
         );
 
         assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
-            ),
-            "expected error for shield with empty proof, got: {:?}",
+            matches!(result, Err(Error::Proof(_)) | Err(Error::GroveDB(_))),
+            "expected a proof error for an empty proof, got: {:?}",
             result
         );
     }
@@ -3697,6 +4101,93 @@ mod tests {
             "expected error for identity create from addresses with empty proof, got: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn verify_identity_create_from_addresses_binds_public_keys() {
+        use dpp::address_funds::PlatformAddress;
+        use dpp::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+        use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+        use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+        use std::collections::BTreeMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([9u8; 20]), (1u32, 2000u64));
+        let id_transition =
+            IdentityCreateFromAddressesTransition::V0(IdentityCreateFromAddressesTransitionV0 {
+                public_keys: vec![],
+                inputs: inputs.clone(),
+                output: None,
+                fee_strategy: vec![],
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            });
+        let identity_id = id_transition
+            .identity_id_from_inputs()
+            .expect("expected identity id from inputs");
+
+        let mut identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a platform identity");
+        identity.set_id(identity_id);
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add identity");
+
+        let matching = StateTransition::IdentityCreateFromAddresses(
+            IdentityCreateFromAddressesTransition::V0(IdentityCreateFromAddressesTransitionV0 {
+                public_keys: identity.public_keys().values().map(Into::into).collect(),
+                inputs: inputs.clone(),
+                output: None,
+                fee_strategy: vec![],
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }),
+        );
+        let proof = drive
+            .prove_state_transition(&matching, None, platform_version)
+            .expect("expected proof creation")
+            .into_data()
+            .expect("expected proof data");
+
+        let matching_result = Drive::verify_state_transition_was_executed_with_proof(
+            &matching,
+            &BlockInfo::default(),
+            &proof,
+            &|_id| Ok(None),
+            platform_version,
+        );
+        assert!(matching_result.is_ok());
+
+        let mismatched = StateTransition::IdentityCreateFromAddresses(
+            IdentityCreateFromAddressesTransition::V0(IdentityCreateFromAddressesTransitionV0 {
+                public_keys: vec![],
+                inputs,
+                output: None,
+                fee_strategy: vec![],
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }),
+        );
+        let mismatched_result = Drive::verify_state_transition_was_executed_with_proof(
+            &mismatched,
+            &BlockInfo::default(),
+            &proof,
+            &|_id| Ok(None),
+            platform_version,
+        );
+        assert!(matches!(
+            mismatched_result,
+            Err(Error::Proof(ProofError::IncorrectProof(_)))
+        ));
     }
 
     // --- IdentityTopUpFromAddresses: empty proof returns error.
@@ -3904,6 +4395,180 @@ mod tests {
             "expected error for shielded withdrawal (known contract, empty proof), got: {:?}",
             result
         );
+    }
+
+    // --- Batch V1 with Token Mint transition + unknown contract returns
+    // UnknownContract error (token transition branch).
+    /// The classifier is the single authority on which transition families'
+    /// proofs bind execution; this table pins the snapshot-only families so
+    /// a reclassification (accidental or deliberate) fails a test instead of
+    /// silently upgrading a snapshot into execution evidence.
+    #[test]
+    fn classifier_tags_snapshot_only_families_as_affected_state() {
+        use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+        use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+        use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+        use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+        use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+        use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+        use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+
+        let no_contracts: &ContractLookupFn = &|_id| Ok(None);
+
+        let snapshot_only: Vec<(&str, StateTransition)> = vec![
+            (
+                "identity top up",
+                StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(Default::default())),
+            ),
+            (
+                "identity credit withdrawal",
+                StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(
+                    Default::default(),
+                )),
+            ),
+            (
+                "identity credit transfer",
+                StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                    Default::default(),
+                )),
+            ),
+            (
+                "identity credit transfer to addresses",
+                StateTransition::IdentityCreditTransferToAddresses(
+                    IdentityCreditTransferToAddressesTransition::V0(Default::default()),
+                ),
+            ),
+            (
+                "identity top up from addresses",
+                StateTransition::IdentityTopUpFromAddresses(
+                    IdentityTopUpFromAddressesTransition::V0(Default::default()),
+                ),
+            ),
+            (
+                "address funds transfer",
+                StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                    Default::default(),
+                )),
+            ),
+            (
+                "address funding from asset lock",
+                StateTransition::AddressFundingFromAssetLock(
+                    AddressFundingFromAssetLockTransition::V0(Default::default()),
+                ),
+            ),
+            (
+                "address credit withdrawal",
+                StateTransition::AddressCreditWithdrawal(AddressCreditWithdrawalTransition::V0(
+                    Default::default(),
+                )),
+            ),
+        ];
+
+        for (name, st) in snapshot_only {
+            let binds = Drive::state_transition_proof_binds_execution(&st, no_contracts)
+                .expect("classifier should not error for contract-independent families");
+            assert!(
+                !binds,
+                "{name}: proof must be classified as an affected-state snapshot"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_no_history_token_empty_proof_returns_error() {
+        use dpp::data_contract::accessors::v1::DataContractV1Setters;
+        use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+        use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+        use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKeepsHistoryRulesV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_burn_transition::v0::TokenBurnTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_burn_transition::TokenBurnTransition;
+        use dpp::state_transition::batch_transition::batched_transition::token_mint_transition::v0::TokenMintTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_mint_transition::TokenMintTransition;
+        use dpp::state_transition::batch_transition::batched_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::token_transfer_transition::TokenTransferTransition;
+        use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+        use dpp::state_transition::batch_transition::token_base_transition::v0::TokenBaseTransitionV0;
+        use dpp::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
+        use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+
+        let platform_version = PlatformVersion::latest();
+        let mut contract =
+            get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+                .data_contract_owned();
+        let mut token_configuration = TokenConfigurationV0::default_most_restrictive();
+        token_configuration.keeps_history =
+            TokenKeepsHistoryRulesV0::default_for_keeping_all_history(false).into();
+        contract.set_tokens(BTreeMap::from([(
+            0,
+            TokenConfiguration::V0(token_configuration),
+        )]));
+        let contract_id = contract.id();
+        let token_id = contract.token_id(0).expect("expected token id");
+        let owner_id = Identifier::from([9u8; 32]);
+        let recipient_id = Identifier::from([10u8; 32]);
+
+        let base = || {
+            TokenBaseTransition::V0(TokenBaseTransitionV0 {
+                identity_contract_nonce: 1,
+                token_contract_position: 0,
+                data_contract_id: contract_id,
+                token_id,
+                using_group_info: None,
+            })
+        };
+        let transitions = vec![
+            TokenTransition::Burn(TokenBurnTransition::V0(TokenBurnTransitionV0 {
+                base: base(),
+                burn_amount: 42,
+                public_note: None,
+            })),
+            TokenTransition::Mint(TokenMintTransition::V0(TokenMintTransitionV0 {
+                base: base(),
+                amount: 42,
+                issued_to_identity_id: Some(recipient_id),
+                public_note: None,
+            })),
+            TokenTransition::Transfer(TokenTransferTransition::V0(TokenTransferTransitionV0 {
+                base: base(),
+                amount: 42,
+                recipient_id,
+                public_note: None,
+                shared_encrypted_note: None,
+                private_encrypted_note: None,
+            })),
+        ];
+
+        let contract = Arc::new(contract);
+        let known_contracts_provider_fn: &ContractLookupFn = &|id| {
+            if id == &contract_id {
+                Ok(Some(contract.clone()))
+            } else {
+                Ok(None)
+            }
+        };
+
+        for transition in transitions {
+            let st = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+                owner_id,
+                transitions: vec![BatchedTransition::Token(transition)],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }));
+            let result = Drive::verify_state_transition_was_executed_with_proof(
+                &st,
+                &BlockInfo::default(),
+                &[],
+                known_contracts_provider_fn,
+                platform_version,
+            );
+            assert!(
+                matches!(result, Err(Error::Proof(_)) | Err(Error::GroveDB(_))),
+                "expected a proof error for an empty proof, got: {:?}",
+                result
+            );
+        }
     }
 
     // --- Batch V1 with Token Mint transition + unknown contract returns
@@ -4993,7 +5658,6 @@ mod tests {
             .clone()
             .try_into_platform_versioned(platform_version)
             .expect("expected to serialize contract");
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
         let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {

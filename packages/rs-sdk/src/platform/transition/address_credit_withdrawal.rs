@@ -111,7 +111,9 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
         // `metadata.height` is the proof's committed block — the height
         // pin for these absolutes (`AddressFunds::as_of_height`).
         let (st_result, metadata) = state_transition
-            .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(self, settings)
+            .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+                self, settings,
+            )
             .await?;
         match st_result {
             StateTransitionProofResult::VerifiedAddressInfos(address_infos_map) => {

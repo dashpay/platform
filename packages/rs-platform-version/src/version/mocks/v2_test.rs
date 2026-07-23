@@ -500,6 +500,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_limits: SystemLimits {
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
+        max_document_value_depth: None,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,

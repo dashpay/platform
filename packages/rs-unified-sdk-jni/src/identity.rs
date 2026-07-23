@@ -33,7 +33,7 @@
 
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{
-    generic_asset_lock_recovery_allowed, guard, take_pwffi_error, throw_sdk_exception,
+    generic_asset_lock_recovery_allowed, guard, net_from_ord, take_pwffi_error, throw_sdk_exception,
 };
 use jni::objects::{JByteArray, JClass, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
@@ -45,7 +45,6 @@ use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
-use platform_wallet_ffi::types::FFINetwork;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -309,18 +308,6 @@ unsafe fn encode_preview_rows(previews: &IdentityKeyPreviewsFFI) -> Vec<u8> {
         out.extend_from_slice(&row.private_key_bytes);
     }
     out
-}
-
-/// FFINetwork ordinal → the crate's `FFINetwork` enum
-/// (0=Mainnet, 2=Devnet, 3=Regtest, else Testnet). Kept in step with
-/// `persistence::net_from_ord`.
-fn net_from_ord(ord: i32) -> FFINetwork {
-    match ord {
-        0 => FFINetwork::Mainnet,
-        2 => FFINetwork::Devnet,
-        3 => FFINetwork::Regtest,
-        _ => FFINetwork::Testnet,
-    }
 }
 
 /// Resolver-keyed single-slot identity private-key derive for the
