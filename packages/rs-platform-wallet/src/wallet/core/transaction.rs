@@ -17,7 +17,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_builder::{
 };
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::{Account, DerivationPath, Utxo};
+use key_wallet::{Account, DerivationPath, ReservationToken, Utxo};
 
 use super::CoreWallet;
 use crate::broadcaster::TransactionBroadcaster;
@@ -69,6 +69,17 @@ pub struct SignedCoreTransaction {
     /// advance far enough that the token looks fresh while the reservation it
     /// covers has already aged toward key-wallet's TTL sweep.
     reservation_height: u32,
+    /// The key-wallet [`ReservationToken`] stamped onto the selected inputs when
+    /// `build_unsigned_reserved` reserved them, or `None` when the build took no
+    /// reservation (no reservation set attached — not reached on the funded
+    /// finalize path). Held so an abandoned or definitively-rejected send
+    /// releases the reservation *owner-guarded*: after this build's inputs may
+    /// have been swept by key-wallet's TTL and re-reserved by a concurrent build
+    /// under a new token, releasing by outpoint alone would free that other
+    /// build's inputs (the `dashpay/platform#4185` double-spend window).
+    /// [`ManagedCoreFundsAccount::release_reservation_if_owner`] releases only
+    /// inputs still owned by this token, closing that window.
+    reservation_token: Option<ReservationToken>,
 }
 
 impl SignedCoreTransaction {
@@ -94,6 +105,15 @@ impl SignedCoreTransaction {
     /// the reservation's true age rather than a post-signing sample.
     pub fn reservation_height(&self) -> u32 {
         self.reservation_height
+    }
+
+    /// The key-wallet [`ReservationToken`] the funding inputs were reserved
+    /// under (`None` if the build reserved nothing). The broadcast/abandon
+    /// release paths present it to
+    /// [`ManagedCoreFundsAccount::release_reservation_if_owner`] so a rejected
+    /// or abandoned send frees only reservations this build still owns.
+    pub fn reservation_token(&self) -> Option<ReservationToken> {
+        self.reservation_token
     }
 }
 
@@ -143,7 +163,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         account_index: u32,
         signer: &S,
     ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-        let (unsigned, fee, selected, paths, height) = {
+        let (unsigned, fee, selected, paths, height, reservation_token) = {
             let mut manager = self.wallet_manager.write().await;
             let (wallet, info) = manager
                 .get_wallet_and_info_mut(&self.wallet_id)
@@ -165,13 +185,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         ))
                     })?;
 
-            // `set_funding` observes ReservationSet and `build_unsigned`
-            // records its selection. There is no await between them and the
-            // manager write guard prevents another finalizer interleaving.
-            let (unsigned, fee) = builder
+            // `set_funding` observes ReservationSet and `build_unsigned_reserved`
+            // records its selection AND returns the token stamped onto the
+            // reserved inputs. There is no await between them and the manager
+            // write guard prevents another finalizer interleaving. The token
+            // rides in `SignedCoreTransaction` so a later abandon or rejected
+            // broadcast releases *only* the inputs this build still owns, even
+            // if a TTL sweep re-reserved them under a new token meanwhile
+            // (`dashpay/platform#4185`).
+            let (unsigned, fee, reservation_token) = builder
                 .set_current_height(height)
                 .set_funding(managed, &account)
-                .build_unsigned()
+                .build_unsigned_reserved()
                 .map_err(|error| map_builder_error(error, account_type, account_index))?;
 
             let selected: Vec<Utxo> = match unsigned
@@ -219,7 +244,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 }
             };
 
-            (unsigned, fee, selected, paths, height)
+            (unsigned, fee, selected, paths, height, reservation_token)
         };
 
         let signed = match signer
@@ -230,8 +255,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         {
             Ok(signed) => signed,
             Err(error) => {
-                self.release_transaction_reservation(account_type, account_index, &unsigned)
-                    .await;
+                // Signing awaited an (external) signer with the manager lock
+                // dropped, so key-wallet's TTL sweep could have reclaimed this
+                // build's reservation and a concurrent build re-taken the same
+                // inputs under a new token. Release owner-guarded so we free
+                // only what this build still owns.
+                self.release_transaction_reservation(
+                    account_type,
+                    account_index,
+                    &unsigned,
+                    reservation_token,
+                )
+                .await;
                 return Err(PlatformWalletError::TransactionBuild(error.to_string()));
             }
         };
@@ -242,6 +277,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             funding_account_type: account_type,
             funding_account_index: account_index,
             reservation_height: height,
+            reservation_token,
         })
     }
 
@@ -251,15 +287,27 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             transaction.funding_account_type,
             transaction.funding_account_index,
             &transaction.transaction,
+            transaction.reservation_token,
         )
         .await;
     }
 
+    /// Release the funding reservation `transaction` holds, bound to this
+    /// handle's own wallet *generation*.
+    ///
+    /// `token` is the [`ReservationToken`] the build stamped onto the inputs
+    /// (`SignedCoreTransaction::reservation_token`). When present the release is
+    /// *owner-guarded* — it frees only inputs still owned by that token, so a
+    /// reservation key-wallet's TTL swept and a concurrent build re-took is left
+    /// untouched (`dashpay/platform#4185`). When `None` (the build reserved
+    /// nothing) it falls back to the unconditional by-outpoint release; that
+    /// path is never reached for a funded finalize, which always reserves.
     pub(crate) async fn release_transaction_reservation(
         &self,
         account_type: AccountTypePreference,
         account_index: u32,
         transaction: &Transaction,
+        token: Option<ReservationToken>,
     ) {
         // Validate the generation AND mutate the `ReservationSet` under one
         // manager-lock hold. `ReservationSet::release` removes an outpoint
@@ -301,7 +349,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             return;
         }
         match managed_account(&info.core_wallet.accounts, account_type, account_index) {
-            Some(managed) => managed.release_reservation(transaction),
+            // Owner-guarded when the build stamped a token: even within this
+            // generation, a TTL sweep between build and release could have
+            // re-reserved the same outpoints under a new token, and an
+            // unconditional release would free that newer reservation. With the
+            // token key-wallet frees only inputs this build still owns. `None`
+            // (no reservation taken) falls back to the unconditional release.
+            Some(managed) => match token {
+                Some(token) => managed.release_reservation_if_owner(transaction, token),
+                None => managed.release_reservation(transaction),
+            },
             None => tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
                 ?account_type,
