@@ -20,21 +20,153 @@ cd "$SCRIPT_DIR" || exit 1
 # default for the duration of the run so `SecItemAdd` targets a keychain
 # that needs no interactive authorization. Add it to the user search list
 # so later reads and deletes find the same items. Gated to CI so it never
-# touches a developer's keychain configuration; the previous default and
-# search list are restored on exit.
+# touches a developer's keychain configuration; the selected restorable
+# baseline is restored on exit.
 if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
-  PREV_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
-  PREV_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
-  PREV_USER_KEYCHAINS=()
-  while IFS= read -r keychain_path; do
-    keychain_path="$(printf '%s\n' "$keychain_path" | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
-    if [ -n "$keychain_path" ]; then
-      PREV_USER_KEYCHAINS+=("$keychain_path")
+  normalize_security_keychain_path() {
+    sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//'
+  }
+
+  canonicalize_existing_keychain() {
+    candidate_path="$1"
+    if [ -z "$candidate_path" ] || [ -L "$candidate_path" ] \
+      || [ ! -f "$candidate_path" ]; then
+      return 1
     fi
-  done <<< "$PREV_USER_KEYCHAINS_OUTPUT"
-  if [ "${#PREV_USER_KEYCHAINS[@]}" -eq 0 ]; then
-    echo "No user keychain search list is configured" >&2
+
+    candidate_dir="$(dirname "$candidate_path")"
+    candidate_name="$(basename "$candidate_path")"
+    canonical_dir="$(cd "$candidate_dir" 2>/dev/null && pwd -P)" || return 1
+    canonical_path="$canonical_dir/$candidate_name"
+    if [ -L "$canonical_path" ] || [ ! -f "$canonical_path" ]; then
+      return 1
+    fi
+
+    printf '%s\n' "$canonical_path"
+  }
+
+  canonicalize_recovery_keychain() {
+    canonical_path="$(canonicalize_existing_keychain "$1")" || return 1
+    case "$canonical_path" in
+      "$CANONICAL_USER_KEYCHAIN_DIR"/*)
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+    if [ ! -O "$canonical_path" ] || [ ! -w "$canonical_path" ]; then
+      return 1
+    fi
+
+    printf '%s\n' "$canonical_path"
+  }
+
+  keychain_array_contains() {
+    searched_path="$1"
+    shift
+    for existing_path in "$@"; do
+      if [ "$existing_path" = "$searched_path" ]; then
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  RAW_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
+  RAW_USER_KEYCHAINS=()
+  while IFS= read -r keychain_path; do
+    keychain_path="$(printf '%s\n' "$keychain_path" | normalize_security_keychain_path)"
+    if [ -n "$keychain_path" ]; then
+      RAW_USER_KEYCHAINS+=("$keychain_path")
+    fi
+  done <<< "$RAW_USER_KEYCHAINS_OUTPUT"
+  if [ "${#RAW_USER_KEYCHAINS[@]}" -eq 0 ]; then
+    echo "Cannot repair an empty user keychain search list" >&2
     exit 1
+  fi
+
+  if ! CANONICAL_USER_KEYCHAIN_DIR="$(
+    cd "$HOME/Library/Keychains" 2>/dev/null && pwd -P
+  )"; then
+    echo "The user keychain directory is unavailable" >&2
+    exit 1
+  fi
+
+  RAW_DEFAULT_KEYCHAIN_OUTPUT=""
+  DEFAULT_QUERY_STATUS=0
+  if RAW_DEFAULT_KEYCHAIN_OUTPUT="$(security default-keychain -d user 2>&1)"; then
+    DEFAULT_QUERY_STATUS=0
+  else
+    DEFAULT_QUERY_STATUS=$?
+  fi
+
+  RAW_DEFAULT_KEYCHAIN=""
+  if [ "$DEFAULT_QUERY_STATUS" -eq 0 ]; then
+    RAW_DEFAULT_KEYCHAIN="$(
+      printf '%s\n' "$RAW_DEFAULT_KEYCHAIN_OUTPUT" \
+        | normalize_security_keychain_path
+    )"
+  else
+    case "$DEFAULT_QUERY_STATUS" in
+      37|44)
+        ;;
+      *)
+        printf '%s\n' "$RAW_DEFAULT_KEYCHAIN_OUTPUT" >&2
+        exit "$DEFAULT_QUERY_STATUS"
+        ;;
+    esac
+  fi
+
+  BASELINE_DEFAULT_KEYCHAIN=""
+  BASELINE_USER_KEYCHAINS=()
+  BASELINE_COMMITTED=0
+  DEFAULT_IS_COHERENT=0
+
+  if [ "$DEFAULT_QUERY_STATUS" -eq 0 ] && [ -n "$RAW_DEFAULT_KEYCHAIN" ]; then
+    if canonical_default="$(
+      canonicalize_existing_keychain "$RAW_DEFAULT_KEYCHAIN"
+    )"; then
+      raw_index=0
+      while [ "$raw_index" -lt "${#RAW_USER_KEYCHAINS[@]}" ]; do
+        raw_path="${RAW_USER_KEYCHAINS[$raw_index]}"
+        if canonical_raw_path="$(canonicalize_existing_keychain "$raw_path")" \
+          && [ "$canonical_raw_path" = "$canonical_default" ]; then
+          DEFAULT_IS_COHERENT=1
+          break
+        fi
+        raw_index=$((raw_index + 1))
+      done
+    fi
+  fi
+
+  RECOVERY_USER_KEYCHAINS=()
+  if [ "$DEFAULT_IS_COHERENT" -eq 1 ]; then
+    BASELINE_DEFAULT_KEYCHAIN="$RAW_DEFAULT_KEYCHAIN"
+    BASELINE_USER_KEYCHAINS=("${RAW_USER_KEYCHAINS[@]}")
+    BASELINE_COMMITTED=1
+  else
+    LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+    if canonical_login="$(canonicalize_recovery_keychain "$LOGIN_KEYCHAIN")"; then
+      RECOVERY_USER_KEYCHAINS+=("$canonical_login")
+    fi
+
+    raw_index=0
+    while [ "$raw_index" -lt "${#RAW_USER_KEYCHAINS[@]}" ]; do
+      raw_path="${RAW_USER_KEYCHAINS[$raw_index]}"
+      if canonical_raw_path="$(canonicalize_recovery_keychain "$raw_path")"; then
+        if [ "${#RECOVERY_USER_KEYCHAINS[@]}" -eq 0 ] \
+          || ! keychain_array_contains \
+            "$canonical_raw_path" "${RECOVERY_USER_KEYCHAINS[@]}"; then
+          RECOVERY_USER_KEYCHAINS+=("$canonical_raw_path")
+        fi
+      fi
+      raw_index=$((raw_index + 1))
+    done
+
+    if [ "${#RECOVERY_USER_KEYCHAINS[@]}" -eq 0 ]; then
+      echo "No eligible user keychain is available for default recovery" >&2
+      exit 1
+    fi
   fi
 
   CI_KEYCHAIN_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/dash-ci-keychain.XXXXXX")"
@@ -42,19 +174,31 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   CI_KEYCHAIN_MAY_EXIST=0
   CI_DEFAULT_MAY_HAVE_CHANGED=0
   CI_SEARCH_LIST_MAY_HAVE_CHANGED=0
+  REPAIR_LIST_MAY_HAVE_CHANGED=0
+  REPAIR_CONTAINMENT_ACTIVE=0
 
   cleanup_ci_keychain() {
     original_status=$?
     cleanup_status=0
     trap - EXIT
 
-    if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-      if ! security default-keychain -d user -s "$PREV_DEFAULT_KEYCHAIN"; then
-        cleanup_status=1
+    if [ "${BASELINE_COMMITTED:-0}" -eq 1 ]; then
+      if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
+        if ! security default-keychain \
+          -d user -s "$BASELINE_DEFAULT_KEYCHAIN"; then
+          cleanup_status=1
+        fi
       fi
-    fi
-    if [ "${CI_SEARCH_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-      if ! security list-keychains -d user -s "${PREV_USER_KEYCHAINS[@]}"; then
+      if [ "${CI_SEARCH_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
+        if ! security list-keychains \
+          -d user -s "${BASELINE_USER_KEYCHAINS[@]}"; then
+          cleanup_status=1
+        fi
+      fi
+    elif [ "${REPAIR_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ] \
+      && [ "${REPAIR_CONTAINMENT_ACTIVE:-0}" -eq 0 ]; then
+      if ! security list-keychains \
+        -d user -s "${RAW_USER_KEYCHAINS[@]}"; then
         cleanup_status=1
       fi
     fi
@@ -82,17 +226,75 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   CI_KEYCHAIN="$CI_KEYCHAIN_DIR/tests.keychain-db"
   chmod 700 "$CI_KEYCHAIN_DIR"
 
+  if [ "$BASELINE_COMMITTED" -eq 0 ]; then
+    REPAIR_LIST_MAY_HAVE_CHANGED=1
+    security list-keychains \
+      -d user -s "${RECOVERY_USER_KEYCHAINS[@]}"
+
+    REPAIR_CONTAINMENT_ACTIVE=1
+    security default-keychain \
+      -d user -s "${RECOVERY_USER_KEYCHAINS[0]}"
+
+    REPAIRED_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
+    REPAIRED_USER_KEYCHAINS=()
+    while IFS= read -r keychain_path; do
+      keychain_path="$(
+        printf '%s\n' "$keychain_path" | normalize_security_keychain_path
+      )"
+      if [ -n "$keychain_path" ]; then
+        if ! canonical_path="$(canonicalize_existing_keychain "$keychain_path")"; then
+          echo "Repaired keychain search list contains an invalid path" >&2
+          exit 1
+        fi
+        REPAIRED_USER_KEYCHAINS+=("$canonical_path")
+      fi
+    done <<< "$REPAIRED_USER_KEYCHAINS_OUTPUT"
+
+    if [ "${#REPAIRED_USER_KEYCHAINS[@]}" \
+      -ne "${#RECOVERY_USER_KEYCHAINS[@]}" ]; then
+      echo "Repaired keychain search list did not match the selected baseline" >&2
+      exit 1
+    fi
+    repaired_index=0
+    while [ "$repaired_index" -lt "${#RECOVERY_USER_KEYCHAINS[@]}" ]; do
+      if [ "${REPAIRED_USER_KEYCHAINS[$repaired_index]}" \
+        != "${RECOVERY_USER_KEYCHAINS[$repaired_index]}" ]; then
+        echo "Repaired keychain search list did not match the selected baseline" >&2
+        exit 1
+      fi
+      repaired_index=$((repaired_index + 1))
+    done
+
+    REPAIRED_DEFAULT_KEYCHAIN="$(
+      security default-keychain -d user | normalize_security_keychain_path
+    )"
+    if ! canonical_repaired_default="$(
+      canonicalize_existing_keychain "$REPAIRED_DEFAULT_KEYCHAIN"
+    )" || [ "$canonical_repaired_default" != "${RECOVERY_USER_KEYCHAINS[0]}" ]; then
+      echo "Repaired default keychain did not match the selected baseline" >&2
+      exit 1
+    fi
+
+    BASELINE_DEFAULT_KEYCHAIN="${RECOVERY_USER_KEYCHAINS[0]}"
+    BASELINE_USER_KEYCHAINS=("${RECOVERY_USER_KEYCHAINS[@]}")
+    BASELINE_COMMITTED=1
+    REPAIR_LIST_MAY_HAVE_CHANGED=0
+  fi
+
   CI_KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
   CI_KEYCHAIN_MAY_EXIST=1
   security create-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
   security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" "$CI_KEYCHAIN"
   security set-keychain-settings -u -t 7200 "$CI_KEYCHAIN"
   CI_SEARCH_LIST_MAY_HAVE_CHANGED=1
-  security list-keychains -d user -s "$CI_KEYCHAIN" "${PREV_USER_KEYCHAINS[@]}"
+  security list-keychains \
+    -d user -s "$CI_KEYCHAIN" "${BASELINE_USER_KEYCHAINS[@]}"
   CI_DEFAULT_MAY_HAVE_CHANGED=1
   security default-keychain -d user -s "$CI_KEYCHAIN"
 
-  SELECTED_DEFAULT_KEYCHAIN="$(security default-keychain -d user | sed -E 's/^[[:space:]]*"?//;s/"?[[:space:]]*$//')"
+  SELECTED_DEFAULT_KEYCHAIN="$(
+    security default-keychain -d user | normalize_security_keychain_path
+  )"
   if [ "$SELECTED_DEFAULT_KEYCHAIN" != "$CI_KEYCHAIN" ]; then
     echo "Failed to select the CI test keychain as the user default" >&2
     exit 1

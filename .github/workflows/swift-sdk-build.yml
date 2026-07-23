@@ -98,6 +98,9 @@ jobs:
           rm -rf packages/swift-sdk/.build || true
           rm -rf packages/swift-sdk/SwiftExampleApp/.build || true
 
+      - name: Test Swift CI keychain lifecycle
+        run: /bin/bash packages/swift-sdk/tests/run-tests-keychain-regression.sh
+
       - name: Build and test Swift SDK
         env:
           # The self-hosted runner persists Cargo's target cache between jobs.
