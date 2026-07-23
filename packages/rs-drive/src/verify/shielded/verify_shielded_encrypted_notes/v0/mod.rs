@@ -65,7 +65,13 @@ impl Drive {
         // PathQuery must match the server-side proof generation exactly:
         // path = [ShieldedBalances, "M"], key = [SHIELDED_NOTES_KEY],
         // subquery = range_inclusive(start..=end)
-        let end_index = start_index + limit as u64 - 1;
+        // `limit >= 1` here (max_elements > 0 was checked above), so
+        // `limit - 1` cannot underflow; only the addition can overflow.
+        let end_index = start_index.checked_add(limit as u64 - 1).ok_or_else(|| {
+            Error::Drive(DriveError::CorruptedElementType(
+                "shielded notes query range exceeds u64::MAX",
+            ))
+        })?;
         let mut inner_query = Query::new();
         inner_query.insert_range_inclusive(
             start_index.to_be_bytes().to_vec()..=end_index.to_be_bytes().to_vec(),
@@ -427,5 +433,38 @@ mod tests {
 
         assert!(notes.is_empty());
         assert_eq!(total_count, N);
+    }
+
+    /// A chunk-aligned `start_index` near `u64::MAX` must be rejected with a
+    /// clean error before the inclusive end index is computed — not wrap or
+    /// panic on `start_index + limit - 1`.
+    #[test]
+    fn rejects_range_end_overflow_past_u64_max() {
+        let platform_version = PlatformVersion::latest();
+
+        let mmr_chunk_size: u64 = 1u64 << SHIELDED_NOTES_CHUNK_POWER;
+        let max_elements = (4 * mmr_chunk_size) as u32;
+        // Largest chunk-aligned start: u64::MAX + 1 is a power of two, so
+        // u64::MAX - (mmr_chunk_size - 1) is a multiple of mmr_chunk_size.
+        // The alignment check passes, then end = start + limit - 1 overflows.
+        let start_index = u64::MAX - (mmr_chunk_size - 1);
+
+        let result = Drive::verify_shielded_encrypted_notes_v0(
+            &[],
+            start_index,
+            0,
+            max_elements,
+            false,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedElementType(msg)))
+                    if msg.contains("exceeds u64::MAX")
+            ),
+            "overflowing range must fail closed with a corruption error"
+        );
     }
 }
