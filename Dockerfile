@@ -357,7 +357,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.108 cargo-chef@0.1.72 \
+    cargo binstall wasm-bindgen-cli@0.2.108 cargo-chef@0.1.72 wasm-pack \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
@@ -655,6 +655,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --recipe-path recipe.json \
     --profile "$CARGO_BUILD_PROFILE" \
     --package wasm-dpp \
+    --package wasm-sdk \
     --target wasm32-unknown-unknown \
     --locked && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
@@ -666,6 +667,7 @@ COPY --parents \
     Cargo.toml \
     rust-toolchain.toml \
     .cargo \
+    packages/scripts \
     packages/rs-dapi \
     packages/rs-dash-async \
     packages/rs-dash-event-bus \
@@ -682,9 +684,18 @@ COPY --parents \
     packages/rs-unified-sdk-ffi \
     packages/rs-unified-sdk-jni \
     packages/rs-json-schema-compatibility-validator \
+    # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
+    packages/rs-context-provider \
+    packages/rs-dapi-client \
+    packages/rs-dash-platform-macros \
+    packages/rs-drive \
+    packages/rs-drive-proof-verifier \
+    packages/rs-sdk \
+    packages/rs-sdk-trusted-context-provider \
     # Common
     packages/wasm-dpp \
     packages/wasm-dpp2 \
+    packages/wasm-sdk \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
@@ -706,6 +717,7 @@ COPY --parents \
     packages/wallet-lib \
     packages/js-dash-sdk \
     packages/dash-spv \
+    packages/js-evo-sdk \
     /platform/
 
 # We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
@@ -722,6 +734,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     export SKIP_GRPC_PROTO_BUILD=1 && \
     # Build JS Dash SDK and dependencies
     yarn run ultra -r --filter '+dash' --build && \
+    # Build Evo SDK (and wasm-sdk) — the platform test suite's proof verifier
+    yarn run ultra -r --filter '+@dashevo/evo-sdk' --build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove target directory and rust packages to save space
     rm -rf target packages/rs-*
