@@ -1,3 +1,20 @@
+## [4.1.0-beta.2](https://github.com/dashpay/platform/compare/v4.1.0-beta.1...v4.1.0-beta.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* **kotlin-sdk:** persist active DashPay identity ([#4211](https://github.com/dashpay/platform/issues/4211))
+
+
+### Documentation
+
+* document offset-version fix and release publishing ([#4213](https://github.com/dashpay/platform/issues/4213))
+
+
+### Build System
+
+* **docker:** build evo-sdk + wasm-sdk in the test-suite image ([#4215](https://github.com/dashpay/platform/issues/4215))
+
 ## [4.1.0-beta.1](https://github.com/dashpay/platform/compare/v4.0.0...v4.1.0-beta.1) (2026-07-23)
 
 
