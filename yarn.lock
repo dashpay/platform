@@ -1487,8 +1487,10 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
+    "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/evo-sdk": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     console-table-printer: "npm:^2.11.0"
@@ -1761,7 +1763,7 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/evo-sdk@workspace:packages/js-evo-sdk":
+"@dashevo/evo-sdk@workspace:*, @dashevo/evo-sdk@workspace:packages/js-evo-sdk":
   version: 0.0.0-use.local
   resolution: "@dashevo/evo-sdk@workspace:packages/js-evo-sdk"
   dependencies:
@@ -1860,6 +1862,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/evo-sdk": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
