@@ -98,11 +98,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            // `account_index` is family-less (TrackedAssetLock doesn't record
+            // whether the lock was BIP44- or CoinJoin-funded), so check both
+            // maps: the BIP44 family first (every historical lock), then the
+            // CoinJoin family (whole-balance drain locks). The persister
+            // fallback below covers either on a miss.
             info.core_wallet
                 .accounts
                 .standard_bip44_accounts
                 .get(&account_index)
                 .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                .or_else(|| {
+                    info.core_wallet
+                        .accounts
+                        .coinjoin_accounts
+                        .get(&account_index)
+                        .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+                })
             // wm dropped at end of block — release before persister + DAPI calls.
         };
 

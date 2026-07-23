@@ -187,6 +187,75 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Fund the shielded pool by DRAINING the wallet's CoinJoin account
+    /// (`m/9'/coinType'/4'/accountIndex'`) into a single asset lock.
+    ///
+    /// Sibling to [`shieldedFundFromAssetLock`] with drain funding: every
+    /// final mixed-coin UTXO is consumed and the lock value is
+    /// `Σ inputs − L1 fee`, computed Rust-side — the mixed coins never hop
+    /// through a transparent BIP44 address. The recipient receives
+    /// `lock_value − pool_fee` credits. The Rust preflight rejects a drain
+    /// whose balance could not clear the Type 18 pool fee, so an
+    /// unrecoverable dust lock is never broadcast. A stuck lock resumes via
+    /// [`shieldedResumeFundFromAssetLock`] exactly like a BIP44-funded one.
+    ///
+    /// - Parameters:
+    ///   - walletId: 32-byte wallet identifier.
+    ///   - coinJoinAccountIndex: CoinJoin account whose whole balance funds
+    ///     the asset lock (account 0 for every current wallet).
+    ///   - recipients: Destination Orchard address (exactly one entry, no
+    ///     explicit credits — same single-recipient remainder contract as
+    ///     `shieldedFundFromAssetLock`).
+    public func shieldedFundFromCoinJoinDrain(
+        walletId: Data,
+        coinJoinAccountIndex: UInt32 = 0,
+        recipients: [ShieldedFundFromAssetLockRecipient]
+    ) async throws {
+        try shieldedFundFromAssetLockPreflight(
+            walletId: walletId,
+            recipients: recipients
+        )
+
+        let handle = self.handle
+        let recipientRaw43 = recipients[0].recipientRaw43
+        // Constructed on the calling actor so it lives for the entire
+        // detached Task — see `shieldedFundFromAssetLock` for why
+        // `withExtendedLifetime` (not a bare discard) is required.
+        let coreSigner = MnemonicResolver()
+
+        try await Task.detached(priority: .userInitiated) {
+            try walletId.withUnsafeBytes { widRaw in
+                guard
+                    let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "walletId baseAddress is nil"
+                    )
+                }
+                try recipientRaw43.withUnsafeBytes { recipientRaw in
+                    guard
+                        let recipientPtr = recipientRaw.baseAddress?
+                            .assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter(
+                            "recipient baseAddress is nil"
+                        )
+                    }
+                    let result = withExtendedLifetime(coreSigner) {
+                        platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+                            handle,
+                            widPtr,
+                            coinJoinAccountIndex,
+                            recipientPtr,
+                            coreSigner.handle
+                        )
+                    }
+                    try result.check()
+                }
+            }
+        }.value
+    }
+
     /// Resume a stuck shielded fund-from-asset-lock from an
     /// already-tracked outpoint.
     ///

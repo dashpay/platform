@@ -12,7 +12,7 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::Signer;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
-    AssetLockFundingType, CreditOutputFunding,
+    AssetLockFundingAccount, AssetLockFundingType, CreditOutputFunding,
 };
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -26,6 +26,19 @@ use super::tracked::{AssetLockStatus, TrackedAssetLock};
 // Asset lock transaction building
 // ---------------------------------------------------------------------------
 
+/// Amount semantics of a funded asset-lock build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetLockBuildAmount {
+    /// Lock exactly this many duffs; funding UTXOs are coin-selected and
+    /// change returns to the funding account.
+    Exact(u64),
+    /// Drain the funding account: every final UTXO is consumed and the
+    /// lock value is `Σ inputs − fee`, computed by the key-wallet builder
+    /// (see `build_asset_lock_with_signer`'s drain mode). Required for
+    /// CoinJoin funding, whose accounts have no change semantics.
+    DrainAll,
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Build an asset lock transaction using the key-wallet builder.
     ///
@@ -34,6 +47,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// never sees a raw credit-output private key — the returned
     /// `DerivationPath` is what the caller hands back to the same
     /// `signer` when the credit output is later consumed on Platform.
+    ///
+    /// Exact-amount BIP44 form — the historical entry point; the
+    /// funding-parameterized form is
+    /// [`Self::build_asset_lock_transaction_with_funding`].
     ///
     /// # Arguments
     ///
@@ -57,7 +74,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
-        if amount_duffs == 0 {
+        self.build_asset_lock_transaction_with_funding(
+            AssetLockBuildAmount::Exact(amount_duffs),
+            AssetLockFundingAccount::Bip44 {
+                account_index,
+            },
+            funding_type,
+            identity_index,
+            signer,
+        )
+        .await
+    }
+
+    /// Funding-parameterized form of [`Self::build_asset_lock_transaction`]:
+    /// `funding_account` picks the account family supplying (and signing)
+    /// the funding UTXOs, and `amount` picks exact-amount vs whole-balance
+    /// drain semantics (see [`AssetLockBuildAmount`]). CoinJoin funding is
+    /// drain-only — the key-wallet builder rejects a non-drain CoinJoin
+    /// build.
+    pub async fn build_asset_lock_transaction_with_funding<S: Signer>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
+        let (amount_duffs, drain) = match amount {
+            AssetLockBuildAmount::Exact(v) => (v, false),
+            // The credit-output value is a placeholder — the key-wallet
+            // drain build rewrites it to Σ inputs − fee.
+            AssetLockBuildAmount::DrainAll => (0, true),
+        };
+        if amount_duffs == 0 && !drain {
             return Err(PlatformWalletError::AssetLockTransaction(
                 "Amount must be greater than zero".to_string(),
             ));
@@ -94,9 +143,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .core_wallet
             .build_asset_lock_with_signer(
                 wallet,
-                account_index,
+                funding_account,
                 vec![funding],
                 DEFAULT_FEE_PER_KB,
+                drain,
                 signer,
             )
             .await
@@ -389,17 +439,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
-        let (path, out_point) = self
-            .broadcast_funded_asset_lock(
-                amount_duffs,
+        self.create_funded_asset_lock_proof_with_funding(
+            AssetLockBuildAmount::Exact(amount_duffs),
+            AssetLockFundingAccount::Bip44 {
                 account_index,
+            },
+            funding_type,
+            identity_index,
+            signer,
+        )
+        .await
+    }
+
+    /// Funding-parameterized form of [`Self::create_funded_asset_lock_proof`]
+    /// — same build → broadcast → proof pipeline with the account family and
+    /// amount semantics of [`Self::build_asset_lock_transaction_with_funding`].
+    pub async fn create_funded_asset_lock_proof_with_funding<S: Signer>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        let (path, out_point) = self
+            .broadcast_funded_asset_lock_with_funding(
+                amount,
+                funding_account,
                 funding_type,
                 identity_index,
                 signer,
             )
             .await?;
         let proof = self
-            .wait_for_funded_asset_lock_proof(&out_point, account_index)
+            .wait_for_funded_asset_lock_proof(&out_point, funding_account.account_index())
             .await?;
         Ok((proof, path, out_point))
     }
@@ -416,6 +489,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         amount_duffs: u64,
         account_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+    ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        self.broadcast_funded_asset_lock_with_funding(
+            AssetLockBuildAmount::Exact(amount_duffs),
+            AssetLockFundingAccount::Bip44 {
+                account_index,
+            },
+            funding_type,
+            identity_index,
+            signer,
+        )
+        .await
+    }
+
+    /// Funding-parameterized form of [`Self::broadcast_funded_asset_lock`].
+    pub(crate) async fn broadcast_funded_asset_lock_with_funding<S: Signer>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
@@ -451,9 +545,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // 1. Build the asset lock transaction.
         let (tx, path) = self
-            .build_asset_lock_transaction(
-                amount_duffs,
-                account_index,
+            .build_asset_lock_transaction_with_funding(
+                amount,
+                funding_account,
                 funding_type,
                 identity_index,
                 signer,
@@ -462,6 +556,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let txid = tx.txid();
         let out_point = OutPoint::new(txid, 0);
+
+        // The tracked/logged amount is read back from the built payload —
+        // for `Exact` it equals the requested value; for `DrainAll` the
+        // builder computed it (Σ inputs − fee) and this is the only place
+        // it is known.
+        let locked_amount_duffs: u64 = match &tx.special_transaction_payload {
+            Some(
+                dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetLockPayloadType(p),
+            ) => p.credit_outputs.iter().map(|o| o.value).sum(),
+            _ => 0,
+        };
 
         // Persist the funding account's address pool now that the build marked
         // its index used. These asset-lock accounts fund OP_RETURN-payload
@@ -503,10 +608,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .track_asset_lock(TrackedAssetLock {
                 out_point,
                 transaction: tx.clone(),
-                account_index,
+                account_index: funding_account.account_index(),
                 funding_type,
                 identity_index,
-                amount: amount_duffs,
+                amount: locked_amount_duffs,
                 status: AssetLockStatus::Built,
                 proof: None,
             })
@@ -540,11 +645,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
                 self.queue_asset_lock_changeset(cs_untrack);
                 if removed_built_row {
+                    let reserved_account = match funding_account {
+                        AssetLockFundingAccount::Bip44 {
+                            account_index,
+                        } => crate::wallet::reservations::ReservedFundingAccount::Standard(
+                            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                            account_index,
+                        ),
+                        AssetLockFundingAccount::CoinJoin {
+                            account_index,
+                        } => crate::wallet::reservations::ReservedFundingAccount::CoinJoin(
+                            account_index,
+                        ),
+                    };
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
-                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
-                        account_index,
+                        reserved_account,
                         &tx,
                     )
                     .await;
