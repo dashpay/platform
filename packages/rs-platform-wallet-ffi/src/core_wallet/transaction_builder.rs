@@ -258,6 +258,10 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
             // captured inside finalize's funding critical section before the
             // external signer ran — never a fresh post-signing sample.
             Some(finalized.reservation_height()),
+            // The key-wallet reservation token finalize stamped onto the funding
+            // inputs, so a later broadcast-reject or release frees only inputs
+            // this build still owns (owner-guarded; `dashpay/platform#4185`).
+            finalized.reservation_token(),
         ),
     );
 
