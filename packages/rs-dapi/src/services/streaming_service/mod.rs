@@ -15,9 +15,10 @@ use crate::config::Config;
 use crate::sync::Workers;
 use dash_spv::Hash;
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{Semaphore, broadcast};
 use tokio::time::{Duration, sleep};
+use tonic::Status;
 use tracing::{debug, trace};
 
 pub(crate) use masternode_list_sync::MasternodeListSync;
@@ -25,6 +26,22 @@ pub(crate) use subscriber_manager::{
     FilterType, StreamingEvent, SubscriberManager, SubscriptionHandle,
 };
 pub(crate) use zmq_listener::{ZmqEvent, ZmqListener};
+
+const MAX_ACTIVE_TRANSACTION_STREAMS: usize = 64;
+const MAX_ACTIVE_BLOCK_HEADER_STREAMS: usize = 64;
+const MAX_ACTIVE_MASTERNODE_STREAMS: usize = 64;
+
+const CORE_BLOCK_HASH_SIZE: usize = 32;
+
+fn validate_core_block_hash(hash: &[u8]) -> Result<(), Status> {
+    if hash.len() != CORE_BLOCK_HASH_SIZE {
+        return Err(Status::invalid_argument(format!(
+            "fromBlockHash must be exactly {CORE_BLOCK_HASH_SIZE} bytes"
+        )));
+    }
+
+    Ok(())
+}
 
 /// Streaming service implementation with ZMQ integration.
 ///
@@ -39,6 +56,9 @@ pub struct StreamingServiceImpl {
     pub zmq_listener: Arc<ZmqListener>,
     pub subscriber_manager: Arc<SubscriberManager>,
     pub masternode_list_sync: Arc<MasternodeListSync>,
+    pub transaction_stream_permits: Arc<Semaphore>,
+    pub block_header_stream_permits: Arc<Semaphore>,
+    pub masternode_stream_permits: Arc<Semaphore>,
     /// Background workers; aborted when the last reference is dropped
     pub workers: Workers,
 }
@@ -127,6 +147,9 @@ impl StreamingServiceImpl {
             zmq_listener,
             subscriber_manager,
             masternode_list_sync,
+            transaction_stream_permits: Arc::new(Semaphore::new(MAX_ACTIVE_TRANSACTION_STREAMS)),
+            block_header_stream_permits: Arc::new(Semaphore::new(MAX_ACTIVE_BLOCK_HEADER_STREAMS)),
+            masternode_stream_permits: Arc::new(Semaphore::new(MAX_ACTIVE_MASTERNODE_STREAMS)),
             workers,
         })
     }
@@ -484,6 +507,22 @@ pub(crate) fn summarize_zmq_event(event: &ZmqEvent) -> String {
         }
         ZmqEvent::HashBlock { hash } => {
             format!("HashBlock {}", short_hex(hash, 12))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn core_block_hash_must_be_exact_width() {
+        assert!(validate_core_block_hash(&[0; CORE_BLOCK_HASH_SIZE]).is_ok());
+
+        for length in [0, 1, 31, 33, 64 * 1024] {
+            let status = validate_core_block_hash(&vec![0; length])
+                .expect_err("expected invalid block hash length");
+            assert_eq!(status.code(), tonic::Code::InvalidArgument);
         }
     }
 }

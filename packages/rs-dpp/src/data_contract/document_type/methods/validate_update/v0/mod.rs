@@ -191,6 +191,57 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        if new_document_type.documents_keep_transfer_history()
+            != self.documents_keep_transfer_history()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it keeps transfer history: changing from {} to {}",
+                        self.documents_keep_transfer_history(),
+                        new_document_type.documents_keep_transfer_history()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.documents_keep_purchase_history()
+            != self.documents_keep_purchase_history()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it keeps purchase history: changing from {} to {}",
+                        self.documents_keep_purchase_history(),
+                        new_document_type.documents_keep_purchase_history()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.documents_keep_pricing_history()
+            != self.documents_keep_pricing_history()
+        {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it keeps pricing history: changing from {} to {}",
+                        self.documents_keep_pricing_history(),
+                        new_document_type.documents_keep_pricing_history()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
         if new_document_type.documents_mutable() != self.documents_mutable() {
             return SimpleConsensusValidationResult::new_with_error(
                 DocumentTypeUpdateError::new(

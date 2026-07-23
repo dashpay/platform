@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 use crate::version::drive_versions::DriveDataContractOperationMethodVersions;
 use versioned_feature_core::FeatureVersion;

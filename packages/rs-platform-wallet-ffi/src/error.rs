@@ -159,6 +159,19 @@ pub enum PlatformWalletFFIResultCode {
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
     ErrorAddressNonceMismatch = 21,
+    /// Atomic Core selection found no or insufficient unreserved UTXOs.
+    ErrorCoreInsufficientFunds = 22,
+    /// Existing-lock recovery referenced an outpoint not owned/tracked by the wallet.
+    ErrorAssetLockNotTracked = 23,
+    /// Existing-lock recovery referenced a one-shot output already consumed.
+    ErrorAssetLockAlreadyConsumed = 24,
+    /// Existing-lock recovery attempted to use a lock for the wrong funding
+    /// family or bound identity index.
+    ErrorAssetLockFundingMismatch = 25,
+    /// Maps `PlatformWalletError::TransactionBroadcast`. Core definitively
+    /// rejected the transaction, so its UTXO reservation was released and the
+    /// host may safely retry after addressing the rejection reason.
+    ErrorTransactionBroadcastRejected = 26,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -299,6 +312,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
             }
+            PlatformWalletError::TransactionBroadcast(..) => {
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
@@ -307,6 +323,18 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
+            }
+            PlatformWalletError::CoreInsufficientFunds { .. } => {
+                PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
+            }
+            PlatformWalletError::AssetLockNotTracked(..) => {
+                PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
+            }
+            PlatformWalletError::AssetLockAlreadyConsumed(..) => {
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+            }
+            PlatformWalletError::AssetLockFundingMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -500,6 +528,8 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use key_wallet::account::StandardAccountType;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
     #[test]
     fn ok_has_null_message() {
@@ -546,7 +576,6 @@ mod tests {
     #[test]
     fn no_selectable_inputs_maps_to_dedicated_code() {
         use dpp::address_funds::PlatformAddress;
-        use key_wallet::account::StandardAccountType;
 
         let cases: Vec<PlatformWalletError> = vec![
             PlatformWalletError::NoSpendableInputs {
@@ -583,6 +612,59 @@ mod tests {
                 msg, rendered,
                 "Display payload must survive the FFI boundary verbatim"
             );
+        }
+    }
+
+    #[test]
+    fn atomic_core_insufficient_funds_maps_to_dedicated_code() {
+        for account_type in [
+            AccountTypePreference::BIP44,
+            AccountTypePreference::BIP32,
+            AccountTypePreference::CoinJoin,
+        ] {
+            let result: PlatformWalletFFIResult = PlatformWalletError::CoreInsufficientFunds {
+                account_type,
+                account_index: 0,
+                available: Some(0),
+                required: None,
+            }
+            .into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
+            );
+        }
+    }
+
+    #[test]
+    fn asset_lock_recovery_failures_map_to_stable_codes() {
+        use dashcore::OutPoint;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        let out_point = OutPoint::null();
+        let cases = [
+            (
+                PlatformWalletError::AssetLockNotTracked(out_point),
+                PlatformWalletFFIResultCode::ErrorAssetLockNotTracked,
+            ),
+            (
+                PlatformWalletError::AssetLockAlreadyConsumed(out_point),
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+            ),
+            (
+                PlatformWalletError::AssetLockFundingMismatch {
+                    out_point,
+                    expected_funding_type: AssetLockFundingType::IdentityRegistration,
+                    expected_identity_index: 1,
+                    actual_funding_type: AssetLockFundingType::IdentityTopUp,
+                    actual_identity_index: 1,
+                },
+                PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch,
+            ),
+        ];
+        for (error, expected) in cases {
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(result.code, expected);
         }
     }
 
@@ -680,6 +762,24 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
             "TransactionBroadcastUnconfirmed should map to its dedicated code (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn transaction_broadcast_rejected_maps_to_dedicated_code() {
+        let rejected = PlatformWalletError::TransactionBroadcast(
+            "mandatory-script-verify-flag-failed".to_string(),
+        );
+        let rendered = rejected.to_string();
+        let result: PlatformWalletFFIResult = rejected.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected,
+            "TransactionBroadcast should map to its dedicated rejection code"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

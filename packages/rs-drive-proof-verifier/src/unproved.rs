@@ -13,6 +13,15 @@ use dpp::dashcore::{Network, ProTxHash, PubkeyHash, QuorumHash};
 use dpp::version::PlatformVersion;
 use std::collections::BTreeMap;
 
+fn parse_hash_32(field: &str, bytes: &[u8]) -> Result<[u8; 32], Error> {
+    bytes.try_into().map_err(|_| Error::ProtocolError {
+        error: format!(
+            "Invalid {field} length: expected 32 bytes, received {}",
+            bytes.len()
+        ),
+    })
+}
+
 /// Trait for parsing unproved responses from the Platform.
 ///
 /// This trait defines methods for extracting data from responses received from the Platform
@@ -181,34 +190,15 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                 let quorum_hashes = v0
                     .quorum_hashes
                     .into_iter()
-                    .map(|q_hash| {
-                        let mut q_hash_array = [0u8; 32];
-                        if q_hash.len() != 32 {
-                            return Err(Error::ProtocolError {
-                                error: "Invalid quorum_hash length".to_string(),
-                            });
-                        }
-                        q_hash_array.copy_from_slice(&q_hash);
-                        Ok(q_hash_array)
-                    })
+                    .map(|q_hash| parse_hash_32("quorum_hash", &q_hash))
                     .collect::<Result<Vec<[u8; 32]>, Error>>()?;
 
                 // Extract current quorum hash
-                let mut current_quorum_hash = [0u8; 32];
-                if v0.current_quorum_hash.len() != 32 {
-                    return Err(Error::ProtocolError {
-                        error: "Invalid current_quorum_hash length".to_string(),
-                    });
-                }
-                current_quorum_hash.copy_from_slice(&v0.current_quorum_hash);
+                let current_quorum_hash =
+                    parse_hash_32("current_quorum_hash", &v0.current_quorum_hash)?;
 
-                let mut last_block_proposer = [0u8; 32];
-                if v0.last_block_proposer.len() != 32 {
-                    return Err(Error::ProtocolError {
-                        error: "Invalid last_block_proposer length".to_string(),
-                    });
-                }
-                last_block_proposer.copy_from_slice(&v0.last_block_proposer);
+                let last_block_proposer =
+                    parse_hash_32("last_block_proposer", &v0.last_block_proposer)?;
 
                 // Extract validator sets
                 let validator_sets =
@@ -216,8 +206,8 @@ impl FromUnproved<platform::GetCurrentQuorumsInfoRequest> for CurrentQuorumsInfo
                         .into_iter()
                         .map(|vs| {
                             // Parse the ValidatorSetV0
-                            let mut quorum_hash = [0u8; 32];
-                            quorum_hash.copy_from_slice(&vs.quorum_hash);
+                            let quorum_hash =
+                                parse_hash_32("validator_set.quorum_hash", &vs.quorum_hash)?;
 
                             // Parse ValidatorV0 members
                             let members = vs
@@ -549,6 +539,31 @@ mod tests {
             err_string.contains("Invalid last_block_proposer length"),
             "unexpected error: {err_string}"
         );
+    }
+
+    #[test]
+    fn test_current_quorums_info_rejects_malformed_nested_quorum_hashes() {
+        for invalid_length in [0, 1, 31, 33, 1024] {
+            let mut response = build_valid_quorums_info_response();
+            if let Some(get_current_quorums_info_response::Version::V0(ref mut v0)) =
+                response.version
+            {
+                v0.validator_sets[0].quorum_hash = vec![0u8; invalid_length];
+            }
+
+            let result = CurrentQuorumsInfo::maybe_from_unproved_with_metadata(
+                platform::GetCurrentQuorumsInfoRequest { version: None },
+                response,
+                Network::Testnet,
+                PlatformVersion::latest(),
+            );
+
+            let error = result.expect_err("malformed nested quorum hash must return an error");
+            assert!(
+                matches!(error, Error::ProtocolError { ref error } if error.contains("validator_set.quorum_hash")),
+                "unexpected error for length {invalid_length}: {error:?}"
+            );
+        }
     }
 
     #[test]

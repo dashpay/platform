@@ -262,6 +262,7 @@ all-system_contracts = [
   "wallet-utils-contract",
   "token-history-contract",
   "keywords-contract",
+  "document-history-contract",
 ]
 
 # Individual data contract features
@@ -275,6 +276,7 @@ masternode-rewards-contract = [
 wallet-utils-contract = ["data-contracts", "data-contracts/wallet-utils"]
 token-history-contract = ["data-contracts", "data-contracts/token-history"]
 keywords-contract = ["data-contracts", "data-contracts/keyword-search"]
+document-history-contract = ["data-contracts", "data-contracts/document-history"]
 fixtures-and-mocks = ["all-system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash/base theme; Compose Material3 takes over inside setContent. -->
+    <style name="Theme.KotlinExampleApp" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -52,8 +52,9 @@
 //!   [`derive_ecdsa_identity_auth_keypair_from_master`] — the same
 //!   derive the rescan-via-resolver and the registration paths use.
 //!   The mnemonic / seed / master scalar live in `Zeroizing` buffers
-//!   (the master's `private_key` is explicitly `non_secure_erase`d —
-//!   `ExtendedPrivKey` has no `Drop`) and are scrubbed before this
+//!   (the master's `private_key` is explicitly `non_secure_erase`d as
+//!   belt-and-braces — the pinned key-wallet rev zeroizes
+//!   `ExtendedPrivKey` on `Drop`) and are scrubbed before this
 //!   function returns. This is the path the iOS app takes. If the
 //!   resolver is null for such a wallet, the call returns an error
 //!   hinting that a mnemonic resolver handle is required for this
@@ -72,6 +73,27 @@ use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::handle::*;
+
+/// Canonical default number of keys a freshly-created identity is
+/// provisioned with — the set
+/// [`platform_wallet_preview_identity_registration_key_set`] derives
+/// when the caller passes `count < 0`.
+///
+/// Mirrors the iOS reference (`CreateIdentityView.defaultKeyCount` /
+/// the per-slot table in `identity_derive_and_persist.rs`):
+///   - keyId 0 → AUTHENTICATION / MASTER   (signs IdentityCreate / IdentityUpdate)
+///   - keyId 1 → AUTHENTICATION / CRITICAL (signs token state transitions)
+///   - keyId 2 → AUTHENTICATION / HIGH     (general document operations)
+///   - keyId 3 → TRANSFER / CRITICAL       (signs IdentityCreditTransfer / …Withdrawal)
+///
+/// Without the CRITICAL auth key (keyId 1) the identity cannot mint /
+/// burn / freeze tokens; without the TRANSFER key (keyId 3) credit
+/// transfers and withdrawals are rejected on-chain with "no transfer
+/// public key". This preview row carries only the derived keypair — the
+/// DPP role→keyId mapping lives with each host's registration policy (the
+/// Kotlin `RegistrationKeys` table / the Swift create-identity flow), which
+/// stamps the role onto the registration wire rows.
+pub const IDENTITY_REGISTRATION_KEY_SET_COUNT: u32 = 4;
 use crate::identity_keys_from_mnemonic::{resolve_master_from_resolver, zeroize_and_free_row};
 use crate::types::Network;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
@@ -158,6 +180,24 @@ impl IdentityKeyPreviewsFFI {
     }
 }
 
+/// Which axis a preview call walks with `offset`.
+///
+/// The two entry points share the whole derive / lock / row-build
+/// machinery below; only this selector differs:
+/// - [`PreviewAxis::IdentityIndex`] — the discovery preview: fix the
+///   key slot at [`MASTER_KEY_INDEX`] and walk `identity_index` from
+///   `start_index` (surfaces the pubkey-hash paths the discovery scan
+///   probes).
+/// - [`PreviewAxis::KeyIndex`] — the registration key set: fix
+///   `identity_index = start_index` and walk `key_index` 0..count
+///   (surfaces every keypair a new identity at that index is built
+///   from — keyId 0..N).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PreviewAxis {
+    IdentityIndex,
+    KeyIndex,
+}
+
 /// Derive the first `count_or_neg1` MASTER identity-authentication
 /// keypairs this wallet would probe during a discovery scan,
 /// starting at identity index `start_index`.
@@ -204,6 +244,81 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     start_index: u32,
     count_or_neg1: i32,
+    out_previews: *mut IdentityKeyPreviewsFFI,
+) -> PlatformWalletFFIResult {
+    preview_identity_registration_keys_inner(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        start_index,
+        count_or_neg1,
+        PreviewAxis::IdentityIndex,
+        out_previews,
+    )
+}
+
+/// Derive the full identity-registration key **set** for a single
+/// identity: keyId 0..`count_or_neg1` at the fixed identity index
+/// `start_index`, on the DIP-9 identity-authentication path
+/// `m/9'/coin'/5'/0'/0'/start_index'/keyId'`.
+///
+/// This is the sibling of
+/// [`platform_wallet_preview_identity_registration_keys`] — that
+/// function fixes the key slot at [`MASTER_KEY_INDEX`] and walks the
+/// *identity* index (the discovery preview); this one fixes the
+/// identity index and walks the *key* index, so it surfaces every
+/// keypair a freshly-created identity is built from.
+///
+/// The rows come back in keyId order. The **per-key DPP role** (purpose
+/// / security level) is NOT encoded on the row — every row derives an
+/// ECDSA_SECP256K1 keypair, and the host's registration policy stamps the
+/// purpose / security level (and any contract bounds) by keyId when it builds
+/// the registration wire rows (the Kotlin `RegistrationKeys` table / the Swift
+/// create-identity flow).
+///
+/// `count_or_neg1 < 0` derives the canonical default set
+/// ([`IDENTITY_REGISTRATION_KEY_SET_COUNT`] = 4: MASTER auth, CRITICAL
+/// auth, HIGH auth, TRANSFER/CRITICAL). Release the result with
+/// [`platform_wallet_preview_identity_registration_keys_free`] — same
+/// row layout, same free function.
+///
+/// # Safety
+/// Same contract as
+/// [`platform_wallet_preview_identity_registration_keys`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_preview_identity_registration_key_set(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    identity_index: u32,
+    count_or_neg1: i32,
+    out_previews: *mut IdentityKeyPreviewsFFI,
+) -> PlatformWalletFFIResult {
+    let count = if count_or_neg1 < 0 {
+        IDENTITY_REGISTRATION_KEY_SET_COUNT as i32
+    } else {
+        count_or_neg1
+    };
+    preview_identity_registration_keys_inner(
+        wallet_handle,
+        mnemonic_resolver_handle,
+        identity_index,
+        count,
+        PreviewAxis::KeyIndex,
+        out_previews,
+    )
+}
+
+/// Shared implementation for the two identity-registration-key preview
+/// entry points. See [`PreviewAxis`] for the only behavioural
+/// difference between them; every other concern is identical.
+///
+/// # Safety
+/// Same contract as the public entry points that call it.
+unsafe fn preview_identity_registration_keys_inner(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    start_index: u32,
+    count_or_neg1: i32,
+    axis: PreviewAxis,
     out_previews: *mut IdentityKeyPreviewsFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_previews);
@@ -301,8 +416,15 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
             Master(&'a ExtendedPrivKey),
         }
 
-        // Derive one row's material from the active borrowed key source.
+        // Derive one row's material from the active borrowed key source
+        // at the given `(identity_index, key_index)` slot.
+        //
+        // The discovery-preview axis fixes `key_index = MASTER_KEY_INDEX`
+        // and walks `identity_index`; the registration-key-set axis fixes
+        // `identity_index` and walks `key_index` 0..count. Both funnel
+        // through here so the derive (path + secp256k1) is written once.
         let derive_material = |identity_index: u32,
+                               key_index: u32,
                                source: &DeriveSource|
          -> Result<RowMaterial, PlatformWalletFFIResult> {
             match source {
@@ -314,7 +436,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                         master,
                         network,
                         identity_index,
-                        MASTER_KEY_INDEX,
+                        key_index,
                     )?;
                     Ok(RowMaterial {
                         path: derived.derivation_path.to_string(),
@@ -327,16 +449,21 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                     // wallet. The read guard + `&Wallet` were re-acquired
                     // once before the loop (see below) so this is a
                     // pure secp256k1 pass with no per-row locking.
-                    let (path, ext_priv, public_key) = derive_identity_auth_keypair(
+                    let (path, mut ext_priv, public_key) = derive_identity_auth_keypair(
                         key_wallet,
                         network,
                         identity_index,
-                        MASTER_KEY_INDEX,
+                        key_index,
                     )?;
+                    let private_key = Zeroizing::new(ext_priv.private_key.secret_bytes());
+                    // Belt-and-braces: the pinned key-wallet rev zeroizes
+                    // `ExtendedPrivKey` on Drop; erase explicitly anyway
+                    // (cheap, and robust to an upstream Drop regression).
+                    ext_priv.private_key.non_secure_erase();
                     Ok(RowMaterial {
                         path: path.to_string(),
                         public_key: public_key.serialize(),
-                        private_key: Zeroizing::new(ext_priv.private_key.secret_bytes()),
+                        private_key,
                     })
                 }
             }
@@ -441,12 +568,23 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                 (|| -> Result<Vec<IdentityKeyPreviewFFI>, PlatformWalletFFIResult> {
                     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(count as usize);
                     for offset in 0..count {
-                        // Saturating add: the discovery scan caps identity
-                        // indices well below u32::MAX in practice; if a caller
-                        // intentionally passes near-max values we simply repeat
-                        // the cap rather than wrap.
-                        let identity_index = start_index.saturating_add(offset);
-                        let material = match derive_material(identity_index, &source) {
+                        // Which axis `offset` walks depends on the caller:
+                        //   - `PreviewAxis::IdentityIndex` (discovery preview):
+                        //     fix `key_index = MASTER_KEY_INDEX`, walk
+                        //     `identity_index` from `start_index`.
+                        //   - `PreviewAxis::KeyIndex` (registration key set):
+                        //     fix `identity_index = start_index`, walk
+                        //     `key_index` 0..count.
+                        // Saturating add: the discovery scan caps indices well
+                        // below u32::MAX in practice; if a caller intentionally
+                        // passes near-max values we repeat the cap rather than wrap.
+                        let (identity_index, key_index) = match axis {
+                            PreviewAxis::IdentityIndex => {
+                                (start_index.saturating_add(offset), MASTER_KEY_INDEX)
+                            }
+                            PreviewAxis::KeyIndex => (start_index, offset),
+                        };
+                        let material = match derive_material(identity_index, key_index, &source) {
                             Ok(m) => m,
                             Err(e) => {
                                 free_rows(rows);
@@ -473,7 +611,7 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys(
                 // free to mutate it.
             };
 
-            // TODO(upstream): `ExtendedPrivKey` has no `Drop` / `Zeroize`;
+            // Belt-and-braces (the pinned key-wallet rev zeroizes on Drop);
             // wipe the resolved master's inner secp256k1 scalar
             // explicitly. Same hygiene as the discovery resolver path.
             // No-op on the resident path (no master was resolved).

@@ -29,7 +29,9 @@ use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
-use crate::changeset::{InvitationChangeSet, InvitationEntry, InvitationStatus};
+use crate::changeset::{
+    InvitationChangeSet, InvitationEntry, InvitationStatus, PersistenceCapabilities,
+};
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -204,11 +206,12 @@ impl IdentityWallet {
     /// the embedded tx + islock make the link self-contained; staleness is
     /// bounded by the short advisory expiry, not a CL upgrade.
     ///
-    /// Requires a durably-persisting backend
-    /// ([`PlatformWalletPersistence::persists_durably`](crate::changeset::PlatformWalletPersistence::persists_durably)):
-    /// the exported voucher key is derived from the persisted funding index, so a
-    /// backend that drops writes would re-export the same bearer key after a
-    /// restart. A non-durable backend is refused before any funds move.
+    /// Requires every bit in [`PersistenceCapabilities::INVITATION_CREATION`]:
+    /// atomic changesets, invitation writes, account-address-pool writes, and
+    /// wallet restore. The exported voucher key is derived from the persisted
+    /// funding index, so a backend missing any one of those contracts could
+    /// re-export the same bearer key after a restart. An incomplete backend is
+    /// refused before any funds move.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_invitation<AS, CP>(
         &self,
@@ -221,7 +224,7 @@ impl IdentityWallet {
         crypto_provider: &CP,
     ) -> Result<Invitation, PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         CP: ContactCryptoProvider + Send + Sync,
     {
         if amount_duffs < MIN_INVITATION_DUFFS {
@@ -242,20 +245,22 @@ impl IdentityWallet {
             ));
         }
 
-        // Refuse to run on a backend that cannot durably persist. The one-time
-        // voucher key is derived from a persisted funding index and exported
-        // into a bearer link; on a backend that drops writes (e.g.
-        // `NoPlatformPersistence`) the index resets on restart, so the SAME key
-        // would be re-exported to a later invitation — the holder of the earlier
-        // link could then consume the later voucher. Checked before any funds
-        // move.
-        if !self.persister.persists_durably() {
-            return Err(PlatformWalletError::Persistence(
-                "invitation creation requires a durable persistence backend (see \
-                 PlatformWalletPersistence::persists_durably): a non-durable backend \
-                 would re-export the same bearer voucher key after a restart"
-                    .to_string(),
-            ));
+        // Require the complete invitation persistence contract. A generic
+        // atomic/durable assertion is insufficient: the backend might commit
+        // other changesets while silently dropping invitation rows or funding
+        // address-pool indices, or it might be unable to restore those indices.
+        // Checked before any funds move.
+        let capabilities = self.persister.persistence_capabilities();
+        let required = PersistenceCapabilities::INVITATION_CREATION;
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "invitation creation requires persistence capabilities {:?} \
+                     (missing mask 0x{:x}): an incomplete backend could re-export \
+                     the same bearer voucher key after a restart",
+                missing.names(),
+                missing.bits(),
+            )));
         }
 
         // Build + broadcast the voucher asset lock at the invitation funding
@@ -1023,6 +1028,16 @@ mod tests {
             }
         }
 
+        #[async_trait::async_trait]
+        impl ::key_wallet::signer::ExtendedPubKeySigner for UnreachableSigner {
+            async fn extended_public_key(
+                &self,
+                _path: &key_wallet::bip32::DerivationPath,
+            ) -> Result<key_wallet::bip32::ExtendedPubKey, Self::Error> {
+                unreachable!("the durability gate must fire before any key derivation")
+            }
+        }
+
         /// A bearer voucher key must never be produced by a wallet whose
         /// backend cannot durably persist the funding index: on a restart the
         /// index resets and the SAME key would be re-exported to a later
@@ -1071,8 +1086,8 @@ mod tests {
                 "expected the durability refusal, got {err:?}"
             );
             assert!(
-                format!("{err}").contains("durable persistence backend"),
-                "the error must explain the durable-backend requirement, got: {err}"
+                format!("{err}").contains("persistence capabilities"),
+                "the error must explain the missing capability contract, got: {err}"
             );
         }
     }

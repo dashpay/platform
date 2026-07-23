@@ -797,7 +797,14 @@ impl StateTransition {
         bytes: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let state_transition = StateTransition::deserialize_from_bytes(bytes)?;
+        let max_value_depth = platform_version
+            .system_limits
+            .max_document_value_depth
+            .map(usize::from);
+        let state_transition =
+            platform_value::with_value_decode_depth_limit(max_value_depth, || {
+                StateTransition::deserialize_from_bytes(bytes)
+            })?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
         {
             let active_version_range = state_transition.active_version_range();

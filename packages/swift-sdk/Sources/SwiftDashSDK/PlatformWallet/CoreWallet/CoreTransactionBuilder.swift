@@ -35,8 +35,43 @@ public final class CoreTransaction {
     }
 }
 
-/// key-wallet transaction builder over FFI. Build step by step, `buildSigned`,
-/// then broadcast separately via `ManagedCoreWallet.broadcastTransaction`.
+/// Ownership token for a Core transaction atomically funded and reserved in Rust.
+public final class FinalizedCoreTransaction {
+    private var nativeHandle: Handle
+    public let fee: UInt64
+
+    init(handle: Handle) throws {
+        var value: UInt64 = 0
+        do {
+            try core_wallet_signed_transaction_v2_fee(handle, &value).check()
+        } catch {
+            core_wallet_signed_transaction_v2_free(handle)
+            throw error
+        }
+        nativeHandle = handle
+        fee = value
+    }
+
+    deinit {
+        if nativeHandle != 0 {
+            core_wallet_signed_transaction_v2_free(nativeHandle)
+        }
+    }
+
+    func takeForBroadcast() throws -> Handle {
+        guard nativeHandle != 0 else {
+            throw PlatformWalletError.unknown("FinalizedCoreTransaction already consumed")
+        }
+        let value = nativeHandle
+        nativeHandle = 0
+        return value
+    }
+
+    func takeForAbandon() throws -> Handle { try takeForBroadcast() }
+}
+
+/// key-wallet transaction builder over FFI. Add outputs and options, then call
+/// `finalizeAtomic` before broadcasting via `ManagedCoreWallet`.
 public final class CoreTransactionBuilder {
     public enum AccountType {
         case bip44
@@ -95,6 +130,7 @@ public final class CoreTransactionBuilder {
 
     /// Fund from the account's UTXOs and set its change address.
     @discardableResult
+    @available(*, deprecated, message: "Use finalizeAtomic; split funding/signing is not concurrency-safe")
     public func setFunding(
         wallet: ManagedPlatformWallet,
         accountType: AccountType,
@@ -191,6 +227,7 @@ public final class CoreTransactionBuilder {
     /// Build and sign against the account; returns the signed transaction
     /// without broadcasting. Consumes the builder — it is freed on the Rust
     /// side and this instance must not be reused afterwards.
+    @available(*, deprecated, message: "Use finalizeAtomic; split funding/signing is not concurrency-safe")
     public func buildSigned(
         wallet: ManagedPlatformWallet,
         accountType: AccountType,
@@ -221,5 +258,35 @@ public final class CoreTransactionBuilder {
         }
 
         return CoreTransaction(ffi: out, accountType: accountType, accountIndex: accountIndex)
+    }
+
+    /// Consume this configured builder, atomically select and reserve inputs,
+    /// then sign after Rust has released the wallet-manager lock.
+    public func finalizeAtomic(
+        wallet: ManagedPlatformWallet,
+        accountType: AccountType,
+        accountIndex: UInt32
+    ) throws -> FinalizedCoreTransaction {
+        guard !consumed else {
+            throw PlatformWalletError.unknown("CoreTransactionBuilder already consumed")
+        }
+        var transactionHandle: Handle = 0
+        let resolver = MnemonicResolver()
+        let result = withExtendedLifetime(resolver) {
+            core_wallet_tx_builder_finalize(
+                handle,
+                wallet.handle,
+                accountType.ffi,
+                accountIndex,
+                resolver.handle,
+                &transactionHandle
+            )
+        }
+        consumed = true
+        try result.check()
+        guard transactionHandle != 0 else {
+            throw PlatformWalletError.unknown("atomic finalizer returned an empty handle")
+        }
+        return try FinalizedCoreTransaction(handle: transactionHandle)
     }
 }

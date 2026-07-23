@@ -2,10 +2,10 @@ use crate::drive::contract::paths::{contract_keeping_history_root_path, contract
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::bounded_decode::decode_proof_data_contract;
 use crate::verify::contract::retry_contract_verification_with_history;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use platform_version::version::PlatformVersion;
 
 use grovedb::GroveDb;
@@ -139,17 +139,7 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::from)
                         .and_then(|bytes| {
-                            // we don't need to validate the contract locally because it was proved to be in platform
-                            // and hence it is valid
-                            Ok((
-                                DataContract::versioned_deserialize(
-                                    &bytes,
-                                    false,
-                                    platform_version,
-                                )
-                                .map_err(Error::from)?,
-                                bytes,
-                            ))
+                            Ok((decode_proof_data_contract(&bytes, platform_version)?, bytes))
                         })
                 })
                 .transpose()?;

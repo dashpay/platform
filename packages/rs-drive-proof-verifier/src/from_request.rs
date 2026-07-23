@@ -188,6 +188,22 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                     .map(|id| (id, v.start_poll_identifier_included))
             })
             .transpose()?;
+        let offset =
+            value
+                .offset
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|_| Error::RequestError {
+                    error: "offset out of bounds".to_string(),
+                })?;
+        let limit =
+            value
+                .limit
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|_| Error::RequestError {
+                    error: "limit out of bounds".to_string(),
+                })?;
 
         Ok(Self {
             identity_id: Identifier::from_vec(value.identity_id.to_vec()).map_err(|e| {
@@ -195,8 +211,8 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                     error: e.to_string(),
                 }
             })?,
-            offset: None,
-            limit: value.limit.map(|x| x as u16),
+            offset,
+            limit,
             start_at,
             order_ascending: value.order_ascending,
         })
@@ -204,9 +220,6 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
 
     fn try_to_request(&self) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         use proto::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0 as request_v0;
-        if self.offset.is_some() {
-            return Err(Error::RequestError{error:"ContestedResourceVotesGivenByIdentityQuery.offset field is internal and must be set to None".into()});
-        }
 
         Ok(proto::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0 {
                     prove: true,
@@ -701,23 +714,77 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Error path: ContestedResourceVotesGivenByIdentityQuery try_to_request
-    // rejects offset != None
+    // ContestedResourceVotesGivenByIdentityQuery preserves proof-critical
+    // pagination fields in both conversion directions.
     // ---------------------------------------------------------------
 
     #[test]
-    fn test_contested_resource_votes_given_by_identity_rejects_offset() {
+    fn test_contested_resource_votes_given_by_identity_preserves_offset() {
         let id = Identifier::from_bytes(&[3u8; 32]).unwrap();
         let query = ContestedResourceVotesGivenByIdentityQuery {
             identity_id: id,
-            offset: Some(10), // should trigger rejection
-            limit: None,
+            offset: Some(10),
+            limit: Some(20),
             start_at: None,
             order_ascending: true,
         };
-        let err = query.try_to_request().unwrap_err();
-        let msg = format!("{}", err);
-        assert!(msg.contains("offset"), "error should mention offset: {msg}");
+        let request = query.try_to_request().expect("request conversion");
+        let converted = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)
+            .expect("query conversion");
+        assert_eq!(converted, query);
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_rejects_wide_pagination_values() {
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+            GetContestedResourceIdentityVotesRequestV0, Version as ReqVersion,
+        };
+
+        for (limit, offset, expected_field) in [
+            (Some(u16::MAX as u32 + 1), None, "limit"),
+            (None, Some(u16::MAX as u32 + 1), "offset"),
+        ] {
+            let request = GetContestedResourceIdentityVotesRequest {
+                version: Some(ReqVersion::V0(GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![0u8; 32],
+                    start_at_vote_poll_id_info: None,
+                    limit,
+                    offset,
+                    order_ascending: true,
+                    prove: true,
+                })),
+            };
+            let err =
+                ContestedResourceVotesGivenByIdentityQuery::try_from_request(request).unwrap_err();
+            assert!(
+                format!("{err}").contains(expected_field),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_accepts_u16_pagination_boundaries() {
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+            GetContestedResourceIdentityVotesRequestV0, Version as ReqVersion,
+        };
+
+        for value in [0, 1, u16::MAX as u32] {
+            let request = GetContestedResourceIdentityVotesRequest {
+                version: Some(ReqVersion::V0(GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![0u8; 32],
+                    start_at_vote_poll_id_info: None,
+                    limit: Some(value),
+                    offset: Some(value),
+                    order_ascending: true,
+                    prove: true,
+                })),
+            };
+            let query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)
+                .expect("pagination value should fit");
+            assert_eq!(query.limit, Some(value as u16));
+            assert_eq!(query.offset, Some(value as u16));
+        }
     }
 
     #[test]

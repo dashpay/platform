@@ -6,6 +6,7 @@ pub mod v5;
 pub mod v6;
 pub mod v7;
 pub mod v8;
+pub mod v9;
 
 use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
@@ -57,6 +58,34 @@ pub struct DriveAbciValidationConstants {
     /// uniformity already enforced for `ShieldedTransfer`). Empty pre-v12 so the transition
     /// is gated off until the shielded family activates.
     pub shielded_identity_create_denominations: &'static [u64],
+}
+
+impl DriveAbciValidationConstants {
+    /// Maximum number of shielded anchors the retention policy can keep on disk
+    /// at once.
+    ///
+    /// This is a corollary of the anchor recording and pruning algorithm, and
+    /// must stay in sync with it:
+    ///
+    /// * at most one anchor is recorded per block (`Drive::record_anchor_if_changed`
+    ///   only writes when the pool root changes), and
+    /// * pruning removes every anchor older than `shielded_anchor_retention_blocks`
+    ///   on each `shielded_anchor_pruning_interval` boundary
+    ///   (`Platform::prune_shielded_pool_anchors_v0`).
+    ///
+    /// Between two prune boundaries the retained set therefore spans at most
+    /// `shielded_anchor_retention_blocks + shielded_anchor_pruning_interval`
+    /// distinct heights, so that sum is the worst-case count.
+    ///
+    /// Callers that must bound work against the retained set (e.g. the
+    /// unpaginated V0 shielded-anchors query) should derive their limits from
+    /// this value rather than re-deriving the bound from the raw constants, so
+    /// they stay coupled to the pruning algorithm. Returns `None` only if the
+    /// configured policy overflows `u64`.
+    pub fn max_retained_shielded_anchors(&self) -> Option<u64> {
+        self.shielded_anchor_retention_blocks
+            .checked_add(self.shielded_anchor_pruning_interval)
+    }
 }
 
 #[derive(Clone, Debug, Default)]

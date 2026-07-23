@@ -1,11 +1,34 @@
 use dashcore::Transaction;
 use key_wallet::account::account_type::StandardAccountType;
 
+use super::SignedCoreTransaction;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::wallet::reservations::broadcast_releasing_on_rejection;
 use crate::{CoreWallet, PlatformWalletError};
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
+    /// Broadcast an atomically finalized transaction. A definitive rejection
+    /// releases its reservation; an ambiguous `MaybeSent` outcome retains it.
+    pub async fn broadcast_finalized_transaction(
+        &self,
+        transaction: &SignedCoreTransaction,
+    ) -> Result<dashcore::Txid, PlatformWalletError> {
+        match self.broadcaster.broadcast(transaction.transaction()).await {
+            Ok(txid) => Ok(txid),
+            Err(error) => {
+                if matches!(error, crate::broadcaster::BroadcastError::Rejected { .. }) {
+                    self.release_transaction_reservation(
+                        transaction.funding_account_type(),
+                        transaction.funding_account_index(),
+                        transaction.transaction(),
+                    )
+                    .await;
+                }
+                Err(error.into())
+            }
+        }
+    }
+
     /// Broadcast a signed transaction to the network.
     ///
     /// Transactions can be built and signed with key-wallet's

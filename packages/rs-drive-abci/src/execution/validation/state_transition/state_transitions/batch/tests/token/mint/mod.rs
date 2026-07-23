@@ -1818,6 +1818,8 @@ mod token_mint_tests {
         use super::*;
         use crate::execution::check_tx::CheckTxLevel;
         use crate::platform_types::platform::PlatformRef;
+        use dpp::data_contract::accessors::v0::DataContractV0Setters;
+        use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
         use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Setters;
         use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
         use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -1826,9 +1828,12 @@ mod token_mint_tests {
         use dpp::data_contract::group::Group;
         use dpp::group::group_action_status::GroupActionStatus;
         use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
+        use dpp::prelude::DataContract;
         use dpp::state_transition::batch_transition::TokenMintTransition;
         use dpp::state_transition::proof_result::StateTransitionProofResult;
+        use dpp::tokens::calculate_token_id;
         use drive::drive::Drive;
+        use drive::util::test_helpers::setup_contract;
 
         #[tokio::test]
         async fn test_token_mint_by_owner_sending_to_self_minting_not_allowed() {
@@ -4395,6 +4400,188 @@ mod token_mint_tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+        }
+
+        #[tokio::test]
+        async fn test_token_mint_confirmation_cannot_change_token_position() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(44017);
+            let platform_state = platform.state.load();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (identity_2, signer_2, key_2) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let data_contract_id = DataContract::generate_data_contract_id_v0(identity.id(), 1);
+            let contract = setup_contract(
+                &platform.drive,
+                "tests/supporting_files/contract/basic-token/basic-token.json",
+                Some(data_contract_id.to_buffer()),
+                Some(identity.id().to_buffer()),
+                Some(|data_contract: &mut DataContract| {
+                    data_contract.set_created_at_epoch(Some(0));
+                    data_contract.set_created_at(Some(0));
+                    data_contract.set_created_at_block_height(Some(0));
+
+                    let second_token = data_contract
+                        .expected_token_configuration(0)
+                        .expect("expected token configuration")
+                        .clone();
+                    data_contract
+                        .tokens_mut()
+                        .expect("expected token map")
+                        .insert(1, second_token);
+
+                    for token_position in [0, 1] {
+                        data_contract
+                            .token_configuration_mut(token_position)
+                            .expect("expected token configuration")
+                            .set_manual_minting_rules(ChangeControlRules::V0(
+                                ChangeControlRulesV0 {
+                                    authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                                    admin_action_takers: AuthorizedActionTakers::NoOne,
+                                    changing_authorized_action_takers_to_no_one_allowed: false,
+                                    changing_admin_action_takers_to_no_one_allowed: false,
+                                    self_changing_admin_action_takers_allowed: false,
+                                },
+                            ));
+                    }
+
+                    data_contract.set_groups(
+                        [(
+                            0,
+                            Group::V0(GroupV0 {
+                                members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                                required_power: 2,
+                            }),
+                        )]
+                        .into(),
+                    );
+                }),
+                None,
+                Some(platform_version),
+            );
+            let token_id_0: Identifier = calculate_token_id(data_contract_id.as_bytes(), 0).into();
+            let token_id_1: Identifier = calculate_token_id(data_contract_id.as_bytes(), 1).into();
+
+            let proposal = BatchTransition::new_token_mint_transition(
+                token_id_0,
+                identity.id(),
+                contract.id(),
+                0,
+                1337,
+                Some(identity.id()),
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create mint proposal");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[proposal
+                        .serialize_to_bytes()
+                        .expect("expected serialized proposal")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process proposal");
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit proposal");
+
+            let action_id = TokenMintTransition::calculate_action_id_with_fields(
+                token_id_0.as_bytes(),
+                identity.id().as_bytes(),
+                2,
+                1337,
+            );
+            let confirmation = BatchTransition::new_token_mint_transition(
+                token_id_1,
+                identity_2.id(),
+                contract.id(),
+                1,
+                1337,
+                Some(identity.id()),
+                None,
+                Some(
+                    GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                        GroupStateTransitionInfo {
+                            group_contract_position: 0,
+                            action_id,
+                            action_is_proposer: false,
+                        },
+                    ),
+                ),
+                &key_2,
+                2,
+                0,
+                &signer_2,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create mint confirmation");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[confirmation
+                        .serialize_to_bytes()
+                        .expect("expected serialized confirmation")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process confirmation");
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ModificationOfGroupActionMainParametersNotPermittedError(_)
+                    ),
+                    ..
+                }]
+            );
+
+            let target_balance = platform
+                .drive
+                .fetch_identity_token_balance(
+                    token_id_1.to_buffer(),
+                    identity.id().to_buffer(),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("expected target token balance");
+            assert_eq!(target_balance, Some(100_000));
         }
     }
 }

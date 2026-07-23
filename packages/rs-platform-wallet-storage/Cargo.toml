@@ -119,7 +119,6 @@ windows-native-keyring-store = { version = "=1.0.0", optional = true }
 [dev-dependencies]
 proptest = "1"
 assert_cmd = "2"
-predicates = "3"
 static_assertions = "1"
 filetime = "0.2"
 # Test-only: construct the `Zeroizing<[u8; 32]>` secret on an

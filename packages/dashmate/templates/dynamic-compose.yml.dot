@@ -5,11 +5,11 @@ services:
     command:
       - dashd
       {{~ it.core.docker.commandArgs :arg }}
-      - {{=arg}}
+      - {{=JSON.stringify(arg)}}
       {{~}}
     {{? it.core.log.filePath !== null }}
     volumes:
-      - {{=it.core.log.filePath}}:/var/log/dash/debug.log
+      - {{=JSON.stringify(`${it.core.log.filePath}:/var/log/dash/debug.log`)}}
     {{?}}
 
   {{ driveLogs = Object.entries(it.platform.drive.abci.logs).filter(([, settings]) => settings.destination !== 'stderr' && settings.destination !== 'stdout'); }}
@@ -20,7 +20,8 @@ services:
     volumes:
       {{~ driveLogs :logger }}
       {{ [name, settings] = logger; }}
-      - {{=settings.destination}}:/var/log/dash/drive/{{=name}}/{{=settings.destination.split('/').reverse()[0]}}
+      {{ volumeSpec = `${settings.destination}:/var/log/dash/drive/${name}/${settings.destination.split('/').reverse()[0]}`; }}
+      - {{=JSON.stringify(volumeSpec)}}
       {{~}}
     {{?}}
     {{? driveBuildArgs.length > 0 }}
@@ -35,7 +36,7 @@ services:
   {{? it.platform.drive.tenderdash.log.path !== null }}
   drive_tenderdash:
     volumes:
-      - {{=it.platform.drive.tenderdash.log.path}}:/var/log/tenderdash/tenderdash.log
+      - {{=JSON.stringify(`${it.platform.drive.tenderdash.log.path}:/var/log/tenderdash/tenderdash.log`)}}
   {{?}}
 
   {{? it.platform.dapi && it.platform.dapi.rsDapi }}
@@ -65,6 +66,7 @@ services:
   gateway:
     volumes:
      {{~ gatewayLogs :log }}
-     - {{= log.path }}:/var/log/{{= log.path.split('/').reverse()[0] }}
+     {{ volumeSpec = `${log.path}:/var/log/${log.path.split('/').reverse()[0]}`; }}
+     - {{=JSON.stringify(volumeSpec)}}
      {{~}}
   {{?}}
