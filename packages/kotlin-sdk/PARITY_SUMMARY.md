@@ -10,8 +10,8 @@ Capabilities tracked: **18**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 10 | 8 | 0 | 0 |
 | Swift | Example app | 4 | 12 | 0 | 2 |
-| Kotlin | SDK | 5 | 12 | 1 | 0 |
-| Kotlin | Example app | 4 | 11 | 1 | 2 |
+| Kotlin | SDK | 6 | 12 | 0 | 0 |
+| Kotlin | Example app | 4 | 12 | 0 | 2 |
 
 ## Restart coverage
 
@@ -28,7 +28,7 @@ Capabilities tracked: **18**
 | `core.atomic_send` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
-| `dashpay.invitations` | supported / partial / required | unsupported / unsupported / required |
+| `dashpay.invitations` | supported / partial / required | supported / partial / required |
 | `core.provider_restore` | supported / partial / required | partial / partial / required |
 | `dashpay.deferred_contact_crypto` | partial / partial / required | partial / partial / required |
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |

@@ -405,10 +405,10 @@
           "reason": "Shared/Swift implementation and focused tests exist, but the manual plan still marks DP-12 through DP-19 bridge-only and lacks executed restart evidence."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "required",
-          "reason": "Android has no invitation callback, wrappers, screens, or DP-12 through DP-19 gates."
+          "reason": "Invitation callback (Room v8 + CAPABILITY_INVITATIONS), parse/create/claim/reclaim wrappers, and the four screens shipped; funded testnet e2e executed 2026-07-23 (create, claim, already-consumed classifier, reclaim-as-top-up, malformed reject). DP-14 two-wallet bootstrap and DP-18 reclaim-as-register remain manual, and executed restart evidence is lacking."
         }
       },
       "verification": [
@@ -424,6 +424,45 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-19",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "invitationPersistRoundTripsEveryField",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PlatformWalletPersistenceHandlerTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/InvitationReclaimLogicTest.kt",
+          "id": "consensusConsumedWithMarkerIsExplicitlyAmbiguousNeverReclaimed",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*InvitationReclaimLogicTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate7To8AddsInvitationsTable",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "persistenceBridgeDescriptorsAllResolve",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DP-19",
           "covers_restart": false
         }
@@ -659,9 +698,9 @@
         {
           "host": "kotlin",
           "kind": "unit",
-          "file": "packages/rs-unified-sdk-jni/src/support.rs",
-          "id": "generic_asset_lock_recovery_rejects_invitation_authority",
-          "command": "cargo test -p rs-unified-sdk-jni --lib generic_asset_lock_recovery_rejects_invitation_authority",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityAssetLockRecoveryTest.kt",
+          "id": "registration resume forwards same outpoint and false voucher flag then frees handle",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityAssetLockRecoveryTest*'",
           "covers_restart": false
         }
       ]
