@@ -6,7 +6,9 @@ argument-hint: "[target-version | type]"
 
 # Cut a Platform release
 
-`yarn release` (→ `scripts/release/release.sh`) bumps every workspace version, regenerates the changelog, and opens a release PR. It does **not** publish artifacts or tag — a maintainer merges the PR and CI/tagging takes it from there.
+`yarn release` (→ `scripts/release/release.sh`) bumps every workspace version, regenerates the changelog, and opens a release PR. It does **not** publish artifacts or tag — a maintainer merges the PR, then publishes a GitHub release, which creates the tag and triggers the asset build (see *Publishing the GitHub release* below).
+
+Full flow: **`yarn release` → fix offset versions on the PR → merge → publish the GitHub release (tags + builds assets)**.
 
 ## What one run does
 
@@ -63,3 +65,33 @@ yarn release -v=4.1.0-beta.1
 ```
 
 `-t=beta` yields the same result here (release→beta = minor bump + `.1`), but `-v` is explicit. Changelog auto-detects `v4.0.0` as the base (no prior `v4.1.0-beta.*` tags exist yet), so `-c` is unnecessary.
+
+## Known gotcha: offset package versions (fix on the PR)
+
+The bump sets **every** npm package to the same version, but `yarn.config.cjs` requires three packages to lead the root major by a fixed offset: `@dashevo/dash-spv` (+1), `dash` / js-dash-sdk (+3), `@dashevo/wallet-lib` (+7). The release script does **not** apply these, so the **JS dependency versions check** fails on the release PR. Fix on the release branch:
+
+```sh
+yarn constraints --fix
+```
+
+then commit (`chore(release): restore offset major versions via yarn constraints`) and push. E.g. for `4.1.0-beta.1`: dash-spv `5.1.0-beta.1`, dash `7.1.0-beta.1`, wallet-lib `11.1.0-beta.1`.
+
+Note also that the heavy E2E suites (`test:browsers`, `test:suite`, functional, dashmate E2E) and the Swift SDK build often only run once the Docker images build, and can be red for **environmental** reasons (devnet bring-up, self-hosted-runner Keychain perms) unrelated to the release. Branch protection has **0 required status checks**, so these don't block the merge — only human review does.
+
+## Publishing the GitHub release (after the PR merges)
+
+Tagging is a **separate manual step after the release PR is merged** into the dev branch. Publishing a GitHub **release** (with the version tag) is what triggers the asset pipeline: `.github/workflows/release.yml` runs `on: release: published` and builds + attaches the dashmate packages and Docker images.
+
+1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
+2. Write concise, **non-technical** release notes: a short highlights list (main features) + a bug-fixes/hardening summary + a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks) — don't paste the raw commit list.
+3. Create the release, pinned to the merge commit, marked `--prerelease` for `-beta`/`-rc`/`-dev`/`-alpha` (drop it for a stable release). This is outward-facing and triggers builds — confirm the notes with the user first.
+
+```sh
+gh release create v<version> --target <merge-commit-sha> \
+  --title "Dash Platform v<version>" --prerelease \
+  --notes-file <notes.md>
+```
+
+Changelog link for the notes: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
+
+4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release.
