@@ -46,7 +46,9 @@ impl DapiServer {
         // 64 KiB of raw components, ~65 KiB encoded) and broadcast state
         // transitions (`max_state_transition_size`, 20 KiB).
         const MAX_PLATFORM_DECODING_BYTES: usize = 128 * 1024; // 128 KiB
-        const MAX_CORE_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+        // Same principle for Core: sized above the largest app-layer budget
+        // (raw transaction wire cap, 400 KB) plus envelope overhead.
+        const MAX_CORE_DECODING_BYTES: usize = 512 * 1024; // 512 KiB
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
         let builder = dapi_grpc::tonic::transport::Server::builder()
