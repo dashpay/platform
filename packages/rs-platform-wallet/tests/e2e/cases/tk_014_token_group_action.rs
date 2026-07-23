@@ -418,16 +418,16 @@ async fn publish_token_contract_with_groups(
 
     let owner_only = json!({
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false,
     });
     let group_only = json!({
         "$formatVersion": "0",
-        "authorizedToMakeChange": { "Group": GROUP_POSITION },
-        "adminActionTakers": { "Group": GROUP_POSITION },
+        "authorizedToMakeChange": {"$type": "group", "position": GROUP_POSITION},
+        "adminActionTakers": {"$type": "group", "position": GROUP_POSITION},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false,
@@ -496,7 +496,7 @@ async fn publish_token_contract_with_groups(
         "destroyFrozenFundsRules": owner_only,
         "emergencyActionRules": owner_only,
         "mainControlGroup": GROUP_POSITION,
-        "mainControlGroupCanBeModified": "ContractOwner",
+        "mainControlGroupCanBeModified": {"$type": "contractOwner"},
         "description": "TK-014 group-gated mint token (rs-platform-wallet e2e).",
         "marketplaceRules": {
             "$formatVersion": "0",

@@ -356,8 +356,8 @@ fn build_pre_programmed_token_json(
     let owner_b58 = bs58::encode(owner_id.to_buffer()).into_string();
     let owner_only = json!({
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false,
@@ -423,7 +423,7 @@ fn build_pre_programmed_token_json(
         "destroyFrozenFundsRules": owner_only,
         "emergencyActionRules": owner_only,
         "mainControlGroup": null,
-        "mainControlGroupCanBeModified": "ContractOwner",
+        "mainControlGroupCanBeModified": {"$type": "contractOwner"},
         "description": "TK-013 pre-programmed distribution token (rs-platform-wallet e2e).",
         "marketplaceRules": {
             "$formatVersion": "0",

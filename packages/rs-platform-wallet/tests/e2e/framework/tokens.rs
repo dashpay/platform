@@ -363,8 +363,8 @@ pub fn permissive_owner_token_contract_json(
     let owner_b58 = bs58::encode(owner_id.to_buffer()).into_string();
     let owner_only = json!({
         "$formatVersion": "0",
-        "authorizedToMakeChange": "ContractOwner",
-        "adminActionTakers": "ContractOwner",
+        "authorizedToMakeChange": {"$type": "contractOwner"},
+        "adminActionTakers": {"$type": "contractOwner"},
         "changingAuthorizedActionTakersToNoOneAllowed": false,
         "changingAdminActionTakersToNoOneAllowed": false,
         "selfChangingAdminActionTakersAllowed": false,
@@ -417,7 +417,7 @@ pub fn permissive_owner_token_contract_json(
         "destroyFrozenFundsRules": owner_only,
         "emergencyActionRules": owner_only,
         "mainControlGroup": null,
-        "mainControlGroupCanBeModified": "ContractOwner",
+        "mainControlGroupCanBeModified": {"$type": "contractOwner"},
         "description": "Permissive owner-only token deployed by rs-platform-wallet e2e (Wave G).",
         "marketplaceRules": {
             "$formatVersion": "0",
@@ -834,7 +834,7 @@ pub fn setup_with_token_perpetual_distribution(
 ///
 /// Schema mirrors the round-trip example in
 /// `rs-dpp/src/data_contract/conversion/json/mod.rs`:
-/// `{ "distributionType": { "BlockBasedDistribution": { "interval", "function": { "FixedAmount": { "amount" } } } }, "distributionRecipient": "ContractOwner" }`.
+/// `{ "distributionType": { "BlockBasedDistribution": { "interval", "function": { "FixedAmount": { "amount" } } } }, "distributionRecipient": {"$type": "contractOwner"} }`.
 pub fn permissive_owner_token_contract_with_perpetual_distribution_json(
     owner_id: Identifier,
     position: u16,
@@ -863,7 +863,7 @@ pub fn permissive_owner_token_contract_with_perpetual_distribution_json(
                     },
                 },
             },
-            "distributionRecipient": "ContractOwner",
+            "distributionRecipient": {"$type": "contractOwner"},
         }),
     );
 
