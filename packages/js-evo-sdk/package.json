@@ -28,7 +28,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.json && webpack --config webpack.config.cjs",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "test": "yarn run test:unit",
-    "test:unit": "TS_NODE_TRANSPILE_ONLY=true TS_NODE_PROJECT=tests/tsconfig.json TS_NODE_FILES=true mocha --node-option loader=ts-node/esm --require tests/bootstrap.cjs tests/unit/**/*.spec.ts && karma start ./tests/karma/karma.conf.cjs --single-run"
+    "test:unit": "mocha --require tests/bootstrap.cjs tests/unit/**/*.spec.ts && karma start ./tests/karma/karma.conf.cjs --single-run"
   },
   "devDependencies": {
     "@types/chai": "^4.3.11",
