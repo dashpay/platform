@@ -26,6 +26,7 @@
     "@dashevo/dapi-client": "workspace:*",
     "@dashevo/dashcore-lib": "~0.22.0",
     "@dashevo/dpns-contract": "workspace:*",
+    "@dashevo/evo-sdk": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
