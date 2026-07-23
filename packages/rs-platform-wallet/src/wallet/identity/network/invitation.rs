@@ -2,7 +2,7 @@
 //!
 //! - [`create_invitation`](IdentityWallet::create_invitation) (inviter): fund a
 //!   one-time asset-lock voucher at the invitation derivation path, export the
-//!   voucher key, and package a `dashpay://invite` link.
+//!   voucher key, and package a `https://invitations.dashpay.io/applink` link.
 //! - [`claim_invitation`](IdentityWallet::claim_invitation) (invitee): register
 //!   a new identity funded by the imported voucher — ordinary identity
 //!   registration whose asset-lock signature uses the imported raw voucher key
@@ -101,7 +101,7 @@ impl Drop for WipingPrivateKey {
 /// A freshly-created invitation: the shareable link plus the bookkeeping the
 /// inviter tracks to reclaim an unclaimed voucher.
 pub struct Invitation {
-    /// The `dashpay://invite?…` link (legacy query form). **Contains the voucher
+    /// The `https://invitations.dashpay.io/applink?…` link (legacy query form). **Contains the voucher
     /// key** (WIF) — treat as a secret (never log or persist it).
     pub uri: String,
     /// The funding asset lock's outpoint (the tracked lock's identity).
@@ -189,7 +189,7 @@ fn reverse_txid_hex(txid_hex: &str) -> Result<String, PlatformWalletError> {
 
 impl IdentityWallet {
     /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
-    /// DIP-13 invitation path and return a shareable `dashpay://invite` link.
+    /// DIP-13 invitation path and return a shareable `https://invitations.dashpay.io/applink` link.
     ///
     /// `asset_lock_signer` funds + signs the asset lock (the funding-input P2PKH
     /// signatures and the credit-output pubkey); `crypto_provider` exports the

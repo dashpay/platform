@@ -5,7 +5,7 @@
 //!
 //! - [`platform_wallet_create_invitation`] (inviter) — fund a one-time
 //!   asset-lock voucher at the invitation derivation path, export the voucher
-//!   key, and return a shareable `dashpay://invite` link. **Only the Core-side
+//!   key, and return a shareable `https://invitations.dashpay.io/applink` link. **Only the Core-side
 //!   resolver signer is needed** (no identity signer): this is pure voucher
 //!   creation, no identity is registered. The single resolver handle is used
 //!   twice — as the asset-lock signer (funding-input + credit-output
@@ -43,7 +43,7 @@ use crate::runtime::block_on_worker;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
-/// DIP-13 invitation path and return a shareable `dashpay://invite` link.
+/// DIP-13 invitation path and return a shareable `https://invitations.dashpay.io/applink` link.
 ///
 /// `inviter_identity_id` / `inviter_username` are **optional**: pass a non-null
 /// 32-byte `inviter_identity_id` to opt into the contact-bootstrap (the link
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
 /// Claim a DashPay invitation: register a NEW identity for the invitee, funded
 /// by the imported voucher carried in `uri`.
 ///
-/// `uri` is the `dashpay://invite?…` link; it is parsed into a
+/// `uri` is the `https://invitations.dashpay.io/applink?…` link; it is parsed into a
 /// `ParsedInvitation` and validated (fail-fast on a wrong-type / mismatched
 /// link) before any network act. `identity_pubkeys` are the invitee's own
 /// new-identity keys (derived from the invitee's seed), signed by
@@ -314,7 +314,7 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     PlatformWalletFFIResult::ok()
 }
 
-/// Read-only preview of a `dashpay://invite` link — decode + surface the
+/// Read-only preview of a `https://invitations.dashpay.io/applink` link — decode + surface the
 /// invitation's metadata WITHOUT claiming it (no wallet handle, no network, no
 /// side effects). The claim UI uses this to show the amount, sender, and expiry
 /// before the user commits, and to drive the contact-bootstrap prompt.
@@ -367,7 +367,7 @@ impl InvitationPreviewFFI {
     }
 }
 
-/// Decode a `dashpay://invite?…` link into a read-only
+/// Decode a `https://invitations.dashpay.io/applink?…` link into a read-only
 /// [`InvitationPreviewFFI`] — NO claim, NO network, NO wallet handle.
 ///
 /// A well-formed-but-invalid link (bad base58, unsupported version, truncated,
@@ -621,7 +621,7 @@ mod tests {
         let voucher = SecretKey::from_slice(&[0x11u8; 32]).expect("valid scalar");
         let wif = PrivateKey::new(voucher, Network::Testnet).to_wif();
         let uri =
-            std::ffi::CString::new(format!("dashpay://invite?assetlocktx=aa&pk={wif}")).unwrap();
+            std::ffi::CString::new(format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}")).unwrap();
 
         let pk_a = [0x02u8; 33];
         let pk_b = [0x03u8; 33];

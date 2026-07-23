@@ -34,7 +34,7 @@ import org.dashfoundation.example.util.toHex
 
 /**
  * Claim-invitation sheet — port of `ClaimInvitationSheet.swift`. Paste (or
- * deep-link-seed) a `dashpay://invite` link, preview it off-chain
+ * deep-link-seed) a `…dashpay.io/applink` link, preview it off-chain
  * ([InvitationPreview] — the only gate is structural validity; the amount
  * shows "—" because the legacy link doesn't carry it), then register a
  * brand-new identity for the invitee funded by the imported voucher — the
@@ -206,7 +206,7 @@ fun ClaimInvitationSheet(
         OutlinedTextField(
             value = uriText,
             onValueChange = { uriText = it },
-            label = { Text("dashpay://invite…") },
+            label = { Text("https://invitations.dashpay.io/applink…") },
             enabled = !isClaiming,
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.claim.uriField"),

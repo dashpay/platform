@@ -11,7 +11,7 @@
 //! field-level cross-claimable with those wallets and vice versa:
 //!
 //! ```text
-//! dashpay://invite
+//! https://invitations.dashpay.io/applink
 //!   ?du=<inviter DPNS username>
 //!   &assetlocktx=<funding txid, lowercase big-endian display hex>
 //!   &pk=<voucher credit-burn key, WIF, compressed, network-correct>
@@ -22,9 +22,9 @@
 //!
 //! The interop contract is **emit strict/canonical, parse lenient** — exactly as
 //! tolerantly as the live wallets:
-//! - Parse accepts both the `dashpay://invite` scheme and the
-//!   `https://invitations.dashpay.io/applink` host, by field name and
-//!   order-independent (the two legacy wallets differ in param order).
+//! - Parse accepts only the `https://invitations.dashpay.io/applink` transport
+//!   (the AppsFlyer standard), by field name and order-independent (the two
+//!   legacy wallets differ in param order).
 //! - `islock` is optional: a missing param **and** the literal string `"null"`
 //!   (which Android emits for chainlock-confirmed invites) both mean "no instant
 //!   lock" — the claim reconstructs a ChainLock proof instead.
@@ -48,19 +48,16 @@ use dpp::prelude::AssetLockProof;
 
 use crate::error::PlatformWalletError;
 
-/// The `dashpay://invite` custom scheme — the canonical form we emit and the
-/// primary form we parse (QR / in-person / deep link). `invite` is the URI
-/// authority (Android's `URI_PREFIX`), so the accepted host is exactly `invite`.
-const INVITATION_SCHEME: &str = "dashpay";
-const INVITATION_SCHEME_HOST: &str = "invite";
-/// The full canonical prefix we emit.
-const INVITATION_SCHEME_PREFIX: &str = "dashpay://invite";
-
-/// The AppsFlyer OneLink applink the iOS reference wallet emits
-/// (`https://invitations.dashpay.io/applink?…`). Parsed as a first-class
-/// alternative to the custom scheme (field-level interop).
+/// The AppsFlyer OneLink applink form — the single canonical transport
+/// (owner decision: AppsFlyer links everywhere, matching the production
+/// wallets; the earlier custom URI scheme is retired and no longer parsed).
+/// App interception relies on the domain's association files
+/// (`apple-app-site-association` / `assetlinks.json`); until those are
+/// hosted, taps without the app fall through to the browser.
 const INVITATION_APPLINK_HOST: &str = "invitations.dashpay.io";
 const INVITATION_APPLINK_PATH: &str = "/applink";
+/// The full canonical prefix we emit.
+const INVITATION_APPLINK_PREFIX: &str = "https://invitations.dashpay.io/applink";
 
 /// Query parameter names — identical to the legacy wallets' contract.
 const PARAM_USER: &str = "du";
@@ -243,7 +240,7 @@ fn field<'a>(pairs: &'a [(String, String)], name: &str) -> Option<&'a str> {
 /// The parts of an invitation URI we gate on. Extracted with a small hand parser
 /// (no `url` crate in this crate's deps) so the transport check is anchored to
 /// the real scheme/host/path — not a substring/prefix that a decoy URL could
-/// smuggle (`dashpay://inviteXYZ`, `https://evil/?next=invitations.dashpay.io/applink&…`).
+/// smuggle (`https://invitations.dashpay.io/applinkXYZ`, `https://evil/?next=invitations.dashpay.io/applink&…`).
 struct UriParts<'a> {
     scheme: &'a str,
     /// Authority host, lowercased for comparison (userinfo + port stripped).
@@ -282,7 +279,7 @@ fn split_uri(uri: &str) -> Option<UriParts<'_>> {
     })
 }
 
-/// Encode an invitation into a legacy-compatible `dashpay://invite?…` link.
+/// Encode an invitation into a legacy-compatible `https://invitations.dashpay.io/applink?…` link.
 ///
 /// The returned URI **contains the plaintext voucher key** (WIF) — treat it as a
 /// secret (do not log or persist it). `network` sets the WIF network byte
@@ -349,7 +346,7 @@ pub fn encode_invitation_uri(
         }
     }
 
-    let uri = format!("{INVITATION_SCHEME_PREFIX}?{query}");
+    let uri = format!("{INVITATION_APPLINK_PREFIX}?{query}");
     // Reject a link the parser itself would reject. `MAX_STR_BYTES` bounds each
     // field's RAW bytes, but percent-encoding can expand a field up to 3×, so
     // several near-cap fields can push the formatted URI past
@@ -368,7 +365,7 @@ pub fn encode_invitation_uri(
 
 /// Parse a legacy-compatible invitation link into a [`ParsedInvitation`].
 ///
-/// Accepts exactly the `dashpay://invite` scheme (host `invite`) and the
+/// Accepts exactly the `https://invitations.dashpay.io/applink` scheme (host `invite`) and the
 /// `https://invitations.dashpay.io/applink` URL (host + path anchored, so a
 /// decoy URL that merely mentions the applink cannot smuggle a query in). Fields
 /// are matched by name, order-independent. Requires `assetlocktx` + `pk`
@@ -386,15 +383,13 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
         )));
     }
 
-    // Anchor the transport gate to the real scheme/host/path, not a prefix or
-    // substring: `dashpay://invite` (host == `invite`) or the applink URL
-    // (host == invitations.dashpay.io, path == /applink). A trailing slash on
-    // the applink path is tolerated.
+    // Anchor the transport gate to the real scheme/host/path, not a prefix
+    // or substring: only the applink URL (host == invitations.dashpay.io,
+    // path == /applink) is a valid invitation transport. A trailing slash on
+    // the path is tolerated. The retired `https://invitations.dashpay.io/applink` custom scheme is
+    // deliberately rejected — AppsFlyer links are the single standard.
     let parts = split_uri(uri).ok_or_else(|| invalid("not a valid invitation link URI"))?;
     let accepted = match parts.scheme.to_ascii_lowercase().as_str() {
-        INVITATION_SCHEME => {
-            parts.host == INVITATION_SCHEME_HOST && (parts.path.is_empty() || parts.path == "/")
-        }
         "https" | "http" => {
             parts.host == INVITATION_APPLINK_HOST
                 && parts.path.trim_end_matches('/') == INVITATION_APPLINK_PATH
@@ -403,7 +398,7 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, PlatformWalle
     };
     if !accepted {
         return Err(invalid(
-            "not a dashpay://invite or https://invitations.dashpay.io/applink link",
+            "not an https://invitations.dashpay.io/applink invitation link",
         ));
     }
 
@@ -606,7 +601,7 @@ mod tests {
         let info = inviter_info();
         let uri = encode_invitation_uri(&voucher(), Network::Testnet, &proof, Some(&info))
             .expect("encode");
-        assert!(uri.starts_with("dashpay://invite?"));
+        assert!(uri.starts_with("https://invitations.dashpay.io/applink?"));
 
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert_eq!(parsed.voucher_key.secret_bytes(), voucher().secret_bytes());
@@ -635,7 +630,7 @@ mod tests {
     #[test]
     fn parse_is_order_independent() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
-        let uri = format!("dashpay://invite?islock=deadbeef&pk={wif}&du=bob&assetlocktx=aabbcc");
+        let uri = format!("https://invitations.dashpay.io/applink?islock=deadbeef&pk={wif}&du=bob&assetlocktx=aabbcc");
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert_eq!(parsed.funding_txid, "aabbcc");
         assert_eq!(parsed.islock_hex.as_deref(), Some("deadbeef"));
@@ -667,7 +662,7 @@ mod tests {
     #[test]
     fn parse_islock_present_absent_and_null() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
-        let present = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=00aa11");
+        let present = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}&islock=00aa11");
         assert_eq!(
             parse_invitation_uri(&present)
                 .unwrap()
@@ -676,10 +671,10 @@ mod tests {
             Some("00aa11")
         );
 
-        let absent = format!("dashpay://invite?assetlocktx=aa&pk={wif}");
+        let absent = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}");
         assert!(parse_invitation_uri(&absent).unwrap().islock_hex.is_none());
 
-        let null = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=null");
+        let null = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}&islock=null");
         assert!(
             parse_invitation_uri(&null).unwrap().islock_hex.is_none(),
             "islock=null must be treated as no instant lock"
@@ -690,7 +685,7 @@ mod tests {
     #[test]
     fn parse_accepts_du_less_link() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
-        let uri = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=bb");
+        let uri = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}&islock=bb");
         let parsed = parse_invitation_uri(&uri).expect("parse");
         assert!(parsed.inviter.is_none());
     }
@@ -699,11 +694,11 @@ mod tests {
     fn parse_rejects_missing_pk_or_assetlocktx() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         // No pk.
-        assert!(parse_invitation_uri("dashpay://invite?assetlocktx=aa").is_err());
+        assert!(parse_invitation_uri("https://invitations.dashpay.io/applink?assetlocktx=aa").is_err());
         // No assetlocktx.
-        assert!(parse_invitation_uri(&format!("dashpay://invite?pk={wif}")).is_err());
+        assert!(parse_invitation_uri(&format!("https://invitations.dashpay.io/applink?pk={wif}")).is_err());
         // Blank assetlocktx is treated as missing.
-        assert!(parse_invitation_uri(&format!("dashpay://invite?assetlocktx=&pk={wif}")).is_err());
+        assert!(parse_invitation_uri(&format!("https://invitations.dashpay.io/applink?assetlocktx=&pk={wif}")).is_err());
     }
 
     #[test]
@@ -715,20 +710,20 @@ mod tests {
     #[test]
     fn parse_rejects_uncompressed_wif() {
         let uncompressed = PrivateKey::new_uncompressed(voucher(), Network::Testnet).to_wif();
-        let uri = format!("dashpay://invite?assetlocktx=aa&pk={uncompressed}");
+        let uri = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={uncompressed}");
         let err = parse_invitation_uri(&uri).unwrap_err();
         assert!(err.to_string().contains("compressed"));
     }
 
     #[test]
     fn parse_rejects_bad_wif() {
-        let err = parse_invitation_uri("dashpay://invite?assetlocktx=aa&pk=not-a-wif").unwrap_err();
+        let err = parse_invitation_uri("https://invitations.dashpay.io/applink?assetlocktx=aa&pk=not-a-wif").unwrap_err();
         assert!(err.to_string().contains("WIF"));
     }
 
     #[test]
     fn parse_rejects_oversized_uri() {
-        let huge = format!("dashpay://invite?pk={}", "z".repeat(MAX_INVITATION_URI_LEN));
+        let huge = format!("https://invitations.dashpay.io/applink?pk={}", "z".repeat(MAX_INVITATION_URI_LEN));
         let err = parse_invitation_uri(&huge).unwrap_err();
         assert!(err.to_string().contains("too long"));
     }
@@ -740,7 +735,7 @@ mod tests {
         let wif = PrivateKey::new(voucher(), Network::Mainnet).to_wif();
         // Android order: du, assetlocktx, pk, islock, display-name, avatar-url.
         let uri = format!(
-            "dashpay://invite?du=satoshi&assetlocktx={txid}&pk={wif}&islock={islock}&display-name=Sat%20Oshi&avatar-url=https%3A%2F%2Fimg.example%2Fa.png",
+            "https://invitations.dashpay.io/applink?du=satoshi&assetlocktx={txid}&pk={wif}&islock={islock}&display-name=Sat%20Oshi&avatar-url=https%3A%2F%2Fimg.example%2Fa.png",
             txid = "e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d",
             islock = "01"
         );
@@ -760,6 +755,20 @@ mod tests {
     }
 
     /// The voucher output is selected by pk↔script match, not hard-coded to 0.
+    #[test]
+    fn emits_the_applink_transport_and_rejects_the_retired_custom_scheme() {
+        let key = voucher();
+        let uri =
+            encode_invitation_uri(&key, Network::Testnet, &instant_proof_paying_voucher(), None)
+                .unwrap();
+        assert!(uri.starts_with("https://invitations.dashpay.io/applink?"));
+        // The retired custom URI scheme carries the identical query but is no
+        // longer a valid transport — AppsFlyer applinks are the standard.
+        let legacy = uri.replacen("https://invitations.dashpay.io/applink", "dashpay://invite", 1);
+        let err = parse_invitation_uri(&legacy).unwrap_err();
+        assert!(err.to_string().contains("applink"));
+    }
+
     #[test]
     fn voucher_output_index_selects_matching_output() {
         let key = voucher();
@@ -796,7 +805,7 @@ mod tests {
     fn parse_du_less_link_keeps_metadata() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let uri = format!(
-            "dashpay://invite?assetlocktx=aa&pk={wif}&display-name=No%20User&avatar-url=https%3A%2F%2Fimg%2Fx.png"
+            "https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}&display-name=No%20User&avatar-url=https%3A%2F%2Fimg%2Fx.png"
         );
         let parsed = parse_invitation_uri(&uri).expect("parse");
         let inviter = parsed.inviter.as_ref().expect("metadata-only inviter");
@@ -815,13 +824,13 @@ mod tests {
             Network::Testnet,
         )
         .to_wif();
-        let dup_pk = format!("dashpay://invite?assetlocktx=aa&pk={wif}&pk={other}");
+        let dup_pk = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&pk={wif}&pk={other}");
         assert!(parse_invitation_uri(&dup_pk)
             .unwrap_err()
             .to_string()
             .contains("duplicated"));
 
-        let dup_tx = format!("dashpay://invite?assetlocktx=aa&assetlocktx=bb&pk={wif}");
+        let dup_tx = format!("https://invitations.dashpay.io/applink?assetlocktx=aa&assetlocktx=bb&pk={wif}");
         assert!(parse_invitation_uri(&dup_tx)
             .unwrap_err()
             .to_string()
@@ -829,14 +838,14 @@ mod tests {
     }
 
     /// The scheme/host gate must be anchored: a suffixed scheme host
-    /// (`dashpay://inviteXYZ`) and a decoy URL that merely *mentions* the applink
+    /// (`https://invitations.dashpay.io/applinkXYZ`) and a decoy URL that merely *mentions* the applink
     /// host in its own query must both be rejected — otherwise the decoy's query
     /// (with a `pk`/`assetlocktx`) would be parsed.
     #[test]
     fn parse_rejects_decoy_scheme_and_host() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         // Suffixed authority — not exactly `invite`.
-        let suffixed = format!("dashpay://inviteXYZ?assetlocktx=aa&pk={wif}");
+        let suffixed = format!("https://invitations.dashpay.io/applinkXYZ?assetlocktx=aa&pk={wif}");
         assert!(parse_invitation_uri(&suffixed).is_err());
         // Decoy host: the real host is evil.example; the applink string only
         // appears inside the decoy's own query value.

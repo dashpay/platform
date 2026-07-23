@@ -42,7 +42,7 @@ class MainActivity : FragmentActivity() {
         // route through it). Re-binding on recreation is intentional.
         container.biometricGate.delegate = AuthPrompt(this)
 
-        // Cold-start deep link (`dashpay://invite` / legacy applink) — the
+        // Cold-start deep link (`…dashpay.io/applink` / legacy applink) — the
         // analog of iOS `.onOpenURL`. Parked in AppUiState until the claim
         // sheet can consume it (survives a walletless fresh install).
         captureInviteIntent(intent, container)
@@ -76,21 +76,19 @@ class MainActivity : FragmentActivity() {
     }
 
     /**
-     * Park an invitation link from a VIEW intent. Accepts the custom
-     * `dashpay://invite` scheme and the legacy AppsFlyer
-     * `https://invitations.dashpay.io/applink` host (both parsed leniently
-     * Rust-side). The URI is a bearer credential — never log it. The intent
-     * is consumed one-shot: its data is scrubbed after capture so an
-     * Activity recreation (rotation, process restore) can't re-park a link
-     * that was already claimed.
+     * Park an invitation link from a VIEW intent — the AppsFlyer
+     * `https://invitations.dashpay.io/applink` host, the single canonical
+     * transport (shared with the production wallets). The URI is a bearer
+     * credential — never log it. The intent is consumed one-shot: its data
+     * is scrubbed after capture so an Activity recreation (rotation,
+     * process restore) can't re-park a link that was already claimed.
      */
     private fun captureInviteIntent(intent: Intent?, container: AppContainer) {
         if (intent?.action != Intent.ACTION_VIEW) return
         val uri = intent.data ?: return
-        val isInviteScheme = uri.scheme == "dashpay" && uri.host == "invite"
-        val isLegacyApplink = uri.scheme == "https" &&
+        val isApplink = uri.scheme == "https" &&
             uri.host == "invitations.dashpay.io" && uri.path == "/applink"
-        if (isInviteScheme || isLegacyApplink) {
+        if (isApplink) {
             container.appUiState.pendingInviteUri.value = uri.toString()
         }
         intent.data = null

@@ -201,7 +201,7 @@ internal object DashpayNative {
     // either side of this boundary.
 
     /**
-     * Decode a `dashpay://invite` link into a read-only preview — no
+     * Decode a `…dashpay.io/applink` link into a read-only preview — no
      * wallet, no network, no side effects. Returns a JSON object:
      * `structurallyValid`, `isInstant`, `hasInviter`, `inviterUsername`
      * (string or null), `amountDuffs` / `expiryUnix` (always 0 — the
@@ -215,7 +215,7 @@ internal object DashpayNative {
 
     /**
      * Create a DashPay invitation voucher and return the shareable
-     * `dashpay://invite` link. Blocking (builds + broadcasts an L1 asset
+     * `…dashpay.io/applink` link. Blocking (builds + broadcasts an L1 asset
      * lock and waits for its InstantSend proof). The invitation row lands
      * in Room via [NativePersistenceBridge.onPersistInvitationUpsert]
      * before this returns. [inviterIdentityId] null ⇒ pure funding
@@ -234,7 +234,7 @@ internal object DashpayNative {
     ): String?
 
     /**
-     * Claim a `dashpay://invite` link: register a NEW identity for the
+     * Claim a `…dashpay.io/applink` link: register a NEW identity for the
      * invitee funded by the imported voucher. Blocking (refetches the
      * funding tx by txid, then waits for the Platform response).
      * [pubkeysBlob] is the same rich key-row layout

@@ -256,7 +256,7 @@ class IdentityRegistration internal constructor(
     }
 
     /**
-     * Claim a `dashpay://invite` link: register a NEW identity for the
+     * Claim a `…dashpay.io/applink` link: register a NEW identity for the
      * invitee funded by the imported voucher (DIP-13). Blocking (the SDK
      * refetches the funding tx by txid, then waits for the Platform
      * response). Works with no pre-existing identity — the fresh-invitee
