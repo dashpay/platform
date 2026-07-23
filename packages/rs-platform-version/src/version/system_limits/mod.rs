@@ -1,5 +1,6 @@
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
@@ -36,17 +37,18 @@ mod tests {
     use crate::version::PlatformVersion;
 
     #[test]
-    fn document_value_depth_limit_starts_at_protocol_version_12() {
+    fn document_value_depth_limit_starts_at_protocol_version_13() {
+        // v12 is already active on live networks, so the limit must not apply there.
         assert_eq!(
-            PlatformVersion::get(11)
-                .expect("protocol version 11 should exist")
+            PlatformVersion::get(12)
+                .expect("protocol version 12 should exist")
                 .system_limits
                 .max_document_value_depth,
             None
         );
         assert_eq!(
-            PlatformVersion::get(12)
-                .expect("protocol version 12 should exist")
+            PlatformVersion::get(13)
+                .expect("protocol version 13 should exist")
                 .system_limits
                 .max_document_value_depth,
             Some(256)
