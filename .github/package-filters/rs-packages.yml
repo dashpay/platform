@@ -10,6 +10,12 @@ token-history-contract: &token-history-contract
   - packages/token-history-contract/schema/**
   - packages/token-history-contract/Cargo.toml
 
+document-history-contract: &document-history-contract
+  - .github/workflows/tests*
+  - packages/document-history-contract/src/**
+  - packages/document-history-contract/schema/**
+  - packages/document-history-contract/Cargo.toml
+
 keyword-search-contract: &keyword-search-contract
   - .github/workflows/tests*
   - packages/keyword-search-contract/src/**
@@ -54,6 +60,7 @@ data-contracts: &data-contracts
   - *wallet-utils-contract
   - *token-history-contract
   - *keyword-search-contract
+  - *document-history-contract
 
 dpp: &dpp
   - .github/workflows/tests*
@@ -174,6 +181,11 @@ platform-wallet: &platform_wallet
   - *platform_encryption
   - *sdk
 
+platform-wallet-storage:
+  - .github/workflows/tests*
+  - packages/rs-platform-wallet-storage/**
+  - *platform_wallet
+
 platform-wallet-ffi: &platform_wallet_ffi
   - .github/workflows/tests*
   - packages/rs-platform-wallet-ffi/**
@@ -183,6 +195,12 @@ platform-wallet-ffi: &platform_wallet_ffi
 rs-unified-sdk-ffi:
   - .github/workflows/tests*
   - packages/rs-unified-sdk-ffi/**
+  - *platform_wallet_ffi
+  - *sdk_ffi
+
+rs-unified-sdk-jni:
+  - .github/workflows/tests*
+  - packages/rs-unified-sdk-jni/**
   - *platform_wallet_ffi
   - *sdk_ffi
 

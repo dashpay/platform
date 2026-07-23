@@ -19,7 +19,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
 use platform_encryption::{
-    derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key,
+    derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN,
 };
 use std::collections::BTreeMap;
 
@@ -111,6 +111,13 @@ pub struct ContactRequestResult {
     pub owner_id: Identifier,
     /// The document properties
     pub properties: BTreeMap<String, Value>,
+    /// The entropy used to derive `id`.
+    ///
+    /// This must be reused when broadcasting the document so that the
+    /// document id computed at creation matches the id platform consensus
+    /// recomputes from the entropy (otherwise the create transition is
+    /// rejected with `InvalidDocumentTransitionIdError`).
+    pub entropy: Bytes32,
 }
 
 /// Input for sending a contact request to the platform
@@ -134,6 +141,26 @@ pub struct SendContactRequestResult {
     pub account_reference: u32,
 }
 
+/// Whether `purpose` is acceptable for the `senderKeyIndex` key of a contact
+/// request. The sender always references its own ENCRYPTION key.
+fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
+    purpose == Purpose::ENCRYPTION
+}
+
+/// Whether `purpose` is acceptable for the `recipientKeyIndex` key of a
+/// contact request. The newest cohort references the recipient's
+/// DECRYPTION key (our original convention); the dominant mobile cohort has no
+/// DECRYPTION key and references its ENCRYPTION key. Accept either; reject
+/// AUTHENTICATION/MASTER/TRANSFER.
+///
+/// This is the single source of truth for the recipient-key cohort membership
+/// policy. The pre-send validator (`rs-platform-wallet` `validate_contact_request`)
+/// and the recipient-key selector (`select_recipient_key_index`) both defer to
+/// it so the accepted cohort cannot drift between the SDK and wallet layers.
+pub fn recipient_key_purpose_is_valid(purpose: Purpose) -> bool {
+    matches!(purpose, Purpose::DECRYPTION | Purpose::ENCRYPTION)
+}
+
 impl Sdk {
     /// Create a contact request document
     ///
@@ -147,7 +174,10 @@ impl Sdk {
     /// * `ecdh_provider` - Provider for ECDH key exchange (client-side or SDK-side)
     /// * `get_extended_public_key` - Async function to retrieve the extended public key to share with recipient
     ///   - Parameters: `(account_reference: u32)`
-    ///   - Returns: The unencrypted extended public key bytes (typically 78 bytes)
+    ///   - Returns: The unencrypted extended public key bytes — the **69-byte
+    ///     DIP-15 compact form** (`parentFingerprint(4) ‖ chainCode(32) ‖
+    ///     pubKey(33)`), NOT a 78/107-byte BIP32/DIP-14 serialization. A
+    ///     non-69-byte return is rejected before encryption.
     ///
     /// # Returns
     ///
@@ -208,27 +238,33 @@ impl Sdk {
                 ))
             })?;
 
-        if sender_key.purpose() != Purpose::ENCRYPTION {
+        // Sender always references its own ENCRYPTION key (the live
+        // convention of both on-chain cohorts).
+        if !sender_key_purpose_is_valid(sender_key.purpose()) {
             return Err(Error::Generic(format!(
                 "Sender key at index {} is not an encryption key",
                 input.sender_key_index
             )));
         }
 
-        // Verify recipient has the encryption key at the specified index
+        // Verify recipient has the referenced key at the specified index.
         let recipient_key = recipient_identity
             .public_keys()
             .get(&input.recipient_key_index)
             .ok_or_else(|| {
                 Error::Generic(format!(
-                    "Recipient identity does not have encryption key at index {}",
+                    "Recipient identity does not have a key at index {}",
                     input.recipient_key_index
                 ))
             })?;
 
-        if recipient_key.purpose() != Purpose::DECRYPTION {
+        // Accept either a DECRYPTION key (newest cohort / our original
+        // convention) OR an ENCRYPTION key (the dominant mobile cohort, whose
+        // identities carry no DECRYPTION key and reference their ENCRYPTION
+        // key for recipientKeyIndex).
+        if !recipient_key_purpose_is_valid(recipient_key.purpose()) {
             return Err(Error::Generic(format!(
-                "Recipient key at index {} is not a decryption key",
+                "Recipient key at index {} is not a decryption or encryption key",
                 input.recipient_key_index
             )));
         }
@@ -252,8 +288,20 @@ impl Sdk {
             }
         };
 
-        // Get the extended public key to encrypt
+        // Get the extended public key to encrypt. Per DIP-15 the callback must
+        // return the 69-byte COMPACT form (parentFingerprint ‖ chainCode ‖
+        // pubKey) — NOT a 78/107-byte BIP32/DIP-14 serialization. Validate the
+        // length up front so a malformed producer fails with a precise error
+        // instead of the downstream "96-byte" assertion (which a 78-byte input
+        // would silently pass while remaining undecryptable by mobile clients).
         let extended_public_key = get_extended_public_key(input.account_reference).await?;
+        if extended_public_key.len() != COMPACT_XPUB_LEN {
+            return Err(Error::Generic(format!(
+                "Extended public key must be the {COMPACT_XPUB_LEN}-byte DIP-15 compact form \
+                 (parentFingerprint ‖ chainCode ‖ pubKey), got {} bytes",
+                extended_public_key.len()
+            )));
+        }
 
         // Generate random IVs for encryption
         let mut rng = StdRng::from_entropy();
@@ -345,11 +393,13 @@ impl Sdk {
             properties.insert("autoAcceptProof".to_string(), Value::Bytes(proof));
         }
 
-        // Return the essential fields for the contact request
+        // Return the essential fields for the contact request, including the
+        // entropy that derived `document_id` so the broadcast path can reuse it.
         Ok(ContactRequestResult {
             id: document_id,
             owner_id: sender_id,
             properties,
+            entropy,
         })
     }
 
@@ -364,7 +414,9 @@ impl Sdk {
     /// * `ecdh_provider` - Provider for ECDH key exchange (client-side or SDK-side)
     /// * `get_extended_public_key` - Async function to retrieve the extended public key to share with recipient
     ///   - Parameters: `(account_reference: u32)`
-    ///   - Returns: The unencrypted extended public key bytes (typically 78 bytes)
+    ///   - Returns: The unencrypted extended public key bytes — the **69-byte
+    ///     DIP-15 compact form** (`parentFingerprint(4) ‖ chainCode(32) ‖
+    ///     pubKey(33)`), NOT a 78/107-byte BIP32/DIP-14 serialization.
     ///
     /// # Returns
     ///
@@ -410,6 +462,12 @@ impl Sdk {
                 Error::Generic("DashPay contactRequest document type not found".to_string())
             })?;
 
+        // Reuse the entropy that derived result.id during creation. Platform
+        // consensus recomputes the document id from this entropy and rejects the
+        // create transition unless it matches result.id, so a freshly generated
+        // entropy here would always be rejected (InvalidDocumentTransitionIdError).
+        let entropy = result.entropy;
+
         // Create the document from the result
         let document = Document::V0(DocumentV0 {
             id: result.id,
@@ -427,12 +485,6 @@ impl Sdk {
             transferred_at_core_block_height: None,
             creator_id: None,
         });
-
-        // Extract entropy from document ID for state transition
-        // Note: In a real implementation, we'd need to store the entropy used during creation
-        // For now, we'll generate new entropy (this is a simplification)
-        let mut rng = StdRng::from_entropy();
-        let entropy = Bytes32::random_with_rng(&mut rng);
 
         // Submit the document to the platform
         let platform_document = document
@@ -478,8 +530,11 @@ mod tests {
         rand::thread_rng().fill_bytes(&mut xpub_iv);
         rand::thread_rng().fill_bytes(&mut label_iv);
 
-        // Test extended public key encryption (78 bytes -> 96 bytes with IV + PKCS7 padding)
-        let xpub_data = vec![0x04; 78];
+        // Test extended public key encryption: the DIP-15 compact plaintext is
+        // 69 bytes (parentFingerprint ‖ chainCode ‖ pubKey) → 96 bytes with IV
+        // + PKCS7 padding. (A 78-byte BIP32 xpub would also pad to 96, but the
+        // contract + reference clients require exactly the 69-byte compact.)
+        let xpub_data = vec![0x04; COMPACT_XPUB_LEN];
         let encrypted_xpub = encrypt_extended_public_key(&shared_key, &xpub_iv, &xpub_data);
         assert_eq!(
             encrypted_xpub.len(),
@@ -520,6 +575,87 @@ mod tests {
                 size
             );
         }
+    }
+
+    #[test]
+    fn contact_request_result_entropy_derives_returned_id() {
+        // Regression for G2 entropy mismatch: the document id returned by
+        // create_contact_request must be derivable from the entropy carried in
+        // ContactRequestResult. send_contact_request reuses ContactRequestResult::entropy
+        // when broadcasting, and platform consensus rejects the create transition
+        // (InvalidDocumentTransitionIdError) unless
+        //   generate_document_id_v0(contract, owner, "contactRequest", entropy) == base.id.
+        //
+        // Without the `entropy` field on ContactRequestResult,
+        // send_contact_request would generate fresh entropy E2 != E1 and this
+        // invariant could not even be expressed. This test pins it.
+        let mut rng = StdRng::seed_from_u64(0x6732_4732); // deterministic, no network
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let contract_id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
+
+        let id = Document::generate_document_id_v0(
+            &contract_id,
+            &owner_id,
+            "contactRequest",
+            entropy.as_slice(),
+        );
+
+        let result = ContactRequestResult {
+            id,
+            owner_id,
+            properties: BTreeMap::new(),
+            entropy,
+        };
+
+        // The entropy that send_contact_request will broadcast must regenerate the
+        // exact id that was returned at creation time.
+        let regenerated = Document::generate_document_id_v0(
+            &contract_id,
+            &result.owner_id,
+            "contactRequest",
+            result.entropy.as_slice(),
+        );
+        assert_eq!(
+            regenerated, result.id,
+            "entropy carried in ContactRequestResult must derive the returned document id"
+        );
+    }
+
+    #[test]
+    fn recipient_key_purpose_accepts_decryption_and_encryption() {
+        // G15: the recipient-key assertion must accept DECRYPTION (our
+        // original convention / newest cohort) OR ENCRYPTION (the dominant
+        // mobile cohort, whose identities have no DECRYPTION key and reference
+        // their ENCRYPTION key for recipientKeyIndex). Accepting only
+        // DECRYPTION would make sending to a mobile recipient error with
+        // "Recipient key ... is not a decryption key".
+        assert!(
+            recipient_key_purpose_is_valid(Purpose::DECRYPTION),
+            "DECRYPTION recipient key must remain valid"
+        );
+        assert!(
+            recipient_key_purpose_is_valid(Purpose::ENCRYPTION),
+            "ENCRYPTION recipient key (mobile cohort) must be accepted"
+        );
+    }
+
+    #[test]
+    fn recipient_key_purpose_rejects_authentication() {
+        // No AUTHENTICATION fallback — reusing signing keys for ECDH is poor
+        // key separation and no live population needs it.
+        assert!(!recipient_key_purpose_is_valid(Purpose::AUTHENTICATION));
+        assert!(!recipient_key_purpose_is_valid(Purpose::TRANSFER));
+    }
+
+    #[test]
+    fn sender_key_purpose_is_unchanged_encryption_only() {
+        // Sender side stays strict: only ENCRYPTION (per the task, the
+        // sender-side assertion is unchanged).
+        assert!(sender_key_purpose_is_valid(Purpose::ENCRYPTION));
+        assert!(!sender_key_purpose_is_valid(Purpose::DECRYPTION));
+        assert!(!sender_key_purpose_is_valid(Purpose::AUTHENTICATION));
     }
 
     #[test]

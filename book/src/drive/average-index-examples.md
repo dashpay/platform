@@ -1,10 +1,10 @@
 # Average Index Examples
 
-This chapter walks through a representative contract and shows how **average queries** work on Drive. Every example uses the same `grade` document type on the **grades contract** at [`packages/rs-drive/tests/supporting_files/contract/grades/grades-contract.json`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/tests/supporting_files/contract/grades/grades-contract.json).
+This chapter walks through a representative contract and shows how **average queries** work on Drive. Every example uses the same `grade` document type on the **grades contract** at [`packages/rs-drive/tests/supporting_files/contract/grades/grades-contract.json`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/tests/supporting_files/contract/grades/grades-contract.json).
 
 The chapter assumes you've read [Document Count Trees](./document-count-trees.md) and [Document Sum Trees](./document-sum-trees.md) — averages are built directly on top of both, so understanding count + sum trees individually is the prerequisite. Here we take that machinery as given and look at the queries that need *both*.
 
-> **Status:** the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench lands the reproducible numbers below — same convention as the [Count](./count-index-examples.md) and [Sum](./sum-index-examples.md) chapters. All proof sizes are measured against a 31 620-grade fixture; verified `(count, sum)` values are the actual numbers the bench's matrix reports. The full surface — primary-key global average, point lookups, range aggregates, and both carrier variants — is wired through to grovedb PR #670's verifiers end-to-end.
+> **Status:** the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench lands the reproducible numbers below — same convention as the [Count](./count-index-examples.md) and [Sum](./sum-index-examples.md) chapters. All proof sizes are measured against a 31 620-grade fixture; verified `(count, sum)` values are the actual numbers the bench's matrix reports. The full surface — primary-key global average, point lookups, range aggregates, and both carrier variants — is wired through to grovedb PR #670's verifiers end-to-end.
 
 ## Why Averages Need a New Primitive
 
@@ -70,11 +70,11 @@ Five things to internalize before reading the queries:
 2. **`byClass` / `byStudent` / `bySemester` are `countable: countable` + `summable: "score"`** (no range flags). Each per-key value-tree (one per class / student / semester) is a **`CountSumTree`** carrying both metrics at one merk lookup — point-lookup averages get the same shortcut count proofs and sum proofs do.
 3. **`byClassSemester` and `byStudentSemester` set both range flags** (`rangeCountable: true` AND `rangeSummable: true`). The `semester` continuation under each (class | student) value-tree is a **`ProvableCountProvableSumTree`** (PCPS), the structurally-richest tree variant — every internal merk node carries both a per-node count *and* a per-node sum. This is what `AggregateCountAndSumOnRange` walks for "average for class X in semester range [a..b]" style queries.
 4. **Every `summable` index here is also `countable`.** There's no `summable`-only index in this contract — averages need both axes, so a sum-only index would be unreachable from the average surface. (Pure-sum surfaces are covered by the [tip-jar contract](./sum-index-examples.md) in the previous chapter; the grades contract is deliberately the dual-axis counterpart.)
-5. **`countableAllowingOffset` on the PCPS indexes** — `rangeCountable: true` requires the count tier to be `countable` or `countableAllowingOffset` (per the rule documented in [`Index::range_countable`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-dpp/src/data_contract/document_type/index/mod.rs)). The offset-allowing tier upgrades the property-name tree to a `ProvableCountTree` at minimum; combined with `summable: "score"` and `rangeSummable: true` the dispatcher resolves it to PCPS.
+5. **`countableAllowingOffset` on the PCPS indexes** — `rangeCountable: true` requires the count tier to be `countable` or `countableAllowingOffset` (per the rule documented in [`Index::range_countable`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-dpp/src/data_contract/document_type/index/mod.rs)). The offset-allowing tier upgrades the property-name tree to a `ProvableCountTree` at minimum; combined with `summable: "score"` and `rangeSummable: true` the dispatcher resolves it to PCPS.
 
 The bench populates **50 000 grades** under a deterministic, realistic-data-shaped schedule: 500 students × 10 classes × 10 semesters = 50 000 grade documents. The score model layers three deterministic axes:
 
-- **Per-class baseline + spread** (see [`class_profile` in the bench](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs)) — hard classes get low means and wide spreads; easy classes cluster near 85–90 with narrow spreads. The 10 classes have semantic names matching the chapter's references:
+- **Per-class baseline + spread** (see [`class_profile` in the bench](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_average_worst_case.rs)) — hard classes get low means and wide spreads; easy classes cluster near 85–90 with narrow spreads. The 10 classes have semantic names matching the chapter's references:
 
 | Class | Baseline mean | Spread | Profile |
 |---|---|---|---|
@@ -94,7 +94,7 @@ The bench populates **50 000 grades** under a deterministic, realistic-data-shap
 
 A skill score is *amplified by class spread* — `skill × spread / 8` — so a +10-skill student in PHYS101 (spread=12) gains +15 over baseline, while the same student in ARTS101 (spread=4) only gains +5. This produces the realistic spread real transcripts exhibit: a strong student stands out more in hard classes, struggling students fall further behind in hard classes, easy classes flatten the curve.
 
-**Realistic enrollment.** Not every student takes every class — that's not how transcripts work. The bench walks all 500 × 10 × 10 = 50 000 possible `(student, class, semester)` triples but only emits a grade when [`is_enrolled`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs) returns true, using a deterministic per-class popularity table:
+**Realistic enrollment.** Not every student takes every class — that's not how transcripts work. The bench walks all 500 × 10 × 10 = 50 000 possible `(student, class, semester)` triples but only emits a grade when [`is_enrolled`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_average_worst_case.rs) returns true, using a deterministic per-class popularity table:
 
 | Class | Popularity | Profile |
 |---|---|---|
@@ -1699,7 +1699,7 @@ The split closely parallels the count and sum chapters — point lookups for Q1�
 
 ## What's Next
 
-The chapter is grounded in the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench's measured numbers — Q1–Q7 verify cleanly end-to-end against the shared root hash `8b15f732…ffc7`.
+The chapter is grounded in the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench's measured numbers — Q1–Q7 verify cleanly end-to-end against the shared root hash `8b15f732…ffc7`.
 
 A natural expansion follow-up (out of scope here): a worked example of "exact-precision" averages — for callers that need fractional averages (e.g. `avg = 50.7142857…` rather than `50.99`), the protocol-level approach is to return `(count, sum)` and let the client compute in its preferred numeric format (the chapter notes this in [Numerical Considerations](#numerical-considerations) above; a future expansion could walk through the fixed-point vs. floating-point trade-offs).
 

@@ -39,6 +39,36 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// outcome. Do NOT auto-retry — a retry would rebuild the bundle and
     /// could double-execute if the original landed.
     case errorShieldedSpendUnconfirmed = 18
+    /// A shielded spend could not be built against a Platform-recorded anchor:
+    /// the wallet's commitment tree isn't synced to a checkpoint Platform has
+    /// recorded (an in-progress / interrupted sync leaves it mid-block). Nothing
+    /// was broadcast and the notes were released. This is retryable — let the
+    /// shielded sync reach a confirmed state and try again. Distinct from
+    /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
+    case errorShieldedNoRecordedAnchor = 19
+    /// A core transaction broadcast (send, DashPay payment, or asset-lock
+    /// funding) failed with an ambiguous outcome — the transaction may
+    /// already be on the network. The wallet keeps the spent inputs' UTXO
+    /// reservation, so an immediate retry fails at input selection instead
+    /// of double-spending; the reservation TTL or a sync reconciles the
+    /// outcome. Do NOT auto-retry.
+    case errorTransactionBroadcastUnconfirmed = 20
+    /// Definitively-failed address-nonce race: Platform rejected an
+    /// address-funds transition (shield, or identity top-up-from-addresses)
+    /// because the submitted address nonce raced Platform's expected value
+    /// (a lagging DAPI replica read). The transition did NOT execute and any
+    /// notes were released (a shield reserves none) — safe to retry; the retry
+    /// re-fetches the nonce and self-heals. The submitted/expected nonce values
+    /// travel in the message string, not as structured fields.
+    case errorAddressNonceMismatch = 21
+    /// Atomic Core selection found no or insufficient unreserved UTXOs.
+    case errorCoreInsufficientFunds = 22
+    case errorAssetLockNotTracked = 23
+    case errorAssetLockAlreadyConsumed = 24
+    case errorAssetLockFundingMismatch = 25
+    /// Core definitively rejected the transaction. Its reserved inputs were
+    /// released and a corrected transaction may be submitted again.
+    case errorTransactionBroadcastRejected = 26
     case notFound = 98
     case errorUnknown = 99
 
@@ -82,6 +112,22 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBroadcastUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_SPEND_UNCONFIRMED:
             self = .errorShieldedSpendUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_NO_RECORDED_ANCHOR:
+            self = .errorShieldedNoRecordedAnchor
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_UNCONFIRMED:
+            self = .errorTransactionBroadcastUnconfirmed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ADDRESS_NONCE_MISMATCH:
+            self = .errorAddressNonceMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_INSUFFICIENT_FUNDS:
+            self = .errorCoreInsufficientFunds
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_NOT_TRACKED:
+            self = .errorAssetLockNotTracked
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_ALREADY_CONSUMED:
+            self = .errorAssetLockAlreadyConsumed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_FUNDING_MISMATCH:
+            self = .errorAssetLockFundingMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED:
+            self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -159,6 +205,10 @@ public enum PlatformWalletError: LocalizedError {
     case memoryAllocation(String)
     case arithmeticOverflow(String)
     case noSelectableInputs(String)
+    case coreInsufficientFunds(String)
+    case assetLockNotTracked(String)
+    case assetLockAlreadyConsumed(String)
+    case assetLockFundingMismatch(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -177,6 +227,29 @@ public enum PlatformWalletError: LocalizedError {
     /// notes reserved wallet-side (a shield reserves nothing) until the
     /// next sync reconciles the outcome. Do NOT auto-retry.
     case shieldedSpendUnconfirmed(String)
+    /// A shielded spend could not be built against a Platform-recorded anchor —
+    /// the wallet's commitment tree isn't synced to a checkpoint Platform has
+    /// recorded (an in-progress / interrupted sync leaves it mid-block). Nothing
+    /// was broadcast and the notes were released; retryable once the shielded
+    /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
+    /// which must NOT be retried.
+    case shieldedNoRecordedAnchor(String)
+    /// A core transaction broadcast was submitted but its outcome is
+    /// unknown — the transaction may already be on the network. The wallet
+    /// keeps the spent inputs reserved so a retry cannot double-spend; the
+    /// reservation TTL or a later sync reconciles the outcome. Do NOT
+    /// auto-retry. Core sibling of `shieldedSpendUnconfirmed`.
+    case transactionBroadcastUnconfirmed(String)
+    /// Core definitively rejected the transaction and its input reservation
+    /// was released. Unlike `transactionBroadcastUnconfirmed`, retry is safe.
+    case transactionBroadcastRejected(String)
+    /// Definitively-failed address-nonce race (shield, or identity
+    /// top-up-from-addresses): Platform rejected the transition because the
+    /// submitted address nonce raced its expected value. The transition did
+    /// NOT execute and any notes were released (a shield reserves none) — safe
+    /// to retry, and the retry re-fetches the address nonce so the mismatch
+    /// self-heals. The submitted/expected nonce values are in the message.
+    case addressNonceMismatch(String)
     case notFound(String)
     case unknown(String)
 
@@ -190,8 +263,15 @@ public enum PlatformWalletError: LocalizedError {
              .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
+             .coreInsufficientFunds(let m),
+             .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
+             .assetLockFundingMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
+             .shieldedNoRecordedAnchor(let m),
+             .transactionBroadcastUnconfirmed(let m),
+             .transactionBroadcastRejected(let m),
+             .addressNonceMismatch(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -218,10 +298,21 @@ public enum PlatformWalletError: LocalizedError {
         case .errorUtf8Conversion:    self = .utf8Conversion(detail)
         case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
+        case .errorCoreInsufficientFunds: self = .coreInsufficientFunds(detail)
+        case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
+        case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
+        case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
+        case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorTransactionBroadcastUnconfirmed:
+            self = .transactionBroadcastUnconfirmed(detail)
+        case .errorTransactionBroadcastRejected:
+            self = .transactionBroadcastRejected(detail)
+        case .errorAddressNonceMismatch:
+            self = .addressNonceMismatch(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

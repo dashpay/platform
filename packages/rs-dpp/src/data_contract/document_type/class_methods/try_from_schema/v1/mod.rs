@@ -55,7 +55,8 @@ use crate::data_contract::document_type::class_methods::{
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
-    TRADE_MODE, TRANSFERABLE,
+    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, TRADE_MODE,
+    TRANSFERABLE,
 };
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -69,7 +70,9 @@ use crate::tokens::token_amount_on_contract_token::{
     DocumentActionTokenCost, DocumentActionTokenEffect,
 };
 #[cfg(feature = "validation")]
-use crate::validation::meta_validators::{DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1};
+use crate::validation::meta_validators::{
+    DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
+};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -161,11 +164,12 @@ impl DocumentTypeV1 {
             {
                 0 => &*DOCUMENT_META_SCHEMA_V0,
                 1 => &*DOCUMENT_META_SCHEMA_V1,
+                2 => &*DOCUMENT_META_SCHEMA_V2,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentTypeV1::try_from_schema (document_type_schema)"
                             .to_string(),
-                        known_versions: vec![0, 1],
+                        known_versions: vec![0, 1, 2],
                         received: version,
                     })
                 }
@@ -191,6 +195,46 @@ impl DocumentTypeV1 {
             Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
                 .unwrap_or(data_contact_config.documents_keep_history_contract_default());
+
+        // The document history subscription flags are only recognized from
+        // document meta-schema v2 (protocol version 13). Earlier meta-schema
+        // versions either accepted and ignored unknown top-level keys (v0) or
+        // rejected them outright (v1), so parsing them here for historical
+        // protocol versions would change replay validation: a pre-v12
+        // contract carrying e.g. a non-boolean value under one of these names
+        // validated fine on the base implementation and must keep doing so.
+        let (
+            documents_keep_transfer_history,
+            documents_keep_purchase_history,
+            documents_keep_pricing_history,
+        ): (bool, bool, bool) = if platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .document_type_schema
+            >= 2
+        {
+            (
+                // Are transfers of documents of this type recorded in the
+                // document history system contract?
+                Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default(),
+                // Are purchases of documents of this type recorded in the
+                // document history system contract?
+                Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default(),
+                // Are price updates on documents of this type recorded in the
+                // document history system contract?
+                Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
+                    .map_err(consensus_or_protocol_value_error)?
+                    .unwrap_or_default(),
+            )
+        } else {
+            (false, false, false)
+        };
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
@@ -733,6 +777,9 @@ impl DocumentTypeV1 {
             required_fields,
             transient_fields,
             documents_keep_history,
+            documents_keep_transfer_history,
+            documents_keep_purchase_history,
+            documents_keep_pricing_history,
             documents_mutable,
             documents_can_be_deleted,
             documents_transferable,
@@ -755,6 +802,97 @@ mod tests {
     use crate::data_contract::document_type::DocumentTypeV0;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
+
+    mod keeps_history_flags_version_gating {
+        use super::*;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use platform_value::Value;
+
+        /// A minimal document type schema carrying `keepsTransferHistory` with
+        /// the given value.
+        fn schema_with_transfer_history_flag(flag_value: Value) -> Value {
+            Value::Map(vec![
+                (Value::Text("type".into()), Value::Text("object".into())),
+                (Value::Text("keepsTransferHistory".into()), flag_value),
+                (
+                    Value::Text("properties".into()),
+                    Value::Map(vec![(
+                        Value::Text("name".into()),
+                        Value::Map(vec![
+                            (Value::Text("type".into()), Value::Text("string".into())),
+                            (Value::Text("position".into()), Value::U64(0)),
+                            (Value::Text("maxLength".into()), Value::U64(10)),
+                        ]),
+                    )]),
+                ),
+                (
+                    Value::Text("additionalProperties".into()),
+                    Value::Bool(false),
+                ),
+            ])
+        }
+
+        fn parse_at_version(
+            schema: Value,
+            protocol_version: u32,
+        ) -> Result<DocumentTypeV1, ProtocolError> {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected platform version");
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut vec![],
+                platform_version,
+            )
+        }
+
+        /// Historical protocol versions used document meta-schema v0, which
+        /// accepted and ignored unknown top-level keys — including a
+        /// non-boolean value under a name that later became a config flag.
+        /// The parser must keep ignoring them so replay validation of
+        /// historical contracts is unchanged.
+        #[test]
+        fn non_boolean_flag_is_ignored_before_meta_schema_v2() {
+            let parsed = parse_at_version(
+                schema_with_transfer_history_flag(Value::Text("not-a-bool".into())),
+                11,
+            )
+            .expect("expected historical parse to accept and ignore the unknown key");
+
+            assert!(!parsed.documents_keep_transfer_history());
+        }
+
+        /// Even a well-formed boolean must not affect the typed configuration
+        /// before the flags activate: the base implementation had no such
+        /// config, so a historical contract carrying the key parses to the
+        /// same document type it always did.
+        #[test]
+        fn boolean_flag_is_ignored_before_meta_schema_v2() {
+            let parsed = parse_at_version(schema_with_transfer_history_flag(Value::Bool(true)), 11)
+                .expect("expected historical parse to accept and ignore the unknown key");
+
+            assert!(!parsed.documents_keep_transfer_history());
+        }
+
+        /// From document meta-schema v2 (protocol version 13) the flag is
+        /// parsed into the typed configuration.
+        #[test]
+        fn boolean_flag_is_parsed_from_meta_schema_v2() {
+            let parsed = parse_at_version(schema_with_transfer_history_flag(Value::Bool(true)), 13)
+                .expect("expected parse at protocol version 13");
+
+            assert!(parsed.documents_keep_transfer_history());
+        }
+    }
 
     mod nested_property_position_handling {
         use super::*;

@@ -1,6 +1,8 @@
 import { expect } from 'chai';
 import { Transaction, BlockHeader, PrivateKey } from '@dashevo/dashcore-lib';
-import { IdentityPublicKey, IdentityPublicKeyWithWitness, StateTransitionTypes } from '@dashevo/wasm-dpp';
+import loadWasmDpp, {
+  IdentityPublicKey, IdentityPublicKeyWithWitness, StateTransitionTypes, getLatestProtocolVersion,
+} from '@dashevo/wasm-dpp';
 import { Client } from './index';
 import 'mocha';
 
@@ -36,8 +38,22 @@ describe('Dash - Client', function suite() {
     testMnemonic = 'agree country attract master mimic ball load beauty join gentle turtle hover';
     testHDKey = 'tprv8ZgxMBicQKsPeGi4CikhacVPz6UmErenu1PoD3S4XcEDSPP8auRaS8hG3DQtsQ2i9HACgohHwF5sgMVJNksoKqYoZbis8o75Pp1koCme2Yo';
 
+    // wasm-dpp must be loaded before `getLatestProtocolVersion()` can be called.
+    await loadWasmDpp();
+
     client = new Client({
       network: 'testnet',
+      // The `dash` SDK pins `testnet` to protocol version 1 (a stale mapping),
+      // while the wasm-dpp fixtures are built at the latest protocol version.
+      // Publishing at v1 downgrades the V1 contract config (sized integer types)
+      // to V0, so the published-then-read-back contract no longer matches the
+      // latest-built fixture. Pin the client to the latest protocol version so
+      // the round-trip stays version-consistent with the fixtures.
+      driveProtocolVersion: getLatestProtocolVersion(),
+      platformProofVerifier: {
+        verifyStateTransitionResult: this.sinon.stub().resolves(),
+        verifyDataContractHistory: this.sinon.stub().resolves([]),
+      },
       wallet: {
         HDPrivateKey: testHDKey,
       },
@@ -327,6 +343,7 @@ describe('Dash - Client', function suite() {
     it('should broadcast documents', async () => {
       const proofResponse = {
         proof: { },
+        metadata: { },
       };
 
       dapiClientMock.platform.waitForStateTransitionResult.resolves(proofResponse);
@@ -378,6 +395,7 @@ describe('Dash - Client', function suite() {
     it('should broadcast data contract', async () => {
       dapiClientMock.platform.waitForStateTransitionResult.resolves({
         proof: { },
+        metadata: { },
       });
 
       await client.platform.contracts.publish(dataContractFixture, identityFixture);

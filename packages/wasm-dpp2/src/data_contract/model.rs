@@ -20,6 +20,7 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
+use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
@@ -31,7 +32,7 @@ use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
 };
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, TryIntoPlatformVersioned};
 use js_sys::{Object, Reflect};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -366,9 +367,12 @@ impl DataContractWasm {
         &self,
         #[wasm_bindgen(js_name = "platformVersion")] platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractObjectJs> {
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
-
-        let value = self.0.clone().to_value(&platform_version.into())?;
+        let pv: PlatformVersion = platform_version.try_into()?;
+        // Honor the caller-supplied platform version (see `to_json`).
+        let format: DataContractInSerializationFormat =
+            self.0.clone().try_into_platform_versioned(&pv)?;
+        let value =
+            dpp::platform_value::to_value(&format).map_err(dpp::ProtocolError::ValueError)?;
         let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
@@ -396,7 +400,16 @@ impl DataContractWasm {
 
     #[wasm_bindgen(getter = "config")]
     pub fn config(&self) -> WasmDppResult<DataContractConfigJs> {
-        let js_value = serialization::to_object(self.0.config())?;
+        // DataContractConfig is a versioned enum with the canonical
+        // ValueConvertible trait — route through it so any future custom
+        // impl propagates here automatically.
+        use dpp::serialization::ValueConvertible;
+        let value = self
+            .0
+            .config()
+            .to_object()
+            .map_err(|e| WasmDppError::serialization(format!("config: {}", e)))?;
+        let js_value = serialization::platform_value_to_object(&value)?;
         Ok(js_value.into())
     }
 
@@ -575,9 +588,16 @@ impl DataContractWasm {
         &self,
         platform_version: PlatformVersionLikeJs,
     ) -> WasmDppResult<DataContractJSONJs> {
-        let platform_version = PlatformVersionWasm::try_from(platform_version)?;
-
-        let json = self.0.to_json(&platform_version.into())?;
+        let pv: PlatformVersion = platform_version.try_into()?;
+        // Honor the caller-supplied platform version: route through the
+        // versioned serialization format so the wire shape (V0 vs V1) is
+        // controlled by the caller, not by global thread-local state used by
+        // the canonical `serde_json::to_value(&DataContract)` path. See
+        // Critical-4 note in `data_contract/conversion/serde/mod.rs`.
+        let format: DataContractInSerializationFormat =
+            self.0.clone().try_into_platform_versioned(&pv)?;
+        let json = serde_json::to_value(&format)
+            .map_err(|e| dpp::ProtocolError::EncodingError(e.to_string()))?;
         let js_value = serialization::json_value_to_js(&json)?;
         Ok(js_value.into())
     }

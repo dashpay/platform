@@ -46,6 +46,7 @@ jobs:
       js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
+      rs-scope: ${{ steps.rs-scope.outputs.scope }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
       swift-sdk-changed: ${{ steps.override.outputs.swift-sdk-changed || steps.filter-swift-sdk.outputs.swift-sdk-changed }}
       version-changed: ${{ steps.override.outputs.version-changed || steps.filter-version.outputs.version-changed }}
@@ -54,6 +55,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Verify self-hosted Swift runner policy
+        run: python3 .github/scripts/check-swift-self-hosted-runner.py
 
       - uses: dorny/paths-filter@v4
         id: filter-js
@@ -80,8 +84,10 @@ jobs:
           filters: |
             rs-workflows:
               - .github/workflows/tests-rs-workspace.yml
+              - .github/workflows/tests-rs-wallet.yml
               - .github/workflows/tests-rs-doctests.yml
               - .github/workflows/tests.yml
+              - .github/scripts/check-wallet-closure.py
 
       - name: Check for platform version change
         id: filter-version
@@ -113,6 +119,67 @@ jobs:
           echo "doctests-changed=false" >> "$GITHUB_OUTPUT"
           echo "No doctest changes — skipping doctests"
 
+      - name: Determine Rust test scope (wallet-only fast path)
+        id: rs-scope
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          # The fast path applies only to same-repo pull requests. Fork PRs
+          # must take the full workspace path (whose Ubuntu backup jobs cover
+          # them when UBUNTU_BACKUP_ENABLED is set, while the wallet
+          # workflow's only job skips fork PRs). Push and schedule runs have
+          # no reliable base SHA — scope computed from the last commit alone
+          # could silently downgrade the nightly / post-merge full runs.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Not a pull request — using full Rust workspace tests"
+            exit 0
+          fi
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ] \
+            && [ "${{ github.event.pull_request.head.repo.owner.login }}" != "thepastaclaw" ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Fork pull request — using full Rust workspace tests"
+            exit 0
+          fi
+
+          # --no-renames: a file moved out of another crate into a wallet
+          # crate must still count as a change to the source crate.
+          if ! CHANGED=$(git diff --no-renames --name-only "${{ github.event.pull_request.base.sha }}"...HEAD); then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Could not diff against the PR base — using full Rust workspace tests"
+            exit 0
+          fi
+          if [ -z "$CHANGED" ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "No changed files detected — using full Rust workspace tests"
+            exit 0
+          fi
+
+          has_wallet=false
+          non_wallet=false
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              packages/rs-platform-wallet/*|packages/rs-platform-wallet-ffi/*|packages/rs-platform-wallet-storage/*)
+                has_wallet=true ;;
+              packages/swift-sdk/*)
+                # Swift sources are not part of the Rust workspace and cannot
+                # affect `cargo test`, so they don't force the full suite.
+                : ;;
+              *)
+                # Anything else — another Rust crate, Cargo.lock, root config,
+                # docs, workflows — conservatively forces the full workspace run.
+                non_wallet=true ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "$has_wallet" = true ] && [ "$non_wallet" = false ]; then
+            echo "scope=wallet" >> "$GITHUB_OUTPUT"
+            echo "Only wallet crates changed — using scoped Rust wallet tests"
+          else
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Non-wallet Rust changes present — using full Rust workspace tests"
+          fi
+
       - name: Check for Swift SDK changes
         id: filter-swift-sdk
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -124,6 +191,7 @@ jobs:
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
+              - packages/document-history-contract/**
               - packages/dpns-contract/**
               - packages/keyword-search-contract/**
               - packages/masternode-reward-shares-contract/**
@@ -145,6 +213,7 @@ jobs:
               - packages/rs-platform-versioning/**
               - packages/rs-platform-wallet/**
               - packages/rs-platform-wallet-ffi/**
+              - packages/rs-platform-wallet-storage/**
               - packages/rs-sdk/**
               - packages/rs-sdk-ffi/**
               - packages/rs-sdk-trusted-context-provider/**
@@ -241,9 +310,22 @@ jobs:
     name: Rust workspace tests
     needs:
       - changes
-    if: ${{ needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true' }}
+    if: ${{ (needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true') && needs.changes.outputs.rs-scope != 'wallet' }}
     secrets: inherit
     uses: ./.github/workflows/tests-rs-workspace.yml
+    with:
+      doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
+
+  # Fast path: only wallet crates changed, so run the scoped wallet suite
+  # instead of the full workspace job above (the two are mutually exclusive
+  # via `rs-scope`).
+  rs-wallet-tests:
+    name: Rust wallet tests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.rs-scope == 'wallet' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-wallet.yml
     with:
       doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
 
@@ -260,7 +342,21 @@ jobs:
     needs:
       - changes
       - rs-workspace-tests
-    if: ${{ always() && needs.changes.outputs.swift-sdk-changed == 'true' && needs.changes.result != 'failure' && needs.rs-workspace-tests.result != 'failure' }}
+      - rs-wallet-tests
+    # At most one of the two Rust jobs runs (none for e.g. Swift-only PRs);
+    # skipped jobs report result 'skipped', not 'failure', so this only
+    # blocks on a Rust job that actually ran and failed.
+    # Untrusted fork PRs must not reach the self-hosted Swift runner — same
+    # trusted-fork policy as the callee guard in swift-sdk-build.yml.
+    if: >-
+      ${{ always()
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository
+          || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && needs.changes.outputs.swift-sdk-changed == 'true'
+      && needs.changes.result != 'failure'
+      && needs.rs-workspace-tests.result != 'failure'
+      && needs.rs-wallet-tests.result != 'failure' }}
     secrets: inherit
     uses: ./.github/workflows/swift-sdk-build.yml
 

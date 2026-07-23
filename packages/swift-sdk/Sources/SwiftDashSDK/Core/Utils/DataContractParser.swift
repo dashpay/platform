@@ -407,6 +407,39 @@ public struct DataContractParser {
         return "0"
     }
 
+    /// Render a pre-programmed distribution amount to a canonical
+    /// decimal string. JSONSerialization decodes numeric JSON values as
+    /// `NSNumber` and string values as `String`; token amounts can
+    /// exceed `Int.max`, so read through `UInt64`/`NSNumber` rather than
+    /// `Int` to avoid truncating large balances. Returns `nil` for
+    /// unparseable values so the caller can skip the malformed entry.
+    private static func stringifyDistributionAmount(_ value: Any) -> String? {
+        if let string = value as? String {
+            return string
+        }
+        // `NSNumber` covers Int/UInt/Double bridged from JSON. Prefer a
+        // lossless UInt64 read; fall back to the number's own string.
+        if let number = value as? NSNumber {
+            if let unsigned = UInt64(exactly: number) {
+                return String(unsigned)
+            }
+            if let signed = Int64(exactly: number) {
+                return String(signed)
+            }
+            return number.stringValue
+        }
+        if let unsigned = value as? UInt64 {
+            return String(unsigned)
+        }
+        if let signed = value as? Int64 {
+            return String(signed)
+        }
+        if let intValue = value as? Int {
+            return String(intValue)
+        }
+        return nil
+    }
+
     private static func parseTokenConfiguration(token: PersistentToken, from tokenDict: [String: Any]) {
         // Basic properties
         let maxSupplyStr = extractTokenSupply(from: tokenDict, key: "maxSupply")
@@ -511,7 +544,41 @@ public struct DataContractParser {
             // Pre-programmed distribution
             if let preProgrammed = distributionRules["preProgrammedDistribution"] as? [String: Any] {
                 var dist = TokenPreProgrammedDistribution()
-                if let schedule = preProgrammed["distributionSchedule"] as? [[String: Any]] {
+
+                // Real contract JSON shape (rs-dpp): a `distributions`
+                // map keyed by timestamp-in-milliseconds, each value a
+                // map of recipient-base58 -> amount. Flatten it into the
+                // existing `DistributionEvent` list so downstream
+                // eligibility checks (see `resolveClaim`) can find the
+                // recipient. Amounts may be encoded as JSON numbers or
+                // strings — including large UInt64 values — so render
+                // whatever we get back to a canonical decimal string.
+                if let distributions = preProgrammed["distributions"] as? [String: Any] {
+                    var events: [DistributionEvent] = []
+                    for (timestampKey, recipientsAny) in distributions {
+                        guard let recipients = recipientsAny as? [String: Any] else { continue }
+                        let triggerTime: Date? = UInt64(timestampKey).map {
+                            Date(timeIntervalSince1970: Double($0) / 1000.0)
+                        }
+                        for (recipient, amountAny) in recipients {
+                            guard let amountString = Self.stringifyDistributionAmount(amountAny) else {
+                                continue
+                            }
+                            var event = DistributionEvent(
+                                triggerTime: triggerTime ?? Date(),
+                                amount: amountString,
+                                recipient: recipient
+                            )
+                            if triggerTime == nil {
+                                event.triggerTime = nil
+                            }
+                            events.append(event)
+                        }
+                    }
+                    dist.distributionSchedule = events
+                } else if let schedule = preProgrammed["distributionSchedule"] as? [[String: Any]] {
+                    // Backward-compat: older/synthetic shape carrying an
+                    // explicit array of pre-built event dictionaries.
                     dist.distributionSchedule = schedule.compactMap { eventDict in
                         guard let amount = eventDict["amount"] as? String else { return nil }
                         var event = DistributionEvent(

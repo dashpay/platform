@@ -2,9 +2,11 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Tab-root view for the Contracts tab.
+/// Contracts surface — reached from Settings → Platform (pushed onto
+/// that screen's stack), or standalone with its own stack. See
+/// `embedsOwnNavigationStack`.
 ///
-/// Lays out two sections inside a `NavigationStack`:
+/// Lays out two sections, optionally wrapped in its own `NavigationStack`:
 ///
 /// 1. A unified search bar at the top that handles three input
 ///    shapes:
@@ -34,8 +36,8 @@ struct ContractsTabView: View {
     @EnvironmentObject var transitionState: TransitionState
     /// Needed only to forward into the presented `DocumentsView` sheet
     /// (which declares it as an `@EnvironmentObject`). Reading it in this
-    /// leaf tab view re-renders only `ContractsTabView`, not the parent
-    /// `TabView`, so it doesn't reintroduce the progress-tick churn the
+    /// leaf view re-renders only `ContractsTabView`, not the host screen,
+    /// so it doesn't reintroduce the progress-tick churn the
     /// `WalletManagerStore` indirection in `ContentView` guards against.
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
@@ -49,6 +51,11 @@ struct ContractsTabView: View {
     /// re-runs `init`, which rebuilds the `@Query` predicate).
     private let network: Network
 
+    /// When `false`, the view renders without its own `NavigationStack`
+    /// so it can attach to a host stack (e.g. the Settings → Contracts
+    /// push) instead of nesting a second navigation bar.
+    private let embedsOwnNavigationStack: Bool
+
     @Query private var dataContracts: [PersistentDataContract]
 
     /// Flat list of every token across every saved contract on the
@@ -59,8 +66,9 @@ struct ContractsTabView: View {
     /// name in different contracts stay distinguishable.
     @Query private var allTokens: [PersistentToken]
 
-    init(network: Network) {
+    init(network: Network, embedsOwnNavigationStack: Bool = true) {
         self.network = network
+        self.embedsOwnNavigationStack = embedsOwnNavigationStack
         let target = network.rawValue
         // `PersistentDataContract.predicate(network:)` already exists
         // for this exact use; reuse it here so the keyed-network
@@ -153,100 +161,99 @@ struct ContractsTabView: View {
     private static let keywordSearchLimit: UInt32 = 50
 
     var body: some View {
-        NavigationStack {
-            List {
-                searchSection
-                resultsSection
-                contractsSection
-                tokensSection
+        List {
+            searchSection
+            resultsSection
+            contractsSection
+            tokensSection
+        }
+        .navigationTitle("Contracts")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingDocuments = true
+                } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                }
+                .accessibilityLabel("Browse Documents")
+                .accessibilityIdentifier("contracts.browseDocuments")
             }
-            .navigationTitle("Contracts")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
                     Button {
-                        showingDocuments = true
+                        showingLoadContract = true
                     } label: {
-                        Image(systemName: "doc.text.magnifyingglass")
+                        Label("Load Contract", systemImage: "arrow.down.circle")
                     }
-                    .accessibilityLabel("Browse Documents")
-                    .accessibilityIdentifier("contracts.browseDocuments")
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showingLoadContract = true
-                        } label: {
-                            Label("Load Contract", systemImage: "arrow.down.circle")
-                        }
-                        Button {
-                            showingRegisterContract = true
-                        } label: {
-                            Label("Register Contract", systemImage: "plus.circle")
-                        }
+                    Button {
+                        showingRegisterContract = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("Register Contract", systemImage: "plus.circle")
                     }
-                    .disabled(isLoading)
-                    .accessibilityLabel("Add Contract or Token")
+                } label: {
+                    Image(systemName: "plus")
                 }
-            }
-            .sheet(isPresented: $showingLoadContract) {
-                LoadDataContractView(isLoading: $isLoading)
-                    .environmentObject(platformState)
-                    .environment(\.modelContext, modelContext)
-            }
-            .sheet(isPresented: $showingRegisterContract) {
-                RegisterContractSourceView()
-                    .environmentObject(platformState)
-                    .environmentObject(transitionState)
-                    .environment(\.modelContext, modelContext)
-            }
-            .sheet(isPresented: $showingDocuments) {
-                // `DocumentsView` brings its own `NavigationView`, so it's
-                // presented as a sheet (never pushed). It declares
-                // `AppState`, `PlatformWalletManager`, and `TransitionState`
-                // as `@EnvironmentObject`s — forward all three explicitly
-                // like the sibling sheets above. The SwiftData
-                // `modelContext` is inherited through the sheet, but pin it
-                // explicitly to match the surrounding pattern.
-                DocumentsView()
-                    .environmentObject(platformState)
-                    .environmentObject(walletManager)
-                    .environmentObject(transitionState)
-                    .environment(\.modelContext, modelContext)
-            }
-            .sheet(item: $selectedContract) { contract in
-                // Saved-contract details. Presented from this stable
-                // container so a deep drill-down inside it (document
-                // type -> New Document) isn't torn down when the
-                // `@Query` list re-renders.
-                DataContractDetailsView(contract: contract)
-                    .environmentObject(platformState)
-                    .environment(\.modelContext, modelContext)
-            }
-            .sheet(item: $pendingPreview) { preview in
-                // Render the full saved-contract details view against
-                // the throwaway in-memory container so tokens, document
-                // types + indexes, and groups all surface via the
-                // existing drill-down screens. The container lives on
-                // `preview` and is dropped when the sheet dismisses.
-                DataContractDetailsView(
-                    contract: preview.contract,
-                    onSave: isAlreadySaved(preview.contractIdBase58)
-                        ? nil
-                        : { Task { await savePreview(preview) } },
-                    isSaving: isSavingPreview
-                )
-                .environmentObject(platformState)
-                .modelContainer(preview.container)
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK") { }
-            } message: {
-                Text(errorMessage ?? "Unknown error occurred")
+                .disabled(isLoading)
+                .accessibilityLabel("Add Contract or Token")
             }
         }
+        .sheet(isPresented: $showingLoadContract) {
+            LoadDataContractView(isLoading: $isLoading)
+                .environmentObject(platformState)
+                .environment(\.modelContext, modelContext)
+        }
+        .sheet(isPresented: $showingRegisterContract) {
+            RegisterContractSourceView()
+                .environmentObject(platformState)
+                .environmentObject(transitionState)
+                .environment(\.modelContext, modelContext)
+        }
+        .sheet(isPresented: $showingDocuments) {
+            // `DocumentsView` brings its own `NavigationView`, so it's
+            // presented as a sheet (never pushed). It declares
+            // `AppState`, `PlatformWalletManager`, and `TransitionState`
+            // as `@EnvironmentObject`s — forward all three explicitly
+            // like the sibling sheets above. The SwiftData
+            // `modelContext` is inherited through the sheet, but pin it
+            // explicitly to match the surrounding pattern.
+            DocumentsView()
+                .environmentObject(platformState)
+                .environmentObject(walletManager)
+                .environmentObject(transitionState)
+                .environment(\.modelContext, modelContext)
+        }
+        .sheet(item: $selectedContract) { contract in
+            // Saved-contract details. Presented from this stable
+            // container so a deep drill-down inside it (document
+            // type -> New Document) isn't torn down when the
+            // `@Query` list re-renders.
+            DataContractDetailsView(contract: contract)
+                .environmentObject(platformState)
+                .environment(\.modelContext, modelContext)
+        }
+        .sheet(item: $pendingPreview) { preview in
+            // Render the full saved-contract details view against
+            // the throwaway in-memory container so tokens, document
+            // types + indexes, and groups all surface via the
+            // existing drill-down screens. The container lives on
+            // `preview` and is dropped when the sheet dismisses.
+            DataContractDetailsView(
+                contract: preview.contract,
+                onSave: isAlreadySaved(preview.contractIdBase58)
+                    ? nil
+                    : { Task { await savePreview(preview) } },
+                isSaving: isSavingPreview
+            )
+            .environmentObject(platformState)
+            .modelContainer(preview.container)
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Unknown error occurred")
+        }
+        .wrappedInNavigationStack(embedsOwnNavigationStack)
     }
 
     // MARK: Sections
@@ -1074,4 +1081,18 @@ struct TokenListRow: View {
         .environmentObject(AppState())
         .environmentObject(TransitionState())
         .environmentObject(PlatformWalletManager())
+}
+
+private extension View {
+    /// Wrap in a `NavigationStack` only when `wrap` is true. Lets a view
+    /// own its navigation chrome standalone yet attach to a host stack
+    /// when embedded (avoiding a nested second navigation bar).
+    @ViewBuilder
+    func wrappedInNavigationStack(_ wrap: Bool) -> some View {
+        if wrap {
+            NavigationStack { self }
+        } else {
+            self
+        }
+    }
 }

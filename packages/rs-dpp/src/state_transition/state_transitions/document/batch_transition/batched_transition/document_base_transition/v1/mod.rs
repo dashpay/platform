@@ -24,6 +24,8 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+// See `DocumentBaseTransitionV0` for json_safe_fields rationale.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),

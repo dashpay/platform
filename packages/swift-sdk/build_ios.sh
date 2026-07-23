@@ -24,6 +24,8 @@ TARGET_DIR="$ROOT_DIR/target"
 PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
 PROFILE="dev"
+PRUNE_CARGO_TARGETS="${PRUNE_CARGO_TARGETS:-0}"
+STAGING_DIR=""
 
 # Crates whose cbindgen-generated headers ship in the unified framework.
 # Order matters: earlier headers define types referenced by later ones.
@@ -45,6 +47,31 @@ CLEAN=false
 
 log_info() { echo -e "${GREEN}$1${NC}"; }
 log_error() { echo -e "${RED}$1${NC}"; }
+
+cleanup_staging_dir() {
+  if [ -n "$STAGING_DIR" ]; then
+    rm -rf "$STAGING_DIR"
+  fi
+}
+
+stage_target_artifacts() {
+  local target="$1"
+  local library="$2"
+  local headers="$3"
+  local target_staging_dir="$STAGING_DIR/$target"
+
+  mkdir -p "$target_staging_dir"
+  cp "$library" "$target_staging_dir/"
+  cp -R "$headers" "$target_staging_dir/include"
+
+  STAGED_LIB="$target_staging_dir/$(basename "$library")"
+  STAGED_HEADERS="$target_staging_dir/include"
+
+  # The final static library and generated headers are all xcodebuild needs.
+  # Release the much larger per-architecture dependency tree before building
+  # the next target so persistent CI runners cannot exhaust their disk.
+  rm -rf "${TARGET_DIR:?}/${target:?}"
+}
 
 # -------------------------------
 # Help
@@ -106,7 +133,7 @@ done
 
 if $CLEAN; then
   log_info "Cleaning all build artifacts..."
-  rm -rf "$TARGET_DIR"
+  rm -rf "${TARGET_DIR:?}"
   rm -rf "$XCFRAMEWORK"
 fi
 
@@ -125,6 +152,19 @@ OUTPUT_DIR="$PROFILE"
 
 log_info "Package: $PACKAGE"
 log_info "Profile: $PROFILE"
+
+if [ "$PRUNE_CARGO_TARGETS" = "1" ]; then
+  STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dash-sdk-ffi.XXXXXX")"
+  trap cleanup_staging_dir EXIT
+
+  # Persistent self-hosted runners may contain incomplete or obsolete builds
+  # from an earlier job. Start the bounded build with only Cargo's shared host
+  # cache, then prune each Apple target after staging its final artifacts.
+  rm -rf \
+    "${TARGET_DIR:?}/aarch64-apple-ios" \
+    "${TARGET_DIR:?}/aarch64-apple-ios-sim" \
+    "${TARGET_DIR:?}/aarch64-apple-darwin"
+fi
 
 # -------------------------------
 # Build commands
@@ -174,20 +214,6 @@ module DashSDKFFI {
 }
 EOF
   log_info "  → module.modulemap + umbrella header injected in $HEADERS_DIR"
-
-  # Give opaque struct forward declarations a body so Swift can use UnsafeMutablePointer<T>.
-  # Skip types that already have a full definition in another header to avoid redefinition.
-  local defined
-  defined=$(grep -oh 'typedef struct [A-Za-z_][A-Za-z_0-9]* {' "$HEADERS_DIR"/*/*.h 2>/dev/null \
-    | sed 's/typedef struct \([^ ]*\) {/\1/' | sort -u | paste -sd'|' - || true)
-  for h in "$HEADERS_DIR"/*/*.h; do
-    if [ -n "$defined" ]; then
-      perl -i -pe "s/^typedef struct (\w+) \1;\$/
-        my \$n=\$1; \$n=~m{^($defined)\$} ? \$_ : \"typedef struct \$n { uint8_t _opaque; } \$n;\n\"/e" "$h"
-    else
-      perl -i -pe 's/^typedef struct (\w+) \1;$/typedef struct $1 { uint8_t _opaque; } $1;/' "$h"
-    fi
-  done
 }
 
 # Shielded (Orchard / ZK) support is compiled in by default. The
@@ -210,6 +236,11 @@ if $BUILD_IOS; then
   IOS_LIB="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   IOS_HEADERS="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$IOS_HEADERS"
+  if [ "$PRUNE_CARGO_TARGETS" = "1" ]; then
+    stage_target_artifacts "$IOS_TARGET" "$IOS_LIB" "$IOS_HEADERS"
+    IOS_LIB="$STAGED_LIB"
+    IOS_HEADERS="$STAGED_HEADERS"
+  fi
 fi
 
 # iOS simulator
@@ -220,6 +251,11 @@ if $BUILD_SIM; then
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   SIM_HEADERS="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$SIM_HEADERS"
+  if [ "$PRUNE_CARGO_TARGETS" = "1" ]; then
+    stage_target_artifacts "$SIM_TARGET" "$SIM_LIB" "$SIM_HEADERS"
+    SIM_LIB="$STAGED_LIB"
+    SIM_HEADERS="$STAGED_HEADERS"
+  fi
 fi
 
 # macOS
@@ -230,6 +266,11 @@ if $BUILD_MAC; then
   MAC_LIB="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   MAC_HEADERS="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$MAC_HEADERS"
+  if [ "$PRUNE_CARGO_TARGETS" = "1" ]; then
+    stage_target_artifacts "$MAC_TARGET" "$MAC_LIB" "$MAC_HEADERS"
+    MAC_LIB="$STAGED_LIB"
+    MAC_HEADERS="$STAGED_HEADERS"
+  fi
 fi
 
 # -------------------------------
@@ -258,7 +299,9 @@ OTHER_SWIFT_FLAGS="-warnings-as-errors"
 SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
 SWIFT_SUPPRESS_WARNINGS=NO
 
-if command -v xcodebuild >/dev/null 2>&1; then
+if [ "${SKIP_EXAMPLE_APP_BUILD:-0}" = "1" ]; then
+    log_info "SKIP_EXAMPLE_APP_BUILD=1 — skipping SwiftExampleApp verification build"
+elif command -v xcodebuild >/dev/null 2>&1; then
     set +e
     xcodebuild -project "$SWIFT_PROJECT" \
                -scheme "$SWIFT_SCHEME" \

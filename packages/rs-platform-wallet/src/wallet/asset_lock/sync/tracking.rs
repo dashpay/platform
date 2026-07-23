@@ -10,6 +10,26 @@ use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Snapshot the funding role, bound index and status used to authorize an
+    /// existing-lock resume. Taking all three under one read lock avoids a
+    /// role/status time-of-check/time-of-use split in the resolver.
+    ///
+    /// [`AssetLockFundingType`]:
+    /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
+    pub(crate) async fn tracked_resume_metadata(
+        &self,
+        out_point: &OutPoint,
+    ) -> Option<(
+        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
+        u32,
+        AssetLockStatus,
+    )> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///
@@ -21,6 +41,44 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let out_point = lock.out_point;
             cs.asset_locks.insert(out_point, (&lock).into());
             info.tracked_asset_locks.insert(out_point, lock);
+        }
+        cs
+    }
+
+    /// Remove a tracked asset lock whose funding transaction was
+    /// definitively rejected at broadcast (never reached the network).
+    ///
+    /// Unlike [`consume_asset_lock`](Self::consume_asset_lock), the
+    /// persisted row is deleted too (via the changeset's `removed` set):
+    /// a rejected lock's funding transaction never existed on the
+    /// network, so the row has no historical value — and because the
+    /// rejection released the funding UTXO reservation, leaving the
+    /// `Built` row resumable would let a later `resume_asset_lock`
+    /// re-broadcast a transaction whose inputs may have been re-spent.
+    ///
+    /// Idempotent: returns an empty changeset if the outpoint is not
+    /// tracked. Guarded on the row still being
+    /// [`Built`](AssetLockStatus::Built): if a concurrent flow advanced it
+    /// (e.g. a `resume_asset_lock` that re-broadcast in the window between
+    /// the rejected broadcast and this cleanup), the progress is kept
+    /// rather than clobbered. The caller queues the changeset (call sites
+    /// live in `asset_lock/build.rs`, inside the module).
+    pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
+        let mut wm = self.wallet_manager.write().await;
+        let mut cs = AssetLockChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            match info.tracked_asset_locks.get(out_point) {
+                Some(entry) if entry.status == AssetLockStatus::Built => {
+                    info.tracked_asset_locks.remove(out_point);
+                    cs.removed.insert(*out_point);
+                }
+                Some(entry) => tracing::warn!(
+                    outpoint = %out_point,
+                    status = ?entry.status,
+                    "untrack_asset_lock: lock advanced past Built concurrently — leaving it tracked"
+                ),
+                None => {}
+            }
         }
         cs
     }
@@ -55,9 +113,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   ALREADY been queued for persistence before return; the value
     ///   is surfaced for tests / future internal callers that want to
     ///   inspect the diff.
-    /// - `Ok(empty changeset)` — the lock was not tracked (already
-    ///   consumed by a prior call, or never present). Idempotent;
-    ///   nothing queued.
+    /// - `Ok(empty changeset)` — the lock is already marked consumed,
+    ///   or was never tracked. Idempotent; nothing queued.
     /// - `Err(WalletNotFound)` — the wallet id is unknown to the
     ///   manager. Always a programmer error / stale handle.
     ///
@@ -85,15 +142,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .get_wallet_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let mut cs = AssetLockChangeSet::default();
-            if let Some(mut entry) = info.tracked_asset_locks.remove(out_point) {
-                entry.status = AssetLockStatus::Consumed;
-                entry.proof = None; // one-shot — never relevant after consumption
-                cs.asset_locks.insert(*out_point, (&entry).into());
-            } else {
-                tracing::warn!(
-                    outpoint = %out_point,
-                    "consume_asset_lock: outpoint not tracked — already consumed or never present"
-                );
+            match info.tracked_asset_locks.get_mut(out_point) {
+                Some(entry) if entry.status != AssetLockStatus::Consumed => {
+                    entry.status = AssetLockStatus::Consumed;
+                    entry.proof = None; // one-shot — never relevant after consumption
+                    cs.asset_locks.insert(*out_point, (&*entry).into());
+                }
+                Some(_) => {
+                    tracing::debug!(
+                        outpoint = %out_point,
+                        "consume_asset_lock: outpoint is already consumed"
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        outpoint = %out_point,
+                        "consume_asset_lock: outpoint was never tracked"
+                    );
+                }
             }
             cs
         };

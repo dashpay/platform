@@ -18,7 +18,19 @@ use crate::state_transition::batch_transition::document_replace_transition::v0::
 use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
-#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    // System-field discriminator `$action` (consistent with the `$`-prefix
+    // convention for all serde-injected keys). Cannot use `$type` here
+    // because the flattened `DocumentBaseTransition` already exposes
+    // `document_type_name` as `$type` in JSON (the long-standing DPP
+    // document-type field). The variant names (`create`, `replace`,
+    // `delete`, `transfer`, `updatePrice`, `purchase`) read naturally as
+    // actions, matching the existing `PROPERTY_ACTION = "$action"`
+    // constant on the parent batch transition.
+    serde(tag = "$action", rename_all = "camelCase")
+)]
 pub enum DocumentTransition {
     #[display("CreateDocumentTransition({})", "_0")]
     Create(DocumentCreateTransition),
@@ -37,6 +49,121 @@ pub enum DocumentTransition {
 
     #[display("PurchaseDocumentTransition({})", "_0")]
     Purchase(DocumentPurchaseTransition),
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DocumentTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DocumentTransition {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use crate::state_transition::batch_transition::batched_transition::{
+        document_create_transition, document_delete_transition, document_purchase_transition,
+        document_replace_transition, document_transfer_transition,
+        document_update_price_transition,
+    };
+
+    /// Wrapping helper — drives a single `DocumentTransition::*` variant through
+    /// JSON and Value round-trips and asserts the outer wire shape carries
+    /// `"$type": <variantName>` with the inner-leaf fields merged in (internally
+    /// tagged). Each leaf already has its own per-property assertion test, so
+    /// here we only verify the umbrella adds the discriminator without altering
+    /// the rest of the shape.
+    fn assert_umbrella_round_trip(transition: DocumentTransition, expected_type: &str) {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+
+        let json = transition.to_json().expect("to_json");
+        let json_obj = json.as_object().expect("json object");
+        assert_eq!(
+            json_obj.get("$action").and_then(|v| v.as_str()),
+            Some(expected_type),
+            "json `type` discriminator mismatch"
+        );
+        let recovered_json = DocumentTransition::from_json(json).expect("from_json");
+        assert_eq!(transition, recovered_json);
+
+        let value = transition.to_object().expect("to_object");
+        let value_map = value.as_map().expect("value map");
+        let type_kv = value_map
+            .iter()
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "$action"))
+            .expect("type key present");
+        assert_eq!(
+            type_kv.1,
+            platform_value::Value::Text(expected_type.to_string()),
+            "value `type` discriminator mismatch"
+        );
+        let recovered_value = DocumentTransition::from_object(value).expect("from_object");
+        assert_eq!(transition, recovered_value);
+    }
+
+    #[test]
+    fn umbrella_create() {
+        assert_umbrella_round_trip(
+            DocumentTransition::Create(
+                document_create_transition::json_convertible_tests::fixture(),
+            ),
+            "create",
+        );
+    }
+
+    #[test]
+    fn umbrella_replace() {
+        assert_umbrella_round_trip(
+            DocumentTransition::Replace(
+                document_replace_transition::json_convertible_tests::fixture(),
+            ),
+            "replace",
+        );
+    }
+
+    #[test]
+    fn umbrella_delete() {
+        assert_umbrella_round_trip(
+            DocumentTransition::Delete(
+                document_delete_transition::json_convertible_tests::fixture(),
+            ),
+            "delete",
+        );
+    }
+
+    #[test]
+    fn umbrella_transfer() {
+        assert_umbrella_round_trip(
+            DocumentTransition::Transfer(
+                document_transfer_transition::json_convertible_tests::fixture(),
+            ),
+            "transfer",
+        );
+    }
+
+    #[test]
+    fn umbrella_update_price() {
+        assert_umbrella_round_trip(
+            DocumentTransition::UpdatePrice(
+                document_update_price_transition::json_convertible_tests::fixture(),
+            ),
+            "updatePrice",
+        );
+    }
+
+    #[test]
+    fn umbrella_purchase() {
+        assert_umbrella_round_trip(
+            DocumentTransition::Purchase(
+                document_purchase_transition::json_convertible_tests::fixture(),
+            ),
+            "purchase",
+        );
+    }
 }
 
 impl BatchTransitionResolversV0 for DocumentTransition {

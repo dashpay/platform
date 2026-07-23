@@ -6,7 +6,7 @@ import SwiftData
 struct AccountListView: View {
     let wallet: PersistentWallet
     @EnvironmentObject var walletManager: PlatformWalletManager
-    @EnvironmentObject var shieldedService: ShieldedService
+    @EnvironmentObject var platformState: AppState
 
     @Query private var accounts: [PersistentAccount]
 
@@ -24,12 +24,22 @@ struct AccountListView: View {
     /// than by raw `accountType` tag so BIP44 leads, PlatformPayment
     /// sits next, BIP32 follows, CoinJoin after, and every special-
     /// purpose account tails off in tag order.
+    ///
+    /// DashPay friendship accounts (tags 12 receiving / 13 external)
+    /// are hidden here: they're per-contact protocol plumbing, one
+    /// pair per friendship, and would crowd the list as contacts
+    /// grow. Their funds already roll into the wallet's Core
+    /// Balance, and the DashPay tab surfaces the received-from-
+    /// contacts number; the Storage Explorer still lists the raw
+    /// rows for debugging.
     private var orderedAccounts: [PersistentAccount] {
-        accounts.sorted { lhs, rhs in
-            let lhsKey = AccountListView.sortKey(for: lhs)
-            let rhsKey = AccountListView.sortKey(for: rhs)
-            return lhsKey < rhsKey
-        }
+        accounts
+            .filter { $0.accountType != 12 && $0.accountType != 13 }
+            .sorted { lhs, rhs in
+                let lhsKey = AccountListView.sortKey(for: lhs)
+                let rhsKey = AccountListView.sortKey(for: rhs)
+                return lhsKey < rhsKey
+            }
     }
 
     private static func sortKey(
@@ -55,21 +65,36 @@ struct AccountListView: View {
     }
 
     /// Bound shielded accounts to render in their own section
-    /// below the Core / Platform accounts. Empty until
-    /// `ShieldedService.bind` has populated the list — which
-    /// happens once per wallet detail open.
+    /// below the Core / Platform accounts. Empty until this wallet's
+    /// engine binding lands (`rebindWalletScopedServices`).
     private var shieldedAccountsForThisWallet: [UInt32] {
-        // Gate on the service's currently-bound wallet id so navigating
-        // between wallet details doesn't briefly show the *previous*
-        // wallet's shielded accounts before the singleton service
-        // finishes rebinding to this wallet.
-        guard shieldedService.boundWalletId == wallet.walletId else { return [] }
-        return shieldedService.boundAccounts
+        // Engine-bound wallets expose account 0 by default. Resolve
+        // per-wallet from the engine (via `shieldedAddress(for:)`) rather
+        // than the single UI mirror so the section shows for ANY loaded
+        // wallet, not just `firstWallet`.
+        shieldedAddress(for: 0) != nil ? [0] : []
+    }
+
+    /// Bech32m Orchard receive address for `account` on the viewed
+    /// wallet, resolved per-wallet from the engine (rather than the
+    /// single UI mirror's `addressesByAccount`). `nil` until this
+    /// wallet's bind lands or if encoding fails.
+    private func shieldedAddress(for account: UInt32) -> String? {
+        walletManager.shieldedDisplayAddress(
+            walletId: wallet.walletId,
+            account: account,
+            network: platformState.currentNetwork
+        )
     }
 
     var body: some View {
         ZStack {
-            if accounts.isEmpty && shieldedAccountsForThisWallet.isEmpty {
+            // Gate on `orderedAccounts` (the FILTERED list actually rendered),
+            // not the raw `accounts` query: a wallet whose only rows are
+            // DashPay friendship accounts (tags 12/13, hidden here) has a
+            // non-empty `accounts` but an empty `orderedAccounts`, which would
+            // otherwise show an empty Section instead of the empty state.
+            if orderedAccounts.isEmpty && shieldedAccountsForThisWallet.isEmpty {
                 ContentUnavailableView(
                     "No Accounts",
                     systemImage: "folder",
@@ -78,7 +103,7 @@ struct AccountListView: View {
             } else {
                 let balances = walletManager.accountBalances(for: wallet.walletId)
                 List {
-                    if !accounts.isEmpty {
+                    if !orderedAccounts.isEmpty {
                         Section {
                             ForEach(orderedAccounts) { account in
                                 NavigationLink(
@@ -103,7 +128,7 @@ struct AccountListView: View {
                             ForEach(shieldedAccountsForThisWallet, id: \.self) { account in
                                 ShieldedAccountRowView(
                                     accountIndex: account,
-                                    address: shieldedService.addressesByAccount[account]
+                                    address: shieldedAddress(for: account)
                                 )
                             }
                         }

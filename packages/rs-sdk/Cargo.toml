@@ -18,7 +18,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9b98a35644cdea73cc1b21d7c122cb58ae9fafd8", features = [
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", features = [
   "client",
   "sqlite",
 ], optional = true }
@@ -58,7 +58,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 base64 = { version = "0.22.1" }
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "client",
   "validation",
@@ -140,6 +140,7 @@ dashpay-contract = ["dpp/dashpay-contract"]
 wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
+document-history-contract = ["dpp/document-history-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
 

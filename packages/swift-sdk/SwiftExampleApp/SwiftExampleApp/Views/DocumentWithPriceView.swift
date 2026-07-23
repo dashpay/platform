@@ -117,6 +117,21 @@ struct DocumentWithPriceView: View {
                     .foregroundColor(.secondary)
             }
         }
+        .onAppear {
+            // `onChange(of: documentId)` does NOT fire when the id is
+            // established as the binding mounts — e.g. PurchaseDocumentView
+            // seeds `documentIdField` in its own `onAppear` and disables this
+            // view, so relying on onChange alone the price probe would never
+            // run and Purchase would stay gated off forever. Kick the fetch
+            // here so a pre-seeded id loads its price without a user edit.
+            // `.disabled(true)` only blocks hit-testing, not lifecycle events,
+            // so this still fires in the Purchase flow. When the field starts
+            // empty (the editable transition flow) this is a no-op and the
+            // existing onChange path continues to handle typing.
+            if !documentId.isEmpty {
+                handleDocumentIdChange(documentId)
+            }
+        }
     }
 
     private func handleDocumentIdChange(_ newValue: String) {

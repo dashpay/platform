@@ -184,10 +184,7 @@ impl ShieldedActivityEntry {
     /// only perturbs the sort tiebreak, never the `block_height`-first
     /// ordering, so a non-monotonic read is harmless here.
     pub fn now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0)
+        crate::util::now_ms()
     }
 }
 

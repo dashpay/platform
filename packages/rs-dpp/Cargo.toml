@@ -71,7 +71,7 @@ strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
 tracing = { version = "0.1.41" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9b98a35644cdea73cc1b21d7c122cb58ae9fafd8", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }
@@ -262,6 +262,7 @@ all-system_contracts = [
   "wallet-utils-contract",
   "token-history-contract",
   "keywords-contract",
+  "document-history-contract",
 ]
 
 # Individual data contract features
@@ -275,6 +276,7 @@ masternode-rewards-contract = [
 wallet-utils-contract = ["data-contracts", "data-contracts/wallet-utils"]
 token-history-contract = ["data-contracts", "data-contracts/token-history"]
 keywords-contract = ["data-contracts", "data-contracts/keyword-search"]
+document-history-contract = ["data-contracts", "data-contracts/document-history"]
 fixtures-and-mocks = ["all-system_contracts", "platform-value/json"]
 random-public-keys = ["bls-signatures", "ed25519-dalek"]
 random-identities = ["random-public-keys"]

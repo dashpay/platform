@@ -37,6 +37,23 @@ public final class PersistentPublicKey {
     // MARK: - Private Key Reference (optional)
     public var privateKeyKeychainIdentifier: String?
 
+    // MARK: - Derivation breadcrumb (derive-sign-destroy)
+    /// 32-byte wallet id that owns this identity key, denormalized from the
+    /// discovery breadcrumb. Paired with `identityDerivationPath`, it lets the
+    /// signer derive this key on demand from the Keychain-held seed instead of
+    /// reading a stored scalar. `nil` for rows persisted before this column
+    /// existed and for keys with no wallet association; such rows fall back to
+    /// the stored scalar until the backfill populates them. Additive optional
+    /// column => SwiftData lightweight migration.
+    public var walletId: Data?
+
+    /// Full DIP-9 identity-authentication path
+    /// `m/9'/coin'/5'/0'/ECDSA'/identityIndex'/keyIndex'` the signer feeds to
+    /// the mnemonic resolver to derive this key's private scalar at sign time.
+    /// The authoritative breadcrumb; `nil` until written on persist or
+    /// backfilled from the key's Keychain metadata.
+    public var identityDerivationPath: String?
+
     // MARK: - Metadata
     public var identityId: String
     public var createdAt: Date

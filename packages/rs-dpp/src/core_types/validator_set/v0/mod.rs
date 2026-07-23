@@ -33,6 +33,13 @@ pub struct ValidatorSetV0 {
     /// The list of masternodes
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
+    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
+    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
+    // dependency; accepts hex string or byte sequence through any deserializer).
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::serialization::dashcore::bls_pubkey")
+    )]
     pub threshold_public_key: BlsPublicKey<Bls12381G2Impl>,
 }
 

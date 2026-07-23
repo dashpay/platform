@@ -1,6 +1,44 @@
 import Foundation
 import DashSDKFFI
 
+/// Authoritative network outcome for a signed Core transaction.
+///
+/// `accepted` means Dash Core accepted the transaction into its mempool or
+/// already knows it; it does not mean the transaction is mined or
+/// InstantSend-locked. `unknown` must not be retried automatically because the
+/// Core response may have been lost after acceptance.
+public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
+    case accepted(txid: String)
+    case rejected(txid: String, reason: String)
+    case unknown(txid: String, reason: String)
+
+    public var txid: String {
+        switch self {
+        case .accepted(let txid), .rejected(let txid, _), .unknown(let txid, _):
+            return txid
+        }
+    }
+
+    init(
+        resultCode: PlatformWalletResultCode,
+        txid: String,
+        reason: String
+    ) throws {
+        switch resultCode {
+        case .success:
+            self = .accepted(txid: txid)
+        case .errorTransactionBroadcastRejected:
+            self = .rejected(txid: txid, reason: reason)
+        case .errorTransactionBroadcastUnconfirmed:
+            self = .unknown(txid: txid, reason: reason)
+        default:
+            throw PlatformWalletError.unknown(
+                "Cannot create Core broadcast outcome from \(resultCode)"
+            )
+        }
+    }
+}
+
 /// Core wallet for UTXO management, address derivation, and transaction broadcasting.
 ///
 /// Obtained via `ManagedPlatformWallet.coreWallet()`.
@@ -86,103 +124,144 @@ public class ManagedCoreWallet {
         return String(cString: ptr)
     }
 
+    /// Widen the gap limit for an account, generating the addresses the wider
+    /// limit now requires.
+    public func setGapLimit(
+        accountType: CoreTransactionBuilder.AccountType,
+        accountIndex: UInt32,
+        gapLimit: UInt32
+    ) throws {
+        try core_wallet_set_gap_limit(handle, accountType.ffi, accountIndex, gapLimit).check()
+    }
+
     // MARK: - Transactions
 
-    /// Account type for transaction building.
-    public enum AccountType: UInt32 {
-        case bip44 = 0
-        case bip32 = 1
-    }
-
-    /// Build, sign, and broadcast a payment to the given addresses.
+    /// Broadcast a transaction built by `CoreTransactionBuilder.buildSigned`.
     ///
-    /// Returns the serialized signed transaction.
-    public func sendToAddresses(
-        accountType: AccountType = .bip44,
-        accountIndex: UInt32 = 0,
-        recipients: [(address: String, amountDuffs: UInt64)]
-    ) throws -> Data {
-        var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var txLen: UInt = 0
-
-        // Own the C-string storage explicitly. The naive shape
-        // `recipients.map { ($0.address as NSString).utf8String }`
-        // yields pointers into a bridged `NSString` temporary whose
-        // lifetime ends with the `.map` closure — Rust would then
-        // `CStr::from_ptr` against freed (or autorelease-pool-
-        // recycled) memory. `strdup` malloc's a fresh NUL-terminated
-        // copy we own through the FFI call; `defer` frees them after
-        // Rust returns.
-        let cStringStorage: [UnsafeMutablePointer<CChar>?] = recipients.map {
-            strdup($0.address)
-        }
-        defer {
-            for ptr in cStringStorage {
-                if let p = ptr { free(p) }
-            }
-        }
-        // Promote the owned buffers to immutable `UnsafePointer<CChar>?`
-        // for the FFI's `*const *const c_char` signature. No
-        // `assumingMemoryBound` re-interpretation needed — the bytes
-        // are already correctly typed.
-        let cStringPointers: [UnsafePointer<CChar>?] = cStringStorage.map { ptr in
-            ptr.map { UnsafePointer($0) }
-        }
-        let amounts = recipients.map { $0.amountDuffs }
-
-        // Resolver-backed signer owns mnemonic access for the lifetime
-        // of this call. Each Core ECDSA signature happens atomically
-        // inside the resolver vtable (mnemonic fetched, key derived,
-        // digest signed, buffers zeroed) — no priv key leaves Swift.
-        let resolver = MnemonicResolver()
-
-        try cStringPointers.withUnsafeBufferPointer { addrBuf in
-            try amounts.withUnsafeBufferPointer { amountBuf in
-                try withExtendedLifetime(resolver) {
-                    try core_wallet_send_to_addresses(
-                        handle,
-                        accountType.rawValue,
-                        accountIndex,
-                        addrBuf.baseAddress,
-                        amountBuf.baseAddress,
-                        UInt(recipients.count),
-                        resolver.handle,
-                        &txBytesPtr,
-                        &txLen
-                    ).check()
-                }
-            }
-        }
-
-        guard let ptr = txBytesPtr, txLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
-        }
-        defer { core_wallet_free_tx_bytes(ptr, txLen) }
-
-        return Data(bytes: ptr, count: Int(txLen))
-    }
-
-    /// Broadcast a raw signed transaction.
+    /// The funding account captured at build time is forwarded so that a
+    /// definitive broadcast rejection releases the UTXO reservation
+    /// `buildSigned` took, letting an immediate retry reselect those inputs.
     ///
-    /// Returns the transaction ID as a hex string.
-    public func broadcastTransaction(_ txData: Data) throws -> String {
+    /// Returns the authoritative accepted/rejected/unknown network outcome.
+    /// Throws only for local or FFI failures that prevented an outcome from
+    /// being determined.
+    public func broadcastTransactionWithOutcome(
+        _ tx: CoreTransaction
+    ) throws -> CoreTransactionBroadcastOutcome {
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        try txData.withUnsafeBytes { txBuf in
-            try core_wallet_broadcast_transaction(
-                handle,
-                txBuf.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                UInt(txData.count),
-                &txidPtr
-            ).check()
-        }
-
-        guard let ptr = txidPtr else {
-            throw PlatformWalletError.nullPointer(
-                "core_wallet_broadcast_transaction returned a NULL txid pointer"
+        let ffiResult = withUnsafePointer(to: tx.ffi) { txPtr in
+            core_wallet_broadcast_transaction(
+                handle, txPtr, tx.accountType.ffi, tx.accountIndex, &txidPtr
             )
         }
-        defer { core_wallet_free_address(ptr) } // same free for C strings
+        let result = PlatformWalletResult(ffiResult)
 
-        return String(cString: ptr)
+        defer {
+            if let txidPtr {
+                platform_wallet_string_free(txidPtr)
+            }
+        }
+
+        switch result.code {
+        case .success, .errorTransactionBroadcastRejected,
+             .errorTransactionBroadcastUnconfirmed:
+            guard let txidPtr else {
+                throw PlatformWalletError.nullPointer(
+                    "core_wallet_broadcast_transaction returned a NULL txid pointer for \(result.code)"
+                )
+            }
+            let txid = String(cString: txidPtr)
+            let reason = result.message ?? "<no detail from Rust>"
+
+            return try CoreTransactionBroadcastOutcome(
+                resultCode: result.code,
+                txid: txid,
+                reason: reason
+            )
+
+        default:
+            try result.throwIfError()
+            throw PlatformWalletError.unknown(
+                "core_wallet_broadcast_transaction returned an unexpected success state"
+            )
+        }
+    }
+
+    /// Compatibility wrapper preserving the former throwing API.
+    ///
+    /// New code should inspect `broadcastTransactionWithOutcome` so an unknown
+    /// outcome cannot be mistaken for a definitive rejection.
+    @available(*, deprecated, message: "Use broadcastTransactionWithOutcome(_:) and handle accepted/rejected/unknown")
+    public func broadcastTransaction(_ tx: CoreTransaction) throws -> String {
+        switch try broadcastTransactionWithOutcome(tx) {
+        case .accepted(let txid):
+            return txid
+        case .rejected(_, let reason):
+            throw PlatformWalletError.transactionBroadcastRejected(reason)
+        case .unknown(_, let reason):
+            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+        }
+    }
+
+    /// Consume and broadcast an atomically finalized transaction, returning
+    /// the authoritative accepted/rejected/unknown network outcome.
+    public func broadcastTransactionWithOutcome(
+        _ tx: FinalizedCoreTransaction
+    ) throws -> CoreTransactionBroadcastOutcome {
+        let transactionHandle = try tx.takeForBroadcast()
+        var txidPtr: UnsafeMutablePointer<CChar>? = nil
+        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction_v2(
+            handle,
+            transactionHandle,
+            &txidPtr
+        ))
+
+        defer {
+            if let txidPtr {
+                core_wallet_free_address(txidPtr)
+            }
+        }
+
+        switch result.code {
+        case .success, .errorTransactionBroadcastRejected,
+             .errorTransactionBroadcastUnconfirmed:
+            guard let txidPtr else {
+                throw PlatformWalletError.nullPointer(
+                    "core_wallet_broadcast_signed_transaction_v2 returned a NULL txid pointer for \(result.code)"
+                )
+            }
+            return try CoreTransactionBroadcastOutcome(
+                resultCode: result.code,
+                txid: String(cString: txidPtr),
+                reason: result.message ?? "<no detail from Rust>"
+            )
+
+        default:
+            try result.throwIfError()
+            throw PlatformWalletError.unknown(
+                "core_wallet_broadcast_signed_transaction_v2 returned an unexpected success state"
+            )
+        }
+    }
+
+    /// Compatibility wrapper preserving the former throwing API.
+    @available(*, deprecated, message: "Use broadcastTransactionWithOutcome(_:) and handle accepted/rejected/unknown")
+    public func broadcastTransaction(_ tx: FinalizedCoreTransaction) throws -> String {
+        switch try broadcastTransactionWithOutcome(tx) {
+        case .accepted(let txid):
+            return txid
+        case .rejected(_, let reason):
+            throw PlatformWalletError.transactionBroadcastRejected(reason)
+        case .unknown(_, let reason):
+            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+        }
+    }
+
+    /// Consume without sending and release its reservation immediately.
+    public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
+        try core_wallet_abandon_signed_transaction_v2(
+            handle,
+            tx.takeForAbandon()
+        ).check()
     }
 }

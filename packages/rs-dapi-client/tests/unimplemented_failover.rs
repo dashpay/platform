@@ -4,108 +4,39 @@
 //! retry the request on another address. If every node is unimplemented, the
 //! error must still surface instead of retrying forever.
 
+mod common;
+
 use std::sync::{Arc, Mutex};
 
-use dapi_grpc::mock::Mockable;
+use common::{FakeResponse, ScriptedRequest};
 use dapi_grpc::tonic::{Code, Status};
-use rs_dapi_client::transport::{
-    AppliedRequestSettings, BoxFuture, TransportClient, TransportError, TransportRequest,
-};
+use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{
-    Address, AddressList, CanRetry, ConnectionPool, DapiClient, DapiClientError,
-    DapiRequestExecutor, RequestSettings, Uri,
+    Address, AddressList, CanRetry, DapiClient, DapiClientError, DapiRequestExecutor,
+    RequestSettings, Uri,
 };
-
-/// Transport client that only remembers which node it was created for.
-struct FakeClient {
-    uri: Uri,
-}
-
-impl TransportClient for FakeClient {
-    fn with_uri(uri: Uri, _pool: &ConnectionPool) -> Result<Self, TransportError> {
-        Ok(Self { uri })
-    }
-
-    fn with_uri_and_settings(
-        uri: Uri,
-        _settings: &AppliedRequestSettings,
-        _pool: &ConnectionPool,
-    ) -> Result<Self, TransportError> {
-        Ok(Self { uri })
-    }
-}
-
-#[derive(Debug)]
-struct FakeResponse;
-
-impl Mockable for FakeResponse {}
-
-#[derive(Debug, Default)]
-struct State {
-    /// How many more attempts should be answered with UNIMPLEMENTED,
-    /// simulating nodes that run an older build.
-    unimplemented_responses_left: usize,
-    /// Nodes that answered UNIMPLEMENTED, in order.
-    unimplemented_uris: Vec<Uri>,
-}
-
-/// Request that answers UNIMPLEMENTED for the first N attempts (each failing
-/// node gets banned by the executor, so each attempt hits a different node)
-/// and succeeds afterwards.
-#[derive(Clone, Debug)]
-struct MixedVersionRequest {
-    state: Arc<Mutex<State>>,
-}
-
-impl MixedVersionRequest {
-    fn with_unimplemented_responses(count: usize) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(State {
-                unimplemented_responses_left: count,
-                unimplemented_uris: Vec::new(),
-            })),
-        }
-    }
-}
-
-impl Mockable for MixedVersionRequest {}
-
-impl TransportRequest for MixedVersionRequest {
-    type Client = FakeClient;
-    type Response = FakeResponse;
-
-    const SETTINGS_OVERRIDES: RequestSettings = RequestSettings::default();
-
-    fn method_name(&self) -> &'static str {
-        "fake_shielded_method"
-    }
-
-    fn execute_transport<'c>(
-        self,
-        client: &'c mut Self::Client,
-        _settings: &AppliedRequestSettings,
-    ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        let result = {
-            let mut state = self.state.lock().unwrap();
-            if state.unimplemented_responses_left > 0 {
-                state.unimplemented_responses_left -= 1;
-                state.unimplemented_uris.push(client.uri.clone());
-                Err(TransportError::Grpc(Status::unimplemented(
-                    "Operation is not implemented or not supported",
-                )))
-            } else {
-                Ok(FakeResponse)
-            }
-        };
-
-        Box::pin(async move { result })
-    }
-}
 
 #[tokio::test]
 async fn unimplemented_node_is_banned_and_request_retried_on_another() {
-    // One of the two nodes still runs an older build without the method.
-    let request = MixedVersionRequest::with_unimplemented_responses(1);
+    // The closure captures its own state: exactly one UNIMPLEMENTED response,
+    // then success.  `error_uris` records which node answered UNIMPLEMENTED.
+    let error_uris: Arc<Mutex<Vec<Uri>>> = Default::default();
+    let error_uris_c = error_uris.clone();
+
+    let request = ScriptedRequest::new(move |uri| {
+        let mut uris = error_uris_c.lock().unwrap();
+        if uris.is_empty() {
+            // First call: simulate an old node that doesn't have the method yet.
+            uris.push(uri);
+            Err(TransportError::Grpc(Status::unimplemented(
+                "Operation is not implemented or not supported",
+            )))
+        } else {
+            // Subsequent calls: upgraded node responds successfully.
+            Ok(FakeResponse)
+        }
+    });
+
     let address_list: AddressList = "http://127.0.0.1:10001,http://127.0.0.1:10002"
         .parse()
         .expect("valid address list");
@@ -117,13 +48,13 @@ async fn unimplemented_node_is_banned_and_request_retried_on_another() {
         .expect("request should succeed on the upgraded node");
 
     let old_node_uri = {
-        let state = request.state.lock().unwrap();
+        let uris = error_uris.lock().unwrap();
         assert_eq!(
-            state.unimplemented_uris.len(),
+            uris.len(),
             1,
             "exactly one node should have answered UNIMPLEMENTED"
         );
-        state.unimplemented_uris[0].clone()
+        uris[0].clone()
     };
 
     assert_eq!(response.retries, 1);
@@ -143,7 +74,12 @@ async fn unimplemented_node_is_banned_and_request_retried_on_another() {
 #[tokio::test]
 async fn unimplemented_on_all_nodes_still_surfaces_error() {
     // No node implements the method: every attempt answers UNIMPLEMENTED.
-    let request = MixedVersionRequest::with_unimplemented_responses(usize::MAX);
+    // `hit_uris` counts total attempts (all of which are errors here).
+    let request = ScriptedRequest::new(|_uri| {
+        Err(TransportError::Grpc(Status::unimplemented(
+            "Operation is not implemented or not supported",
+        )))
+    });
     let address_list: AddressList = "http://127.0.0.1:10003,http://127.0.0.1:10004"
         .parse()
         .expect("valid address list");
@@ -155,7 +91,7 @@ async fn unimplemented_on_all_nodes_still_surfaces_error() {
         .expect_err("request must fail when no node implements the method");
 
     // Both nodes were tried once each before the address list was exhausted.
-    assert_eq!(request.state.lock().unwrap().unimplemented_uris.len(), 2);
+    assert_eq!(request.hit_uris.lock().unwrap().len(), 2);
     assert!(
         !error.can_retry(),
         "exhausted-addresses error must not be retried by callers"
@@ -186,7 +122,11 @@ async fn unimplemented_surfaces_retryable_when_pool_exceeds_retry_budget() {
 
     // Three live nodes, retry budget of 1 → at most retries + 1 = 2 attempts, so
     // the retry cap trips before all three addresses are banned.
-    let request = MixedVersionRequest::with_unimplemented_responses(usize::MAX);
+    let request = ScriptedRequest::new(|_uri| {
+        Err(TransportError::Grpc(Status::unimplemented(
+            "Operation is not implemented or not supported",
+        )))
+    });
     let address_list: AddressList =
         "http://127.0.0.1:10005,http://127.0.0.1:10006,http://127.0.0.1:10007"
             .parse()
@@ -201,7 +141,7 @@ async fn unimplemented_surfaces_retryable_when_pool_exceeds_retry_budget() {
     // retries + 1 = 2 nodes were tried (and banned) before the retry cap tripped;
     // the third address is never reached.
     assert_eq!(
-        request.state.lock().unwrap().unimplemented_uris.len(),
+        request.hit_uris.lock().unwrap().len(),
         2,
         "retry budget (1) caps attempts at 2 before the 3-node pool is exhausted"
     );

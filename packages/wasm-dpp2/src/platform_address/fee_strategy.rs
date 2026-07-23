@@ -15,8 +15,8 @@ const FEE_STRATEGY_STEP_TS_TYPES: &str = r#"
  * `index` selects the input/output position.
  */
 export type FeeStrategyStepObject =
-    | { type: "deductFromInput"; index: number }
-    | { type: "reduceOutput"; index: number };
+    | { $type: "deductFromInput"; index: number }
+    | { $type: "reduceOutput"; index: number };
 
 /**
  * Fee strategy step in JSON form (output of a transition's `toJSON()`).
@@ -26,8 +26,8 @@ export type FeeStrategyStepObject =
  * human-readable formats.
  */
 export type FeeStrategyStepJSON =
-    | { type: "deductFromInput"; index: number }
-    | { type: "reduceOutput"; index: number };
+    | { $type: "deductFromInput"; index: number }
+    | { $type: "reduceOutput"; index: number };
 "#;
 
 /// Defines how fees are paid in address-based state transitions.
@@ -36,7 +36,7 @@ export type FeeStrategyStepJSON =
 /// should be reduced to cover the transaction fee.
 ///
 /// `#[serde(transparent)]` delegates to the inner `AddressFundsFeeStrategyStep`'s
-/// custom serde, which produces the `{ type, index }` adjacent shape used by
+/// custom serde, which produces the `{ $type, index }` adjacent shape used by
 /// every wasm-sdk consumer that round-trips a `Vec<FeeStrategyStepWasm>`.
 #[wasm_bindgen(js_name = "FeeStrategyStep")]
 #[derive(Clone, Debug, Serialize, Deserialize)]

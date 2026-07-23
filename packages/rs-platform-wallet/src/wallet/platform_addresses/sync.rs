@@ -41,13 +41,22 @@ pub(crate) fn compute_address_balance_diff(
     before: &BTreeMap<PlatformAddressTag, AddressFunds>,
     found: &BTreeMap<(PlatformAddressTag, PlatformP2PKHAddress), AddressFunds>,
     absent: &BTreeSet<(PlatformAddressTag, PlatformP2PKHAddress)>,
+    absent_as_of_height: u64,
 ) -> Vec<PlatformAddressBalanceEntry> {
     let mut entries = Vec::new();
 
     // 1. Found-and-changed.
     for (&(tag, p2pkh), &funds) in found {
-        if before.get(&tag) == Some(&funds) {
-            continue;
+        if let Some(existing) = before.get(&tag) {
+            // Skip when unchanged, or when the scanned pin is OLDER than
+            // the committed pin — a stale-but-valid proof from a lagging
+            // node must not clobber a row a fresher reconcile committed
+            // (mirrors `commit_reconciliation`'s height-freshness rule,
+            // and `sync_finished`'s scratch merge applies the same guard
+            // so memory and disk stay in agreement).
+            if existing == &funds || existing.as_of_height > funds.as_of_height {
+                continue;
+            }
         }
         let (wallet_id, account_index, address_index) = tag;
         entries.push(PlatformAddressBalanceEntry {
@@ -70,10 +79,17 @@ pub(crate) fn compute_address_balance_diff(
         // Only emit when we actually had non-default cached funds for the
         // address. An address that was already empty (or never cached)
         // doesn't need a zeroing write.
-        let had_funds = before
-            .get(&tag)
-            .is_some_and(|f| f.balance != 0 || f.nonce != 0);
-        if !had_funds {
+        let Some(existing) = before.get(&tag) else {
+            continue;
+        };
+        if existing.balance == 0 && existing.nonce == 0 {
+            continue;
+        }
+        // A stale absence proof must not zero a row pinned by a fresher
+        // proof or transition reconcile: on a lagging node an address
+        // funded seconds ago legitimately does not exist yet at the scan
+        // checkpoint, but the committed row is newer truth.
+        if existing.as_of_height > absent_as_of_height {
             continue;
         }
         let (wallet_id, account_index, address_index) = tag;
@@ -82,10 +98,14 @@ pub(crate) fn compute_address_balance_diff(
             account_index,
             address_index,
             address: p2pkh,
-            // Absent in state ⇒ no balance and no nonce. Reset both.
+            // Absent in state ⇒ no balance and no nonce. Reset both. The
+            // absence was proven by the tree scan, so the zero is pinned
+            // at the scan's checkpoint height (`absent_as_of_height`) —
+            // a later re-credit carries a higher pin and wins.
             funds: AddressFunds {
                 balance: 0,
                 nonce: 0,
+                as_of_height: absent_as_of_height,
             },
         });
     }
@@ -139,7 +159,14 @@ impl PlatformAddressWallet {
         // proven absent this pass that previously carried cached funds.
         // The latter is what zeroes a stale balance after a chain reset.
         let mut cs = PlatformAddressChangeSet {
-            addresses: compute_address_balance_diff(&before, &result.found, &result.absent),
+            addresses: compute_address_balance_diff(
+                &before,
+                &result.found,
+                &result.absent,
+                // Absence is only ever proven by the trunk/branch scan,
+                // so its checkpoint height pins the zeroing entries.
+                result.checkpoint_height,
+            ),
             ..Default::default()
         };
         if result.new_sync_height > 0 {
@@ -153,13 +180,19 @@ impl PlatformAddressWallet {
         }
 
         provider.update_sync_state(&result);
-        drop(guard);
 
+        // Persist BEFORE releasing the provider lock. The reconciliation
+        // seam (`reconcile_address_infos`) serializes on this lock and
+        // persists its proof-attested entries while holding it too, so
+        // both writers' stores are totally ordered by the lock: whichever
+        // commits its seed later also lands on disk later, and an older
+        // diff can never overwrite a fresher row.
         if !cs.is_empty() {
             if let Err(e) = self.persister.store(cs.into()) {
                 tracing::error!("Failed to persist address sync changeset: {}", e);
             }
         }
+        drop(guard);
 
         Ok(result)
     }
@@ -180,7 +213,11 @@ mod tests {
     }
 
     fn funds(balance: u64, nonce: u32) -> AddressFunds {
-        AddressFunds { balance, nonce }
+        AddressFunds {
+            balance,
+            nonce,
+            as_of_height: 0,
+        }
     }
 
     /// An address that previously carried a cached balance and is proven
@@ -196,7 +233,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
 
         assert_eq!(entries.len(), 1);
         let entry = &entries[0];
@@ -218,7 +255,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert!(entries.is_empty());
     }
 
@@ -235,7 +272,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].funds.balance, 0);
         assert_eq!(entries[0].funds.nonce, 0);
@@ -252,7 +289,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert!(entries.is_empty());
     }
 
@@ -270,7 +307,7 @@ mod tests {
 
         let absent = BTreeSet::new();
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].address_index, 0);
         assert_eq!(entries[0].address, p2pkh(10));
@@ -294,7 +331,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(0), p2pkh(1)));
 
-        let entries = compute_address_balance_diff(&before, &found, &absent);
+        let entries = compute_address_balance_diff(&before, &found, &absent, 0);
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].address, p2pkh(1));
@@ -316,7 +353,7 @@ mod tests {
         let mut absent = BTreeSet::new();
         absent.insert((tag(1), p2pkh(20)));
 
-        let mut entries = compute_address_balance_diff(&before, &found, &absent);
+        let mut entries = compute_address_balance_diff(&before, &found, &absent, 0);
         entries.sort_by_key(|e| e.address_index);
 
         assert_eq!(entries.len(), 2);
@@ -329,5 +366,83 @@ mod tests {
         assert_eq!(entries[1].address_index, 1);
         assert_eq!(entries[1].address, p2pkh(20));
         assert_eq!(entries[1].funds, funds(0, 0));
+    }
+
+    /// A stale-but-valid scan result (older pin) must not be emitted over
+    /// a row a fresher reconcile committed: on a lagging node the scanned
+    /// absolute predates the ST-attested balance, and persisting it would
+    /// regress the durable row until the next pass self-heals.
+    #[test]
+    fn found_with_older_pin_is_not_emitted() {
+        let mut before = BTreeMap::new();
+        // Committed by the reconcile seam at the funding proof height.
+        before.insert(
+            tag(0),
+            AddressFunds {
+                balance: 9_985_071_720,
+                nonce: 0,
+                as_of_height: 379_731,
+            },
+        );
+        let mut found = BTreeMap::new();
+        // Scan against a lagging node: pre-funding value at an older pin.
+        found.insert(
+            (tag(0), p2pkh(0)),
+            AddressFunds {
+                balance: 0,
+                nonce: 0,
+                as_of_height: 379_728,
+            },
+        );
+        let entries = compute_address_balance_diff(&before, &found, &BTreeSet::new(), 379_728);
+        assert!(
+            entries.is_empty(),
+            "a stale-pinned scan absolute must not clobber a fresher row"
+        );
+
+        // A genuinely newer scan (same or later pin) still emits.
+        found.insert(
+            (tag(0), p2pkh(0)),
+            AddressFunds {
+                balance: 5,
+                nonce: 1,
+                as_of_height: 379_740,
+            },
+        );
+        let entries = compute_address_balance_diff(&before, &found, &BTreeSet::new(), 379_740);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].funds.balance, 5);
+    }
+
+    /// A stale absence proof (scan checkpoint below the committed pin)
+    /// must not zero a row a fresher reconcile committed — on a lagging
+    /// node an address funded seconds ago legitimately does not exist at
+    /// the scan checkpoint.
+    #[test]
+    fn absent_with_older_checkpoint_is_not_emitted() {
+        let mut before = BTreeMap::new();
+        before.insert(
+            tag(0),
+            AddressFunds {
+                balance: 9_985_071_720,
+                nonce: 0,
+                as_of_height: 379_731,
+            },
+        );
+        let mut absent = BTreeSet::new();
+        absent.insert((tag(0), p2pkh(0)));
+
+        // Lagging checkpoint: no zeroing entry.
+        let entries = compute_address_balance_diff(&before, &BTreeMap::new(), &absent, 379_728);
+        assert!(
+            entries.is_empty(),
+            "a stale absence proof must not zero a fresher-pinned row"
+        );
+
+        // A checkpoint at/after the pin still zeroes (a real drain).
+        let entries = compute_address_balance_diff(&before, &BTreeMap::new(), &absent, 379_731);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].funds.balance, 0);
+        assert_eq!(entries[0].funds.as_of_height, 379_731);
     }
 }

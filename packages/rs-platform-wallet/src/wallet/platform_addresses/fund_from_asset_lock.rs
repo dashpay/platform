@@ -25,10 +25,9 @@
 //!    tracked outpoint so the row is marked `Consumed` (terminal)
 //!    and dropped from the in-memory tracked-lock map.
 
-use crate::changeset::Merge;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding, CL_FALLBACK_TIMEOUT,
+    ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
 use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
@@ -87,12 +86,17 @@ impl PlatformAddressWallet {
     ///
     /// # Latency budget
     ///
-    /// Worst-case wall time stacks at ~690s on the IS-rejection
-    /// branch:
+    /// There is intentionally **no ceiling** on this call: a broadcast
+    /// asset lock is committed on-chain, and its ChainLock is
+    /// deterministic finality that will eventually arrive, so the flow
+    /// waits for finality however long it takes rather than reporting a
+    /// spurious failure. The components are:
     /// - 300s IS-wait inside the resolver's
     ///   `create_funded_asset_lock_proof` (`AssetLockManager`'s
-    ///   fixed window before falling back to ChainLock).
-    /// - 180s CL fallback (`CL_FALLBACK_TIMEOUT`) per `upgrade_to_chain_lock_proof` call.
+    ///   InstantSend-preference window before falling back to ChainLock).
+    /// - **Unbounded** ChainLock fallback
+    ///   (`upgrade_to_chain_lock_proof(None)`) — waits for the ChainLock
+    ///   indefinitely (testnet ChainLocks can take ~15min).
     /// - 210s CL-height retry budget (`CL_HEIGHT_RETRY_BUDGET`) per
     ///   `submit_with_cl_height_retry` wrapper.
     /// - Up to two passes through the submit wrapper on the
@@ -101,7 +105,10 @@ impl PlatformAddressWallet {
     ///
     /// Happy-path wall time on a healthy testnet is single-digit
     /// seconds (IS-lock typically arrives within 3s of broadcast,
-    /// CL-height retry never fires).
+    /// CL-height retry never fires). The unbounded wait only bites when
+    /// InstantSend never propagates and the caller must wait out the
+    /// slower ChainLock. Callers run this off the main thread and never
+    /// cancel it (see the Cancellation note below).
     ///
     /// # Cancellation
     ///
@@ -140,7 +147,7 @@ impl PlatformAddressWallet {
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx.
@@ -174,16 +181,13 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Re-derive the credit-output path. The lock is now
                 // CL-attached; `resume_asset_lock` short-circuits to
                 // the existing-proof branch and just hands the path
                 // back.
-                let (_, path) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
-                    .await?;
+                let (_, path) = self.asset_locks.resume_asset_lock(&out_point, None).await?;
                 ResolvedFunding {
                     proof: chain_proof,
                     path,
@@ -198,7 +202,9 @@ impl PlatformAddressWallet {
         // cache, and IS-lock rejection triggers an IS→CL upgrade on
         // the same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
-        let address_infos = match submit_with_cl_height_retry(settings, |s| {
+        // `proof_height` is the broadcast proof's committed block — the
+        // height pin for the reconciled absolutes below.
+        let (address_infos, proof_height) = match submit_with_cl_height_retry(settings, |s| {
             addresses.top_up_with_signers(
                 &self.sdk,
                 proof.clone(),
@@ -221,7 +227,7 @@ impl PlatformAddressWallet {
                 );
                 let chain_proof = self
                     .asset_locks
-                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .upgrade_to_chain_lock_proof(&out_point, None)
                     .await?;
                 // Advance the tracked status from `InstantSendLocked`
                 // to `ChainLocked` with the upgraded proof attached
@@ -273,41 +279,66 @@ impl PlatformAddressWallet {
         // or all recipients.
         validate_address_infos_complete(&addresses, &address_infos)?;
 
-        let cs = self
-            .write_address_balances_changeset(platform_account_index, &address_infos)
-            .await;
-
-        // Mirror `transfer.rs` / `sync.rs`: push the post-submit
-        // balances through the persister so any external store stays
-        // in sync with the in-memory account state we just updated.
-        // Without this, persisted rows for these recipients stay
-        // frozen at pre-top-up values until the next BLAST sync
-        // overwrites them. On the next process start before that
-        // sync, `initialize_from_persisted` would seed
+        // The shared seam applies the proof-attested balances to the
+        // managed accounts, updates the provider's sync seed, and
+        // persists — without the persist, rows for these recipients
+        // stay frozen at pre-top-up values until the next BLAST sync;
+        // on a process restart before that sync,
+        // `initialize_from_persisted` would seed
         // `account.address_credit_balance` from the stale rows while
-        // the asset-lock record is already `Consumed` — leaving
+        // the asset-lock record is already `Consumed`, leaving
         // `auto_select_inputs` to under-budget and produce
         // protocol-level rejections until a sync repairs them.
         //
-        // The persist MUST happen before `consume_asset_lock` so
-        // we never have a Consumed lock paired with a stale balance
-        // row on disk.
+        // The seam persists before returning, and the persist MUST
+        // happen before `consume_asset_lock` so we never have a
+        // Consumed lock paired with a stale balance row on disk.
+        // Persistence errors are logged inside the seam rather than
+        // propagated: Platform already accepted the transition, and a
+        // persistence hiccup shouldn't mask that.
         //
-        // Log-on-error rather than propagate: Platform already
-        // accepted the transition, and a persistence hiccup shouldn't
-        // mask that. A subsequent sync reconciles.
-        if !cs.is_empty() {
-            if let Err(e) = self.persister.store(cs.clone().into()) {
-                tracing::error!(
-                    error = %e,
-                    "Failed to persist fund-from-asset-lock changeset; \
-                     in-memory balances are updated but durable rows are stale \
-                     until the next BLAST sync"
-                );
-            }
-        }
+        // ADDR-09: every recipient of an asset-lock top-up is credited via
+        // an on-chain `AddBalanceToAddress` DELTA at exactly this proof's
+        // block height. The committed absolutes carry `proof_height` as
+        // their height pin (`AddressFunds::as_of_height`), so the sync's
+        // apply loops drop that delta (and any older one) instead of
+        // re-applying it on top → no `X + X = 2X` double-count, on
+        // incremental AND full-scan passes alike.
+        //
+        // Use the persistence-reporting variant: marking the lock
+        // `Consumed` below is irreversible, so it MUST be gated on the
+        // reconciled balances actually reaching disk. `persisted` is
+        // false ONLY when the in-memory balances were updated but the
+        // durable write failed — exactly the case where a Consumed lock
+        // would pair with stale rows and under-budget the next spend
+        // after a restart.
+        let (cs, persisted) = self
+            .reconcile_address_infos_with_persistence(
+                &address_infos,
+                proof_height,
+                "fund from asset lock",
+            )
+            .await;
 
         if let Some(out_point) = tracked_out_point {
+            if !persisted {
+                // The proof-attested balances were applied in memory but
+                // did not reach disk. Leave the lock non-Consumed: it
+                // stays in the Resumable Funding list, and a user Resume
+                // gets Platform's deterministic "lock already consumed"
+                // rejection — the same benign recovery path as a failed
+                // consume below — while the next platform-address sync
+                // repairs the stale rows. Consuming here would strand the
+                // lock as Consumed over durable balances that under-report
+                // the credit.
+                tracing::error!(
+                    outpoint = %out_point,
+                    "skipping consume_asset_lock: the reconciled balance changeset \
+                     was not durably stored; the lock stays non-Consumed (Resumable) \
+                     rather than pairing a Consumed lock with stale balance rows on disk"
+                );
+                return Ok(cs);
+            }
             // Platform DID accept the top-up — propagating an Err
             // here would misreport the protocol outcome, since the
             // caller's recipient(s) already have credits attested
@@ -347,97 +378,6 @@ impl PlatformAddressWallet {
         }
 
         Ok(cs)
-    }
-
-    /// Apply proof-attested credit balances to the
-    /// `ManagedPlatformAccount` for each recipient address, emitting
-    /// a `PlatformAddressChangeSet` describing the new balances.
-    async fn write_address_balances_changeset(
-        &self,
-        platform_account_index: u32,
-        address_infos: &AddressInfos,
-    ) -> PlatformAddressChangeSet {
-        let key_source = {
-            let guard = self.provider.read().await;
-            guard
-                .as_ref()
-                .and_then(|p| p.key_source(&self.wallet_id, platform_account_index))
-        };
-
-        let mut wm = self.wallet_manager.write().await;
-        let mut cs = PlatformAddressChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            if let Some(account) = info
-                .core_wallet
-                .platform_payment_managed_account_at_index_mut(platform_account_index)
-            {
-                for (addr, maybe_info) in address_infos.iter() {
-                    let PlatformAddress::P2pkh(hash) = *addr else {
-                        continue;
-                    };
-                    let p2pkh = PlatformP2PKHAddress::new(hash);
-                    // Platform's proof must carry an `AddressInfo`
-                    // for every recipient we asked to fund. A `None`
-                    // is a protocol-contract violation, not a
-                    // zero-credit funding — skip and log so a missed
-                    // recipient is visible to operators instead of
-                    // silently writing a "credited 0" row.
-                    let Some(ai) = maybe_info else {
-                        tracing::error!(
-                            address = %p2pkh,
-                            "Platform proof returned None AddressInfo for a recipient that should have been credited; skipping balance write to avoid recording 'credited 0'"
-                        );
-                        continue;
-                    };
-                    let funds = dash_sdk::platform::address_sync::AddressFunds {
-                        balance: ai.balance,
-                        nonce: ai.nonce,
-                    };
-                    // The recipient must exist in the account's
-                    // address pool — `validate_recipient_addresses`
-                    // verified that upstream. A miss here would
-                    // mean the pool was mutated between pre-flight
-                    // and now; skip and log rather than mis-attribute
-                    // credits to whichever address lives at slot 0.
-                    //
-                    // Look this up BEFORE mutating the in-memory
-                    // balance: if we mutated first and then `continue`d
-                    // on a pool miss, the changeset would be missing
-                    // this recipient's entry while the in-memory state
-                    // already carried the new balance — defeating the
-                    // persist-before-consume invariant the caller
-                    // relies on (the persisted row would stay stale
-                    // while the asset lock is consumed regardless).
-                    let Some(address_index) =
-                        account
-                            .addresses
-                            .addresses
-                            .iter()
-                            .find_map(|(&idx, ainfo)| {
-                                PlatformP2PKHAddress::from_address(&ainfo.address)
-                                    .ok()
-                                    .filter(|found| *found == p2pkh)
-                                    .map(|_| idx)
-                            })
-                    else {
-                        tracing::error!(
-                            address = %p2pkh,
-                            "Recipient address not found in account address pool; skipping balance write to avoid mis-attributing credits to slot 0"
-                        );
-                        continue;
-                    };
-                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
-                    cs.addresses.push(crate::PlatformAddressBalanceEntry {
-                        wallet_id: self.wallet_id,
-                        account_index: platform_account_index,
-                        address_index,
-                        address: p2pkh,
-                        funds,
-                    });
-                }
-            }
-        }
-        cs
     }
 }
 

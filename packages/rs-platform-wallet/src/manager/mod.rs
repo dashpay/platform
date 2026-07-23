@@ -1,8 +1,10 @@
 //! Multi-wallet manager with SPV coordination.
 
 pub mod accessors;
+pub mod dashpay_sync;
 pub mod identity_sync;
 mod load;
+mod loop_cancel;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
@@ -18,6 +20,7 @@ use key_wallet_manager::WalletManager;
 
 use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
+use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 #[cfg(feature = "shielded")]
@@ -25,6 +28,7 @@ use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
 use crate::wallet::core::BalanceUpdateHandler;
+use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -52,6 +56,17 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// wallet. Not auto-started — call `start` after wallets are
     /// registered. See [`IdentitySyncManager`].
     pub(super) identity_sync_manager: Arc<IdentitySyncManager<P>>,
+    /// Periodic DashPay sync coordinator. Drives `dashpay_sync()`
+    /// (contact requests + profiles) on **every** registered wallet
+    /// each sweep — wallet-driven, not token-registry-driven, so
+    /// DashPay-only identities are never skipped. Shares the same
+    /// `wallets` map as [`PlatformAddressSyncManager`]. Not
+    /// auto-started — call `start` after wallets are registered. See
+    /// [`DashPaySyncManager`].
+    pub(super) dashpay_sync_manager: Arc<DashPaySyncManager>,
+    /// Tracks asynchronous payment hooks so manager shutdown can close
+    /// admission and drain every task before host callback contexts are freed.
+    pub(super) dashpay_payment_handler: Arc<DashPayPaymentHandler>,
     /// Periodic shielded (Orchard) note sync coordinator (spends are
     /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
@@ -87,6 +102,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// is torn down.
     pub(super) event_adapter_cancel: CancellationToken,
     pub(super) event_adapter_join: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
+    /// (and never cleared) by the wallet-event adapter the first time it
+    /// freezes a durable watermark after a persistence `store()` rejection
+    /// or a dropped-event broadcast lag. Poll via
+    /// [`Self::sync_fault_detected`] to surface a "verification failed /
+    /// rescan pending" state rather than re-freezing silently on the next
+    /// launch.
+    pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -100,9 +123,22 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(sdk.network)));
+        // Subscribe to the wallet-event broadcast BEFORE the manager is
+        // wrapped in the shared `Arc<RwLock>` and handed to any producer,
+        // so no event emitted during startup is lost without a `Lagged`
+        // marker (a `broadcast::Receiver` only sees messages sent after its
+        // `subscribe()` — see `run_wallet_event_adapter`'s
+        // subscribe-before-publish note). The receiver is created here,
+        // synchronously, and moved into the adapter task below.
+        let wallet_manager_inner = WalletManager::new(sdk.network);
+        let event_receiver = wallet_manager_inner.subscribe_events();
+        let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
+
+        // Host-visible hard sync-fault latch (dashpay/platform#4069). The
+        // adapter raises it the first time it freezes a durable watermark.
+        let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
@@ -111,6 +147,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let event_adapter_join = spawn_wallet_event_adapter(
             Arc::clone(&wallet_manager),
             Arc::clone(&persister),
+            event_receiver,
+            Arc::clone(&sync_fault),
             event_adapter_cancel.clone(),
         );
 
@@ -122,10 +160,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // with SPV's write lock.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
+        // DashPayPaymentHandler records incoming DashPay payments and
+        // confirms sent ones off the wallet-event fan-out, keeping that
+        // domain logic out of the generic core-changeset bridge. It holds
+        // the wallet-manager (for the in-memory payment state it mutates)
+        // and the persister (to write the resulting payment rows).
+        let dashpay_payment_handler = Arc::new(DashPayPaymentHandler::new(
+            Arc::clone(&wallet_manager),
+            Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
+        ));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,
             lock_handler,
             balance_handler,
+            Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
         ]));
 
         let spv = Arc::new(SpvRuntime::new(
@@ -140,6 +188,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&sdk),
             Arc::clone(&persister),
         ));
+        // DashPay sync shares the `wallets` map (not the token
+        // registry) so DashPay-only identities sync on every sweep.
+        let dashpay_sync = Arc::new(DashPaySyncManager::new(Arc::clone(&wallets)));
         #[cfg(feature = "shielded")]
         let shielded_coordinator: Arc<
             RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
@@ -157,6 +208,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             spv_manager: spv,
             platform_address_sync_manager: platform_address_sync,
             identity_sync_manager: identity_sync,
+            dashpay_sync_manager: dashpay_sync,
+            dashpay_payment_handler,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
@@ -166,7 +219,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
+            sync_fault,
         }
+    }
+
+    /// Whether the wallet-event adapter has frozen a durable sync
+    /// watermark this session (dashpay/platform#4069).
+    ///
+    /// Returns `true` once — and stays `true` for the manager's lifetime
+    /// — after the adapter drops record-bearing events (a broadcast lag)
+    /// or a persistence `store()` is rejected, meaning the persisted
+    /// `syncedHeight` is deliberately held behind the chain tip and a
+    /// rescan is pending on the next launch. Integrators poll this to
+    /// surface a hard "verification failed / rescan pending" state instead
+    /// of the fault being visible only in error logs. It is intentionally
+    /// a coarse, latch-once, all-or-nothing signal (the per-wallet vs.
+    /// global scoping lives inside the adapter); a host that needs
+    /// per-wallet granularity should re-derive it from the persisted
+    /// watermark vs. chain tip.
+    pub fn sync_fault_detected(&self) -> bool {
+        self.sync_fault.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Configure network-scoped shielded support. Opens the
@@ -272,35 +344,106 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// first **quiesce** the sync manager (cancel the loop *and* drain
     /// any in-flight pass, including its persister-callback fan-out, so
     /// nothing can re-persist notes after this returns), then **clear**
-    /// the network coordinator's per-subwallet registries. Idempotent —
-    /// the coordinator step is a no-op when shielded support was never
-    /// configured. The per-network commitment-tree SQLite file stays on
-    /// disk but its contents are reset to empty so the next bind cold-
-    /// resyncs from index 0.
+    /// the network coordinator's per-subwallet registries AND reset the
+    /// on-disk commitment-tree SQLite store. The per-network
+    /// commitment-tree SQLite file stays on disk but its contents are
+    /// reset to empty so the next bind cold-resyncs from index 0.
     ///
-    /// Returns an error if the coordinator's store reset fails; the host
-    /// must not commit its own persistence wipe in that case.
+    /// # The missing-coordinator case is an ERROR, not a silent no-op
+    ///
+    /// This used to `Ok(())` when `shielded_coordinator()` was `None`,
+    /// treating "no coordinator" as "nothing to clear". That masked the exact
+    /// on-device failure this fix targets: the host taps Clear on a manager
+    /// whose coordinator is **not installed on this instance** — e.g. an SDK
+    /// rebuild handed the host a fresh `PlatformWalletManager` whose
+    /// `configure_shielded` never ran (or ran on a different instance than the
+    /// one currently syncing). The quiesce runs (sync loop stops), the call
+    /// returns `Ok`, and the host then wipes its own Room/SwiftData rows —
+    /// while the **on-disk commitment tree is never touched** (file mtime
+    /// unchanged on device, no `reset_commitment_tree` call). The next bind
+    /// reloads the still-full tree + its persisted watermark and re-freezes
+    /// everything.
+    ///
+    /// The FFI only exposes this call behind a bound, shielded-enabled host
+    /// surface (the "Clear" button), so reaching it with no coordinator is a
+    /// genuine wiring fault, not a benign "shielded was never used" case.
+    /// Returning an error makes the host fail closed (keep its rows) and
+    /// surfaces the real problem instead of a phantom success.
+    ///
+    /// Returns an error if the coordinator is absent, or if the coordinator's
+    /// store reset (which resets the on-disk tree to 0 leaves and verifies it)
+    /// fails; the host must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.shielded_sync_manager.quiesce().await;
-        if let Some(coord) = self.shielded_coordinator().await {
-            coord.clear().await?;
+        match self.shielded_coordinator().await {
+            Some(coord) => coord.clear().await,
+            None => {
+                tracing::error!(
+                    "clear_shielded: no shielded coordinator installed on this manager — the \
+                     on-disk commitment tree cannot be reset. configure_shielded never ran on \
+                     THIS manager instance (or ran on a different one)."
+                );
+                Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                    "shielded clear requested but no coordinator is configured on this manager — \
+                     on-disk tree not reset"
+                        .to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Reset the platform-address (BLAST/DIP-17) incremental-sync
+    /// watermark and drop every cached balance across **all**
+    /// registered wallets, forcing a full rescan on the next sync.
+    ///
+    /// Backs the SwiftExampleApp "Clear" button. Manager-level (not
+    /// per-wallet) to match [`clear_shielded`](Self::clear_shielded):
+    /// the host's persistence delete is global, so a per-wallet reset
+    /// would leave sibling wallets' in-memory watermarks to
+    /// re-populate the deleted rows on the next sync.
+    ///
+    /// Quiesces the platform-address sync manager first so no in-flight
+    /// pass can call `update_sync_state` and re-write the watermark (or
+    /// re-seed balances) *after* the reset. Does NOT restart the loop —
+    /// manual "Sync Now" works without it, and leaving it stopped is
+    /// the desired UX: data stays cleared until the user explicitly
+    /// resyncs. `quiesce` leaves the manager stopped-but-restartable.
+    pub async fn reset_platform_address_sync_state(
+        &self,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        self.platform_address_sync_manager.quiesce().await;
+
+        // Snapshot Arc clones under a short read lock; never hold the
+        // `wallets` read guard across the per-wallet `.await`s below —
+        // that would block registration and invite lock-ordering
+        // issues against each wallet's `wallet_manager` lock.
+        let wallets: Vec<Arc<PlatformWallet>> = {
+            let guard = self.wallets.read().await;
+            guard.values().cloned().collect()
+        };
+
+        for wallet in wallets {
+            wallet.platform().reset_sync_state().await;
         }
         Ok(())
     }
 
     /// Stop all background tasks and wait for them to exit.
     ///
-    /// **Quiesces** the periodic coordinators
+    /// Stops SPV and **quiesces** the periodic coordinators
     /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
-    /// `ShieldedSyncManager`) — cancelling each loop *and draining any
-    /// in-flight pass to completion*, including its persister /
-    /// host-callback fan-out — then drains the wallet-event adapter task.
+    /// `DashPaySyncManager`, `ShieldedSyncManager`) — cancelling each
+    /// loop *and draining any in-flight pass to completion*, including
+    /// its persister / host-callback fan-out — then drains the
+    /// wallet-event adapter task.
     /// Idempotent. Call before dropping the manager when a clean
     /// shutdown is required (e.g. on app termination); a dirty drop
     /// simply leaks the tasks until the runtime exits.
     ///
-    /// Ordering matters: cancel-only `stop()` would let a pass already
+    /// Ordering matters: SPV is stopped and joined first so it cannot dispatch
+    /// more wallet events. Payment-task admission is then closed and all
+    /// admitted work is joined. A cancel-only `stop()` would let a pass already
     /// inside `sync_now` keep running and call `persister.store(...)` /
     /// fire a host completion callback after the FFI's `destroy`
     /// returned and the host freed the persister / event-handler
@@ -309,8 +452,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// and only THEN cancel + join the event adapter, which is the sink
     /// those stores feed into.
     pub async fn shutdown(&self) {
+        if let Err(error) = self.spv_manager.stop().await {
+            tracing::warn!(?error, "SPV shutdown failed");
+        }
+
+        self.dashpay_payment_handler.quiesce().await;
         self.platform_address_sync_manager.quiesce().await;
         self.identity_sync_manager.quiesce().await;
+        self.dashpay_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
         self.shielded_sync_manager.quiesce().await;
 

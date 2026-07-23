@@ -55,7 +55,7 @@ pub mod asset_lock_funding_type {
 }
 
 /// Adapter for `AddressFunds` (re-exported from `dash-sdk`; no serde
-/// derive there). Encodes the two scalar fields side-by-side.
+/// derive there). Encodes the scalar fields side-by-side.
 pub mod address_funds {
     use super::*;
 
@@ -63,6 +63,11 @@ pub mod address_funds {
     struct Wire {
         nonce: AddressNonce,
         balance: Credits,
+        /// Height pin (see `AddressFunds::as_of_height`). Defaults to 0
+        /// ("unknown provenance") when decoding blobs persisted before
+        /// the pin existed.
+        #[serde(default)]
+        as_of_height: u64,
     }
 
     pub fn serialize<S: Serializer>(
@@ -72,6 +77,7 @@ pub mod address_funds {
         Wire {
             nonce: value.nonce,
             balance: value.balance,
+            as_of_height: value.as_of_height,
         }
         .serialize(serializer)
     }
@@ -83,6 +89,7 @@ pub mod address_funds {
         Ok(AddressFunds {
             nonce: w.nonce,
             balance: w.balance,
+            as_of_height: w.as_of_height,
         })
     }
 }

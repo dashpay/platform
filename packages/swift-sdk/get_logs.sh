@@ -23,12 +23,12 @@ set -euo pipefail
 #                               [--session <ts|latest>]
 #
 # Defaults:
-#   bundle-id: org.dashfoundation.SwiftExampleApp
+#   bundle-id: org.dashfoundation.DashDeveloperPro
 #   out:       ./logs-<device-name>-<session-ts>
 #   device:    interactive picker when more than one is available
 #   session:   interactive picker when more than one is available
 
-BUNDLE_ID="org.dashfoundation.SwiftExampleApp"
+BUNDLE_ID="org.dashfoundation.DashDeveloperPro"
 OUT_DIR=""
 DEVICE=""
 SESSION=""

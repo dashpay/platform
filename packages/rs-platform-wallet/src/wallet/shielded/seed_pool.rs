@@ -32,7 +32,7 @@ use dash_sdk::platform::types::shielded::fetch_shielded_notes_count;
 use dpp::address_funds::OrchardAddress;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 
-use crate::wallet::asset_lock::orchestration::AssetLockFunding;
+use crate::wallet::asset_lock::orchestration::{AssetLockFunding, CL_FALLBACK_TIMEOUT};
 use crate::wallet::shielded::fund_from_asset_lock::shield_from_asset_lock_num_actions;
 use crate::wallet::shielded::CachedOrchardProver;
 use crate::wallet::PlatformWallet;
@@ -149,7 +149,7 @@ impl PlatformWallet {
         settings: Option<PutSettings>,
     ) -> Result<SeedPoolOutcome, PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         F: Fn(SeedPoolProgress) + Send + Sync,
     {
         // HARD GATE: this is a devnet/testnet seeding utility. The mainnet
@@ -285,6 +285,9 @@ impl PlatformWallet {
                         None,
                         dummy_outputs,
                         settings,
+                        // Bounded: a ChainLock timeout here is the deliberate
+                        // unconfirmed-ancestor pacing signal this loop retries on.
+                        Some(CL_FALLBACK_TIMEOUT),
                     )
                     .await
                 {
@@ -299,7 +302,10 @@ impl PlatformWallet {
                             "seed batch finality timed out; pausing for a core block then \
                              resuming the tracked lock"
                         );
-                        funding = AssetLockFunding::FromExistingAssetLock { out_point };
+                        funding = AssetLockFunding::FromExistingAssetLock {
+                            out_point,
+                            consume_invitation_voucher: false,
+                        };
                         tokio::time::sleep(SEED_BATCH_RETRY_PAUSE).await;
                     }
                     Err(e) => return Err(e),

@@ -81,15 +81,11 @@ impl ManagedIdentity {
             identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
-            established_contacts: Default::default(),
-            sent_contact_requests: Default::default(),
-            incoming_contact_requests: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
             wallet_id: None,
-            dashpay_profile: None,
-            dashpay_payments: BTreeMap::new(),
+            dashpay: Default::default(),
         }
     }
 
@@ -105,15 +101,11 @@ impl ManagedIdentity {
             identity_index: None,
             last_updated_balance_block_time: None,
             last_synced_keys_block_time: None,
-            established_contacts: Default::default(),
-            sent_contact_requests: Default::default(),
-            incoming_contact_requests: Default::default(),
             status: Default::default(),
             dpns_names: Vec::new(),
             contested_dpns_names: Vec::new(),
             wallet_id: None,
-            dashpay_profile: None,
-            dashpay_payments: BTreeMap::new(),
+            dashpay: Default::default(),
         }
     }
 
@@ -132,7 +124,7 @@ impl ManagedIdentity {
         profile: Option<crate::wallet::identity::DashPayProfile>,
         persister: &WalletPersister,
     ) {
-        self.dashpay_profile = profile;
+        self.dashpay.profile = profile;
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
@@ -155,12 +147,46 @@ impl ManagedIdentity {
         tx_id: String,
         entry: crate::wallet::identity::PaymentEntry,
         persister: &WalletPersister,
-    ) {
-        self.dashpay_payments.insert(tx_id, entry);
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        // Insert, snapshot, persist — but roll the change back if the store
+        // fails so in-memory state stays equal to the persisted state.
+        // Otherwise a caller's `contains_key` retry guard sees the
+        // un-persisted entry and skips the next sweep's re-attempt, permanently
+        // dropping a Sent entry + memo that has no on-chain recovery (the
+        // self-healing sweep callers re-derive Received from UTXOs next pass).
+        // A failed overwrite restores the previous entry rather than deleting
+        // it. Either way the persist result is returned, not swallowed: the
+        // user-initiated send path (`send_payment`) surfaces it in the UI.
+        let previous = self.dashpay.payments.insert(tx_id.clone(), entry);
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
-            tracing::error!("Failed to persist changeset: {}", e);
+            match previous {
+                Some(prev) => {
+                    self.dashpay.payments.insert(tx_id, prev);
+                }
+                None => {
+                    self.dashpay.payments.remove(&tx_id);
+                }
+            }
+            return Err(e);
         }
+        Ok(())
+    }
+
+    /// All DashPay payments to or from `contact_id` (keyed by txid), newest
+    /// first. Both `send_payment` and the receival recorder stamp
+    /// `counterparty_id`, so this is the per-contact tx history without a
+    /// separate tx→contact reverse-lookup table.
+    pub fn payments_for_contact(
+        &self,
+        contact_id: &Identifier,
+    ) -> Vec<(String, crate::wallet::identity::PaymentEntry)> {
+        self.dashpay
+            .payments
+            .iter()
+            .filter(|(_, p)| p.counterparty_id == contact_id)
+            .map(|(tx_id, p)| (tx_id.clone(), p.clone()))
+            .collect()
     }
 
     /// Get the identity ID
@@ -223,12 +249,9 @@ impl ManagedIdentity {
     /// Replace the contested-name list wholesale.
     ///
     /// Use this when a sync round pulls the canonical set of
-    /// contested names from Platform — the merge-time dedup-append
-    /// policy on `IdentityChangeSet` would otherwise accumulate
-    /// stale labels (contests that resolved but still appear in
-    /// the local cache). Emitting a full snapshot here + running
-    /// the sync path on identity reapply bakes the authoritative
-    /// set into state.
+    /// contested names from Platform. `IdentityChangeSet::merge` and replay
+    /// both treat this field as a complete last-write-wins snapshot so
+    /// resolved contests are removed, including by an empty snapshot.
     pub fn set_contested_dpns_names(&mut self, labels: Vec<String>, persister: &WalletPersister) {
         self.contested_dpns_names = labels;
         let cs = self.snapshot_changeset();
@@ -249,51 +272,86 @@ impl ManagedIdentity {
     pub fn add_key(
         &mut self,
         public_key: dpp::identity::IdentityPublicKey,
-        derivation_breadcrumb: Option<([u8; 32], u32, u32)>,
+        derivation_breadcrumb: Option<crate::changeset::KeyDerivationBreadcrumb>,
         persister: &WalletPersister,
-    ) {
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        // Single-key form of [`Self::add_keys`] — one canonical
+        // key-layering + changeset path so the two can't drift.
+        self.add_keys(
+            vec![crate::changeset::KeyWithBreadcrumb {
+                key: public_key,
+                breadcrumb: derivation_breadcrumb,
+            }],
+            persister,
+        )
+    }
+
+    /// Layer several `IdentityPublicKey`s onto this identity and emit ONE
+    /// batched [`IdentityKeysChangeSet`] carrying each key's derivation
+    /// breadcrumb (`Some((wallet_id, identity_index, key_index))`) or
+    /// `None` for a watch-only key the wallet can't re-derive.
+    ///
+    /// The single-write batch form of [`Self::add_key`], used by discovery
+    /// to materialize every re-derivable key of a freshly found identity in
+    /// one persist round (rather than one round per key) and to carry the
+    /// authoritative per-key breadcrumb set in a single changeset (no
+    /// order-dependent watch-only-then-override). No-op on an empty list.
+    pub fn add_keys(
+        &mut self,
+        keys: Vec<crate::changeset::KeyWithBreadcrumb>,
+        persister: &WalletPersister,
+    ) -> Result<(), crate::changeset::PersistenceError> {
         use dpp::identity::accessors::IdentitySettersV0;
 
-        let key_id = public_key.id();
-        let public_key_hash = pubkey_hash_of(&public_key);
-
-        // Layer onto the DPP `Identity` itself — that's what every
-        // signing / introspection path reads.
-        let mut keys = self.identity.public_keys().clone();
-        keys.insert(key_id, public_key.clone());
-        self.identity.set_public_keys(keys);
-
+        if keys.is_empty() {
+            return Ok(());
+        }
         let identity_id = self.id();
-        let (wallet_id, derivation_indices) = match derivation_breadcrumb {
-            Some((wallet_id, identity_index, key_index)) => (
-                Some(wallet_id),
-                Some(crate::changeset::IdentityKeyDerivationIndices {
-                    identity_index,
-                    key_index,
-                }),
-            ),
-            None => (None, None),
-        };
+        let mut current = self.identity.public_keys().clone();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        keys_cs.upserts.insert(
-            (identity_id, key_id),
-            IdentityKeyEntry {
-                identity_id,
-                key_id,
-                public_key,
-                public_key_hash,
-                wallet_id,
-                derivation_indices,
-            },
-        );
+        for crate::changeset::KeyWithBreadcrumb {
+            key: public_key,
+            breadcrumb,
+        } in keys
+        {
+            let key_id = public_key.id();
+            let public_key_hash = pubkey_hash_of(&public_key);
+            current.insert(key_id, public_key.clone());
+            let (wallet_id, derivation_indices) = match breadcrumb {
+                Some((wallet_id, identity_index, key_index)) => (
+                    Some(wallet_id),
+                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                        identity_index,
+                        key_index,
+                    }),
+                ),
+                None => (None, None),
+            };
+            keys_cs.upserts.insert(
+                (identity_id, key_id),
+                IdentityKeyEntry {
+                    identity_id,
+                    key_id,
+                    public_key,
+                    public_key_hash,
+                    wallet_id,
+                    derivation_indices,
+                },
+            );
+        }
+        self.identity.set_public_keys(current);
         let cs = crate::changeset::PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
             ..Default::default()
         };
-        if let Err(e) = persister.store(cs) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+        // Surface the persist failure — these rows carry the per-key
+        // derivation breadcrumb + verified scalar that make an imported /
+        // restored identity signable. Swallowing a failed store here would
+        // leave the keys in memory but absent from the client store, so the
+        // identity comes back watch-only after restart with no signal.
+        persister.store(cs)?;
+        Ok(())
     }
 
     /// Stamp `disabled_at` on the public keys named by `key_ids` and
@@ -399,5 +457,292 @@ impl ManagedIdentity {
         if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::wallet::identity::PaymentEntry;
+    use crate::wallet::platform_wallet::WalletId;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+
+    /// Persister that records every store so a test can inspect the exact
+    /// changeset `add_keys` emits.
+    #[derive(Default)]
+    struct CapturingPersister {
+        stores: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+    impl PlatformWalletPersistence for CapturingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stores.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Persister whose every `store` fails — pins that a key-persist failure
+    /// is surfaced, not swallowed.
+    struct FailingPersister;
+    impl PlatformWalletPersistence for FailingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Err(PersistenceError::backend("add_keys store armed to fail"))
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn key(id: KeyID) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        })
+    }
+
+    /// `add_keys` records each key's breadcrumb (or `None` for watch-only)
+    /// in one batched changeset and lands every key in the DPP identity.
+    /// Pins the materialization side of the imported-identity-signing fix.
+    #[test]
+    fn add_keys_emits_breadcrumbs_per_key() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let wallet_id: WalletId = [0xAB; 32];
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+
+        // Key 0 is re-derivable (breadcrumb), key 1 is watch-only (None).
+        managed
+            .add_keys(
+                vec![
+                    crate::changeset::KeyWithBreadcrumb {
+                        key: key(0),
+                        breadcrumb: Some((wallet_id, 7, 0)),
+                    },
+                    crate::changeset::KeyWithBreadcrumb {
+                        key: key(1),
+                        breadcrumb: None,
+                    },
+                ],
+                &p,
+            )
+            .expect("add_keys persists in test");
+
+        // Both keys landed in the DPP identity.
+        assert_eq!(managed.identity.public_keys().len(), 2);
+
+        let stores = persister.stores.lock().unwrap();
+        let upserts = &stores
+            .last()
+            .expect("a changeset was stored")
+            .identity_keys
+            .as_ref()
+            .expect("identity_keys present")
+            .upserts;
+        let id = managed.id();
+        assert_eq!(
+            upserts[&(id, 0)].derivation_indices,
+            Some(crate::changeset::IdentityKeyDerivationIndices {
+                identity_index: 7,
+                key_index: 0,
+            }),
+            "reproducible key carries its breadcrumb"
+        );
+        assert_eq!(upserts[&(id, 0)].wallet_id, Some(wallet_id));
+        assert_eq!(
+            upserts[&(id, 1)].derivation_indices,
+            None,
+            "watch-only key carries no breadcrumb"
+        );
+        assert_eq!(upserts[&(id, 1)].wallet_id, None);
+    }
+
+    /// An empty `add_keys` is a no-op — no changeset stored.
+    #[test]
+    fn add_keys_empty_is_noop() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        managed
+            .add_keys(Vec::new(), &p)
+            .expect("empty add_keys is a no-op Ok");
+        assert!(
+            persister.stores.lock().unwrap().is_empty(),
+            "empty add_keys stores nothing"
+        );
+    }
+
+    /// A failed key-persist must SURFACE as `Err`, not be swallowed — else an
+    /// imported / restored identity comes back watch-only after restart with no
+    /// signal. The pre-fix `add_keys` logged the error and returned `()`.
+    #[test]
+    fn add_keys_surfaces_persist_failure() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let wallet_id: WalletId = [0xAB; 32];
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::new(FailingPersister) as _);
+
+        let result = managed.add_keys(
+            vec![crate::changeset::KeyWithBreadcrumb {
+                key: key(0),
+                breadcrumb: Some((wallet_id, 7, 0)),
+            }],
+            &p,
+        );
+        assert!(
+            result.is_err(),
+            "a failed key-persist must surface, not be swallowed"
+        );
+    }
+
+    /// A failed payment persist must NOT strand the entry in memory — else a
+    /// caller's `contains_key` retry guard skips the next sweep's re-attempt
+    /// and the Sent entry + memo (no on-chain recovery) is permanently lost.
+    /// Pre-fix, `record_dashpay_payment` inserted before persisting, so a
+    /// failed store left the entry in memory.
+    #[test]
+    fn record_dashpay_payment_rolls_back_fresh_on_persist_failure() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::new(FailingPersister) as _);
+        let alice = Identifier::from([0xAA; 32]);
+
+        let result = managed.record_dashpay_payment(
+            "tx1".into(),
+            PaymentEntry::new_sent(alice, 100, Some("rent".into())),
+            &p,
+        );
+        assert!(result.is_err(), "a failed payment persist must surface");
+        assert!(
+            !managed.dashpay.payments.contains_key("tx1"),
+            "a failed persist must not strand the entry in memory, else the \
+             contains_key retry guard skips the re-attempt"
+        );
+    }
+
+    /// A failed *overwrite* (e.g. Pending→Confirmed) must restore the previous
+    /// entry, not leave the un-persisted new value (or delete the row).
+    #[test]
+    fn record_dashpay_payment_restores_previous_on_failed_overwrite() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::new(FailingPersister) as _);
+        let alice = Identifier::from([0xAA; 32]);
+
+        // Pre-existing (persisted) entry.
+        managed
+            .dashpay
+            .payments
+            .insert("tx1".into(), PaymentEntry::new_sent(alice, 100, None));
+
+        // Overwrite attempt fails to persist → previous must survive intact.
+        let result = managed.record_dashpay_payment(
+            "tx1".into(),
+            PaymentEntry::new_sent(alice, 999, Some("changed".into())),
+            &p,
+        );
+        assert!(result.is_err());
+        let kept = managed
+            .dashpay
+            .payments
+            .get("tx1")
+            .expect("previous survives");
+        assert_eq!(
+            kept.amount_duffs, 100,
+            "a failed overwrite must restore the previous entry, not the un-persisted new value"
+        );
+    }
+
+    #[test]
+    fn payments_for_contact_filters_by_counterparty() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let alice = Identifier::from([0xAA; 32]);
+        let bob = Identifier::from([0xBB; 32]);
+
+        managed
+            .dashpay
+            .payments
+            .insert("t1".into(), PaymentEntry::new_sent(alice, 100, None));
+        managed
+            .dashpay
+            .payments
+            .insert("t2".into(), PaymentEntry::new_received(bob, 200, None));
+        managed
+            .dashpay
+            .payments
+            .insert("t3".into(), PaymentEntry::new_sent(alice, 300, None));
+
+        let for_alice = managed.payments_for_contact(&alice);
+        assert_eq!(for_alice.len(), 2, "both sent payments to alice");
+        assert!(for_alice.iter().all(|(_, p)| p.counterparty_id == alice));
+        assert_eq!(managed.payments_for_contact(&bob).len(), 1);
+        assert_eq!(
+            managed
+                .payments_for_contact(&Identifier::from([0xCC; 32]))
+                .len(),
+            0,
+            "unknown contact has no payments"
+        );
     }
 }

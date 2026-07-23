@@ -96,12 +96,6 @@ wasm-dpp2 = { path = "../wasm-dpp2" }
 wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 
-[profile.release]
-opt-level = "z"
-panic = "abort"
-debug = false
-lto = "fat"
-
 [package.metadata.wasm-pack]
 wasm-opt = false
 

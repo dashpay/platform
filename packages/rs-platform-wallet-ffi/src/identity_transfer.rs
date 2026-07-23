@@ -97,8 +97,10 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_with_signer(
 /// [`PlatformAddressCreditOutputFFI`] recipients using the supplied
 /// `signer_handle`.
 ///
-/// Wraps
-/// [`IdentityWallet::transfer_credits_to_addresses_with_external_signer`](platform_wallet::IdentityWallet::transfer_credits_to_addresses_with_external_signer).
+/// Wraps the composite
+/// [`PlatformWallet::transfer_credits_to_addresses_with_external_signer`](platform_wallet::PlatformWallet::transfer_credits_to_addresses_with_external_signer),
+/// which also reconciles wallet-owned recipient addresses' platform
+/// balances from the transfer proof.
 ///
 /// `out_new_balance` (when non-null) receives the sender's remaining
 /// balance after the transfer.
@@ -149,10 +151,13 @@ pub unsafe extern "C" fn platform_wallet_transfer_credits_to_addresses_with_sign
     let signer_addr = signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
+        let wallet = wallet.clone();
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            identity_wallet
+            // The composite transfers the credits AND reconciles any
+            // wallet-owned recipient addresses' platform balances from
+            // the proof (third-party recipients are skipped).
+            wallet
                 .transfer_credits_to_addresses_with_external_signer(
                     &from_id, output_map, signer, None,
                 )

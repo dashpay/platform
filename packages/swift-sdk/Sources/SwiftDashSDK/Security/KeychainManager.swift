@@ -649,6 +649,7 @@ extension KeychainManager {
             kSecValueData as String: privateKey,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecAttrSynchronizable as String: false,
+            kSecAttrLabel as String: metadata.publicKey.lowercased(),
         ]
 
         if let accessGroup = accessGroup {
@@ -710,8 +711,8 @@ extension KeychainManager {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true,
+            kSecAttrLabel as String: publicKeyHex.lowercased(),
+            kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
         ]
         if let accessGroup = accessGroup {
@@ -720,29 +721,8 @@ extension KeychainManager {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
-            return nil
-        }
-
-        let decoder = JSONDecoder()
-        for item in items {
-            guard let account = item[kSecAttrAccount as String] as? String,
-                account.hasPrefix("identity_privkey.")
-            else {
-                continue
-            }
-            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
-                let metadata = try? decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
-            else {
-                continue
-            }
-            // Case-insensitive hex compare — both producers downcase
-            // their hex but be defensive against future writers.
-            if metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
-                return item[kSecValueData as String] as? Data
-            }
-        }
-        return nil
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
     }
 
     /// Existence check for the wallet-derived identity-private-key
@@ -788,6 +768,94 @@ extension KeychainManager {
             }
         }
         return false
+    }
+
+    /// Return the keychain account string of the identity-private-key
+    /// item whose metadata `publicKey` matches `publicKeyHex`, or `nil`
+    /// if none is stored. Like `hasIdentityPrivateKey(publicKeyHex:)`
+    /// this skips `kSecReturnData`, so the secret bytes never enter Swift
+    /// memory — only attributes are read. The returned account is the
+    /// identifier `retrieveKeyData(identifier:)` consumes, so a caller
+    /// can adopt it onto `PersistentPublicKey.privateKeyKeychainIdentifier`
+    /// when a key was materialized by another path (e.g. registration's
+    /// own keychain write) without re-deriving anything.
+    public nonisolated func identityPrivateKeyAccount(publicKeyHex: String) -> String? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return nil
+        }
+
+        let decoder = JSONDecoder()
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                let metadata = try? decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
+            else {
+                continue
+            }
+            if metadata.publicKey.caseInsensitiveCompare(publicKeyHex) == .orderedSame {
+                return account
+            }
+        }
+        return nil
+    }
+
+    /// Decode the metadata blob (`kSecAttrGeneric`) of every
+    /// `identity_privkey.*` keychain item — no secret bytes loaded. The
+    /// breadcrumb backfill uses this to populate
+    /// `PersistentPublicKey.{walletId, identityDerivationPath}` for keys
+    /// materialized before those columns existed; sourcing it from the
+    /// Keychain (not SwiftData) means it heals even if the SwiftData store
+    /// was rebuilt.
+    public nonisolated func allIdentityPrivateKeyMetadata() -> [IdentityPrivateKeyMetadata] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            return []
+        }
+
+        let decoder = JSONDecoder()
+        var out: [IdentityPrivateKeyMetadata] = []
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                let metadata = try? decoder.decode(
+                    IdentityPrivateKeyMetadata.self, from: metadataData)
+            else {
+                continue
+            }
+            out.append(metadata)
+        }
+        return out
     }
 
     /// Delete the identity private-key row for the

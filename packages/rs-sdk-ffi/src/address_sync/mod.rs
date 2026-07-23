@@ -463,6 +463,13 @@ pub unsafe extern "C" fn dash_sdk_sync_addresses_batch_with_result(
                         AddressFunds {
                             nonce: kb_nonces[i],
                             balance: kb_amounts[i],
+                            // This raw batch API predates the height pin
+                            // and its C signature carries no per-address
+                            // height; 0 = "unknown provenance", the
+                            // pre-pin delta-replay semantics. The
+                            // platform-wallet BLAST path (the production
+                            // sync) round-trips real pins.
+                            as_of_height: 0,
                         },
                     ));
                 }

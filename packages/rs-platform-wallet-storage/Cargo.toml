@@ -121,6 +121,11 @@ proptest = "1"
 assert_cmd = "2"
 static_assertions = "1"
 filetime = "0.2"
+# Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
+# `IdentityKeyEntry` to prove the on-disk wire shape drops it. The
+# production `zeroize` dep is gated behind the `secrets` feature, which
+# the off-state CI build disables, so the test surface needs its own.
+zeroize = { version = "=1.8.2", features = ["derive"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
 # `default-features = false` so the off-state CI invocation

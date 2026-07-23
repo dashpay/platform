@@ -130,6 +130,24 @@ impl From<token_history_contract::Error> for Error {
     }
 }
 
+#[cfg(feature = "document-history")]
+impl From<document_history_contract::Error> for Error {
+    fn from(e: document_history_contract::Error) -> Self {
+        match e {
+            document_history_contract::Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            } => Error::UnknownVersionMismatch {
+                method,
+                known_versions,
+                received,
+            },
+            document_history_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
+        }
+    }
+}
+
 #[cfg(feature = "keyword-search")]
 impl From<keyword_search_contract::Error> for Error {
     fn from(e: keyword_search_contract::Error) -> Self {

@@ -1,6 +1,6 @@
 # Count Index Group By Examples
 
-This chapter is the `GROUP BY` companion to [Count Index Examples](./count-index-examples.md). It uses the same `widget` contract, the same 100 000-row fixture, and the same bench at [`packages/rs-drive/benches/document_count_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_count_worst_case.rs). Read chapter 29 first — most of the mechanics (CountTree variants, the merk-proof reconstruction algorithm, `node_hash_with_count` and friends) carry over unchanged.
+This chapter is the `GROUP BY` companion to [Count Index Examples](./count-index-examples.md). It uses the same `widget` contract, the same 100 000-row fixture, and the same bench at [`packages/rs-drive/benches/document_count_worst_case.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_count_worst_case.rs). Read chapter 29 first — most of the mechanics (CountTree variants, the merk-proof reconstruction algorithm, `node_hash_with_count` and friends) carry over unchanged.
 
 What's different here:
 
@@ -35,7 +35,7 @@ Range queries are different. `AggregateCountOnRange` (chapter 29's Q7) walks the
 
 ## Queries in this Chapter
 
-All proof-size and behaviour numbers below come from the same bench helper (`report_group_by_matrix`) as chapter 29's. The dispatcher's group_by surface validation lives in [`validate_count_query_groupby_against_index`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/validate.rs); the per-mode path-query builders sit in [`packages/rs-drive/src/query/drive_document_count_query/path_query.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/path_query.rs)'s `group_by_*` family.
+All proof-size and behaviour numbers below come from the same bench helper (`report_group_by_matrix`) as chapter 29's. The dispatcher's group_by surface validation lives in [`validate_count_query_groupby_against_index`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/validate.rs); the per-mode path-query builders sit in [`packages/rs-drive/src/query/drive_document_count_query/path_query.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/path_query.rs)'s `group_by_*` family.
 
 | # | Query | Filter + group_by | Complexity | Avg time | Proof size | Verified shape | Notes |
 |---|-------|-------------------|------------|----------|------------|----------------|-------|
@@ -194,7 +194,7 @@ Entries([
 ])
 ```
 
-This is the load-bearing behaviour to know about: grovedb's `verify_query` *without* `absence_proofs_for_non_existing_searched_keys: true` drops absent-Key branches from the elements stream. The drive-side verifier ([`verify_point_lookup_count_proof_v0`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/verify/document_count/verify_point_lookup_count_proof/v0/mod.rs)) uses the default (off) and so emits one entry per **present** In value, not one per **requested** In value. Test coverage: [`test_point_lookup_proof_omits_absent_in_branches_from_entries`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/tests.rs).
+This is the load-bearing behaviour to know about: grovedb's `verify_query` *without* `absence_proofs_for_non_existing_searched_keys: true` drops absent-Key branches from the elements stream. The drive-side verifier ([`verify_point_lookup_count_proof_v0`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/verify/document_count/verify_point_lookup_count_proof/v0/mod.rs)) uses the default (off) and so emits one entry per **present** In value, not one per **requested** In value. Test coverage: [`test_point_lookup_proof_omits_absent_in_branches_from_entries`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/tests.rs).
 
 **Caller implication.** Callers MUST NOT assume `entries.len() == |In|`. To check whether a specific In value matched, demux entries by serialized key (the same `serialize_value_for_key(field, value)` the path-query builder uses for outer Keys) — see the test for the canonical pattern. A `0`-count vs absent-key distinction would require passing `absence_proofs_for_non_existing_searched_keys: true` end-to-end, which the platform doesn't expose today.
 
@@ -840,7 +840,7 @@ Entries(100 groups, sum = 10 000)
 
 The 100 groups are color_00000501 through color_00000600 (the first 100 in-range colors in lex-asc order, capped by the limit). Each carries `count_value_or_default = 100` since the fixture's deterministic schedule gives each color exactly 100 documents.
 
-Wait — but [Q7](./count-index-examples.md#query-7--range-query-aggregatecountonrange) said there are 499 distinct in-range colors and `sum = 49 900` over the same `color > "color_00000500"` predicate. So why does G4 see only 100 groups summing to 10 000? Because `GroupByRange`'s `distinct_count_path_query` applies the 100-entry response cap (`Some(limit)` in [`execute_distinct_count_with_proof`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/execute_range_count.rs)). Without that cap the proof would scale linearly with the full in-range distinct count (~5.5 KB for the full 499 colors at ~110 B per resolved CountTree branch). The cap is a response-size safety control — the verifier ceases the walk once it has 100 entries.
+Wait — but [Q7](./count-index-examples.md#query-7--range-query-aggregatecountonrange) said there are 499 distinct in-range colors and `sum = 49 900` over the same `color > "color_00000500"` predicate. So why does G4 see only 100 groups summing to 10 000? Because `GroupByRange`'s `distinct_count_path_query` applies the 100-entry response cap (`Some(limit)` in [`execute_distinct_count_with_proof`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/execute_range_count.rs)). Without that cap the proof would scale linearly with the full in-range distinct count (~5.5 KB for the full 499 colors at ~110 B per resolved CountTree branch). The cap is a response-size safety control — the verifier ceases the walk once it has 100 entries.
 
 **Proof size:** 10 992 B — ~5.3 × [Q7](./count-index-examples.md#query-7--range-query-aggregatecountonrange). The structural reason:
 
@@ -1538,7 +1538,7 @@ SizedQuery::limit:     10                                       // platform defa
 outer Query.left_to_right: false                                // from order_by [(brand, desc)]
 ```
 
-**Same-field range merging.** The caller's wire shape carries *four* range clauses (`brand >`, `brand <`, `color >`, `color <`). The dispatcher merges each same-field pair into a single `BetweenExcludeBounds` clause via [`merge_same_field_range_pairs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/drive_dispatcher.rs) before mode detection runs. After merging, the structure is identical to G8's two-range shape; mode detection routes to `RangeAggregateCarrierProof` for the same reasons.
+**Same-field range merging.** The caller's wire shape carries *four* range clauses (`brand >`, `brand <`, `color >`, `color <`). The dispatcher merges each same-field pair into a single `BetweenExcludeBounds` clause via [`merge_same_field_range_pairs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/drive_dispatcher.rs) before mode detection runs. After merging, the structure is identical to G8's two-range shape; mode detection routes to `RangeAggregateCarrierProof` for the same reasons.
 
 **Verified payload** (descending walk — outer keys come out from highest to lowest, capped at `L = 10`):
 
@@ -1684,7 +1684,7 @@ group_by = [brand, color]
 prove    = true
 ```
 
-**Outcome:** `Err(QuerySyntaxError::InvalidWhereClauseComponents("count query supports at most one range where-clause; combine two-sided ranges via `between*` instead of separate `>` / `<` clauses, or use `group_by = [outer_range_field]` with `prove = true` for the carrier-aggregate shape with one outer range and one inner ACOR range on a different field"))` — at [`detect_mode`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_count_query/mode_detection.rs)'s `range_count > 1` short-circuit, before any index picking or path-query building.
+**Outcome:** `Err(QuerySyntaxError::InvalidWhereClauseComponents("count query supports at most one range where-clause; combine two-sided ranges via `between*` instead of separate `>` / `<` clauses, or use `group_by = [outer_range_field]` with `prove = true` for the carrier-aggregate shape with one outer range and one inner ACOR range on a different field"))` — at [`detect_mode`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mode_detection.rs)'s `range_count > 1` short-circuit, before any index picking or path-query building.
 
 **Why.** The two-range carrier shape (`outer_range AND inner_range` on distinct fields) is opened by mode detection **only** when `mode == GroupByRange` *and* `group_by.len() == 1` *and* `prove = true`. G8b violates the first two: with `group_by = [brand, color]` the request maps to `CountMode::GroupByCompound`, which routes to `distinct_count_path_query` — a builder that knows how to walk an `In + range` fan-out but not a `range + range` cartesian product. Two design points:
 
@@ -1721,7 +1721,7 @@ This chapter now mirrors chapter 29's per-query structure: every section above c
 
 Two pieces of infrastructure made this possible:
 
-- `query_g1_*` … `query_g6_*` criterion `bench_function` calls in [`document_count_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_count_worst_case.rs) — produce the **Avg time** column in [Queries in this Chapter](#queries-in-this-chapter).
+- `query_g1_*` … `query_g6_*` criterion `bench_function` calls in [`document_count_worst_case.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/benches/document_count_worst_case.rs) — produce the **Avg time** column in [Queries in this Chapter](#queries-in-this-chapter).
 - `display_group_by_proofs` (a sibling of `display_proofs` in the same bench file) — emits each `group_by` shape's verbatim merk-proof structure via bincode decode + `GroveDBProof::Display`. Tagged with `[gproof]` prefix in stderr so reviewers can grep deterministically.
 
 Open follow-ups:

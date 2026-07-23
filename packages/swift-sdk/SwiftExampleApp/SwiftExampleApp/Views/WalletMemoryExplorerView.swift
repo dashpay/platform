@@ -1402,11 +1402,14 @@ private struct TxoSnapshot: Equatable {
 // MARK: - Helper labels
 
 private func addressPoolTypeLabel(_ tag: UInt8) -> String {
+    // Mirrors `PersistentCoreAddress.poolTypeName` — tags 2/3 are the
+    // on-demand "Additional" pools (provider keys etc.), not Rust's
+    // internal "Absent" naming.
     switch tag {
     case 0: return "External"
     case 1: return "Internal"
-    case 2: return "Absent"
-    case 3: return "AbsentHardened"
+    case 2: return "Additional"
+    case 3: return "Additional (Hardened)"
     default: return "Unknown(\(tag))"
     }
 }
@@ -1459,6 +1462,7 @@ struct WalletMemoryIdentityDetailView: View {
 
     @State private var dashpayProfile: DashPayProfile?
     @State private var dashpayProfileMissing: Bool = false
+    @State private var dashpaySyncState: ManagedIdentity.DashPaySyncState?
 
     @State private var tokenSyncSnapshot: IdentityTokenSyncSnapshot?
 
@@ -1474,6 +1478,7 @@ struct WalletMemoryIdentityDetailView: View {
                 dpnsSection
                 contestedDpnsSection
                 dashpayProfileSection
+                dashpaySyncStateSection
             }
             if let loadError {
                 Section {
@@ -1663,6 +1668,39 @@ struct WalletMemoryIdentityDetailView: View {
         }
     }
 
+    /// Live in-memory DashPay sync state — the counts let you compare against
+    /// the persisted SwiftData rows (Storage Explorer), and the high-water
+    /// cursors are visible NOWHERE else (they aren't persisted; they reset to
+    /// "not advanced" on every cold restart).
+    private var dashpaySyncStateSection: some View {
+        Section("DashPay Sync State (live)") {
+            if let s = dashpaySyncState {
+                KVRow(label: "Established contacts", value: "\(s.establishedContacts)")
+                KVRow(label: "Incoming requests", value: "\(s.incomingRequests)")
+                KVRow(label: "Sent requests", value: "\(s.sentRequests)")
+                KVRow(label: "Ignored senders", value: "\(s.ignoredSenders)")
+                KVRow(
+                    label: "Contact profiles",
+                    value: "\(s.presentContactProfiles) present / \(s.contactProfiles) cached"
+                )
+                KVRow(label: "Payments", value: "\(s.dashpayPayments)")
+                KVRow(label: "Own profile", value: s.hasDashPayProfile ? "yes" : "no")
+                KVRow(label: "High-water received", value: cursorLabel(s.highWaterReceivedMs))
+                KVRow(label: "High-water sent", value: cursorLabel(s.highWaterSentMs))
+            } else {
+                Text("—")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func cursorLabel(_ ms: UInt64?) -> String {
+        guard let ms else { return "not advanced" }
+        let date = Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
+        return "\(ms) (\(date.formatted(date: .abbreviated, time: .standard)))"
+    }
+
     // MARK: - Helpers
 
     private func sectionHeader(_ title: String, count: Int) -> some View {
@@ -1715,6 +1753,7 @@ struct WalletMemoryIdentityDetailView: View {
             } catch {
                 errors.append("DashPay profile: \(error.localizedDescription)")
             }
+            dashpaySyncState = try? mi.getDashPaySyncState()
         } catch {
             errors.append(
                 "Identity \(shortBase58(identityId)) not found in wallet: "

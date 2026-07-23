@@ -27,7 +27,8 @@ pub unsafe extern "C" fn managed_identity_get_established_contact(
 
     let option = MANAGED_IDENTITY_STORAGE.with_item(identity_handle, |identity| {
         identity
-            .established_contacts
+            .dashpay()
+            .established_contacts()
             .get(&contact_identifier)
             .cloned()
     });
@@ -116,41 +117,6 @@ pub unsafe extern "C" fn established_contact_get_alias(
     PlatformWalletFFIResult::ok()
 }
 
-/// Set the alias for an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_set_alias(
-    contact_handle: Handle,
-    alias: *const std::os::raw::c_char,
-) -> PlatformWalletFFIResult {
-    let alias_str = if alias.is_null() {
-        None
-    } else {
-        unsafe {
-            Some(unwrap_result_or_return!(std::ffi::CStr::from_ptr(alias).to_str()).to_string())
-        }
-    };
-
-    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
-        if let Some(a) = alias_str {
-            contact.set_alias(a);
-        }
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
-/// Clear the alias for an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_clear_alias(
-    contact_handle: Handle,
-) -> PlatformWalletFFIResult {
-    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
-        contact.clear_alias();
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
 /// Get the note for an established contact
 #[no_mangle]
 pub unsafe extern "C" fn established_contact_get_note(
@@ -158,6 +124,11 @@ pub unsafe extern "C" fn established_contact_get_note(
     out_note: *mut *mut std::os::raw::c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_note);
+    // Null the out-pointer before the fallible lookup so a cleanup-on-error
+    // caller that unconditionally `platform_wallet_string_free`s the variable
+    // frees null, not garbage — matching the null-sentinel-first convention
+    // used across the rest of this FFI surface.
+    unsafe { *out_note = std::ptr::null_mut() };
 
     let option =
         ESTABLISHED_CONTACT_STORAGE.with_item(contact_handle, |contact| contact.note.clone());
@@ -165,41 +136,6 @@ pub unsafe extern "C" fn established_contact_get_note(
     let note = unwrap_option_or_return!(option);
     let c_str = unwrap_result_or_return!(std::ffi::CString::new(note));
     unsafe { *out_note = c_str.into_raw() };
-    PlatformWalletFFIResult::ok()
-}
-
-/// Set the note for an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_set_note(
-    contact_handle: Handle,
-    note: *const std::os::raw::c_char,
-) -> PlatformWalletFFIResult {
-    let note_str = if note.is_null() {
-        None
-    } else {
-        unsafe {
-            Some(unwrap_result_or_return!(std::ffi::CStr::from_ptr(note).to_str()).to_string())
-        }
-    };
-
-    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
-        if let Some(n) = note_str {
-            contact.set_note(n);
-        }
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
-
-/// Clear the note for an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_clear_note(
-    contact_handle: Handle,
-) -> PlatformWalletFFIResult {
-    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
-        contact.clear_note();
-    });
-    unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 
@@ -216,27 +152,25 @@ pub unsafe extern "C" fn established_contact_is_hidden(
     PlatformWalletFFIResult::ok()
 }
 
-/// Hide an established contact from the contact list
+/// Check whether an established contact's DashPay payment channel is
+/// permanently broken.
+///
+/// `true` means the account-building sweep hit a permanent failure
+/// (decrypt/decode of the counterparty xpub, or a key-index validation
+/// failure) and stopped retrying. The UI should disable "Send Dash" and
+/// surface "Payment channel broken — ask the contact to send a new
+/// request"; the flag clears automatically when a superseding contact
+/// request (re-)establishes the relationship.
 #[no_mangle]
-pub unsafe extern "C" fn established_contact_hide(
+pub unsafe extern "C" fn established_contact_is_payment_channel_broken(
     contact_handle: Handle,
+    out_is_broken: *mut bool,
 ) -> PlatformWalletFFIResult {
-    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
-        contact.hide();
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
-}
+    check_ptr!(out_is_broken);
 
-/// Unhide an established contact
-#[no_mangle]
-pub unsafe extern "C" fn established_contact_unhide(
-    contact_handle: Handle,
-) -> PlatformWalletFFIResult {
-    let option = ESTABLISHED_CONTACT_STORAGE.with_item_mut(contact_handle, |contact| {
-        contact.unhide();
-    });
-    unwrap_option_or_return!(option);
+    let option = ESTABLISHED_CONTACT_STORAGE
+        .with_item(contact_handle, |contact| contact.payment_channel_broken);
+    *out_is_broken = unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
 

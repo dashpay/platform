@@ -14,6 +14,7 @@ struct TransitionCategoryView: View {
             return [
                 ("identityCreate", "Create Identity", "Create a new identity with initial credits"),
                 ("identityTopUp", "Top Up Identity", "Add credits to an existing identity"),
+                ("identityTopUpResume", "Top Up Identity (Resume)", "Recover a stuck top-up from a tracked asset lock"),
                 ("identityUpdate", "Update Identity", "Update identity properties and keys"),
                 ("identityCreditTransfer", "Transfer Credits", "Transfer credits between identities"),
                 ("identityCreditWithdrawal", "Withdraw Credits", "Withdraw credits to a Dash address")
@@ -53,30 +54,6 @@ struct TransitionCategoryView: View {
     var body: some View {
         if category == .address {
             List {
-                NavigationLink(destination: TransferAddressFundsView()) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Transfer Address Funds")
-                            .font(.headline)
-                        Text("Transfer credits between Platform addresses")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                NavigationLink(destination: WithdrawAddressFundsView()) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Withdraw Address Funds")
-                            .font(.headline)
-                        Text("Withdraw credits from Platform to Core (L1)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(2)
-                    }
-                    .padding(.vertical, 4)
-                }
-
                 NavigationLink(destination: TopUpAddressFromAssetLockView()) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Top Up Address (Asset Lock)")
@@ -124,6 +101,53 @@ struct TransitionCategoryView: View {
                     }
                     .padding(.vertical, 4)
                 }
+
+                // Debug-only raw (private-key) forms. The production,
+                // wallet-signed equivalents now live off the
+                // `WalletDetailView` Platform Balance row's ⋯ menu:
+                // Transfer Credits (ADDR-02, `TransferPlatformAddressView`)
+                // and Withdraw to Core (ADDR-04,
+                // `WithdrawPlatformAddressView`). These raw forms paste a
+                // 64-char private key and exist only for low-level
+                // debugging / arbitrary-address operations.
+                //
+                // Gated behind `#if DEBUG` so a Release/TestFlight build
+                // can't direct users to paste a raw private key, bypassing
+                // the `KeychainSigner` boundary the production sheets
+                // enforce. The view definitions stay compiled (they live in
+                // AddressQueriesView.swift); only these entry-point
+                // NavigationLinks are debug-only.
+                #if DEBUG
+                Section {
+                    NavigationLink(destination: TransferAddressFundsView()) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("🧪 Transfer Address Funds (raw)")
+                                .font(.headline)
+                            Text("Debug-only: transfer credits between Platform addresses using a pasted private key. Production path: Wallet → Platform Balance → ⋯ → Transfer Credits.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(3)
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    NavigationLink(destination: WithdrawAddressFundsView()) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("🧪 Withdraw Address Funds (raw)")
+                                .font(.headline)
+                            Text("Debug-only: withdraw credits from Platform to Core (L1) using a pasted private key. Production path: Wallet → Platform Balance → ⋯ → Withdraw to Core.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(3)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } header: {
+                    Text("Debug / Raw (private-key) forms")
+                } footer: {
+                    Text("These paste a raw 64-char private key and bypass the wallet signer. Use the production sheets off the wallet's Platform Balance row instead.")
+                }
+                #endif
             }
             .navigationTitle(category.rawValue)
             .navigationBarTitleDisplayMode(.inline)

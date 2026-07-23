@@ -51,7 +51,7 @@
 //!
 //! [`sync_notes_across`]: super::sync::sync_notes_across
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -80,7 +80,7 @@ use tokio::sync::RwLock;
 
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
-use super::store::{ShieldedStore, SubwalletId};
+use super::store::{ShieldedStore, StalePendingSpend, SubwalletId};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::wallet::persister::WalletPersister;
@@ -513,6 +513,36 @@ impl NetworkShieldedCoordinator {
                     ))
                 });
             }
+            // Verify the reset actually landed to 0 leaves under the SAME
+            // write guard. `reset_commitment_tree` can theoretically report
+            // Ok while leaving the on-disk tree populated (e.g. a checkpoint
+            // that didn't take, or a shardtree reopen that re-materialized a
+            // cached frontier). Without this check `clear()` would return Ok,
+            // the host would wipe its own Room/SwiftData rows, and the next
+            // cold resync would gate-skip every re-downloaded position against
+            // the still-full tree — the exact "Clear did nothing, tree frozen
+            // at N/N, zero notes scanned" symptom. Turning a silent no-op into
+            // a hard error makes the host fail closed (keep its rows) and
+            // surfaces the failure instead of masking it.
+            if first_err.is_none() {
+                match store.tree_size() {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        tracing::error!(
+                            remaining_leaves = n,
+                            "commitment tree still populated after reset_commitment_tree"
+                        );
+                        first_err = Some(crate::error::PlatformWalletError::ShieldedStoreError(
+                            format!("commitment tree still has {n} leaves after reset"),
+                        ));
+                    }
+                    Err(e) => {
+                        first_err = Some(crate::error::PlatformWalletError::ShieldedStoreError(
+                            format!("tree_size check after reset failed: {e}"),
+                        ));
+                    }
+                }
+            }
         }
         if let Some(e) = first_err {
             return Err(e);
@@ -593,6 +623,21 @@ impl NetworkShieldedCoordinator {
             return summary;
         }
 
+        // Snapshot armed reservations and prefetch Platform's recorded
+        // anchor set BEFORE the note scan. The release pass after the scan
+        // may only act on this pre-scan pair: an anchor already absent from
+        // a PRE-scan set was pruned before the scan began, so a spend that
+        // did execute did so at a height the scan covers — the scan's
+        // spent-note reconcile clears its reservation, which the release
+        // pass honors via `clear_pending`'s return value. A set fetched
+        // AFTER the scan would leave a window (spend executes past the
+        // scan's coverage, anchor pruned before the fetch) where a landed
+        // spend could be wrongly released. Reservations armed DURING the
+        // scan are deliberately absent from the snapshot — their anchors
+        // may be newer than this set — and get checked next pass. Skips the
+        // network call entirely when nothing is armed (the common case).
+        let stranded_release = self.prefetch_stranded_release(&subwallets).await;
+
         // ONE SDK call covers every registered IVK on the network.
         // Snapshot the optional progress handler installed by the
         // manager; sync_notes_across feeds it into the SDK's chunk
@@ -622,6 +667,50 @@ impl NetworkShieldedCoordinator {
         // newly-spent counts and the spend records ride the same
         // `notes` result and `notes.changeset` the receipts do.
         let newly_spent_per_sub = notes.per_subwallet_newly_spent.clone();
+
+        // Residual-spend resolution: `sync_notes_across` above marked every
+        // landed spend (clearing its reservation and dropping its redrive
+        // record via the store hook). Two passes over what's left, both
+        // judged against the PRE-scan recorded-anchor set:
+        //
+        // 1. Re-drive — for each armed unconfirmed spend whose anchor is
+        //    still recorded, re-broadcast the stored byte-identical
+        //    transition (bounded by MAX_REDRIVE_ATTEMPTS) to actively
+        //    resolve the ambiguity instead of waiting out the retention
+        //    window.
+        // 2. Prune backstop — release any still-pending pre-scan
+        //    reservation whose anchor was already pruned (the spend can
+        //    never execute).
+        //
+        // Runs before the balance read so freed notes are reflected in
+        // this pass's balances.
+        if let Some((snapshot, recorded)) = stranded_release {
+            // Snapshot the per-wallet persisters BEFORE the loop and drop
+            // the read guard: `redrive_pending_spends` performs network
+            // broadcasts, and holding the persisters lock across those
+            // awaits would block wallet register/unregister for the
+            // duration of the round trips.
+            let subwallet_persisters: Vec<(SubwalletId, Option<WalletPersister>)> = {
+                let persisters = self.persisters.read().await;
+                subwallets
+                    .iter()
+                    .map(|(id, _)| (*id, persisters.get(&id.wallet_id).cloned()))
+                    .collect()
+            };
+            for (id, persister) in &subwallet_persisters {
+                super::operations::redrive_pending_spends(
+                    &self.sdk,
+                    &self.store,
+                    persister.as_ref(),
+                    id.wallet_id,
+                    *id,
+                    &recorded,
+                )
+                .await;
+            }
+            self.release_stranded_spends(snapshot, &recorded).await;
+        }
+
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
@@ -728,6 +817,193 @@ impl NetworkShieldedCoordinator {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
+    }
+
+    /// Pre-scan half of the stranded-reservation release: snapshot the
+    /// anchored reservations armed right now and fetch Platform's recorded
+    /// anchor set, or `None` when there is nothing to do.
+    ///
+    /// MUST run before the pass's note scan — the release's fund-safety
+    /// argument ([`Self::release_stranded_spends`]) rests on both the
+    /// snapshot and the set predating the scan's spent-note reconcile.
+    ///
+    /// Skips the network round-trip when no anchored reservation exists (the
+    /// common case), and treats a recorded-anchor fetch failure as
+    /// non-fatal — a sync must not fail because that query hiccupped; the
+    /// release simply waits for the next pass.
+    async fn prefetch_stranded_release(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+    ) -> Option<(Vec<(SubwalletId, StalePendingSpend)>, HashSet<[u8; 32]>)> {
+        // Gather anchored reservations across every synced subwallet. The
+        // common case is none — then the network round-trip is skipped.
+        let stale: Vec<(SubwalletId, StalePendingSpend)> = {
+            let store = self.store.read().await;
+            let mut acc = Vec::new();
+            for (id, _) in subwallets {
+                match store.stale_pending_spends(*id) {
+                    Ok(entries) => acc.extend(entries.into_iter().map(|entry| (*id, entry))),
+                    Err(e) => tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "shielded reservation release: stale_pending_spends failed; skipping subwallet"
+                    ),
+                }
+            }
+            acc
+        };
+        if stale.is_empty() {
+            return None;
+        }
+
+        use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+        match dash_sdk::query_types::ShieldedAnchors::fetch_current(&self.sdk).await {
+            Ok(dash_sdk::query_types::ShieldedAnchors(anchors)) => {
+                Some((stale, anchors.into_iter().collect()))
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "shielded reservation release: failed to fetch the recorded anchor set; \
+                     skipping this pass"
+                );
+                None
+            }
+        }
+    }
+
+    /// Release any stranded shielded-spend reservation whose recorded
+    /// anchor Platform has pruned.
+    ///
+    /// A spend that returns broadcast-accepted-but-unconfirmed keeps its
+    /// note reservation (so a retry can't double-spend a note that may in
+    /// fact have landed), released only when the tx lands or the app
+    /// restarts. A spend accepted but that never lands would otherwise
+    /// strand its notes for the whole session. Here, after the pass's
+    /// spent-note reconcile, any reservation from the PRE-scan `snapshot`
+    /// whose anchor is absent from the PRE-scan `recorded` set is provably
+    /// dead: `validate_anchor_exists` accepts a spend only while its anchor
+    /// is retained (`shielded_anchor_retention_blocks = 1000`), so once the
+    /// anchor is pruned the transition can never execute. The notes are
+    /// freed and the linked activity row flipped to Failed so the UI shows
+    /// a clear, retryable failure instead of "Pending" forever. The
+    /// on-chain nullifier set stays the authoritative double-spend guard.
+    ///
+    /// Fund-safe by construction, resting on two ordering facts:
+    ///
+    /// 1. Both inputs predate the scan ([`Self::prefetch_stranded_release`]),
+    ///    and the scan's spent-note reconcile ran to completion in between.
+    ///    An anchor absent from the pre-scan set was pruned before the scan
+    ///    began (a pruned root can never re-enter the set — the tree only
+    ///    grows), so if that spend nevertheless executed, it executed at a
+    ///    height the scan covered — the reconcile already cleared its
+    ///    reservation, which fact 2 catches.
+    /// 2. Each release is a check-and-clear under a single store write
+    ///    guard: the reservation is cleared only while the nullifier is
+    ///    still armed with the snapshot's exact anchor + activity. A
+    ///    reservation resolved concurrently (the reconcile above, or the
+    ///    spend's own result-wait confirming mid-pass) — or cleared and
+    ///    re-armed by a retry with a fresh anchor — is skipped, and its
+    ///    activity row is left alone.
+    ///
+    /// A still-recorded (slow-but-landing) spend is never released, and an
+    /// anchor-less reservation (reserved but not yet built) is never in the
+    /// snapshot (`stale_pending_spends` returns only anchored entries).
+    async fn release_stranded_spends(
+        &self,
+        snapshot: Vec<(SubwalletId, StalePendingSpend)>,
+        recorded: &HashSet<[u8; 32]>,
+    ) {
+        // Persister map is only written on wallet register/unregister —
+        // one read acquisition covers the whole loop.
+        let persisters = self.persisters.read().await;
+        // Every note of a multi-note spend carries the same activity id:
+        // flip each linked row once, not once per nullifier.
+        let mut flipped: HashSet<[u8; 32]> = HashSet::new();
+        for (id, (nullifier, anchor, activity_id)) in snapshot {
+            // Fund-safety invariant: release ONLY when the anchor is absent
+            // from the recorded set. A still-recorded anchor may yet land.
+            if recorded.contains(&anchor) {
+                continue;
+            }
+            // Check-and-clear under ONE write acquisition: the snapshot
+            // entry is released only while the nullifier is still armed
+            // with the SAME anchor + activity. A reservation cleared
+            // mid-scan and re-armed by a retry (same note, fresh anchor
+            // and activity) must not be judged against the pre-scan set —
+            // its anchor may postdate the fetch; it gets checked next pass.
+            {
+                let mut store = self.store.write().await;
+                let still_same = match store.stale_pending_spends(id) {
+                    Ok(current) => current
+                        .iter()
+                        .any(|(n, a, act)| *n == nullifier && *a == anchor && *act == activity_id),
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: stale_pending_spends failed; skipping entry"
+                        );
+                        continue;
+                    }
+                };
+                if !still_same {
+                    // Resolved (landed and reconciled, result-wait
+                    // confirmed) or re-armed by a retry while this pass
+                    // was scanning. Nothing to release — leave the
+                    // activity row alone.
+                    tracing::debug!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        nullifier = %hex::encode(nullifier),
+                        "shielded reservation release: reservation resolved or re-armed; skipping"
+                    );
+                    continue;
+                }
+                match store.clear_pending(id, &nullifier) {
+                    // `still_same` held under this same guard, so the clear
+                    // removes exactly the snapshot's reservation.
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(e) => {
+                        tracing::warn!(
+                            wallet_id = %hex::encode(id.wallet_id),
+                            account = id.account_index,
+                            error = %e,
+                            "shielded reservation release: clear_pending failed"
+                        );
+                        continue;
+                    }
+                }
+            }
+            tracing::info!(
+                wallet_id = %hex::encode(id.wallet_id),
+                account = id.account_index,
+                nullifier = %hex::encode(nullifier),
+                anchor = %hex::encode(anchor),
+                "shielded reservation released: its recorded anchor was pruned, so the stranded \
+                 spend can never execute; freeing the notes"
+            );
+            // Flip the linked activity row to Failed. Only queue to the
+            // wallet's own persister (cloned out — `WalletPersister: Clone`).
+            if let Some(entry_id) = activity_id {
+                if !flipped.insert(entry_id) {
+                    continue;
+                }
+                let persister = persisters.get(&id.wallet_id).cloned();
+                super::operations::record_activity_status_by_id(
+                    &self.store,
+                    persister.as_ref(),
+                    id.wallet_id,
+                    id,
+                    &entry_id,
+                    super::activity::ShieldedActivityStatus::Failed,
+                )
+                .await;
+            }
+        }
     }
 
     /// Derive best-effort activity entries from each subwallet's
@@ -1085,6 +1361,66 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ON-DISK durability of `clear()` — the regression guard for the
+    /// "Clear resets the in-memory tree but not the persisted SQLite" bug.
+    ///
+    /// The prior test asserts `tree_size() == 0` on the SAME store handle,
+    /// which passes even if `clear()` only reset an in-memory shardtree /
+    /// frontier and left the on-disk `commitment_tree_*` rows intact. This
+    /// test instead reopens the persisted file through a COMPLETELY FRESH
+    /// `FileBackedShieldedStore` (independent connection, cold frontier) after
+    /// `clear()` and asserts both the tree AND the per-subwallet watermark
+    /// read back empty — proving the reset reached disk. Without the on-disk
+    /// reset + WAL checkpoint, this fresh handle would reload the full tree
+    /// (the on-device "tap Clear, relaunch, still 867/867" symptom).
+    #[tokio::test]
+    async fn clear_resets_the_persisted_on_disk_store_not_just_memory() {
+        let dir = temp_dir("clear_ondisk");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        // Build a non-trivial tree AND advance the watermark, then checkpoint
+        // — the exact durable state a real sync leaves behind.
+        {
+            let mut store = coordinator.store().write().await;
+            for i in 0..8u8 {
+                store.append_commitment(&[i + 1; 32], true).unwrap();
+            }
+            store.checkpoint_tree(8).unwrap();
+            store.set_last_synced_note_index(id, 8).unwrap();
+            assert_eq!(store.tree_size().unwrap(), 8);
+            assert_eq!(store.last_synced_note_index(id).unwrap(), 8);
+        }
+
+        coordinator.clear().await.expect("clear should succeed");
+
+        // Reopen the persisted file with a FRESH handle: this reads the
+        // on-disk tables cold (no shared in-memory frontier), so a non-zero
+        // size here would mean clear() never wrote the disk.
+        let reopened = FileBackedShieldedStore::open_path(&db_path, 100)
+            .expect("reopen persisted store after clear");
+        assert_eq!(
+            reopened.tree_size().unwrap(),
+            0,
+            "on-disk commitment tree must read 0 through a fresh handle after clear — \
+             a non-zero size means clear() only reset the in-memory tree"
+        );
+        // The watermark is in-memory per store handle (rebuilt from the host's
+        // Room/SwiftData on bind, which the host wipes separately), so a fresh
+        // handle starts it at 0 by construction; assert it to pin the contract
+        // that a cold reopen is caught up to nothing.
+        assert_eq!(
+            reopened.last_synced_note_index(id).unwrap(),
+            0,
+            "a freshly reopened store must have no per-subwallet watermark"
+        );
+        drop(reopened);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Failure path — regression guard for the partial-clear bug: when the
     /// store reset fails, `clear()` must return `Err` and leave the account /
     /// persister registries populated, so the coordinator does not silently
@@ -1124,5 +1460,92 @@ mod tests {
             !coordinator.persisters.read().await.is_empty(),
             "persisters must survive a failed clear"
         );
+    }
+
+    /// Common case: with no anchored reservation in the store, the pre-scan
+    /// prefetch short-circuits before any network round-trip — it never
+    /// touches the mock SDK (which has no anchor-query expectation), so this
+    /// both pins the fast-path skip and proves the pass is wired without
+    /// panic (sync() skips the release entirely on `None`).
+    #[tokio::test]
+    async fn release_stranded_spends_no_op_without_anchored_reservation() {
+        let dir = temp_dir("release_noop");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+
+        let subwallets = vec![(
+            SubwalletId::new([0x11; 32], 0),
+            OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+                .expect("derive viewing keys")
+                .viewing_keys(),
+        )];
+
+        // No reservation was armed, so `stale_pending_spends` is empty and
+        // the prefetch returns None before fetching the recorded anchor set.
+        let prefetched = coordinator.prefetch_stranded_release(&subwallets).await;
+        assert!(
+            prefetched.is_none(),
+            "nothing armed ⇒ no anchor fetch, no release pass"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Full release-path coverage through `release_stranded_spends` itself
+    /// (not just the store predicate): of two armed reservations, the one
+    /// whose anchor is absent from the recorded set is released while the
+    /// one whose anchor is still recorded survives untouched.
+    #[tokio::test]
+    async fn release_stranded_spends_releases_pruned_and_retains_recorded() {
+        let dir = temp_dir("release_paths");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+
+        let pruned_nf = [0xAAu8; 32];
+        let pruned_anchor = [0xABu8; 32];
+        let pruned_act = [0xACu8; 32];
+        let live_nf = [0xBAu8; 32];
+        let live_anchor = [0xBBu8; 32];
+        let live_act = [0xBCu8; 32];
+        {
+            let mut store = coordinator.store.write().await;
+            store.mark_pending(id, &pruned_nf).expect("mark pruned");
+            store
+                .set_pending_spend(id, &pruned_nf, pruned_anchor, pruned_act)
+                .expect("arm pruned");
+            store.mark_pending(id, &live_nf).expect("mark live");
+            store
+                .set_pending_spend(id, &live_nf, live_anchor, live_act)
+                .expect("arm live");
+        }
+
+        // Snapshot as the pre-scan prefetch would have produced it; the
+        // recorded set holds only the live anchor (the other was "pruned").
+        let snapshot = vec![
+            (id, (pruned_nf, pruned_anchor, Some(pruned_act))),
+            (id, (live_nf, live_anchor, Some(live_act))),
+        ];
+        let recorded: HashSet<[u8; 32]> = [live_anchor].into_iter().collect();
+
+        coordinator
+            .release_stranded_spends(snapshot, &recorded)
+            .await;
+
+        let remaining = coordinator
+            .store
+            .read()
+            .await
+            .stale_pending_spends(id)
+            .expect("stale_pending_spends");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "pruned-anchor reservation released; recorded-anchor one retained"
+        );
+        assert_eq!(
+            remaining[0].0, live_nf,
+            "the still-recorded reservation must survive"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

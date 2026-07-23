@@ -28,14 +28,14 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, Mutex as StdMutex,
+    Arc,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use crate::events::PlatformEventManager;
+use crate::manager::loop_cancel::LoopCancelGuard;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 
@@ -139,16 +139,9 @@ pub struct ShieldedSyncManager {
     /// run first, so an empty slot guarantees no shielded state
     /// exists).
     coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
-    /// Cancel token for the background loop, if running.
-    background_cancel: StdMutex<Option<CancellationToken>>,
-    /// Monotonically increasing generation counter. Bumped on every
-    /// `start()` so the exiting thread can tell whether its
-    /// generation is still the active one before clearing
-    /// `background_cancel`. Without this, a `stop()` → `start()`
-    /// overlap lets the prior thread's cleanup strip the new
-    /// generation's token, leaving the new loop running but
-    /// untrackable via `is_running()`.
-    background_generation: AtomicU64,
+    /// Generation-guarded cancel-token slot for the background loop —
+    /// see [`LoopCancelGuard`] for the stale-loop shutdown invariant.
+    cancel_guard: LoopCancelGuard,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
     /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
@@ -170,8 +163,7 @@ impl ShieldedSyncManager {
         Self {
             event_manager,
             coordinator_slot,
-            background_cancel: StdMutex::new(None),
-            background_generation: AtomicU64::new(0),
+            cancel_guard: LoopCancelGuard::new(),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: AtomicBool::new(false),
@@ -194,10 +186,7 @@ impl ShieldedSyncManager {
 
     /// Whether the background loop is currently running.
     pub fn is_running(&self) -> bool {
-        self.background_cancel
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.cancel_guard.is_running()
     }
 
     /// Whether a sync pass is in flight right now.
@@ -222,17 +211,9 @@ impl ShieldedSyncManager {
     /// GRPC client state isn't `Send + Sync`). Same trade-off as
     /// [`PlatformAddressSyncManager::start`](super::platform_address_sync::PlatformAddressSyncManager::start).
     pub fn start(self: Arc<Self>) {
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if guard.is_some() {
+        let Some((cancel, my_generation)) = self.cancel_guard.install() else {
             return;
-        }
-        let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        // Bump the generation while we still hold the slot lock so
-        // the load below in any prior thread's cleanup observes
-        // `current_gen != my_gen` ordered against this token swap.
-        let my_gen = self.background_generation.fetch_add(1, Ordering::AcqRel) + 1;
-        drop(guard);
+        };
 
         let handle = tokio::runtime::Handle::current();
         let this = self;
@@ -261,17 +242,7 @@ impl ShieldedSyncManager {
                         }
                     }
 
-                    // Only clear `background_cancel` if the active
-                    // generation is still ours. Without this guard a
-                    // tight `stop()` → `start()` reschedule has the
-                    // exiting thread overwrite the *new* generation's
-                    // token, leaving the new loop running but
-                    // unreflectable via `is_running()` / `stop()`.
-                    if this.background_generation.load(Ordering::Acquire) == my_gen {
-                        if let Ok(mut guard) = this.background_cancel.lock() {
-                            *guard = None;
-                        }
-                    }
+                    this.cancel_guard.clear_if_current(my_generation);
                 });
             })
             .expect("failed to spawn shielded-sync thread");
@@ -286,12 +257,7 @@ impl ShieldedSyncManager {
     /// nothing more will be persisted" barrier — required by Clear,
     /// unregister, and rebind — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .expect("bg_cancel poisoned")
-            .take()
-        {
+        if let Some(token) = self.cancel_guard.take() {
             token.cancel();
         }
     }

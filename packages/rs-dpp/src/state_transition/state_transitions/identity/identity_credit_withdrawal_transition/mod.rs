@@ -7,15 +7,11 @@ use crate::state_transition::identity_credit_withdrawal_transition::v0::Identity
 pub mod accessors;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "json-conversion")]
-mod json_conversion;
 pub mod methods;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
 pub mod v1;
-#[cfg(feature = "value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0Signable;
@@ -140,11 +136,11 @@ mod test {
     use crate::state_transition::{
         StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
         StateTransitionIdentityEstimatedFeeValidation, StateTransitionLike, StateTransitionOwned,
-        StateTransitionSingleSigned, StateTransitionType, StateTransitionValueConvert,
+        StateTransitionSingleSigned, StateTransitionType,
     };
     use crate::version::LATEST_PLATFORM_VERSION;
     use crate::withdrawal::Pooling;
-    use platform_value::{BinaryData, Identifier, Value};
+    use platform_value::{BinaryData, Identifier};
 
     fn make_withdrawal_v0() -> IdentityCreditWithdrawalTransition {
         IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
@@ -279,66 +275,11 @@ mod test {
         assert_eq!(bin.len(), 2);
     }
 
-    #[test]
-    fn test_value_conversion_roundtrip_v0() {
-        let t = make_withdrawal_v0();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let restored =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
-                obj,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_value_conversion_roundtrip_v1() {
-        let t = make_withdrawal_v1();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let restored =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
-                obj,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_value_map_v0() {
-        let t = make_withdrawal_v0();
-        let obj = StateTransitionValueConvert::to_object(&t, false).expect("should work");
-        let map = obj.into_btree_string_map().expect("should be map");
-        let restored =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_value_map(
-                map,
-                LATEST_PLATFORM_VERSION,
-            )
-            .expect("should work");
-        assert_eq!(t, restored);
-    }
-
-    #[test]
-    fn test_from_object_unknown_version() {
-        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
-        let result =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::from_object(
-                value,
-                LATEST_PLATFORM_VERSION,
-            );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_clean_value_unknown_version() {
-        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
-        let result =
-            <IdentityCreditWithdrawalTransition as StateTransitionValueConvert>::clean_value(
-                &mut value,
-            );
-        assert!(result.is_err());
-    }
+    // Legacy `StateTransitionValueConvert` round-trip and
+    // unknown-version tests deleted in Phase D step 9. The canonical
+    // `JsonConvertible` / `ValueConvertible` round-trip is exercised on
+    // the outer enum derive (see `json_convertible_tests` below) — these
+    // tested methods that no longer exist.
 
     #[test]
     fn test_estimated_fee_sufficient() {
@@ -367,5 +308,221 @@ mod test {
     fn test_min_withdrawal_amount_constant() {
         assert!(MIN_WITHDRAWAL_AMOUNT > 0);
         assert!(MIN_CORE_FEE_PER_BYTE == 1);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+
+    use crate::identity::core_script::CoreScript;
+    use crate::withdrawal::Pooling;
+    use platform_value::{platform_value, BinaryData, Identifier};
+    use serde_json::json;
+
+    pub(crate) fn fixture() -> IdentityCreditWithdrawalTransition {
+        IdentityCreditWithdrawalTransition::V0(IdentityCreditWithdrawalTransitionV0 {
+            identity_id: Identifier::new([0x33; 32]),
+            amount: 9_876_543,
+            core_fee_per_byte: 5,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes(vec![0x76, 0xa9, 0x14]),
+            nonce: 11,
+            user_fee_increase: 2,
+            signature_public_key_id: 4,
+            signature: BinaryData::new(vec![0xb2; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `coreFeePerByte` (u32), `nonce` (u64), `userFeeIncrease` (u16),
+        // `signaturePublicKeyId` (u32). The value-path assertion below uses
+        // explicit suffixes to lock in the typed variants.
+        // `pooling` uses a custom `pooling_serde` that emits the camelCase name
+        // string in HR and the u8 discriminant in non-HR.
+        // `outputScript` is base64 in HR (CoreScript Serialize) and bytes in non-HR.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x33; 32]),
+                "amount": 9_876_543u64,
+                "coreFeePerByte": 5u32,
+                "pooling": "never",
+                "outputScript": "dqkU",
+                "nonce": 11u64,
+                "userFeeIncrease": 2u16,
+                "signaturePublicKeyId": 4u32,
+                "signature": "srKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrI=",
+            })
+        );
+        let recovered = IdentityCreditWithdrawalTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: `amount` u64, `coreFeePerByte`
+        // u32, `nonce` u64 (IdentityNonce), `userFeeIncrease` u16,
+        // `signaturePublicKeyId` u32 (KeyID).
+        // `pooling`: `pooling_serde` emits the u8 discriminant on the non-HR
+        // path (`Pooling::Never as u8 == 0`).
+        // `outputScript`: CoreScript serializes as Bytes on the non-HR path.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "identityId": Identifier::new([0x33; 32]),
+                "amount": 9_876_543u64,
+                "coreFeePerByte": 5u32,
+                "pooling": 0u8,
+                "outputScript": BinaryData::new(vec![0x76, 0xa9, 0x14]),
+                "nonce": 11u64,
+                "userFeeIncrease": 2u16,
+                "signaturePublicKeyId": 4u32,
+                "signature": BinaryData::new(vec![0xb2; 65]),
+            })
+        );
+        let recovered =
+            IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    // --- V1 with output_script: None (restored coverage from Phase D step 9) ---
+    //
+    // V1 has `output_script: Option<CoreScript>` where None means "send to the
+    // address set by core" (vs V0's mandatory script). These tests round-trip
+    // the None case through both JSON and Value paths, replacing the
+    // `make_withdrawal_v1_no_script` fixture deleted in step 9.
+    pub(crate) fn fixture_v1_no_script() -> IdentityCreditWithdrawalTransition {
+        IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
+            identity_id: Identifier::new([0x44; 32]),
+            amount: 1_234_567,
+            core_fee_per_byte: 7,
+            pooling: Pooling::Standard,
+            output_script: None,
+            nonce: 13,
+            user_fee_increase: 3,
+            signature_public_key_id: 5,
+            signature: BinaryData::new(vec![0xa3; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_v1_with_none_output_script() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture_v1_no_script();
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "1",
+                "identityId": Identifier::new([0x44; 32]),
+                "amount": 1_234_567u64,
+                "coreFeePerByte": 7u32,
+                "pooling": "standard",
+                "outputScript": null,
+                "nonce": 13u64,
+                "userFeeIncrease": 3u16,
+                "signaturePublicKeyId": 5u32,
+                "signature": "o6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6Ojo6M=",
+            })
+        );
+        let recovered = IdentityCreditWithdrawalTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_v1_with_none_output_script() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture_v1_no_script();
+        let value = original.to_object().expect("to_object");
+        // Pooling::Standard = 2 (discriminant; Never=0, IfAvailable=1, Standard=2)
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "1",
+                "identityId": Identifier::new([0x44; 32]),
+                "amount": 1_234_567u64,
+                "coreFeePerByte": 7u32,
+                "pooling": 2u8,
+                "outputScript": platform_value::Value::Null,
+                "nonce": 13u64,
+                "userFeeIncrease": 3u16,
+                "signaturePublicKeyId": 5u32,
+                "signature": BinaryData::new(vec![0xa3; 65]),
+            })
+        );
+        let recovered =
+            IdentityCreditWithdrawalTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    // --- Unknown `$formatVersion` error coverage ---
+    //
+    // Representative test for the canonical `serde(tag = "$formatVersion")`
+    // dispatch error path. We assert that an unknown version (`"99"`) is
+    // rejected by both `from_json` and `from_object` paths. This pattern
+    // is unified across every `$formatVersion`-tagged outer enum in the
+    // codebase, so one representative test on a multi-variant enum
+    // (V0 + V1) demonstrates the contract; per-enum coverage would be
+    // mechanical noise.
+    #[test]
+    fn from_json_rejects_unknown_format_version() {
+        use crate::serialization::JsonConvertible;
+        let bad = json!({
+            "$formatVersion": "99",
+            "identityId": Identifier::new([0x33; 32]),
+            "amount": 1u64,
+            "coreFeePerByte": 1u32,
+            "pooling": "never",
+            "outputScript": "AA==",
+            "nonce": 1u64,
+            "userFeeIncrease": 1u16,
+            "signaturePublicKeyId": 1u32,
+            "signature": "AA==",
+        });
+        let result = IdentityCreditWithdrawalTransition::from_json(bad);
+        assert!(
+            result.is_err(),
+            "from_json should reject an unknown $formatVersion (got: {:?})",
+            result.as_ref().map(|_| "Ok")
+        );
+    }
+
+    #[test]
+    fn from_object_rejects_unknown_format_version() {
+        use crate::serialization::ValueConvertible;
+        let bad = platform_value!({
+            "$formatVersion": "99",
+            "identityId": Identifier::new([0x33; 32]),
+            "amount": 1u64,
+            "coreFeePerByte": 1u32,
+            "pooling": 0u8,
+            "outputScript": BinaryData::new(vec![]),
+            "nonce": 1u64,
+            "userFeeIncrease": 1u16,
+            "signaturePublicKeyId": 1u32,
+            "signature": BinaryData::new(vec![]),
+        });
+        let result = IdentityCreditWithdrawalTransition::from_object(bad);
+        assert!(
+            result.is_err(),
+            "from_object should reject an unknown $formatVersion (got: {:?})",
+            result.as_ref().map(|_| "Ok")
+        );
     }
 }

@@ -13,7 +13,7 @@ Generate a pull request title and description for the current branch using the p
 1. Determine the base branch:
    - Use the argument if provided
    - Otherwise, auto-detect: `git remote set-head origin --auto >/dev/null 2>&1 && git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/||'`
-   - Fall back to `v3.1-dev` if the command above fails
+   - Fall back to `v4.0-dev` if the command above fails
 
 2. Gather context by running these git commands:
    - `git log --oneline $(git merge-base HEAD <base>)..HEAD` — all commits on this branch

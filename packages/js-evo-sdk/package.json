@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/evo-sdk",
-  "version": "4.0.0-rc.2",
+  "version": "4.0.0",
   "type": "module",
   "main": "./dist/evo-sdk.module.js",
   "types": "./dist/sdk.d.ts",
@@ -28,7 +28,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.json && webpack --config webpack.config.cjs",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "test": "yarn run test:unit",
-    "test:unit": "mocha --import ts-node/esm --require tests/bootstrap.cjs tests/unit/**/*.spec.ts && karma start ./tests/karma/karma.conf.cjs --single-run"
+    "test:unit": "mocha --require tests/bootstrap.cjs tests/unit/**/*.spec.ts && karma start ./tests/karma/karma.conf.cjs --single-run"
   },
   "devDependencies": {
     "@types/chai": "^4.3.11",

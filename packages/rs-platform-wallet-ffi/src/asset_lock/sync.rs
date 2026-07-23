@@ -58,7 +58,9 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
     check_ptr!(out_derivation_path);
 
     let out_point = parse_outpoint(txid, vout);
-    let timeout = Duration::from_secs(timeout_secs);
+    // `timeout_secs == 0` requests an unbounded wait (a ChainLock is
+    // guaranteed finality; a broadcast lock is pending, never failed).
+    let timeout = (timeout_secs != 0).then(|| Duration::from_secs(timeout_secs));
 
     let option = ASSET_LOCK_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(manager.resume_asset_lock(&out_point, timeout))
@@ -92,7 +94,8 @@ pub unsafe extern "C" fn asset_lock_manager_resume(
 /// Returns `ok` on a successful proof resolution, an error on
 /// timeout / wait failure. The Swift caller is expected to schedule
 /// this on a background queue — `runtime().block_on(...)` parks the
-/// calling thread for up to `timeout_secs`.
+/// calling thread for up to `timeout_secs` (or **indefinitely** when
+/// `timeout_secs == 0`, since a ChainLock is guaranteed finality).
 #[no_mangle]
 pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     handle: Handle,
@@ -103,7 +106,9 @@ pub unsafe extern "C" fn asset_lock_manager_catch_up_blocking(
     check_ptr!(txid);
 
     let out_point = parse_outpoint(txid, vout);
-    let timeout = Duration::from_secs(timeout_secs);
+    // `timeout_secs == 0` requests an unbounded wait (a ChainLock is
+    // guaranteed finality; a broadcast lock is pending, never failed).
+    let timeout = (timeout_secs != 0).then(|| Duration::from_secs(timeout_secs));
 
     tracing::info!(
         outpoint = %out_point,

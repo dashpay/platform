@@ -7,8 +7,8 @@ mod contact_request;
 mod contact_request_queries;
 
 pub use contact_request::{
-    ContactRequestInput, ContactRequestResult, EcdhProvider, RecipientIdentity,
-    SendContactRequestInput, SendContactRequestResult,
+    recipient_key_purpose_is_valid, ContactRequestInput, ContactRequestResult, EcdhProvider,
+    RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
 pub use contact_request_queries::ContactRequestDocuments;
 
@@ -30,7 +30,10 @@ impl Sdk {
 
         #[cfg(not(feature = "dashpay-contract"))]
         let dashpay_contract_id = {
-            const DASHPAY_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+            // The deployed DashPay v1 contract id. This fallback
+            // previously held the DPNS id — a latent foot-gun for
+            // builds without the `dashpay-contract` feature.
+            const DASHPAY_CONTRACT_ID: &str = "Bwr4WHCPz5rFVAD87RqTs3izo4zpzwsEdKPWUT1NS1C7";
             Identifier::from_string(
                 DASHPAY_CONTRACT_ID,
                 dpp::platform_value::string_encoding::Encoding::Base58,

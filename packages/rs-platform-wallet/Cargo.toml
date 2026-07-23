@@ -49,7 +49,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 zeroize = "1"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9b98a35644cdea73cc1b21d7c122cb58ae9fafd8", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
 # WAL + synchronous=NORMAL pragmas before handing the connection to
 # `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
@@ -84,6 +84,10 @@ required-features = ["shielded"]
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+# `test-utils` exposes key-wallet's `TestWalletContext` + `Address::dummy`
+# (via `dashcore/test-utils`) for building funded, signable test wallets.
+# Dev-only, so the production build stays on the leaner default features.
+key-wallet = { workspace = true, features = ["test-utils"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
@@ -108,6 +112,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" 
 
 [features]
 default = ["bls", "eddsa"]
+test-utils = ["key-wallet/test-utils"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]

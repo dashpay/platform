@@ -8,6 +8,11 @@ token-history-contract: &token-history-contract
   - packages/token-history-contract/schema/**
   - packages/token-history-contract/Cargo.toml
 
+document-history-contract: &document-history-contract
+  - packages/document-history-contract/src/**
+  - packages/document-history-contract/schema/**
+  - packages/document-history-contract/Cargo.toml
+
 keyword-search-contract: &keyword-search-contract
   - packages/keyword-search-contract/src/**
   - packages/keyword-search-contract/schema/**
@@ -45,6 +50,7 @@ data-contracts: &data-contracts
   - *wallet-utils-contract
   - *token-history-contract
   - *keyword-search-contract
+  - *document-history-contract
 
 dpp: &dpp
   - packages/rs-dpp/**
@@ -147,6 +153,10 @@ platform-wallet: &platform_wallet
   - *platform_encryption
   - *sdk
 
+platform-wallet-storage:
+  - packages/rs-platform-wallet-storage/**
+  - *platform_wallet
+
 platform-wallet-ffi: &platform_wallet_ffi
   - packages/rs-platform-wallet-ffi/**
   - *platform_wallet
@@ -154,6 +164,11 @@ platform-wallet-ffi: &platform_wallet_ffi
 
 rs-unified-sdk-ffi:
   - packages/rs-unified-sdk-ffi/**
+  - *platform_wallet_ffi
+  - *sdk_ffi
+
+rs-unified-sdk-jni:
+  - packages/rs-unified-sdk-jni/**
   - *platform_wallet_ffi
   - *sdk_ffi
 

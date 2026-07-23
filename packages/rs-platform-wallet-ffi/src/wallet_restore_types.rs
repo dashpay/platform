@@ -130,8 +130,12 @@ impl StandardAccountTypeTagFFI {
 ///   * `AssetLockShieldedAddressTopUp`       — (none)
 ///   * `ProviderVotingKeys`                  — (none)
 ///   * `ProviderOwnerKeys`                   — (none)
-///   * `ProviderOperatorKeys`                — (none)
-///   * `ProviderPlatformKeys`                — (none)
+///   * `ProviderOperatorKeys`                — (none); `account_xpub_bytes`
+///     carries a bincode-encoded extended **BLS** public key, not a
+///     secp256k1 `ExtendedPubKey`
+///   * `ProviderPlatformKeys`                — (none); `account_xpub_bytes`
+///     carries a bincode-encoded extended **Ed25519** public key, not a
+///     secp256k1 `ExtendedPubKey`
 ///   * `DashpayReceivingFunds`               — `index`, `user_identity_id`, `friend_identity_id`
 ///   * `DashpayExternalAccount`              — `index`, `user_identity_id`, `friend_identity_id`
 ///   * `PlatformPayment`                     — `index` (as `account`), `key_class`
@@ -152,7 +156,11 @@ pub struct AccountSpecFFI {
     pub key_class: u32,
     pub user_identity_id: [u8; 32],
     pub friend_identity_id: [u8; 32],
-    /// Bincode-encoded [`key_wallet::bip32::ExtendedPubKey`]. Valid for
+    /// Bincode-encoded [`key_wallet::bip32::ExtendedPubKey`] for ECDSA
+    /// accounts. For the two provider key-material accounts the bytes
+    /// are instead a bincode-encoded extended BLS
+    /// (`ProviderOperatorKeys`) or Ed25519 (`ProviderPlatformKeys`)
+    /// public key — the `type_tag` selects the decode. Valid for
     /// callback duration only; Swift owns the allocation.
     pub account_xpub_bytes: *const u8,
     pub account_xpub_bytes_len: usize,
@@ -288,6 +296,125 @@ pub struct IdentityRestoreEntryFFI {
     /// hasn't completed).
     pub keys: *const IdentityKeyRestoreFFI,
     pub keys_count: usize,
+    /// DashPay contact rows owned by this identity, assembled from the
+    /// per-identity `PersistentDashpayContactRequest` SwiftData rows.
+    /// Reuses the persist-side [`crate::contact_persistence::ContactRequestFFI`]
+    /// shape (Swift-owned for the callback window — the byte buffers
+    /// and metadata strings ride the load allocation, NOT the Rust
+    /// destructors). Restores pending sent / incoming requests and
+    /// established contacts (pairs of rows, both directions) with
+    /// their owner-private metadata — without this, contacts only
+    /// re-derive from chain on the first sync sweep and the
+    /// contactInfo metadata is wiped during the deferred-publish
+    /// window (the relaunch-durability gap in contact-info persistence).
+    /// `null` / `0` when the identity has no persisted contact rows.
+    pub contacts: *const crate::contact_persistence::ContactRequestFFI,
+    pub contacts_count: usize,
+    /// DashPay payment-history rows owned by this identity, assembled
+    /// from the per-identity `PersistentDashpayPayment` SwiftData rows.
+    /// Restores the `dashpay_payments` map at load — without this the
+    /// in-memory map starts empty and only *Received* entries are
+    /// re-derived from UTXOs by the reconcile sweep, so *Sent* entries
+    /// (with their user-entered memos) silently vanish from the
+    /// authoritative model on every relaunch (H1). Swift-owned for the
+    /// callback window; the strings ride the load allocation, NOT the
+    /// Rust destructors. `null` / `0` when the identity has no payments.
+    pub payments: *const PaymentRestoreEntryFFI,
+    pub payments_count: usize,
+    /// DashPay ignored senders (per-sender mute, local-only) owned by this
+    /// identity, assembled from the persisted ignored-sender rows. Restores
+    /// the managed identity's ignored-senders set at load — **without this the ignore
+    /// set starts empty on every relaunch, so the still-on-platform
+    /// immutable `contactRequest` documents of a previously-ignored sender
+    /// re-ingest on the next sync sweep and the ignored sender resurfaces**
+    /// (the relaunch-durability gap that mirrors the contacts/payments
+    /// restore arrays above). Each entry is a bare 32-byte sender id (the
+    /// host persists only currently-ignored senders, so an un-ignored one
+    /// simply doesn't appear) — a flat POD array, so nothing rides the load
+    /// allocation here. `null` / `0` when the identity has ignored no one.
+    pub ignored_senders: *const [u8; 32],
+    pub ignored_senders_count: usize,
+    /// DashPay cached **contact** profiles owned by this identity,
+    /// assembled from the per-identity `PersistentDashpayContactProfile`
+    /// SwiftData rows. Restores the managed identity's contact-profile cache
+    /// (present entries only) at load — without this the contact-profile
+    /// cache starts empty on every relaunch and the requests/contacts UI
+    /// shows raw identity ids until the next profile sweep re-fetches
+    /// every contact (write amplification + a visible cold-start flicker).
+    /// Only **present** profiles are persisted/restored; the
+    /// confirmed-absent negative cache rebuilds harmlessly on the next
+    /// sweep. Swift-owned for the callback window; the strings ride the
+    /// load allocation, NOT the Rust destructors. `null` / `0` when the
+    /// identity has no cached contact profiles.
+    pub contact_profiles: *const ContactProfileRestoreEntryFFI,
+    pub contact_profiles_count: usize,
+}
+
+/// One DashPay payment-history row to rehydrate into
+/// the managed identity's payments map (keyed by `txid`) at load.
+///
+/// `direction_raw` / `status_raw` mirror the `PaymentDirection` /
+/// `PaymentStatus` discriminants (direction: 0=Sent, 1=Received;
+/// status: 0=Pending, 1=Confirmed, 2=Failed). Swift owns `txid`
+/// (always non-null) and the optional `memo` for the callback window.
+#[repr(C)]
+pub struct PaymentRestoreEntryFFI {
+    /// NUL-terminated transaction id (hex) — the `dashpay_payments`
+    /// map key.
+    pub txid: *const std::os::raw::c_char,
+    /// The other identity in this payment.
+    pub counterparty_id: [u8; 32],
+    /// Amount in duffs (always positive; `direction_raw` carries sign).
+    pub amount_duffs: u64,
+    /// `PaymentDirection` discriminant: 0=Sent, 1=Received.
+    pub direction_raw: u8,
+    /// `PaymentStatus` discriminant: 0=Pending, 1=Confirmed, 2=Failed.
+    pub status_raw: u8,
+    /// NUL-terminated memo, or null when the source `Option` was `None`.
+    pub memo: *const std::os::raw::c_char,
+}
+
+/// One cached **contact** profile row to rehydrate into
+/// the managed identity's contact-profile cache (keyed by the contact's identity
+/// id) at load. Mirrors the persist-side
+/// [`crate::identity_persistence::ContactProfileRowFFI`] field-for-field
+/// (the leading `contact_id` key, the five public profile fields with
+/// their `_present` byte-array flags, and the trailing `checked_at_ms`
+/// self-heal timestamp).
+///
+/// Only **present** profiles ride this struct — the confirmed-absent
+/// negative cache is never persisted, so every restored entry rebuilds
+/// as `ContactProfileEntry { profile: Some(..), checked_at_ms }`. Swift
+/// owns the four optional c-strings for the callback window; gate the
+/// byte-array fields on their paired `_present` flag rather than
+/// checking for all-zero (a valid hash/fingerprint value).
+#[repr(C)]
+pub struct ContactProfileRestoreEntryFFI {
+    /// The contact's 32-byte identity id — the `contact_profiles` map
+    /// key.
+    pub contact_id: [u8; 32],
+    /// NUL-terminated `displayName`, or null when the source `Option`
+    /// was `None`.
+    pub display_name: *const std::os::raw::c_char,
+    /// NUL-terminated `bio`, or null when `None`.
+    pub bio: *const std::os::raw::c_char,
+    /// NUL-terminated `avatarUrl`, or null when `None`.
+    pub avatar_url: *const std::os::raw::c_char,
+    /// SHA-256 avatar hash; meaningful only when
+    /// [`Self::avatar_hash_present`] is `true`.
+    pub avatar_hash: [u8; 32],
+    /// `true` iff the source `avatar_hash` was `Some(_)`.
+    pub avatar_hash_present: bool,
+    /// DHash avatar fingerprint; meaningful only when
+    /// [`Self::avatar_fingerprint_present`] is `true`.
+    pub avatar_fingerprint: [u8; 8],
+    /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
+    pub avatar_fingerprint_present: bool,
+    /// NUL-terminated `publicMessage`, or null when `None`.
+    pub public_message: *const std::os::raw::c_char,
+    /// Wall-clock ms of the last fetch attempt — the
+    /// `ContactProfileEntry::checked_at_ms` self-heal timestamp.
+    pub checked_at_ms: u64,
 }
 
 /// One unspent UTXO row to rehydrate into a funds-bearing account's
@@ -386,6 +513,48 @@ pub struct UnresolvedAssetLockTxRecordFFI {
     pub first_seen: u64,
 }
 
+/// A persisted provider special transaction (ProRegTx / ProUpServTx /
+/// ProUpRegTx / ProUpRevTx) staged back into the wallet at load so its
+/// DIP-3 payload record is resident on the provider-key accounts again.
+///
+/// Without this, key-wallet's rust-dashcore #876 retention has nothing to
+/// retain after a restart (the wallet is rebuilt from staging, which
+/// otherwise stages only UTXOs + asset-lock funding txs), so the
+/// masternode-list aggregation comes back empty until a rescan
+/// re-processes the blocks.
+///
+/// Same raw-tx / height shape as [`UnresolvedAssetLockTxRecordFFI`] but
+/// with NO `account_index`: provider involvement is payload-based (owner
+/// / voting key hashes), not a known BIP44 index, so the load path routes
+/// the record onto the wallet's provider-key accounts directly. `tx_bytes`
+/// is Swift-owned for the callback window and freed by the load
+/// allocation's `release()`.
+#[repr(C)]
+pub struct ProviderSpecialTxRestoreEntryFFI {
+    /// Consensus-encoded transaction body (`Transaction::consensus_decode`
+    /// round-trips). Carries the DIP-3 special-transaction payload.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// `TransactionContext` discriminant: `2` = InBlock, `3` =
+    /// InChainLockedBlock; anything else is treated as `Mempool`.
+    pub context_raw: u32,
+    /// Block height (meaningful only when `context_raw` is `2` / `3`).
+    pub block_height: u32,
+    /// Block hash (wire-orientation; meaningful with `context_raw` `2`/`3`).
+    pub block_hash: [u8; 32],
+    /// Block timestamp (Unix seconds; same meaningfulness rule).
+    pub block_timestamp: u64,
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when `has_block_position`. Restored onto the
+    /// rebuilt record's `BlockInfo` so the masternode aggregation keeps
+    /// Core's same-block apply order across restarts (rust-dashcore#891).
+    /// `false` for rows persisted before the field existed.
+    pub block_position: u32,
+    pub has_block_position: bool,
+    /// Persisted "first seen" Unix-second timestamp (mirrors on-disk).
+    pub first_seen: u64,
+}
+
 /// Per-wallet entry returned by `on_load_wallet_list_fn`.
 ///
 /// `accounts` points to a contiguous array of length `accounts_count`.
@@ -453,6 +622,14 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Persisted provider special transactions (ProRegTx / ProUpServTx /
+    /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
+    /// accounts so rust-dashcore #876 retention keeps them resident and
+    /// the masternode-list aggregation survives a restart. `null` / `0`
+    /// when the wallet has no provider special txs. Each entry's
+    /// `tx_bytes` buffer is Swift-owned and freed by `LoadWalletListFreeFn`.
+    pub provider_special_txs: *const ProviderSpecialTxRestoreEntryFFI,
+    pub provider_special_txs_count: usize,
     /// Persisted core address pools for this wallet
     pub core_address_pools: *const AccountAddressPoolFFI,
     pub core_address_pools_count: usize,
@@ -486,6 +663,10 @@ unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
 unsafe impl Send for UtxoRestoreEntryFFI {}
 unsafe impl Sync for UtxoRestoreEntryFFI {}
+// SAFETY: `tx_bytes` is Swift-owned and lifetime-scoped to the load
+// callback, same contract as the other restore entries above.
+unsafe impl Send for ProviderSpecialTxRestoreEntryFFI {}
+unsafe impl Sync for ProviderSpecialTxRestoreEntryFFI {}
 
 /// Paired free callback for the wallet-list load callback. Releases
 /// any memory Swift allocated for the entries array, the per-wallet

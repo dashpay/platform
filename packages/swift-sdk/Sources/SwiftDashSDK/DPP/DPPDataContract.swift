@@ -362,9 +362,7 @@ public struct DPPTokenConfiguration: Codable, Equatable, Sendable {
 
     /// Get total supply formatted with decimals
     public var formattedTotalSupply: String {
-        let divisor = pow(10.0, Double(decimals))
-        let amount = Double(totalSupplyInLowestDenomination) / divisor
-        return String(format: "%.\(decimals)f %@", amount, symbol)
+        "\(PersistentToken.formatSupply(String(totalSupplyInLowestDenomination), decimals: Int(decimals))) \(symbol)"
     }
 
     /// Alias for tokenDescription (for backward compatibility)

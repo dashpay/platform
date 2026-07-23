@@ -7,6 +7,7 @@ use std::error::Error as StdError;
 
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
+use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -188,6 +189,29 @@ impl PersistenceError {
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
 pub trait PlatformWalletPersistence: Send + Sync {
+    /// Feature-specific contracts this backend can persist and, where the
+    /// capability requires it, restore after process restart.
+    ///
+    /// **Fail-closed:** the default is empty. Implementations must attest each
+    /// bit explicitly; schema presence or a generic successful `store()` is
+    /// not sufficient.
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        PersistenceCapabilities::NONE
+    }
+
+    /// Compatibility summary for older invitation callers. It is true when the
+    /// backend attests atomic changesets plus durably persisted invitation rows
+    /// and asset-lock funding indices. This does not attest restart hydration;
+    /// new feature preflights must use [`Self::persistence_capabilities`] and
+    /// require their complete feature-specific set (including `WALLET_RESTORE`
+    /// where the operation needs it).
+    fn persists_durably(&self) -> bool {
+        let required = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+            .union(PersistenceCapabilities::INVITATIONS);
+        self.persistence_capabilities().contains(required)
+    }
+
     /// Buffer a changeset for later persistence.
     ///
     /// Implementations should merge into an internal per-wallet accumulator so
@@ -196,6 +220,25 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Returns an error if the internal accumulator cannot be accessed
     /// (e.g. mutex poisoning). Callers that use fire-and-forget
     /// semantics should log the error rather than propagating.
+    ///
+    /// ## Reentrancy contract (required)
+    ///
+    /// **A `store` implementation MUST NOT call back into any wallet-manager /
+    /// platform-wallet API.** The wallet manager is guarded by a single,
+    /// **non-reentrant** async `RwLock`, and many callers invoke `store`
+    /// **while holding that lock's write guard** (the balance/registration/
+    /// contact/payment mutation paths persist inside their critical section).
+    /// A callback that re-acquired the manager lock — directly, or indirectly
+    /// via a wallet-manager FFI call, an event/observer that synchronously
+    /// drives one, or a read-back that queries live wallet state — would
+    /// **deadlock on first execution**. Persist only the changeset you were
+    /// handed; do not consult the wallet manager to enrich it.
+    ///
+    /// Because `store` may run under that write guard, it is also
+    /// **latency-sensitive**: a slow synchronous write blocks every other
+    /// wallet accessor (readers and writers) for its duration. Keep the
+    /// per-call work bounded; if the backend does inline I/O (see the type
+    /// doc), size it accordingly.
     fn store(
         &self,
         wallet_id: WalletId,
