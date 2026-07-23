@@ -61,7 +61,7 @@ use dpp::identity::Purpose;
 use dpp::platform_value::{self};
 use dpp::prelude::{AddressNonce, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
-use dpp::state_transition::proof_result::{StateTransitionProofOutcome, StateTransitionProofResult};
+use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
