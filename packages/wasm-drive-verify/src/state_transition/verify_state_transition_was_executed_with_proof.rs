@@ -20,6 +20,7 @@ use crate::identity::verify_identity_keys_by_identity_id::partial_identity_to_js
 #[wasm_bindgen]
 pub struct VerifyStateTransitionWasExecutedWithProofResult {
     root_hash: Vec<u8>,
+    execution_proved: bool,
     proof_result: JsValue,
 }
 
@@ -28,6 +29,17 @@ impl VerifyStateTransitionWasExecutedWithProofResult {
     #[wasm_bindgen(getter)]
     pub fn root_hash(&self) -> Uint8Array {
         self.root_hash.to_uint8array()
+    }
+
+    /// Whether the proof established that this specific transition executed.
+    /// When `false`, `proof_result` is a verified snapshot of the state the
+    /// transition affects at the proof's block (transition families whose
+    /// proofs cannot be bound to execution: balance top-ups, credit
+    /// transfers/withdrawals, address funds movements, shields, no-history
+    /// token operations) — NOT evidence that the transition executed.
+    #[wasm_bindgen(getter)]
+    pub fn execution_proved(&self) -> bool {
+        self.execution_proved
     }
 
     #[wasm_bindgen(getter)]
@@ -45,66 +57,6 @@ pub fn verify_state_transition_was_executed_with_proof(
     proof: &Uint8Array,
     known_contracts_js: &JsValue,
     platform_version_number: u32,
-) -> Result<VerifyStateTransitionWasExecutedWithProofResult, JsValue> {
-    verify_state_transition_with_proof_internal(
-        state_transition_js,
-        block_height,
-        block_time_ms,
-        block_core_height,
-        proof,
-        known_contracts_js,
-        platform_version_number,
-        Drive::verify_state_transition_was_executed_with_proof,
-    )
-}
-
-/// Like `verifyStateTransitionWasExecutedWithProof`, but for transition
-/// families whose proof cannot be bound to execution (balance top-ups,
-/// credit transfers/withdrawals, address funds movements, shields,
-/// no-history token operations) it returns a verified snapshot of the
-/// affected state at the proof's block instead of failing. Snapshot results
-/// are NOT evidence that the transition executed.
-#[wasm_bindgen(js_name = "verifyStateTransitionAffectedStateWithProof")]
-pub fn verify_state_transition_affected_state_with_proof(
-    state_transition_js: &JsValue,
-    block_height: u64,
-    block_time_ms: u64,
-    block_core_height: u32,
-    proof: &Uint8Array,
-    known_contracts_js: &JsValue,
-    platform_version_number: u32,
-) -> Result<VerifyStateTransitionWasExecutedWithProofResult, JsValue> {
-    verify_state_transition_with_proof_internal(
-        state_transition_js,
-        block_height,
-        block_time_ms,
-        block_core_height,
-        proof,
-        known_contracts_js,
-        platform_version_number,
-        Drive::verify_state_transition_affected_state_with_proof,
-    )
-}
-
-type StateTransitionVerifier =
-    fn(
-        &StateTransition,
-        &BlockInfo,
-        &[u8],
-        &ContractLookupFn,
-        &PlatformVersion,
-    ) -> Result<(drive::verify::RootHash, StateTransitionProofResult), drive::error::Error>;
-
-#[allow(clippy::too_many_arguments)]
-fn verify_state_transition_with_proof_internal(
-    state_transition_js: &JsValue,
-    block_height: u64,
-    block_time_ms: u64,
-    block_core_height: u32,
-    proof: &Uint8Array,
-    known_contracts_js: &JsValue,
-    platform_version_number: u32,
-    verifier: StateTransitionVerifier,
 ) -> Result<VerifyStateTransitionWasExecutedWithProofResult, JsValue> {
     let proof_vec = proof.to_vec();
 
@@ -129,7 +81,7 @@ fn verify_state_transition_with_proof_internal(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proof_result) = verifier(
+    let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
         &state_transition,
         &block_info,
         &proof_vec,
@@ -138,11 +90,14 @@ fn verify_state_transition_with_proof_internal(
     )
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
+    let execution_proved = outcome.is_execution_proved();
+
     // Convert proof result to JS value
-    let proof_result_js = convert_proof_result_to_js(&proof_result)?;
+    let proof_result_js = convert_proof_result_to_js(outcome.result())?;
 
     Ok(VerifyStateTransitionWasExecutedWithProofResult {
         root_hash: root_hash.to_vec(),
+        execution_proved,
         proof_result: proof_result_js,
     })
 }

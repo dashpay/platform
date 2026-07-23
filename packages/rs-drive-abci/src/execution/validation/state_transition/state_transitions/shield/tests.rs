@@ -1367,25 +1367,26 @@ mod tests {
             );
 
             // A post-state balance alone cannot prove that this specific shield
-            // transition executed; the production verifier must fail closed until
-            // the proof carries transition-bound execution evidence.
-            let error = Drive::verify_state_transition_was_executed_with_proof(
-                &st,
-                &BlockInfo::default(),
-                &proof_bytes,
-                &|_| Ok(None),
-                platform_version,
-            )
-            .expect_err("a shield state proof must not imply transition execution");
+            // transition executed; the outcome must therefore stay tagged as
+            // an affected-state snapshot rather than execution evidence.
+            let (_outcome_root_hash, outcome) =
+                Drive::verify_state_transition_was_executed_with_proof(
+                    &st,
+                    &BlockInfo::default(),
+                    &proof_bytes,
+                    &|_| Ok(None),
+                    platform_version,
+                )
+                .expect("shield affected-state verification should succeed");
 
             assert!(
                 matches!(
-                    error,
-                    DriveError::Proof(ProofError::UnexpectedResultProof(ref message))
-                        if message.contains("shield execution")
-                            && message.contains("transition-bound execution evidence")
+                    outcome,
+                    dpp::state_transition::proof_result::StateTransitionProofOutcome::AffectedState(
+                        _
+                    )
                 ),
-                "unexpected shield execution verification error: {error:?}"
+                "a shield state proof must not be treated as execution evidence, got {outcome:?}"
             );
         }
     }

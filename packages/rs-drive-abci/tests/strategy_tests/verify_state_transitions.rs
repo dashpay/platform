@@ -9,7 +9,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::document::property_names::PRICE;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::{StateTransitionProofOutcome, StateTransitionProofResult};
 use dpp::state_transition::{StateTransition };
 use dpp::state_transition::StateTransitionType;
 use dpp::state_transition::StateTransitionWitnessSigned;
@@ -95,30 +95,29 @@ fn latest_block_info<C>(platform: &PlatformRef<C>) -> BlockInfo {
         .unwrap_or_else(BlockInfo::default)
 }
 
-fn assert_transition_execution_requires_receipt(
+fn assert_transition_yields_affected_state_snapshot(
     state_transition: &StateTransition,
     block_info: &BlockInfo,
     proof: &[u8],
     operation: &str,
     platform_version: &PlatformVersion,
 ) {
-    let error = Drive::verify_state_transition_was_executed_with_proof(
+    let (_root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
         state_transition,
         block_info,
         proof,
         &|_| Ok(None),
         platform_version,
     )
-    .expect_err("post-state proof must not imply execution without a bound receipt");
+    .unwrap_or_else(|error| {
+        panic!("{operation}: affected-state verification should succeed: {error:?}")
+    });
 
+    // The post-state proof cannot be bound to this transition's execution,
+    // so the outcome must stay tagged as an affected-state snapshot.
     assert!(
-        matches!(
-            error,
-            DriveError::Proof(ProofError::UnexpectedResultProof(ref message))
-                if message.contains(operation)
-                    && message.contains("transition-bound execution evidence")
-        ),
-        "unexpected {operation} verification error: {error:?}"
+        matches!(outcome, StateTransitionProofOutcome::AffectedState(_)),
+        "{operation}: post-state proof must not be treated as execution evidence, got {outcome:?}"
     );
 }
 
@@ -967,9 +966,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                 platform.state.last_committed_block_info()
                             );
 
-                            let StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
-                                proved_identity,
-                                proof_address_infos_map,
+                            let StateTransitionProofOutcome::ExecutionProved(
+                                StateTransitionProofResult::VerifiedIdentityFullWithAddressInfos(
+                                    proved_identity,
+                                    proof_address_infos_map,
+                                ),
                             ) = proof_result
                             else {
                                 panic!("expected identity/address infos for identity create from addresses proof");
@@ -1064,9 +1065,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             )
                             .expect("IdentityTopUpFromAddressesAction proof should verify");
 
-                        let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-                            identity,
-                            proof_address_infos,
+                        let StateTransitionProofOutcome::ExecutionProved(
+                            StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                                identity,
+                                proof_address_infos,
+                            ),
                         ) = data
                         else {
                             panic!("expected identity/address infos for top up from addresses proof, got {}",
@@ -1155,9 +1158,11 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
 
                         if *was_executed {
-                            let StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
-                                proved_identity,
-                                proof_address_infos_map,
+                            let StateTransitionProofOutcome::ExecutionProved(
+                                StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
+                                    proved_identity,
+                                    proof_address_infos_map,
+                                ),
                             ) = proof_result
                             else {
                                 panic!("expected identity/address infos for credit transfer proof");
@@ -1203,7 +1208,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionAction::AddressFundsTransfer(_) => {
                     if let StateTransition::AddressFundsTransfer(_) = state_transition {
                         let block_info = latest_block_info(&platform);
-                        assert_transition_execution_requires_receipt(
+                        assert_transition_yields_affected_state_snapshot(
                             state_transition,
                             &block_info,
                             &response_proof.grovedb_proof,
@@ -1222,7 +1227,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     ) = state_transition
                     {
                         let block_info = latest_block_info(&platform);
-                        assert_transition_execution_requires_receipt(
+                        assert_transition_yields_affected_state_snapshot(
                             state_transition,
                             &block_info,
                             &response_proof.grovedb_proof,
@@ -1258,7 +1263,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionAction::AddressCreditWithdrawal(_) => {
                     if let StateTransition::AddressCreditWithdrawal(_) = state_transition {
                         let block_info = latest_block_info(&platform);
-                        assert_transition_execution_requires_receipt(
+                        assert_transition_yields_affected_state_snapshot(
                             state_transition,
                             &block_info,
                             &response_proof.grovedb_proof,
