@@ -9,20 +9,30 @@ const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAd
 let evoSdkPromise = null;
 
 /**
+ * Map a client/test-suite network name to an EvoSDK network name.
+ *
+ * @param {string} network
+ * @returns {string}
+ */
+function normalizeNetwork(network) {
+  if (network === 'regtest' || network === 'local') {
+    return 'local';
+  }
+
+  if (network === 'testnet' || network === 'mainnet' || network === 'devnet') {
+    return network;
+  }
+
+  throw new Error(`Unsupported network "${network}" for the platform proof verifier`);
+}
+
+/**
  * Map the test suite's NETWORK env to an EvoSDK network name.
  *
  * @returns {{ network: string, devnetName: (string|undefined) }}
  */
 function resolveNetwork() {
-  const network = process.env.NETWORK || 'local';
-
-  if (network === 'regtest' || network === 'local') {
-    return { network: 'local', devnetName: undefined };
-  }
-
-  if (network === 'testnet' || network === 'mainnet') {
-    return { network, devnetName: undefined };
-  }
+  const network = normalizeNetwork(process.env.NETWORK || 'local');
 
   if (network === 'devnet') {
     const devnetName = process.env.EVO_SDK_DEVNET_NAME;
@@ -35,7 +45,7 @@ function resolveNetwork() {
     return { network: 'devnet', devnetName };
   }
 
-  throw new Error(`Unsupported NETWORK "${network}" for the platform proof verifier`);
+  return { network, devnetName: undefined };
 }
 
 /**
@@ -95,11 +105,31 @@ function getEvoSdk() {
 
       await sdk.connect();
 
-      return { evo, sdk };
+      return { evo, sdk, network };
     })();
   }
 
   return evoSdkPromise;
+}
+
+/**
+ * Get the shared EvoSDK, failing closed if the caller's network differs from
+ * the one the verifier is connected to: verifying against another network's
+ * quorum set must throw, never silently pass.
+ *
+ * @param {string} callNetwork
+ * @returns {Promise<{ evo: Object, sdk: Object }>}
+ */
+async function getEvoSdkForNetwork(callNetwork) {
+  const { evo, sdk, network } = await getEvoSdk();
+
+  if (callNetwork !== undefined && normalizeNetwork(callNetwork) !== network) {
+    throw new Error(
+      `Platform proof verifier is connected to "${network}" but the client requested verification for "${callNetwork}"`,
+    );
+  }
+
+  return { evo, sdk };
 }
 
 /**
@@ -119,10 +149,11 @@ function createPlatformProofVerifier() {
     /**
      * @param {Object} input
      * @param {Uint8Array} input.serializedStateTransition
+     * @param {string} input.network
      * @returns {Promise<void>}
      */
-    async verifyStateTransitionResult({ serializedStateTransition }) {
-      const { evo, sdk } = await getEvoSdk();
+    async verifyStateTransitionResult({ serializedStateTransition, network }) {
+      const { evo, sdk } = await getEvoSdkForNetwork(network);
 
       const stateTransition = evo.StateTransition.fromBytes(
         new Uint8Array(serializedStateTransition),
@@ -140,10 +171,11 @@ function createPlatformProofVerifier() {
      * @param {bigint} input.startAtMs
      * @param {number} input.limit
      * @param {number} input.offset
+     * @param {string} input.network
      * @returns {Promise<Array<{ date: bigint, value: Uint8Array }>>}
      */
     async verifyDataContractHistory({
-      contractId, startAtMs, limit, offset,
+      contractId, startAtMs, limit, offset, network,
     }) {
       if (offset) {
         throw new Error(
@@ -151,7 +183,7 @@ function createPlatformProofVerifier() {
         );
       }
 
-      const { sdk } = await getEvoSdk();
+      const { sdk } = await getEvoSdkForNetwork(network);
 
       const history = await sdk.contracts.getHistory({
         dataContractId: new Uint8Array(contractId),

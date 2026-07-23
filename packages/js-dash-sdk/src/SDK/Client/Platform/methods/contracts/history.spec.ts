@@ -103,7 +103,7 @@ describe('Client - Platform - Contracts - .history()', () => {
       expect(requestedProofModes).to.deep.equal([true]);
     });
 
-    it('should get from local when already fetched once', async () => {
+    it('should re-verify and refetch on a second call', async () => {
       const contractHistory = await history.call({
         // @ts-ignore
         apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,

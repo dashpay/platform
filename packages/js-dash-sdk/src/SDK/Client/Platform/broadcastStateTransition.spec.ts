@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import broadcastStateTransition from './broadcastStateTransition';
 
 describe('broadcastStateTransition proof requirements', function suite() {
-  it('fails before broadcasting when no proof verifier is configured', async function test() {
+  it('should fail before broadcasting when no proof verifier is configured', async function test() {
     const dapi = {
       platform: {
         broadcastStateTransition: this.sinon.stub(),
@@ -26,7 +26,7 @@ describe('broadcastStateTransition proof requirements', function suite() {
     expect(platform.initialize).not.to.have.been.called;
   });
 
-  it('rejects a success response missing proof material', async function test() {
+  it('should reject a success response missing proof material', async function test() {
     const verifier = {
       verifyStateTransitionResult: this.sinon.stub(),
     };
@@ -52,5 +52,45 @@ describe('broadcastStateTransition proof requirements', function suite() {
     )).to.be.rejectedWith('missing proof or metadata');
 
     expect(verifier.verifyStateTransitionResult).not.to.have.been.called;
+  });
+
+  it('should verify and return a proved success response', async function test() {
+    const verifier = {
+      verifyStateTransitionResult: this.sinon.stub().resolves(),
+    };
+    const stateTransitionResult = {
+      proof: { grovedbProof: Buffer.from('proof') },
+      metadata: { height: 1 },
+    };
+    const dapi = {
+      platform: {
+        broadcastStateTransition: this.sinon.stub().resolves(),
+        waitForStateTransitionResult: this.sinon.stub().resolves(stateTransitionResult),
+      },
+    };
+    const platform = {
+      client: {
+        network: 'testnet',
+        getPlatformProofVerifier: () => verifier,
+        getDAPIClient: () => dapi,
+      },
+      initialize: this.sinon.stub().resolves(),
+      protocolVersion: 13,
+    };
+
+    const serialized = Buffer.from('transition');
+    const result = await broadcastStateTransition(
+      platform as any,
+      { toBuffer: () => serialized },
+    );
+
+    expect(result).to.equal(stateTransitionResult);
+    expect(dapi.platform.broadcastStateTransition).to.have.been.calledOnceWith(serialized);
+    expect(verifier.verifyStateTransitionResult).to.have.been.calledOnceWithExactly({
+      serializedStateTransition: serialized,
+      response: stateTransitionResult,
+      network: 'testnet',
+      protocolVersion: 13,
+    });
   });
 });
