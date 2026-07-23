@@ -32,12 +32,14 @@ fun <T> AccessiblePicker(
     optionLabel: (T) -> String,
     modifier: Modifier = Modifier,
     testTag: String? = null,
+    enabled: Boolean = true,
     onSelected: (T) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(enabled) { mutableStateOf(false) }
+    val effectiveExpanded = expanded && enabled
 
     ExposedDropdownMenuBox(
-        expanded = expanded,
+        expanded = effectiveExpanded,
         onExpandedChange = { expanded = it },
         modifier = modifier.let { m -> testTag?.let { m.testTag(it) } ?: m },
     ) {
@@ -45,14 +47,20 @@ fun <T> AccessiblePicker(
             value = optionLabel(selected),
             onValueChange = {},
             readOnly = true,
+            enabled = enabled,
             label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = effectiveExpanded)
+            },
             modifier = Modifier
-                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = enabled)
                 .fillMaxWidth()
                 .semantics { contentDescription = label },
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(
+            expanded = effectiveExpanded,
+            onDismissRequest = { expanded = false },
+        ) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(optionLabel(option)) },
