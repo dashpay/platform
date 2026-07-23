@@ -175,11 +175,11 @@ class AppState: ObservableObject {
         // Reset so a network switch never carries the previous
         // network's version while the refresh is in flight.
         platformProtocolVersion = nil
-        Task.detached { [weak self] in
+        Task.detached {
             do {
                 let version = try sdk.refreshProtocolVersion()
                 NSLog("✅ AppState: refreshed protocol version to \(version)")
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     // Drop a stale result if the SDK was swapped (e.g.
                     // another network switch) while we were querying.
                     guard let self, self.sdk === sdk else { return }
