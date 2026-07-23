@@ -180,7 +180,10 @@ impl std::fmt::Debug for DecryptedEncryptedDocument {
             .field("version", &self.version)
             .field("updated_at_ms", &self.updated_at_ms)
             // Redacted: never render the decrypted financial plaintext.
-            .field("payload", &format_args!("<{} bytes redacted>", self.payload.len()))
+            .field(
+                "payload",
+                &format_args!("<{} bytes redacted>", self.payload.len()),
+            )
             .finish()
     }
 }
@@ -227,7 +230,8 @@ impl IdentityWallet {
     async fn resolve_encryption_context(
         &self,
         owner_identity_id: &Identifier,
-    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError> {
+    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError>
+    {
         let wm = self.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&self.wallet_id)
@@ -259,7 +263,8 @@ impl IdentityWallet {
     fn resolve_encryption_context_blocking(
         &self,
         owner_identity_id: &Identifier,
-    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError> {
+    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError>
+    {
         let wm = self.wallet_manager.blocking_read();
         let info = wm
             .get_wallet_info(&self.wallet_id)
