@@ -134,13 +134,16 @@ async function getEvoSdkForNetwork(callNetwork) {
 
 /**
  * Create an `IPlatformProofVerifier` for `Dash.Client`, backed by the
- * Rust/WASM SDK, which authenticates every result end to end: GroveDB proof
- * verification plus the Tenderdash quorum signature over the root hash.
+ * Rust/WASM SDK. Its proved re-query authenticates an execution result or
+ * affected-state snapshot end to end: GroveDB proof verification plus the
+ * Tenderdash quorum signature over the root hash.
  *
  * Verification re-queries Platform through the WASM SDK's proved paths rather
- * than re-checking the exact bytes the JS transport received: the returned
- * data (and the absence of a consensus error) is quorum-authenticated, so the
- * unverified DAPI response is never the source of truth.
+ * than re-checking the exact bytes the JS transport received. Depending on the
+ * transition family, the proof authenticates either the execution result or a
+ * height-pinned snapshot of the affected state. A snapshot is not evidence
+ * that this exact transition executed; the caller handles consensus errors
+ * from the original response before invoking this verifier.
  *
  * @returns {Object} IPlatformProofVerifier
  */
@@ -159,10 +162,9 @@ function createPlatformProofVerifier() {
         new Uint8Array(serializedStateTransition),
       );
 
-      // Waits on the proved endpoint and verifies the execution proof and
-      // quorum signature inside the Rust SDK; throws unless the transition
-      // was executed (or yielded a consensus error, which also throws).
-      await sdk.stateTransitions.waitForResponse(stateTransition);
+      // Verify either the execution result or the affected-state snapshot,
+      // depending on the proof shape supported by the transition family.
+      await sdk.stateTransitions.waitForAffectedState(stateTransition);
     },
 
     /**

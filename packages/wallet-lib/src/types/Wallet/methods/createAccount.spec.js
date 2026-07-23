@@ -65,7 +65,7 @@ describe('Wallet#createAccount', function suite() {
     await createAccountPromise;
   });
 
-  it('should initialize from stored headers and their authenticated height', async function shouldInitializeStoredHeaders() {
+  it('should resume from the first authenticated stored header without a remote checkpoint', async function shouldInitializeStoredHeaders() {
     const blockHeadersProvider = {
       initializeChainWith: this.sinon.stub().resolves(),
     };
@@ -76,7 +76,11 @@ describe('Wallet#createAccount', function suite() {
     });
     await waitForStorage(wallet);
     const chainStore = wallet.storage.getDefaultChainStore();
-    const storedHeaders = [{ hash: 'stored-header' }];
+    const storedHeaders = [
+      { hash: 'stored-header-40' },
+      { hash: 'stored-header-41' },
+      { hash: 'stored-header-42' },
+    ];
     chainStore.state.blockHeaders = storedHeaders;
     chainStore.state.lastSyncedHeaderHeight = 42;
 
@@ -86,7 +90,7 @@ describe('Wallet#createAccount', function suite() {
     });
 
     expect(blockHeadersProvider.initializeChainWith)
-      .to.have.been.calledOnceWithExactly(storedHeaders, 42);
+      .to.have.been.calledOnceWithExactly(storedHeaders, 40);
   });
 
   it('should share one provider initialization between concurrent accounts', async function shouldInitializeOnce() {

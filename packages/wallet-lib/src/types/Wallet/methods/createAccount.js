@@ -33,8 +33,11 @@ async function createAccount(accountOpts) {
     const blockHeadersProvider = this.transport?.client?.blockHeadersProvider;
 
     if (blockHeadersProvider && !this.blockHeadersProviderInitializationPromise) {
+      const firstHeaderHeight = blockHeaders.length > 0
+        ? lastSyncedHeaderHeight - blockHeaders.length + 1
+        : lastSyncedHeaderHeight;
       this.blockHeadersProviderInitializationPromise = blockHeadersProvider
-        .initializeChainWith(blockHeaders, lastSyncedHeaderHeight);
+        .initializeChainWith(blockHeaders, firstHeaderHeight);
     }
 
     if (this.blockHeadersProviderInitializationPromise) {

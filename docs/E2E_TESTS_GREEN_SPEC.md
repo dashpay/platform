@@ -8,8 +8,17 @@ below. That amendment was independently reviewed, user-aligned, implemented,
 and locally verified. A fresh PR run proved the Core convergence fix but showed
 that another SPV rejection was still hidden by repeated browser-stream cleanup.
 The diagnostic amendment preserved that primary error. Run `30029414181`
-confirmed that the remaining failure is regtest difficulty validation, and the
-consensus amendment below pins and fixes that final root cause.
+confirmed the regtest difficulty mismatch, and the consensus amendment pinned
+and fixed it. Run `30031305459` then exposed a separate persisted-wallet
+restore bug: stored headers were indexed from the stored tip height instead of
+their first authenticated height. The restore amendment below preserves the
+remote-checkpoint rejection while correcting that local anchor. The same run
+then exposed three compatibility gaps introduced or revealed by the broadened
+E2E trigger: the legacy proof verifier still requested strict execution
+evidence for transition families that can only return affected-state proofs,
+the WASM epoch tests still used the intentionally disabled implicit-current
+proof query, and document transitions did not invoke the existing client-only
+binary-property sanitizer.
 
 ## Independent spec review findings applied
 
@@ -43,6 +52,19 @@ must-fix findings are incorporated below:
    negative regression uses only genesis as context. This proves the new
    equality guard itself rejects a changed target instead of accidentally
    passing through the existing DGW rejection after 24 headers.
+8. The affected-state adapter no longer claims that a snapshot proves exact
+   execution or absence of a consensus error. A focused rejection regression
+   is required because the legacy client's consensus-error response bypasses
+   the proof adapter.
+9. Epoch tests require `status.time.epoch` to be present and preserve the
+   original `current - 5` range semantics; there is no implicit or zero
+   fallback that could recreate the prohibited query.
+10. Document normalization uses the production
+    `DocumentTypeV0Methods::sanitize_document_properties` API. The 32-byte DPNS
+    property must become `Value::Bytes32`, and the caller-owned document must
+    remain unchanged.
+11. `IPlatformProofVerifier` documentation distinguishes full query binding
+    from the state-transition adapter's affected-state guarantee.
 
 The reviewers differed on trigger breadth. The failure-mode review recommended
 also treating every immediate/transitive `js-dapi-client` dependency (starting
@@ -88,7 +110,41 @@ schedule, or a manual dispatch:
    retargeting disabled and keeps its existing target while blocks are mined
    rapidly. The SPV client therefore rejects Core's valid next header as soon
    as its artificial DGW window fills.
-4. A PR that fixes either path does not normally run the affected E2Es.
+4. Final run `30031305459` passed the new consensus regressions, then browser
+   shard 2 failed during DPNS setup with `SPV chain cannot initialize from an
+   unauthenticated remote checkpoint`. The cached faucet wallet restores an
+   ordered array of authenticated headers plus the height of its last header.
+   `createAccount` passed that tip height to
+   `BlockHeadersProvider.initializeChainWith` as the first header's height.
+   The resulting height map could not supply the trusted predecessor requested
+   by the next historical sync, so the provider reset into the intentionally
+   prohibited remote-checkpoint state.
+5. Browser shard 1 in the same run failed while topping up an identity during
+   the duplicate-asset-lock regression. The test-suite proof verifier calls
+   Evo SDK's strict `waitForResponse`. Proof hardening now rejects the
+   `VerifiedPartialIdentity` returned for top-ups because it authenticates the
+   affected identity snapshot, not execution of the exact transition. Evo SDK
+   provides `waitForAffectedState` for precisely these transition families,
+   while preserving consensus-error failures and strict execution results when
+   they are available.
+6. The WASM functional job first exhausted all addresses after three successful
+   `getEpochsInfo` responses. The swallowed first error was
+   `proved descending epoch queries require an explicit start epoch`.
+   Security hardening intentionally disabled `getCurrentEpoch` because its
+   implicit descending bound came from unsigned response metadata. The
+   functional tests still call that method before every explicit epoch query
+   and swallow the error, leaving only the misleading address-exhaustion
+   symptom.
+7. The same functional job rejected the first DPNS preorder create with
+   `not an array of bytes`. `Document` converts the JavaScript
+   `Uint8Array` property through a schema-agnostic JSON representation, which
+   becomes an integer `Value::Array`. DPP already has a schema-aware,
+   client-only sanitizer that converts integer arrays on `byteArray` fields to
+   canonical binary Value variants (`Value::Bytes32` for this field), but the
+   Rust SDK document transition path never invokes it.
+   The remaining document failures are dependent cascades from that first
+   create and the missing custom contract/document IDs.
+8. A PR that fixes either path does not normally run the affected E2Es.
    `.github/workflows/tests.yml` gates Docker builds and all platform,
    functional, and Dashmate E2Es on `version-changed`, even when the E2E
    harness or one of its clients changes. A fake version edit would trigger the
@@ -132,6 +188,20 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   change exposed `SPV: Header 2e53e5ed...d8afbd55 is invalid` during a
   height-1 historical request for all 1393 regtest headers. The already-closed
   exception did not replace it.
+- PR run `30031305459`, browser shard 2 job `89290927444`: the regtest header
+  sequence advanced past the former difficulty failure. DPNS bootstrap then
+  exposed the persisted-header indexing bug as
+  `SPV chain cannot initialize from an unauthenticated remote checkpoint`.
+- PR run `30031305459`, browser shard 1 job `89290927408`: the identity
+  duplicate-asset-lock test failed during its successful top-up setup because
+  strict proof waiting rejected a verified affected-state identity snapshot.
+- PR run `30031305459`, functional job `89290927040`: all three nodes returned
+  `getEpochsInfo` successfully, but local proof verification rejected the
+  implicit descending query and exhausted the address pool. Replaying the
+  exact CI WASM bundle against the existing local network with SDK tracing
+  exposed the hidden proof error. The first document broadcast later reached
+  Tenderdash and was rejected with the schema binary conversion error; the
+  following document failures were setup cascades.
 
 ### Local deterministic reproduction
 
@@ -162,6 +232,13 @@ boundaries and returns it unchanged at an adjustment boundary. The bundled
 `@dashevo/dark-gravity-wave` implementation models regtest as a DGW network
 that permits minimum-difficulty blocks; it has no no-retarget parameter.
 
+The epoch failure also has a safe, read-only local reproduction. The exact
+WASM bundle built by run `30031305459` succeeds at trusted-context setup and
+receives a proved `getEpochsInfo` response from the existing local gateway.
+SDK tracing then reports that the descending request has no explicit start
+epoch. An explicit query using the epoch already returned by `getStatus`
+verifies successfully.
+
 ## Goals
 
 - A new online wallet initializes its SPV chain from the configured network's
@@ -170,6 +247,16 @@ that permits minimum-difficulty blocks; it has no no-retarget parameter.
   validation error with a second-close exception.
 - Regtest SPV validation follows Core's no-retarget rule instead of deriving a
   time-based DGW target.
+- A persisted wallet restores each authenticated header at its actual height,
+  so subsequent synchronization stays anchored to local state.
+- Legacy test-suite state-transition verification accepts authenticated,
+  height-pinned affected-state results for transition families whose proofs
+  cannot establish exact execution, without accepting unproved data or
+  suppressing consensus errors.
+- WASM functional tests issue request-bound epoch proofs instead of the
+  intentionally prohibited implicit-current proof query.
+- Rust SDK document transitions normalize schema-declared binary properties at
+  the client boundary before strict serialization.
 - A local Dashmate group does not start mining until every Core node reports
   the same height and block hash.
 - Changes to the explicit direct E2E-facing package and orchestration set
@@ -185,6 +272,10 @@ that permits minimum-difficulty blocks; it has no no-retarget parameter.
 - Changing Core chain-lock validation or Drive consensus handling.
 - Making every DAPI stream/client close operation idempotent.
 - Hardening partial `getStatus` parsing.
+- Re-enabling implicit-current proved epoch queries or trusting response
+  metadata as a proof selector.
+- Relaxing platform-value's strict binary serializer, which is also used on
+  consensus/app-hash paths.
 - Expanding E2Es to every source change in the monorepo.
 
 ## Chosen approach
@@ -285,6 +376,114 @@ weaken SPV checks, and modifying `@dashevo/dark-gravity-wave` would expand an
 external package API for a Core parameter that `dash-spv` already knows from
 its network selection. Comparing with the preceding authenticated header
 models no-retarget behavior while retaining all existing contextual checks.
+
+### 1d. Restore persisted headers at their actual first height
+
+`ChainStore` keeps headers in ascending order and records
+`lastSyncedHeaderHeight` for the array's final header. Before calling
+`BlockHeadersProvider.initializeChainWith`, derive the first authenticated
+height as:
+
+`lastSyncedHeaderHeight - blockHeaders.length + 1`
+
+Keep the existing empty-store value unchanged because the provider ignores
+that height when it initializes from genesis. Add a regression with three
+stored headers ending at height 42 and require initialization at height 40.
+Run it against the current caller first and observe the exact 42-versus-40
+failure.
+
+Why this boundary: weakening `SpvChain` to accept a remote root would undo the
+security invariant added by the batch-validation fix. Fetching a new remote
+checkpoint would not authenticate it. Correctly indexing the already
+authenticated local headers restores the predecessor that `ensureChainRoot`
+expects without changing any trust decision.
+
+### 1e. Use affected-state proof waiting in legacy test clients
+
+Change the platform-test-suite proof verifier's state-transition check from
+`waitForResponse` to `waitForAffectedState`. Apply the same correction to the
+bench-suite copy so the two legacy `Dash.Client` factories retain one proof
+contract. Update `IPlatformProofVerifier` documentation to distinguish its two
+method guarantees: data-contract history remains fully request-bound, while
+state-transition success can mean either exact execution evidence or an
+authenticated, height-pinned affected-state snapshot for families whose proof
+cannot bind execution.
+
+The affected-state API remains a proved path: it verifies the GroveDB proof
+and Tenderdash quorum signature, accepts strict execution-proved outcomes when
+available, propagates proved-wait errors, and additionally accepts the explicit
+affected-state result variants used by balance top-ups, transfers, withdrawals,
+address movements, shields, and no-history token operations. Its weaker
+guarantee must be stated accurately in the verifier comments: a snapshot
+authenticates affected state at a height but is not evidence that the exact
+transition executed or that it had no consensus error. The legacy caller
+rejects consensus errors from its original response before invoking the
+adapter, and the top-level adapter documentation must not retain either
+stronger claim.
+
+Run the existing duplicate-asset-lock browser regression against the strict
+wait first and retain its observed failure. Its successful top-up exercises the
+compatibility need, but the later duplicate-spend consensus error is thrown by
+the legacy client before the proof adapter is called. Add a focused adapter
+regression with an injected Evo SDK loader to prove that an affected-state wait
+rejection propagates unchanged instead of being converted to success.
+
+Why this boundary: weakening the Evo SDK strict wait would hide guarantee
+differences for all consumers. The dedicated affected-state API makes the
+limited guarantee explicit at the legacy adapter that can accept it.
+
+### 1f. Make functional epoch queries request-bound
+
+The WASM functional setup already calls `getStatus` and records the evonode
+ProTxHash. Record `status.time.epoch` at the same point and use that value as
+the explicit basis for every query in the file. Preserve the range tests'
+existing coverage by using `Math.max(0, epochIndex - 5)` as the start for
+epoch/finalized-epoch ranges and `epochIndex` itself for proposed-block
+queries. Require the optional status field to be present and fail loudly
+without an implicit or zero fallback. Remove the repeated
+`getCurrentEpoch().catch(() => null)` calls.
+
+The status value is not treated as authenticated query output; it only chooses
+the exact epoch the subsequent GroveDB proof must authenticate. This matches
+the migration contract documented by the proof-hardening change: callers must
+fetch a specific epoch by explicit index until Platform exposes an
+authenticated current-epoch marker. The tests assert API shape and proof
+handling, not a cryptographic claim that the selected status epoch is the
+unique chain tip.
+
+Why this boundary: restoring the old metadata fallback would reintroduce a
+stale-proof attack, while skipping the tests would discard coverage for six
+public WASM query methods. Retrying address exhaustion would only repeat a
+deterministic local proof rejection.
+
+### 1g. Sanitize document properties at the Rust SDK client boundary
+
+Before `PutDocument` constructs either a create or replacement transition,
+clone the supplied document, import `DocumentTypeV0Methods`, and call the
+production `sanitize_document_properties` trait method on its
+`properties_mut()`. Use the sanitized clone for transition construction and
+leave the caller's document unchanged.
+
+Add a focused Rust SDK regression using a schema-declared `byteArray` property
+and the exact integer-array shape produced by WASM's schemaless conversion.
+Put clone-and-sanitize behavior in a pure transition-boundary helper so the
+regression compiles before the behavior changes. The helper must initially
+return the unchanged integer array, then return the canonical binary Value
+variant after the fix; the exact 32-byte DPNS `saltedDomainHash` must become
+`Value::Bytes32`, while the original caller-owned document remains an integer
+array. Invoke the helper once before the create/replacement branch so both
+transition paths use the same normalization.
+
+The sanitizer is deliberately client-only. Consensus continues to require a
+canonical binary Value variant; platform-value serialization and Drive
+validation are unchanged. Creation and replacement share the same boundary
+because both serialize document properties, while delete, transfer, price, and
+purchase transitions do not need property normalization.
+
+Why this boundary: `DocumentWasm` cannot identify binary properties before it
+fetches the data contract. The Rust SDK has both the document and its resolved
+document type immediately before building the transition, making it the
+narrowest shared client boundary for WASM and other SDK callers.
 
 ### 2. Add a Core-tip convergence gate before mining
 
@@ -428,6 +627,20 @@ Treat separately to keep this PR tied to E2E reliability.
 This would suppress the browser-visible masking error but leave the new
 wallet's chain uninitialized. The historical batch would still be rejected.
 
+### Restore unsigned metadata as the implicit current-epoch bound
+
+The proof-hardening change intentionally removed this behavior: a node could
+select a stale epoch and produce a valid proof for it. Functional coverage
+must migrate to an explicit request selector instead of weakening proof
+verification.
+
+### Relax binary serialization to accept integer arrays
+
+The strict serializer is used by consensus and app-hash paths. Accepting a new
+wire shape there would create a rolling-upgrade divergence risk. Normalize
+only at the SDK client boundary where the resolved schema identifies
+`byteArray` fields.
+
 ### Skip difficulty validation for regtest
 
 Regtest uses cheap proof of work, but Core still enforces a specific target.
@@ -508,6 +721,23 @@ browser wallet bootstrap
   -> regtest headers retain the preceding authenticated target
   -> finite historical stream(fromBlockHeight, count)
   -> continuous reconnecting stream(fromBlockHeight), only after history
+
+legacy state-transition verification
+  -> reject a consensus error in the original response
+  -> parse the submitted transition
+  -> wait on Evo SDK's proved affected-state endpoint
+  -> accept execution proof or authenticated height-pinned affected state
+  -> propagate proof or API errors
+
+WASM epoch functional query
+  -> getStatus supplies an explicit epoch selector
+  -> proved query authenticates that exact requested epoch
+
+WASM Document Uint8Array
+  -> schema-agnostic integer Value::Array
+  -> Rust SDK resolves document type
+  -> client-only schema sanitizer produces canonical Value::Bytes32
+  -> strict transition serialization remains unchanged
 ```
 
 ## Failure modes and safeguards
@@ -545,6 +775,19 @@ browser wallet bootstrap
   using Core's no-retarget rule and does not derive a false time-based target.
 - A regtest peer supplies a header with a changed target: canonical-target,
   proof-of-work, median-time, and no-retarget checks still reject it.
+- A transition family has only an affected-state proof: the legacy adapter
+  accepts the quorum-authenticated snapshot but never describes it as exact
+  execution evidence.
+- A transition's original response contains a consensus error: the legacy
+  caller throws before invoking the adapter. An invalid proved query still
+  rejects, and the adapter does not convert that failure into success.
+- Status selects a nonexistent or stale epoch: the explicit proved query
+  returns authenticated absence or state for that exact selector rather than
+  letting unsigned metadata redefine the proof query.
+- A document property is not schema-declared as binary: the sanitizer leaves
+  it untouched and normal validation remains responsible for rejecting it.
+- A binary property reaches consensus serialization: it is already canonical
+  binary Value variant; the strict shared serializer is not relaxed.
 
 ## Verification plan
 
@@ -569,6 +812,20 @@ browser wallet bootstrap
    array, or premature miner call.
 6. Add the convergence task and DI registration, rerun the same test, then run
    the complete Dashmate unit suite.
+7. Run the persisted-header regression against the old tip-as-start call and
+   record the exact 42-versus-40 failure. Derive the first stored height and
+   rerun the complete `createAccount` unit file.
+8. Retain the browser shard 1 failure from the strict execution wait, switch
+   the two legacy verifier copies to the explicit affected-state API, and run
+   the focused browser shard plus verifier lint.
+9. Replay the CI WASM bundle's implicit-current failure with SDK tracing.
+   Change the functional epoch tests to use the status epoch as an explicit
+   selector and run all six epoch/proposed-block queries read-only against the
+   existing local network.
+10. Add the Rust SDK binary-property boundary regression and observe the
+    integer array before the fix. Invoke the existing client-only sanitizer,
+    verify `Value::Bytes32` after the fix, then run the Rust SDK unit target
+    and the WASM document functional suite in CI.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test
