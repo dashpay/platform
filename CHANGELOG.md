@@ -399,7 +399,7 @@
 * **kotlin-sdk:** apply rustfmt to rs-unified-sdk-jni, closes [#4192](https://github.com/dashpay/platform/issues/4192)
 * **kotlin-sdk:** free more runner disk before the emulator to fix "no space left" flakes
 * **kotlin-sdk:** tx-decode follow-up — blob hardening, net_from_ord hoist, prevVout docs ([#4187](https://github.com/dashpay/platform/issues/4187) review) ([#4192](https://github.com/dashpay/platform/issues/4192))
-* pin rust-dashcore to the dashpay/rust-dashcore[#913](https://github.com/dashpay/platform/issues/913) merge commit
+* pin rust-dashcore to the [rust-dashcore#913](https://github.com/dashpay/rust-dashcore/issues/913) merge commit
 * remove ignored cargo build config
 * **sdk:** drop the empty companion object left by the Cleaner migration
 * **swift-sdk:** reduce swift-sdk test time in CI ([#3869](https://github.com/dashpay/platform/issues/3869))

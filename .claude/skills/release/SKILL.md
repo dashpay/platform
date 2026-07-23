@@ -18,7 +18,7 @@ argument-hint: "[target-version | type]"
 
 ## Command
 
-```
+```sh
 yarn release -v=<target-version>     # explicit exact version — preferred, unambiguous
 yarn release -t=<type>               # derive next version from current + type
 yarn release -c=<tag>                # override the changelog-from tag (optional)
@@ -58,7 +58,7 @@ Given current root version and its type:
 
 Current version `4.0.0` on branch `v4.1-dev`, cutting the first 4.1 beta:
 
-```
+```sh
 yarn release -v=4.1.0-beta.1
 ```
 
