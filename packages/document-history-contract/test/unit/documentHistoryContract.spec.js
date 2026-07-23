@@ -105,12 +105,22 @@ describe('Document History Contract', () => {
       });
 
       describe('price', () => {
-        it('should be a non-negative integer', async () => {
-          rawPurchaseDocument.price = -1;
+        it('should be an integer', async () => {
+          rawPurchaseDocument.price = 'a lot';
           const document = dpp.document.create(dataContract, identityId, 'purchase', rawPurchaseDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minimum');
+          expect(error.keyword).to.equal('type');
+        });
+
+        // The schema deliberately has no `minimum`: the property stays an
+        // unbounded (sum-aggregatable i64) integer, and actual values are
+        // consensus-validated credit amounts written only by the protocol.
+        it('should accept negative values at the schema layer', async () => {
+          rawPurchaseDocument.price = -1;
+          const document = dpp.document.create(dataContract, identityId, 'purchase', rawPurchaseDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          expect(validationResult.isValid()).to.be.true();
         });
       });
 
