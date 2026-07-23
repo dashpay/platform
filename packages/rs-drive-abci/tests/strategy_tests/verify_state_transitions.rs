@@ -1065,7 +1065,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                             )
                             .expect("IdentityTopUpFromAddressesAction proof should verify");
 
-                        let StateTransitionProofOutcome::ExecutionProved(
+                        let StateTransitionProofOutcome::AffectedState(
                             StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
                                 identity,
                                 proof_address_infos,
@@ -1158,7 +1158,7 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                         );
 
                         if *was_executed {
-                            let StateTransitionProofOutcome::ExecutionProved(
+                            let StateTransitionProofOutcome::AffectedState(
                                 StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
                                     proved_identity,
                                     proof_address_infos_map,

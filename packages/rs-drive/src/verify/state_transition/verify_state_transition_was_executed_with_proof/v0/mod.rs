@@ -72,14 +72,6 @@ impl Drive {
         known_contracts_provider_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
-        // Set by the transition-family arms whose proofs cannot be bound to
-        // the execution of one specific transition (balance top-ups, credit
-        // transfers and withdrawals, address funds movements, shields,
-        // no-history token operations): the proof only authenticates the
-        // affected keys' state at the committed block, and the outcome is
-        // tagged `AffectedState` instead of `ExecutionProved`.
-        let mut affected_state = false;
-
         let (root_hash, result) = match state_transition {
             StateTransition::DataContractCreate(data_contract_create) => {
                 // we expect to get a contract that matches the state transition
@@ -497,7 +489,6 @@ impl Drive {
                                     ))
                                 } else {
                                     {
-                                        affected_state = true;
                                         let (root_hash, Some(balance)) =
                                             Drive::verify_token_balance_for_identity_id(
                                                 proof,
@@ -558,7 +549,6 @@ impl Drive {
                                     ))
                                 } else {
                                     {
-                                        affected_state = true;
                                         let recipient_id =
                                             token_mint_transition.recipient_id(token_config)?;
                                         let (root_hash, Some(balance)) =
@@ -582,7 +572,6 @@ impl Drive {
                                     historical_query()
                                 } else {
                                     {
-                                        affected_state = true;
                                         let recipient_id = token_transfer_transition.recipient_id();
                                         let identity_ids =
                                             [owner_id.to_buffer(), recipient_id.to_buffer()];
@@ -858,7 +847,6 @@ impl Drive {
                 Ok((root_hash, VerifiedIdentity(identity)))
             }
             StateTransition::IdentityTopUp(identity_top_up_transition) => {
-                affected_state = true;
                 // snapshot of the identity's balance and revision at the proof's block
                 let identity_id = identity_top_up_transition.identity_id();
                 let (root_hash, Some((balance, revision))) =
@@ -885,7 +873,6 @@ impl Drive {
             }
             StateTransition::IdentityCreditWithdrawal(identity_credit_withdrawal_transition) => {
                 {
-                    affected_state = true;
                     // snapshot of the identity's balance at the proof's block
                     let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
                         proof,
@@ -965,7 +952,6 @@ impl Drive {
                 Ok((root_hash, VerifiedPartialIdentity(identity)))
             }
             StateTransition::IdentityCreditTransfer(identity_credit_transfer) => {
-                affected_state = true;
                 // snapshot of the sender's and recipient's balances at the proof's block
                 let (root_hash_identity, balance_identity) =
                     Drive::verify_identity_balance_for_identity_id(
@@ -1175,7 +1161,6 @@ impl Drive {
                 ))
             }
             StateTransition::AddressFundsTransfer(st) => {
-                affected_state = true;
                 // snapshot of the input and output addresses at the proof's block
                 use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
                 use dpp::state_transition::StateTransitionWitnessSigned;
@@ -1192,7 +1177,6 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(address_balances)))
             }
             StateTransition::AddressFundingFromAssetLock(st) => {
-                affected_state = true;
                 // snapshot of the input and output addresses at the proof's block
                 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
                 let (root_hash, balances): (
@@ -1208,7 +1192,6 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::AddressCreditWithdrawal(st) => {
-                affected_state = true;
                 // snapshot of the input and output addresses at the proof's block
                 use dpp::state_transition::StateTransitionWitnessSigned;
                 let addresses_to_check = st
@@ -1228,7 +1211,6 @@ impl Drive {
                 Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::Shield(st) => {
-                affected_state = true;
                 // snapshot of the input addresses at the proof's block
                 use dpp::state_transition::StateTransitionWitnessSigned;
                 let (root_hash, balances): (
@@ -1909,13 +1891,124 @@ impl Drive {
             }
         }?;
 
-        let outcome = if affected_state {
-            StateTransitionProofOutcome::AffectedState(result)
-        } else {
+        let outcome = if Self::state_transition_proof_binds_execution(
+            state_transition,
+            known_contracts_provider_fn,
+        )? {
             StateTransitionProofOutcome::ExecutionProved(result)
+        } else {
+            StateTransitionProofOutcome::AffectedState(result)
         };
 
         Ok((root_hash, outcome))
+    }
+
+    /// Whether a valid proof for this state transition binds the execution of
+    /// this specific transition (`ExecutionProved`) or can only authenticate
+    /// the state the transition affects at the committed block
+    /// (`AffectedState`).
+    ///
+    /// This classifier is deliberately an exhaustive `match` over every
+    /// transition family — and, for tokens, over the contract's keeps-history
+    /// configuration and group usage — so adding a new variant fails to
+    /// compile until it is classified here: no transition can silently
+    /// inherit the stronger `ExecutionProved` guarantee.
+    fn state_transition_proof_binds_execution(
+        state_transition: &StateTransition,
+        known_contracts_provider_fn: &ContractLookupFn,
+    ) -> Result<bool, Error> {
+        let binds = match state_transition {
+            // The created contract's id derives from its owner and entropy,
+            // and the proven body must equal the transition's declared
+            // contract, which cannot exist without this create executing.
+            StateTransition::DataContractCreate(_) => true,
+            // The proven contract body equaling the update's target does not
+            // prove that THIS update executed: the proven version may predate
+            // the request, whose signature and nonce are not in the proof.
+            StateTransition::DataContractUpdate(_) => false,
+            StateTransition::Batch(batch) => match batch.first_transition() {
+                // The verifier errors on an empty batch before the tag is
+                // consulted; classify fail-closed regardless.
+                None => false,
+                // Document proofs bind the exact document (or its absence
+                // after deletion), including contested status and history.
+                Some(BatchedTransitionRef::Document(_)) => true,
+                Some(BatchedTransitionRef::Token(token_transition)) => {
+                    let data_contract_id = token_transition.data_contract_id();
+                    let contract = known_contracts_provider_fn(&data_contract_id)?.ok_or(
+                        Error::Proof(ProofError::UnknownContract(format!(
+                            "unknown contract with id {} in token verification",
+                            data_contract_id
+                        ))),
+                    )?;
+                    let token_config = contract.expected_token_configuration(
+                        token_transition.base().token_contract_position(),
+                    )?;
+                    let keeps = token_config.keeps_history();
+                    // A group action's proof binds the action id and the
+                    // signer's recorded participation; a history-keeping
+                    // token's proof binds the exact historical document.
+                    // Without either, only the resulting state is proven.
+                    let grouped = token_transition.base().using_group_info().is_some();
+                    match token_transition {
+                        TokenTransition::Burn(_) => keeps.keeps_burning_history() || grouped,
+                        TokenTransition::Mint(_) => keeps.keeps_minting_history() || grouped,
+                        TokenTransition::Transfer(_) => keeps.keeps_transfer_history(),
+                        TokenTransition::Freeze(_) | TokenTransition::Unfreeze(_) => {
+                            keeps.keeps_freezing_history() || grouped
+                        }
+                        TokenTransition::DirectPurchase(_) => keeps.keeps_direct_purchase_history(),
+                        TokenTransition::SetPriceForDirectPurchase(_) => {
+                            keeps.keeps_direct_pricing_history() || grouped
+                        }
+                        TokenTransition::DestroyFrozenFunds(_)
+                        | TokenTransition::EmergencyAction(_)
+                        | TokenTransition::ConfigUpdate(_)
+                        | TokenTransition::Claim(_) => true,
+                    }
+                }
+            },
+            // The proven identity holds exactly the transition's declared
+            // key set, which cannot exist without this create executing.
+            StateTransition::IdentityCreate(_) => true,
+            // Balance/revision snapshots: values as of the proof's block,
+            // not bindable to one specific top-up/withdrawal/transfer.
+            StateTransition::IdentityTopUp(_) => false,
+            StateTransition::IdentityCreditWithdrawal(_) => false,
+            StateTransition::IdentityCreditTransfer(_) => false,
+            // Binds the transition's revision and its exact key additions
+            // and disabling timestamps.
+            StateTransition::IdentityUpdate(_) => true,
+            // The proven vote is stored under the masternode's identity and
+            // must equal the transition's declared vote.
+            StateTransition::MasternodeVote(_) => true,
+            // Current identity and address balances, without the requested
+            // amounts, nonces, or the submitted request itself.
+            StateTransition::IdentityCreditTransferToAddresses(_) => false,
+            StateTransition::IdentityTopUpFromAddresses(_) => false,
+            // Binds the created identity's declared public keys.
+            StateTransition::IdentityCreateFromAddresses(_) => true,
+            // Address funds families: post-state address balances only.
+            StateTransition::AddressFundsTransfer(_) => false,
+            StateTransition::AddressFundingFromAssetLock(_) => false,
+            StateTransition::AddressCreditWithdrawal(_) => false,
+            StateTransition::Shield(_) => false,
+            // Nullifier-spend proofs bind the exact Orchard actions of this
+            // transition.
+            StateTransition::Unshield(_) => true,
+            StateTransition::ShieldedTransfer(_) => true,
+            StateTransition::ShieldedWithdrawal(_) => true,
+            // Only the consumed outpoint (and current surplus-address state)
+            // is proven; competing shields over the same outpoint share the
+            // same query and result.
+            StateTransition::ShieldFromAssetLock(_) => false,
+            // Spent nullifiers plus the resulting identity do not bind the
+            // complete Orchard request, denomination context, or fallback
+            // address.
+            StateTransition::IdentityCreateFromShieldedPool(_) => false,
+        };
+
+        Ok(binds)
     }
 
     /// Reconstruct the prove side's merged multi-root query and verify it STRICTLY.
@@ -2144,13 +2237,19 @@ mod tests {
             result.err()
         );
         let (_root_hash, proof_result) = result.unwrap();
+        // The proven contract body equaling the update's target does not
+        // prove that THIS update executed (the version may predate the
+        // request), so the outcome is a snapshot, not execution evidence.
         match proof_result {
-            StateTransitionProofOutcome::ExecutionProved(
+            StateTransitionProofOutcome::AffectedState(
                 StateTransitionProofResult::VerifiedDataContract(verified_contract),
             ) => {
                 assert_eq!(verified_contract.id(), contract.id());
             }
-            other => panic!("expected VerifiedDataContract, got {:?}", other),
+            other => panic!(
+                "expected AffectedState(VerifiedDataContract), got {:?}",
+                other
+            ),
         }
     }
 
