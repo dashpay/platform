@@ -137,6 +137,31 @@ describe('BlockHeadersReader - unit', () => {
         .to.have.been.calledTwice();
     });
 
+    it('[data] should preserve a rejected headers error when the browser stream is already closed', async function () {
+      blockHeadersReader.maxRetries = 0;
+      await blockHeadersReader.readHistorical(1, headers.length);
+
+      const rejectWith = new Error('Invalid headers');
+      const stream = historicalStreams[0];
+      stream.cancel = this.sinon.stub();
+      stream.cancel.onSecondCall()
+        .throws(new Error('Client already closed - cannot .close()'));
+
+      blockHeadersReader.on(BlockHeadersReader.EVENTS.BLOCK_HEADERS, (_, rejectHeaders) => {
+        rejectHeaders(rejectWith);
+      });
+
+      const errorPromise = new Promise((resolve) => {
+        blockHeadersReader.on(BlockHeadersReader.EVENTS.ERROR, resolve);
+      });
+
+      expect(() => stream.sendHeaders(headers)).to.not.throw();
+      expect(await errorPromise).to.equal(rejectWith);
+      expect(stream.cancel).to.have.been.calledTwice();
+      expect(blockHeadersReader.stopReadingHistorical).to.have.been.calledOnce();
+      expect(blockHeadersReader.historicalStreams).to.have.length(0);
+    });
+
     it('[error] should handle stream cancellation', async () => {
       await subscribeToHistoricalBatch(1, headers.length);
 

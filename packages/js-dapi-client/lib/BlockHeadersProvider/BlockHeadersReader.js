@@ -8,6 +8,8 @@ const EVENTS = {
   ERROR: 'error',
 };
 
+const CLIENT_ALREADY_CLOSED_ERROR_MESSAGE = 'Client already closed - cannot .close()';
+
 /**
  * @typedef BlockHeadersReaderOptions
  * @property {number} [maxParallelStreams]
@@ -296,7 +298,13 @@ class BlockHeadersReader extends EventEmitter {
   // eslint-disable-next-line class-methods-use-this
   cancelStream(stream) {
     stream.removeAllListeners();
-    stream.cancel();
+    try {
+      stream.cancel();
+    } catch (e) {
+      if (e.message !== CLIENT_ALREADY_CLOSED_ERROR_MESSAGE) {
+        throw e;
+      }
+    }
   }
 }
 

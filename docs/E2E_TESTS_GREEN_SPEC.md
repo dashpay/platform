@@ -4,8 +4,11 @@
 
 The initial design was approved and implemented. The first PR run disproved
 one browser diagnosis and exposed the missing genesis initialization described
-below. The amendment was independently reviewed, user-aligned, implemented,
-and locally verified. Fresh PR E2E validation remains pending.
+below. That amendment was independently reviewed, user-aligned, implemented,
+and locally verified. A fresh PR run proved the Core convergence fix but showed
+that another SPV rejection is still hidden by repeated browser-stream cleanup.
+The diagnostic amendment below preserves that primary error so the next run
+can identify and pin the remaining root cause.
 
 ## Independent spec review findings applied
 
@@ -60,16 +63,22 @@ schedule, or a manual dispatch:
    invalid signature, Drive rejected the proposal, and Tenderdash stopped.
    The browser's later `getStatus` failure was a secondary symptom of the
    unavailable Tenderdash service.
-2. On the latest rerun, the network survived because the next mined block
+2. On an earlier rerun, the network survived because the next mined block
    happened to arrive after Core synchronization. Both browser batches then
    failed deterministically during wallet bootstrap. A new wallet has no
    stored block headers, and `createAccount` only initializes the SPV chain
    when stored headers are present. The subsequent height-1 historical batch
    is therefore treated as an unauthenticated remote checkpoint and rejected.
-   In Chrome, the finite gRPC-web response is already closed when that
-   rejection tries to cancel it, so `Client already closed - cannot .close()`
-   masks the underlying SPV initialization error.
-3. A PR that fixes either path does not normally run the affected E2Es.
+   In Chrome, rejection cleanup cancels the gRPC-web response, and later
+   historical cleanup cancels the same tracked stream again. The resulting
+   `Client already closed - cannot .close()` masks the underlying SPV
+   initialization error.
+3. After genesis initialization was added, fresh run `30025175452` still
+   reached an SPV rejection in both browser shards. Repeated cleanup of the
+   same gRPC-web stream again replaced the primary error with the second-close
+   exception. Until cleanup preserves that error, CI cannot report the
+   remaining validation failure accurately.
+4. A PR that fixes either path does not normally run the affected E2Es.
    `.github/workflows/tests.yml` gates Docker builds and all platform,
    functional, and Dashmate E2Es on `version-changed`, even when the E2E
    harness or one of its clients changes. A fake version edit would trigger the
@@ -104,6 +113,11 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   close stack during a new wallet's `before all` hook. Source tracing showed
   that the close originates from rejection of the first historical headers,
   before the provider has a genesis root.
+- PR run `30025175452`: all three Dashmate E2Es passed, including the cached
+  local-network job, proving the convergence gate under CI. Both browser
+  shards nevertheless failed from `BlockHeadersProvider.headersHandler`
+  through historical retry cleanup. The only visible exception was the
+  already-closed gRPC-web client, so the underlying SPV error remained hidden.
 
 ### Local deterministic reproduction
 
@@ -124,6 +138,8 @@ tests will pin both deterministic contracts locally.
 
 - A new online wallet initializes its SPV chain from the configured network's
   genesis before processing height-1 historical headers.
+- Repeated cleanup of a rejected browser stream cannot replace a primary SPV
+  validation error with a second-close exception.
 - A local Dashmate group does not start mining until every Core node reports
   the same height and block hash.
 - Changes to the explicit direct E2E-facing package and orchestration set
@@ -189,9 +205,33 @@ Run the empty-store test against the current conditional first and observe it
 fail, then add the once-per-wallet initialization and rerun it.
 
 Why this boundary: genesis initialization is the earliest missing invariant.
-Making cancellation idempotent would only reveal the SPV rejection, and
-changing SPV to trust height 1 would weaken its authenticated-checkpoint
+Changing SPV to trust height 1 would weaken its authenticated-checkpoint
 protection.
+
+### 1b. Preserve the primary browser-stream rejection
+
+The upstream browser gRPC client throws
+`Client already closed - cannot .close()` when DAPI calls `cancel()` on a
+stream that an earlier rejection cleanup already cancelled. Treat only that
+exact second-close exception as successful cleanup in
+`BlockHeadersReader.cancelStream`. Other cancellation failures must still
+propagate.
+
+Add a regression that tracks the historical stream through
+`readHistorical`, rejects the received headers with a concrete validation
+error, lets the first cancellation succeed, and makes the second cancellation
+throw the exact upstream exception. The reader must perform both cleanup
+attempts, drain its tracked stream list, and emit the validation error rather
+than throwing the cleanup error. Run this test against the old behavior first
+and observe it fail.
+
+Why this boundary: catching around only the first rejection-site cancellation
+is insufficient because exhausted retries call `stopReadingHistorical`, which
+cancels the same tracked stream again. Making the reader's exact
+already-closed case idempotent covers both cleanup paths without suppressing
+unrelated transport failures. This amendment deliberately reveals, rather than
+guesses at, the remaining SPV failure; the next CI trace supplies the input for
+the final regression and fix.
 
 ### 2. Add a Core-tip convergence gate before mining
 
