@@ -110,15 +110,14 @@ struct ShieldedFundFromAssetLockView: View {
     /// fight the formatter on partial input.
     @State private var recipientHex: String = ""
     @State private var amountDash: String = "0.001"
-    /// Cross-privacy-domain co-spend consent (dashpay/platform#4184). Off by
-    /// default: the L1 asset-lock funding is confined to the transparent
-    /// BIP44/BIP32 domain. When the transparent slice alone can't cover the
-    /// lock, the funding call fails with `.errorAssetLockCrossDomainConsentRequired`;
-    /// flipping this on and resubmitting re-issues with `allowCrossDomain: true`,
-    /// widening funding to the wallet-wide signable union (CoinJoin +
-    /// DashPay-receiving). See the TODO on `crossDomainConsentSection` for the
-    /// fuller catch-30-and-retry UX this stand-in stands in for.
-    @State private var allowCrossDomain: Bool = false
+    /// Optional BIP32 derivation-path override selecting the single funds
+    /// account whose UTXOs fund the asset lock (dashpay/platform#4184). Empty
+    /// (the default) funds from the unmixed BIP44 account at the selected Core
+    /// account index; an explicit account-level path (e.g. the DIP-9 CoinJoin
+    /// account path) funds strictly from that one account, with no union across
+    /// accounts and no consent gate. Threaded to
+    /// `shieldedFundFromAssetLock(fundingPath:)` as `nil` when blank.
+    @State private var fundingPath: String = ""
     /// Platform-branch amount in DASH (parsed to credits, 1e11/DASH).
     /// Kept separate from `amountDash` so the Core (duffs) and
     /// Platform (credits) unit systems never share a text buffer.
@@ -183,7 +182,7 @@ struct ShieldedFundFromAssetLockView: View {
                         coreFundingSection
                         recipientSection
                         amountSection
-                        crossDomainConsentSection
+                        fundingPathSection
                     case .platformBalance:
                         platformAccountSection
                         platformAmountSection
@@ -272,31 +271,28 @@ struct ShieldedFundFromAssetLockView: View {
         }
     }
 
-    /// Cross-privacy-domain co-spend consent (dashpay/platform#4184).
+    /// Optional funding-account derivation path (dashpay/platform#4184).
     ///
-    /// TODO(dashpay/platform#4184 follow-up): this is a minimal stand-in, not
-    /// the intended UX. The proper flow submits with `allowCrossDomain: false`,
-    /// catches `.errorAssetLockCrossDomainConsentRequired` (result code 30),
-    /// shows the transparent/union/required duff breakdown parsed from the
-    /// error message, and only then offers a consent prompt that retries with
-    /// `allowCrossDomain: true` — rather than asking the user to pre-consent
-    /// blind. A fuller version would also let the funding picker surface
-    /// CoinJoin / DashPay-receiving balances so the user can see what the
-    /// union adds. Tracked as a follow-up to file (see the PR description); the
-    /// PR is held for rust-dashcore#912 (atomic multi-account reservation)
-    /// before this UX lands.
-    private var crossDomainConsentSection: some View {
+    /// A minimal stand-in for a richer picker: a fuller version would let the
+    /// user choose the funding account from a list that surfaces each
+    /// account's balance and label (unmixed BIP44, DIP-9 CoinJoin, etc.)
+    /// rather than typing a raw BIP32 path. Left blank funds from the default
+    /// unmixed BIP44 account.
+    private var fundingPathSection: some View {
         Section {
-            Toggle("Allow cross-domain funds", isOn: $allowCrossDomain)
+            TextField("m/44'/5'/0' (blank = default account)", text: $fundingPath)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
         } header: {
-            Text("Privacy")
+            Text("Funding Account (optional)")
         } footer: {
             Text(
-                "Off: fund the asset lock only from your transparent "
-                    + "(BIP44/BIP32) balance. On: if that alone can't cover the "
-                    + "lock, also draw CoinJoin and DashPay-receiving funds — this "
-                    + "combines those funds in one on-chain transaction and links "
-                    + "them together. Only enable after you understand that trade-off."
+                "Blank: fund the asset lock from your default unmixed BIP44 "
+                    + "account. Or enter one account-level BIP32 path (e.g. the "
+                    + "DIP-9 CoinJoin account) to fund strictly from that single "
+                    + "account — no union across accounts. If that one account "
+                    + "cannot cover the lock, the funding call fails with "
+                    + "insufficient funds."
             )
         }
     }
@@ -728,7 +724,9 @@ struct ShieldedFundFromAssetLockView: View {
                     recipients: [
                         ShieldedFundFromAssetLockRecipient(recipientRaw43: recipient)
                     ],
-                    allowCrossDomain: allowCrossDomain
+                    fundingPath: fundingPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? nil
+                        : fundingPath.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
             }
         }
