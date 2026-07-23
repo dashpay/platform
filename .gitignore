@@ -99,7 +99,9 @@ __pycache__/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .mcp.json
-.codex/
+# Ignore local Codex state, but track the shared skill symlinks
+.codex/*
+!.codex/skills/
 
 # Security audit reports (local-only, not committed)
 audits/
