@@ -25,7 +25,7 @@ use crate::version::drive_versions::v8::DRIVE_VERSION_V8;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v2::SYSTEM_DATA_CONTRACT_VERSIONS_V2;
-use crate::version::system_limits::v2::SYSTEM_LIMITS_V2;
+use crate::version::system_limits::v3::SYSTEM_LIMITS_V3;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
@@ -82,7 +82,7 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V2, // changed: DPNS v2 subscribes domain to document history
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V2,
+    system_limits: SYSTEM_LIMITS_V3,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
