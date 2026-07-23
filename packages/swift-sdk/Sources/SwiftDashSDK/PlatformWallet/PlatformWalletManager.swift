@@ -278,6 +278,21 @@ public class PlatformWalletManager: ObservableObject {
                 Self.log.error(
                     "Platform wallet manager teardown failed with \(String(describing: destroyResult.code), privacy: .public): \(destroyResult.message ?? "<no detail from Rust>", privacy: .public)"
                 )
+                // A non-clean destroy (errorShutdownIncomplete) means a Rust
+                // worker may still fire a persistence or event callback
+                // through the context pointers backed by these two objects —
+                // they were handed to Rust via `Unmanaged.passUnretained`, so
+                // this class is their only strong owner. The Rust handle is
+                // already removed, so a retry is impossible; deliberately
+                // leak the callback owners instead of letting ARC free them
+                // under a live worker (use-after-free → crash or wallet-state
+                // corruption). Bounded: one leak per failed teardown.
+                if let persistenceHandler {
+                    _ = Unmanaged.passRetained(persistenceHandler)
+                }
+                if let eventHandler {
+                    _ = Unmanaged.passRetained(eventHandler)
+                }
             }
         }
     }

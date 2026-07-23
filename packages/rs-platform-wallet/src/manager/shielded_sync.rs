@@ -37,7 +37,9 @@ use tokio::sync::RwLock;
 use dash_async::ThreadRegistry;
 
 use crate::events::PlatformEventManager;
-use crate::manager::{coordinator_worker_config, WalletWorker};
+use crate::manager::{
+    coordinator_worker_config, SyncSlotGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET,
+};
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 
@@ -290,13 +292,36 @@ impl ShieldedSyncManager {
     /// including the persister fan-out, so its falling edge (with the
     /// gate up) is a sound "fully drained" signal. The gate is reopened
     /// before returning so a later start/sync works normally.
-    pub async fn quiesce(&self) {
+    ///
+    /// **Bounded** by `COORDINATOR_DRAIN_BUDGET`: returns `false` if
+    /// the in-flight pass did not drain in time — see
+    /// `quiesce_within` for the timeout contract.
+    #[must_use = "a false return means the pass did NOT drain; the caller must fail closed"]
+    pub async fn quiesce(&self) -> bool {
+        self.quiesce_within(COORDINATOR_DRAIN_BUDGET).await
+    }
+
+    /// [`quiesce`](Self::quiesce) with an explicit drain budget.
+    ///
+    /// Returns `true` when the drain completed. Returns `false` when
+    /// `is_syncing` was still held at the deadline — a wedged pass. On
+    /// that path the `quiescing` gate is deliberately **left up** so the
+    /// wedged pass cannot be followed by a fresh one; the caller must
+    /// treat the coordinator as non-clean (Clear aborts fail-closed, the
+    /// FFI stop surfaces `ErrorShutdownIncomplete`). A later successful
+    /// `quiesce` reopens the gate.
+    pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         self.quiescing.store(true, Ordering::Release);
         self.stop();
+        let deadline = tokio::time::Instant::now() + budget;
         while self.is_syncing.load(Ordering::Acquire) {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         self.quiescing.store(false, Ordering::Release);
+        true
     }
 
     /// Run one sync pass across every registered wallet.
@@ -318,12 +343,14 @@ impl ShieldedSyncManager {
         {
             return ShieldedSyncPassSummary::default();
         }
+        // Clears `is_syncing` on every exit path — including panic unwind —
+        // so a failed pass can never wedge `quiesce()`'s drain.
+        let _slot = SyncSlotGuard(&self.is_syncing);
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; if so, release the slot and bail without running a pass
         // so the drain can complete and Clear/stop get a true barrier.
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return ShieldedSyncPassSummary::default();
         }
 
@@ -366,10 +393,9 @@ impl ShieldedSyncManager {
         // while this completion event (FFI callback → Swift
         // `handleShieldedSyncCompleted`) is still pending — surfacing a
         // stale post-stop/post-clear event. Holding the flag across the
-        // dispatch makes quiesce's barrier cover the event too.
+        // dispatch makes quiesce's barrier cover the event too (`_slot`
+        // drops — and clears the flag — only after this dispatch returns).
         self.event_manager.on_shielded_sync_completed(&summary);
-
-        self.is_syncing.store(false, Ordering::Release);
 
         summary
     }
@@ -413,16 +439,17 @@ impl ShieldedSyncManager {
         {
             return Ok(None);
         }
+        // Clears `is_syncing` on every exit path — including panic unwind —
+        // so a failed pass can never wedge `quiesce()`'s drain.
+        let _slot = SyncSlotGuard(&self.is_syncing);
 
         // Bail if a `quiesce()` raised the gate after our CAS (see
         // `sync_now`) so the drain barrier holds.
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return Ok(None);
         }
 
         let pass = coordinator.sync(force).await;
-        self.is_syncing.store(false, Ordering::Release);
 
         // Extract this wallet's slice from the network-wide pass
         // summary. If the wallet is registered, we'll get back an

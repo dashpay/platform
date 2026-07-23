@@ -307,11 +307,27 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         // fire a callback after this.
         let result =
             unsafe { platform_wallet_ffi::platform_wallet_manager_destroy(b.manager_handle) };
-        // destroy is documented to always return ok; free the message if any.
+        let clean = result.code == PlatformWalletFFIResultCode::Success;
         let mut result = result;
         unsafe { platform_wallet_ffi_result_free(&mut result) };
-        // Now safe to drop the context boxes (their GlobalRefs release the
-        // Kotlin bridges).
+        if !clean {
+            // `ErrorShutdownIncomplete`: a coordinator worker may outlive
+            // destroy and fire one more persistence/event callback through
+            // these context pointers. The manager handle is already gone,
+            // so a retry is impossible — deliberately LEAK the context
+            // boxes (and their GlobalRefs) instead of freeing memory a
+            // live worker can still dereference. Mirrors the Swift
+            // wrapper's retain-on-incomplete contract. Bounded: one leak
+            // per failed teardown.
+            log::error!(
+                "manager destroy reported an incomplete shutdown; leaking the \
+                 persistence/event callback contexts to keep a straggling \
+                 worker's pointers valid"
+            );
+            return;
+        }
+        // Clean shutdown: safe to drop the context boxes (their GlobalRefs
+        // release the Kotlin bridges).
         unsafe {
             if !b.persistence_ctx.is_null() {
                 drop(Box::from_raw(b.persistence_ctx));

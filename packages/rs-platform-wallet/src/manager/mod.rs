@@ -10,9 +10,10 @@ pub mod shielded_sync;
 mod wallet_lifecycle;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_async::{
-    ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, DEFAULT_JOIN_BUDGET,
+    ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, WorkerStatus, DEFAULT_JOIN_BUDGET,
 };
 use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
@@ -52,6 +53,25 @@ pub enum WalletWorker {
     DashPaySync,
     /// Shielded (Orchard) note sync coordinator.
     ShieldedSync,
+    /// SPV runtime — the network event source feeding every persister-
+    /// visible wallet event. Not a registry worker: `SpvRuntime::stop`
+    /// owns its (bounded, abort-escalating) join, and
+    /// [`shutdown`](PlatformWalletManager::shutdown) folds the stop
+    /// outcome into the report so a failed SPV stop can never hide
+    /// behind a clean coordinator join.
+    Spv,
+    /// DashPay payment-hook tasks spawned by `DashPayPaymentHandler` in
+    /// response to SPV wallet events. Not a registry worker: the
+    /// handler's own tracker closes admission and joins the admitted
+    /// tasks; its drain outcome is folded into the report because those
+    /// tasks clone the FFI persister and can fire host callbacks.
+    DashPayPayments,
+    /// The wallet-event adapter task — the sink coordinator stores feed
+    /// into. Not a registry worker: joined by
+    /// [`shutdown`](PlatformWalletManager::shutdown) under a bounded
+    /// budget, with the live handle re-parked on timeout so a destroy
+    /// retry can re-join it.
+    EventAdapter,
 }
 
 // `dash_async::RegistryKey` is a blanket impl over
@@ -61,6 +81,48 @@ pub enum WalletWorker {
 /// Teardown tier for the periodic coordinators. All four share one tier so
 /// [`ThreadRegistry::shutdown`] drains them concurrently.
 pub(crate) const COORDINATOR_WEIGHT: ShutdownWeight = ShutdownWeight(0);
+
+/// Deadline for a coordinator `quiesce()` drain — how long we wait for an
+/// in-flight pass (its `is_syncing` slot) to fall before giving up and
+/// reporting the coordinator non-clean. Without a bound, a pass wedged in
+/// a network / persister / host-callback await blocks `shutdown()` (and
+/// therefore the FFI's `destroy`) forever, *before* the registry's
+/// per-worker join budget ever gets a chance to run. A timed-out drain is
+/// surfaced as [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout)
+/// so `all_clean()` fails and the host keeps its callback context alive.
+pub(crate) const COORDINATOR_DRAIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// Deadline for draining the DashPay payment-hook tasks at shutdown.
+/// After it lapses each straggler is aborted and given
+/// [`PAYMENT_ABORT_GRACE`] to confirm termination; anything still alive
+/// is kept tracked and reported non-clean.
+pub(crate) const PAYMENT_DRAIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// Post-abort confirmation grace for one payment-hook task. An abort only
+/// takes effect at the task's next await point, so a task stuck inside a
+/// synchronous persister call cannot be interrupted — after this grace it
+/// is left tracked (for a retry to re-join) and reported non-clean.
+pub(crate) const PAYMENT_ABORT_GRACE: Duration = Duration::from_secs(1);
+
+/// Deadline for joining the wallet-event adapter task at shutdown. The
+/// adapter exits promptly on cancellation; the bound exists so a persister
+/// `store` it is blocked in cannot hang `destroy`. On timeout the live
+/// handle is re-parked so a destroy retry re-joins it, and the report
+/// carries [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout).
+const EVENT_ADAPTER_JOIN_BUDGET: Duration = Duration::from_secs(10);
+
+/// RAII holder for a coordinator's `is_syncing` slot: clears the flag on
+/// drop, **including panic unwind out of a pass body**. Every pass must
+/// hold one of these instead of storing `false` manually — a panicking
+/// pass that leaves `is_syncing` latched would wedge `quiesce()`'s drain
+/// until its budget lapses on every subsequent teardown.
+pub(crate) struct SyncSlotGuard<'a>(pub(crate) &'a std::sync::atomic::AtomicBool);
+
+impl Drop for SyncSlotGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
 
 /// Base [`WorkerConfig`] each coordinator starts its loop thread with — one
 /// shared tier, no drain hook, the registry's default managed-join budget
@@ -444,7 +506,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // the store `coord.clear()` is about to reset. The guard's Drop
         // releases the latch on every exit path (including `?` and panic).
         let _clearing = self.registry.hold_clearing(WalletWorker::ShieldedSync);
-        self.shielded_sync_manager.quiesce().await;
+        if !self.shielded_sync_manager.quiesce().await {
+            // Fail closed: a pass is still holding `is_syncing` after the
+            // drain budget, so wiping the store now would race its
+            // persister fan-out. The host must NOT commit its own wipe.
+            return Err(crate::error::PlatformWalletError::ShutdownIncomplete(
+                "shielded sync pass did not drain within the quiesce budget; \
+                 clear aborted — retry once sync is idle"
+                    .to_string(),
+            ));
+        }
         match self.shielded_coordinator().await {
             Some(coord) => coord.clear().await,
             None => {
@@ -481,7 +552,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     pub async fn reset_platform_address_sync_state(
         &self,
     ) -> Result<(), crate::error::PlatformWalletError> {
-        self.platform_address_sync_manager.quiesce().await;
+        if !self.platform_address_sync_manager.quiesce().await {
+            // Fail closed, mirroring `clear_shielded`: resetting the
+            // watermark while a wedged pass still holds `is_syncing`
+            // would let its tail re-write the state this reset clears.
+            return Err(crate::error::PlatformWalletError::ShutdownIncomplete(
+                "platform-address sync pass did not drain within the quiesce budget; \
+                 reset aborted — retry once sync is idle"
+                    .to_string(),
+            ));
+        }
 
         // Snapshot Arc clones under a short read lock; never hold the
         // `wallets` read guard across the per-wallet `.await`s below —
@@ -528,38 +608,138 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// 4. The event adapter — the sink those stores feed into — drains
     ///    LAST.
     ///
-    /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`]; inspect
+    /// **Every phase is bounded.** SPV stop owns its own abort-escalating
+    /// join; the payment-hook drain is bounded by `PAYMENT_DRAIN_BUDGET`;
+    /// the coordinator drains run concurrently under
+    /// `COORDINATOR_DRAIN_BUDGET`; the registry join uses each worker's
+    /// join budget; the adapter join is bounded too (its live handle is
+    /// re-parked on timeout so a retry re-joins it). A wedged await
+    /// therefore surfaces as a non-clean report instead of hanging the
+    /// FFI's `destroy` forever.
+    ///
+    /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
+    /// the non-registry workers [`WalletWorker::Spv`],
+    /// [`WalletWorker::DashPayPayments`], and
+    /// [`WalletWorker::EventAdapter`], so no callback-capable background
+    /// work is excluded from the verdict. Inspect
     /// [`ShutdownReport::all_clean`] before freeing the host callback
     /// context. A non-clean status flags a still-live worker or orphan.
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        if let Err(error) = self.spv_manager.stop().await {
-            tracing::warn!(?error, "SPV shutdown failed");
-        }
+        // SPV first: it is the event source feeding everything below, and
+        // its `stop` owns a bounded, abort-escalating join of the run-loop
+        // task. Its outcome lands in the report — a failed stop must not
+        // hide behind a clean coordinator join.
+        let spv_status = match self.spv_manager.stop().await {
+            Ok(()) => WorkerStatus::Ok,
+            Err(error) => {
+                tracing::warn!(?error, "SPV shutdown failed");
+                WorkerStatus::Error(error.to_string())
+            }
+        };
 
-        self.dashpay_payment_handler.quiesce().await;
-        self.platform_address_sync_manager.quiesce().await;
-        self.identity_sync_manager.quiesce().await;
-        self.dashpay_sync_manager.quiesce().await;
+        // Close payment-hook admission and join the admitted tasks —
+        // they clone the FFI persister, so a straggler is exactly the
+        // callback-after-destroy hazard the report exists to catch.
+        let payments_drained = self
+            .dashpay_payment_handler
+            .quiesce_within(PAYMENT_DRAIN_BUDGET)
+            .await;
+
+        // Drain the coordinators concurrently against one shared budget so
+        // the drain phase as a whole is bounded (a wedged pass surfaces as
+        // `Timeout` in the report instead of hanging destroy forever).
         #[cfg(feature = "shielded")]
-        self.shielded_sync_manager.quiesce().await;
+        let (pa_drained, id_drained, dp_drained, sh_drained) = tokio::join!(
+            self.platform_address_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+            self.identity_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+            self.dashpay_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+            self.shielded_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+        );
+        #[cfg(not(feature = "shielded"))]
+        let (pa_drained, id_drained, dp_drained) = tokio::join!(
+            self.platform_address_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+            self.identity_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+            self.dashpay_sync_manager
+                .quiesce_within(COORDINATOR_DRAIN_BUDGET),
+        );
 
         // Hard-join the coordinator loop threads now that every in-flight
         // pass has drained. This is the barrier `quiesce` cannot give:
         // it waits for the actual OS thread to terminate before the host
         // drops the runtime.
-        let report = self.registry.shutdown().await;
+        let mut report = self.registry.shutdown().await;
 
-        // The wallet-event adapter is the sink the coordinators' stores
-        // feed into, so it drains AFTER them. It is a plain tokio task, not
-        // a registry worker, so it is joined here rather than in the report.
-        self.event_adapter_cancel.cancel();
-        if let Some(handle) = self.event_adapter_join.lock().await.take() {
-            if let Err(e) = handle.await {
-                tracing::warn!(error = ?e, "Wallet event adapter task join error");
+        // Fold drain timeouts in. A timed-out drain means a pass —
+        // possibly a *direct* `sync_now` running on a host FFI thread the
+        // registry never sees — may still hold `is_syncing` and fire
+        // persister callbacks, so a clean registry join must not mask it.
+        let drains = [
+            (WalletWorker::PlatformAddressSync, pa_drained),
+            (WalletWorker::IdentitySync, id_drained),
+            (WalletWorker::DashPaySync, dp_drained),
+            #[cfg(feature = "shielded")]
+            (WalletWorker::ShieldedSync, sh_drained),
+        ];
+        for (worker, drained) in drains {
+            if !drained {
+                let status = report
+                    .per_worker
+                    .entry(worker)
+                    .or_insert(WorkerStatus::Timeout);
+                if status.is_clean() {
+                    *status = WorkerStatus::Timeout;
+                }
             }
         }
+
+        report.per_worker.insert(WalletWorker::Spv, spv_status);
+        report.per_worker.insert(
+            WalletWorker::DashPayPayments,
+            if payments_drained {
+                WorkerStatus::Ok
+            } else {
+                WorkerStatus::Timeout
+            },
+        );
+
+        // The wallet-event adapter is the sink the coordinators' stores
+        // feed into, so it drains AFTER them. It is a plain tokio task,
+        // not a registry worker; on a join timeout the live handle is
+        // re-parked so a destroy retry can re-join it rather than
+        // silently detaching the task.
+        self.event_adapter_cancel.cancel();
+        let adapter_status = {
+            let mut slot = self.event_adapter_join.lock().await;
+            match slot.take() {
+                None => WorkerStatus::NotRunning,
+                Some(mut handle) => {
+                    match tokio::time::timeout(EVENT_ADAPTER_JOIN_BUDGET, &mut handle).await {
+                        Ok(Ok(())) => WorkerStatus::Ok,
+                        Ok(Err(e)) if e.is_panic() => WorkerStatus::Panicked(e.to_string()),
+                        Ok(Err(e)) => WorkerStatus::Stopped(Some(e.to_string())),
+                        Err(_) => {
+                            tracing::warn!(
+                                "wallet event adapter did not join within {:?}; re-parking",
+                                EVENT_ADAPTER_JOIN_BUDGET
+                            );
+                            *slot = Some(handle);
+                            WorkerStatus::Timeout
+                        }
+                    }
+                }
+            }
+        };
+        report
+            .per_worker
+            .insert(WalletWorker::EventAdapter, adapter_status);
 
         report
     }
@@ -634,10 +814,47 @@ mod tests {
                 "{worker:?} must join cleanly"
             );
         }
+        // The verdict must also cover the non-registry workers: SPV, the
+        // DashPay payment-hook tracker, and the wallet-event adapter. A
+        // report that omitted them could pass `all_clean()` while
+        // callback-capable background work stayed live.
+        for worker in [
+            WalletWorker::Spv,
+            WalletWorker::DashPayPayments,
+            WalletWorker::EventAdapter,
+        ] {
+            assert!(
+                report
+                    .per_worker
+                    .get(&worker)
+                    .is_some_and(WorkerStatus::is_clean),
+                "{worker:?} must be present and clean in the report: {report:?}"
+            );
+        }
 
         // Second shutdown: the coordinators already joined, so the registry
         // reports them NotRunning and the report stays clean.
         let again = mgr.shutdown().await;
         assert!(again.all_clean(), "idempotent shutdown: {again:?}");
+    }
+
+    /// `SyncSlotGuard` must clear the `is_syncing` slot on panic unwind,
+    /// not just on normal fall-through. Without this, a pass that panics
+    /// leaves the flag latched and every subsequent `quiesce()` drain
+    /// burns its full budget before reporting non-clean — turning one
+    /// panicked pass into a permanently wedged (slow, never-clean)
+    /// teardown.
+    #[test]
+    fn sync_slot_guard_clears_flag_on_panic_unwind() {
+        let flag = std::sync::atomic::AtomicBool::new(true);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _slot = SyncSlotGuard(&flag);
+            panic!("pass body panicked");
+        }));
+        assert!(result.is_err(), "the pass body must have panicked");
+        assert!(
+            !flag.load(std::sync::atomic::Ordering::Acquire),
+            "guard must clear the slot during unwind"
+        );
     }
 }

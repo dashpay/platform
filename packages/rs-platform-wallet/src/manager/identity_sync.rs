@@ -65,7 +65,9 @@ use dash_sdk::platform::FetchMany;
 use dash_async::ThreadRegistry;
 
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
-use crate::manager::{coordinator_worker_config, WalletWorker};
+use crate::manager::{
+    coordinator_worker_config, SyncSlotGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET,
+};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Default cadence for the identity-token sync loop.
@@ -462,13 +464,35 @@ where
     /// so its falling edge (with the gate up) is a sound "fully drained"
     /// signal. The gate is reopened before returning so a later
     /// start/sync works normally.
-    pub async fn quiesce(&self) {
+    ///
+    /// **Bounded** by `COORDINATOR_DRAIN_BUDGET`: returns `false` if
+    /// the in-flight pass did not drain in time — see
+    /// `quiesce_within` for the timeout contract.
+    #[must_use = "a false return means the pass did NOT drain; the caller must fail closed"]
+    pub async fn quiesce(&self) -> bool {
+        self.quiesce_within(COORDINATOR_DRAIN_BUDGET).await
+    }
+
+    /// [`quiesce`](Self::quiesce) with an explicit drain budget.
+    ///
+    /// Returns `true` when the drain completed. Returns `false` when
+    /// `is_syncing` was still held at the deadline — a wedged pass. On
+    /// that path the `quiescing` gate is deliberately **left up** so the
+    /// wedged pass cannot be followed by a fresh one; the caller must
+    /// treat the coordinator as non-clean. A later successful `quiesce`
+    /// reopens the gate.
+    pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
         self.quiescing.store(true, Ordering::Release);
         self.stop();
+        let deadline = tokio::time::Instant::now() + budget;
         while self.is_syncing.load(Ordering::Acquire) {
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         self.quiescing.store(false, Ordering::Release);
+        true
     }
 
     /// Run one sync pass across every registered identity.
@@ -489,13 +513,15 @@ where
         {
             return;
         }
+        // Clears `is_syncing` on every exit path — including panic unwind —
+        // so a failed pass can never wedge `quiesce()`'s drain.
+        let _slot = SyncSlotGuard(&self.is_syncing);
 
         // A `quiesce()` may have raised the gate between our CAS and
         // here; if so, release the slot and bail without running a pass
         // so the drain can complete and shutdown gets a true barrier
         // (no further `persister.store(...)` after quiesce returns).
         if self.quiescing.load(Ordering::Acquire) {
-            self.is_syncing.store(false, Ordering::Release);
             return;
         }
 
@@ -521,7 +547,6 @@ where
             .map(|d| d.as_secs())
             .unwrap_or(0);
         self.last_sync_unix.store(now, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -932,6 +957,37 @@ mod tests {
         assert!(!mgr.quiescing.load(Ordering::Acquire));
         assert!(!mgr.is_syncing());
         pass.await.unwrap();
+    }
+
+    /// A pass that never drains must NOT hang `quiesce_within` forever:
+    /// the drain returns `false` at its deadline and deliberately leaves
+    /// the `quiescing` gate up (so the wedged pass cannot be followed by
+    /// a fresh one). A later successful quiesce reopens the gate. Sibling
+    /// of the dashpay / platform-address regression tests.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn quiesce_within_times_out_and_leaves_gate_up_when_pass_never_drains() {
+        let mgr = make_manager();
+
+        assert!(mgr
+            .is_syncing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok());
+
+        let drained = tokio::time::timeout(
+            Duration::from_secs(2),
+            mgr.quiesce_within(Duration::from_millis(100)),
+        )
+        .await
+        .expect("bounded quiesce must return at its deadline");
+        assert!(!drained, "a wedged pass must be reported as non-drained");
+        assert!(
+            mgr.quiescing.load(Ordering::Acquire),
+            "gate must stay up after a timed-out drain"
+        );
+
+        mgr.is_syncing.store(false, Ordering::Release);
+        assert!(mgr.quiesce().await);
+        assert!(!mgr.quiescing.load(Ordering::Acquire));
     }
 
     /// A `sync_now()` invoked while `quiescing` is set must bail without

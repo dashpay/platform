@@ -344,6 +344,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
             }
+            // A quiesce/drain barrier that did not complete within budget
+            // (clear/reset paths). The host must fail closed: keep its
+            // callback context alive and skip any paired persistence wipe.
+            PlatformWalletError::ShutdownIncomplete(..) => {
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
