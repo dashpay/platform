@@ -385,10 +385,39 @@ class PlatformWalletManager(
                 // coreChildren AFTER construction completes — the lambda only
                 // runs on later sign attempts, never during this block.
                 onSigningKeyInvalidated = { pubkeyHex ->
-                    runCatching {
+                    try {
                         persistenceHandler.recordSigningKeyInvalidated(pubkeyHex) {
                             walletStorage.isPrivateKeyDecryptable(it)
                         }
+                    } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                        // NEVER swallow structured-concurrency cancellation —
+                        // rethrow so a teardown of the signer's IO scope
+                        // propagates instead of being masked as a benign
+                        // bookkeeping miss.
+                        throw cancellation
+                    } catch (t: Throwable) {
+                        // Do NOT fail open (dashpay/platform#4183 review): the
+                        // durable invalidation bookkeeping (null the row's
+                        // keychain identifier + re-seed pendingIdentityKeys)
+                        // did NOT complete, so the repair signal is not yet
+                        // persisted. The sign still fails with the typed code
+                        // 31, but swallowing this silently would leave the key
+                        // looking healthy on the next launch. Surface it loudly
+                        // and rethrow so the signer's own best-effort guard —
+                        // not this bookkeeping lambda — is the single place
+                        // that decides bookkeeping failure is non-fatal to the
+                        // completion; the repair stays retryable (the durable
+                        // rows were not cleared, and the next sign attempt / the
+                        // next loadPersistedWallets reconstruction re-runs it).
+                        android.util.Log.e(
+                            "PlatformWalletManager",
+                            "durable sign-time invalidation bookkeeping FAILED for key " +
+                                "${pubkeyHex.take(16)}… — the pending-repair signal is not yet " +
+                                "persisted; it will be retried on the next sign attempt or the " +
+                                "next launch's pending-key reconstruction",
+                            t,
+                        )
+                        throw t
                     }
                 },
             ).also { signer = it }
@@ -1000,9 +1029,23 @@ class PlatformWalletManager(
         // CHEAP capability check re-seed pendingIdentityKeys, so a repair
         // signal recorded before a process death (or a blob stranded by a
         // Keystore keypair replacement) resurfaces on every launch.
-        runCatching {
+        try {
             persistenceHandler.reconstructPendingIdentityKeysFromPersistence(
                 isPrivateKeyDecryptable = { walletStorage.isPrivateKeyDecryptable(it) },
+            )
+        } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+            // NEVER swallow structured-concurrency cancellation from the
+            // suspend reconstruction — rethrow so a cancelled load propagates
+            // (dashpay/platform#4183 review). A best-effort reconstruction
+            // failure is fine to absorb (the repair signal reconstructs on the
+            // next launch), but cancellation must not be masked.
+            throw cancellation
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "PlatformWalletManager",
+                "pending-identity-key reconstruction failed on load; repair signals will be " +
+                    "rebuilt on the next launch",
+                t,
             )
         }
 
