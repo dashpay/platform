@@ -17,6 +17,7 @@ all-contracts = [
     "wallet-utils",
     "token-history",
     "keyword-search",
+    "document-history",
 ]
 
 # Individual contract features
@@ -27,6 +28,7 @@ dashpay = ["dep:dashpay-contract"]
 wallet-utils = ["dep:wallet-utils-contract"]
 token-history = ["dep:token-history-contract"]
 keyword-search = ["dep:keyword-search-contract"]
+document-history = ["dep:document-history-contract"]
 
 [dependencies]
 thiserror = "2.0.12"
@@ -40,3 +42,4 @@ platform-value = { path = "../rs-platform-value" }
 wallet-utils-contract = { path = "../wallet-utils-contract", optional = true }
 token-history-contract = { path = "../token-history-contract", optional = true }
 keyword-search-contract = { path = "../keyword-search-contract", optional = true }
+document-history-contract = { path = "../document-history-contract", optional = true }

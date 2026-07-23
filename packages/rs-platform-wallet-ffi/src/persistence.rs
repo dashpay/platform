@@ -25,8 +25,9 @@ use std::str::FromStr;
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-    ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
+    PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
@@ -66,11 +67,70 @@ use dpp::prelude::Identifier;
 use platform_wallet::{DpnsNameInfo, IdentityManagerStartState, IdentityStatus, ManagedIdentity};
 use std::ffi::CStr;
 
+/// Versioned C projection of [`PersistenceCapabilities`].
+///
+/// `version` identifies the stable bit assignment. `reserved` must be ignored
+/// and is zero in version 1. Unknown bits in `bits` must be preserved/ignored
+/// by callers rather than treated as an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct PersistenceCapabilitiesFFI {
+    pub version: u32,
+    pub reserved: u32,
+    pub bits: u64,
+}
+
+impl From<PersistenceCapabilities> for PersistenceCapabilitiesFFI {
+    fn from(value: PersistenceCapabilities) -> Self {
+        Self {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: value.bits(),
+        }
+    }
+}
+
+/// Stable version-1 C bit values. These mirror
+/// [`PersistenceCapabilities`] and are append-only.
+// Keep these as C-bindgen-friendly literals. Rust tests pin them to the
+// shared `PersistenceCapabilities` values so neither projection can drift.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION: u32 = 1;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS: u64 = 1 << 0;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_INVITATIONS: u64 = 1 << 1;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES: u64 = 1 << 2;
+/// Source-compatible alias for the original capability name.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS: u64 =
+    PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_VIEWING_KEYS: u64 = 1 << 3;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PROVIDER_TRANSACTIONS: u64 = 1 << 4;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_UNSIGNED_TOKEN_STORAGE: u64 = 1 << 5;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO: u64 = 1 << 6;
+/// Source-compatible alias for the original capability name.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO: u64 =
+    PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE: u64 = 1 << 7;
+
 /// C callback vtable for wallet persistence.
 ///
 /// General-purpose notifications (`on_store_fn`, `on_flush_fn`) plus
 /// typed callbacks that send incremental data across FFI for the caller
 /// to persist in their preferred storage backend.
+///
+/// # Reentrancy contract (required of every callback)
+///
+/// A persistence callback runs **synchronously on the calling native thread**,
+/// which is frequently a wallet-manager task **holding the manager's write
+/// lock**. That lock is non-reentrant. Therefore a callback MUST NOT call back
+/// into any wallet-manager / platform-wallet FFI (`dash_sdk_*` /
+/// `platform_wallet_*` and friends), directly or indirectly — doing so
+/// deadlocks. Write the changeset to your storage backend and return; do not
+/// query live wallet state to enrich a row, and do not synchronously drive an
+/// observer/UI reaction that re-enters native on the same thread. (A UI layer
+/// reacting to the committed rows on a *later* turn — SwiftUI `@Query`, a Room
+/// `Flow` collector on an async dispatcher — is fine: it runs after the
+/// callback returns and the lock is released.) Keep the work bounded; the call
+/// blocks every other wallet accessor while it runs. Mirrors the Rust-side
+/// `PlatformWalletPersistence::store` reentrancy contract.
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 pub struct PersistenceCallbacks {
@@ -671,46 +731,146 @@ impl Default for PersistenceCallbacks {
     }
 }
 
+/// Defensive state machine for the begin→end FFI callback round, guarded
+/// by [`FFIPersister::round_lock`]. `in_round` is set when a round opens
+/// and cleared once it closes, so a nested begin (or an `end` with no
+/// matching `begin`) is detectable and rejected — as an error, never a
+/// panic — instead of silently corrupting the client's single in-flight
+/// transaction state.
+#[derive(Default)]
+struct RoundGuardState {
+    in_round: bool,
+}
+
+impl RoundGuardState {
+    /// Open a round. Rejects (does not panic) if one is already open —
+    /// a nested begin, or an unclean round left open by a prior call
+    /// that unwound between its begin and end.
+    fn begin_round(&mut self) -> Result<(), PersistenceError> {
+        if self.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: changeset round already open (nested begin); \
+                 refusing to start a new round",
+            ));
+        }
+        self.in_round = true;
+        Ok(())
+    }
+
+    /// Close the current round. Rejects (does not panic) if no round is
+    /// open — an unmatched end.
+    fn end_round(&mut self) -> Result<(), PersistenceError> {
+        if !self.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: changeset round is not open (unmatched end)",
+            ));
+        }
+        self.in_round = false;
+        Ok(())
+    }
+}
+
 /// In-memory persister that accumulates changesets and notifies via callbacks.
 pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
+    /// Semantic capability declaration supplied separately from the callback
+    /// vtable by the additive manager-create API. Keeping this out of
+    /// `PersistenceCallbacks` preserves that established C struct's size.
+    declared_capabilities: PersistenceCapabilities,
     pending: RwLock<BTreeMap<WalletId, PlatformWalletChangeSet>>,
-    /// Serializes complete `store()` callback rounds. The host stages all
-    /// per-kind callbacks of a round into shared transaction state (Swift: one
-    /// `ModelContext` + `inChangeset` flag) that is only committed/rolled back
-    /// by the end callback — two concurrently interleaved rounds could commit
-    /// or roll back each other's staged writes, so the entire
-    /// begin → per-kind → end bracket must be exclusive.
-    store_round: Mutex<()>,
+    /// Serializes the ENTIRE begin→per-kind→end callback round of
+    /// [`Self::store`]. Every round producer (the core-changeset bridge,
+    /// platform-address sync, shielded sync, spawned DashPay tasks) shares
+    /// one `Arc<FFIPersister>` and calls `store()` concurrently; the host
+    /// client keeps a single in-flight-round transaction state (Kotlin: one
+    /// per-wallet buffer; Swift: one global `inChangeset` flag), so two
+    /// overlapping rounds would let one round's writes land in — or roll
+    /// back with — the other round's transaction. That drops core TXO /
+    /// spent-marker rows while both `store()` calls still return `Ok`,
+    /// bypassing the durable-watermark fault latch and recreating
+    /// dashpay/platform#4069. Holding this lock for the whole round makes
+    /// each round atomic with respect to every other round.
+    round_lock: Mutex<RoundGuardState>,
 }
 
 impl FFIPersister {
     pub fn new(callbacks: PersistenceCallbacks) -> Self {
+        Self::new_with_persistence_capabilities(callbacks, PersistenceCapabilities::NONE)
+    }
+
+    pub fn new_with_persistence_capabilities(
+        callbacks: PersistenceCallbacks,
+        declared_capabilities: PersistenceCapabilities,
+    ) -> Self {
         Self {
             callbacks,
+            declared_capabilities,
             pending: RwLock::new(BTreeMap::new()),
-            store_round: Mutex::new(()),
+            round_lock: Mutex::new(RoundGuardState::default()),
         }
+    }
+
+    /// Compute the callback contracts that are structurally complete in this
+    /// vtable. This mask is only an upper bound: the host must separately attest
+    /// the semantics it actually implements.
+    fn callback_capabilities(&self) -> PersistenceCapabilities {
+        let mut capabilities = PersistenceCapabilities::NONE;
+
+        if self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::ATOMIC_CHANGESETS);
+        }
+        if self.callbacks.on_persist_invitations_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::INVITATIONS);
+        }
+        let wallet_restore = self.callbacks.on_load_wallet_list_fn.is_some()
+            && self.callbacks.on_load_wallet_list_free_fn.is_some();
+        if self.callbacks.on_persist_account_registrations_fn.is_some()
+            && self.callbacks.on_persist_account_address_pools_fn.is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
+        }
+        if wallet_restore {
+            capabilities = capabilities.union(PersistenceCapabilities::WALLET_RESTORE);
+        }
+        if self.callbacks.on_persist_wallet_changeset_fn.is_some()
+            && wallet_restore
+            && capabilities.contains(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::PROVIDER_TRANSACTIONS);
+        }
+        if self.callbacks.on_persist_token_balances_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
+        }
+        #[cfg(feature = "shielded")]
+        if self.callbacks.on_persist_shielded_viewing_keys_fn.is_some()
+            && self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
+            && self
+                .callbacks
+                .on_load_shielded_viewing_keys_free_fn
+                .is_some()
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS);
+        }
+
+        // Deliberately absent: PersistenceCallbacks has no deferred contact
+        // crypto add/clear callback pair, so FFI hosts cannot attest it.
+        capabilities
     }
 }
 
 impl PlatformWalletPersistence for FFIPersister {
-    /// Durable only when the host actually wired the persistence callbacks.
-    ///
-    /// Every per-kind block in [`Self::store`] is `if let Some(cb)` — with the
-    /// callbacks absent (e.g. a manager configured without a persistence
-    /// container), non-empty changesets are silently skipped while `store()`
-    /// still returns `Ok`, which is exactly the write-dropping shape the
-    /// fail-closed trait default exists to catch. Attest durability only when
-    /// the transaction bracket (begin/end) AND the callbacks the
-    /// bearer-key-sensitive invitation flow writes through (invitations +
-    /// account address pools) are all present; the Swift bridge wires all of
-    /// its callbacks together, so a partially-wired vtable stays non-durable.
-    fn persists_durably(&self) -> bool {
-        self.callbacks.on_changeset_begin_fn.is_some()
-            && self.callbacks.on_changeset_end_fn.is_some()
-            && self.callbacks.on_persist_invitations_fn.is_some()
-            && self.callbacks.on_persist_account_address_pools_fn.is_some()
+    // Fan-out coverage note: `pending_contact_crypto_added` /
+    // `pending_contact_crypto_cleared` have no vtable slots yet, so the
+    // deferred contact-crypto queue is NOT durable on FFI hosts — the
+    // recurring sweep re-enqueues after a restart (see the field docs on
+    // `PlatformWalletChangeSet`). Wire host callbacks before relying on
+    // restart-immediate drains.
+
+    fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.declared_capabilities
+            .intersection(self.callback_capabilities())
     }
 
     fn store(
@@ -718,11 +878,22 @@ impl PlatformWalletPersistence for FFIPersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
-        // One round at a time: the host's transaction state (Swift's shared
-        // ModelContext / inChangeset flag) cannot distinguish interleaved
-        // rounds, so hold the round lock across the entire
-        // begin → per-kind → end bracket.
-        let _round_guard = self.store_round.lock();
+        // Serialize the ENTIRE begin→per-kind→end round against every
+        // other round producer (see `round_lock`'s field doc and
+        // dashpay/platform#4069). The lock is a synchronous
+        // `parking_lot::Mutex`, NOT a `tokio::sync::Mutex`: `store()`
+        // is a synchronous trait method invoked directly (blocking) from
+        // both async tasks and blocking FFI entry points, so an async
+        // mutex cannot be `.await`ed here and `blocking_lock()` panics
+        // inside a runtime. Serialization — not async yielding — is the
+        // requirement; callers already block for the round's duration, so
+        // the sync mutex only adds waiting under genuine round contention.
+        let mut round = self.round_lock.lock();
+
+        // Open the round on the Rust side (rejects a nested begin / an
+        // unclean round left open by a prior unwind — error, never
+        // panic). Matched 1:1 with the `round.end_round()` below.
+        round.begin_round()?;
 
         // Bracket the whole per-kind callback sequence with a
         // begin/end pair so clients (Swift, etc.) can treat the
@@ -735,7 +906,19 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(cb) = self.callbacks.on_changeset_begin_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                eprintln!("Changeset-begin callback returned error code {}", result);
+                // A nonzero begin means the client could NOT open its
+                // transaction. Proceeding would run every per-kind
+                // callback against no batch and then fire an unmatched
+                // `end`. Treat it as fatal: close the Rust-side round
+                // (so `in_round` doesn't wedge) and fail now, before any
+                // per-kind write. (Unlike the previous advisory-log
+                // behavior, the round is aborted so no state advances
+                // against an unopened batch.)
+                let _ = round.end_round();
+                return Err(PersistenceError::backend(format!(
+                    "changeset-begin callback returned error code {result}; \
+                     round aborted before any write"
+                )));
             }
         }
         let mut round_success = true;
@@ -1746,6 +1929,15 @@ impl PlatformWalletPersistence for FFIPersister {
                 round_success = false;
             }
         }
+
+        // Close the round: its `end` callback has fired (committing or
+        // rolling back the client transaction), or there was no end
+        // callback wired. Clear the state-machine flag now — BEFORE any
+        // early return below — so a rejected round doesn't wedge the
+        // persister into permanent "round already open" rejection on the
+        // next `store()`. (`end_round` only errors on an unmatched end,
+        // which cannot happen here since `begin_round` succeeded above.)
+        round.end_round()?;
 
         if !round_success {
             return Err(PersistenceError::backend(
@@ -4184,7 +4376,9 @@ fn build_wallet_start_state(
 /// A malformed entry returns `Err(PersistenceError)` so the caller
 /// surfaces the load failure rather than dropping a partially-rebuilt
 /// state silently. Empty / null `tracked_asset_locks` yields an empty
-/// map (same as the legacy hardcoded path).
+/// map (same as the legacy hardcoded path). Terminal `Consumed` rows
+/// are restored as tombstones so an exact-outpoint retry remains
+/// distinguishable from a lock that was never tracked.
 fn build_unused_asset_locks(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -4264,16 +4458,6 @@ fn build_unused_asset_locks(
 
         let funding_type = funding_type_from_u8(spec.funding_type)?;
         let status = status_from_u8(spec.status)?;
-
-        // Skip `Consumed` rows. The Swift persister keeps them for
-        // historical UI lookups (transactions list → locked amount),
-        // but the in-memory `tracked_asset_locks` map is for
-        // still-actionable locks only — a consumed lock has no proof
-        // worth waiting on and adding it back to memory at every
-        // load would defeat the point of marking it terminal.
-        if matches!(status, platform_wallet::AssetLockStatus::Consumed) {
-            continue;
-        }
 
         let tracked = platform_wallet::TrackedAssetLock {
             out_point,
@@ -5286,6 +5470,14 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_registrations(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _specs: *const AccountSpecFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
     unsafe extern "C" fn noop_invitations(
         _ctx: *mut c_void,
         _wallet_id: *const u8,
@@ -5296,6 +5488,71 @@ mod tests {
     ) -> i32 {
         0
     }
+    unsafe extern "C" fn noop_load_wallets(
+        _ctx: *mut c_void,
+        out_entries: *mut *const WalletRestoreEntryFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        *out_entries = std::ptr::null();
+        *out_count = 0;
+        0
+    }
+    unsafe extern "C" fn noop_free_wallets(
+        _ctx: *mut c_void,
+        _entries: *const WalletRestoreEntryFFI,
+        _count: usize,
+    ) {
+    }
+    unsafe extern "C" fn noop_wallet_changeset(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _changeset: *const WalletChangeSetFFI,
+    ) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_token_balances(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _upserts: *const TokenBalanceUpsertFFI,
+        _upserts_count: usize,
+        _removed: *const TokenBalanceRemovalFFI,
+        _removed_count: usize,
+    ) -> i32 {
+        0
+    }
+
+    fn declared_persister(
+        cb: PersistenceCallbacks,
+        capabilities: PersistenceCapabilities,
+    ) -> FFIPersister {
+        FFIPersister::new_with_persistence_capabilities(cb, capabilities)
+    }
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn noop_persist_viewing_keys(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _entries: *const crate::shielded_persistence::ShieldedViewingKeyFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn noop_load_viewing_keys(
+        _ctx: *mut c_void,
+        out_entries: *mut *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+        out_count: *mut usize,
+    ) -> i32 {
+        *out_entries = std::ptr::null();
+        *out_count = 0;
+        0
+    }
+    #[cfg(feature = "shielded")]
+    unsafe extern "C" fn noop_free_viewing_keys(
+        _ctx: *mut c_void,
+        _entries: *const crate::shielded_persistence::ShieldedViewingKeyRestoreFFI,
+        _count: usize,
+    ) {
+    }
 
     /// A callback-free persister (the `configure(modelContainer: nil)` shape)
     /// silently drops every write, so it must NOT attest durability — this is
@@ -5303,119 +5560,210 @@ mod tests {
     /// an unpersisted invitation funding index re-exports the same bearer
     /// voucher key after a restart.
     #[test]
-    fn callback_free_persister_is_not_durable() {
+    fn callback_free_persister_has_no_capabilities() {
         let persister = FFIPersister::new(PersistenceCallbacks::default());
+        assert_eq!(
+            persister.persistence_capabilities(),
+            PersistenceCapabilities::NONE
+        );
         assert!(!persister.persists_durably());
     }
 
-    /// A partially-wired vtable (commit bracket present, invitation-critical
-    /// callbacks absent — or vice versa) stays non-durable.
+    /// Partial callback pairs attest only complete, independently testable
+    /// contracts. Atomicity must not imply invitation support, and a pool
+    /// callback without its registration callback must not attest pools.
     #[test]
-    fn partially_wired_persister_is_not_durable() {
+    fn partially_wired_persister_attests_only_complete_pairs() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        assert_eq!(
+            declared_persister(cb, PersistenceCapabilities::ATOMIC_CHANGESETS)
+                .persistence_capabilities(),
+            PersistenceCapabilities::NONE
+        );
+
         let mut cb = PersistenceCallbacks::default();
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
-        assert!(!FFIPersister::new(cb).persists_durably());
+        let capabilities = declared_persister(cb, PersistenceCapabilities::ATOMIC_CHANGESETS)
+            .persistence_capabilities();
+        assert_eq!(capabilities, PersistenceCapabilities::ATOMIC_CHANGESETS);
+        assert!(!capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
 
         let mut cb = PersistenceCallbacks::default();
+        let declaration = PersistenceCapabilities::INVITATIONS
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES);
         cb.on_persist_invitations_fn = Some(noop_invitations);
         cb.on_persist_account_address_pools_fn = Some(noop_pools);
-        assert!(!FFIPersister::new(cb).persists_durably());
+        let capabilities = declared_persister(cb, declaration).persistence_capabilities();
+        assert_eq!(capabilities, PersistenceCapabilities::INVITATIONS);
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_account_registrations_fn = Some(noop_registrations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        let capabilities =
+            declared_persister(cb, PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+                .persistence_capabilities();
+        assert_eq!(
+            capabilities,
+            PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES
+        );
+        assert!(!capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     }
 
-    /// With the transaction bracket + the invitation-critical callbacks all
-    /// wired (the shape the Swift bridge always produces), the persister
-    /// attests durability.
+    /// A complete non-shielded vtable exposes every capability representable
+    /// by its callbacks. Deferred contact crypto remains absent because the
+    /// vtable has no callback contract for that queue.
     #[test]
-    fn fully_wired_persister_attests_durability() {
+    fn fully_wired_persister_attests_feature_specific_capabilities() {
+        let mut cb = PersistenceCallbacks::default();
+        let expected = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::INVITATIONS)
+            .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
+            .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
+            .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
+            .union(PersistenceCapabilities::WALLET_RESTORE);
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        cb.on_persist_account_registrations_fn = Some(noop_registrations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        cb.on_persist_invitations_fn = Some(noop_invitations);
+        cb.on_load_wallet_list_fn = Some(noop_load_wallets);
+        cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
+        cb.on_persist_wallet_changeset_fn = Some(noop_wallet_changeset);
+        cb.on_persist_token_balances_fn = Some(noop_token_balances);
+        let capabilities = declared_persister(cb, expected).persistence_capabilities();
+
+        assert_eq!(capabilities, expected);
+        assert!(capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
+        assert!(!capabilities.contains(PersistenceCapabilities::PENDING_CONTACT_CRYPTO));
+    }
+
+    #[test]
+    fn complete_callbacks_without_declaration_attest_nothing() {
         let mut cb = PersistenceCallbacks::default();
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
-        cb.on_persist_account_address_pools_fn = Some(noop_pools);
         cb.on_persist_invitations_fn = Some(noop_invitations);
-        assert!(FFIPersister::new(cb).persists_durably());
+        cb.on_persist_account_registrations_fn = Some(noop_registrations);
+        cb.on_persist_account_address_pools_fn = Some(noop_pools);
+        cb.on_load_wallet_list_fn = Some(noop_load_wallets);
+        cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
+        assert_eq!(
+            FFIPersister::new(cb).persistence_capabilities(),
+            PersistenceCapabilities::NONE
+        );
     }
 
-    // --- store(): one callback round at a time ---
-
-    /// Shared state for [`concurrent_stores_never_interleave_rounds`]:
-    /// `active` counts rounds currently inside their begin→end bracket;
-    /// `overlap` latches if a second round ever enters while one is open.
-    struct RoundProbe {
-        active: std::sync::atomic::AtomicUsize,
-        overlap: std::sync::atomic::AtomicBool,
-    }
-
-    unsafe extern "C" fn probing_begin(ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
-        let probe = &*(ctx as *const RoundProbe);
-        if probe
-            .active
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-            != 0
-        {
-            probe
-                .overlap
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-        }
-        // Hold the round open long enough that an unserialized second
-        // store would enter its own begin inside this bracket. The sleep
-        // only widens the detection window on a broken implementation —
-        // on the serialized one, overlap is structurally impossible and
-        // the invariant assert below can never flake.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        0
-    }
-
-    unsafe extern "C" fn probing_end(ctx: *mut c_void, _wallet_id: *const u8, _ok: bool) -> i32 {
-        let probe = &*(ctx as *const RoundProbe);
-        probe
-            .active
-            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        0
-    }
-
-    /// Two concurrent `store()` calls must not interleave their callback
-    /// rounds: the host stages every per-kind callback of a round into
-    /// shared transaction state (Swift: one ModelContext + `inChangeset`
-    /// flag) that the end callback commits or rolls back, so an
-    /// interleaved round B could be committed/rolled back by round A's
-    /// outcome — e.g. losing a durable invitation funding index while
-    /// reporting success. The `store_round` mutex serializes the whole
-    /// begin → per-kind → end bracket.
     #[test]
-    fn concurrent_stores_never_interleave_rounds() {
-        let probe = Box::leak(Box::new(RoundProbe {
-            active: std::sync::atomic::AtomicUsize::new(0),
-            overlap: std::sync::atomic::AtomicBool::new(false),
-        }));
-
+    fn declaration_is_intersected_with_callback_structure() {
         let mut cb = PersistenceCallbacks::default();
-        cb.context = probe as *const RoundProbe as *mut c_void;
-        cb.on_changeset_begin_fn = Some(probing_begin);
-        cb.on_changeset_end_fn = Some(probing_end);
-        let persister = std::sync::Arc::new(FFIPersister::new(cb));
+        cb.on_changeset_begin_fn = Some(noop_begin);
+        cb.on_changeset_end_fn = Some(noop_end);
+        assert_eq!(
+            declared_persister(cb, PersistenceCapabilities::INVITATION_CREATION)
+                .persistence_capabilities(),
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+        );
+    }
 
-        let wallet_id: WalletId = [0x42u8; 32];
-        std::thread::scope(|s| {
-            for _ in 0..2 {
-                let p = std::sync::Arc::clone(&persister);
-                s.spawn(move || {
-                    p.store(wallet_id, PlatformWalletChangeSet::default())
-                        .expect("store must succeed");
-                });
-            }
-        });
-
-        assert!(
-            !probe.overlap.load(std::sync::atomic::Ordering::SeqCst),
-            "a second store() entered its callback round while another was open"
+    #[test]
+    fn ffi_capability_projection_has_stable_v1_layout_values() {
+        let ffi = PersistenceCapabilitiesFFI::from(
+            PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::WALLET_RESTORE),
+        );
+        assert_eq!(ffi.version, 1);
+        assert_eq!(ffi.reserved, 0);
+        assert_eq!(ffi.bits, 0x81);
+        assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
+        // Capability negotiation is deliberately NOT appended to the legacy
+        // callback vtable. Pin its historical size and prove invitations remain
+        // the terminal field so old clients are never over-read.
+        #[cfg(not(feature = "shielded"))]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            21 * std::mem::size_of::<usize>()
+        );
+        #[cfg(feature = "shielded")]
+        assert_eq!(
+            std::mem::size_of::<PersistenceCallbacks>(),
+            37 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            probe.active.load(std::sync::atomic::Ordering::SeqCst),
-            0,
-            "every begun round must have ended"
+            std::mem::offset_of!(PersistenceCallbacks, on_persist_invitations_fn)
+                + std::mem::size_of::<usize>(),
+            std::mem::size_of::<PersistenceCallbacks>()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION,
+            PERSISTENCE_CAPABILITIES_VERSION
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS,
+            PersistenceCapabilities::ATOMIC_CHANGESETS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_INVITATIONS,
+            PersistenceCapabilities::INVITATIONS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES,
+            PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_VIEWING_KEYS,
+            PersistenceCapabilities::SHIELDED_VIEWING_KEYS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PROVIDER_TRANSACTIONS,
+            PersistenceCapabilities::PROVIDER_TRANSACTIONS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_UNSIGNED_TOKEN_STORAGE,
+            PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO,
+            PersistenceCapabilities::PENDING_CONTACT_CRYPTO.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE,
+            PersistenceCapabilities::WALLET_RESTORE.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DEFERRED_CONTACT_CRYPTO,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PENDING_CONTACT_CRYPTO
         );
     }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn shielded_viewing_key_capability_requires_complete_callback_triplet() {
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
+        cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
+        assert!(
+            !declared_persister(cb, PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+        );
+
+        let mut cb = PersistenceCallbacks::default();
+        cb.on_persist_shielded_viewing_keys_fn = Some(noop_persist_viewing_keys);
+        cb.on_load_shielded_viewing_keys_fn = Some(noop_load_viewing_keys);
+        cb.on_load_shielded_viewing_keys_free_fn = Some(noop_free_viewing_keys);
+        assert!(
+            declared_persister(cb, PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+        );
+    }
+
     use dashcore::blockdata::transaction::txin::TxIn;
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;
@@ -6415,6 +6763,199 @@ mod tests {
         );
 
         unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
+    }
+
+    // ── Round serialization + defensive state machine (dashpay/platform#4069) ──
+
+    use std::os::raw::c_void as TestCVoid;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Shared context for the begin/end probe callbacks. Records the
+    /// chronological boundary log and flags any interleave (a begin while
+    /// another round is already open, or an end that doesn't close the
+    /// round it should).
+    struct RoundProbe {
+        /// `true` = begin fired, `false` = end fired, in call order.
+        events: parking_lot::Mutex<Vec<bool>>,
+        /// Live round depth: must only ever toggle 0↔1. Anything else
+        /// means two rounds overlapped.
+        depth: AtomicUsize,
+        /// Latched if `depth` ever leaves the {0,1} set.
+        interleaved: AtomicBool,
+    }
+
+    impl RoundProbe {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                events: parking_lot::Mutex::new(Vec::new()),
+                depth: AtomicUsize::new(0),
+                interleaved: AtomicBool::new(false),
+            })
+        }
+    }
+
+    extern "C" fn probe_begin(ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+        let probe = unsafe { &*(ctx as *const RoundProbe) };
+        // Entering a round: depth must transition 0 -> 1.
+        if probe.depth.fetch_add(1, Ordering::SeqCst) != 0 {
+            probe.interleaved.store(true, Ordering::SeqCst);
+        }
+        probe.events.lock().push(true);
+        // Widen the interleave window so an UNSERIALIZED persister is
+        // caught deterministically: without the round lock, the sibling
+        // thread's begin lands inside this sleep.
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        0
+    }
+
+    extern "C" fn probe_end(ctx: *mut TestCVoid, _wallet_id: *const u8, _success: bool) -> i32 {
+        let probe = unsafe { &*(ctx as *const RoundProbe) };
+        probe.events.lock().push(false);
+        // Leaving a round: depth must transition 1 -> 0.
+        if probe.depth.fetch_sub(1, Ordering::SeqCst) != 1 {
+            probe.interleaved.store(true, Ordering::SeqCst);
+        }
+        0
+    }
+
+    /// dashpay/platform#4069 (P1 from QuantumExplorer's review): two
+    /// concurrent `store()` rounds through the SAME `FFIPersister` must be
+    /// fully serialized — no begin fires while another round's begin→end
+    /// bracket is still open. Without the global round lock the probe's
+    /// `begin` sleep lets the sibling thread's begin interleave, tripping
+    /// `interleaved`.
+    #[test]
+    fn concurrent_store_rounds_are_serialized() {
+        let probe = RoundProbe::new();
+        let callbacks = PersistenceCallbacks {
+            context: Arc::as_ptr(&probe) as *mut TestCVoid,
+            on_changeset_begin_fn: Some(probe_begin),
+            on_changeset_end_fn: Some(probe_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = Arc::new(FFIPersister::new(callbacks));
+
+        const THREADS: u8 = 2;
+        const ROUNDS_PER_THREAD: usize = 10;
+        let mut handles = Vec::new();
+        for t in 0..THREADS {
+            let p = Arc::clone(&persister);
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..ROUNDS_PER_THREAD {
+                    // An empty changeset still fires begin + end (they
+                    // bracket every round unconditionally).
+                    p.store([t; 32], PlatformWalletChangeSet::default())
+                        .expect("empty changeset round must succeed");
+                }
+            }));
+        }
+        for h in handles {
+            h.join().expect("store thread panicked");
+        }
+
+        assert!(
+            !probe.interleaved.load(Ordering::SeqCst),
+            "begin/end rounds interleaved — the global round lock did not \
+             serialize concurrent store() calls"
+        );
+
+        let events = probe.events.lock();
+        let expected = THREADS as usize * ROUNDS_PER_THREAD * 2;
+        assert_eq!(
+            events.len(),
+            expected,
+            "each round must fire exactly one begin + one end"
+        );
+        // Every begin must be immediately followed by its own end.
+        let mut i = 0;
+        while i < events.len() {
+            assert!(events[i], "expected a begin at position {i}");
+            assert!(!events[i + 1], "expected an end at position {}", i + 1);
+            i += 2;
+        }
+        drop(events);
+
+        // Keep the probe alive until no thread can touch the context
+        // pointer any more.
+        drop(persister);
+        drop(probe);
+    }
+
+    /// A nonzero `begin` return is fatal: the client failed to open its
+    /// transaction, so `store()` must abort before any per-kind write and
+    /// leave the round CLOSED (so the next `store()` isn't wedged).
+    #[test]
+    fn nonzero_begin_aborts_the_round() {
+        extern "C" fn failing_begin(_ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+            7
+        }
+        let callbacks = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(failing_begin),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new(callbacks);
+        let err = persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect_err("a nonzero begin must fail the round");
+        assert!(
+            err.to_string()
+                .contains("changeset-begin callback returned error code 7"),
+            "unexpected error: {err}"
+        );
+        // The round must be closed again: a follow-up store() with a
+        // healthy (absent) begin succeeds — proving `in_round` was reset.
+        let healthy = PersistenceCallbacks::default();
+        let persister2 = FFIPersister::new(healthy);
+        persister2
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect("a healthy round must succeed");
+        // And the failing persister itself is not wedged: repeated calls
+        // keep returning the same begin error, never a "round already
+        // open" rejection.
+        let err2 = persister
+            .store([1u8; 32], PlatformWalletChangeSet::default())
+            .expect_err("second call must also fail on begin, not on a stuck round");
+        assert!(
+            err2.to_string().contains("changeset-begin"),
+            "expected a fresh begin error, got a wedged-round error: {err2}"
+        );
+    }
+
+    /// The round state machine rejects a nested begin and an unmatched end
+    /// as errors (never panics), and a normal begin→end pair round-trips.
+    #[test]
+    fn round_guard_state_machine_rejects_nesting_and_unmatched_end() {
+        let mut state = RoundGuardState::default();
+        // Fresh: begin opens the round.
+        state
+            .begin_round()
+            .expect("first begin must open the round");
+        // Nested begin is rejected (error, not panic).
+        let nested = state
+            .begin_round()
+            .expect_err("a nested begin must be rejected");
+        assert!(
+            nested.to_string().contains("nested begin"),
+            "unexpected nested-begin error: {nested}"
+        );
+        // End closes it.
+        state.end_round().expect("end must close the open round");
+        // A second end is unmatched → rejected.
+        let unmatched = state
+            .end_round()
+            .expect_err("an unmatched end must be rejected");
+        assert!(
+            unmatched.to_string().contains("unmatched end"),
+            "unexpected unmatched-end error: {unmatched}"
+        );
+        // Fully cycled back to a usable state.
+        state
+            .begin_round()
+            .expect("state must be reusable after a clean cycle");
+        state
+            .end_round()
+            .expect("end must close the reopened round");
     }
 
     /// Stub one marked-used entry at `(account_type, pool_type, index)`

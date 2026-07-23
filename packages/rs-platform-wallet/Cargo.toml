@@ -170,8 +170,12 @@ e2e = ["shielded", "test-utils"]
 # (extract-spends, note reservation, build-against-a-chosen-note, and an
 # asset-lock one-time-key derivation helper) for the adversarial e2e
 # cases. NOT in `default`; pulled in by `e2e`. Never enable in production
-# builds — these bypass the wallet's spend guards by design.
-test-utils = ["shielded"]
+# builds — these bypass the wallet's spend guards by design. Also
+# forwards to key-wallet's own `test-utils` (`TestWalletContext` +
+# `Address::dummy`) so downstream crates that only need dummy-wallet
+# fixtures can pull them in via this single flag without opting into
+# `shielded` directly.
+test-utils = ["shielded", "key-wallet/test-utils"]
 # Opt-in serde derives on the changeset types in `src/changeset/` plus
 # the per-identity / DashPay scalar types those changesets carry.
 # Activates `key-wallet/serde` (which transitively activates

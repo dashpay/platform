@@ -31,7 +31,7 @@ use dash_sdk::platform::address_sync::AddressFunds;
 use dpp::prelude::AssetLockProof;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::AddressPoolType;
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
@@ -610,17 +610,11 @@ impl Merge for IdentityChangeSet {
                             existing.dpns_names.push(name.clone());
                         }
                     }
-                    // Append new contested DPNS labels. Dedup
-                    // directly on the string since the field is a
-                    // plain `Vec<String>`. Resolutions (contest
-                    // won / locked) flow through a separate setter
-                    // that shrinks the list, so an always-extend
-                    // policy at merge time is correct.
-                    for label in &entry.contested_dpns_names {
-                        if !existing.contested_dpns_names.contains(label) {
-                            existing.contested_dpns_names.push(label.clone());
-                        }
-                    }
+                    // The contested-name sync emits the complete canonical
+                    // snapshot. Last-write-wins is therefore required so
+                    // resolved contests disappear, including when the latest
+                    // snapshot is empty.
+                    existing.contested_dpns_names = entry.contested_dpns_names.clone();
                     // Merge DashPay payments (last-write-wins per tx_id).
                     // Every mutation snapshot copies the full map via
                     // `from_managed`, so extend converges within a
@@ -1248,6 +1242,38 @@ pub struct AccountAddressPoolEntry {
     pub addresses: Vec<AddressInfo>,
 }
 
+/// Snapshot the non-empty address pools of one account into
+/// [`AccountAddressPoolEntry`] rows.
+///
+/// Pool snapshots are whole-pool and last-write-wins on the persistence
+/// side, so each emission carries the full pool state; empty pools are
+/// dropped so the FFI receiver keeps its "skip empty pools" semantics.
+/// Callers pass `account.managed_account_type().address_pools()` — this
+/// works for any account shape (`ManagedCoreFundsAccount`,
+/// `ManagedAccountRef`, …) since only the resolved pools are needed.
+/// Shared by wallet registration, the DashPay registration/payment-rotation
+/// path, the identity-top-up account deriver, and the asset-lock
+/// funding-index persistence.
+pub(crate) fn account_address_pool_entries<'a>(
+    account_type: AccountType,
+    pools: impl IntoIterator<Item = &'a AddressPool>,
+) -> Vec<AccountAddressPoolEntry> {
+    pools
+        .into_iter()
+        .filter_map(|pool| {
+            let addresses: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            if addresses.is_empty() {
+                return None;
+            }
+            Some(AccountAddressPoolEntry {
+                account_type,
+                pool_type: pool.pool_type,
+                addresses,
+            })
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Deferred contact-crypto queue (seedless background-sync deferral)
 // ---------------------------------------------------------------------------
@@ -1445,6 +1471,12 @@ pub struct PlatformWalletChangeSet {
     /// (key material unavailable). Append-only delta; apply inserts into the
     /// persisted queue, deduped by [`PendingContactCryptoKey`]. Secret-free.
     /// See [`PendingContactCrypto`].
+    ///
+    /// Durability caveat: the FFI persister vtable (iOS/Android hosts) has
+    /// no slot for this field yet, so on those hosts the queue is
+    /// process-lifetime only — a restart before a signer-backed drain
+    /// loses the entries until the recurring sweep re-discovers and
+    /// re-enqueues them (self-healing, but not immediate).
     pub pending_contact_crypto_added: Vec<PendingContactCrypto>,
     /// Keys of deferred ops to remove (drained successfully, or permanently
     /// failed). Append-only delta; apply removes matching `(owner, contact,
@@ -1602,10 +1634,55 @@ impl Merge for PlatformWalletChangeSet {
 mod tests {
     use super::*;
 
+    fn identity_entry_with_contested(id: Identifier, labels: &[&str]) -> IdentityEntry {
+        IdentityEntry {
+            id,
+            balance: 0,
+            revision: 0,
+            identity_index: None,
+            last_updated_balance_block_time: None,
+            last_synced_keys_block_time: None,
+            dpns_names: Vec::new(),
+            contested_dpns_names: labels.iter().map(|label| (*label).to_owned()).collect(),
+            status: IdentityStatus::Unknown,
+            wallet_id: None,
+            dashpay_profile: None,
+            dashpay_payments: BTreeMap::new(),
+            contact_profiles: BTreeMap::new(),
+            ignored_senders: BTreeSet::new(),
+        }
+    }
+
     #[test]
     fn test_empty_changeset() {
         let cs = PlatformWalletChangeSet::default();
         assert!(cs.is_empty());
+    }
+
+    #[test]
+    fn contested_dpns_merge_replaces_canonical_snapshot_and_allows_empty() {
+        let id = Identifier::from([0x51; 32]);
+        let mut changes = IdentityChangeSet::default();
+        changes
+            .identities
+            .insert(id, identity_entry_with_contested(id, &["old", "retained"]));
+
+        let mut refreshed = IdentityChangeSet::default();
+        refreshed
+            .identities
+            .insert(id, identity_entry_with_contested(id, &["retained", "new"]));
+        changes.merge(refreshed);
+        assert_eq!(
+            changes.identities[&id].contested_dpns_names,
+            ["retained", "new"]
+        );
+
+        let mut resolved = IdentityChangeSet::default();
+        resolved
+            .identities
+            .insert(id, identity_entry_with_contested(id, &[]));
+        changes.merge(resolved);
+        assert!(changes.identities[&id].contested_dpns_names.is_empty());
     }
 
     /// The deferred contact-crypto queue rides the changeset as add/clear

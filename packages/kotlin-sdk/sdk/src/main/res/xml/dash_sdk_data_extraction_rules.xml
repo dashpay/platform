@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Modern (API 31+) backup exclusion for WalletStorage's encrypted-secrets
+  DataStore. See dash_sdk_backup_rules.xml (the API <31 counterpart) for
+  the full rationale — both files must be referenced together to cover
+  this SDK's minSdk 29 floor:
+
+    <application
+        android:fullBackupContent="@xml/dash_sdk_backup_rules"
+        android:dataExtractionRules="@xml/dash_sdk_data_extraction_rules">
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/org.dashfoundation.wallet.secrets.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/org.dashfoundation.wallet.secrets.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

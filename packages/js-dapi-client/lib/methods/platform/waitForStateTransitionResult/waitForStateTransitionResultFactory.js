@@ -52,9 +52,17 @@ function waitForStateTransitionResultFactory(grpcTransport) {
           options,
         );
 
-        return WaitForStateTransitionResultResponse.createFromProto(
+        const parsedResponse = WaitForStateTransitionResultResponse.createFromProto(
           waitForStateTransitionResultResponse,
         );
+        if (options.prove && !parsedResponse.getError()
+          && (!parsedResponse.getProof() || !parsedResponse.getMetadata())) {
+          throw new InvalidResponseError(
+            'Proved state transition confirmation is missing proof or metadata',
+          );
+        }
+
+        return parsedResponse;
       } catch (e) {
         if (e instanceof InvalidResponseError) {
           lastError = e;

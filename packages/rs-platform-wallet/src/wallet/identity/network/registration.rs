@@ -129,7 +129,7 @@ impl IdentityWallet {
     ) -> Result<Identity, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
         // Step 1: pre-flight on the caller-supplied keys map.
         if keys_map.is_empty() {
@@ -391,7 +391,7 @@ impl IdentityWallet {
         settings: Option<PutSettings>,
     ) -> Result<u64, PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
         // Step 1: retrieve the identity + its HD index.
         let (identity, identity_index) = {

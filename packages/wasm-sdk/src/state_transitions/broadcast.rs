@@ -98,4 +98,64 @@ impl WasmSdk {
 
         convert_proof_result(result).map_err(WasmSdkError::from)
     }
+
+    /// Waits for a state transition response, accepting proofs that only
+    /// authenticate the state the transition affects.
+    ///
+    /// `waitForResponse` is strict: it fails for the transition families
+    /// whose proofs cannot be bound to the execution of one specific
+    /// transition (balance top-ups, credit transfers and withdrawals,
+    /// address funds movements, shields, no-history token operations). This
+    /// method accepts those outcomes instead. The result is a verified,
+    /// height-pinned snapshot of the affected state — NOT evidence that this
+    /// specific transition executed.
+    ///
+    /// @param stateTransition - The state transition that was broadcast
+    /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
+    /// @returns The verified affected-state result
+    #[wasm_bindgen(js_name = "waitForAffectedState")]
+    pub async fn wait_for_affected_state(
+        &self,
+        #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
+        settings: Option<PutSettingsJs>,
+    ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+        let st: StateTransition = state_transition.into();
+        let put_settings = parse_put_settings(settings)?;
+
+        let result = st
+            .wait_for_affected_state::<StateTransitionProofResult>(self.as_ref(), put_settings)
+            .await
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
+            })?;
+
+        convert_proof_result(result).map_err(WasmSdkError::from)
+    }
+
+    /// Broadcasts a state transition and waits for the result, accepting
+    /// proofs that only authenticate the affected state (see
+    /// `waitForAffectedState` for the semantics).
+    ///
+    /// @param stateTransition - The state transition to broadcast
+    /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
+    /// @returns The verified affected-state result
+    #[wasm_bindgen(js_name = "broadcastAndWaitForAffectedState")]
+    pub async fn broadcast_and_wait_for_affected_state(
+        &self,
+        #[wasm_bindgen(js_name = "stateTransition")] state_transition: &StateTransitionWasm,
+        settings: Option<PutSettingsJs>,
+    ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
+        let st: StateTransition = state_transition.into();
+        let put_settings = parse_put_settings(settings)?;
+
+        let result = st
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                self.as_ref(),
+                put_settings,
+            )
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+
+        convert_proof_result(result).map_err(WasmSdkError::from)
+    }
 }

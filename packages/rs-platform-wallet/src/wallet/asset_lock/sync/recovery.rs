@@ -233,10 +233,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     tracked_count,
                     "resume_asset_lock: asset lock not in tracked_asset_locks map"
                 );
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Asset lock {} is not tracked",
-                    out_point
-                ))
+                PlatformWalletError::AssetLockNotTracked(*out_point)
             })?;
             tracing::info!(
                 outpoint = %out_point,
@@ -313,17 +310,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .await?
             }
             AssetLockStatus::Consumed => {
-                // Terminal — the asset lock was already burned by a
-                // successful identity registration / top-up. We
-                // should never reach this arm in practice (the
-                // `tracked_asset_locks` map drops Consumed entries
-                // and the load path filters them out), but the
-                // exhaustive match needs an arm. Treat as a wallet-
-                // state mismatch rather than panicking.
-                return Err(PlatformWalletError::AssetLockProofWait(format!(
-                    "Asset lock {} is already Consumed — nothing to resume",
-                    out_point
-                )));
+                // Terminal tombstone — the asset lock was already
+                // burned by a successful identity registration / top-up.
+                // Retaining this state makes the typed distinction from
+                // an unknown outpoint available before and after restart.
+                return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
             }
         };
 
@@ -343,12 +334,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-            let lock = info.tracked_asset_locks.get(out_point).ok_or_else(|| {
-                PlatformWalletError::AssetLockProofWait(format!(
-                    "Asset lock {} disappeared during resume",
-                    out_point
-                ))
-            })?;
+            let lock = info
+                .tracked_asset_locks
+                .get(out_point)
+                .ok_or_else(|| PlatformWalletError::AssetLockNotTracked(*out_point))?;
             self.rederive_credit_output_path(lock).await?
         };
 
@@ -452,5 +441,353 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             })?;
 
         Ok(derivation_path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use async_trait::async_trait;
+    use dashcore::hashes::Hash;
+    use dashcore::{Network, OutPoint, Transaction, Txid};
+    use key_wallet::account::account_collection::AccountCollection;
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::account::{Account, AccountType};
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::wallet::Wallet;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::{Notify, RwLock};
+
+    use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
+    use crate::wallet::asset_lock::manager::AssetLockManager;
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::wallet::core::WalletBalance;
+    use crate::wallet::identity::IdentityManager;
+    use crate::wallet::persister::WalletPersister;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+    use crate::AssetLockFundingType;
+
+    /// Persistence stub that records every stored changeset so the test
+    /// can replay the registration rounds the way the FFI load path does.
+    #[derive(Default)]
+    struct RecordingPersistence {
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+
+    /// Captures the exact transaction passed to the resumed `Built` branch.
+    /// Recovery must never rebuild a replacement transaction/outpoint.
+    #[derive(Default)]
+    struct RecordingBroadcaster {
+        transactions: Mutex<Vec<Transaction>>,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for RecordingBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.transactions
+                .lock()
+                .expect("recording broadcaster mutex")
+                .push(transaction.clone());
+            Ok(transaction.txid())
+        }
+    }
+
+    impl PlatformWalletPersistence for RecordingPersistence {
+        fn store(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored
+                .lock()
+                .expect("recording persistence mutex")
+                .push(changeset);
+            Ok(())
+        }
+
+        fn flush(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn built_resume_rebroadcasts_original_and_typed_failures_do_not_broadcast() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let persistence = Arc::new(RecordingPersistence::default());
+        let broadcaster = Arc::new(RecordingBroadcaster::default());
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster),
+            WalletPersister::new(wallet_id, persistence),
+        );
+        let (transaction, _path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                4,
+                &signer,
+            )
+            .await
+            .expect("build asset lock");
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        {
+            let mut wm = wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    out_point,
+                    transaction: transaction.clone(),
+                    account_index: 0,
+                    funding_type: AssetLockFundingType::IdentityRegistration,
+                    identity_index: 4,
+                    amount: 1_000_000,
+                    status: AssetLockStatus::Built,
+                    proof: None,
+                },
+            );
+        }
+
+        let timed_out = manager
+            .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("no proof event should arrive");
+        assert!(matches!(
+            timed_out,
+            PlatformWalletError::FinalityTimeout(actual) if actual == out_point
+        ));
+        let broadcast = broadcaster
+            .transactions
+            .lock()
+            .expect("recording broadcaster mutex");
+        assert_eq!(broadcast.as_slice(), std::slice::from_ref(&transaction));
+        assert_eq!(broadcast[0].txid(), out_point.txid);
+        drop(broadcast);
+
+        // The real consume path leaves a terminal tombstone. That gives a
+        // same-process retry a truthful typed error, while a foreign outpoint
+        // remains distinguishable as never tracked.
+        let consumed_changeset = manager
+            .consume_asset_lock(&out_point)
+            .await
+            .expect("consume tracked lock");
+        assert_eq!(
+            consumed_changeset
+                .asset_locks
+                .get(&out_point)
+                .expect("consumed snapshot")
+                .status,
+            AssetLockStatus::Consumed
+        );
+        {
+            let wm = wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("wallet")
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .expect("consumed tombstone")
+                    .status,
+                AssetLockStatus::Consumed
+            );
+        }
+        let consumed = manager
+            .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("consumed lock must fail");
+        assert!(matches!(
+            consumed,
+            PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == out_point
+        ));
+
+        let foreign = OutPoint::new(Txid::all_zeros(), 7);
+        let unknown = manager
+            .resume_asset_lock(&foreign, Some(Duration::from_millis(10)))
+            .await
+            .expect_err("foreign outpoint must fail");
+        assert!(matches!(
+            unknown,
+            PlatformWalletError::AssetLockNotTracked(actual) if actual == foreign
+        ));
+        assert_eq!(
+            broadcaster
+                .transactions
+                .lock()
+                .expect("recording broadcaster mutex")
+                .len(),
+            1,
+            "terminal/foreign failures must not trigger another broadcast"
+        );
+    }
+
+    /// A lazily-created `IdentityTopUp` funding account must survive a
+    /// restart. Its persisted registration round (account xpub + pool
+    /// snapshot) is the ONLY record the load path can rebuild the account
+    /// from — the `account_registrations` / `account_address_pools`
+    /// changeset fields are not replayed by `apply_changeset` — so
+    /// without it, `resume_asset_lock` on a relaunched wallet fails at
+    /// `rederive_credit_output_path` ("Funding account IdentityTopUp not
+    /// found for re-derivation") and the already-broadcast top-up is
+    /// stranded.
+    #[tokio::test]
+    async fn topup_credit_output_path_rederives_after_restart() {
+        const TOPUP_INDEX: u32 = 7;
+
+        // --- Session 1: build a top-up asset lock. This lazily creates
+        // the IdentityTopUp{7} account and must persist its registration.
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let persistence = Arc::new(RecordingPersistence::default());
+        // The mock SDK network must match the testnet wallet fixture:
+        // `rederive_credit_output_path` decodes the credit-output address
+        // against `sdk.network`.
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = AssetLockManager::new(
+            Arc::clone(&sdk),
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        );
+        let (tx, path) = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityTopUp,
+                TOPUP_INDEX,
+                &signer,
+            )
+            .await
+            .expect("build top-up asset lock");
+
+        let topup_account_type = AccountType::IdentityTopUp {
+            registration_index: TOPUP_INDEX,
+        };
+        let registrations: Vec<crate::changeset::AccountRegistrationEntry> = {
+            let stored = persistence.stored.lock().expect("recording mutex");
+            assert!(
+                stored.iter().any(|cs| cs
+                    .account_address_pools
+                    .iter()
+                    .any(|p| p.account_type == topup_account_type && !p.addresses.is_empty())),
+                "the lazily-created top-up account must persist a non-empty \
+                 initial address-pool snapshot"
+            );
+            stored
+                .iter()
+                .flat_map(|cs| cs.account_registrations.iter().cloned())
+                .collect()
+        };
+        assert!(
+            registrations
+                .iter()
+                .any(|r| r.account_type == topup_account_type),
+            "the lazily-created top-up account must persist an \
+             AccountRegistrationEntry, got {registrations:?}"
+        );
+
+        // --- "Restart": rebuild the wallet the way the FFI load path
+        // does (`build_wallet_start_state`) — an external-signable
+        // Wallet holding ONLY the persisted account registrations (pool
+        // windows regenerate deterministically from each account xpub) —
+        // and re-track the lock from its persisted row.
+        let mut accounts = AccountCollection::new();
+        for reg in &registrations {
+            let account = Account::from_xpub(
+                Some(wallet_id),
+                reg.account_type,
+                reg.account_xpub,
+                Network::Testnet,
+            )
+            .expect("Account::from_xpub");
+            accounts.insert(account).expect("insert restored account");
+        }
+        let restored_wallet = Wallet::new_external_signable(Network::Testnet, wallet_id, accounts);
+        let mut restored_info = PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(&restored_wallet, 0),
+            balance: Arc::new(WalletBalance::new()),
+            identity_manager: IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        };
+        let out_point = OutPoint::new(tx.txid(), 0);
+        let lock = TrackedAssetLock {
+            out_point,
+            transaction: tx,
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityTopUp,
+            identity_index: TOPUP_INDEX,
+            amount: 1_000_000,
+            status: AssetLockStatus::Built,
+            proof: None,
+        };
+        restored_info
+            .tracked_asset_locks
+            .insert(out_point, lock.clone());
+
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+        let restored_id = wm
+            .insert_wallet(restored_wallet, restored_info)
+            .expect("insert restored wallet");
+        assert_eq!(
+            restored_id, wallet_id,
+            "external-signable restore must keep the persisted wallet id"
+        );
+
+        let restored_manager = AssetLockManager::new(
+            sdk,
+            Arc::new(RwLock::new(wm)),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),
+        );
+        let rederived = restored_manager
+            .rederive_credit_output_path(&lock)
+            .await
+            .expect(
+                "credit-output path must re-derive from the persisted \
+                 IdentityTopUp account after a restart",
+            );
+        assert_eq!(
+            rederived, path,
+            "re-derived credit-output path must match the build-time path"
+        );
     }
 }

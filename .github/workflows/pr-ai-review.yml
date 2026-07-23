@@ -1,0 +1,55 @@
+name: "AI Review"
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - ready_for_review
+      - synchronize
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ai-review:
+    name: CodeRabbit or PastaClaw review
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check for a review from CodeRabbit or thepastaclaw
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reviewers = new Set(['coderabbitai[bot]', 'coderabbitai', 'thepastaclaw']);
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+
+            const found = reviews.filter(
+              (review) =>
+                review.state !== 'PENDING' &&
+                reviewers.has(review.user?.login?.toLowerCase())
+            );
+
+            if (found.length > 0) {
+              const authors = [...new Set(found.map((review) => review.user.login))];
+              core.info(`Found ${found.length} review(s) from: ${authors.join(', ')}`);
+              return;
+            }
+
+            core.setFailed(
+              'No review from CodeRabbit or thepastaclaw yet. This check passes ' +
+                'once either of them submits a review, so a rate-limited ' +
+                'CodeRabbit does not block the PR when thepastaclaw has reviewed ' +
+                '(or vice versa). It re-runs automatically when a review is submitted.'
+            );

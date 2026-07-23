@@ -1,6 +1,6 @@
 //! Platform address wallet for DIP-17 platform payment addresses.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
@@ -64,6 +64,55 @@ impl PlatformAddressWallet {
             asset_locks,
             persister,
         }
+    }
+
+    /// Enumerate the candidate address SET for `account_index`: the union of
+    /// the account's transient derived pool (`addresses.addresses`) and the
+    /// hydrated `address_balances` map.
+    ///
+    /// The union is what lets input selection survive a fresh relaunch — the
+    /// derived pool is empty until a platform sync repopulates it, while
+    /// `address_balances` is hydrated synchronously on wallet load from the
+    /// persisted `platform_addresses` rows (the same source Platform Balance
+    /// reads). Enumerating only the pool made selection find no candidates and
+    /// fail right after launch even though the balances were on disk and
+    /// on-chain.
+    ///
+    /// Balances are NOT read here — every caller re-reads the authoritative
+    /// on-chain balance via `AddressInfo::fetch_many`, keeping the submit gate
+    /// and the spend path in lockstep and immune to a stale/zero cache. The
+    /// wallet-manager read lock is released before returning so a concurrent
+    /// sync/reconcile is never blocked behind a caller's proof round-trip.
+    pub(crate) async fn candidate_address_set(
+        &self,
+        account_index: u32,
+    ) -> Result<BTreeSet<PlatformAddress>, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found in wallet manager",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    account_index
+                ))
+            })?;
+
+        Ok(account
+            .addresses
+            .addresses
+            .values()
+            .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok())
+            .chain(account.address_balances.keys().copied())
+            .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
+            .collect())
     }
 
     /// Build (or rebuild) the unified address provider covering every

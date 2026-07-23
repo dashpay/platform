@@ -64,8 +64,8 @@ bs58 = "0.5"
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-tempfile = "3.8"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
+platform-wallet = { path = "../rs-platform-wallet", features = ["test-utils"] }
 
 [build-dependencies]
 cbindgen = "0.27"
