@@ -10,8 +10,8 @@ use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{PlatformWalletError, TxMetadataKeySource};
-use zeroize::Zeroizing;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
+use zeroize::Zeroizing;
 
 use crate::check_ptr;
 use crate::error::*;
@@ -91,7 +91,11 @@ unsafe fn tx_metadata_key_master_for_wallet(
             // caller's safety contract guarantees it came from
             // `dash_sdk_mnemonic_resolver_create`.
             let master = unsafe {
-                resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, wallet.network())?
+                resolve_master_from_resolver(
+                    mnemonic_resolver_handle,
+                    &wallet_id,
+                    wallet.network(),
+                )?
             };
             Ok(Some(master))
         }
@@ -350,10 +354,9 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
         // back into the host mnemonic resolver for external-signable
         // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
         // master is wrapped in a Drop-wiping guard.
-        let master_opt = unsafe {
-            tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle)
-        }?
-        .map(WipingMaster);
+        let master_opt =
+            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
+                .map(WipingMaster);
 
         // Derive the AES key + seal the wire blob SYNCHRONOUSLY, then wipe the
         // master BEFORE any network `.await`: the master xprv never crosses the
@@ -467,10 +470,9 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
         // back into the host mnemonic resolver for external-signable
         // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
         // master is wrapped in a Drop-wiping guard.
-        let master_opt = unsafe {
-            tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle)
-        }?
-        .map(WipingMaster);
+        let master_opt =
+            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
+                .map(WipingMaster);
 
         let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
             block_on_worker(async move {

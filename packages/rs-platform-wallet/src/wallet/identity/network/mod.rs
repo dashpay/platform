@@ -23,8 +23,8 @@
 mod contract;
 mod discovery;
 mod document;
-mod encrypted_document;
 mod dpns;
+mod encrypted_document;
 mod identity_handle;
 mod loading;
 mod register_from_addresses;
@@ -65,15 +65,15 @@ pub use seed_binding::SeedBindingVerification;
 mod tokens;
 
 pub use contact_info::ContactInfoPublishOutcome;
-pub use encrypted_document::{
-    query_owned_encrypted_documents, DecryptedEncryptedDocument, TxMetadataKeySource,
-};
 pub use contact_requests::{
     AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened, ContactInfoSealed,
 };
 pub use dashpay_view::DashPayView;
 pub use discovery::IdentityDiscoveryOptions;
 pub use dpns::{ContestContender, ContestVoteState, ContestWinner};
+pub use encrypted_document::{
+    query_owned_encrypted_documents, DecryptedEncryptedDocument, TxMetadataKeySource,
+};
 pub use identity_handle::{
     derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
     derive_identity_auth_keypair, identity_auth_derivation_path_for_type, DerivedIdentityAuthKey,
