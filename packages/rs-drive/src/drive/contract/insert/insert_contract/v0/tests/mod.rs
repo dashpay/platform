@@ -15,7 +15,11 @@
 //!   `rangeSummable` / `rangeCountable` 4-way dispatcher
 //!   (`(false, false) | (true, false) | (false, true) | (true,
 //!   true)` corners of the matrix).
+//! - [`shared_prefix_aggregation_e2e_tests`] — cross-index shared
+//!   prefix layouts where a shorter aggregate index and a deeper
+//!   range index must compose safely during document insertion.
 
 mod countable_e2e_tests;
 mod range_countable_index_e2e_tests;
 mod range_summable_index_e2e_tests;
+mod shared_prefix_aggregation_e2e_tests;
