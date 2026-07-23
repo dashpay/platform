@@ -77,13 +77,14 @@ stage_target_artifacts() {
 # Help
 # -------------------------------
 show_help() {
-  echo "Usage: $0 --target <ios|sim|mac> [--profile <dev|release>]"
+  echo "Usage: $0 --target <ios|sim|mac|all|tests> [--profile <dev|release>]"
   echo ""
   echo "Targets:"
   echo "  ios         -> iPhone device"
   echo "  sim         -> auto-detected iOS simulator"
   echo "  mac         -> Apple Silicon Mac"
   echo "  all         -> all targets"
+  echo "  tests       -> targets needed by run_tests.sh (sim + mac)"
   echo ""
   echo "Profile:"
   echo "  dev (default)"
