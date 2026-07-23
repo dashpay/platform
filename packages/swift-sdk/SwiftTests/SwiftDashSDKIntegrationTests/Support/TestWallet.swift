@@ -30,7 +30,14 @@ final class TestWalletWrapper {
             accountType: .bip44,
             accountIndex: 0
         )
-        return try core.broadcastTransaction(tx)
+        switch try core.broadcastTransactionWithOutcome(tx) {
+        case .accepted(let txid):
+            return txid
+        case .rejected(_, let reason):
+            throw PlatformWalletError.transactionBroadcastRejected(reason)
+        case .unknown(_, let reason):
+            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+        }
     }
 
     func waitForSpendable(exactly duffs: UInt64, timeout: TimeInterval = 60) async throws {
