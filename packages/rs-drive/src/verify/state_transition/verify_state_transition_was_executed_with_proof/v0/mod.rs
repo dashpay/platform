@@ -2077,6 +2077,7 @@ mod tests {
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::Identity;
     use dpp::prelude::DataContract;
+    use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use dpp::state_transition::proof_result::{
         StateTransitionProofOutcome, StateTransitionProofResult,
     };
@@ -2209,7 +2210,6 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected to serialize contract");
 
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
         let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {
@@ -3437,7 +3437,6 @@ mod tests {
             .try_into_platform_versioned(platform_version)
             .expect("expected to serialize contract");
 
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
         let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {
@@ -4400,6 +4399,82 @@ mod tests {
 
     // --- Batch V1 with Token Mint transition + unknown contract returns
     // UnknownContract error (token transition branch).
+    /// The classifier is the single authority on which transition families'
+    /// proofs bind execution; this table pins the snapshot-only families so
+    /// a reclassification (accidental or deliberate) fails a test instead of
+    /// silently upgrading a snapshot into execution evidence.
+    #[test]
+    fn classifier_tags_snapshot_only_families_as_affected_state() {
+        use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+        use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+        use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+        use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+        use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+        use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
+        use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+        use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+
+        let no_contracts: &ContractLookupFn = &|_id| Ok(None);
+
+        let snapshot_only: Vec<(&str, StateTransition)> = vec![
+            (
+                "identity top up",
+                StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(Default::default())),
+            ),
+            (
+                "identity credit withdrawal",
+                StateTransition::IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition::V0(
+                    Default::default(),
+                )),
+            ),
+            (
+                "identity credit transfer",
+                StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                    Default::default(),
+                )),
+            ),
+            (
+                "identity credit transfer to addresses",
+                StateTransition::IdentityCreditTransferToAddresses(
+                    IdentityCreditTransferToAddressesTransition::V0(Default::default()),
+                ),
+            ),
+            (
+                "identity top up from addresses",
+                StateTransition::IdentityTopUpFromAddresses(
+                    IdentityTopUpFromAddressesTransition::V0(Default::default()),
+                ),
+            ),
+            (
+                "address funds transfer",
+                StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                    Default::default(),
+                )),
+            ),
+            (
+                "address funding from asset lock",
+                StateTransition::AddressFundingFromAssetLock(
+                    AddressFundingFromAssetLockTransition::V0(Default::default()),
+                ),
+            ),
+            (
+                "address credit withdrawal",
+                StateTransition::AddressCreditWithdrawal(AddressCreditWithdrawalTransition::V0(
+                    Default::default(),
+                )),
+            ),
+        ];
+
+        for (name, st) in snapshot_only {
+            let binds = Drive::state_transition_proof_binds_execution(&st, no_contracts)
+                .expect("classifier should not error for contract-independent families");
+            assert!(
+                !binds,
+                "{name}: proof must be classified as an affected-state snapshot"
+            );
+        }
+    }
+
     #[test]
     fn verify_no_history_token_empty_proof_returns_error() {
         use dpp::data_contract::accessors::v1::DataContractV1Setters;
@@ -5583,7 +5658,6 @@ mod tests {
             .clone()
             .try_into_platform_versioned(platform_version)
             .expect("expected to serialize contract");
-        use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
         use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
         let st = StateTransition::DataContractUpdate(DataContractUpdateTransition::V0(
             DataContractUpdateTransitionV0 {
