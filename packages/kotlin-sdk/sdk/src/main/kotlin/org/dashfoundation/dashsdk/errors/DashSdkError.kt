@@ -257,7 +257,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorReservationTokenConsumed` (native code 27). A deferred
+         * `ErrorReservationTokenConsumed` (native code 28). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
          * token is unknown, already broadcast, or already released — the guard
          * that turns a double-broadcast (or a broadcast after release) into a
@@ -270,7 +270,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorReservationWalletMismatch` (native code 28). A deferred
+         * `ErrorReservationWalletMismatch` (native code 29). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
          * token was minted against a different wallet *generation* than the one
          * broadcasting it (e.g. a wallet re-created under the same id); its
