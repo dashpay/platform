@@ -82,7 +82,7 @@ impl ValidationMode {
 }
 
 #[cfg(test)]
-pub(in crate::execution) mod test_helpers;
+pub(crate) mod test_helpers;
 
 #[cfg(test)]
 pub(in crate::execution) mod tests {

@@ -34,6 +34,7 @@ members = [
     "packages/check-features",
     "packages/wallet-utils-contract",
     "packages/token-history-contract",
+    "packages/document-history-contract",
     "packages/keyword-search-contract",
     "packages/rs-sdk-ffi",
     "packages/wasm-drive-verify",
@@ -46,18 +47,19 @@ members = [
     "packages/rs-platform-encryption",
     "packages/wasm-sdk",
     "packages/rs-unified-sdk-ffi",
+    "packages/rs-unified-sdk-jni",
     "packages/rs-scripts",
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "19690d31b37ba12adc00f6bf2f8413d97e2b669d" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
 
 tokio-metrics = "0.5"
 
@@ -77,6 +79,22 @@ opt-level = 3
 [profile.dev-ios]
 inherits = "dev"
 panic = "abort"
+debug = "line-tables-only"
+
+# Android counterparts for the `rs-unified-sdk-jni` cdylib, used ONLY by
+# `packages/kotlin-sdk/build_android.sh`. Unlike iOS, panic stays
+# `unwind`: a JNI library must never abort the app process — panics are
+# caught at the shim boundary and rethrown as Java exceptions.
+[profile.release-android]
+inherits = "release"
+strip = "debuginfo"
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+[profile.dev-android]
+inherits = "dev"
+strip = "debuginfo"
 lto = "thin"
 
 # Optimize heavy crypto crates even in dev/test builds so that
@@ -110,5 +128,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "4.0.0"
+version = "4.1.0-beta.1"
 rust-version = "1.92"

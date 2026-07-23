@@ -4,7 +4,7 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
 use crate::handle::*;
-use crate::persistence::{FFIPersister, PersistenceCallbacks};
+use crate::persistence::{FFIPersister, PersistenceCallbacks, PersistenceCapabilitiesFFI};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -12,8 +12,19 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use platform_wallet::PlatformWalletManager;
+use platform_wallet::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 use std::os::raw::c_void;
 use std::sync::Arc;
+
+fn persistence_capabilities_declaration(
+    value: &PersistenceCapabilitiesFFI,
+) -> PersistenceCapabilities {
+    if value.version == PERSISTENCE_CAPABILITIES_VERSION {
+        PersistenceCapabilities::from_bits_retain(value.bits)
+    } else {
+        PersistenceCapabilities::NONE
+    }
+}
 
 /// Create a new PlatformWalletManager.
 ///
@@ -38,13 +49,56 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     event_handler: *const EventHandlerCallbacks,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        persistence,
+        event_handler,
+        PersistenceCapabilities::NONE,
+        out_handle,
+    )
+}
+
+/// Create a manager with an explicit, versioned persistence capability
+/// declaration. This additive entry point preserves the exact layout of the
+/// established [`PersistenceCallbacks`] vtable used by
+/// [`platform_wallet_manager_create`]. Unknown versions fail closed to no
+/// capabilities; known bits are still intersected with callback structure.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabilities(
+    sdk_ptr: *const c_void,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(persistence_capabilities);
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        persistence,
+        event_handler,
+        declaration,
+        out_handle,
+    )
+}
+
+unsafe fn platform_wallet_manager_create_impl(
+    sdk_ptr: *const c_void,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    declared_capabilities: PersistenceCapabilities,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
     check_ptr!(persistence);
     check_ptr!(event_handler);
     check_ptr!(out_handle);
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
-    let persister = Arc::new(FFIPersister::new(std::ptr::read(persistence)));
+    let persister = Arc::new(FFIPersister::new_with_persistence_capabilities(
+        std::ptr::read(persistence),
+        declared_capabilities,
+    ));
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> =
         Arc::new(FFIEventHandler::new(std::ptr::read(event_handler)));
 
@@ -62,6 +116,25 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
     *out_handle = handle;
 
+    PlatformWalletFFIResult::ok()
+}
+
+/// Query the versioned persistence capabilities of a live manager.
+///
+/// The returned mask is derived from the callback vtable copied at manager
+/// creation. Callers must check `version` before interpreting known bits and
+/// ignore unknown bits for forward compatibility.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_persistence_capabilities(
+    manager_handle: Handle,
+    out_capabilities: *mut PersistenceCapabilitiesFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_capabilities);
+
+    let capabilities = PLATFORM_WALLET_MANAGER_STORAGE
+        .with_item(manager_handle, |manager| manager.persistence_capabilities());
+    let capabilities = unwrap_option_or_return!(capabilities);
+    *out_capabilities = capabilities.into();
     PlatformWalletFFIResult::ok()
 }
 
@@ -432,6 +505,49 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
 mod tests {
     use super::*;
 
+    unsafe extern "C" fn begin_changeset(_context: *mut c_void, _wallet_id: *const u8) -> i32 {
+        0
+    }
+
+    unsafe extern "C" fn end_changeset(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _success: bool,
+    ) -> i32 {
+        0
+    }
+
+    fn persistence_callbacks() -> PersistenceCallbacks {
+        PersistenceCallbacks {
+            on_changeset_begin_fn: Some(begin_changeset),
+            on_changeset_end_fn: Some(end_changeset),
+            ..Default::default()
+        }
+    }
+
+    fn event_callbacks() -> EventHandlerCallbacks {
+        EventHandlerCallbacks {
+            context: std::ptr::null_mut(),
+            on_wallet_event_fn: None,
+            on_error_fn: None,
+            on_platform_address_sync_completed_fn: None,
+            on_shielded_sync_completed_fn: None,
+            on_shielded_sync_progress_fn: None,
+            on_shielded_tree_progress_fn: None,
+        }
+    }
+
+    fn query(handle: Handle) -> PersistenceCapabilitiesFFI {
+        let mut out = PersistenceCapabilitiesFFI {
+            version: 0,
+            reserved: u32::MAX,
+            bits: u64::MAX,
+        };
+        let result = unsafe { platform_wallet_manager_persistence_capabilities(handle, &mut out) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        out
+    }
+
     #[test]
     fn birth_height_override_opt_true_zero_is_some_zero() {
         assert_eq!(birth_height_override_opt(true, 0), Some(0));
@@ -446,5 +562,76 @@ mod tests {
     fn birth_height_override_opt_false_is_none_regardless_of_value() {
         assert_eq!(birth_height_override_opt(false, 0), None);
         assert_eq!(birth_height_override_opt(false, 99), None);
+    }
+
+    #[test]
+    fn unknown_capability_declaration_version_fails_closed() {
+        let declaration = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION + 1,
+            reserved: 0,
+            bits: u64::MAX,
+        };
+        assert_eq!(
+            persistence_capabilities_declaration(&declaration),
+            PersistenceCapabilities::NONE
+        );
+    }
+
+    #[test]
+    fn legacy_create_is_abi_stable_and_fail_closed() {
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let callbacks = persistence_callbacks();
+        let event_callbacks = event_callbacks();
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_callbacks,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let out = query(handle);
+        assert_eq!(out.version, PERSISTENCE_CAPABILITIES_VERSION);
+        assert_eq!(out.reserved, 0);
+        assert_eq!(out.bits, 0);
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    #[test]
+    fn additive_create_versions_and_intersects_capabilities() {
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let callbacks = persistence_callbacks();
+        let event_callbacks = event_callbacks();
+        let declaration = PersistenceCapabilitiesFFI {
+            version: PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: PersistenceCapabilities::ATOMIC_CHANGESETS
+                .union(PersistenceCapabilities::INVITATIONS)
+                .bits(),
+        };
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create_with_persistence_capabilities(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_callbacks,
+                &declaration,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let out = query(handle);
+        assert_eq!(out.version, PERSISTENCE_CAPABILITIES_VERSION);
+        assert_eq!(out.reserved, 0);
+        // Invitations were declared but lack their required callback, proving
+        // the manager query returns the declaration/structure intersection.
+        assert_eq!(out.bits, PersistenceCapabilities::ATOMIC_CHANGESETS.bits());
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
     }
 }

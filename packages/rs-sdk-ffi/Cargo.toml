@@ -23,6 +23,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
     "wallet-utils-contract",
     "token-history-contract",
     "keywords-contract",
+    "document-history-contract",
 ] }
 simple-signer = { path = "../simple-signer" }
 async-trait = { version = "0.1.83" }
@@ -73,18 +74,20 @@ zeroize = "1.8"
 # Concurrency
 once_cell = "1.20"
 
-# HTTP client for diagnostics
-reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
+# HTTP client for diagnostics — TLS backend is target-gated below: Android
+# gets rustls + bundled webpki roots (no OpenSSL, no readable system cert
+# store); every other target keeps the default `native-tls` backend so iOS
+# continues to validate against the system trust store (Security.framework,
+# MDM-installed roots) exactly as before the Android port.
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 
 [build-dependencies]
 cbindgen = "0.27"
-
-[profile.release]
-lto = "fat"       # Enable cross-crate optimization
-codegen-units = 1 # Single codegen unit for better optimization
-strip = "symbols" # Strip debug symbols for smaller size
-opt-level = "z"   # Optimize for size
-panic = "abort"   # Required for iOS
 
 [dev-dependencies]
 hex = "0.4"

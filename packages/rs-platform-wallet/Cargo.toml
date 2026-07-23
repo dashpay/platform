@@ -113,6 +113,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" 
 
 [features]
 default = ["bls", "eddsa"]
+test-utils = ["key-wallet/test-utils"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]

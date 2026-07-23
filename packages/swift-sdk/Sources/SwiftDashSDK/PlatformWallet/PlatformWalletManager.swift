@@ -46,6 +46,32 @@ public struct DashPayUnlockStatus: Equatable {
     public var hasSignal: Bool { seedMismatch || draining || pendingAccountBuilds > 0 }
 }
 
+/// Effective persistence contract reported by the native manager after it
+/// intersects the host declaration with the callbacks actually installed.
+public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
+    public static let version1: UInt32 = 1
+    public static let atomicChangesets: UInt64 = 1 << 0
+    public static let invitations: UInt64 = 1 << 1
+    public static let assetLockFundingIndices: UInt64 = 1 << 2
+    public static let shieldedViewingKeys: UInt64 = 1 << 3
+    public static let providerTransactions: UInt64 = 1 << 4
+    public static let unsignedTokenStorage: UInt64 = 1 << 5
+    public static let pendingContactCrypto: UInt64 = 1 << 6
+    public static let walletRestore: UInt64 = 1 << 7
+
+    public let version: UInt32
+    public let bits: UInt64
+
+    public init(version: UInt32 = 0, bits: UInt64 = 0) {
+        self.version = version
+        self.bits = bits
+    }
+
+    public func contains(_ capability: UInt64) -> Bool {
+        bits & capability == capability
+    }
+}
+
 /// The one thing SwiftUI needs for all wallet operations.
 ///
 /// Owns the Rust-side `PlatformWalletManager` handle which drives:
@@ -69,6 +95,10 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Whether [`configure`] has been called successfully.
     @Published public private(set) var isConfigured: Bool = false
+
+    /// Initialization diagnostic for the effective persistence backend.
+    @Published public private(set) var persistenceCapabilities =
+        PlatformWalletPersistenceCapabilities()
 
     /// The current SPV sync progress. Updated by the polling task
     /// started in [`configure`].
@@ -235,6 +265,11 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
+            // Stop the network event source before releasing the manager's
+            // unretained callback contexts. Rust's destroy path provides the
+            // authoritative join barrier; this explicit stop is defense in
+            // depth for the Swift wrapper's teardown order.
+            platform_wallet_manager_spv_stop(handle).discard()
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
@@ -286,32 +321,59 @@ public class PlatformWalletManager: ObservableObject {
 
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
+        var declaredCapabilities: PersistenceCapabilitiesFFI
         if let container = modelContainer {
             let h = PlatformWalletPersistenceHandler(
                 modelContainer: container,
                 network: network
             )
             persistence = h.makeCallbacks()
+            declaredCapabilities = h.makePersistenceCapabilities()
             handler = h
         } else {
             persistence = PersistenceCallbacks()
+            declaredCapabilities = PersistenceCapabilitiesFFI(
+                version: 0,
+                reserved: 0,
+                bits: 0
+            )
             handler = nil
         }
 
         let eventHandler = PlatformWalletEventHandler(manager: self)
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
 
-        try platform_wallet_manager_create(
+        try platform_wallet_manager_create_with_persistence_capabilities(
             sdkPointer,
             &persistence,
             &eventHandlerCallbacks,
+            &declaredCapabilities,
             &handle
         ).check()
+
+        var effectiveCapabilities = PersistenceCapabilitiesFFI(
+            version: 0,
+            reserved: 0,
+            bits: 0
+        )
+        do {
+            try platform_wallet_manager_persistence_capabilities(
+                handle,
+                &effectiveCapabilities
+            ).check()
+        } catch {
+            _ = platform_wallet_manager_destroy(handle)
+            throw error
+        }
 
         self.handle = handle
         self.persistenceHandler = handler
         self.eventHandler = eventHandler
         self.modelContainer = modelContainer
+        self.persistenceCapabilities = PlatformWalletPersistenceCapabilities(
+            version: effectiveCapabilities.version,
+            bits: effectiveCapabilities.bits
+        )
         self.signerNetwork = network
         self.isConfigured = true
 

@@ -43,12 +43,41 @@ pub use types::identifier::{Identifier, IdentifierBytes32, IDENTIFIER_MEDIA_TYPE
 
 pub use value_serialization::{from_value, to_value};
 
+use bincode::de::Decoder;
+use bincode::error::{AllowedEnumVariants, DecodeError};
 use bincode::{Decode, Encode};
 pub use patch::{patch, Patch};
 
+/// The defensive nesting limit used when decoding a [`Value`] without an explicit scope.
+pub const DEFAULT_MAX_VALUE_DECODE_DEPTH: usize = 256;
+
+std::thread_local! {
+    static VALUE_DECODE_DEPTH_LIMIT: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(Some(DEFAULT_MAX_VALUE_DECODE_DEPTH)) };
+}
+
+/// Runs `decode` with the requested container-depth limit for [`Value`] decoding on this thread.
+///
+/// This is used by version-aware protocol decoders so historical versions can retain their
+/// original behavior while current versions reject excessive nesting before constructing a
+/// recursive value tree.
+pub fn with_value_decode_depth_limit<T>(max_depth: Option<usize>, decode: impl FnOnce() -> T) -> T {
+    struct RestoreDepthLimit(Option<usize>);
+
+    impl Drop for RestoreDepthLimit {
+        fn drop(&mut self) {
+            VALUE_DECODE_DEPTH_LIMIT.with(|limit| limit.set(self.0));
+        }
+    }
+
+    let previous_limit = VALUE_DECODE_DEPTH_LIMIT.with(|limit| limit.replace(max_depth));
+    let _restore_limit = RestoreDepthLimit(previous_limit);
+    decode()
+}
+
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
-#[derive(Clone, Debug, PartialEq, PartialOrd, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Encode)]
 pub enum Value {
     /// A u128 integer
     U128(u128),
@@ -121,6 +150,164 @@ pub enum Value {
     /// A map
     Map(ValueMap),
 }
+
+enum ValueDecodeFrame {
+    Array {
+        values: Vec<Value>,
+        remaining: usize,
+    },
+    Map {
+        entries: ValueMap,
+        remaining: usize,
+        pending_key: Option<Value>,
+    },
+}
+
+fn decode_value_container_len<Context, D>(decoder: &mut D) -> Result<usize, DecodeError>
+where
+    D: Decoder<Context = Context>,
+{
+    let len = <u64 as Decode<Context>>::decode(decoder)?;
+    len.try_into()
+        .map_err(|_| DecodeError::OutsideUsizeRange(len))
+}
+
+fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
+    VALUE_DECODE_DEPTH_LIMIT.with(|limit| match limit.get() {
+        Some(max_depth) if depth > max_depth => Err(DecodeError::OtherString(format!(
+            "value nesting depth {depth} exceeds maximum {max_depth}"
+        ))),
+        _ => Ok(()),
+    })
+}
+
+impl<Context> Decode<Context> for Value {
+    fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let mut frames = Vec::<ValueDecodeFrame>::new();
+        let mut completed_value = None;
+
+        loop {
+            if let Some(value) = completed_value.take() {
+                let Some(frame) = frames.last_mut() else {
+                    return Ok(value);
+                };
+
+                match frame {
+                    ValueDecodeFrame::Array { values, remaining } => {
+                        values.push(value);
+                        *remaining -= 1;
+
+                        if *remaining == 0 {
+                            let ValueDecodeFrame::Array { values, .. } =
+                                frames.pop().expect("the array frame was just observed")
+                            else {
+                                unreachable!("the observed frame changed")
+                            };
+                            completed_value = Some(Value::Array(values));
+                        } else {
+                            decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
+                        }
+                    }
+                    ValueDecodeFrame::Map {
+                        entries,
+                        remaining,
+                        pending_key,
+                    } => {
+                        if pending_key.is_none() {
+                            *pending_key = Some(value);
+                        } else {
+                            let key = pending_key
+                                .take()
+                                .expect("the map frame was expecting a value");
+                            entries.push((key, value));
+                            *remaining -= 1;
+
+                            if *remaining == 0 {
+                                let ValueDecodeFrame::Map { entries, .. } =
+                                    frames.pop().expect("the map frame was just observed")
+                                else {
+                                    unreachable!("the observed frame changed")
+                                };
+                                completed_value = Some(Value::Map(entries));
+                            } else {
+                                decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
+                            }
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            let variant_index = <u32 as Decode<Context>>::decode(decoder)?;
+            completed_value = Some(match variant_index {
+                0 => Value::U128(Decode::decode(decoder)?),
+                1 => Value::I128(Decode::decode(decoder)?),
+                2 => Value::U64(Decode::decode(decoder)?),
+                3 => Value::I64(Decode::decode(decoder)?),
+                4 => Value::U32(Decode::decode(decoder)?),
+                5 => Value::I32(Decode::decode(decoder)?),
+                6 => Value::U16(Decode::decode(decoder)?),
+                7 => Value::I16(Decode::decode(decoder)?),
+                8 => Value::U8(Decode::decode(decoder)?),
+                9 => Value::I8(Decode::decode(decoder)?),
+                10 => Value::Bytes(Decode::decode(decoder)?),
+                11 => Value::Bytes20(Decode::decode(decoder)?),
+                12 => Value::Bytes32(Decode::decode(decoder)?),
+                13 => Value::Bytes36(Decode::decode(decoder)?),
+                14 => Value::EnumU8(Decode::decode(decoder)?),
+                15 => Value::EnumString(Decode::decode(decoder)?),
+                16 => Value::Identifier(Decode::decode(decoder)?),
+                17 => Value::Float(Decode::decode(decoder)?),
+                18 => Value::Text(Decode::decode(decoder)?),
+                19 => Value::Bool(Decode::decode(decoder)?),
+                20 => Value::Null,
+                21 => {
+                    validate_value_decode_depth(frames.len() + 1)?;
+                    let len = decode_value_container_len(decoder)?;
+                    decoder.claim_container_read::<Value>(len)?;
+
+                    if len == 0 {
+                        Value::Array(Vec::new())
+                    } else {
+                        frames.push(ValueDecodeFrame::Array {
+                            values: Vec::with_capacity(len),
+                            remaining: len,
+                        });
+                        decoder.unclaim_bytes_read(std::mem::size_of::<Value>());
+                        continue;
+                    }
+                }
+                22 => {
+                    validate_value_decode_depth(frames.len() + 1)?;
+                    let len = decode_value_container_len(decoder)?;
+                    decoder.claim_container_read::<(Value, Value)>(len)?;
+
+                    if len == 0 {
+                        Value::Map(Vec::new())
+                    } else {
+                        frames.push(ValueDecodeFrame::Map {
+                            entries: Vec::with_capacity(len),
+                            remaining: len,
+                            pending_key: None,
+                        });
+                        decoder.unclaim_bytes_read(std::mem::size_of::<(Value, Value)>());
+                        continue;
+                    }
+                }
+                found => {
+                    return Err(DecodeError::UnexpectedVariant {
+                        type_name: std::any::type_name::<Self>(),
+                        allowed: &AllowedEnumVariants::Range { min: 0, max: 22 },
+                        found,
+                    });
+                }
+            });
+        }
+    }
+}
+
+bincode::impl_borrow_decode!(Value);
 
 impl Value {
     /// Returns true if the `Value` is an `Integer`. Returns false otherwise.
@@ -1318,178 +1505,91 @@ impl Value {
         }
     }
 
-    /// can determine if there is any very big data in a value
-    pub fn has_data_larger_than(&self, size: u32) -> Option<(Option<Value>, u32)> {
-        match self {
-            Value::U128(_) => {
-                if size < 16 {
-                    Some((None, 16))
-                } else {
-                    None
-                }
-            }
-            Value::I128(_) => {
-                if size < 16 {
-                    Some((None, 16))
-                } else {
-                    None
-                }
-            }
-            Value::U64(_) => {
-                if size < 8 {
-                    Some((None, 8))
-                } else {
-                    None
-                }
-            }
-            Value::I64(_) => {
-                if size < 8 {
-                    Some((None, 8))
-                } else {
-                    None
-                }
-            }
-            Value::U32(_) => {
-                if size < 4 {
-                    Some((None, 4))
-                } else {
-                    None
-                }
-            }
-            Value::I32(_) => {
-                if size < 4 {
-                    Some((None, 4))
-                } else {
-                    None
-                }
-            }
-            Value::U16(_) => {
-                if size < 2 {
-                    Some((None, 2))
-                } else {
-                    None
-                }
-            }
-            Value::I16(_) => {
-                if size < 2 {
-                    Some((None, 2))
-                } else {
-                    None
-                }
-            }
-            Value::U8(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::I8(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes(bytes) => {
-                if (size as usize) < bytes.len() {
-                    Some((None, bytes.len() as u32))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes20(_) => {
-                if size < 20 {
-                    Some((None, 20))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes32(_) => {
-                if size < 32 {
-                    Some((None, 32))
-                } else {
-                    None
-                }
-            }
-            Value::Bytes36(_) => {
-                if size < 36 {
-                    Some((None, 36))
-                } else {
-                    None
-                }
-            }
-            Value::EnumU8(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::EnumString(strings) => {
-                let max_len = strings.iter().map(|string| string.len()).max();
-                if let Some(max) = max_len {
-                    if max > size as usize {
-                        Some((None, max as u32))
-                    } else {
-                        None
+    /// Returns the first container depth greater than `max_depth`.
+    ///
+    /// Maps and arrays each add one level, including a container at the root. Map keys are
+    /// included because they are also attacker-controlled [`Value`] instances. The traversal is
+    /// iterative so checking an invalid value cannot itself consume attacker-selected stack depth.
+    pub fn first_depth_exceeding(&self, max_depth: usize) -> Option<usize> {
+        let mut pending = vec![(self, 0usize)];
+
+        while let Some((value, parent_depth)) = pending.pop() {
+            let children: &[_] = match value {
+                Value::Array(values) => values,
+                Value::Map(map) => {
+                    let depth = parent_depth + 1;
+                    if depth > max_depth {
+                        return Some(depth);
                     }
-                } else {
-                    None
-                }
-            }
-            Value::Identifier(_) => {
-                if size < 32 {
-                    Some((None, 32))
-                } else {
-                    None
-                }
-            }
-            Value::Float(_) => {
-                if size < 8 {
-                    Some((None, 8))
-                } else {
-                    None
-                }
-            }
-            Value::Text(string) => {
-                if string.len() > size as usize {
-                    Some((None, string.len() as u32))
-                } else {
-                    None
-                }
-            }
-            Value::Bool(_) => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::Null => {
-                if size < 1 {
-                    Some((None, 1))
-                } else {
-                    None
-                }
-            }
-            Value::Array(values) => {
-                for value in values {
-                    if let Some(result) = value.has_data_larger_than(size) {
-                        return Some((Some(value.clone()), result.1));
+                    for (key, value) in map.iter().rev() {
+                        pending.push((value, depth));
+                        pending.push((key, depth));
                     }
+                    continue;
                 }
-                None
+                _ => continue,
+            };
+
+            let depth = parent_depth + 1;
+            if depth > max_depth {
+                return Some(depth);
             }
-            Value::Map(map) => {
-                for (key, value) in map {
-                    if let Some(result) = value.has_data_larger_than(size) {
-                        return Some((Some(key.clone()), result.1));
-                    }
+            pending.extend(children.iter().rev().map(|value| (value, depth)));
+        }
+
+        None
+    }
+
+    /// Determines whether any scalar data in this value is larger than `size`.
+    ///
+    /// Container traversal is iterative to keep stack use independent of attacker-controlled
+    /// nesting. The reported map key or array child remains the outermost value that identifies
+    /// the oversized field, matching the previous recursive behavior.
+    pub fn has_data_larger_than(&self, size: u32) -> Option<(Option<&Value>, u32)> {
+        let mut pending = vec![(self, None)];
+
+        while let Some((value, reported_value)) = pending.pop() {
+            let actual_size = match value {
+                Value::U128(_) | Value::I128(_) => (size < 16).then_some(16),
+                Value::U64(_) | Value::I64(_) | Value::Float(_) => (size < 8).then_some(8),
+                Value::U32(_) | Value::I32(_) => (size < 4).then_some(4),
+                Value::U16(_) | Value::I16(_) => (size < 2).then_some(2),
+                Value::U8(_) | Value::I8(_) | Value::EnumU8(_) | Value::Bool(_) | Value::Null => {
+                    (size < 1).then_some(1)
                 }
-                None
+                Value::Bytes(bytes) => (bytes.len() > size as usize).then_some(bytes.len() as u32),
+                Value::Bytes20(_) => (size < 20).then_some(20),
+                Value::Bytes32(_) | Value::Identifier(_) => (size < 32).then_some(32),
+                Value::Bytes36(_) => (size < 36).then_some(36),
+                Value::EnumString(strings) => strings
+                    .iter()
+                    .map(|string| string.len())
+                    .max()
+                    .filter(|actual_size| *actual_size > size as usize)
+                    .map(|actual_size| actual_size as u32),
+                Value::Text(string) => {
+                    (string.len() > size as usize).then_some(string.len() as u32)
+                }
+                Value::Array(values) => {
+                    for value in values.iter().rev() {
+                        pending.push((value, reported_value.or(Some(value))));
+                    }
+                    continue;
+                }
+                Value::Map(map) => {
+                    for (key, value) in map.iter().rev() {
+                        pending.push((value, reported_value.or(Some(key))));
+                    }
+                    continue;
+                }
+            };
+
+            if let Some(actual_size) = actual_size {
+                return Some((reported_value, actual_size));
             }
         }
+
+        None
     }
 }
 

@@ -142,7 +142,7 @@ impl PlatformWallet {
         cl_wait: Option<Duration>,
     ) -> Result<(), PlatformWalletError>
     where
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         P: OrchardProver,
     {
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
@@ -705,12 +705,15 @@ where
         _ => Vec::new(),
     };
 
-    // Wait for proven execution rather than relay-ACK. Single-use
+    // Wait for the verified result rather than relay-ACK. Single-use
     // asset-lock proof: a false-positive on a transition Platform
     // later rejects would strand the L1 outpoint with no in-app
-    // signal. The proven result is discarded; we only need the
-    // confirmation that drive-abci committed.
-    st.broadcast_and_wait::<StateTransitionProofResult>(&sdk, settings)
+    // signal. A shield-from-asset-lock proof authenticates the consumed
+    // outpoint (and surplus-address state) at the committed block but
+    // cannot bind this exact Orchard request, so the outcome is an
+    // affected-state snapshot; a consensus rejection still surfaces as
+    // an error on this wait.
+    st.broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(&sdk, settings)
         .await?;
     Ok(actions)
 }

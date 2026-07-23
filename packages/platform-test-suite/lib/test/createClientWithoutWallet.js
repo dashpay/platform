@@ -3,6 +3,7 @@ const Dash = require('dash');
 const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const getDAPISeeds = require('./getDAPISeeds');
+const createPlatformProofVerifier = require('./createPlatformProofVerifier');
 
 function createClientWithoutWallet() {
   const dapiAddresses = (process.env.DAPI_ADDRESSES || '')
@@ -16,6 +17,7 @@ function createClientWithoutWallet() {
       : { seeds: getDAPISeeds() }),
     network: process.env.NETWORK,
     timeout: 25000,
+    platformProofVerifier: createPlatformProofVerifier(),
     apps: {
       dpns: {
         contractId,
