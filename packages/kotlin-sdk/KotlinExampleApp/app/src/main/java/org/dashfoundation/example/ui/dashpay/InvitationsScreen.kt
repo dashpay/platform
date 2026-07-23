@@ -169,7 +169,7 @@ private fun InvitationRow(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    "${formatDuffs(invitation.amountDuffs)} DASH",
+                    formatDuffs(invitation.amountDuffs),
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Text(

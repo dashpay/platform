@@ -232,7 +232,7 @@ fun ReclaimInvitationSheet(
     ) {
         Text("Reclaim Invitation", style = MaterialTheme.typography.titleLarge)
         Text(
-            "${formatDuffs(invitation.amountDuffs)} DASH voucher · " +
+            "${formatDuffs(invitation.amountDuffs)} voucher · " +
                 invitation.outPointHex.take(12) + "…",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
