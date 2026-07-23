@@ -322,3 +322,28 @@ impl key_wallet::signer::Signer for SeedBackedCoreSigner {
         Ok(PublicKey::from_secret_key(&secp, &secret))
     }
 }
+
+#[async_trait]
+impl key_wallet::signer::ExtendedPubKeySigner for SeedBackedCoreSigner {
+    /// Re-derive the xpriv at `path` (same seed-walk as [`Self::derive_secret`],
+    /// but keeping the chain code) and drop the private half — the harness
+    /// owns the seed, so exporting an xpub costs nothing extra here (a real
+    /// HSM-backed signer would instead refuse paths it can't safely export).
+    async fn extended_public_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::ExtendedPubKey, Self::Error> {
+        use key_wallet::bip32::ExtendedPubKey;
+        use key_wallet::dashcore::secp256k1::Secp256k1;
+        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+
+        let root_priv = RootExtendedPrivKey::new_master(&self.seed)
+            .map_err(|e| format!("SeedBackedCoreSigner: invalid seed: {e}"))?;
+        let master = root_priv.to_extended_priv_key(self.network);
+        let secp = Secp256k1::new();
+        let xpriv = master
+            .derive_priv(&secp, path)
+            .map_err(|e| format!("SeedBackedCoreSigner: derive_priv({path}): {e}"))?;
+        Ok(ExtendedPubKey::from_priv(&secp, &xpriv))
+    }
+}

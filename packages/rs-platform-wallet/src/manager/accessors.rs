@@ -1206,7 +1206,7 @@ mod spv_rescan_tests {
         let manager = Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(NoopPersister),
-            event_handler,
+            vec![event_handler],
         ));
         let mnemonic =
             Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid mnemonic");
