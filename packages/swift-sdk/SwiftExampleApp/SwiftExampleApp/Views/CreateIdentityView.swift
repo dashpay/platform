@@ -102,25 +102,54 @@ struct CreateIdentityView: View {
     /// docstring; kept here so the conversion logic stays local.
     private static let creditsPerDash: UInt64 = 100_000_000_000
 
+    /// Protocol version at which the shielded exit-denomination set was
+    /// revised: 0.03 and 0.25 DASH added, 0.3 DASH retired.
+    private static let shieldedDenominationRevisionVersion: UInt32 = 13
+
     /// Versioned fixed exit denominations (in CREDITS) a Type-20
     /// IdentityCreateFromShieldedPool transition may spend from the
-    /// shielded pool — 0.03 / 0.1 / 0.25 / 0.5 / 1.0 DASH (the v13
-    /// set; v13 added 0.03 and 0.25 and retired 0.3). Source of truth:
+    /// shielded pool. Source of truth:
     /// `shielded_identity_create_denominations` in
     /// `packages/rs-platform-version/src/version/drive_abci_versions/`
-    /// `drive_abci_validation_versions/v9.rs`. There is no FFI getter
-    /// for this set, so it's mirrored here — same precedent as
+    /// `drive_abci_validation_versions/` (`v8.rs` pre-v13, `v9.rs`
+    /// from v13). There is no FFI getter for this set, so it's
+    /// mirrored here — same precedent as
     /// `identityKeyCreationCostCredits` / `dashpayContractId`. If the
-    /// versioned set changes on the Rust side, update this constant to
-    /// match (a submitted denomination not in the on-chain set is
+    /// versioned set changes on the Rust side, update these constants
+    /// to match (a submitted denomination not in the on-chain set is
     /// rejected at validation).
-    private static let shieldedIdentityCreateDenominations: [UInt64] = [
+    private static let shieldedDenominationsPreV13: [UInt64] = [
+        10_000_000_000,   // 0.1 DASH
+        30_000_000_000,   // 0.3 DASH
+        50_000_000_000,   // 0.5 DASH
+        100_000_000_000,  // 1.0 DASH
+    ]
+
+    /// The revised set active from protocol version 13 (see
+    /// `shieldedDenominationsPreV13` for sourcing).
+    private static let shieldedDenominationsV13: [UInt64] = [
         3_000_000_000,    // 0.03 DASH
         10_000_000_000,   // 0.1 DASH
         25_000_000_000,   // 0.25 DASH
         50_000_000_000,   // 0.5 DASH
         100_000_000_000,  // 1.0 DASH
     ]
+
+    /// The denomination set to offer, gated on the network's reported
+    /// protocol version (`AppState.platformProtocolVersion`, learned
+    /// via the proven refresh on app start / network switch). Until
+    /// v13 activates the network only accepts the pre-v13 set, and
+    /// after activation 0.3 DASH is rejected — so the picker must
+    /// track the live version. An unknown version (refresh pending or
+    /// failed) falls back to the pre-v13 set, matching every currently
+    /// deployed network.
+    private var shieldedIdentityCreateDenominations: [UInt64] {
+        if let version = platformState.platformProtocolVersion,
+           version >= Self.shieldedDenominationRevisionVersion {
+            return Self.shieldedDenominationsV13
+        }
+        return Self.shieldedDenominationsPreV13
+    }
 
     /// Duffs per DASH (1e8) — Core-side scale, used by the Core-funded
     /// identity path.
@@ -271,7 +300,7 @@ struct CreateIdentityView: View {
     /// `.shieldedBalance` funding path. `nil` until the user picks one
     /// in the denomination picker. Reset on any wallet / funding-source
     /// change (same reset paths as `amountDash`). Only ever one of
-    /// `Self.shieldedIdentityCreateDenominations`.
+    /// `shieldedIdentityCreateDenominations`.
     @State private var selectedDenomination: UInt64? = nil
 
     // MARK: - Submit state
@@ -728,7 +757,7 @@ struct CreateIdentityView: View {
 
     /// Fixed-denomination picker for the `.shieldedBalance` funding
     /// path. The Type-20 transition spends one of the versioned
-    /// denominations (`Self.shieldedIdentityCreateDenominations`), not
+    /// denominations (`shieldedIdentityCreateDenominations`), not
     /// a free-form amount — so this replaces the amount field. Only
     /// denominations the selected wallet's shielded pool can actually
     /// cover (`<= shieldedPoolBalance(for:)`) are offered.
@@ -743,18 +772,17 @@ struct CreateIdentityView: View {
         // Denominations the pool can cover. Computed off the live
         // per-wallet pool balance so the list shrinks as the pool
         // drains (e.g. after a prior shielded spend this session).
-        let affordable = Self.shieldedIdentityCreateDenominations
+        let affordable = shieldedIdentityCreateDenominations
             .filter { $0 <= poolBalance }
         Section {
             if affordable.isEmpty {
                 // Defensive: the option is gated on `shieldedBalance > 0`,
-                // but the smallest denomination (0.1 DASH) can still
-                // exceed a small positive balance. Surface why no
-                // denomination is selectable rather than showing an
-                // empty picker.
+                // but the smallest denomination can still exceed a
+                // small positive balance. Surface why no denomination
+                // is selectable rather than showing an empty picker.
                 Text(
                     "The shielded balance is below the smallest "
-                    + "denomination (\(Self.formatDash(raw: Self.shieldedIdentityCreateDenominations.first ?? 0, divisor: Double(Self.creditsPerDash)))). "
+                    + "denomination (\(Self.formatDash(raw: shieldedIdentityCreateDenominations.first ?? 0, divisor: Double(Self.creditsPerDash)))). "
                     + "Shield more funds first."
                 )
                 .font(.caption)
@@ -1008,11 +1036,15 @@ struct CreateIdentityView: View {
             if fundingSelection == .shieldedBalance {
                 // Re-check availability (the bound wallet / balance could
                 // have changed since the option was rendered), require a
-                // chosen denomination, and that the pool still covers it.
-                // The slot-collision check above already applies (the
+                // chosen denomination still in the live version-gated set
+                // (a protocol-version refresh can retire the picked value
+                // mid-session), and that the pool still covers it. The
+                // slot-collision check above already applies (the
                 // shielded path isn't `.unusedAssetLock`).
                 guard shieldedOptionAvailable(for: walletId) else { return false }
-                guard let denomination = selectedDenomination else { return false }
+                guard let denomination = selectedDenomination,
+                      shieldedIdentityCreateDenominations.contains(denomination)
+                else { return false }
                 return denomination <= shieldedPoolBalance(for: walletId)
             }
             return false

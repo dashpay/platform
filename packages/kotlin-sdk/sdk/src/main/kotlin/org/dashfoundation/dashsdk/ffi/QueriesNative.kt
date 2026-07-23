@@ -275,6 +275,13 @@ internal object QueriesNative {
 
     // ── Protocol version ──────────────────────────────────────────────────
 
+    /**
+     * Refresh the SDK's protocol version from the network (proven
+     * `getEpochsInfo` ratchet). Returns the resulting version as a decimal
+     * string, or null.
+     */
+    external fun refreshProtocolVersion(sdk: Long): String?
+
     /** Protocol-version upgrade state (per-version tallies) as JSON, or null. */
     external fun protocolVersionUpgradeState(sdk: Long): String?
 
