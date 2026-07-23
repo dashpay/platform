@@ -533,14 +533,16 @@ internal fun isCreateIdentityFundingAmountValid(
 
 /**
  * The fixed exit denominations (in CREDITS) a Type-20 shielded identity
- * create may spend from the pool — 0.1 / 0.3 / 0.5 / 1.0 DASH. Source of
- * truth: `shielded_identity_create_denominations` in DPP; a submitted
+ * create may spend from the pool — 0.03 / 0.1 / 0.25 / 0.5 / 1.0 DASH (the
+ * v13 set; v13 added 0.03 and 0.25 and retired 0.3). Source of truth:
+ * `shielded_identity_create_denominations` in DPP; a submitted
  * denomination not in the on-chain set is rejected at validation (← iOS
  * `CreateIdentityView.shieldedIdentityCreateDenominations`).
  */
 private val SHIELDED_IDENTITY_DENOMINATIONS: List<Pair<Long, String>> = listOf(
+    3_000_000_000L to "0.03 DASH",
     10_000_000_000L to "0.1 DASH",
-    30_000_000_000L to "0.3 DASH",
+    25_000_000_000L to "0.25 DASH",
     50_000_000_000L to "0.5 DASH",
     100_000_000_000L to "1.0 DASH",
 )

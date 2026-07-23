@@ -211,8 +211,9 @@ mod tests {
     fn should_accept_each_member_denomination() {
         let platform_version = PlatformVersion::latest();
         for denomination in [
-            10_000_000_000u64,
-            30_000_000_000,
+            3_000_000_000u64,
+            10_000_000_000,
+            25_000_000_000,
             50_000_000_000,
             100_000_000_000,
         ] {
@@ -223,6 +224,21 @@ mod tests {
                 "denomination {denomination} should be accepted"
             );
         }
+    }
+
+    #[test]
+    fn should_reject_retired_denomination() {
+        // 0.3 DASH was a member of the v12 set but is retired as of v13.
+        let platform_version = PlatformVersion::latest();
+        let mut t = valid_transition();
+        t.denomination = 30_000_000_000;
+        let result = t.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::ShieldedInvalidDenominationError(_)
+            )]
+        );
     }
 
     #[test]

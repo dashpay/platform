@@ -104,18 +104,20 @@ struct CreateIdentityView: View {
 
     /// Versioned fixed exit denominations (in CREDITS) a Type-20
     /// IdentityCreateFromShieldedPool transition may spend from the
-    /// shielded pool — 0.1 / 0.3 / 0.5 / 1.0 DASH. Source of truth:
+    /// shielded pool — 0.03 / 0.1 / 0.25 / 0.5 / 1.0 DASH (the v13
+    /// set; v13 added 0.03 and 0.25 and retired 0.3). Source of truth:
     /// `shielded_identity_create_denominations` in
     /// `packages/rs-platform-version/src/version/drive_abci_versions/`
-    /// `drive_abci_validation_versions/v8.rs`. There is no FFI getter
+    /// `drive_abci_validation_versions/v9.rs`. There is no FFI getter
     /// for this set, so it's mirrored here — same precedent as
     /// `identityKeyCreationCostCredits` / `dashpayContractId`. If the
     /// versioned set changes on the Rust side, update this constant to
     /// match (a submitted denomination not in the on-chain set is
     /// rejected at validation).
     private static let shieldedIdentityCreateDenominations: [UInt64] = [
+        3_000_000_000,    // 0.03 DASH
         10_000_000_000,   // 0.1 DASH
-        30_000_000_000,   // 0.3 DASH
+        25_000_000_000,   // 0.25 DASH
         50_000_000_000,   // 0.5 DASH
         100_000_000_000,  // 1.0 DASH
     ]

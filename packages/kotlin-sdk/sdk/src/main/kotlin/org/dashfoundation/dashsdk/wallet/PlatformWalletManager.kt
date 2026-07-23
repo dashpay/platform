@@ -1330,8 +1330,9 @@ class PlatformWalletManager(
     /**
      * Create an identity funded from the shielded pool (Type 20) — port of
      * Swift's `shieldedIdentityCreateFromPool`. Spends a note of the fixed
-     * exit [denomination] (credits — one of the on-chain 0.1/0.3/0.5/1.0 DASH
-     * denominations) from the wallet's bound Orchard pool ([account]) to fund
+     * exit [denomination] (credits — one of the on-chain 0.03/0.1/0.25/0.5/1.0
+     * DASH denominations as of v13) from the wallet's bound Orchard pool
+     * ([account]) to fund
      * a new identity at [identityIndex]. [keys] are the rich registration rows
      * (built via `RegistrationKeys.buildRegistrationRows`), encoded to the same
      * blob every registration path uses; each row's private half must already

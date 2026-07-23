@@ -652,8 +652,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 ///
 /// Mirrors Swift's `PlatformWalletManager.shieldedIdentityCreateFromPool`:
 /// spends a note of the fixed exit `denomination` (credits — one of the
-/// on-chain `shielded_identity_create_denominations`: 0.1 / 0.3 / 0.5 /
-/// 1.0 DASH) from the wallet's bound Orchard pool (`account`) to fund a new
+/// on-chain `shielded_identity_create_denominations`: 0.03 / 0.1 / 0.25 /
+/// 0.5 / 1.0 DASH as of v13) from the wallet's bound Orchard pool
+/// (`account`) to fund a new
 /// identity at `identity_index`. `pubkeys_blob` is the SAME shared rich
 /// registration key-row blob ID-08 uses (built by `IdentityPubkeyCodec`,
 /// decoded by `decode_registration_pubkeys_blob` exactly like
