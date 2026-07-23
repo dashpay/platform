@@ -15,17 +15,12 @@ use zeroize::{Zeroize, Zeroizing};
 /// buffer behind — virtually impossible for any human-entered secret.
 const DEFAULT_CAPACITY: usize = 4096;
 
-/// Minimal post-trim length floor for a vault passphrase or a Tier-2
-/// object password, in bytes. A **coarse** guard only: `1` means "merely
-/// non-blank" (the same outcome [`SecretString::is_blank`] enforces).
+/// Minimum post-trim byte length for a vault passphrase or Tier-2 password.
 ///
-/// The library deliberately ships **no** password-strength estimator. The
-/// real entropy policy — zxcvbn-style strength, dictionary checks, UX
-/// feedback — is locale- and threat-specific and therefore the
-/// **consumer's** responsibility (documented in `SECRETS.md`). Baking a
-/// fixed estimator into a storage crate would be both too weak for some
-/// callers and too rigid for others.
-pub const MIN_PASSPHRASE_LEN: usize = 1;
+/// This defense-in-depth floor rejects trivially short inputs but is not a
+/// strength estimator. Dictionary checks, UX feedback, and the real entropy
+/// policy remain the consumer's responsibility (see `SECRETS.md`).
+pub const MIN_PASSPHRASE_LEN: usize = 8;
 
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
@@ -109,11 +104,16 @@ impl SecretString {
     /// Returns only blank-ness — never a borrowed view of the plaintext —
     /// and uses [`str::trim`] (the Unicode `White_Space` property), so a
     /// NBSP (`U+00A0`) trims to blank but a ZWSP (`U+200B`, not
-    /// `White_Space`) does not. This is the enforcement primitive behind
-    /// the Tier-1 blank-passphrase guard and the Tier-2 blank-object-
-    /// password reject. Always available — **not** feature-gated.
+    /// `White_Space`) does not. Minimum-length enforcement uses
+    /// [`is_below_minimum_passphrase_len`](Self::is_below_minimum_passphrase_len)
+    /// instead. Always available — **not** feature-gated.
     pub fn is_blank(&self) -> bool {
         self.inner.trim().is_empty()
+    }
+
+    /// Whether the trimmed secret is shorter than [`MIN_PASSPHRASE_LEN`].
+    pub(crate) fn is_below_minimum_passphrase_len(&self) -> bool {
+        self.inner.trim().len() < MIN_PASSPHRASE_LEN
     }
 }
 

@@ -271,9 +271,9 @@ mod tests {
     /// objects directly — the `contacts.payment_channel_broken` column and
     /// the `ignored_senders` table. The storage crate is pre-release with no
     /// product consumers yet (nothing instantiates `SqlitePersister` or runs
-    /// these migrations), so V001 is edited in place rather than amended by a
-    /// follow-on migration — no real database has ever applied it. This test
-    /// pins that the objects exist after the (only) migration runs.
+    /// these migrations), so every migration remains editable in place until
+    /// the crate's first release. This test pins that the objects exist after
+    /// the full migration set runs.
     #[test]
     fn v001_creates_dashpay_sync_schema() {
         let mut conn = Connection::open_in_memory().unwrap();

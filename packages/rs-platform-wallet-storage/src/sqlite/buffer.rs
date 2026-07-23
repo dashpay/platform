@@ -94,6 +94,17 @@ impl Buffer {
         ids.sort();
         Ok(ids)
     }
+
+    /// Discard every buffered changeset after the backing connection becomes
+    /// permanently unusable.
+    pub fn discard_all(&self) -> Result<(), WalletStorageError> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| WalletStorageError::LockPoisoned)?;
+        guard.clear();
+        Ok(())
+    }
 }
 
 #[cfg(test)]

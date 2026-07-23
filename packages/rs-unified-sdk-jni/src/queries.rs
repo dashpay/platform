@@ -30,9 +30,9 @@ use rs_sdk_ffi::{
     dash_sdk_identity_fetch_by_public_key_hash, dash_sdk_identity_fetch_contract_nonce,
     dash_sdk_identity_fetch_nonce, dash_sdk_identity_fetch_public_keys,
     dash_sdk_identity_fetch_token_balances, dash_sdk_protocol_version_get_upgrade_state,
-    dash_sdk_protocol_version_get_upgrade_vote_status, dash_sdk_system_get_current_quorums_info,
-    dash_sdk_system_get_epochs_info, dash_sdk_system_get_path_elements,
-    dash_sdk_system_get_prefunded_specialized_balance,
+    dash_sdk_protocol_version_get_upgrade_vote_status, dash_sdk_refresh_protocol_version,
+    dash_sdk_system_get_current_quorums_info, dash_sdk_system_get_epochs_info,
+    dash_sdk_system_get_path_elements, dash_sdk_system_get_prefunded_specialized_balance,
     dash_sdk_system_get_total_credits_in_platform, dash_sdk_token_get_contract_info,
     dash_sdk_token_get_direct_purchase_prices,
     dash_sdk_token_get_perpetual_distribution_last_claim,
@@ -932,6 +932,25 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_evonode
 }
 
 // ── Protocol version ─────────────────────────────────────────────────────
+
+/// Refresh the SDK's protocol version from the network (proven
+/// `getEpochsInfo` ratchet — see `dash_sdk_refresh_protocol_version`) and
+/// return the resulting version as a decimal string, or null after
+/// throwing. Backs the protocol-version-gated shielded denomination picker
+/// (Kotlin port of iOS `SDK.refreshProtocolVersion`).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_refreshProtocolVersion(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let result = unsafe { dash_sdk_refresh_protocol_version(sdk as *const SDKHandle) };
+        unsafe { unwrap_string(env, result) }
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
 
 /// Protocol-version upgrade state (per-version vote counts) as JSON, or null.
 #[no_mangle]

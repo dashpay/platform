@@ -11,7 +11,7 @@ use crate::version::dpp_versions::dpp_state_transition_method_versions::v1::STAT
 use crate::version::dpp_versions::dpp_state_transition_serialization_versions::v2::STATE_TRANSITION_SERIALIZATION_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_state_transition_versions::v3::STATE_TRANSITION_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_token_versions::v2::TOKEN_VERSIONS_V2;
-use crate::version::dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3;
+use crate::version::dpp_versions::dpp_validation_versions::v4::DPP_VALIDATION_VERSIONS_V4;
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
@@ -25,7 +25,7 @@ use crate::version::drive_versions::v8::DRIVE_VERSION_V8;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v2::SYSTEM_DATA_CONTRACT_VERSIONS_V2;
-use crate::version::system_limits::v2::SYSTEM_LIMITS_V2;
+use crate::version::system_limits::v3::SYSTEM_LIMITS_V3;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
@@ -46,14 +46,16 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 /// v13 also enables DPNS username transfers and sales:
 /// * `DRIVE_ABCI_VALIDATION_VERSIONS_V9` bumps data trigger bindings to v1,
 ///   dropping the reject bindings for Transfer, Purchase and UpdatePrice on
-///   DPNS `domain` documents.
+///   DPNS `domain` documents. It also revises the shielded identity-create
+///   exit-denomination set: 0.03 and 0.25 DASH are added and 0.3 DASH is
+///   retired, giving 0.03 / 0.1 / 0.25 / 0.5 / 1 DASH.
 /// * `DRIVE_VERSION_V8` bumps the document transfer/purchase high-level
 ///   operation conversions to v1, which rewrite a transferred or purchased
 ///   domain's `records.identity` to the new owner so the username resolves
 ///   to the buyer.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
-    drive: DRIVE_VERSION_V8, // changed: DPNS domain records.identity rewrite on transfer/purchase
+    drive: DRIVE_VERSION_V8,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9, // changed: records shielded-spend transparent credits (Unshield net output, ShieldFromAssetLock surplus, identity-create fallback) into the recent per-block address-balance set
@@ -64,7 +66,7 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     },
     dpp: DPPVersion {
         costs: DPP_COSTS_VERSIONS_V1,
-        validation: DPP_VALIDATION_VERSIONS_V3,
+        validation: DPP_VALIDATION_VERSIONS_V4,
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V2,
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
@@ -80,8 +82,51 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V2, // changed: DPNS v2 subscribes domain to document history
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V2,
+    system_limits: SYSTEM_LIMITS_V3,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::version::v12::PLATFORM_V12;
+
+    #[test]
+    fn token_authorization_hardening_activates_only_at_v13() {
+        let v12_batch = &PLATFORM_V12
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+        let v13_batch = &PLATFORM_V13
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition;
+
+        assert_eq!(v12_batch.token_base_transition_state_validation, 0);
+        assert_eq!(v13_batch.token_base_transition_state_validation, 1);
+        assert_eq!(v12_batch.token_base_transition_group_action_validation, 0);
+        assert_eq!(v13_batch.token_base_transition_group_action_validation, 1);
+        assert_eq!(v12_batch.token_config_update_transition_state_validation, 0);
+        assert_eq!(v13_batch.token_config_update_transition_state_validation, 1);
+        assert_eq!(
+            PLATFORM_V12
+                .dpp
+                .validation
+                .data_contract
+                .validate_token_config_groups_exist,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V13
+                .dpp
+                .validation
+                .data_contract
+                .validate_token_config_groups_exist,
+            1
+        );
+    }
+}

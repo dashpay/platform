@@ -9,6 +9,7 @@ const {
 const getDAPISeeds = require('./getDAPISeeds');
 
 const createFaucetClient = require('./createFaucetClient');
+const createPlatformProofVerifier = require('./createPlatformProofVerifier');
 
 let faucetClient;
 
@@ -29,6 +30,7 @@ async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
   const clientOpts = {
     network: process.env.NETWORK,
     timeout: 25000,
+    platformProofVerifier: createPlatformProofVerifier(),
     apps: {
       dpns: {
         contractId: dpnsContractId,

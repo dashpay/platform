@@ -61,7 +61,7 @@ use dpp::identity::Purpose;
 use dpp::platform_value::{self};
 use dpp::prelude::{AddressNonce, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializable;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use dpp::voting::votes::Vote;
@@ -1441,7 +1441,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
     }
 }
 
-impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionProofResult {
+impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionProofOutcome {
     type Request = platform::BroadcastStateTransitionRequest;
     type Response = platform::WaitForStateTransitionResultResponse;
 
@@ -1480,7 +1480,15 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         let contracts_provider_fn = provider.as_contract_lookup_fn(platform_version);
 
-        let (root_hash, result) = Drive::verify_state_transition_was_executed_with_proof(
+        // Transition families whose proof cannot be bound to execution
+        // (balance top-ups, credit transfers/withdrawals, address funds
+        // movements, shields, no-history token operations) yield a verified
+        // snapshot of the affected keys at the proof's block, tagged
+        // `AffectedState` on the `StateTransitionProofOutcome`. The tag is
+        // preserved here so SDK callers can enforce their required
+        // guarantee: strict waits reject snapshots, snapshot waits treat
+        // them as height-pinned state, never as execution evidence.
+        let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
             &state_transition,
             &block_info,
             &proof.grovedb_proof,
@@ -1491,7 +1499,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        Ok((Some(result), mtd.clone(), proof.clone()))
+        Ok((Some(outcome), mtd.clone(), proof.clone()))
     }
 }
 

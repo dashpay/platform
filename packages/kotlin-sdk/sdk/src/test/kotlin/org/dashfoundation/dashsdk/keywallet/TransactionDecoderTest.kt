@@ -37,6 +37,7 @@ class TransactionDecoderTest {
         val input = decoded.inputs[0]
         assertArrayEquals(ByteArray(32) { 0x11 }, input.prevTxid)
         assertEquals(3, input.prevVout)
+        assertEquals(3L, input.prevVoutUnsigned)
         assertEquals("yNDj28QBMm5sY6bLjFcNdWRNef24KLQNuQ", input.address)
         assertEquals("11".repeat(32), input.prevTxidDisplayHex)
 
@@ -77,6 +78,8 @@ class TransactionDecoderTest {
         assertEquals(1, decoded.inputs.size)
         assertNull(decoded.inputs[0].address)
         assertEquals(-1, decoded.inputs[0].prevVout) // u32 max crosses as -1 bits
+        // Convenience view recovers the numeric u32 (Swift UInt32 parity).
+        assertEquals(0xFFFFFFFFL, decoded.inputs[0].prevVoutUnsigned)
         assertEquals(1, decoded.outputs.size)
         assertNull(decoded.outputs[0].address)
         assertEquals(5_000_000_000L, decoded.outputs[0].valueDuffs)

@@ -36,6 +36,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+use rusqlite::OptionalExtension;
 
 /// The two wallets the fixture carries.
 const FULL_WALLET: u8 = 0xA1;
@@ -270,6 +271,101 @@ fn build_populated_store(path: &Path) {
     persister.flush(empty).expect("flush empty");
 }
 
+struct V001UtxoRow {
+    wallet_id: Vec<u8>,
+    outpoint: Vec<u8>,
+    value: i64,
+    script: Vec<u8>,
+    spent: i64,
+}
+
+fn copy_core_utxos_to_v001(source: &rusqlite::Connection, destination: &rusqlite::Connection) {
+    let wallet_ids: Vec<Vec<u8>> = {
+        let mut stmt = source
+            .prepare("SELECT wallet_id FROM wallets ORDER BY wallet_id")
+            .unwrap();
+        stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let mut account_indices = std::collections::HashMap::new();
+    for wallet_id_bytes in wallet_ids {
+        let wallet_id: WalletId = wallet_id_bytes
+            .as_slice()
+            .try_into()
+            .expect("fixture wallet_id must be 32 bytes");
+        let unspent = platform_wallet_storage::sqlite::schema::core_state::list_unspent_utxos(
+            source, &wallet_id,
+        )
+        .expect("resolve fixture UTXO owners from core_address_pool");
+        for (account_index, rows) in unspent {
+            for row in rows {
+                let outpoint =
+                    platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&row.outpoint)
+                        .expect("encode fixture outpoint");
+                account_indices.insert((wallet_id_bytes.clone(), outpoint), account_index);
+            }
+        }
+    }
+
+    let rows: Vec<V001UtxoRow> = {
+        let mut stmt = source
+            .prepare(
+                "SELECT wallet_id, outpoint, value, script, spent \
+                 FROM core_utxos ORDER BY wallet_id, outpoint",
+            )
+            .unwrap();
+        stmt.query_map([], |row| {
+            Ok(V001UtxoRow {
+                wallet_id: row.get(0)?,
+                outpoint: row.get(1)?,
+                value: row.get(2)?,
+                script: row.get(3)?,
+                spent: row.get(4)?,
+            })
+        })
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap()
+    };
+
+    for row in rows {
+        let outpoint =
+            platform_wallet_storage::sqlite::schema::blob::decode_outpoint(&row.outpoint)
+                .expect("decode fixture outpoint");
+        let height = source
+            .query_row(
+                "SELECT height FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                rusqlite::params![&row.wallet_id, AsRef::<[u8]>::as_ref(&outpoint.txid)],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .unwrap()
+            .flatten();
+        let account_index = account_indices
+            .get(&(row.wallet_id.clone(), row.outpoint.clone()))
+            .copied()
+            .unwrap_or(0);
+        destination
+            .execute(
+                "INSERT INTO main.core_utxos \
+                    (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
+                rusqlite::params![
+                    row.wallet_id,
+                    row.outpoint,
+                    row.value,
+                    row.script,
+                    height,
+                    account_index,
+                    row.spent
+                ],
+            )
+            .expect("copy core_utxos row into V001 fixture");
+    }
+}
+
 /// Fixture regenerator. Ignored by default — run explicitly to rebuild the
 /// committed fixture:
 /// `cargo test -p platform-wallet-storage --test fixture_gen -- --ignored regenerate`.
@@ -283,6 +379,7 @@ fn regenerate_populated_v001_fixture() {
     // seed is not expressible directly. The rows the migration suite reads all
     // live in V001 tables, which we lift onto a V001-capped destination below.
     build_populated_store(&src);
+    let source = rusqlite::Connection::open(&src).expect("open populated source");
 
     let dest = fixture_path();
     if dest.exists() {
@@ -325,6 +422,10 @@ fn regenerate_populated_v001_fixture() {
         rows
     };
     for t in &tables {
+        if t == "core_utxos" {
+            copy_core_utxos_to_v001(&source, &conn);
+            continue;
+        }
         let count: i64 = conn
             .query_row(&format!("SELECT COUNT(*) FROM built.\"{t}\""), [], |r| {
                 r.get(0)
@@ -393,18 +494,14 @@ fn populated_v001_fixture_is_present_and_openable() {
         .unwrap();
     assert_eq!(reg_count, 1, "full wallet has one account registration");
 
-    let (utxo_count, account_index): (i64, i64) = conn
+    let utxo_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*), MAX(account_index) FROM core_utxos WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
             rusqlite::params![full.as_slice()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| r.get(0),
         )
         .unwrap();
     assert_eq!(utxo_count, 1, "full wallet has one unspent UTXO");
-    assert_eq!(
-        account_index, 0,
-        "V001 hardcodes account_index=0 — the pre-redirect writer gap"
-    );
 
     let tx_count: i64 = conn
         .query_row(

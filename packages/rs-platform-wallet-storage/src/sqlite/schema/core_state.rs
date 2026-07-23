@@ -102,15 +102,12 @@ pub fn apply(
         }
     }
     // `addresses_derived` is intentionally NOT persisted here — the pool
-    // snapshot (`account_address_pools`) is the derived-address source, and
-    // it is applied to `core_address_pool` before this in the same flush tx,
-    // so a UTXO's owning account resolves by matching its script against a
-    // pool row (falling back to account 0 when no pool row covers it).
+    // snapshot (`account_address_pools`) is the derived-address source used
+    // to resolve UTXO ownership during rehydration.
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.new_utxos {
-            let account_index = resolve_account_index(tx, wallet_id, utxo)?;
-            execute_upsert_utxo(&mut stmt, wallet_id, utxo, account_index, false)?;
+            execute_upsert_utxo(&mut stmt, wallet_id, utxo, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -129,11 +126,7 @@ pub fn apply(
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                // Spent-only synthetic row for a UTXO we never saw unspent;
-                // attribute like any other row (inert — spent rows are
-                // excluded from `list_unspent_utxos`).
-                let account_index = resolve_account_index(tx, wallet_id, utxo)?;
-                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, account_index, true)?;
+                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
             }
         }
     }
@@ -173,37 +166,18 @@ pub fn apply(
 }
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
-        (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL) \
+        (wallet_id, outpoint, value, script, spent) \
+     VALUES (?1, ?2, ?3, ?4, ?5) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
-        account_index = excluded.account_index, \
         spent = excluded.spent";
 
-/// Owning account for a UTXO, resolved by matching its `script_pubkey`
-/// against a `core_address_pool` row. Falls back to account 0 when no pool
-/// row covers the script — the one-way historical-attribution default (R7):
-/// funds are never dropped, only conservatively bucketed.
-fn resolve_account_index(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    utxo: &Utxo,
-) -> Result<i64, WalletStorageError> {
-    let script = utxo.txout.script_pubkey.as_bytes();
-    let account =
-        crate::sqlite::schema::core_pool::account_index_for_script(tx, wallet_id, script)?
-            .unwrap_or(0);
-    Ok(i64::from(account))
-}
-
-/// Upsert one `core_utxos` row with its resolved `account_index`; `spent`
-/// marks spent-only synthetic rows.
+/// Upsert one `core_utxos` row; `spent` marks spent-only synthetic rows.
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
-    account_index: i64,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint)?;
@@ -212,7 +186,6 @@ fn execute_upsert_utxo(
         &op[..],
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
-        account_index,
         spent,
     ])?;
     Ok(())
@@ -558,31 +531,31 @@ pub struct UnspentRow {
     pub account_index: u32,
 }
 
-/// All UTXOs for a wallet that have not been spent yet, bucketed by
-/// account index. Retained for this crate's integration tests.
+/// All UTXOs for a wallet that have not been spent yet, bucketed by the
+/// account index resolved from `core_address_pool` during the read.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_unspent_utxos(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<BTreeMap<u32, Vec<UnspentRow>>, WalletStorageError> {
-    let mut stmt = conn.prepare(
-        "SELECT outpoint, value, script, account_index \
+    let mut stmt = conn.prepare_cached(
+        "SELECT outpoint, value, script \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         let op_bytes: Vec<u8> = row.get(0)?;
         let value: i64 = row.get(1)?;
         let script: Vec<u8> = row.get(2)?;
-        let account_index: i64 = row.get(3)?;
-        Ok((op_bytes, value, script, account_index))
+        Ok((op_bytes, value, script))
     })?;
     let mut by_account: BTreeMap<u32, Vec<UnspentRow>> = BTreeMap::new();
     for r in rows {
-        let (op_bytes, value, script_bytes, account_index) = r?;
+        let (op_bytes, value, script_bytes) = r?;
         let outpoint = blob::decode_outpoint(&op_bytes)?;
         let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
-        let account_index =
-            crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.account_index", account_index)?;
+        let account_index = owning_account_for_script(conn, wallet_id, &script_bytes)?
+            .map(|owner| owner.account_index)
+            .unwrap_or(0);
         let row = UnspentRow {
             outpoint,
             value,
@@ -816,8 +789,8 @@ mod tests {
         let bad_script = [0x6au8];
         conn.execute(
             "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, account_index, spent) \
-             VALUES (?1, ?2, 0, ?3, 0, 0)",
+                (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 0, ?3, 0)",
             params![&w[..], &[0u8; 36][..], &bad_script[..]],
         )
         .unwrap();

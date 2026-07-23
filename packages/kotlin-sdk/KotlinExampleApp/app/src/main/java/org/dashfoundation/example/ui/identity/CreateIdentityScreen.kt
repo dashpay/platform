@@ -67,6 +67,10 @@ fun CreateIdentityScreen(navController: NavHostController) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
+    // The shielded fixed-denomination set is protocol-version-gated (0.03
+    // and 0.25 DASH only exist from v13; 0.3 DASH is retired at v13).
+    val shieldedDenominations = shieldedIdentityDenominations(protocolVersion)
     val coordinator = container.registrationCoordinator
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
@@ -78,6 +82,17 @@ fun CreateIdentityScreen(navController: NavHostController) {
     var selectedWallet by remember(wallets) { mutableStateOf(wallets.firstOrNull()) }
     var fundingSource by remember { mutableStateOf(CreateIdentityFundingSource.CoreBalance) }
     var amountText by remember { mutableStateOf("50000000") } // 0.5 DASH in duffs default
+
+    // Re-snap a shielded amount when the version-gated set changes (a
+    // protocol-version refresh can land after the user picked, retiring
+    // the chosen denomination mid-session).
+    LaunchedEffect(shieldedDenominations) {
+        if (fundingSource == CreateIdentityFundingSource.ShieldedBalance &&
+            amountText.toLongOrNull() !in shieldedDenominations.map { it.first }
+        ) {
+            amountText = shieldedDenominations.first().first.toString()
+        }
+    }
     var identityIndexText by remember { mutableStateOf("0") }
     var isSubmitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -154,9 +169,9 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     // free-form amount — snap to a valid one when switching in.
                     if (newSource == CreateIdentityFundingSource.ShieldedBalance &&
                         amountText.toLongOrNull() !in
-                        SHIELDED_IDENTITY_DENOMINATIONS.map { it.first }
+                        shieldedDenominations.map { it.first }
                     ) {
-                        amountText = SHIELDED_IDENTITY_DENOMINATIONS.first().first.toString()
+                        amountText = shieldedDenominations.first().first.toString()
                     }
                 },
                 amountText = amountText,
@@ -168,6 +183,7 @@ fun CreateIdentityScreen(navController: NavHostController) {
                     selectedRecoveryLock = it
                     identityIndexText = it.registrationIndex.toString()
                 },
+                shieldedDenominations = shieldedDenominations,
             )
 
             KeysSection(
@@ -532,18 +548,51 @@ internal fun isCreateIdentityFundingAmountValid(
 }
 
 /**
- * The fixed exit denominations (in CREDITS) a Type-20 shielded identity
- * create may spend from the pool — 0.1 / 0.3 / 0.5 / 1.0 DASH. Source of
- * truth: `shielded_identity_create_denominations` in DPP; a submitted
- * denomination not in the on-chain set is rejected at validation (← iOS
- * `CreateIdentityView.shieldedIdentityCreateDenominations`).
+ * Protocol version at which the shielded exit-denomination set was revised:
+ * 0.03 and 0.25 DASH added, 0.3 DASH retired.
  */
-private val SHIELDED_IDENTITY_DENOMINATIONS: List<Pair<Long, String>> = listOf(
+private const val SHIELDED_DENOMINATION_REVISION_VERSION = 13
+
+/**
+ * The fixed exit denominations (in CREDITS) a Type-20 shielded identity
+ * create may spend from the pool, before protocol version 13 — 0.1 / 0.3 /
+ * 0.5 / 1.0 DASH. Source of truth: `shielded_identity_create_denominations`
+ * in DPP; a submitted denomination not in the on-chain set is rejected at
+ * validation (← iOS `CreateIdentityView.shieldedDenominationsPreV13`).
+ */
+private val SHIELDED_IDENTITY_DENOMINATIONS_PRE_V13: List<Pair<Long, String>> = listOf(
     10_000_000_000L to "0.1 DASH",
     30_000_000_000L to "0.3 DASH",
     50_000_000_000L to "0.5 DASH",
     100_000_000_000L to "1.0 DASH",
 )
+
+/**
+ * The revised set active from protocol version 13 — 0.03 / 0.1 / 0.25 /
+ * 0.5 / 1.0 DASH (← iOS `CreateIdentityView.shieldedDenominationsV13`).
+ */
+private val SHIELDED_IDENTITY_DENOMINATIONS_V13: List<Pair<Long, String>> = listOf(
+    3_000_000_000L to "0.03 DASH",
+    10_000_000_000L to "0.1 DASH",
+    25_000_000_000L to "0.25 DASH",
+    50_000_000_000L to "0.5 DASH",
+    100_000_000_000L to "1.0 DASH",
+)
+
+/**
+ * The denomination set to offer, gated on the network's reported protocol
+ * version ([org.dashfoundation.example.state.AppState.platformProtocolVersion]).
+ * Until v13 activates the network only accepts the pre-v13 set, and after
+ * activation 0.3 DASH is rejected — so the picker must track the live
+ * version. An unknown version (refresh pending or failed) falls back to the
+ * pre-v13 set, matching every currently deployed network.
+ */
+private fun shieldedIdentityDenominations(protocolVersion: Int?): List<Pair<Long, String>> =
+    if (protocolVersion != null && protocolVersion >= SHIELDED_DENOMINATION_REVISION_VERSION) {
+        SHIELDED_IDENTITY_DENOMINATIONS_V13
+    } else {
+        SHIELDED_IDENTITY_DENOMINATIONS_PRE_V13
+    }
 
 /**
  * Funding source + amount — the Swift `CreateIdentityView` funding/amount
@@ -560,6 +609,7 @@ private fun FundingSection(
     recoveryLoadError: String?,
     selectedRecoveryLock: TrackedAssetLock?,
     onRecoveryLockChange: (TrackedAssetLock) -> Unit,
+    shieldedDenominations: List<Pair<Long, String>>,
 ) {
     FormSection(title = "Funding") {
         org.dashfoundation.example.ui.components.AccessiblePicker(
@@ -605,12 +655,12 @@ private fun FundingSection(
             // Type-20 spends a FIXED exit denomination, not a free-form amount
             // (← iOS's denomination Picker). The picked value flows back through
             // [amountText] (in credits) so the submit path reads it uniformly.
-            val selectedDenom = SHIELDED_IDENTITY_DENOMINATIONS
+            val selectedDenom = shieldedDenominations
                 .firstOrNull { it.first.toString() == amountText }
-                ?: SHIELDED_IDENTITY_DENOMINATIONS.first()
+                ?: shieldedDenominations.first()
             org.dashfoundation.example.ui.components.AccessiblePicker(
                 label = "Denomination",
-                options = SHIELDED_IDENTITY_DENOMINATIONS,
+                options = shieldedDenominations,
                 selected = selectedDenom,
                 optionLabel = { it.second },
                 testTag = "createIdentity.denominationPicker",

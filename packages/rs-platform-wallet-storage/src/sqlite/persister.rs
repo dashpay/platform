@@ -149,8 +149,8 @@ impl SqlitePersister {
     /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
     ///   `config.path` does not exist. The persister refuses to create
     ///   parent directories silently.
-    /// - [`WalletStorageError::InsecureParentDir`] — the database parent is
-    ///   group/other writable on Unix.
+    /// - [`WalletStorageError::InsecureParentDir`] — a database ancestor has
+    ///   unsafe replacement permissions or ownership on Unix.
     /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
     ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
     ///   (no FK support compiled in).
@@ -325,9 +325,16 @@ impl SqlitePersister {
     /// # Cross-process rollback caveat
     ///
     /// The pre-restore auto-backup is taken BEFORE the restore body's
-    /// `BEGIN EXCLUSIVE`, so under concurrent cross-process access the
+    /// exclusive SQLite lock, so under concurrent cross-process access the
     /// rollback point may miss writes a peer committed in between. Callers
     /// must serialize restore intent across processes.
+    ///
+    /// # Source trust
+    ///
+    /// Restore verifies SQLite integrity, wallet application identity, and
+    /// schema compatibility, but not backup provenance. It trusts a valid
+    /// source file as much as the live database; protect the backup directory
+    /// from untrusted replacement or modification.
     pub fn restore_from(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -342,7 +349,9 @@ impl SqlitePersister {
     /// Library consumers should prefer [`restore_from`](Self::restore_from)
     /// — it's safe by default. This entry point exists so the CLI's
     /// `--no-auto-backup` flag can deliver on its name regardless of
-    /// `auto_backup_dir`.
+    /// `auto_backup_dir`. Source validation does not authenticate backup
+    /// provenance; the source-trust warning on [`restore_from`](Self::restore_from)
+    /// applies here equally.
     pub fn restore_from_skip_backup(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -356,6 +365,19 @@ impl SqlitePersister {
         auto_backup_dir: Option<&Path>,
         skip_backup: bool,
     ) -> Result<(), WalletStorageError> {
+        let parent = dest_db_path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
+            crate::parent_permissions::ParentPermissionsError::Io(source) => {
+                WalletStorageError::Io(source)
+            }
+            crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+                WalletStorageError::InsecureParentDir { mode }
+            }
+        })?;
+
         // Refuse to overwrite a database a live persister in this process is
         // still holding open: that handle's buffer/connection would silently
         // diverge from the restored bytes. Canonicalize to match how `open()`
@@ -387,7 +409,7 @@ impl SqlitePersister {
             drop(dest_conn);
         }
         // No row-count fingerprint guards the snapshot→EXCLUSIVE window:
-        // `backup::restore_from`'s `BEGIN EXCLUSIVE` covers the body, and a
+        // `backup::restore_from`'s exclusive SQLite lock covers the body, and a
         // count would miss in-place UPDATEs and give false confidence.
         // Callers needing a quiesced point serialize restore intent.
         backup::restore_from(dest_db_path, src_backup)
@@ -596,6 +618,8 @@ impl SqlitePersister {
     }
 
     fn commit_writes_inner(&self) -> Result<CommitReport, PersistenceError> {
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
         let mut report = CommitReport {
             succeeded: Vec::new(),
             failed: Vec::new(),
@@ -627,9 +651,21 @@ impl SqlitePersister {
 
     /// Lock the write connection.
     pub(crate) fn conn(&self) -> Result<MutexGuard<'_, Connection>, WalletStorageError> {
-        self.conn
-            .lock()
-            .map_err(|_| WalletStorageError::LockPoisoned)
+        match self.conn.lock() {
+            Ok(conn) => Ok(conn),
+            Err(_) => {
+                self.buffer.discard_all()?;
+                Err(WalletStorageError::LockPoisoned)
+            }
+        }
+    }
+
+    fn ensure_connection_usable(&self) -> Result<(), WalletStorageError> {
+        if self.conn.is_poisoned() {
+            self.buffer.discard_all()?;
+            return Err(WalletStorageError::LockPoisoned);
+        }
+        Ok(())
     }
 
     // The `__test-helpers` feature uses Cargo's `__` prefix convention:
@@ -651,6 +687,8 @@ impl SqlitePersister {
     }
 
     fn flush_inner(&self, wallet_id: &WalletId) -> Result<(), PersistenceError> {
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
         let cs = self
             .buffer
             .take_for_flush(wallet_id)
@@ -687,9 +725,6 @@ impl SqlitePersister {
     /// Classify the failure: transient errors restore the buffer and
     /// surface as `FlushRetryable`; everything else drops the changeset
     /// and returns the original variant.
-    //
-    // TODO(qa): the fatal `LockPoisoned` branch has no e2e mutex-poison
-    // test; verified by hand — reconfirm if you touch the classification.
     fn handle_flush_error(
         &self,
         wallet_id: &WalletId,
@@ -851,13 +886,22 @@ impl PlatformWalletPersistence for SqlitePersister {
         // transaction. The current schema also has lossless token balances,
         // invitations, account pools, and deferred-contact-crypto queue rows.
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
-        // `load()` still reports `ClientStartState::wallets` in
-        // `LOAD_UNIMPLEMENTED`. Shielded state lives in a separate store.
-        PersistenceCapabilities::ATOMIC_CHANGESETS
+        // token balances and the DashPay overlay have no load readers, so a
+        // full restore remains lossy. Shielded viewing keys are native when
+        // compiled in; notes, nullifiers, and sync state use ShieldedStore.
+        let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
-            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
+            .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO);
+        #[cfg(feature = "shielded")]
+        {
+            capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            capabilities
+        }
     }
 
     /// Merge `changeset` into the per-wallet buffer.
@@ -876,6 +920,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         wallet_id: WalletId,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), PersistenceError> {
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
         self.buffer
             .store(wallet_id, changeset)
             .map_err(PersistenceError::from)?;
@@ -889,6 +935,12 @@ impl PlatformWalletPersistence for SqlitePersister {
         self.flush_inner(&wallet_id)
     }
 
+    fn delete_wallet(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+        SqlitePersister::delete_wallet(self, wallet_id)
+            .map(|_| ())
+            .map_err(PersistenceError::from)
+    }
+
     /// Load every wallet's start-state from disk.
     ///
     /// Populates `platform_addresses` and the keyless per-wallet `wallets`
@@ -899,7 +951,8 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// The `tracing::info!` summary reports `wallets_rehydrated`.
     ///
     /// Fail-hard: any row that fails to decode (or has a malformed
-    /// `wallet_id`) aborts the whole load — corruption is never skipped.
+    /// `wallet_id`) aborts the whole load, except a corrupt shielded
+    /// viewing-key row, which is skipped for that one subwallet.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one
@@ -957,6 +1010,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
+
+        #[cfg(feature = "shielded")]
+        {
+            state.shielded.viewing_keys =
+                schema::shielded_viewing_keys::load_all(&conn).map_err(PersistenceError::from)?;
+        }
 
         let addrs_all = schema::platform_addrs::load_all(&conn).map_err(PersistenceError::from)?;
         let mut addresses_loaded: usize = 0;
@@ -1148,11 +1207,16 @@ impl PlatformWalletPersistence for SqlitePersister {
             );
         }
         let wallets_rehydrated = state.wallets.len();
+        #[cfg(feature = "shielded")]
+        let shielded_viewing_keys_loaded = state.shielded.viewing_keys.len();
+        #[cfg(not(feature = "shielded"))]
+        let shielded_viewing_keys_loaded = 0usize;
 
         tracing::info!(
             wallets_seen,
             addresses_loaded,
             wallets_rehydrated,
+            shielded_viewing_keys_loaded,
             wallets_pending_rehydration = 0usize,
             unimplemented = ?LOAD_UNIMPLEMENTED,
             "load() summary"
@@ -1281,6 +1345,10 @@ fn apply_changeset_to_tx(
     if let Some(core) = cs.core.as_ref() {
         schema::core_state::apply(tx, wallet_id, core)?;
     }
+    #[cfg(feature = "shielded")]
+    if let Some(shielded) = cs.shielded.as_ref() {
+        schema::shielded_viewing_keys::apply(tx, wallet_id, shielded)?;
+    }
     if let Some(identities) = cs.identities.as_ref() {
         schema::identities::apply(tx, wallet_id, identities)?;
     }
@@ -1336,14 +1404,59 @@ pub(crate) fn run_auto_backup(
 }
 
 fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
+    #[cfg(unix)]
+    let mut missing_components = Vec::new();
     if !dir.exists() {
-        std::fs::create_dir_all(dir).map_err(|source| {
+        #[cfg(unix)]
+        {
+            let mut component = dir;
+            while !component.exists() && !component.as_os_str().is_empty() {
+                missing_components.push(component.to_path_buf());
+                let Some(parent) = component.parent() else {
+                    break;
+                };
+                component = parent;
+            }
+        }
+        #[cfg(unix)]
+        let create_result = {
+            use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
+            builder.recursive(true).mode(0o700).create(dir)
+        };
+        #[cfg(not(unix))]
+        let create_result = std::fs::create_dir_all(dir);
+        create_result.map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
+            dir: dir.to_path_buf(),
+            source,
+        })?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if missing_components.is_empty() {
+            missing_components.push(dir.to_path_buf());
+        }
+        for component in missing_components {
+            std::fs::set_permissions(&component, std::fs::Permissions::from_mode(0o700)).map_err(
+                |source| WalletStorageError::AutoBackupDirUnwritable {
+                    dir: component,
+                    source,
+                },
+            )?;
+        }
+    }
+    crate::parent_permissions::check_parent_perms(dir).map_err(|error| match error {
+        crate::parent_permissions::ParentPermissionsError::Io(source) => {
             WalletStorageError::AutoBackupDirUnwritable {
                 dir: dir.to_path_buf(),
                 source,
             }
-        })?;
-    }
+        }
+        crate::parent_permissions::ParentPermissionsError::Insecure { mode } => {
+            WalletStorageError::InsecureParentDir { mode }
+        }
+    })?;
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the
     // worst case is a later typed error instead of this early one.

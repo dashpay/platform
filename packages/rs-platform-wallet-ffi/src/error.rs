@@ -172,6 +172,10 @@ pub enum PlatformWalletFFIResultCode {
     ErrorPersisterTransient = 26,
     /// A persister operation failed permanently; callers must not retry.
     ErrorPersisterFatal = 27,
+    /// Maps `PlatformWalletError::TransactionBroadcast`. Core definitively
+    /// rejected the transaction, so its UTXO reservation was released and the
+    /// host may safely retry after addressing the rejection reason.
+    ErrorTransactionBroadcastRejected = 28,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -336,6 +340,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // so hosts can distinguish it from a definitive rejection.
             PlatformWalletError::TransactionBroadcastUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+            }
+            PlatformWalletError::TransactionBroadcast(..) => {
+                PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
@@ -553,6 +560,19 @@ impl From<anyhow::Error> for PlatformWalletFFIResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn result_code_discriminants_remain_stable() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorPersisterTransient as i32,
+            26
+        );
+        assert_eq!(PlatformWalletFFIResultCode::ErrorPersisterFatal as i32, 27);
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected as i32,
+            28
+        );
+    }
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 
@@ -852,6 +872,24 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
             "TransactionBroadcastUnconfirmed should map to its dedicated code (rendered: {rendered})"
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
+    }
+
+    #[test]
+    fn transaction_broadcast_rejected_maps_to_dedicated_code() {
+        let rejected = PlatformWalletError::TransactionBroadcast(
+            "mandatory-script-verify-flag-failed".to_string(),
+        );
+        let rendered = rejected.to_string();
+        let result: PlatformWalletFFIResult = rejected.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected,
+            "TransactionBroadcast should map to its dedicated rejection code"
         );
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

@@ -1,9 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! `core_address_pool` writer + `core_utxos.account_index` attribution.
+//! `core_address_pool` writer and read-time UTXO attribution.
 //! Covers TC-B-001 (pool rows with `used` flags), TC-B-002
-//! (real account_index, not the retired `=0` constant), TC-B-010 (idempotent
-//! per-changeset pool state), TC-B-015 (`key_class` survives).
+//! (pool-resolved account index), TC-B-010 (idempotent per-changeset pool
+//! state), TC-B-015 (`key_class` survives).
 
 mod common;
 
@@ -20,7 +20,7 @@ use platform_wallet::changeset::{
     WalletMetadataEntry,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet_storage::sqlite::schema::core_pool;
+use platform_wallet_storage::sqlite::schema::{core_pool, core_state};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 /// Real external-pool `AddressInfo`s for a wallet's Standard BIP44 account 0,
@@ -351,10 +351,9 @@ fn used_address_cannot_regain_reservation_from_stale_snapshot() {
     assert_eq!(state, (1, None));
 }
 
-/// TC-B-002 — a UTXO whose owning account is index 1 stores
-/// `account_index = 1`, not the retired hardcoded 0.
+/// TC-B-002 — UTXOs resolve to their pool-declared account during reads.
 #[test]
-fn tc_b_002_account_index_is_real_not_zero() {
+fn tc_b_002_account_index_is_resolved_from_pool() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xA2);
     ensure_wallet_meta(&persister, &w);
@@ -398,30 +397,22 @@ fn tc_b_002_account_index_is_real_not_zero() {
         .unwrap();
 
     let conn = persister.lock_conn_for_test();
-    let account_for = |script: &[u8]| -> i64 {
-        conn.query_row(
-            "SELECT account_index FROM core_utxos WHERE wallet_id = ?1 AND script = ?2",
-            rusqlite::params![w.as_slice(), script],
-            |r| r.get(0),
-        )
-        .unwrap()
-    };
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
     assert_eq!(
-        account_for(addr1.script_pubkey.as_bytes()),
-        1,
-        "UTXO on account 1's address must store account_index = 1"
+        by_account.get(&1).map(|rows| rows[0].value),
+        Some(222),
+        "UTXO on account 1's address must resolve to account 1"
     );
     assert_eq!(
-        account_for(addr0.script_pubkey.as_bytes()),
-        0,
-        "UTXO on account 0's address must store account_index = 0"
+        by_account.get(&0).map(|rows| rows[0].value),
+        Some(111),
+        "UTXO on account 0's address must resolve to account 0"
     );
 }
 
-/// A UTXO whose script matches no pool row falls back to account 0 — the
-/// one-way historical-attribution default (R7), funds never dropped.
+/// A UTXO whose script matches no pool row resolves to the fallback account.
 #[test]
-fn utxo_without_pool_row_defaults_to_account_zero() {
+fn utxo_without_pool_row_resolves_to_account_zero() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xA3);
     ensure_wallet_meta(&persister, &w);
@@ -441,14 +432,8 @@ fn utxo_without_pool_row_defaults_to_account_zero() {
         .unwrap();
 
     let conn = persister.lock_conn_for_test();
-    let account: i64 = conn
-        .query_row(
-            "SELECT account_index FROM core_utxos WHERE wallet_id = ?1",
-            rusqlite::params![w.as_slice()],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(account, 0, "unattributed UTXO defaults to account 0");
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    assert_eq!(by_account.get(&0).map(|rows| rows[0].value), Some(500));
 }
 
 /// TC-B-010 — a used-flag flip persists and a second no-op flush leaves the

@@ -371,6 +371,204 @@ mod tests {
         );
     }
 
+    /// Stores a single compacted address-balance entry directly under the
+    /// compacted address balances path with the given `(start_block,
+    /// end_block)` key. Bypasses normal compaction so tests can build exact
+    /// tree shapes (e.g. several ranges at/below the queried height).
+    fn store_compacted_entry(
+        drive: &Drive,
+        start_block: u64,
+        end_block: u64,
+        changes: BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
+        platform_version: &PlatformVersion,
+    ) {
+        use grovedb::Element;
+        use grovedb_costs::CostContext;
+        use grovedb_path::SubtreePath;
+
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+
+        let mut key = Vec::with_capacity(16);
+        key.extend_from_slice(&start_block.to_be_bytes());
+        key.extend_from_slice(&end_block.to_be_bytes());
+        let value = bincode::encode_to_vec(&changes, config).expect("encode changes");
+
+        let path = Drive::saved_compacted_block_transactions_address_balances_path();
+
+        let CostContext { value: result, .. } = drive.grove.insert(
+            SubtreePath::from(path.as_ref()),
+            key.as_slice(),
+            Element::new_item(value),
+            None,
+            None,
+            &platform_version.drive.grove_version,
+        );
+        result.expect("insert compacted entry");
+    }
+
+    fn single_change_for(
+        end_block: u64,
+        credits: u64,
+    ) -> BTreeMap<PlatformAddress, BlockAwareCreditOperation> {
+        let mut changes = BTreeMap::new();
+        changes.insert(
+            PlatformAddress::P2pkh([7; 20]),
+            BlockAwareCreditOperation::from_operation(
+                end_block,
+                &CreditOperation::AddToCredits(credits),
+            ),
+        );
+        changes
+    }
+
+    /// Regression for the chained-proof liveness bug that blocked the
+    /// original soundness fix: with two or more compacted ranges sorting
+    /// at/below the queried height — the normal paginated-sync shape — a
+    /// single one-directional proof could not satisfy both the descending
+    /// predecessor query and the ascending forward query. The two-proof
+    /// envelope must verify the honest roundtrip.
+    #[test]
+    fn multiple_ranges_below_query_height_verify() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let containing_changes = single_change_for(192, 192_000);
+        for (start, end) in [(1u64, 64u64), (65, 128), (129, 192)] {
+            let changes = if end == 192 {
+                containing_changes.clone()
+            } else {
+                single_change_for(end, end * 1000)
+            };
+            store_compacted_entry(&drive, start, end, changes, platform_version);
+        }
+
+        // All three ranges sort at/below (150, u64::MAX).
+        let proof = drive
+            .prove_compacted_address_balance_changes(150, None, None, platform_version)
+            .expect("should prove with multiple ranges below the query height");
+        let (_, changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            150,
+            None,
+            platform_version,
+        )
+        .expect("verification must not fail with multiple ranges at/below the bound");
+
+        assert_eq!(
+            changes
+                .iter()
+                .map(|(start, end, _)| (*start, *end))
+                .collect::<Vec<_>>(),
+            vec![(129, 192)],
+            "only the range containing the requested height must be returned"
+        );
+        assert_eq!(
+            changes[0].2, containing_changes,
+            "the containing range must carry its stored changes"
+        );
+    }
+
+    /// The forward scan starts at the authenticated containing range and
+    /// continues through later ranges; ranges wholly below the queried
+    /// height stay excluded even though they sort below the predecessor
+    /// bound.
+    #[test]
+    fn containing_range_with_lower_and_higher_ranges() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        for (start, end) in [(1u64, 64u64), (65, 128), (129, 192), (193, 256)] {
+            store_compacted_entry(
+                &drive,
+                start,
+                end,
+                single_change_for(end, end * 1000),
+                platform_version,
+            );
+        }
+
+        let proof = drive
+            .prove_compacted_address_balance_changes(150, None, None, platform_version)
+            .expect("should prove with ranges on both sides of the query height");
+        let (_, changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            150,
+            None,
+            platform_version,
+        )
+        .expect("should verify");
+
+        assert_eq!(
+            changes
+                .iter()
+                .map(|(start, end, _)| (*start, *end))
+                .collect::<Vec<_>>(),
+            vec![(129, 192), (193, 256)],
+            "the containing range and every later range must be returned in order"
+        );
+    }
+
+    /// Mirrors the paginated sync the gRPC handler performs (it passes an
+    /// explicit limit): the caller limit truncates the forward scan, and the
+    /// next page resumes past the last returned range — including a final
+    /// page that exercises the non-containing-predecessor fallback under a
+    /// limit.
+    #[test]
+    fn caller_limit_paginates_across_ranges() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        for (start, end) in [(1u64, 64u64), (65, 128), (129, 192), (193, 256)] {
+            store_compacted_entry(
+                &drive,
+                start,
+                end,
+                single_change_for(end, end * 1000),
+                platform_version,
+            );
+        }
+
+        let page = |start_height: u64| -> Vec<(u64, u64)> {
+            let proof = drive
+                .prove_compacted_address_balance_changes(
+                    start_height,
+                    Some(1),
+                    None,
+                    platform_version,
+                )
+                .expect("should prove a limited page");
+            let (_, changes) = Drive::verify_compacted_address_balance_changes(
+                proof.as_slice(),
+                start_height,
+                Some(1),
+                platform_version,
+            )
+            .expect("a limited page must verify");
+            changes
+                .iter()
+                .map(|(start, end, _)| (*start, *end))
+                .collect()
+        };
+
+        assert_eq!(
+            page(150),
+            vec![(129, 192)],
+            "first page returns only the containing range"
+        );
+        assert_eq!(
+            page(193),
+            vec![(193, 256)],
+            "second page resumes at the next range"
+        );
+        assert_eq!(
+            page(257),
+            Vec::<(u64, u64)>::new(),
+            "past the last range the fallback start key yields an empty page"
+        );
+    }
+
     #[test]
     fn rejects_envelope_halves_committing_to_different_roots() {
         // Splice a predecessor proof from one state with a forward proof from

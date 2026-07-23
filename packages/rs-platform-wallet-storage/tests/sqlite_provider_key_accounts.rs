@@ -438,14 +438,14 @@ fn tc_pka_015_idempotent_repersist_does_not_duplicate() {
     assert_eq!(manifest.provider.len(), 2, "re-persist must not duplicate");
 }
 
-/// SEC-001 — the writer enforces the curve/type pairing the reader enforces.
+/// The writer enforces the same curve/type pairing as the reader.
 /// The two writers share one table, one PK space and one blob column,
 /// discriminated only by `account_type`: a `ProviderOperatorKeys` entry
 /// carrying an EdDSA key would upsert onto the operator account's row with a
 /// payload the fail-hard reader then rejects — bricking `load()` for the whole
 /// wallet. Reject it at write time instead of storing a landmine.
 #[test]
-fn sec_001_writer_rejects_mispaired_curve_and_account_type() {
+fn writer_rejects_mispaired_curve_and_account_type() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xD1);
     ensure_wallet_meta(&persister, &w);
@@ -662,12 +662,12 @@ fn ecdsa_registration_path_rejects_provider_account_labels() {
     );
 }
 
-/// QA-002 — the provider write path rides the flush transaction: when a later
+/// The provider write path rides the flush transaction: when a later
 /// writer in the same `store()` fails, the account row and domain-seq bump roll
 /// back together. Mirrors `tc_b_012`, which pins the same invariant for the
 /// pool writer.
 #[test]
-fn qa_002_partial_failure_rolls_back_provider_rows_and_bump() {
+fn partial_failure_rolls_back_provider_rows_and_bump() {
     let (persister, _tmp, _path) = fresh_persister();
     let w: WalletId = wid(0xD3);
     ensure_wallet_meta(&persister, &w);

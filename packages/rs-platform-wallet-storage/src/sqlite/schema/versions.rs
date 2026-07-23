@@ -36,6 +36,8 @@ pub enum Domain {
     AccountAddressPools,
     PendingContactCrypto,
     Invitations,
+    #[cfg(feature = "shielded")]
+    ShieldedViewingKeys,
 }
 
 impl Domain {
@@ -57,11 +59,34 @@ impl Domain {
             Domain::AccountAddressPools => "account_address_pools",
             Domain::PendingContactCrypto => "pending_contact_crypto",
             Domain::Invitations => "invitations",
+            #[cfg(feature = "shielded")]
+            Domain::ShieldedViewingKeys => "shielded_viewing_keys",
         }
     }
 
     /// Every domain, for coverage tests.
     #[cfg(any(test, feature = "__test-helpers"))]
+    #[cfg(feature = "shielded")]
+    pub const ALL: [Domain; 15] = [
+        Domain::Core,
+        Domain::Identities,
+        Domain::IdentityKeys,
+        Domain::Contacts,
+        Domain::PlatformAddresses,
+        Domain::AssetLocks,
+        Domain::TokenBalances,
+        Domain::DashpayProfiles,
+        Domain::DashpayPaymentsOverlay,
+        Domain::WalletMetadata,
+        Domain::AccountRegistrations,
+        Domain::AccountAddressPools,
+        Domain::PendingContactCrypto,
+        Domain::Invitations,
+        Domain::ShieldedViewingKeys,
+    ];
+
+    /// Every domain, for coverage tests without shielded persistence.
+    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
     pub const ALL: [Domain; 14] = [
         Domain::Core,
         Domain::Identities,
@@ -83,8 +108,8 @@ impl Domain {
 /// Domains carrying data in `cs`. The destructure is exhaustive (no `..`), so
 /// adding a field to `PlatformWalletChangeSet` is a compile error here until
 /// it gains a `Domain` variant and an arm below — the R8 forgotten-domain
-/// guard. One field is bound and deliberately ignored rather than mapped:
-/// `shielded` (feature-gated; storage versions no shielded state here).
+/// guard. The feature-gated `shielded` field maps only its natively persisted
+/// viewing keys; notes and sync state remain in the host `ShieldedStore`.
 ///
 /// `account_registrations` and `provider_key_account_registrations` share
 /// [`Domain::AccountRegistrations`]: both land in `account_registrations`
@@ -110,8 +135,6 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         #[cfg(feature = "shielded")]
         shielded,
     } = cs;
-    #[cfg(feature = "shielded")]
-    let _ = shielded;
 
     // A sub-changeset carried but empty (`Some(default)`) is not a real
     // change; the `Merge::is_empty` bound is the shared emptiness contract.
@@ -164,6 +187,13 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     }
     if present(invitations) {
         out.push(Domain::Invitations);
+    }
+    #[cfg(feature = "shielded")]
+    if shielded
+        .as_ref()
+        .is_some_and(|changeset| !changeset.viewing_keys.is_empty())
+    {
+        out.push(Domain::ShieldedViewingKeys);
     }
     out
 }

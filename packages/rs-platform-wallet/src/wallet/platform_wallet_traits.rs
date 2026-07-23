@@ -145,6 +145,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.synced_height()
     }
 
+    fn account_generation(&self) -> u64 {
+        self.core_wallet.account_generation()
+    }
+
     fn update_last_processed_height(&mut self, current_height: u32) {
         self.core_wallet
             .update_last_processed_height(current_height);

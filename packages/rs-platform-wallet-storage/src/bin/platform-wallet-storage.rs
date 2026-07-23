@@ -138,6 +138,12 @@ impl CliError {
             code: ExitCode::from(1),
         }
     }
+    fn usage(msg: impl Into<String>) -> Self {
+        Self {
+            message: msg.into(),
+            code: ExitCode::from(2),
+        }
+    }
     fn validation(msg: impl Into<String>) -> Self {
         Self {
             message: msg.into(),
@@ -155,9 +161,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         return run_prune(args);
     }
 
-    let db = cli
-        .db
-        .ok_or_else(|| CliError::runtime("--db is required"))?;
+    let db = cli.db.ok_or_else(|| CliError::usage("--db is required"))?;
 
     // `restore` is an associated function; no persister needed beforehand.
     if let Cmd::Restore(args) = &cli.cmd {
@@ -271,10 +275,7 @@ fn run_restore(
     auto_backup_dir: Option<&Path>,
 ) -> Result<ExitCode, CliError> {
     if !args.yes {
-        return Err(CliError {
-            message: "refusing to restore without --yes".into(),
-            code: ExitCode::from(2),
-        });
+        return Err(CliError::usage("refusing to restore without --yes"));
     }
     let result = if args.no_auto_backup {
         eprintln!("warning: auto-backup skipped (--no-auto-backup)");
@@ -293,9 +294,18 @@ fn run_restore(
         Err(WalletStorageError::IntegrityCheckFailed { report }) => Err(CliError::validation(
             format!("source backup failed integrity check: {report}"),
         )),
+        Err(err @ WalletStorageError::IntegrityCheckRunFailed { .. }) => {
+            Err(CliError::validation(err.to_string()))
+        }
         Err(WalletStorageError::SchemaHistoryMissing) => Err(CliError::validation(
-            "source backup failed integrity check: schema history missing".to_string(),
+            "source backup schema history missing".to_string(),
         )),
+        Err(
+            err @ (WalletStorageError::NotAWalletDb { .. }
+            | WalletStorageError::SchemaVersionUnsupported { .. }
+            | WalletStorageError::SchemaHistoryMalformed { .. }
+            | WalletStorageError::SourceOpenFailed { .. }),
+        ) => Err(CliError::validation(err.to_string())),
         Err(WalletStorageError::AutoBackupDisabled { .. }) => Err(CliError::runtime(
             "auto-backup directory not configured; pass --no-auto-backup to proceed",
         )),
@@ -305,10 +315,9 @@ fn run_restore(
 
 fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     if args.keep_last.is_none() && args.max_age.is_none() {
-        return Err(CliError {
-            message: "at least one of --keep-last or --max-age is required".into(),
-            code: ExitCode::from(2),
-        });
+        return Err(CliError::usage(
+            "at least one of --keep-last or --max-age is required",
+        ));
     }
     let policy = RetentionPolicy {
         keep_last_n: args.keep_last,

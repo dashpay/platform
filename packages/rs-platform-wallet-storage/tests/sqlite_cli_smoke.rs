@@ -12,6 +12,124 @@ fn cli() -> Command {
     Command::cargo_bin("platform-wallet-storage").expect("bin built")
 }
 
+#[test]
+fn missing_db_is_usage_error_for_database_commands() {
+    for args in [
+        vec!["migrate"],
+        vec!["backup", "--out", "unused.db"],
+        vec!["restore", "--from", "unused.db", "--yes"],
+    ] {
+        let out = cli().args(&args).output().unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "{args:?} without --db must exit 2; stderr={}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn restore_source_validation_errors_exit_three() {
+    let tmp = common::secure_tempdir().unwrap();
+    let valid = tmp.path().join("valid.db");
+    let migrated = cli()
+        .args(["--db", valid.to_str().unwrap(), "migrate"])
+        .output()
+        .unwrap();
+    assert!(
+        migrated.status.success(),
+        "source migrate failed: {migrated:?}"
+    );
+
+    let foreign = tmp.path().join("foreign.db");
+    let conn = rusqlite::Connection::open(&foreign).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE refinery_schema_history (
+             version INTEGER PRIMARY KEY,
+             name TEXT,
+             applied_on TEXT,
+             checksum TEXT
+         );
+         INSERT INTO refinery_schema_history (version, name, applied_on, checksum)
+             VALUES (1, 'initial', '2026-01-01T00:00:00+00:00', '12345');",
+    )
+    .unwrap();
+    drop(conn);
+
+    let future = tmp.path().join("future.db");
+    std::fs::copy(&valid, &future).unwrap();
+    let conn = rusqlite::Connection::open(&future).unwrap();
+    conn.execute(
+        "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+         VALUES (1000000, 'future', '2026-01-01T00:00:00+00:00', '0')",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let malformed = tmp.path().join("malformed.db");
+    std::fs::copy(&valid, &malformed).unwrap();
+    let conn = rusqlite::Connection::open(&malformed).unwrap();
+    conn.execute(
+        "UPDATE refinery_schema_history SET applied_on = 'not-a-timestamp' WHERE version = 1",
+        [],
+    )
+    .unwrap();
+    drop(conn);
+
+    let corrupt = tmp.path().join("corrupt.db");
+    std::fs::write(&corrupt, b"not a sqlite database").unwrap();
+
+    let missing = tmp.path().join("missing.db");
+    let dest = tmp.path().join("dest.db");
+    for source in [&missing, &foreign, &future, &malformed, &corrupt] {
+        let out = cli()
+            .args([
+                "--db",
+                dest.to_str().unwrap(),
+                "restore",
+                "--from",
+                source.to_str().unwrap(),
+                "--yes",
+                "--no-auto-backup",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(3),
+            "source {} must be a validation error; stderr={}",
+            source.display(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn restore_missing_schema_history_message_is_not_integrity_failure() {
+    let tmp = common::secure_tempdir().unwrap();
+    let source = tmp.path().join("empty.db");
+    rusqlite::Connection::open(&source).unwrap();
+    let dest = tmp.path().join("dest.db");
+    let out = cli()
+        .args([
+            "--db",
+            dest.to_str().unwrap(),
+            "restore",
+            "--from",
+            source.to_str().unwrap(),
+            "--yes",
+            "--no-auto-backup",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("schema history missing"), "stderr={stderr}");
+    assert!(!stderr.contains("integrity check"), "stderr={stderr}");
+}
+
 /// migrate on a fresh DB prints `applied: <N>` then `applied: 0`.
 #[test]
 fn tc056_migrate_idempotent() {

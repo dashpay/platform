@@ -98,12 +98,11 @@ fn core_utxo_value_negative_on_disk_errors_on_read() {
     .unwrap();
     {
         let conn = persister.lock_conn_for_test();
-        // Declare the address so the row is treated as a real, unspent
-        // UTXO and the value cast is reached (account_index 0).
+        // Insert an unspent UTXO so the value cast is reached.
         conn.execute(
             "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
-             VALUES (?1, ?2, ?3, X'00', 0, 0, NULL)",
+                (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, ?3, X'00', 0)",
             params![w.as_slice(), &outpoint, -1i64],
         )
         .unwrap();

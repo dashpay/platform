@@ -37,7 +37,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover V001; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004), the V005–V006 pool columns, and V007's `core_utxos.height` removal are not yet reflected here — see the [Migrations](#migrations) log for those changes.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover the current `core_utxos` shape and the V001 tables; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004), the V005–V006 pool columns, and V008's shielded viewing keys are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -50,7 +50,6 @@ erDiagram
     WALLETS ||--o{ CORE_UTXOS : "owns"
     WALLETS ||--o{ CORE_INSTANT_LOCKS : "holds"
     WALLETS ||--o| CORE_SYNC_STATE : "tracks"
-    CORE_TRANSACTIONS ||--o{ CORE_UTXOS : "spends"
 
     WALLETS {
         BLOB wallet_id PK "32-byte WalletId"
@@ -83,10 +82,7 @@ erDiagram
         BLOB outpoint PK "bincode-encoded OutPoint"
         INTEGER value "satoshis"
         BLOB script "scriptPubKey bytes"
-        INTEGER height "NULL if unconfirmed"
-        INTEGER account_index
         INTEGER spent "0 | 1"
-        BLOB spent_in_txid "NULL until spend; cleared by trigger on tx delete"
     }
 
     CORE_INSTANT_LOCKS {
@@ -101,11 +97,6 @@ erDiagram
         INTEGER synced_height "NULL until first sync"
     }
 ```
-
-> Note: the `CORE_TRANSACTIONS → CORE_UTXOS` edge shown above is enforced by the
-> `setnull_core_utxos_on_tx_delete` SQLite trigger, not a declared `FOREIGN KEY`.
-> A native `ON DELETE SET NULL` composite FK would also null the NOT NULL `wallet_id`
-> column — the trigger nulls only `spent_in_txid`, preserving the intended semantics.
 
 ## Diagram 2 — Identities + DashPay (Platform L2 identity tree)
 
@@ -380,10 +371,9 @@ is `1` once block context is present.
 
 ### `core_utxos`
 
-One row per UTXO, spent or unspent. `spent_in_txid` is set to NULL
-by a trigger when its referenced `core_transactions` row is deleted
-(instead of a native `ON DELETE SET NULL`, which would also null the
-NOT NULL `wallet_id` column).
+One row per UTXO, spent or unspent. Owning-account identity is derived from
+`core_address_pool` while loading wallet state, and confirmation height is
+derived from `core_transactions.height`.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -662,9 +652,6 @@ having to grep this repo.
   a `wallet_id BLOB NOT NULL` column and two `ON DELETE CASCADE` FKs
   (`wallet_id → wallets`, `identity_id → identities`), so a delete on
   either parent cascades to it.
-- `core_utxos.spent_in_txid` is cleared by the `setnull_core_utxos_on_tx_delete`
-  trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
-  every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
 - The five typed `meta_*` tables carry **no FK** (writes may precede the parent);
   cleanup is an `AFTER DELETE` soft cascade. A wallet delete fires a wallet-rooted
   trigger that brooms the wallet-scoped `meta_*` tables by `wallet_id`, and the
@@ -677,7 +664,6 @@ having to grep this repo.
 
 | Trigger | Fires | Action |
 |---|---|---|
-| `setnull_core_utxos_on_tx_delete` | AFTER DELETE ON `core_transactions` | NULL `core_utxos.spent_in_txid` for the deleted tx |
 | `cascade_meta_on_wallet_delete` | AFTER DELETE ON `wallets` | delete `meta_wallet`, `meta_contact`, `meta_platform_address` rows by `wallet_id` |
 | `cascade_meta_on_identity_delete` | AFTER DELETE ON `identities` | delete `meta_identity`, `meta_token` rows by `identity_id` |
 | `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows (direct balance delete) |
@@ -688,10 +674,12 @@ having to grep this repo.
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full base schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |
+| V001 | `V001__initial.rs` | Full base schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and the original trigger set. |
 | V002 | `V002__address_height_pin.rs` | Adds `platform_addresses.as_of_height` (the Platform-block-height pin reconciling proof-attested balances against the delta stream; `DEFAULT 0` = unknown provenance for pre-existing rows). Additive column, no new table. |
 | V003 | `V003__unified.rs` | Adds `core_address_pool` (per-index address-pool rows replacing `core_utxos` script-derivation for the address-reuse guard), `meta_data_versions` (per-`(wallet_id, domain)` cache-invalidation `seq`), and `meta_store_generation` (single-row store-generation token). Additive only. |
 | V004 | `V004__invitations.rs` | Adds `invitations` for DIP-13 DashPay invitation lifecycle records, keyed by wallet and outpoint. |
 | V005 | `V005__pool_public_key.rs` | Adds nullable `public_key` and `key_type` columns to `core_address_pool`, preserving typed pre-derived public keys that a watch-only account cannot regenerate (closes #4113). |
 | V006 | `V006__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |
-| V007 | `V007__drop_core_utxos_height.rs` | Drops `core_utxos.height`; UTXO confirmation height is sourced solely from `core_transactions.height` (#4178). |
+| V007 | `V007__drop_core_utxo_metadata.rs` | Removes unused `core_utxos.account_index` and `core_utxos.spent_in_txid` metadata and the associated cleanup trigger; owning-account identity is resolved from `core_address_pool` during reads. |
+| V008 | `V008__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
+| V009 | `V009__drop_core_utxos_height.rs` | Drops `core_utxos.height`; UTXO confirmation height is sourced solely from `core_transactions.height` (#4178). |

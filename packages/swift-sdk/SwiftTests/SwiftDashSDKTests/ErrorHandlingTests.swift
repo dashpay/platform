@@ -34,6 +34,8 @@ final class ErrorHandlingTests: XCTestCase {
     }
 
     func testPersisterFFIResultMappingsRemainDistinguishable() {
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterTransient.rawValue, 26)
+        XCTAssertEqual(PlatformWalletResultCode.errorPersisterFatal.rawValue, 27)
         XCTAssertEqual(
             PlatformWalletResultCode(
                 ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_PERSISTER_TRANSIENT
@@ -439,5 +441,51 @@ final class ErrorHandlingTests: XCTestCase {
 
         let failureResult: Result<String, Error> = .failure(TestError())
         XCTAssertEqual(failureResult.errorMessage, "Test failure")
+    }
+
+    // MARK: - Core broadcast outcome mapping
+
+    func testCoreBroadcastOutcomeMapping() throws {
+        XCTAssertEqual(PlatformWalletResultCode.errorTransactionBroadcastRejected.rawValue, 28)
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED
+            ),
+            .errorTransactionBroadcastRejected
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .success,
+                txid: "accepted-id",
+                reason: ""
+            ),
+            .accepted(txid: "accepted-id")
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastRejected,
+                txid: "rejected-id",
+                reason: "policy"
+            ),
+            .rejected(txid: "rejected-id", reason: "policy")
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastUnconfirmed,
+                txid: "unknown-id",
+                reason: "timeout"
+            ),
+            .unknown(txid: "unknown-id", reason: "timeout")
+        )
+    }
+
+    func testCoreBroadcastOutcomeRejectsOperationalResultCode() {
+        XCTAssertThrowsError(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorInvalidHandle,
+                txid: "unused",
+                reason: "invalid handle"
+            )
+        )
     }
 }

@@ -1,36 +1,42 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! Genesis-rescan regression for the account-attribution fallback default
-//! (PR #3828).
-//!
-//! Before: a UTXO landing on a freshly-derived gap-limit-edge address could
-//! race address-derivation persistence and be mis-attributed or dropped, so
-//! the bridge smuggled a full pool snapshot in-band to resolve it. Now the
-//! storage writer resolves each UTXO's owning account by matching its script
-//! against the `core_address_pool` lookup table, falling back to account
-//! index 0 when no pool row covers the script — no in-band snapshot. A fresh
-//! gap-limit-edge address has no pool row yet, so this test pins that such a
-//! UTXO persists directly under the `account_index == 0` fallback, contributes
-//! the exact balance, and never aborts the flush.
+//! Genesis-rescan regression for UTXO attribution when a freshly-derived
+//! gap-limit-edge address has no persisted pool row.
 
 mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
+#[cfg(feature = "rehydration-apply")]
+use platform_wallet::changeset::AccountRegistrationEntry;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::sqlite::schema::core_state;
 
+#[cfg(feature = "rehydration-apply")]
+fn manifest_for(wallet: &Wallet) -> Vec<AccountRegistrationEntry> {
+    wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|account| AccountRegistrationEntry {
+            account_type: account.account_type,
+            account_xpub: account.account_xpub,
+        })
+        .collect()
+}
+
 /// The LAST address in the wallet's Standard BIP44 external pool — the
 /// gap-limit-edge address, the one most likely to be a fresh extension and
 /// thus the worst case for the retired attribution race.
-fn gap_limit_edge_address(seed_byte: u8) -> AddressInfo {
+fn wallet_and_gap_limit_edge_address(seed_byte: u8) -> (Wallet, AddressInfo) {
     use key_wallet::account::AccountType;
     use key_wallet::managed_account::address_pool::AddressPoolType;
 
@@ -51,8 +57,9 @@ fn gap_limit_edge_address(seed_byte: u8) -> AddressInfo {
             if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
                 continue;
             }
-            let infos: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
-            return infos.last().cloned().unwrap();
+            let mut infos: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            infos.sort_by_key(|address| address.index);
+            return (wallet, infos.pop().unwrap());
         }
     }
     panic!("wallet must expose a non-empty Standard BIP44 external pool");
@@ -79,44 +86,63 @@ fn utxo_at(addr: &dashcore::Address, vout: u32, value: u64) -> key_wallet::Utxo 
     }
 }
 
-/// A UTXO on a freshly-derived gap-limit-edge address (no `core_address_pool`
-/// row) persists directly under the `account_index == 0` fallback: no snapshot,
-/// no flush abort, and the unspent balance is exact.
+/// A UTXO without a pool row follows the real restart path into the first
+/// funds account with its exact balance.
+#[cfg(feature = "rehydration-apply")]
 #[test]
-fn utxo_on_fresh_gap_limit_address_persists_under_account_zero() {
-    let (persister, _tmp, _path) = fresh_persister();
+fn utxo_on_fresh_gap_limit_address_rehydrates_under_first_funds_account() {
+    let (persister, _tmp, path) = fresh_persister();
     let w: WalletId = wid(0xD1);
     ensure_wallet_meta(&persister, &w);
 
-    let edge = gap_limit_edge_address(0x55);
+    let (wallet, edge) = wallet_and_gap_limit_edge_address(0x55);
     let addr = edge.address.clone();
+    let utxo = utxo_at(&addr, 0, 777_000);
+    let outpoint = utxo.outpoint;
 
     persister
         .store(
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
-                    new_utxos: vec![utxo_at(&addr, 0, 777_000)],
+                    new_utxos: vec![utxo],
                     ..Default::default()
                 }),
                 ..Default::default()
             },
         )
         .expect("a UTXO on a fresh gap-limit address must persist, not abort");
+    drop(persister);
 
-    let conn = persister.lock_conn_for_test();
-    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    let reopened = platform_wallet_storage::SqlitePersister::open(
+        platform_wallet_storage::SqlitePersisterConfig::new(&path),
+    )
+    .expect("reopen persister");
+    let conn = reopened.lock_conn_for_test();
+    let (core, utxo_accounts) =
+        core_state::load_state(&conn, &w, key_wallet::Network::Testnet).expect("load state");
+    drop(conn);
 
-    let total: usize = by_account.values().map(|v| v.len()).sum();
-    assert_eq!(total, 1, "the edge-address UTXO must persist");
-
-    let rows = by_account
-        .get(&0)
-        .expect("UTXO must be attributed to the default account (index 0)");
-    assert_eq!(
-        rows.len(),
-        1,
-        "exactly the one edge-address UTXO under account 0"
+    assert!(
+        utxo_accounts.is_empty(),
+        "the missing pool row must exercise the unattributed fallback"
     );
-    assert_eq!(rows[0].value, 777_000, "value preserved");
+
+    let mut managed = ManagedWalletInfo::from_wallet(&wallet, 1);
+    platform_wallet_storage::sqlite::util::apply_persisted_core_state(
+        &mut managed,
+        &manifest_for(&wallet),
+        &core,
+        &utxo_accounts,
+        &Default::default(),
+    )
+    .expect("rehydration must apply the unattributed UTXO");
+
+    let first_funds = managed.accounts.all_funding_accounts().remove(0);
+    assert!(
+        first_funds.utxos.contains_key(&outpoint),
+        "the UTXO must land in the first funds account"
+    );
+    assert_eq!(first_funds.balance.total(), 777_000);
+    assert_eq!(WalletInfoInterface::balance(&managed).total(), 777_000);
 }

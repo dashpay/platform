@@ -51,16 +51,16 @@ pub enum SecretStoreError {
     WrongPassword,
 
     /// A vault passphrase (Tier-1 `open`/`rekey`) or an object password
-    /// (Tier-2 enrol/unwrap) was blank — empty or all-whitespace — rejected
-    /// via [`SecretString::is_blank`]. CWE-521.
+    /// (Tier-2 enrol/unwrap) was shorter than [`MIN_PASSPHRASE_LEN`] after
+    /// trimming. CWE-521.
     ///
     /// Neutral wording: the variant covers both Tier-1 vault passphrases and
     /// Tier-2 per-object passwords; the caller's context determines which.
     /// Tier-1 callers wanting a deliberately keyless vault should use
     /// [`EncryptedFileStore::open_unprotected`](crate::secrets::EncryptedFileStore::open_unprotected).
     ///
-    /// [`SecretString::is_blank`]: crate::secrets::SecretString::is_blank
-    #[error("passphrase or password must not be blank")]
+    /// [`MIN_PASSPHRASE_LEN`]: crate::secrets::MIN_PASSPHRASE_LEN
+    #[error("passphrase or password is blank or too short")]
     BlankPassphrase,
 
     /// AEAD tag failure on a stored entry (or rekey re-encrypt) *after*
@@ -137,15 +137,12 @@ pub enum SecretStoreError {
         mode: u32,
     },
 
-    /// The vault file's parent directory was group/other WRITABLE
-    /// (`mode & 0o022 != 0`). Directory write governs rename/unlink, so a
-    /// writable parent lets another local user swap the vault despite its
-    /// own `0600`. Read-only group access (`0o750`) is fine — it leaks
-    /// filenames, not the 0600-protected contents.
+    /// A vault ancestor was writable without the sticky bit or owned by
+    /// neither the current user nor root. Either condition can allow another
+    /// local user to replace the vault despite its own `0600` mode.
     #[error("vault parent directory has insecure permissions")]
     InsecureParentDir {
-        /// The offending POSIX mode bits on the parent directory (not
-        /// secret).
+        /// The offending POSIX mode bits on the ancestor directory (not secret).
         mode: u32,
     },
 
@@ -590,7 +587,7 @@ mod tests {
         assert_eq!(E::WrongPassword.to_string(), "wrong object password");
         assert_eq!(
             E::BlankPassphrase.to_string(),
-            "passphrase or password must not be blank"
+            "passphrase or password is blank or too short"
         );
         assert_eq!(
             E::ExpectedProtectedButUnsealed.to_string(),

@@ -10,6 +10,7 @@ mod common;
 
 use std::ffi::OsString;
 use std::os::unix::ffi::OsStringExt;
+use std::os::unix::fs::symlink;
 use std::os::unix::fs::PermissionsExt;
 
 use common::{ensure_wallet_meta, wid};
@@ -36,6 +37,126 @@ fn open_rejects_group_or_other_writable_parent() {
         "open must return the typed insecure-parent error"
     );
     assert!(!db_path.exists(), "the database must not be pre-created");
+}
+
+#[test]
+fn open_rejects_writable_non_sticky_ancestor_above_secure_parent() {
+    let tmp = common::secure_tempdir().unwrap();
+    let insecure_ancestor = tmp.path().join("replaceable");
+    let secure_parent = insecure_ancestor.join("wallet");
+    std::fs::create_dir_all(&secure_parent).unwrap();
+    std::fs::set_permissions(&insecure_ancestor, std::fs::Permissions::from_mode(0o777)).unwrap();
+    std::fs::set_permissions(&secure_parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let db_path = secure_parent.join("wallet.db");
+
+    let result = SqlitePersister::open(SqlitePersisterConfig::new(&db_path));
+
+    assert!(matches!(
+        result,
+        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+    ));
+    assert!(
+        !db_path.exists(),
+        "an insecure ancestor must fail before create"
+    );
+}
+
+#[test]
+fn open_rejects_insecure_ancestor_reached_through_parent_symlink() {
+    let tmp = common::secure_tempdir().unwrap();
+    let insecure_target_ancestor = tmp.path().join("replaceable-target");
+    let secure_target_parent = insecure_target_ancestor.join("wallet");
+    std::fs::create_dir_all(&secure_target_parent).unwrap();
+    std::fs::set_permissions(
+        &insecure_target_ancestor,
+        std::fs::Permissions::from_mode(0o777),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &secure_target_parent,
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    let linked_parent = tmp.path().join("wallet-link");
+    symlink(&secure_target_parent, &linked_parent).unwrap();
+    let db_path = linked_parent.join("wallet.db");
+
+    let result = SqlitePersister::open(SqlitePersisterConfig::new(&db_path));
+
+    assert!(matches!(
+        result,
+        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+    ));
+    assert!(
+        !secure_target_parent.join("wallet.db").exists(),
+        "the resolved target ancestor must be checked before create"
+    );
+}
+
+#[test]
+fn open_accepts_sticky_writable_parent() {
+    let tmp = common::secure_tempdir().unwrap();
+    let parent = tmp.path().join("shared");
+    std::fs::create_dir(&parent).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o1777)).unwrap();
+    let db_path = parent.join("wallet.db");
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&db_path))
+        .expect("the sticky bit prevents unrelated users from replacing entries");
+    drop(persister);
+    assert!(db_path.exists());
+}
+
+#[test]
+fn restore_rejects_insecure_destination_parent() {
+    let tmp = common::secure_tempdir().unwrap();
+    let source_path = tmp.path().join("source.db");
+    let source = SqlitePersister::open(SqlitePersisterConfig::new(&source_path)).unwrap();
+    let backup = source.backup_to(tmp.path()).unwrap();
+    drop(source);
+
+    let insecure_parent = tmp.path().join("restore-target");
+    std::fs::create_dir(&insecure_parent).unwrap();
+    std::fs::set_permissions(&insecure_parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let destination = insecure_parent.join("restored.db");
+
+    let result = SqlitePersister::restore_from_skip_backup(&destination, &backup);
+
+    assert!(matches!(
+        result,
+        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+    ));
+    assert!(
+        !destination.exists(),
+        "restore must reject the parent before staging or replacing the destination"
+    );
+}
+
+#[test]
+fn restore_checks_destination_permissions_before_auto_backup_policy() {
+    let tmp = common::secure_tempdir().unwrap();
+    let source_path = tmp.path().join("source-for-ordinary-restore.db");
+    let source = SqlitePersister::open(SqlitePersisterConfig::new(&source_path)).unwrap();
+    let backup = source.backup_to(tmp.path()).unwrap();
+    drop(source);
+
+    let insecure_parent = tmp.path().join("ordinary-restore-target");
+    std::fs::create_dir(&insecure_parent).unwrap();
+    std::fs::set_permissions(&insecure_parent, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let destination = insecure_parent.join("restored.db");
+    std::fs::write(&destination, b"existing destination").unwrap();
+
+    let result = SqlitePersister::restore_from(&destination, &backup, None);
+
+    assert!(matches!(
+        result,
+        Err(WalletStorageError::InsecureParentDir { mode }) if mode & 0o022 != 0
+    ));
+    assert_eq!(
+        std::fs::read(&destination).unwrap(),
+        b"existing destination",
+        "the gate must run before opening or backing up the destination"
+    );
 }
 
 #[test]

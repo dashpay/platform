@@ -60,7 +60,10 @@ arm, so `WrongPassphrase` vs `Corruption` vs `AlreadyLocked` stay distinct.
 ```rust
 use platform_wallet_storage::secrets::{SecretBytes, SecretStore, SecretString, WalletId};
 
-let store = SecretStore::file("/var/lib/wallet/secrets.pwsvault", SecretString::new("pw"))?;
+let store = SecretStore::file(
+    "/var/lib/wallet/secrets.pwsvault",
+    SecretString::new("correct-horse-battery-staple"),
+)?;
 let wallet = WalletId::from(wallet_id);
 
 // Tier-1 only (unprotected by an object password). `set`/`get` are
@@ -264,9 +267,8 @@ bricks that object (an availability trade-off the UX must state plainly).
 
 #### Entropy policy is the consumer's
 
-The library enforces only **non-blank** at enrol (and a coarse
-`MIN_PASSPHRASE_LEN` floor, `1` today = merely non-blank) for both the
-vault passphrase and the Tier-2 object password. It ships **no**
+The library enforces an 8-byte post-trim `MIN_PASSPHRASE_LEN` floor for both
+the vault passphrase and the Tier-2 object password. It ships **no**
 password-strength estimator: real entropy policy (zxcvbn-style strength,
 dictionary checks, UX feedback) is locale- and threat-specific and is the
 **consumer's responsibility**. For a protected object the password's
@@ -352,11 +354,9 @@ unwrapped copy is allocated.
   `SecretStore::set_secret`/`set` the user-facing plaintext cap is the
   slightly lower `MAX_PLAINTEXT_LEN`, leaving room for the envelope
   overhead; see **Two-tier secret protection**.)
-  **Blank passphrase is rejected.** `open` (and `rekey`) refuse a blank
-  (empty / all-whitespace) passphrase with `SecretStoreError::BlankPassphrase`
-  — a blank passphrase derives a key from a public salt only, i.e.
-  obfuscation, not confidentiality. This is an **intended behavioural
-  break** for any caller that relied on `SecretString::empty()`. A
+  **Short passphrases are rejected.** `open` (and `rekey`) require at least
+  8 bytes after trimming and return `SecretStoreError::BlankPassphrase` for a
+  shorter input. A
   deliberate keyless vault uses the explicit
   `EncryptedFileStore::open_unprotected(path)` /
   `SecretStore::file_unprotected(path)` door instead (use it only where the
@@ -391,12 +391,21 @@ unwrapped copy is allocated.
   redact the pair; operators who need metadata hiding should use the file
   vault, whose `(wallet_id, label)` map lives only inside the sealed
   vault. Prefer non-descriptive labels on the OS arm regardless.
-- **Tests** — integration tests construct a tempdir-backed
-  `EncryptedFileStore` directly via
-  `EncryptedFileStore::open(tempfile::tempdir()?.path().join("vault.pwsvault"), SecretString::new("..."))`,
-  or use the public `SecretStore::file(path, passphrase)` constructor.
-  No special feature flag is required; both are available under the default
-  `secrets` feature.
+
+#### Tests
+
+Ordinary integration tests use `EncryptedFileStore::open` or
+`SecretStore::file` and therefore exercise the production Argon2id target.
+Downstream suites that would otherwise pay that cost throughout an end-to-end
+flow may enable the dev-only `test-util` feature and use
+`EncryptedFileStore::open_mock` or `SecretStore::file_mock`. For a fresh vault,
+those constructors select the floor Argon2id parameters; an existing vault
+retains the parameters recorded in its header. Per-object wrapping also uses
+the floor. `KdfParams::floor_target` is the single choke point for selecting
+these weak-but-legal parameters. Accidental production use is blocked twice:
+the constructors are compiled only for tests or with `test-util`, and
+`KdfParams::floor_target` panics outside debug builds and this crate's own test
+harness.
 
 Backend selection is an explicit operator decision; there is no
 automatic fallback between backends.
@@ -411,7 +420,7 @@ is **lossless**: `WrongPassphrase`, `Corruption`, `AlreadyLocked`,
 `ExpectedProtectedButUnsealed` (the fail-closed strip refusal),
 `NeedsPassword` (a protected object read with no password), `WrongPassword`
 (object-password tag fail — distinct from the Tier-1 `WrongPassphrase`),
-`BlankPassphrase` (a blank vault passphrase or object password), and
+`BlankPassphrase` (a blank or sub-floor vault passphrase or object password), and
 `UnsupportedEnvelopeVersion { found }` (a future envelope format, fail
 closed regardless of the password). The four Tier-2 credential/protection
 *state* variants project to a recoverable `NoStorageAccess` (boxed,
@@ -419,9 +428,10 @@ downcast-recoverable, like `WrongPassphrase`); `UnsupportedEnvelopeVersion`
 joins the secret-free `BadStoreFormat` group. `VaultTooLarge` surfaces when
 the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
 oversized secret at the write boundary before it can inflate the shared
-vault; `InsecureParentDir` refuses a vault whose parent directory is
-group/other-writable (a writable parent governs rename/replace despite the
-file's own `0600`); `Encrypt` is the (effectively unreachable) AEAD
+vault; `InsecureParentDir` refuses a vault whose ancestor chain has unsafe
+ownership or a group/other-writable component without the sticky bit (an
+attacker who can replace an ancestor can replace the `0600` file); `Encrypt`
+is the (effectively unreachable) AEAD
 encrypt-side failure, kept typed so a write failure is never mislabeled a
 key-derivation error. For the OS arm,
 `keyring_core::Error` projects best-effort into
@@ -438,6 +448,15 @@ item — one AEAD tag cannot disambiguate the two. Treat `WrongPassword` on
 the OS arm as "wrong password or corrupted item." On the file arm it is
 unambiguous: the vault's own per-entry tag has already authenticated the
 stored bytes before the envelope is parsed.
+
+**`WrongPassphrase` on the file arm is ambiguous at the vault header.** The
+Tier-1 header's verification token has no integrity check independent of the
+passphrase-derived key. Its AEAD tag therefore cannot distinguish an incorrect
+vault passphrase from corruption of the header salt, KDF parameters, nonce, or
+ciphertext. Treat file-arm `WrongPassphrase` as "wrong passphrase or corrupted
+header." This ambiguity is limited to the Tier-1 header; after the header is
+verified, the vault's per-entry authentication keeps Tier-2 `WrongPassword`
+unambiguous on the file arm as described above.
 
 The internal SPI projection `From<SecretStoreError> for
 keyring_core::Error` keeps the `WrongPassphrase` / `AlreadyLocked` variants

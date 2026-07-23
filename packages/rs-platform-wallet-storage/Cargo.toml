@@ -132,7 +132,6 @@ windows-native-keyring-store = { version = "=1.0.0", optional = true }
 [dev-dependencies]
 proptest = "1"
 assert_cmd = "2"
-predicates = "3"
 static_assertions = "1"
 filetime = "0.2"
 # Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
@@ -170,6 +169,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 default = ["sqlite", "cli", "secrets", "kv"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
+    "dep:libc",
     "dep:platform-wallet",
     "dep:serde",
     "dep:key-wallet",
@@ -255,14 +255,12 @@ __test-helpers = ["sqlite"]
 # e2e tests that drive the #3692 manager-apply path; enabled in the integrated stack (dash-evo-tool).
 rehydration-apply = []
 # Exposes `SecretStore::file_mock` / `EncryptedFileStore::open_mock` — vault
-# constructors that force every Argon2id derivation to the enforced floor so a
-# downstream test suite is not charged a production-strength KDF per call
-# (#4111). Enable it in `[dev-dependencies]` ONLY; the constructors panic in a
-# build without `debug_assertions`.
+# constructors that use the Argon2id floor for fresh-vault creation and
+# per-secret wrapping; existing vaults retain their header parameters. Enable
+# it in `[dev-dependencies]` ONLY. The constructors panic outside debug builds
+# and this crate's own test harness.
 test-util = []
-# Pass-through to `platform-wallet/shielded` so the feature-gated
-# `PlatformWalletChangeSet::shielded` field is visible to the exhaustive
-# `versions::touched_domains` destructure (the R8 forgotten-domain guard).
-# Storage persists no shielded state itself; this only aligns visibility so
-# an added always-on field stays a compile error.
+# Persists and restores Orchard viewing keys from the feature-gated
+# `PlatformWalletChangeSet::shielded` field. Other shielded state remains in
+# the host-provided `ShieldedStore`.
 shielded = ["platform-wallet/shielded"]

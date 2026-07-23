@@ -95,8 +95,8 @@ const DECODE_CONFIG: Configuration<BigEndian, Varint, Limit<DECODE_BUDGET>> =
 /// Wrap `plaintext` for `(wallet_id, label)` under Argon2 `params`.
 ///
 /// `None` → an unprotected (scheme-0) envelope, and `params` is unused;
-/// `Some(pw)` → a scheme-1 envelope sealed under `pw`. A blank password is
-/// rejected at enrol (`SecretStoreError::BlankPassphrase`).
+/// `Some(pw)` → a scheme-1 envelope sealed under `pw`. A sub-floor password
+/// is rejected at enrol (`SecretStoreError::BlankPassphrase`).
 ///
 /// Callers pass [`KdfParams::default_target`]; a mock store
 /// ([`SecretStore::file_mock`]) passes the floor instead (#4111).
@@ -136,8 +136,8 @@ pub(crate) fn wrap_with_params(
         return Ok(SecretBytes::new(encoded));
     };
 
-    // Reject a blank object password BEFORE any salt / derive.
-    if pw.is_blank() {
+    // Reject a sub-floor object password before any salt or derivation.
+    if pw.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
     }
 
@@ -267,11 +267,9 @@ fn unwrap_password_payload(
     nonce: [u8; NONCE_LEN],
     ciphertext: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
-    // (a0) Mirror wrap's invariant: a blank object password is rejected on
-    // read as well as enrol, so a backend-write attacker who plants a
-    // scheme-1 envelope sealed under the blank password cannot inject
-    // plaintext into a caller that accidentally forwards Some(empty).
-    if password.is_blank() {
+    // (a0) Mirror wrap's floor on read so a backend-write attacker cannot
+    // plant a weakly sealed envelope for an accidentally weak caller input.
+    if password.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
     }
     // (a) Wider Argon2 floors/ceilings — refuses an inflated header
@@ -333,7 +331,7 @@ pub(crate) fn wrap_with_params_for_test(
             max: MAX_PLAINTEXT_LEN,
         });
     }
-    if pw.is_blank() {
+    if pw.is_below_minimum_passphrase_len() {
         return Err(SecretStoreError::BlankPassphrase);
     }
     let key = crypto::derive_key(pw, &salt, params)?;
@@ -366,18 +364,26 @@ mod tests {
     const SCHEME0_GOLDEN_HEX: &str = "01000568656c6c6f";
 
     /// scheme-1 deterministic golden: wid=[0;32], label="seed",
-    /// pw="pw", plaintext="hello", floor params, salt=[0x11;32],
+    /// pw="pw------", plaintext="hello", floor params, salt=[0x11;32],
     /// nonce=[0x22;24]. Bytes: version + Payload::Password tag +
     /// kdf(id,m_kib,t,p as varints) + salt[32] + nonce[24] +
     /// ciphertext-with-tag length + ciphertext+tag(21B).
-    const SCHEME1_GOLDEN_HEX: &str = "010101fb4c000201111111111111111111111111111111111111111111111111111111111111111122222222222222222222222222222222222222222222222215e2ffdf3f0476b6bfb99b4f71b3039ff965132b92f0";
+    const SCHEME1_GOLDEN_HEX: &str = "010101fb4c0002011111111111111111111111111111111111111111111111111111111111111111222222222222222222222222222222222222222222222222152b9c8f5632a7bad30ca908db231f1aa2c897982352";
 
     fn wid(b: u8) -> WalletId {
         WalletId::from([b; 32])
     }
 
+    /// Pad nonblank fixture labels to the production length floor.
     fn pw(s: &str) -> SecretString {
-        SecretString::new(s)
+        if s.trim().is_empty() {
+            return SecretString::new(s);
+        }
+        let mut value = s.to_owned();
+        while value.trim().len() < crate::secrets::MIN_PASSPHRASE_LEN {
+            value.push('-');
+        }
+        SecretString::new(value)
     }
 
     /// TC-033 — blank object password rejected at enrol (wrap-side).

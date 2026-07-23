@@ -114,7 +114,8 @@ pub(crate) fn all_platform_payment_registrations(
     conn: &Connection,
 ) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT wallet_id, account_index, key_class, length(account_xpub_bytes), account_xpub_bytes \
+        "SELECT length(wallet_id), wallet_id, account_index, key_class, \
+                length(account_xpub_bytes), account_xpub_bytes \
          FROM account_registrations \
          WHERE account_type = 'platform_payment' \
          ORDER BY wallet_id, account_index",
@@ -122,17 +123,12 @@ pub(crate) fn all_platform_payment_registrations(
     let mut rows = stmt.query([])?;
     let mut out: BTreeMap<WalletId, Vec<PlatformPaymentRegistration>> = BTreeMap::new();
     while let Some(row) = rows.next()? {
-        let wid_bytes: Vec<u8> = row.get(0)?;
-        let idx: i64 = row.get(1)?;
-        let key_class: i64 = row.get(2)?;
-        let len = usize::try_from(row.get::<_, i64>(3)?).unwrap_or(usize::MAX);
-        if len > blob::BLOB_SIZE_LIMIT_BYTES {
-            return Err(WalletStorageError::BlobTooLarge {
-                len_bytes: len,
-                limit_bytes: blob::BLOB_SIZE_LIMIT_BYTES,
-            });
-        }
-        let bytes: Vec<u8> = row.get(4)?;
+        blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "account_registrations.wallet_id")?;
+        let wid_bytes: Vec<u8> = row.get(1)?;
+        let idx: i64 = row.get(2)?;
+        let key_class: i64 = row.get(3)?;
+        blob::check_size(row.get::<_, i64>(4)?)?;
+        let bytes: Vec<u8> = row.get(5)?;
         let wallet_id = super::id32("account_registrations.wallet_id", &wid_bytes)?;
         out.entry(wallet_id)
             .or_default()
@@ -373,7 +369,9 @@ pub(crate) fn load_provider_state(
     wallet_id: &WalletId,
 ) -> Result<Vec<ProviderKeyAccountEntry>, WalletStorageError> {
     let mut stmt = conn.prepare(
-        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+        "SELECT account_type, account_index, key_class, \
+                length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id, \
                 length(account_xpub_bytes), account_xpub_bytes FROM account_registrations \
          WHERE wallet_id = ?1 AND account_type IN ('provider_operator', 'provider_platform') \
          ORDER BY account_type",
@@ -384,10 +382,20 @@ pub(crate) fn load_provider_state(
         let typed_type: String = row.get(0)?;
         let typed_index: i64 = row.get(1)?;
         let typed_key_class: i64 = row.get(2)?;
-        let typed_user: Vec<u8> = row.get(3)?;
-        let typed_friend: Vec<u8> = row.get(4)?;
-        blob::check_size(row.get::<_, i64>(5)?)?;
-        let payload: Vec<u8> = row.get(6)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            32,
+            "account_registrations.user_identity_id",
+        )?;
+        let typed_user: Vec<u8> = row.get(4)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(5)?,
+            32,
+            "account_registrations.friend_identity_id",
+        )?;
+        let typed_friend: Vec<u8> = row.get(6)?;
+        blob::check_size(row.get::<_, i64>(7)?)?;
+        let payload: Vec<u8> = row.get(8)?;
         let entry = blob::decode::<ProviderKeyAccountEntry>(&payload)?;
 
         // Same typed-column cross-check the ECDSA reader applies, plus the
@@ -451,7 +459,9 @@ fn load_ecdsa_state(
     // blob is a `ProviderKeyAccountEntry` over a non-secp256k1 curve and
     // would hard-error this decode.
     let mut stmt = conn.prepare(
-        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+        "SELECT account_type, account_index, key_class, \
+                length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id, \
                 length(account_xpub_bytes), account_xpub_bytes FROM account_registrations \
          WHERE wallet_id = ?1 \
            AND account_type NOT IN ('provider_operator', 'provider_platform') \
@@ -463,10 +473,20 @@ fn load_ecdsa_state(
         let typed_type: String = row.get(0)?; // account_type TEXT
         let typed_index: i64 = row.get(1)?; // account_index INTEGER
         let typed_key_class: i64 = row.get(2)?; // key_class INTEGER
-        let typed_user: Vec<u8> = row.get(3)?; // user_identity_id BLOB
-        let typed_friend: Vec<u8> = row.get(4)?; // friend_identity_id BLOB
-        blob::check_size(row.get::<_, i64>(5)?)?;
-        let payload: Vec<u8> = row.get(6)?; // account_xpub_bytes BLOB
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            32,
+            "account_registrations.user_identity_id",
+        )?;
+        let typed_user: Vec<u8> = row.get(4)?; // user_identity_id BLOB
+        blob::check_fixed_width(
+            row.get::<_, i64>(5)?,
+            32,
+            "account_registrations.friend_identity_id",
+        )?;
+        let typed_friend: Vec<u8> = row.get(6)?; // friend_identity_id BLOB
+        blob::check_size(row.get::<_, i64>(7)?)?;
+        let payload: Vec<u8> = row.get(8)?; // account_xpub_bytes BLOB
         let entry = blob::decode::<AccountRegistrationEntry>(&payload)?;
         // Cross-check every typed PK column vs the decoded blob so a
         // corruption that passes `PRAGMA integrity_check` is still caught
