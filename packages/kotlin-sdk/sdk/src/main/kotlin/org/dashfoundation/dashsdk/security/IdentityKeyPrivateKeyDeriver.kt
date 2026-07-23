@@ -50,6 +50,7 @@ class IdentityKeyPrivateKeyDeriver(
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
+        keyType: Int,
         force: Boolean,
     ): DerivedKeyStoreResult {
         val pubkeyHex = publicKeyData.toHex()
@@ -102,7 +103,7 @@ class IdentityKeyPrivateKeyDeriver(
             val derivedPrivate = pair[0]
             val derivedPublic = pair[1]
             scalar = derivedPrivate
-            if (!derivedPublicKeyMatches(derivedPublic, publicKeyData)) {
+            if (!derivedPublicKeyMatches(derivedPublic, publicKeyData, keyType)) {
                 // Scrub the wrong scalar immediately; the finally scrubs
                 // again harmlessly (idempotent zero-fill).
                 derivedPrivate.fill(0)
@@ -164,17 +165,35 @@ class IdentityKeyPrivateKeyDeriver(
         /** Matches `WalletStorage`'s private `PRIVKEY_PREFIX`. */
         const val PRIVKEY_IDENTIFIER_PREFIX = "privkey."
 
+        /** DPP `KeyType` discriminants whose on-chain data is a HASH160. */
+        private const val KEY_TYPE_ECDSA_HASH160 = 2
+        private const val KEY_TYPE_EDDSA_25519_HASH160 = 4
+
         /**
-         * Whether a freshly derived public key [derived] is byte-for-byte the
-         * key [expected] a repair was asked to restore. Pure and side-effect
-         * free so the repair's before-persistence identity check
+         * Whether a freshly derived public key [derived] is the key [expected]
+         * a repair was asked to restore, interpreted per [keyType]. Pure and
+         * side-effect free so the repair's before-persistence identity check
          * (dashpay/platform#4060 blocker 1) is unit-testable without the
-         * native derive. Both halves are the compressed public-key bytes Rust
-         * emits (identical encoding on both derive entry points), so a plain
-         * content comparison is the whole check.
+         * native derive.
+         *
+         * [derived] is always the compressed public-key bytes Rust emits. What
+         * [expected] holds depends on the key type (dashpay/platform#4183
+         * review):
+         * - For `ECDSA_HASH160` / `EDDSA_25519_HASH160`, DPP stores the 20-byte
+         *   HASH160 of the public key as the key's on-chain data — NOT the key
+         *   itself — so we must HASH160 the derived pubkey before comparing.
+         *   A raw byte compare (33-byte pubkey vs 20-byte hash) can never
+         *   match, which made these key types permanently un-repairable before
+         *   this fix.
+         * - For every other key type the stored data IS the public key, so a
+         *   plain content comparison is the whole check.
          */
-        fun derivedPublicKeyMatches(derived: ByteArray, expected: ByteArray): Boolean =
-            derived.contentEquals(expected)
+        fun derivedPublicKeyMatches(derived: ByteArray, expected: ByteArray, keyType: Int): Boolean =
+            when (keyType) {
+                KEY_TYPE_ECDSA_HASH160, KEY_TYPE_EDDSA_25519_HASH160 ->
+                    Hash160.hash160(derived).contentEquals(expected)
+                else -> derived.contentEquals(expected)
+            }
     }
 }
 

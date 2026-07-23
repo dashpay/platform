@@ -1117,6 +1117,7 @@ class PlatformWalletPersistenceHandler(
                         publicKeyData = publicKeyData,
                         identityIndex = identityIndex,
                         keyIndex = keyIndex,
+                        keyType = keyType.toInt() and 0xFF,
                     )
                 }
                 val id = outcome.getOrNull()
@@ -2695,24 +2696,32 @@ class PlatformWalletPersistenceHandler(
                     "the key remains unusable and pending state is left intact",
             )
 
-        // BLOCKER 1: read the derivation indices from the persisted row, never
-        // from the caller. A row lacking breadcrumbs cannot be safely repaired
-        // (we would have to guess the slot), so fail WITHOUT clearing pending.
+        // BLOCKER 1: read the derivation indices (and the DPP key type, so the
+        // deriver's ownership check interprets publicKeyData correctly for
+        // HASH160-typed keys — dashpay/platform#4183 review) from the persisted
+        // row, never from the caller. A row lacking breadcrumbs cannot be
+        // safely repaired (we would have to guess the slot), so fail WITHOUT
+        // clearing pending.
         val breadcrumbs = database.publicKeyDao().getByPublicKeyData(publicKeyData)
             .firstNotNullOfOrNull { row ->
                 val identityIndex = row.derivationIdentityIndex
                 val keyIndex = row.derivationKeyIndex
-                if (identityIndex != null && keyIndex != null) identityIndex to keyIndex else null
+                if (identityIndex != null && keyIndex != null) {
+                    Triple(identityIndex, keyIndex, row.keyType.toIntOrNull() ?: 0)
+                } else {
+                    null
+                }
             } ?: throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
                 "cannot repair identity key $pubkeyHex: no derivation breadcrumbs are " +
                     "persisted for it (derivationIdentityIndex/derivationKeyIndex are " +
                     "null) — the correct slot is unknown; pending state left intact",
             )
-        val (identityIndex, keyIndex) = breadcrumbs
+        val (identityIndex, keyIndex, keyType) = breadcrumbs
 
         // force = true routes through WalletStorage.replacePrivateKey and, in
         // the production deriver, derives the KEYPAIR and verifies the derived
-        // public key equals publicKeyData BEFORE any store — a mismatch throws
+        // public key equals publicKeyData (HASH160-hashed first for HASH160 key
+        // types) BEFORE any store — a mismatch throws
         // IdentityKeyDerivationMismatchException here, so nothing below runs
         // and pending is never cleared (BLOCKER 1).
         val storageIdentifier = deriver.deriveAndStore(
@@ -2720,6 +2729,7 @@ class PlatformWalletPersistenceHandler(
             publicKeyData = publicKeyData,
             identityIndex = identityIndex,
             keyIndex = keyIndex,
+            keyType = keyType,
             force = true,
         )?.identifier ?: return null
 
@@ -2933,8 +2943,17 @@ interface PrivateKeyDeriver {
      * Returns `null` if the key could not be derived/stored (leaving it
      * watch-only).
      *
-     * @param publicKeyData the compressed public-key bytes — used as the
+     * @param publicKeyData the on-chain public-key data — the compressed
+     *   pubkey, or the 20-byte HASH160 for a HASH160 key type — used as the
      *   storage key so the signer can locate the scalar.
+     * @param keyType the DPP `KeyType` discriminant of this key. Only the
+     *   [force] repair path consults it: it tells the pubkey-ownership check
+     *   whether [publicKeyData] is the raw derived pubkey or its HASH160, so a
+     *   HASH160-type key (`ECDSA_HASH160` = 2, `EDDSA_25519_HASH160` = 4) is
+     *   verified by hashing the derived pubkey rather than comparing raw bytes
+     *   that can never match (dashpay/platform#4183 review). Defaults to
+     *   `ECDSA_SECP256K1` (0) for the non-repair store path, which does no
+     *   pubkey comparison.
      * @param force when true, skip the "already usable" short-circuit and
      *   REPLACE the stored entry unconditionally — the repair path
      *   (dashpay/platform#4060 finding 6), where a shape+fingerprint-valid
@@ -2947,6 +2966,7 @@ interface PrivateKeyDeriver {
         publicKeyData: ByteArray,
         identityIndex: Int,
         keyIndex: Int,
+        keyType: Int = 0,
         force: Boolean = false,
     ): DerivedKeyStoreResult?
 

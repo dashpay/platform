@@ -779,6 +779,7 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
+            keyType: Int,
             force: Boolean,
         ): DerivedKeyStoreResult? {
             calls.add(Triple(walletId, identityIndex, keyIndex))
@@ -1021,6 +1022,7 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
+            keyType: Int,
             force: Boolean,
         ): DerivedKeyStoreResult = throw IllegalStateException("keystore unavailable")
 
@@ -1092,6 +1094,7 @@ class PlatformWalletPersistenceHandlerTest {
                 publicKeyData: ByteArray,
                 identityIndex: Int,
                 keyIndex: Int,
+                keyType: Int,
                 force: Boolean,
             ): DerivedKeyStoreResult =
                 if (boom) {
@@ -1199,6 +1202,7 @@ class PlatformWalletPersistenceHandlerTest {
                 publicKeyData: ByteArray,
                 identityIndex: Int,
                 keyIndex: Int,
+                keyType: Int,
                 force: Boolean,
             ): DerivedKeyStoreResult =
                 if (boom) {
@@ -1409,6 +1413,7 @@ class PlatformWalletPersistenceHandlerTest {
             publicKeyData: ByteArray,
             identityIndex: Int,
             keyIndex: Int,
+            keyType: Int,
             force: Boolean,
         ): DerivedKeyStoreResult? {
             if (!force) {
