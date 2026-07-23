@@ -1030,6 +1030,121 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     PlatformWalletFFIResult::ok()
 }
 
+/// Fund the shielded pool by DRAINING the wallet's CoinJoin account
+/// (`m/9'/coinType'/4'/account_index'`) into a single asset lock.
+///
+/// Sister to [`platform_wallet_manager_shielded_fund_from_asset_lock`],
+/// with two differences:
+///
+/// 1. **Funding**: instead of coin-selecting an exact amount from a BIP44
+///    account, every final CoinJoin UTXO is consumed and the lock value is
+///    `Σ inputs − L1 fee`, computed by the builder. There is no amount
+///    parameter, and the mixed coins never hop through a transparent BIP44
+///    address — this is the CoinJoin → Shielded migration path.
+/// 2. **No surplus output**: the single-recipient remainder flow pins the
+///    consensus surplus to zero (see the resume sibling's doc), so the
+///    parameter is omitted rather than plumbed.
+///
+/// The recipient receives `lock_value − pool_fee` credits. A stuck lock is
+/// resumable via
+/// [`platform_wallet_manager_shielded_resume_fund_from_asset_lock`] exactly
+/// like a BIP44-funded one. The preflight rejects a drain whose balance
+/// could not clear the Type 18 pool fee, so an unrecoverable dust lock is
+/// never broadcast.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `recipient_raw_43` must point to 43 readable bytes (raw Orchard
+///   payment address: 11-byte diversifier + 32-byte pk_d).
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle` produced by
+///   `dash_sdk_mnemonic_resolver_create`. The caller retains ownership.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    recipient_raw_43: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(recipient_raw_43);
+    check_ptr!(core_signer_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let mut recipient_bytes = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient_bytes.as_mut_ptr(), 43);
+    let recipient = match OrchardAddress::from_raw_bytes(&recipient_bytes) {
+        Ok(a) => a,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invalid Orchard recipient address: {e}"),
+            );
+        }
+    };
+
+    // The Type 18 live activity recorder writes to the coordinator's
+    // shared in-memory store, so resolve the coordinator alongside the
+    // wallet (same as the BIP44-funded sibling).
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+    let network = wallet.network();
+
+    // Round-trip the resolver handle through `usize` so the worker
+    // future's capture is `Send + 'static`.
+    let core_signer_addr = core_signer_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack) — see the sibling for
+    // why the Halo 2 synthesis cannot run on the calling thread.
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the resolver handle
+        // is pinned alive for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_fund_from_asset_lock(
+                &coordinator,
+                AssetLockFunding::DrainAccountBalance {
+                    account:
+                        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount::CoinJoin {
+                            account_index,
+                        },
+                },
+                vec![(recipient, None)],
+                &asset_lock_signer,
+                &prover,
+                // Single-recipient remainder flow: surplus is structurally
+                // zero, so no surplus output.
+                None,
+                // Single real note, no anonymity-set fillers.
+                0,
+                None,
+                // User-facing funding: wait for the ChainLock indefinitely —
+                // a broadcast asset lock is pending finality, never failed.
+                None,
+            )
+            .await
+    });
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded coinjoin-drain fund-from-asset-lock failed: {e}"),
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
+
 /// Resume a shielded fund-from-asset-lock by outpoint.
 ///
 /// Sister to [`platform_wallet_manager_shielded_fund_from_asset_lock`]:

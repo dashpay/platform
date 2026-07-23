@@ -122,20 +122,30 @@ pub enum AssetLockFunding {
     /// - others — see [`AssetLockFundingType`]
     ///
     /// `account_index` selects which BIP44 *standard* account (by
-    /// BIP44 account index) supplies the UTXOs. Only BIP44 standard
-    /// accounts are supported today — CoinJoin / BIP32 funding for
-    /// any asset-lock-funded operation is out of scope and would
-    /// require additional plumbing in
-    /// [`AssetLockManager::create_funded_asset_lock_proof`].
+    /// BIP44 account index) supplies the UTXOs. This exact-amount form
+    /// is BIP44-only; CoinJoin funding exists solely as the
+    /// whole-balance [`AssetLockFunding::DrainAccountBalance`] form
+    /// (CoinJoin accounts have no change semantics). BIP32 funding
+    /// remains unsupported.
     FromWalletBalance {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
         /// BIP44 standard-account index to draw the funding UTXOs from.
-        ///
-        /// Only BIP44 standard accounts (`AccountType::Standard` with
-        /// `StandardAccountTypeTag::Bip44`) are supported today;
-        /// CoinJoin / BIP32 are not.
         account_index: u32,
+    },
+
+    /// Build an asset lock that drains a funding account's whole balance:
+    /// every final UTXO of `account` is consumed and the lock value is
+    /// `Σ inputs − fee`, computed by the key-wallet builder.
+    ///
+    /// This is the CoinJoin → Shielded path: mixed coins fund the asset
+    /// lock directly (CoinJoin funding is drain-only — those accounts have
+    /// no change semantics), so they never hop through a transparent BIP44
+    /// address. A `Bip44` account is also accepted for a whole-balance
+    /// BIP44 lock.
+    DrainAccountBalance {
+        /// The account family + index to drain.
+        account: key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount,
     },
 
     /// Resume from a tracked asset lock identified by its outpoint
@@ -423,6 +433,34 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         // the error payload — no `find_tracked_unproven_lock`
                         // walk needed (which would pick BTreeMap-first
                         // on multiple unproven locks for the same key).
+                        Ok(FundingResolution::IsTimeout { out_point })
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            AssetLockFunding::DrainAccountBalance {
+                account,
+            } => {
+                // Same pipeline as `FromWalletBalance`, with drain amount
+                // semantics and the caller-picked funding account family.
+                match self
+                    .create_funded_asset_lock_proof_with_funding(
+                        super::build::AssetLockBuildAmount::DrainAll,
+                        account,
+                        funding_type,
+                        destination_index,
+                        asset_lock_signer,
+                    )
+                    .await
+                {
+                    Ok((proof, path, out_point)) => {
+                        Ok(FundingResolution::Resolved(ResolvedFunding {
+                            proof,
+                            path,
+                            tracked_out_point: Some(out_point),
+                        }))
+                    }
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
                         Ok(FundingResolution::IsTimeout { out_point })
                     }
                     Err(e) => Err(e),
