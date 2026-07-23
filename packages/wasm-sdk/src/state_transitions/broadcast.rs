@@ -33,6 +33,15 @@ impl WasmSdk {
         &self,
         state_transition: &StateTransition,
     ) -> Result<(), WasmSdkError> {
+        if let Some(context) = self.trusted_context() {
+            if let Err(error) = context.refresh_quorums().await {
+                tracing::warn!(
+                    error = %error,
+                    "Failed to refresh trusted quorum cache before proof verification; using cached keys"
+                );
+            }
+        }
+
         for contract_id in referenced_contract_ids(state_transition) {
             self.refresh_contract(contract_id).await?;
         }
@@ -193,6 +202,9 @@ impl WasmSdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    use crate::sdk::WasmSdkBuilder;
+    use dash_sdk::platform::ContextProvider;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
@@ -202,6 +214,86 @@ mod tests {
     use dash_sdk::dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
     use dash_sdk::dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use dash_sdk::dpp::platform_value::BinaryData;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => return stream,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept quorum request: {}", error),
+            }
+        }
+    }
+
+    fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
+        listener
+            .set_nonblocking(true)
+            .expect("make mock endpoint bounded");
+        let address = listener.local_addr().expect("read mock endpoint address");
+
+        let handle = thread::spawn(move || {
+            let current = serde_json::json!({
+                "success": true,
+                "data": [{
+                    "quorum_hash": hex::encode([0x88; 32]),
+                    "key": hex::encode([0x98; 48]),
+                    "height": 1,
+                    "valid_members_count": 3
+                }]
+            })
+            .to_string();
+            let previous = serde_json::json!({
+                "success": true,
+                "data": {
+                    "height": 1,
+                    "quorums": []
+                }
+            })
+            .to_string();
+
+            for (expected_path, body) in [("/quorums", current), ("/previous", previous)] {
+                let mut stream = accept_before(&listener, Instant::now() + Duration::from_secs(5));
+                let mut reader =
+                    BufReader::new(stream.try_clone().expect("clone quorum request stream"));
+                let mut request_line = String::new();
+                reader
+                    .read_line(&mut request_line)
+                    .expect("read quorum request line");
+                assert_eq!(request_line.split_whitespace().nth(1), Some(expected_path));
+
+                loop {
+                    let mut header = String::new();
+                    reader
+                        .read_line(&mut header)
+                        .expect("read quorum request header");
+                    if header == "\r\n" || header.is_empty() {
+                        break;
+                    }
+                }
+
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                )
+                .expect("write quorum response");
+                stream.flush().expect("flush quorum response");
+            }
+        });
+
+        (format!("http://{}", address), handle)
+    }
 
     fn delete_transition(contract_id: Identifier, nonce: u64) -> DocumentTransition {
         DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
@@ -245,5 +337,30 @@ mod tests {
         ));
 
         assert!(referenced_contract_ids(&state_transition).is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_refresh_rotated_quorums_through_proof_preparation() {
+        let (base_url, server) = spawn_rotated_quorum_endpoint();
+        let context = WasmTrustedContext::for_testing_with_url(vec![], base_url);
+        let sdk = WasmSdkBuilder::new_local()
+            .with_trusted_context(&context)
+            .build()
+            .expect("build local SDK with trusted context");
+        let state_transition = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+            IdentityTopUpTransitionV0::default(),
+        ));
+
+        assert!(context.get_quorum_public_key(1, [0x88; 32], 1).is_err());
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("proof preparation must refresh quorums");
+        assert_eq!(
+            context
+                .get_quorum_public_key(1, [0x88; 32], 1)
+                .expect("rotated quorum must be available after preparation"),
+            [0x98; 48]
+        );
+        server.join().expect("mock quorum server must finish");
     }
 }

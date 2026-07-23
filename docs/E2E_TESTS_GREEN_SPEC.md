@@ -26,7 +26,12 @@ one runner reuses an unwritable fixed-path CI keychain and aborts signing tests
 before any branch FFI code executes. Final-head run `30041868263` proved the
 WASM fix but exposed a second persistent-runner state: the user preference
 domain has no resolvable default keychain, so querying the previous default
-fails before ephemeral provisioning begins.
+fails before ephemeral provisioning begins. Run `30045884067` proved the
+keychain recovery and all completed integration targets, but two healthy test
+suite jobs exhausted their 15-minute cap after cold helper-image pulls. Run
+`30048343835` then proved the corrected timeout and exposed a long-lived WASM
+context gap: after the local quorum rotated, browser proof verification could
+not find the new quorum hash in the connect-time cache.
 
 ## Independent spec review findings applied
 
@@ -220,6 +225,13 @@ schedule, or a manual dispatch:
     keychain`. Apple documents that a missing default is not recreated
     automatically; the user-domain search list is the remaining authoritative
     source of pre-existing keychains.
+12. Browser shard 1 job `89346232709` in run `30048343835` passed nineteen
+    tests before credit-transfer proof verification rejected quorum hash
+    `14e4c177...e457` as absent from the cache. The shared trusted WASM context
+    prefetches quorums only when it connects and disables synchronous
+    cache-miss HTTP inside the proof verifier. The local network rotated after
+    that snapshot, so the next valid proof required an asynchronously refreshed
+    current/previous quorum set.
 
 The initial browser error in
 `GetStatusResponse.createFromProto` is not a third root cause. RS-DAPI
@@ -286,6 +298,16 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   on the same runner and commit `ae554fdd`; three nearby jobs passed on
   `mac-runner-2`, establishing persistent runner state rather than a branch
   behavior regression.
+- PR run `30045884067`: Swift, Kotlin, functional packages, every Dashmate
+  E2E, and browser shard 2 passed. The main suite and browser shard 1 were
+  cancelled exactly at the reusable job's 15-minute limit. One main-runner
+  helper-image layer took 13 minutes 17 seconds to pull, and shard 1 was still
+  passing tests when cancelled.
+- PR run `30048343835`: the 30-minute test-suite limit let all three jobs cross
+  their former cancellation point. Browser shard 2 passed; shard 1 started
+  tests only after 14 minutes and later failed at the rotated-quorum cache
+  miss described above. This is the red integration observation, not a
+  deterministic rotation test.
 
 ### Local deterministic reproduction
 
@@ -332,6 +354,12 @@ the transition directly to proof verification without consulting
 duplicate transitions for one non-system contract and prove that context
 preparation extracts that ID exactly once.
 
+The rotated-quorum cache behavior has a deterministic provider boundary. A
+controllable HTTP endpoint can fail either `/quorums` or `/previous`, rotate
+the other response to a new exact hash/key, and then prove that independent
+refresh preserves the successful cache update. With both endpoints failing, a
+seeded known key must remain usable while an unknown hash remains rejected.
+
 ## Goals
 
 - A new DAPI-backed online wallet initializes its SPV chain from the configured
@@ -354,6 +382,9 @@ preparation extracts that ID exactly once.
 - Generic WASM proof-verifying state-transition waits preload every referenced
   batch contract into the trusted context, including dynamically created
   contracts, before Drive proof verification.
+- Long-lived trusted WASM contexts refresh current and previous quorum keys
+  before proof preparation, without enabling synchronous browser refetch or
+  accepting a proof whose requested quorum hash/key cannot verify it.
 - Swift CI provisions a fresh writable keychain for each job and restores the
   runner's prior default keychain even when tests fail.
 - A local Dashmate group does not start mining until every Core node reports
@@ -832,6 +863,79 @@ Alternatives rejected:
 - Change `WalletStorage` to pass an explicit keychain: that changes production
   API behavior to solve CI host state and bypasses the integration contract.
 
+### 1k. Refresh rotated quorum keys before WASM proof waits
+
+The trusted WASM context prefetches current and previous quorum keys when the
+SDK connects and deliberately disables synchronous cache-miss fetching. The
+`ContextProvider` callback used during proof verification is synchronous, so
+attempting an HTTP fetch from that callback would block the browser executor.
+In a long browser shard the local network can rotate its quorum after the
+shared SDK connects, leaving a valid proof keyed by a hash that is absent from
+the connect-time cache.
+
+Extend the existing `prepare_state_transition_context` boundary to refresh the
+trusted context's current and previous quorum caches before it fetches
+referenced contracts. This ordering also gives document-contract proof fetches
+the latest quorum keys. All four proof-verifying wait APIs already share this
+boundary; plain broadcast remains unchanged.
+
+Treat refresh as an availability optimization, not a proof bypass. Attempt the
+current and previous endpoints independently, retain whichever cache update
+succeeds, and warn if either fails. The bounded LRUs are merged without being
+cleared, but insertion can overwrite a same-hash entry or evict an older key.
+That is not availability-neutral: a partial refresh can make a formerly
+verifiable proof reject. It remains cryptographically fail-closed under the
+configured trust model because verification looks up the requested hash and
+checks the proof signature; a missing or mismatched key rejects.
+
+The quorum endpoint is already the trusted context's proof-verification root
+of trust. Mainnet and testnet URLs require HTTPS, while the default local HTTP
+sidecar is inside the disposable local-network trust boundary; callers must
+separately trust any custom devnet or regtest URL. Refresh introduces no new
+trust source and does not protect against a malicious or compromised trusted
+endpoint colluding with a forged DAPI response; that root compromise is out of
+scope.
+
+On WASM, apply a five-second timeout and browser `no-store` cache mode
+independently to every current and previous quorum fetch. The same public fetch
+methods serve initial `prefetch*`, where timeout or failure propagates, and
+best-effort pre-proof refresh, where failure warns before cached verification
+continues. The two sequential quorum requests add at most ten seconds of HTTP
+wait outside `waitTimeoutMs`; this does not bound the separate
+referenced-contract preparation. Native request timeout and HTTP-cache behavior
+remain unchanged. On all targets, reject `success: false` responses before
+they can mutate their corresponding cache.
+
+Do not enable synchronous cache-miss refetching, match rendered error strings
+to retry a proof, or refresh only in the platform-test-suite adapter.
+Synchronous refetch can deadlock the browser executor, string matching is not
+a stable error interface, and an adapter-only fix leaves direct WASM callers
+broken. A periodic refresh task or single-flight freshness layer would reduce
+request volume, but adds lifecycle and scheduling state that is unnecessary
+for the failing E2E path. A stronger one-shot recovery could match the typed
+`Error::Proof(ContextProviderError::InvalidQuorum)` chain, refresh, and retry
+only the wait phase without rebroadcasting. That would close a rotation after
+preparation and avoid requests on cache hits, but it requires preserving the
+original retry/timeout budget through nested SDK errors and restructuring the
+combined broadcast-and-wait wrappers. Keep this follow-up out of the scoped
+fix; a rotation after preparation can still reject the current call, and a
+later call refreshes again.
+
+The exact browser credit-transfer test is the red integration regression:
+nineteen prior tests passed before proof verification rejected the rotated
+quorum hash. Add deterministic mock-endpoint regressions proving a key absent
+before refresh becomes resolvable afterward, either endpoint still populates
+its cache when the other fails, total refresh failure preserves a known cached
+key while rejecting an unknown hash, and `success: false` cannot populate a
+cache. Cover exact-hash behavior after partial updates; rejection of a valid
+proof is acceptable, substitution with another hash's key is not. Static
+coverage must show refresh precedes contract fetch and all four wait APIs share
+the boundary. Compile the cfg-only request timeout for
+`wasm32-unknown-unknown` through the WASM build. The authoritative integration
+proof remains the full main and both browser E2E jobs; record a rotation in
+logs when using it as refresh evidence rather than inferring rotation from
+duration.
+
 ### 2. Add a Core-tip convergence gate before mining
 
 Use Dashmate's existing
@@ -1116,10 +1220,17 @@ WASM Document Uint8Array
   -> strict transition serialization remains unchanged
 
 WASM document-batch proof wait
+  -> independently refresh current and previous trusted quorum caches
   -> extract and deduplicate referenced contract IDs
   -> proof-fetch every referenced contract at preparation time
   -> overwrite the trusted cache with the verified contract version
   -> verify the state-transition result proof with the complete context
+
+WASM non-document proof wait
+  -> independently refresh current and previous trusted quorum caches
+  -> warn and retain cache state if either bounded request fails
+  -> resolve the proof's exact quorum hash from the trusted cache
+  -> verify the quorum signature or reject
 
 Swift CI test process
   -> sanitize the user search list and establish a live prior-or-recovery default
@@ -1190,6 +1301,28 @@ Swift CI test process
 - A contract changes after preparation but before the result proof: the two
   independent proofs remain authentic and verification retains the existing
   trusted-schema semantics; exact same-height binding is not claimed.
+- A current or previous quorum endpoint fails: the other endpoint is still
+  attempted and any successful exact-hash entries remain cached. The refresh
+  warns, then proof verification uses the cache or rejects.
+- Both quorum endpoints stall or fail: each WASM request is capped at five
+  seconds. A known cached key can still verify; an unknown hash fails closed.
+  Initial trusted-context prefetch propagates the same request failure instead
+  of continuing without an initialized trust cache.
+- A quorum response reports `success: false`: it is rejected before its
+  corresponding cache is mutated. Best-effort refresh still attempts the
+  other endpoint; fail-fast initial prefetch propagates the semantic failure.
+- A partial refresh overwrites or evicts an LRU entry: this can reject a valid
+  proof, but exact-hash lookup plus signature verification cannot substitute a
+  different cached hash. Availability loss is accepted; false acceptance is
+  not.
+- The trusted quorum endpoint is malicious or compromised: it is already the
+  configured root of trust for proof public keys. HTTPS protects mainnet and
+  testnet transport; the default local HTTP endpoint stays inside the test
+  network, and callers own trust in custom devnet/regtest URLs. Endpoint-root
+  compromise and collusion with a forged DAPI response are out of scope.
+- A quorum rotates after preparation but before the result proof: the current
+  call can reject the missing key. It is never accepted unverified; a later
+  call refreshes again. Typed wait-only refresh-and-retry is deferred.
 - The Swift runner has a stale or unwritable keychain from another job: the
   unique path avoids it, and the smoke check fails before the expensive build
   if the new keychain is not writable.
@@ -1277,6 +1410,18 @@ Swift CI test process
     failure and prove candidate containment remains active. Run the regression
     explicitly with `/bin/bash -u`, then invoke it with `/bin/bash` from the
     reusable Swift workflow before the real keychain setup.
+14. Retain browser shard 1's exact rotated-quorum cache miss as the integration
+    red observation. At the trusted-provider boundary, serve controlled current
+    and previous responses and prove refresh attempts both endpoints after
+    either partial failure, preserves a seeded known key after total failure,
+    rejects an unknown hash, and cannot cache `success: false` data. At the
+    WASM boundary, prove non-batch proof preparation changes the same key from
+    absent to available through the attached no-refetch trusted context. Run
+    the provider and WASM SDK Rust tests, compile the request-timeout and
+    `no-store` Fetch settings through the `wasm32-unknown-unknown` build, and
+    statically confirm all four proof-verifying waits use the common boundary.
+    Rerun the full main and both browser E2E jobs; the former credit-transfer
+    test must pass after an observed quorum rotation.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test
