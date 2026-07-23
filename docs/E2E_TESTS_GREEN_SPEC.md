@@ -304,8 +304,9 @@ preparation extracts that ID exactly once.
 
 ## Goals
 
-- A new online wallet initializes its SPV chain from the configured network's
-  genesis before processing height-1 historical headers.
+- A new DAPI-backed online wallet initializes its SPV chain from the configured
+  network's genesis before processing height-1 historical headers. Custom
+  online transports without DAPI internals retain their existing behavior.
 - Repeated cleanup of a rejected browser stream cannot replace a primary SPV
   validation error with a second-close exception.
 - Regtest SPV validation follows Core's no-retarget rule instead of deriving a
