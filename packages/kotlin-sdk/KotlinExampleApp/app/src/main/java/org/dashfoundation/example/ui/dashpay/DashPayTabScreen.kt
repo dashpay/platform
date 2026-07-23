@@ -134,6 +134,20 @@ fun DashPayTabScreen(navController: NavHostController) {
             showClaimSheet = true
         }
     }
+    // A QR scan launched from the claim sheet returns its raw string here
+    // (the shared scanner's savedStateHandle contract); park it through the
+    // same pending-invite path so the sheet reopens seeded with it.
+    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
+    LaunchedEffect(savedStateHandle) {
+        savedStateHandle
+            ?.getStateFlow<String?>(org.dashfoundation.example.navigation.QrScanner.RESULT_KEY, null)
+            ?.collect { scanned ->
+                if (!scanned.isNullOrBlank()) {
+                    savedStateHandle[org.dashfoundation.example.navigation.QrScanner.RESULT_KEY] = null
+                    appUiState.pendingInviteUri.value = scanned
+                }
+            }
+    }
 
     fun refresh() {
         scope.launch {
@@ -159,7 +173,11 @@ fun DashPayTabScreen(navController: NavHostController) {
                         Icon(Icons.Default.Redeem, contentDescription = "Claim invitation")
                     }
                     IconButton(
-                        onClick = { navController.navigate(DashPayInvitations) },
+                        onClick = {
+                            navController.navigate(
+                                DashPayInvitations(activeIdentity?.identityId?.toHex()),
+                            )
+                        },
                         modifier = Modifier.testTag("dashpay.openSentInvitations"),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Sent invitations")
@@ -277,6 +295,11 @@ fun DashPayTabScreen(navController: NavHostController) {
         ModalBottomSheet(onDismissRequest = { if (!claimInFlight) showClaimSheet = false }) {
             ClaimInvitationSheet(
                 initialUri = claimSheetUri,
+                preferredWalletIdHex = activeIdentity?.walletId?.toHex(),
+                onScanRequest = {
+                    showClaimSheet = false
+                    navController.navigate(org.dashfoundation.example.navigation.QrScanner)
+                },
                 onClose = { showClaimSheet = false },
             )
         }

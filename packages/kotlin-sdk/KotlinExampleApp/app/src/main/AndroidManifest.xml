@@ -38,9 +38,9 @@
                 <data android:scheme="dashpay" android:host="invite" />
             </intent-filter>
             <!-- Legacy AppsFlyer applink host (what production dashwallet-iOS
-                 emits). Unverified until invitations.dashpay.io serves
-                 assetlinks.json (dashpay/platform#4096) — participates in the
-                 chooser; add android:autoVerify="true" when #4096 lands. -->
+                 emits). Unverified: the domain serves no assetlinks.json, so
+                 this participates in the app chooser rather than auto-opening;
+                 add android:autoVerify="true" once the domain hosts one. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

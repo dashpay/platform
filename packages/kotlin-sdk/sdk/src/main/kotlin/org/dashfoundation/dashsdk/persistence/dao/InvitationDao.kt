@@ -19,12 +19,6 @@ interface InvitationDao {
     @Query("SELECT * FROM invitations ORDER BY createdAtSecs DESC")
     fun observeAll(): Flow<List<InvitationEntity>>
 
-    @Query(
-        "SELECT * FROM invitations WHERE walletId = :walletId " +
-            "ORDER BY createdAtSecs DESC"
-    )
-    fun observeByWallet(walletId: ByteArray): Flow<List<InvitationEntity>>
-
     @Query("SELECT * FROM invitations WHERE outPointHex = :outPointHex")
     suspend fun getByOutPointHex(outPointHex: String): InvitationEntity?
 
@@ -34,6 +28,10 @@ interface InvitationDao {
     /**
      * Reclaim-flow terminal save: status + marker in one statement so the
      * row can never hold a terminal status with a stale in-flight marker.
+     *
+     * @return rows updated — `0` means the row vanished (e.g. a concurrent
+     *   wallet deletion); callers that gate irreversible work on this write
+     *   must treat `0` as failure, not success.
      */
     @Query(
         "UPDATE invitations SET statusRaw = :statusRaw, " +
@@ -45,9 +43,12 @@ interface InvitationDao {
         statusRaw: Int,
         reclaimInFlight: Boolean,
         updatedAtMillis: Long,
-    )
+    ): Int
 
-    /** Pre-consume marker write (the crash-forensics flag on its own). */
+    /**
+     * Pre-consume marker write (the crash-forensics flag on its own).
+     * @return rows updated — see [setStatusAndMarker]'s `0` contract.
+     */
     @Query(
         "UPDATE invitations SET reclaimInFlight = :reclaimInFlight, " +
             "updatedAt = :updatedAtMillis WHERE outPointHex = :outPointHex"
@@ -56,7 +57,7 @@ interface InvitationDao {
         outPointHex: String,
         reclaimInFlight: Boolean,
         updatedAtMillis: Long,
-    )
+    ): Int
 
     /** Removal path of the persistence callback. */
     @Query("DELETE FROM invitations WHERE outPointHex = :outPointHex")

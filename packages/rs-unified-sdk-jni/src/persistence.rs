@@ -4320,7 +4320,7 @@ mod tests {
         let callbacks = build_vtable(ptr::null_mut());
         assert!(callbacks.on_changeset_begin_fn.is_some());
         assert!(callbacks.on_changeset_end_fn.is_some());
-        assert!(callbacks.on_persist_invitations_fn.is_none());
+        assert!(callbacks.on_persist_invitations_fn.is_some());
     }
 
     #[cfg(feature = "shielded")]

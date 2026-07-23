@@ -64,7 +64,11 @@ import org.dashfoundation.example.util.toHex
  * build-persist mutex is the backstop, not the primary guard).
  */
 @Composable
-fun CreateInvitationSheet(onClose: () -> Unit) {
+fun CreateInvitationSheet(
+    preferredIdentityIdHex: String? = null,
+    onBusyChange: (Boolean) -> Unit = {},
+    onClose: () -> Unit,
+) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
     val context = LocalContext.current
@@ -77,16 +81,20 @@ fun CreateInvitationSheet(onClose: () -> Unit) {
         )
     }.collectAsStateWithLifecycle()
 
-    // Inviter identity: the active identity (first wallet-owned on this
-    // network whose wallet is loaded), if any — drives the opt-in toggle.
-    // An identity-less wallet can still create a pure funding voucher.
+    // Inviter identity — drives the funding wallet AND the opt-in toggle.
+    // The DashPay tab's ACTIVE selection wins (passed via the route); only
+    // when none was active fall back to the first wallet-owned identity
+    // whose wallet is loaded. An identity-less wallet can still create a
+    // pure funding voucher.
     val walletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }.collectAsStateWithLifecycle(emptyList())
-    val inviterIdentity = remember(walletOwned, walletsMap) {
-        walletOwned.firstOrNull {
+    val inviterIdentity = remember(walletOwned, walletsMap, preferredIdentityIdHex) {
+        val loaded = walletOwned.filter {
             it.walletId != null && walletsMap.containsKey(it.walletId!!.toHex())
         }
+        loaded.firstOrNull { it.identityId.toHex() == preferredIdentityIdHex }
+            ?: loaded.firstOrNull()
     }
     val inviterUsername = inviterIdentity?.let { it.mainDpnsName ?: it.dpnsName }
 
@@ -110,6 +118,7 @@ fun CreateInvitationSheet(onClose: () -> Unit) {
             ?: run { errorMessage = "No wallet loaded."; return }
         val withInviter = sendRequestBack && inviterUsername != null
         isCreating = true
+        onBusyChange(true)
         errorMessage = null
         // Application scope: the L1 broadcast must not be cancelled by a
         // sheet teardown mid-flight.
@@ -127,6 +136,7 @@ fun CreateInvitationSheet(onClose: () -> Unit) {
                 errorMessage = t.message ?: "Creating the invitation failed."
             } finally {
                 isCreating = false
+                onBusyChange(false)
             }
         }
     }
@@ -207,18 +217,21 @@ fun CreateInvitationSheet(onClose: () -> Unit) {
                 onClick = { shareInvitationLink(context, link) },
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.share"),
             ) { Text("Share link") }
-            val scope = androidx.compose.runtime.rememberCoroutineScope()
             Button(
                 onClick = {
-                    copyInvitationLinkSensitive(context, link)
+                    val label = copyInvitationLinkSensitive(context, link)
                     didCopy = true
                     // Compare-and-clear after ~60 s (iOS parity window):
-                    // Android has no clipboard expiry, so clear it ourselves
-                    // if our secret is still the current clip.
-                    scope.launch {
+                    // Android has no clipboard expiry, so clear it ourselves.
+                    // Application scope — a composition scope dies with the
+                    // sheet, which would leave the bearer link on the
+                    // clipboard indefinitely. The per-copy label nonce keeps
+                    // the delayed clear from wiping a NEWER copy (this one's
+                    // or any other clip that replaced it).
+                    val appContext = context.applicationContext
+                    container.applicationScope.launch {
                         delay(60_000)
-                        clearClipboardIfStillInvitation(context)
-                        didCopy = false
+                        clearClipboardIfLabelMatches(appContext, label)
                     }
                 },
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.copy"),
@@ -237,9 +250,6 @@ fun CreateInvitationSheet(onClose: () -> Unit) {
     }
 }
 
-/** Marker label so the delayed clear only wipes OUR clip, never a later one. */
-private const val INVITE_CLIP_LABEL = "dashpay-invitation"
-
 /** Text-only share — never a temp image file carrying the bearer link. */
 private fun shareInvitationLink(context: Context, link: String) {
     val send = Intent(Intent.ACTION_SEND).apply {
@@ -249,21 +259,28 @@ private fun shareInvitationLink(context: Context, link: String) {
     context.startActivity(Intent.createChooser(send, "Share invitation"))
 }
 
-private fun copyInvitationLinkSensitive(context: Context, link: String) {
+/**
+ * Copy the bearer link with a unique per-copy label (returned) so the
+ * delayed clear can target exactly this copy, plus the API 33+ sensitive
+ * flag (masks the system clipboard preview; earlier APIs have no masking).
+ */
+private fun copyInvitationLinkSensitive(context: Context, link: String): String {
+    val label = "dashpay-invitation-${android.os.SystemClock.elapsedRealtimeNanos()}"
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText(INVITE_CLIP_LABEL, link)
+    val clip = ClipData.newPlainText(label, link)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         clip.description.extras = PersistableBundle().apply {
             putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
         }
     }
     clipboard.setPrimaryClip(clip)
+    return label
 }
 
-private fun clearClipboardIfStillInvitation(context: Context) {
+/** Clear the clipboard only if OUR exact copy (by label nonce) is still current. */
+private fun clearClipboardIfLabelMatches(context: Context, label: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val label = clipboard.primaryClipDescription?.label
-    if (label == INVITE_CLIP_LABEL) {
+    if (clipboard.primaryClipDescription?.label == label) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             clipboard.clearPrimaryClip()
         } else {

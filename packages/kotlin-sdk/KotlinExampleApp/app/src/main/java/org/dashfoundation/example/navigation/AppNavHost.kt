@@ -446,7 +446,9 @@ fun AppNavHost(
             HiddenContactsScreen(entry.toRoute<DashPayHidden>().ownerIdentityIdHex, navController)
         }
 
-        composable<DashPayInvitations> { InvitationsScreen() }
+        composable<DashPayInvitations> { entry ->
+            InvitationsScreen(entry.toRoute<DashPayInvitations>().activeIdentityIdHex)
+        }
 
         // ── Diagnostics graph ──────────────────────────────────────────
 

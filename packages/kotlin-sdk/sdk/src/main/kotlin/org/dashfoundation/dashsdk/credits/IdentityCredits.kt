@@ -123,7 +123,8 @@ class IdentityCredits internal constructor(
      * voucher's asset lock (the DASH was OP_RETURN-burned at create; the
      * value returns as identity **credits**, never L1 Dash). The invitee
      * can no longer claim afterwards. ← Swift
-     * `ManagedPlatformWallet.resumeTopUpWithAssetLock(consumeInvitationVoucher: true)`.
+     * `ManagedPlatformWallet.resumeTopUpWithAssetLock(consumeInvitationVoucher: true)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
      * Takes the raw outpoint (from the invitation row's `rawOutPoint` —
      * txid wire order + vout), not a [TrackedAssetLock]: invitation locks

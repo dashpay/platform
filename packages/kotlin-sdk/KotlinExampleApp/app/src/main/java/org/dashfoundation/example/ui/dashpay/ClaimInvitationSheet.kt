@@ -57,6 +57,8 @@ import org.dashfoundation.example.util.toHex
 @Composable
 fun ClaimInvitationSheet(
     initialUri: String? = null,
+    preferredWalletIdHex: String? = null,
+    onScanRequest: (() -> Unit)? = null,
     onClose: () -> Unit,
 ) {
     val container = LocalAppContainer.current
@@ -80,12 +82,16 @@ fun ClaimInvitationSheet(
     // Post-claim "Add <username>?" prompt payload: (username, new identity id).
     var contactPrompt by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
 
-    // Claim wallet: the active identity's wallet, else the first loaded
-    // wallet — a fresh invitee with no identity can still claim.
-    val claimWallet = remember(walletOwned, walletsMap) {
-        walletOwned.firstOrNull {
-            it.walletId != null && walletsMap.containsKey(it.walletId!!.toHex())
-        }?.walletId?.let { walletsMap[it.toHex()] } ?: walletsMap.values.firstOrNull()
+    // Claim wallet: the DashPay tab's ACTIVE identity's wallet (passed by
+    // the host — the user's actual selection, matching iOS), else the first
+    // wallet-owned identity's wallet, else the first loaded wallet — a
+    // fresh invitee with no identity can still claim.
+    val claimWallet = remember(walletOwned, walletsMap, preferredWalletIdHex) {
+        preferredWalletIdHex?.let { walletsMap[it] }
+            ?: walletOwned.firstOrNull {
+                it.walletId != null && walletsMap.containsKey(it.walletId!!.toHex())
+            }?.walletId?.let { walletsMap[it.toHex()] }
+            ?: walletsMap.values.firstOrNull()
     }
 
     LaunchedEffect(uriText) {
@@ -205,6 +211,13 @@ fun ClaimInvitationSheet(
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.claim.uriField"),
         )
+        if (onScanRequest != null) {
+            TextButton(
+                onClick = { if (!isClaiming) onScanRequest() },
+                enabled = !isClaiming,
+                modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.claim.scan"),
+            ) { Text("Scan QR code") }
+        }
         if (uriText.isNotBlank()) {
             if (preview.structurallyValid) {
                 // The legacy link carries neither amount nor expiry.

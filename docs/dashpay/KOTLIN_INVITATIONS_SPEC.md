@@ -409,6 +409,17 @@ state → parked until a wallet exists → claim sheet, with the claim-in-flight
 ## 9. Out of scope
 
 - Typed FFI code for consensus 10504 already-consumed (shared iOS/Android follow-up).
+- A typed funded-failure result carrying the recovery outpoint from
+  `create_invitation` (adversarial-review follow-up): on the rare
+  funded-but-row-persist-failed path the outpoint doesn't cross the JNI boundary
+  (the FFI fills out-params only on success — changing that is a shared-Rust
+  change). Recovery exists meanwhile via the Rust-side tracked-lock list
+  (diagnostics surface); the common interrupted-create case persists the row
+  and is reclaimable from the UI (funded-e2e verified).
+- Driving the Rust pre-broadcast abort from a JVM test (the broadcast boundary
+  is Rust-side; the Kotlin tier pins the round-failure half —
+  `invitationPoolEntryWithoutWalletFailsTheRound` — and Rust's own
+  `create_invitation_requires_durable_persistence` pins the abort).
 - Any `rs-platform-wallet` / `rs-platform-wallet-ffi` change (incl. Rust-emitted
   Claimed/Reclaimed status changesets — latent on iOS too).
 - Fixing the iOS walletless deep-link drop (flagged upstream, §3.3).

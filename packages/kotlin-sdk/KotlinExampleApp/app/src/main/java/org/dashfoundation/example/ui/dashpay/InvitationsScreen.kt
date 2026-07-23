@@ -53,7 +53,7 @@ import java.util.Date
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InvitationsScreen() {
+fun InvitationsScreen(activeIdentityIdHex: String? = null) {
     val container = LocalAppContainer.current
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
@@ -71,6 +71,11 @@ fun InvitationsScreen() {
 
     var showCreateSheet by remember { mutableStateOf(false) }
     var reclaimTarget by remember { mutableStateOf<InvitationEntity?>(null) }
+    // Funds are moving while a hosted sheet reports busy — the scrim-tap /
+    // back dismissal must be gated exactly like the sheets' own Cancel
+    // buttons, or a dismissal mid-create discards the only bearer link and
+    // a re-opened reclaim can double-submit.
+    var sheetBusy by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -119,18 +124,29 @@ fun InvitationsScreen() {
     }
 
     if (showCreateSheet) {
-        ModalBottomSheet(onDismissRequest = { showCreateSheet = false }) {
-            CreateInvitationSheet(onClose = { showCreateSheet = false })
+        ModalBottomSheet(onDismissRequest = { if (!sheetBusy) showCreateSheet = false }) {
+            CreateInvitationSheet(
+                preferredIdentityIdHex = activeIdentityIdHex,
+                onBusyChange = { sheetBusy = it },
+                onClose = {
+                    sheetBusy = false
+                    showCreateSheet = false
+                },
+            )
         }
     }
     reclaimTarget?.let { invitation ->
         val wallet = walletsMap[invitation.walletId.toHex()]
         if (wallet != null) {
-            ModalBottomSheet(onDismissRequest = { reclaimTarget = null }) {
+            ModalBottomSheet(onDismissRequest = { if (!sheetBusy) reclaimTarget = null }) {
                 ReclaimInvitationSheet(
                     invitation = invitation,
                     wallet = wallet,
-                    onClose = { reclaimTarget = null },
+                    onBusyChange = { sheetBusy = it },
+                    onClose = {
+                        sheetBusy = false
+                        reclaimTarget = null
+                    },
                 )
             }
         }
@@ -190,6 +206,26 @@ private fun InvitationRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // Advisory expiry (inviter-side display only — not on the
+                // wire and not consensus; the real bound is reclaim).
+                if (invitation.statusRaw == 0 && invitation.expiryUnix > 0) {
+                    val expired = invitation.expiryUnix * 1000L < System.currentTimeMillis()
+                    Text(
+                        if (expired) {
+                            "Expired — consider reclaiming"
+                        } else {
+                            "Expires " + DateFormat
+                                .getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                                .format(Date(invitation.expiryUnix * 1000L))
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (expired) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(statusLabel, style = MaterialTheme.typography.labelLarge, color = statusColor)

@@ -196,7 +196,8 @@ class IdentityRegistration internal constructor(
      * of `IdentityCredits.reclaimInvitationAsTopUp`). The voucher's DASH
      * was OP_RETURN-burned at create; the value returns as the new
      * identity's credits. ← Swift
-     * `ManagedPlatformWallet.resumeIdentityWithAssetLock(consumeInvitationVoucher: true)`.
+     * `ManagedPlatformWallet.resumeIdentityWithAssetLock(consumeInvitationVoucher: true)`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
      * Takes the raw outpoint (from the invitation row's `rawOutPoint`),
      * not a [TrackedAssetLock] — invitation locks are deliberately
@@ -259,7 +260,8 @@ class IdentityRegistration internal constructor(
      * invitee funded by the imported voucher (DIP-13). Blocking (the SDK
      * refetches the funding tx by txid, then waits for the Platform
      * response). Works with no pre-existing identity — the fresh-invitee
-     * onboarding path. ← Swift `ManagedPlatformWallet.claimInvitation`.
+     * onboarding path. ← Swift `ManagedPlatformWallet.claimInvitation`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
      * [keys] carries the full fresh-registration set (the base four
      * auth/transfer keys PLUS the DashPay ENCRYPTION/DECRYPTION pair,

@@ -396,7 +396,8 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * — no network, no side effects. A malformed link yields
      * `structurallyValid == false`, never an exception, so the claim UI can
      * render a clean "invalid invitation" state.
-     * ← Swift `ManagedPlatformWallet.parseInvitation`.
+     * ← Swift `ManagedPlatformWallet.parseInvitation`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      */
     suspend fun parseInvitation(uri: String): InvitationPreview = gate.op {
         val json = mapNativeErrors { DashpayNative.parseInvitation(uri) }
@@ -410,7 +411,8 @@ class Dashpay internal constructor(private val walletHandle: Long,
      * proof); runs on IO. The sent-invitation row lands in Room via the
      * persistence callback before this returns, so the "Sent invitations"
      * `Flow` updates without any extra call.
-     * ← Swift `ManagedPlatformWallet.createInvitation`.
+     * ← Swift `ManagedPlatformWallet.createInvitation`
+     * (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWallet.swift).
      *
      * Amount bounds (`MIN_INVITATION_DUFFS = 300_000`,
      * `MAX_INVITATION_DUFFS = 5_000_000`) are enforced in Rust — a voucher

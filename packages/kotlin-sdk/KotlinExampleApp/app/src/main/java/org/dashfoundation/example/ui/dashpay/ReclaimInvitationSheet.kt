@@ -63,6 +63,7 @@ import org.dashfoundation.example.util.toHex
 fun ReclaimInvitationSheet(
     invitation: InvitationEntity,
     wallet: ManagedPlatformWallet,
+    onBusyChange: (Boolean) -> Unit = {},
     onClose: () -> Unit,
 ) {
     val container = LocalAppContainer.current
@@ -95,6 +96,7 @@ fun ReclaimInvitationSheet(
     fun reclaim() {
         if (!canReclaim || isReclaiming) return
         isReclaiming = true
+        onBusyChange(true)
         errorMessage = null
         infoMessage = null
         val mgr = manager ?: run {
@@ -120,7 +122,10 @@ fun ReclaimInvitationSheet(
                     suspend fun markInFlight() {
                         hadPriorReclaimInFlight =
                             dao.getByOutPointHex(hex)?.reclaimInFlight ?: false
-                        dao.setReclaimInFlight(hex, true, System.currentTimeMillis())
+                        val updated = dao.setReclaimInFlight(hex, true, System.currentTimeMillis())
+                        check(updated == 1) {
+                            "invitation row vanished before the reclaim marker landed"
+                        }
                     }
 
                     if (targetTopUp) {
@@ -222,6 +227,7 @@ fun ReclaimInvitationSheet(
                 }
             } finally {
                 isReclaiming = false
+                onBusyChange(false)
             }
         }
     }

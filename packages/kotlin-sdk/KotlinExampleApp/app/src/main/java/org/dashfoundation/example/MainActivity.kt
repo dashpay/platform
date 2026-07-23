@@ -71,6 +71,7 @@ class MainActivity : FragmentActivity() {
     /** Warm-start deep link (launchMode=singleTop). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         captureInviteIntent(intent, (application as ExampleApplication).container)
     }
 
@@ -78,7 +79,10 @@ class MainActivity : FragmentActivity() {
      * Park an invitation link from a VIEW intent. Accepts the custom
      * `dashpay://invite` scheme and the legacy AppsFlyer
      * `https://invitations.dashpay.io/applink` host (both parsed leniently
-     * Rust-side). The URI is a bearer credential — never log it.
+     * Rust-side). The URI is a bearer credential — never log it. The intent
+     * is consumed one-shot: its data is scrubbed after capture so an
+     * Activity recreation (rotation, process restore) can't re-park a link
+     * that was already claimed.
      */
     private fun captureInviteIntent(intent: Intent?, container: AppContainer) {
         if (intent?.action != Intent.ACTION_VIEW) return
@@ -89,6 +93,8 @@ class MainActivity : FragmentActivity() {
         if (isInviteScheme || isLegacyApplink) {
             container.appUiState.pendingInviteUri.value = uri.toString()
         }
+        intent.data = null
+        setIntent(intent)
     }
 
     private fun setSecureScreen(secure: Boolean) {
