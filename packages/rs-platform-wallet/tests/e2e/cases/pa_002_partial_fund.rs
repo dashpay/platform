@@ -93,9 +93,8 @@ async fn pa_002_partial_fund_change() {
 
     let s = setup().await.expect("e2e setup failed");
 
-    // `next_unused_receive_address` advances the pool only once an
-    // address is observed used; derive `addr_2` AFTER `addr_1` is
-    // funded so the cursor lands on a fresh slot.
+    // The hand-out reserves `addr_1` immediately. Funding then promotes
+    // that reservation to Used before the partial-fund transfer.
     let addr_1 = s
         .test_wallet
         .next_unused_address()
@@ -133,7 +132,7 @@ async fn pa_002_partial_fund_change() {
         .expect("derive addr_2");
     assert_ne!(
         addr_1, addr_2,
-        "wallet must hand out a fresh address once addr_1 is observed used"
+        "wallet must hand out a fresh address after addr_1 is reserved and funded"
     );
 
     let outputs: BTreeMap<_, _> = std::iter::once((addr_2, TRANSFER_CREDITS)).collect();

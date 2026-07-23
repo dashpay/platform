@@ -275,8 +275,8 @@ impl BankWallet {
 
         // Pin the bank's sweep target to DIP-17 index 0 deterministically
         // so the same address absorbs sweep-back funds across every test
-        // run. `next_unused_receive_address` would otherwise advance past
-        // index 0 once it gets marked used, accumulating empty addresses.
+        // run. The reservation allocator intentionally hands out another
+        // available address after index 0 has been observed used.
         let primary_receive_address = derive_platform_address_at_index(
             &seed_bytes,
             network,

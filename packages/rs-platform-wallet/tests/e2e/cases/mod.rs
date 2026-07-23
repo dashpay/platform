@@ -40,6 +40,7 @@ pub mod pa_004b_sweep_dust_boundary;
 pub mod pa_004c_sweep_zero_balance;
 pub mod pa_005_address_rotation;
 pub mod pa_005b_gap_limit_triplet;
+pub mod pa_005c_receive_address_reservation_lifecycle;
 pub mod pa_006_replay_safety;
 pub mod pa_006b_concurrent_broadcast;
 pub mod pa_007_sync_watermark;

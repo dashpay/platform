@@ -637,9 +637,8 @@ impl PlatformAddressWallet {
     /// - `account_key.account` selects the HD account
     /// - `account_key.key_class` selects the key purpose (0 = clear funds)
     ///
-    /// The address is derived from the wallet's public key material
-    /// via dashcore's `AddressPool::next_unused` — no seed access or
-    /// caller-side derivation needed.
+    /// The address is atomically reserved in the pool before it is
+    /// returned. Observing funds later promotes it from reserved to used.
     pub async fn next_unused_receive_address(
         &self,
         account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
@@ -679,22 +678,58 @@ impl PlatformAddressWallet {
             key_wallet::KeySource::Public(xpub)
         };
 
-        // Reserve the address on hand-out (Found-026): platform-payment
-        // `used` only flips on a positive synced balance, so without
-        // marking it here a concurrent caller's `next_unused` would
-        // re-hand the same index before the sync pass. `mark_index_used`
-        // is idempotent — a later real sync hit on this index is a
-        // no-op, so gap-limit/`highest_used` accounting isn't doubled.
-        let info = managed_account
+        let address = managed_account
             .addresses
-            .next_unused_with_info(&key_source, true)
+            .next_unused_and_reserve(&key_source, crate::util::now_secs())
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
-        let address = info.address.clone();
-        managed_account.addresses.mark_index_used(info.index);
 
         PlatformAddress::try_from(address).map_err(|e| {
             PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
         })
+    }
+
+    /// Release a receive-address reservation back to the available pool.
+    ///
+    /// Returns `false` when the address is non-P2PKH, unknown to the selected
+    /// account, already released, or no longer reserved because it was used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the wallet or selected platform-payment account
+    /// is not registered with the wallet manager.
+    pub async fn release_receive_reservation(
+        &self,
+        account_key: key_wallet::account::account_collection::PlatformPaymentAccountKey,
+        address: &PlatformAddress,
+    ) -> Result<bool, PlatformWalletError> {
+        let PlatformAddress::P2pkh(hash) = address else {
+            return Ok(false);
+        };
+
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        let managed_account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index_mut(account_key.account)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {}",
+                    account_key.account
+                ))
+            })?;
+
+        let dash_address =
+            PlatformP2PKHAddress::new(*hash).to_address(managed_account.addresses.network);
+        let Some(index) = managed_account.addresses.address_index(&dash_address) else {
+            return Ok(false);
+        };
+
+        Ok(managed_account.addresses.release_reservation(index))
     }
 
     /// Get all platform addresses with their cached balances.
@@ -943,11 +978,8 @@ mod found_026_tests {
 
     /// Found-026 durable guard: two `next_unused_receive_address` calls
     /// with NO intervening sync/balance update must return DISTINCT
-    /// addresses. Pre-fix, `next_unused` re-hands index 0 (its `used`
-    /// flag only flips on a positive synced balance) → identical
-    /// addresses → this assertion fails. Post-fix the first call
-    /// reserves index 0 via `mark_index_used`, so the second yields
-    /// index 1.
+    /// addresses. The first call reserves index 0 without marking it
+    /// used, so the second yields index 1.
     #[tokio::test]
     async fn found_026_back_to_back_handout_returns_distinct_addresses() {
         let wallet = wallet_with_platform_account();
@@ -967,15 +999,78 @@ mod found_026_tests {
         );
     }
 
-    /// Found-026: K repeated hand-outs advance `highest_used` /
-    /// `used_indices` by exactly K (no double-count, no skipped index,
-    /// no panic), all addresses distinct; and a subsequent
-    /// `mark_index_used` on an already-reserved index is a no-op
-    /// (idempotency — the later real sync hit must not double-count).
     #[tokio::test]
-    async fn found_026_repeated_handouts_advance_gap_limit_exactly_k() {
+    async fn release_receive_reservation_is_idempotent_and_miss_safe() {
+        let wallet = wallet_with_platform_account();
+        let unknown = PlatformAddress::P2pkh([0xff; 20]);
+        let non_p2pkh = PlatformAddress::P2sh([0xee; 20]);
+
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &unknown)
+            .await
+            .expect("unknown address release"));
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &non_p2pkh)
+            .await
+            .expect("non-P2PKH release"));
+
+        let reserved = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("reserve");
+        assert!(wallet
+            .release_receive_reservation(ACCOUNT_KEY, &reserved)
+            .await
+            .expect("first release"));
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &reserved)
+            .await
+            .expect("second release"));
+
+        let reissued = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("reissue");
+        assert_eq!(reissued, reserved);
+
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let (_, info) = wm
+                .get_wallet_mut_and_info_mut(&wallet.wallet_id)
+                .expect("wallet present");
+            let pool = &mut info
+                .core_wallet
+                .platform_payment_managed_account_at_index_mut(ACCOUNT_KEY.account)
+                .expect("managed account")
+                .addresses;
+            assert!(pool.mark_index_used(0));
+        }
+        assert!(!wallet
+            .release_receive_reservation(ACCOUNT_KEY, &reserved)
+            .await
+            .expect("used address release"));
+    }
+
+    /// Found-026: K repeated hand-outs create exactly K reservations,
+    /// leave used accounting unchanged, and return distinct addresses.
+    /// A later observed-use mark promotes one reservation to used.
+    #[tokio::test]
+    async fn found_026_repeated_handouts_create_exactly_k_reservations() {
         const K: u32 = 5;
         let wallet = wallet_with_platform_account();
+
+        let baseline = {
+            let wm = wallet.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&wallet.wallet_id)
+                .expect("wallet present");
+            let pool = &info
+                .core_wallet
+                .platform_payment_managed_account_at_index(ACCOUNT_KEY.account)
+                .expect("managed account")
+                .addresses;
+            pool.stats()
+        };
 
         let mut seen = BTreeSet::new();
         for _ in 0..K {
@@ -997,33 +1092,36 @@ mod found_026_tests {
             .expect("managed account")
             .addresses;
 
+        let after_handouts = pool.stats();
         assert_eq!(
-            pool.highest_used,
-            Some(K - 1),
-            "highest_used must advance to exactly K-1 (no double-count / skip)"
+            after_handouts.reserved_count,
+            baseline.reserved_count + K,
+            "each hand-out must add exactly one reservation"
         );
         assert_eq!(
-            pool.used_indices.len(),
-            K as usize,
-            "exactly K indices reserved"
+            after_handouts.used_count, baseline.used_count,
+            "hand-outs must not count as observed use"
         );
+        assert_eq!(pool.highest_used, baseline.highest_used);
+        assert_eq!(pool.used_indices.len(), baseline.used_count as usize);
 
-        // Idempotency: re-marking an already-reserved index (the shape
-        // of a later real sync hit on a handed-out address) is a no-op.
+        assert!(
+            pool.mark_index_used(0),
+            "observed funding must promote a reservation to used"
+        );
+        let after_observed_use = pool.stats();
+        assert_eq!(
+            after_observed_use.reserved_count,
+            after_handouts.reserved_count - 1
+        );
+        assert_eq!(after_observed_use.used_count, after_handouts.used_count + 1);
+        assert_eq!(pool.highest_used, Some(0));
+
         assert!(
             !pool.mark_index_used(0),
-            "re-marking a reserved index must be a no-op (idempotent)"
+            "re-marking an already-used index must remain idempotent"
         );
-        assert_eq!(
-            pool.highest_used,
-            Some(K - 1),
-            "no-op re-mark must not perturb highest_used"
-        );
-        assert_eq!(
-            pool.used_indices.len(),
-            K as usize,
-            "no-op re-mark must not perturb used_indices"
-        );
+        assert_eq!(pool.stats().used_count, after_observed_use.used_count);
     }
 }
 

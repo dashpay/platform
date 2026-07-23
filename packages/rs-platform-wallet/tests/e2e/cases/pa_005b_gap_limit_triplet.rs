@@ -19,9 +19,9 @@
 //! Production builds the DIP-17 platform-payment receive pool via the
 //! eager `AddressPool::new`, which fills indices `0..=gap_limit-1` at
 //! construction (`highest_generated = Some(gap_limit-1)`), and the
-//! QA-002 setup hook marks index 0 used. From that real state the
-//! batch helper's headroom is `highest_used + 1` = `1`, so no
-//! `gap_limit`-wide fresh window exists. A wallet that has actually
+//! QA-002 setup hook reserves index 0. The generated window is
+//! already full, so no `gap_limit`-wide fresh window exists. A wallet
+//! that has actually
 //! cycled through its first gap window has its highest eagerly-built
 //! index used; [`open_full_gap_window`] models exactly that by
 //! marking index `gap_limit-1` used, which shifts the ceiling up by
@@ -152,8 +152,8 @@ struct GapWindow {
 ///
 /// Models a real wallet that has cycled through its first DIP-17 gap
 /// window: production's `AddressPool::new` eagerly fills `0..=gap-1`
-/// and the QA-002 hook marks index 0 used, so a fresh wallet has only
-/// one slot of headroom. Marking index `gap_limit-1` used reflects a
+/// and the QA-002 hook reserves index 0, so the generated window is
+/// already full. Marking index `gap_limit-1` used reflects a
 /// wallet whose highest built address has been spent to — a higher
 /// fidelity premise than the empty pool the triplet originally assumed.
 /// Returns the live watermarks plus the helper's derived headroom.

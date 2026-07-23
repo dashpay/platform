@@ -160,10 +160,9 @@ impl TestWallet {
     }
 
     /// Next unused receive address on the wallet's default
-    /// platform-payment account. Pool advances only after a sync
-    /// observes an inbound credit on the prior address; a freshly
-    /// returned address has balance `0` until the next sync sees it
-    /// funded. Returns a new address if the gap window is exhausted.
+    /// platform-payment account. Each hand-out is reserved immediately;
+    /// a later sync promotes it to used after observing an inbound credit.
+    /// A freshly returned address has balance `0` until funded.
     pub async fn next_unused_address(&self) -> FrameworkResult<PlatformAddress> {
         self.wallet
             .platform()
@@ -1236,7 +1235,7 @@ async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> Fr
     })?;
     // TODO: reaches into the deprecated platform_payment_managed_account
     // pool for state the modern PlatformPaymentAddressProvider doesn't yet
-    // expose (used_indices inspection for the Found-026 reserve guard).
+    // expose (AddressState inspection for the Found-026 reserve guard).
     // Migrate or retire once the pool moves to the provider (per
     // @QuantumExplorer's review on #3648).
     #[allow(deprecated)]
@@ -1249,26 +1248,24 @@ async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> Fr
                  during slot-0 consume"
             ))
         })?;
-    if !account.addresses.used_indices.contains(&0) {
-        // Discriminate two failure shapes: an empty set means nothing was
-        // reserved at all (genuine hand-out regression); a non-empty set
-        // lacking 0 means slot-0 was pre-consumed before this guard ran
-        // (environmental cold-SPV-cache pre-mark, not a reserve regression).
-        if account.addresses.used_indices.is_empty() {
-            return Err(FrameworkError::Wallet(
-                "slot-0 not reserved after next_unused_receive_address: \
-                 hand-out did not mark the index used (reserve regression)"
-                    .into(),
-            ));
-        }
+    if account.addresses.used_indices.contains(&0) {
+        return Err(FrameworkError::Wallet(
+            "slot-0 hand-out was marked Used instead of Reserved".into(),
+        ));
+    }
+    let slot_zero = account.addresses.info_at_index(0).ok_or_else(|| {
+        FrameworkError::Wallet(
+            "slot-0 missing from the platform-payment pool after hand-out".into(),
+        )
+    })?;
+    if !matches!(
+        slot_zero.state,
+        key_wallet::managed_account::address_pool::AddressState::Reserved { .. }
+    ) {
         return Err(FrameworkError::Wallet(format!(
-            "slot-0 already consumed before the setup guard (used_indices={:?} \
-             non-empty, lacks 0): degraded/cold-SPV-cache setup — a BLAST \
-             genesis-walk pre-marked the bank-shared slot-0; NOT a reserve \
-             regression. Re-run on a warm filter cache — if this recurs on a \
-             warm cache (run-wide matched:0), it IS a genuine reserve \
-             regression, not a cold-cache artefact.",
-            account.addresses.used_indices
+            "slot-0 not reserved after next_unused_receive_address \
+             (state={:?})",
+            slot_zero.state
         )));
     }
     Ok(())
