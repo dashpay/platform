@@ -6,9 +6,10 @@ The initial design was approved and implemented. The first PR run disproved
 one browser diagnosis and exposed the missing genesis initialization described
 below. That amendment was independently reviewed, user-aligned, implemented,
 and locally verified. A fresh PR run proved the Core convergence fix but showed
-that another SPV rejection is still hidden by repeated browser-stream cleanup.
-The diagnostic amendment below preserves that primary error so the next run
-can identify and pin the remaining root cause.
+that another SPV rejection was still hidden by repeated browser-stream cleanup.
+The diagnostic amendment preserved that primary error. Run `30029414181`
+confirmed that the remaining failure is regtest difficulty validation, and the
+consensus amendment below pins and fixes that final root cause.
 
 ## Independent spec review findings applied
 
@@ -38,6 +39,10 @@ must-fix findings are incorporated below:
 6. Fixture-defining changes now invalidate both consumers' shared cache.
    Triggering those paths without changing the Dashmate-only fingerprint would
    have restored old volumes and skipped the code under test.
+7. The regtest no-retarget check runs before the short-history return, and its
+   negative regression uses only genesis as context. This proves the new
+   equality guard itself rejects a changed target instead of accidentally
+   passing through the existing DGW rejection after 24 headers.
 
 The reviewers differed on trigger breadth. The failure-mode review recommended
 also treating every immediate/transitive `js-dapi-client` dependency (starting
@@ -76,8 +81,13 @@ schedule, or a manual dispatch:
 3. After genesis initialization was added, fresh run `30025175452` still
    reached an SPV rejection in both browser shards. Repeated cleanup of the
    same gRPC-web stream again replaced the primary error with the second-close
-   exception. Until cleanup preserves that error, CI cannot report the
-   remaining validation failure accurately.
+   exception. Run `30029414181` preserved the primary error:
+   `SPV: Header 2e53e5ed...d8afbd55 is invalid`. The historical request starts
+   at height 1 and asks for all 1393 regtest headers. `dash-spv` begins applying
+   Dark Gravity Wave after 24 headers, but Dash Core 23 regtest has difficulty
+   retargeting disabled and keeps its existing target while blocks are mined
+   rapidly. The SPV client therefore rejects Core's valid next header as soon
+   as its artificial DGW window fills.
 4. A PR that fixes either path does not normally run the affected E2Es.
    `.github/workflows/tests.yml` gates Docker builds and all platform,
    functional, and Dashmate E2Es on `version-changed`, even when the E2E
@@ -101,12 +111,12 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   chain lock, Drive returning `InvalidChainLock`, and Tenderdash terminating
   with a consensus failure. The main and functional suites were later
   cancelled; all three Dashmate E2E matrix jobs passed.
-- Latest rerun `30007308397`: network readiness and browser `getStatus`
+- Rerun `30007308397`: network readiness and browser `getStatus`
   passed, but both browser batches failed from the same block-header
   double-close stack. The successful network startup coincided with a later
   mined block being accepted after every Core node had synchronized,
   corroborating that timing currently decides whether the startup race
-  manifests. Only the resulting CI run can prove that the proposed gate closes
+  manifests. Later run `30025175452` proved that the convergence gate closes
   it.
 - PR run `30017112796`, job `89243212550`: the Core convergence gate worked
   and the local network remained healthy, but browser shard 1 reproduced the
@@ -118,6 +128,10 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   shards nevertheless failed from `BlockHeadersProvider.headersHandler`
   through historical retry cleanup. The only visible exception was the
   already-closed gRPC-web client, so the underlying SPV error remained hidden.
+- PR run `30029414181`, browser shard 2 job `89284360816`: the diagnostic
+  change exposed `SPV: Header 2e53e5ed...d8afbd55 is invalid` during a
+  height-1 historical request for all 1393 regtest headers. The already-closed
+  exception did not replace it.
 
 ### Local deterministic reproduction
 
@@ -134,12 +148,28 @@ generated test environment. The unrelated network must not be stopped or
 mutated. CI logs provide the distributed-system reproduction; focused unit
 tests will pin both deterministic contracts locally.
 
+The consensus failure has a network-independent local reproduction. Starting
+from the configured regtest genesis, mine 23 linked headers one second apart
+at the canonical `0x207fffff` target, then mine the next header at the same
+target. All headers have valid X11 proof of work and timestamps, but the
+current validator rejects the next header once its 24-header DGW window is
+available.
+
+Dash Core v23.1.2 is the source of truth for the expected rule. Its regtest
+parameters set `fPowNoRetargeting = true`. At the affected heights, Core's
+Bitcoin-style difficulty path returns the preceding target between adjustment
+boundaries and returns it unchanged at an adjustment boundary. The bundled
+`@dashevo/dark-gravity-wave` implementation models regtest as a DGW network
+that permits minimum-difficulty blocks; it has no no-retarget parameter.
+
 ## Goals
 
 - A new online wallet initializes its SPV chain from the configured network's
   genesis before processing height-1 historical headers.
 - Repeated cleanup of a rejected browser stream cannot replace a primary SPV
   validation error with a second-close exception.
+- Regtest SPV validation follows Core's no-retarget rule instead of deriving a
+  time-based DGW target.
 - A local Dashmate group does not start mining until every Core node reports
   the same height and block hash.
 - Changes to the explicit direct E2E-facing package and orchestration set
@@ -230,8 +260,31 @@ is insufficient because exhausted retries call `stopReadingHistorical`, which
 cancels the same tracked stream again. Making the reader's exact
 already-closed case idempotent covers both cleanup paths without suppressing
 unrelated transport failures. This amendment deliberately reveals, rather than
-guesses at, the remaining SPV failure; the next CI trace supplies the input for
+guesses at, the remaining SPV failure; run `30029414181` supplied the input for
 the final regression and fix.
+
+### 1c. Honor regtest's no-retarget consensus rule
+
+In `packages/dash-spv/lib/consensus.js`, retain the existing context-free
+checks for a canonical in-range target, proof of work, and timestamp. When at
+least one preceding regtest header is available, require the new header's
+compact target to equal the immediately preceding trusted header's target.
+Run this branch before the existing short-history return as well as before
+invoking DGW. Keep the existing DGW path unchanged for devnet, testnet, and
+mainnet.
+
+Add a regression that mines the exact fast regtest shape which Core accepts:
+genesis plus enough one-second, `0x207fffff` headers to fill the 24-header
+window. The next valid header must be accepted. Also start from genesis, mine a
+proof-of-work-valid first header with a different canonical target, and assert
+that it is rejected before a DGW window exists. Run the acceptance test against
+the current validator first and observe it fail.
+
+Why this boundary: a network-wide exemption from target validation would
+weaken SPV checks, and modifying `@dashevo/dark-gravity-wave` would expand an
+external package API for a Core parameter that `dash-spv` already knows from
+its network selection. Comparing with the preceding authenticated header
+models no-retarget behavior while retaining all existing contextual checks.
 
 ### 2. Add a Core-tip convergence gate before mining
 
@@ -375,6 +428,20 @@ Treat separately to keep this PR tied to E2E reliability.
 This would suppress the browser-visible masking error but leave the new
 wallet's chain uninitialized. The historical batch would still be rejected.
 
+### Skip difficulty validation for regtest
+
+Regtest uses cheap proof of work, but Core still enforces a specific target.
+Skipping the contextual target check would allow a proof-of-work-valid header
+at an arbitrary easier or harder target. The no-retarget equality is both
+minimal and stricter.
+
+### Teach `@dashevo/dark-gravity-wave` about no-retarget networks
+
+The dependency calculates DGW targets from timestamps and exposes no height or
+no-retarget parameter. Expanding and releasing that package is unnecessary:
+`dash-spv` already selects the Core network and can apply regtest's fixed rule
+before using DGW for networks that actually retarget.
+
 ### Swap the default provider's stream factories
 
 The factory's no-options fallback does pass its callbacks in reverse order, but
@@ -438,6 +505,7 @@ dashmate group start (local)
 browser wallet bootstrap
   -> createAccount initializes empty store from network genesis
   -> default BlockHeadersProvider has an authenticated chain root
+  -> regtest headers retain the preceding authenticated target
   -> finite historical stream(fromBlockHeight, count)
   -> continuous reconnecting stream(fromBlockHeight), only after history
 ```
@@ -473,6 +541,10 @@ browser wallet bootstrap
   added to the wallet.
 - An offline wallet creates an account: it still avoids all transport and
   provider access.
+- A fast-mined regtest chain fills the DGW history window: the validator keeps
+  using Core's no-retarget rule and does not derive a false time-based target.
+- A regtest peer supplies a header with a changed target: canonical-target,
+  proof-of-work, median-time, and no-retarget checks still reject it.
 
 ## Verification plan
 
@@ -487,10 +559,15 @@ browser wallet bootstrap
 3. Add a DAPI provider integration case that starts at genesis and accepts a
    height-1 regtest batch. Run it in Node and Karma, then run the complete
    wallet-lib unit suite and relevant DAPI browser suite.
-4. Add the local-start ordering regression and run it before adding the
+4. Add the fast-mined regtest chain regression and run it against the existing
+   DGW-only behavior. Record the valid header being rejected after the
+   24-header window fills. Add the no-retarget branch, rerun the same test, and
+   verify a changed-target first header is rejected before the short-history
+   return.
+5. Add the local-start ordering regression and run it before adding the
    convergence task. Record the missing convergence call, incomplete client
    array, or premature miner call.
-5. Add the convergence task and DI registration, rerun the same test, then run
+6. Add the convergence task and DI registration, rerun the same test, then run
    the complete Dashmate unit suite.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,

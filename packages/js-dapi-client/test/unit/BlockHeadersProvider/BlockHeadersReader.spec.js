@@ -137,7 +137,7 @@ describe('BlockHeadersReader - unit', () => {
         .to.have.been.calledTwice();
     });
 
-    it('[data] should preserve a rejected headers error when the browser stream is already closed', async function () {
+    it('should preserve a rejected headers error when the browser stream is already closed [data]', async function () {
       blockHeadersReader.maxRetries = 0;
       await blockHeadersReader.readHistorical(1, headers.length);
 
