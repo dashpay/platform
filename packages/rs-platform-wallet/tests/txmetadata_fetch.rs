@@ -238,8 +238,14 @@ async fn capture_legacy_yabba2_txmetadata_blobs() {
         let created_at = doc.created_at();
         let updated_at = doc.updated_at();
 
-        let aes_key = derive_tx_metadata_key(&wallet, Network::Testnet, 0, key_index, encryption_key_index)
-            .expect("derive txMetadata key at identity_index 0");
+        let aes_key = derive_tx_metadata_key(
+            &wallet,
+            Network::Testnet,
+            0,
+            key_index,
+            encryption_key_index,
+        )
+        .expect("derive txMetadata key at identity_index 0");
         let opened = open_tx_metadata(&aes_key, &blob).expect("open legacy blob");
 
         println!("---- DOCUMENT {i} ----");
