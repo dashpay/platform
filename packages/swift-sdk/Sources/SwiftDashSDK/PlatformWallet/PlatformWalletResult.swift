@@ -83,11 +83,6 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// duffs travel in the message string. Distinct from
     /// `errorCoreInsufficientFunds` (22), which is the atomic Core-send selector.
     case errorAssetLockInsufficientFunds = 29
-    /// The default single-privacy-domain funding rule refused a cross-domain
-    /// co-spend (dashpay/platform#4184): the transparent domain alone is short
-    /// but the wallet-wide union would cover it. Obtain explicit user consent
-    /// and re-issue the funding request with cross-domain consent.
-    case errorAssetLockCrossDomainConsentRequired = 30
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — restored from the
     /// structured signer completion code (dashpay/platform#4060 finding 7).
@@ -156,8 +151,6 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShutdownIncomplete
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS:
             self = .errorAssetLockInsufficientFunds
-        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CROSS_DOMAIN_CONSENT_REQUIRED:
-            self = .errorAssetLockCrossDomainConsentRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE:
             self = .errorSigningKeyUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
@@ -251,15 +244,6 @@ public enum PlatformWalletError: LocalizedError {
     /// duffs"`). Distinct from `coreInsufficientFunds`, which is the atomic
     /// Core-send selector rather than the asset-lock builder.
     case assetLockInsufficientFunds(String)
-    /// The default single-privacy-domain funding rule (dashpay/platform#4184)
-    /// refused a cross-domain co-spend: the transparent domain (BIP44 + BIP32)
-    /// alone cannot cover the asset lock, but the wallet-wide union — adding
-    /// CoinJoin and/or DashPay-receiving funds — can. Combining them in one L1
-    /// transaction would irreversibly link those domains on-chain, so it is
-    /// gated behind explicit user consent. Prompt the user, then re-issue the
-    /// funding request with `allowCrossDomain: true`. The transparent / union /
-    /// required duff amounts travel in the message.
-    case assetLockCrossDomainConsentRequired(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
     /// (identity-create or a spend — unshield / transfer / withdrawal) was
@@ -328,7 +312,6 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m),
              .assetLockInsufficientFunds(let m),
-             .assetLockCrossDomainConsentRequired(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m),
@@ -368,8 +351,6 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)
         case .errorAssetLockInsufficientFunds: self = .assetLockInsufficientFunds(detail)
-        case .errorAssetLockCrossDomainConsentRequired:
-            self = .assetLockCrossDomainConsentRequired(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

@@ -126,18 +126,23 @@ extension PlatformWalletManager {
     ///     `lock_value − pool_fee`), so `nil` is always valid; the
     ///     parameter is exposed for parity with the Rust builder and
     ///     forward-compatibility with multi-output bundles.
-    /// - Parameter allowCrossDomain: cross-privacy-domain co-spend consent
-    ///   (dashpay/platform#4184). `false` (default) confines the L1 asset-lock
-    ///   funding to the transparent BIP44/BIP32 domain; pass `true` only after
-    ///   the user consents to also drawing CoinJoin / DashPay-receiving funds. A
-    ///   refusal surfaces as `.errorAssetLockCrossDomainConsentRequired`.
+    /// - Parameter fundingPath: optional UTF-8 BIP32 derivation-path string
+    ///   (dashpay/platform#4184) naming the single funds account whose UTXOs
+    ///   fund the lock. `nil` (default) funds from the unmixed BIP44 account at
+    ///   `fundingAccountIndex`. Pass an explicit account-level path (e.g. the
+    ///   DIP-9 CoinJoin account path, `"m/44'/5'/…"`) to fund strictly from that
+    ///   one account — to shield previously-mixed CoinJoin coins, for instance.
+    ///   There is no union across accounts and no consent gate: exactly one
+    ///   funding source participates, and if it cannot cover the lock the call
+    ///   fails with `.assetLockInsufficientFunds`. A malformed path or one that
+    ///   is not valid UTF-8 surfaces as `.invalidParameter`.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
         amountDuffs: UInt64,
         recipients: [ShieldedFundFromAssetLockRecipient],
         surplusOutput: Data? = nil,
-        allowCrossDomain: Bool = false
+        fundingPath: String? = nil
     ) async throws {
         try shieldedFundFromAssetLockPreflight(
             walletId: walletId,
@@ -174,20 +179,23 @@ extension PlatformWalletManager {
                         )
                     }
                     try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
-                        let result = withExtendedLifetime(coreSigner) {
-                            platform_wallet_manager_shielded_fund_from_asset_lock(
-                                handle,
-                                widPtr,
-                                fundingAccountIndex,
-                                amountDuffs,
-                                recipientPtr,
-                                surplusPtr,
-                                surplusLen,
-                                coreSigner.handle,
-                                allowCrossDomain
-                            )
+                        try Self.withOptionalFundingPath(fundingPath) { fundingPathPtr, fundingPathLen in
+                            let result = withExtendedLifetime(coreSigner) {
+                                platform_wallet_manager_shielded_fund_from_asset_lock(
+                                    handle,
+                                    widPtr,
+                                    fundingAccountIndex,
+                                    amountDuffs,
+                                    recipientPtr,
+                                    surplusPtr,
+                                    surplusLen,
+                                    coreSigner.handle,
+                                    fundingPathPtr,
+                                    fundingPathLen
+                                )
+                            }
+                            try result.check()
                         }
-                        try result.check()
                     }
                 }
             }
@@ -467,6 +475,40 @@ extension PlatformWalletManager {
             guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                 throw PlatformWalletError.invalidParameter(
                     "surplusOutput baseAddress is nil"
+                )
+            }
+            return try body(ptr, UInt(raw.count))
+        }
+    }
+
+    /// Run `body` with a `(pointer, length)` view of the optional funding
+    /// derivation-path string, marshalled as raw UTF-8 bytes (no NUL
+    /// terminator — the FFI reads exactly `funding_path_len` bytes).
+    ///
+    /// `nil` yields `(nil, 0)`, which the FFI reads as "no explicit funding
+    /// path" (fund from the unmixed BIP44 account at `fundingAccountIndex`). A
+    /// non-nil value is encoded to its UTF-8 byte view and pinned for the call
+    /// via `withUnsafeBytes` so the pointer stays valid for the duration of
+    /// `body`. The FFI parses the bytes as a BIP32 path and returns an error
+    /// for invalid UTF-8 or a malformed path, so no validation is duplicated
+    /// here. An empty (but non-nil) string yields `(nil, 0)` — the same "no
+    /// path" semantics the FFI applies to a zero length.
+    ///
+    /// `nonisolated` for the same reason as `withOptionalSurplusOutput`: it is
+    /// pure byte marshalling invoked from the off-main-actor `Task.detached`
+    /// body and touches no `PlatformWalletManager` state.
+    nonisolated private static func withOptionalFundingPath<R>(
+        _ fundingPath: String?,
+        _ body: (UnsafePointer<UInt8>?, UInt) throws -> R
+    ) throws -> R {
+        guard let fundingPath, !fundingPath.isEmpty else {
+            return try body(nil, 0)
+        }
+        let utf8 = Array(fundingPath.utf8)
+        return try utf8.withUnsafeBufferPointer { raw in
+            guard let ptr = raw.baseAddress else {
+                throw PlatformWalletError.invalidParameter(
+                    "fundingPath baseAddress is nil"
                 )
             }
             return try body(ptr, UInt(raw.count))
