@@ -1077,12 +1077,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
             .await
     });
     if let Err(e) = result {
-        // Preserve the typed FFI code so a cross-domain refusal
-        // (`AssetLockCrossDomainConsentRequired`) or the asset-lock shortfall
+        // Preserve the typed FFI code so the asset-lock shortfall
         // (`AssetLockInsufficientFunds`) reaches the host as its dedicated code
-        // instead of the generic `ErrorWalletOperation` — the host prompts for
-        // consent / surfaces the shortfall accordingly. The message stays
-        // prefixed for continuity with the existing dash-wallet log matcher.
+        // instead of the generic `ErrorWalletOperation` — the host surfaces the
+        // shortfall accordingly. The message stays prefixed for continuity with
+        // the existing dash-wallet log matcher.
         let code = PlatformWalletFFIResultCode::for_platform_wallet_error(&e);
         return PlatformWalletFFIResult::err(
             code,
