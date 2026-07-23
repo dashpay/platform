@@ -855,8 +855,9 @@ open class KeystoreManager(
          * the lock-screen requirement (message references a lock screen) or sits
          * in the cause chain OF a key-generation `ProviderException` (message
          * "Keystore key generation failed") AND carries the observed KeyMint
-         * rejection's numeric code (internal Keystore code 4 / KeyMint 10309,
-         * observed on-device after the lock screen was removed).
+         * rejection's numeric code (KeyMint 10309, observed on-device after the
+         * lock screen was removed — the generic internal-error code 4 is NOT a
+         * lock-screen signal; see [LOCK_SCREEN_KEYGEN_REJECTION_CODES]).
          *
          * The classification is ONLY these two authoritative signals — the
          * lock-screen numeric code, or explicit lock-screen text. A bare
@@ -939,11 +940,23 @@ open class KeystoreManager(
         }
 
         /**
-         * Numeric codes of the KeyMint "generate_key needs a secure lock
-         * screen" rejection: internal Keystore code 4 and KeyMint 10309
-         * (both observed on-device, dashpay/platform#4060).
+         * Numeric codes that authoritatively mean "generate_key was rejected
+         * for want of a secure lock screen" — only the KeyMint-specific 10309
+         * (observed on-device, dashpay/platform#4060).
+         *
+         * `android.security.KeyStoreException` code **4** is deliberately NOT
+         * here (dashpay/platform#4183 review): 4 is `ERROR_INTERNAL_SYSTEM_ERROR`,
+         * a GENERIC/transient Keystore fault, not the no-lock-screen signal
+         * (which is code 3). Treating a transient internal error as
+         * "no lock screen" silently and permanently downgraded an AUTH_GATED
+         * identity key to the weaker DEVICE_BOUND alias. A genuine transient
+         * internal error must instead surface as a write failure (rethrown by
+         * [resolveIdentityKeysWriteAlias]) so it can be retried — never a
+         * security downgrade. The explicit lock-screen *message* path
+         * ([keyStoreMessageNamesLockScreen]) still classifies real no-LSKF
+         * rejections regardless of numeric code.
          */
-        private val LOCK_SCREEN_KEYGEN_REJECTION_CODES = setOf(4, 10309)
+        private val LOCK_SCREEN_KEYGEN_REJECTION_CODES = setOf(10309)
 
         private const val TAG = "KeystoreManager"
 

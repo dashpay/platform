@@ -12,8 +12,10 @@ import java.security.ProviderException
  * (`setUnlockedDeviceRequired`, and for the auth-gated alias
  * `setUserAuthenticationRequired`) require a secure lock screen; KeyMint rejects
  * `generate_key` for them otherwise (observed on-device: ProviderException
- * "Keystore key generation failed" / internal Keystore code 4 / KeyMint 10309),
- * which used to hard-crash wallet creation on a device with no screen lock. The
+ * "Keystore key generation failed" / KeyMint code 10309), which used to
+ * hard-crash wallet creation on a device with no screen lock. The generic
+ * internal-error code 4 is deliberately NOT treated as this signal
+ * (dashpay/platform#4183 review). The
  * parameter-selection and failure-classification logic is factored into pure
  * functions so it is unit-testable without an AndroidKeyStore runtime (which has
  * no Robolectric provider — see [KeySecurityPolicyTest]).
@@ -57,17 +59,35 @@ class KeystoreKeyGenPolicyTest {
         // The exact on-device shape: a key-gen ProviderException wrapping a
         // Keystore system error carrying the lock-screen rejection numeric code
         // (the real android.security.KeyStoreException exposes it via
-        // getNumericErrorCode(), API 33+). It is the numeric code — not the
-        // incidental "generate_key" mention in the text — that classifies
-        // (dashpay/platform#4060 blocker 2).
+        // getNumericErrorCode(), API 33+). It is the KeyMint-specific numeric
+        // code 10309 — not the incidental "generate_key" mention in the text,
+        // nor the generic internal-error code 4 — that classifies
+        // (dashpay/platform#4060 blocker 2, dashpay/platform#4183 review).
         val failure = ProviderException(
             "Keystore key generation failed",
             SimulatedNumericKeyStoreException(
                 "System error (internal Keystore code: 4 message: In generate_key. 10309)",
-                numericErrorCode = 4,
+                numericErrorCode = 10309,
             ),
         )
         assertTrue(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
+    }
+
+    @Test
+    fun doesNotClassifyInternalSystemErrorCode4() {
+        // dashpay/platform#4183 review: code 4 is ERROR_INTERNAL_SYSTEM_ERROR,
+        // a GENERIC/transient Keystore fault — NOT the no-lock-screen signal
+        // (which is code 3). It must NOT classify, so a transient internal
+        // error surfaces as a retryable write failure instead of silently and
+        // permanently downgrading an AUTH_GATED identity key to DEVICE_BOUND.
+        val failure = ProviderException(
+            "Keystore key generation failed",
+            SimulatedNumericKeyStoreException(
+                "System error (internal Keystore code: 4 message: In generate_key.)",
+                numericErrorCode = 4,
+            ),
+        )
+        assertFalse(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
     }
 
     @Test
@@ -106,19 +126,18 @@ class KeystoreKeyGenPolicyTest {
     @Test
     fun classifiesNumericRejectionCodeUnderAKeyGenProviderException() {
         // Some OEM builds report the rejection with an opaque message; the
-        // structured numeric code (internal Keystore 4 / KeyMint 10309) is
-        // then the only evidence. It counts ONLY inside a key-gen
-        // ProviderException's cause chain.
-        listOf(4, 10309).forEach { code ->
-            val failure = ProviderException(
-                "Keystore key generation failed",
-                SimulatedNumericKeyStoreException("System error", code),
-            )
-            assertTrue(
-                "numeric code $code must classify",
-                KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure),
-            )
-        }
+        // structured KeyMint-specific numeric code 10309 is then the only
+        // evidence. It counts ONLY inside a key-gen ProviderException's cause
+        // chain (the generic internal-error code 4 is excluded —
+        // dashpay/platform#4183 review).
+        val failure = ProviderException(
+            "Keystore key generation failed",
+            SimulatedNumericKeyStoreException("System error", 10309),
+        )
+        assertTrue(
+            "numeric code 10309 must classify",
+            KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure),
+        )
     }
 
     @Test
@@ -149,10 +168,11 @@ class KeystoreKeyGenPolicyTest {
     fun doesNotClassifyAKeystoreErrorOutsideTheKeyGenSubtree() {
         // The lock-screen-message match stands alone, but the bare-system-
         // error match requires the key-gen ProviderException ABOVE it in the
-        // cause chain — an unrelated wrapper does not open the window.
+        // cause chain — an unrelated wrapper does not open the window, even for
+        // the otherwise-classifying KeyMint code 10309.
         val failure = ProviderException(
             "unrelated provider issue",
-            SimulatedNumericKeyStoreException("System error", 4),
+            SimulatedNumericKeyStoreException("System error", 10309),
         )
         assertFalse(KeystoreManager.isNoSecureLockScreenKeyGenFailure(failure))
     }
