@@ -98,16 +98,12 @@ impl WasmSdk {
         }
     }
 
-    /// Fetch a contract, checking cache first
-    pub(crate) async fn get_or_fetch_contract(
+    /// Fetch a proved contract and replace its trusted-context cache entry.
+    pub(crate) async fn refresh_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
     ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
         use dash_sdk::platform::Fetch;
-
-        if let Some(cached) = self.get_cached_contract(&contract_id) {
-            return Ok((*cached).clone());
-        }
 
         let contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
             .await?
@@ -116,6 +112,18 @@ impl WasmSdk {
         self.cache_contract(contract.clone());
 
         Ok(contract)
+    }
+
+    /// Fetch a contract, checking cache first
+    pub(crate) async fn get_or_fetch_contract(
+        &self,
+        contract_id: dash_sdk::platform::Identifier,
+    ) -> Result<dash_sdk::platform::DataContract, crate::error::WasmSdkError> {
+        if let Some(cached) = self.get_cached_contract(&contract_id) {
+            return Ok((*cached).clone());
+        }
+
+        self.refresh_contract(contract_id).await
     }
 
     /// Remove a contract from the cache
@@ -468,6 +476,12 @@ impl WasmSdkBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_sdk::dpp::data_contract::accessors::v0::{
+        DataContractV0Getters, DataContractV0Setters,
+    };
+    use dash_sdk::dpp::prelude::DataContract;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::dpp::version::PlatformVersion;
     use dash_sdk::sdk::Uri;
     use rs_dapi_client::Address;
 
@@ -494,6 +508,15 @@ mod tests {
             .into_iter()
             .map(|info| info.uri.to_string())
             .collect()
+    }
+
+    fn custom_contract(id_byte: u8, version: u32) -> DataContract {
+        let mut contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS contract fixture should load");
+        contract.set_id(dash_sdk::platform::Identifier::new([id_byte; 32]));
+        contract.set_version(version);
+        contract
     }
 
     #[test]
@@ -618,5 +641,100 @@ mod tests {
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let b = user_builder().with_trusted_context(&ctx);
         assert!(b.has_user_addresses());
+    }
+
+    #[tokio::test]
+    async fn refresh_contract_caches_a_missing_custom_contract() {
+        let expected = custom_contract(0x44, 1);
+        let contract_id = expected.id();
+        let mut inner_sdk = Sdk::new_mock();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+
+        let sdk = WasmSdk {
+            sdk: inner_sdk,
+            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
+        };
+        assert!(sdk.get_cached_contract(&contract_id).is_none());
+
+        let refreshed = sdk
+            .refresh_contract(contract_id)
+            .await
+            .expect("proved contract fetch should succeed");
+
+        assert_eq!(refreshed, expected);
+        assert_eq!(
+            sdk.get_cached_contract(&contract_id)
+                .expect("refreshed contract should be cached")
+                .as_ref(),
+            &expected,
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_contract_replaces_a_stale_cached_version() {
+        let stale = custom_contract(0x55, 1);
+        let expected = custom_contract(0x55, 2);
+        let contract_id = expected.id();
+        let context = WasmTrustedContext::for_testing(vec![]);
+        context.add_known_contract(stale);
+
+        let mut inner_sdk = Sdk::new_mock();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+
+        let sdk = WasmSdk {
+            sdk: inner_sdk,
+            trusted_context: Some(context),
+        };
+        let refreshed = sdk
+            .refresh_contract(contract_id)
+            .await
+            .expect("proved contract refresh should succeed");
+
+        assert_eq!(refreshed.version(), 2);
+        assert_eq!(
+            sdk.get_cached_contract(&contract_id)
+                .expect("latest contract should replace stale cache")
+                .version(),
+            2,
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_contract_propagates_proved_absence() {
+        let contract_id = dash_sdk::platform::Identifier::new([0x66; 32]);
+        let mut inner_sdk = Sdk::new_mock();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, None as Option<DataContract>)
+            .await
+            .expect("mock absence response should be configured");
+
+        let sdk = WasmSdk {
+            sdk: inner_sdk,
+            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
+        };
+
+        assert!(sdk.refresh_contract(contract_id).await.is_err());
+        assert!(sdk.get_cached_contract(&contract_id).is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_contract_propagates_fetch_errors() {
+        let contract_id = dash_sdk::platform::Identifier::new([0x77; 32]);
+        let sdk = WasmSdk {
+            sdk: Sdk::new_mock(),
+            trusted_context: Some(WasmTrustedContext::for_testing(vec![])),
+        };
+
+        assert!(sdk.refresh_contract(contract_id).await.is_err());
+        assert!(sdk.get_cached_contract(&contract_id).is_none());
     }
 }

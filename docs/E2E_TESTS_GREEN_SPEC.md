@@ -18,7 +18,12 @@ E2E trigger: the legacy proof verifier still requested strict execution
 evidence for transition families that can only return affected-state proofs,
 the WASM epoch tests still used the intentionally disabled implicit-current
 proof query, and document transitions did not invoke the existing client-only
-binary-property sanitizer.
+binary-property sanitizer. Run `30036234705` proved all three fixes and exposed
+one further proof-context gap: the generic WASM state-transition wait APIs do
+not preload dynamically created data contracts before verifying document-batch
+proofs. The same run exposed a pre-existing self-hosted Swift runner failure:
+one runner reuses an unwritable fixed-path CI keychain and aborts signing tests
+before any branch FFI code executes.
 
 ## Independent spec review findings applied
 
@@ -65,6 +70,26 @@ must-fix findings are incorporated below:
     remain unchanged.
 11. `IPlatformProofVerifier` documentation distinguishes full query binding
     from the state-transition adapter's affected-state guarantee.
+12. The custom-contract preparation stays in the WASM layer because that is
+    the narrowest owner of both the trusted cache and all four generic
+    proof-wait wrappers. Pure extraction tests cover duplicate and distinct
+    contract IDs plus non-batch transitions; a mock SDK/trusted-context test
+    covers proved fetch, cache replacement, absence, and error propagation.
+    The existing E2E failures remain the integration proof.
+13. Preparation proof-fetches and overwrites referenced contracts even on a
+    cache hit. The cache is keyed only by contract ID, so reusing a hit could
+    retain a pre-update schema and leave the generic wait non-self-contained.
+14. Contract proofs are current at preparation time but are not bound to the
+    later state-transition result's proof height. Verification follows the
+    existing trusted-schema semantics; this fix does not claim same-root
+    atomicity.
+15. Swift cleanup is installed before any fallible keychain setup, uses a
+    random password and finite unlock timeout, and preserves the primary exit
+    status while making cleanup failure fail an otherwise successful job.
+16. The ephemeral Swift keychain is added to the complete user-domain search
+    list before it becomes the default. Cleanup restores both the previous
+    default and the exact prior search list because `WalletStorage` reads and
+    deletes through search-list resolution.
 
 The reviewers differed on trigger breadth. The failure-mode review recommended
 also treating every immediate/transitive `js-dapi-client` dependency (starting
@@ -144,11 +169,27 @@ schedule, or a manual dispatch:
    Rust SDK document transition path never invokes it.
    The remaining document failures are dependent cascades from that first
    create and the missing custom contract/document IDs.
-8. A PR that fixes either path does not normally run the affected E2Es.
+8. Run `30036234705` passed the functional package suite, including all six
+   explicit epoch queries and the document normalization path. Browser shard 1
+   then failed after a successful top-up when it created another document
+   under a custom test contract. The affected-state proof was returned, but
+   verification failed with `unknown contract in documents batch transition`.
+   The transition contains the contract ID, yet none of the four generic WASM
+   proof-wait methods loads that contract into the trusted context before the
+   Drive proof verifier asks for it.
+9. A PR that fixes either path does not normally run the affected E2Es.
    `.github/workflows/tests.yml` gates Docker builds and all platform,
    functional, and Dashmate E2Es on `version-changed`, even when the E2E
    harness or one of its clients changes. A fake version edit would trigger the
    run, but would be unrelated product churn rather than a durable CI rule.
+10. Swift job `89307788524` failed both
+    `IdentityResolverSignIntegrationTests` when `SecItemAdd` returned `-61`
+    (`Write permissions error`). The same two failures occur on base branch run
+    `30023633141` on `mac-runner-1`, while nearby runs on `mac-runner-2` pass.
+    `run_tests.sh` always reuses
+    `~/Library/Keychains/dash-ci-tests.keychain-db` and suppresses
+    `security create-keychain` failure, so stale persistent runner state reaches
+    the test suite without any writable-keychain check.
 
 The initial browser error in
 `GetStatusResponse.createFromProto` is not a third root cause. RS-DAPI
@@ -202,6 +243,19 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   exposed the hidden proof error. The first document broadcast later reached
   Tenderdash and was rejected with the schema binary conversion error; the
   following document failures were setup cascades.
+- PR run `30036234705`: the functional package job passed, proving the explicit
+  epoch selectors and Rust SDK document normalization in the full WASM path.
+  All three Dashmate jobs and Rust/clippy also passed. Browser shard 1 job
+  `89307436802` advanced through the previous top-up failure, then rejected a
+  document-batch proof because its custom contract was absent from the trusted
+  context. The main suite's data contract update case failed at the same
+  custom-contract document boundary.
+- PR run `30036234705`, Swift job `89307788524`: 281 tests executed, eight
+  skipped, and only the two signing integration tests failed with keychain
+  error `-61` on `mac-runner-1`. Base push run `30023633141` failed identically
+  on the same runner and commit `ae554fdd`; three nearby jobs passed on
+  `mac-runner-2`, establishing persistent runner state rather than a branch
+  behavior regression.
 
 ### Local deterministic reproduction
 
@@ -239,6 +293,15 @@ SDK tracing then reports that the descending request has no explicit start
 epoch. An explicit query using the epoch already returned by `getStatus`
 verifies successfully.
 
+The custom-contract failure has a deterministic, network-independent boundary:
+a batch state transition exposes every referenced contract ID through
+`transitions_iter()`, while `waitForResponse`, `broadcastAndWait`,
+`waitForAffectedState`, and `broadcastAndWaitForAffectedState` currently pass
+the transition directly to proof verification without consulting
+`get_or_fetch_contract`. A focused unit test can construct a batch containing
+duplicate transitions for one non-system contract and prove that context
+preparation extracts that ID exactly once.
+
 ## Goals
 
 - A new online wallet initializes its SPV chain from the configured network's
@@ -257,6 +320,11 @@ verifies successfully.
   intentionally prohibited implicit-current proof query.
 - Rust SDK document transitions normalize schema-declared binary properties at
   the client boundary before strict serialization.
+- Generic WASM proof-verifying state-transition waits preload every referenced
+  batch contract into the trusted context, including dynamically created
+  contracts, before Drive proof verification.
+- Swift CI provisions a fresh writable keychain for each job and restores the
+  runner's prior default keychain even when tests fail.
 - A local Dashmate group does not start mining until every Core node reports
   the same height and block hash.
 - Changes to the explicit direct E2E-facing package and orchestration set
@@ -274,6 +342,10 @@ verifies successfully.
 - Hardening partial `getStatus` parsing.
 - Re-enabling implicit-current proved epoch queries or trusting response
   metadata as a proof selector.
+- Weakening Drive's unknown-contract proof rejection or trusting a contract
+  supplied by an unverified state-transition payload.
+- Changing production `WalletStorage` behavior or replacing Keychain-backed
+  signing tests with an in-memory implementation.
 - Relaxing platform-value's strict binary serializer, which is also used on
   consensus/app-hash paths.
 - Expanding E2Es to every source change in the monorepo.
@@ -485,6 +557,117 @@ fetches the data contract. The Rust SDK has both the document and its resolved
 document type immediately before building the transition, making it the
 narrowest shared client boundary for WASM and other SDK callers.
 
+### 1h. Prepare trusted contract context before state-transition proof waits
+
+In `packages/wasm-sdk/src/state_transitions/broadcast.rs`, derive the unique
+data contract IDs referenced by a `StateTransition::Batch` using
+`DocumentsBatchTransitionAccessorsV0::transitions_iter()` and each batched
+transition's `data_contract_id()`. Before invoking any SDK operation that waits
+for and verifies a state-transition proof, proof-fetch each referenced
+contract from Platform and overwrite its trusted-context entry. Factor the
+existing fetch-and-cache half of `WasmSdk::get_or_fetch_contract` into a
+private refresh method; ordinary document/query callers retain cache-first
+behavior, while proof-wait preparation always refreshes because the cache is
+keyed only by contract ID and carries no version or proof height.
+
+Apply the preparation to all four proof-verifying public methods:
+`waitForResponse`, `broadcastAndWait`, `waitForAffectedState`, and
+`broadcastAndWaitForAffectedState`. Plain `broadcastStateTransition` remains
+unchanged because it does not verify a response proof. Non-batch transitions
+produce an empty ID set. Deduplicate IDs so a multi-operation batch pays at
+most one lookup per contract; use deterministic ordering to make behavior and
+tests stable.
+
+Add pure Rust regressions for `referenced_contract_ids` using a batch with a
+duplicate custom contract, a second distinct contract, and a non-batch
+transition. Add a focused refresh test using the existing mock Dash SDK and
+`WasmTrustedContext::for_testing`: start without the custom contract, return a
+proved mock contract, observe it in the trusted cache, then seed an older
+same-ID version and prove refresh overwrites it. Authenticated absence and
+fetch errors must propagate without reaching a wait. A small `#[cfg(test)]`
+constructor is acceptable; do not add production fetcher/verifier traits or
+four duplicate wrapper tests. Introduce the ID helper with the current empty
+behavior, run the extraction test to red, then implement traversal and refresh.
+Static source-order inspection supplements these unit tests; the existing
+browser/main failures provide the real network proof-verification integration.
+
+Why this boundary: changing the platform-test-suite adapter to issue a manual
+`getDataContract` query would duplicate transition parsing in JavaScript and
+would still not populate the trusted context because the public query currently
+returns the contract without caching it. Making all public contract queries
+cache results would improve later calls but would not make a standalone proof
+wait self-contained. Suppressing Drive's unknown-contract error would instead
+remove the schema needed to verify document proofs. Preparing the trusted
+context inside the WASM proof-wait boundary preserves proof verification and
+works for every caller. This mirrors the native SDK context provider's
+cache-miss behavior, which fetches the current proved contract during
+verification.
+
+Combined `broadcastAndWait*` calls prepare context before broadcasting and
+therefore can fail without submitting a transition. Manual
+`broadcastStateTransition` followed by `waitFor*` prepares only during the
+second call. The public documentation must describe the operations as the
+combined form of broadcast and wait without claiming identical side-effect
+ordering.
+
+The contract fetch and the later transition-result proof are independent
+quorum-authenticated requests. The fetched contract is current at preparation
+time, not proven at the eventual wait result's height. If a contract update
+lands between those requests, verification follows the existing
+`ContextProvider` trusted-schema semantics; binding schema and result to one
+proof root needs a larger proof-format and API change.
+
+### 1i. Provision an ephemeral writable Swift CI keychain
+
+In `packages/swift-sdk/run_tests.sh`, replace the fixed keychain under the
+persistent runner home with a unique directory created by `mktemp -d` under
+`RUNNER_TEMP` (falling back to the system temporary directory). Create one
+keychain inside a mode-700 directory for the current job and do not suppress
+provisioning errors. Generate a per-job random password without printing it,
+unlock with that password, configure a finite timeout longer than the
+90-minute workflow limit, add it to the user-domain search list, and select it
+as the user-domain default. Capture both the previous default and complete
+search list before mutation.
+
+Before building, perform a throwaway generic-password add/read/delete cycle
+after selecting the keychain, compare the read value exactly without logging
+it, and assert that the selected user default is the ephemeral path. Add to the
+explicit job keychain, but read and delete through the default search path just
+as `WalletStorage` does. This turns stale permissions, search-list omissions,
+or Security session failures into a short provisioning diagnostic instead of
+two opaque test failures after the iOS framework build.
+
+Install the EXIT trap immediately after the temporary directory and keychain
+path are assigned, before `security create-keychain` or any other fallible
+setup. Track whether the keychain was created and whether the default changed.
+On every exit, capture the original status, restore the previous default,
+restore the previous user search list, delete only the explicit ephemeral
+keychain through `security delete-keychain`, and remove its now-empty
+directory. A pre-existing nonzero status remains authoritative; cleanup
+failure makes an otherwise successful run fail so a dirty persistent runner
+is never reported green.
+
+The repository currently registers two independently named self-hosted macOS
+runners, and a self-hosted runner agent executes one job at a time. This design
+relies on one runner registration/user domain per host. The unique path removes
+cross-run file reuse, but `security default-keychain -d user` is not safe for
+two runner agents sharing the same macOS user; that infrastructure invariant
+must remain true.
+
+The existing `IdentityResolverSignIntegrationTests` remain the behavioral
+regression because they exercise `WalletStorage`, identity resolution, and FFI
+signing end to end. Verify the current fixed-path script's `-61` failure and
+the new ephemeral setup on `mac-runner-1`, then run the complete Swift job so
+both `swift test` and the simulator `xcodebuild` phase finish.
+
+Why this boundary: deleting or repairing the fixed home keychain would mutate
+shared runner state and can race concurrent or interrupted jobs. Retrying
+`SecItemAdd` cannot make an unwritable keychain writable. Mocking Keychain in
+the integration tests would hide the infrastructure contract they are intended
+to verify. A per-job keychain removes cross-run state while preserving the
+production storage and signing path under the one-job-per-runner-user
+invariant.
+
 ### 2. Add a Core-tip convergence gate before mining
 
 Use Dashmate's existing
@@ -641,6 +824,35 @@ wire shape there would create a rolling-upgrade divergence risk. Normalize
 only at the SDK client boundary where the resolved schema identifies
 `byteArray` fields.
 
+### Prefetch custom contracts in the platform-test-suite adapter
+
+The adapter can parse the transition and call `sdk.contracts.getDataContract`,
+but the public query does not currently cache its result in the trusted
+context. Reimplementing cache preparation in every JavaScript caller would
+also leave the generic WASM proof-wait API unsafe to use directly. The WASM
+boundary already owns both transition parsing and the proof context.
+
+### Ignore unknown contracts during document-proof verification
+
+The verifier needs the resolved document schema to interpret and authenticate
+the proved values. Treating an unknown contract as success would weaken proof
+verification rather than repair its missing trusted input.
+
+### Repair or silently reuse the fixed Swift CI keychain
+
+The self-hosted runner persists home-directory state between jobs. Reusing,
+deleting, or chmod-ing one global keychain couples runs and can interfere with
+an interrupted or concurrent job. Suppressing creation failure is what allowed
+the unwritable state to reach the tests. A unique temporary keychain makes
+ownership and cleanup job-local.
+
+### Mock Keychain in the Swift signing integration tests
+
+Those tests intentionally exercise production `WalletStorage` before FFI
+signing. Replacing the storage backend would make CI green by removing the
+failing system integration, not by providing the writable Keychain contract
+the application requires.
+
 ### Skip difficulty validation for regtest
 
 Regtest uses cheap proof of work, but Core still enforces a specific target.
@@ -738,6 +950,18 @@ WASM Document Uint8Array
   -> Rust SDK resolves document type
   -> client-only schema sanitizer produces canonical Value::Bytes32
   -> strict transition serialization remains unchanged
+
+WASM document-batch proof wait
+  -> extract and deduplicate referenced contract IDs
+  -> proof-fetch every referenced contract at preparation time
+  -> overwrite the trusted cache with the verified contract version
+  -> verify the state-transition result proof with the complete context
+
+Swift CI test process
+  -> create one keychain under a job-local temporary directory
+  -> unlock/select it, add it to search, and prove default add/read/delete access
+  -> run signing integration and simulator tests
+  -> restore default/search list and delete the temporary keychain on exit
 ```
 
 ## Failure modes and safeguards
@@ -788,6 +1012,28 @@ WASM Document Uint8Array
   it untouched and normal validation remains responsible for rejecting it.
 - A binary property reaches consensus serialization: it is already canonical
   binary Value variant; the strict shared serializer is not relaxed.
+- A batch references a custom contract absent from bootstrap context: the wait
+  path proof-fetches and caches it before result verification.
+- A referenced contract is cached at an older version: preparation refreshes
+  and overwrites it with the latest proved version available before waiting.
+- Multiple operations reference one contract: context preparation performs one
+  lookup for that ID.
+- Contract prefetch fails or returns authenticated absence: the proof wait
+  fails loudly before attempting verification with incomplete context.
+- A non-batch transition is awaited: no contract prefetch is performed and its
+  existing wait behavior is unchanged.
+- A contract changes after preparation but before the result proof: the two
+  independent proofs remain authentic and verification retains the existing
+  trusted-schema semantics; exact same-height binding is not claimed.
+- The Swift runner has a stale or unwritable keychain from another job: the
+  unique path avoids it, and the smoke check fails before the expensive build
+  if the new keychain is not writable.
+- Swift tests or setup fail: the exit trap restores the prior default keychain
+  before deleting this job's keychain. Cleanup errors do not hide a primary
+  failure and fail an otherwise successful run.
+- Two runner agents share one macOS user domain: unique files do not serialize
+  default-keychain mutation. CI requires one runner registration per host/user;
+  violating that invariant is an infrastructure configuration error.
 
 ## Verification plan
 
@@ -826,6 +1072,19 @@ WASM Document Uint8Array
     integer array before the fix. Invoke the existing client-only sanitizer,
     verify `Value::Bytes32` after the fix, then run the Rust SDK unit target
     and the WASM document functional suite in CI.
+11. Add the pure WASM contract-ID regression with the extraction boundary
+    returning no IDs and record the missing custom contracts. Traverse and
+    deduplicate batch transition contract IDs, then prove distinct IDs,
+    duplicate suppression, and non-batch no-op behavior. With the mock SDK and
+    test trusted context, prove fetch-and-cache, stale-version replacement,
+    authenticated absence, and error propagation. Rerun the focused tests,
+    then the WASM SDK Rust tests, formatting, and clippy. Confirm all four
+    proof-verifying entry points prepare context before their wait call.
+12. On `mac-runner-1`, retain the fixed-path `SecItemAdd(-61)` failure as the
+    red observation. Provision and smoke-test a unique temporary keychain,
+    force an early nonzero exit to verify default restoration and removal, then
+    run `swift test --filter IdentityResolverSignIntegrationTests` and the
+    complete Swift workflow through its simulator `xcodebuild` phase.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test

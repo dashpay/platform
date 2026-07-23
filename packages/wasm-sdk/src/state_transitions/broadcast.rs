@@ -6,14 +6,40 @@
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use crate::settings::{parse_put_settings, PutSettingsJs};
+use dash_sdk::dpp::platform_value::Identifier;
+use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::state_transitions::proof_result::{
     convert_proof_result, StateTransitionProofResultTypeJs,
 };
 use wasm_dpp2::StateTransitionWasm;
+
+fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Identifier> {
+    match state_transition {
+        StateTransition::Batch(batch_transition) => batch_transition
+            .transitions_iter()
+            .map(|transition| transition.data_contract_id())
+            .collect(),
+        _ => BTreeSet::new(),
+    }
+}
+
+impl WasmSdk {
+    async fn prepare_state_transition_context(
+        &self,
+        state_transition: &StateTransition,
+    ) -> Result<(), WasmSdkError> {
+        for contract_id in referenced_contract_ids(state_transition) {
+            self.refresh_contract(contract_id).await?;
+        }
+
+        Ok(())
+    }
+}
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -61,6 +87,7 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
         let result = st
             .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
@@ -74,10 +101,10 @@ impl WasmSdk {
 
     /// Broadcasts a state transition and waits for the result.
     ///
-    /// This method broadcasts the transition and waits for confirmation from the network.
-    /// Returns once the transition has been processed or fails.
-    /// This is equivalent to calling `broadcastStateTransition` followed by
-    /// `waitForResponse`.
+    /// This method prepares proof context, broadcasts the transition, and waits
+    /// for confirmation from the network. Returns once the transition has been
+    /// processed or fails. Unlike separate broadcast and wait calls, proof
+    /// context preparation happens before broadcasting.
     ///
     /// @param stateTransition - The state transition to broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
@@ -90,6 +117,7 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
         let result = st
             .broadcast_and_wait::<StateTransitionProofResult>(self.as_ref(), put_settings)
@@ -121,6 +149,7 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
         let result = st
             .wait_for_affected_state::<StateTransitionProofResult>(self.as_ref(), put_settings)
@@ -147,6 +176,7 @@ impl WasmSdk {
     ) -> Result<StateTransitionProofResultTypeJs, WasmSdkError> {
         let st: StateTransition = state_transition.into();
         let put_settings = parse_put_settings(settings)?;
+        self.prepare_state_transition_context(&st).await?;
 
         let result = st
             .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
@@ -157,5 +187,63 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
 
         convert_proof_result(result).map_err(WasmSdkError::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransition;
+    use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dash_sdk::dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
+    use dash_sdk::dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
+    use dash_sdk::dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dash_sdk::dpp::platform_value::BinaryData;
+
+    fn delete_transition(contract_id: Identifier, nonce: u64) -> DocumentTransition {
+        DocumentTransition::Delete(DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
+            base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                id: Identifier::new([nonce as u8; 32]),
+                identity_contract_nonce: nonce,
+                document_type_name: "note".to_string(),
+                data_contract_id: contract_id,
+            }),
+        }))
+    }
+
+    #[test]
+    fn should_prepare_custom_contracts_before_verifying_document_batch() {
+        let first_contract_id = Identifier::new([0x11; 32]);
+        let second_contract_id = Identifier::new([0x22; 32]);
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![
+                delete_transition(first_contract_id, 1),
+                delete_transition(second_contract_id, 2),
+                delete_transition(first_contract_id, 3),
+            ],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        assert_eq!(
+            referenced_contract_ids(&state_transition)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            vec![first_contract_id, second_contract_id],
+        );
+    }
+
+    #[test]
+    fn should_not_prepare_contracts_for_non_batch_transition() {
+        let state_transition = StateTransition::IdentityTopUp(IdentityTopUpTransition::V0(
+            IdentityTopUpTransitionV0::default(),
+        ));
+
+        assert!(referenced_contract_ids(&state_transition).is_empty());
     }
 }
