@@ -174,7 +174,17 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V9: DriveAbciValidationVersions =
                 },
                 is_allowed: 0,
                 document_create_transition_structure_validation: 0,
-                document_delete_transition_structure_validation: 0,
+                // PROTOCOL_VERSION_13: structure validator now rejects
+                // deletes against `documentsKeepHistory: true` doctypes as
+                // invalid (paid) consensus errors. Pre-v13 the delete reached
+                // `force_delete_document_for_contract_operations_v0`,
+                // returned `InvalidDeletionOfDocumentThatKeepsHistory`, and
+                // the batch processor reclassified it as
+                // `ExecutionResult::InternalError` (neither valid nor
+                // invalid-paid). Gated here so PROTOCOL_VERSION_12 and
+                // earlier chain history stays bit-for-bit reproducible. See
+                // issue #3927.
+                document_delete_transition_structure_validation: 1,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
