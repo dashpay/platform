@@ -27,7 +27,6 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::ManagedAccountType;
-use key_wallet::Utxo;
 
 use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
@@ -229,12 +228,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// BIP44 *standard* account (`standard_bip44_accounts[account_index]`), so
     /// previously-mixed CoinJoin coins — which live on the DIP-9 CoinJoin
     /// account — are unreachable through it. This method composes the key-wallet
-    /// `TransactionBuilder` directly: it seeds the selected account's spendable
-    /// UTXOs as explicit inputs (`add_inputs`) and signs with a resolver over
-    /// that account's addresses. The credit-output key is still derived from the
-    /// shielded-topup account exactly as the single-account builder does (peek
-    /// path → signer pubkey → mark used), so the returned `DerivationPath` lines
-    /// up with the credit-output script the caller already peeked.
+    /// `TransactionBuilder` directly: it points the builder's `set_funding` at
+    /// the *selected* funds account (rather than the BIP44 account the pinned
+    /// builder hard-codes), so the builder seeds that account's spendable UTXOs
+    /// and reserves the chosen inputs in that same account's reservation ledger,
+    /// and signs with a resolver over that account's addresses. The
+    /// credit-output key is still derived from the shielded-topup account exactly
+    /// as the single-account builder does (peek path → signer pubkey → mark
+    /// used), so the returned `DerivationPath` lines up with the credit-output
+    /// script the caller already peeked.
     ///
     /// ## Change routing (structural BIP44 dependency)
     ///
@@ -250,9 +252,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// ## Reservations
     ///
-    /// The whole build runs under the wallet write lock and shielded funding is
-    /// single-flighted under `shield_guard`, so no concurrent build can race the
-    /// selected account's UTXOs; the builder runs without a reservation set.
+    /// Pointing `set_funding` at the selected account reserves the chosen inputs
+    /// in **that account's own `ReservationSet`** — the same single-account
+    /// reservation machinery the pinned BIP44 builder
+    /// (`build_asset_lock_with_signer`) uses, just aimed at the selected account
+    /// instead of the BIP44 one. The reservation is held across
+    /// build → broadcast and is released only when the broadcast transaction is
+    /// processed back into the wallet (its input leaves the UTXO set), when a
+    /// rejected broadcast releases it via
+    /// [`release_asset_lock_funding_reservation`](Self::release_asset_lock_funding_reservation),
+    /// or by the reservation-TTL backstop. This is load-bearing, not defensive:
+    /// the wallet write lock and `shield_guard` only serialize *shielded* builds,
+    /// so without a reservation a concurrent normal Core send (the BIP44
+    /// `build_asset_lock_with_signer` path, taken by every non-shielded funding
+    /// type) or a CoinJoin mix could reselect the selected account's UTXOs in the
+    /// build → broadcast → reconcile window and double-spend them.
     #[allow(clippy::too_many_arguments)]
     async fn build_asset_lock_tx_from_selected_account<S: ExtendedPubKeySigner>(
         &self,
@@ -264,7 +278,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         signer: &S,
         funding_path: Option<DerivationPath>,
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
-        use std::collections::HashMap;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
 
         let target_duffs: u64 = credit_output_fundings.iter().map(|f| f.output.value).sum();
         let height = info.core_wallet.last_processed_height();
@@ -297,17 +311,52 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })?,
         };
 
-        // Immutable pass over the funds accounts: find the ONE account whose
-        // account-level derivation path equals `funding_path`, and collect its
-        // spendable UTXOs plus an `Address -> DerivationPath` resolver so signing
-        // can resolve a key for any input selected from it. Watch-only
+        // Change must land on a Standard (BIP44) account: non-Standard accounts
+        // (CoinJoin / DashPay-receiving) cannot derive change. Route it to the
+        // BIP44 account at `account_index`. Clone the xpub-bearing account and
+        // derive the change address up front into an OWNED value, so the BIP44
+        // `&mut` borrow is dropped before we take the selected account's `&mut`
+        // for `set_funding` below (they may be different accounts of the same
+        // collection, which cannot both be borrowed mutably at once).
+        let bip44_acc = wallet
+            .get_bip44_account(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AssetLockTransaction(format!(
+                    "BIP44 account {account_index} not found for asset-lock change routing"
+                ))
+            })?
+            .clone();
+        let credit_outputs: Vec<TxOut> = credit_output_fundings
+            .iter()
+            .map(|f| f.output.clone())
+            .collect();
+        let change_addr = {
+            let change_acc = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&account_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "managed BIP44 account {account_index} not found for asset-lock change routing"
+                    ))
+                })?;
+            change_acc
+                .next_change_address(Some(&bip44_acc.account_xpub), true)
+                .map_err(|e| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "failed to derive change address on BIP44 account {account_index}: {e}"
+                    ))
+                })?
+        };
+
+        // Locate the ONE funds account whose account-level derivation path
+        // equals `funding_path`, MUTABLY, so `set_funding` below reserves the
+        // selected inputs in that account's OWN reservation ledger. Watch-only
         // `DashpayExternalAccount`s are never fundable (the local mnemonic can't
         // sign them) — refuse even when their path is named explicitly.
-        let mut path_map: HashMap<DashAddress, DerivationPath> = HashMap::new();
-        let mut selected_inputs: Vec<Utxo> = Vec::new();
-        let mut selected_value: u64 = 0;
-        let mut matched = false;
-        for acc in info.core_wallet.accounts.all_funding_accounts() {
+        let mut selected: Option<&mut ManagedCoreFundsAccount> = None;
+        for acc in info.core_wallet.accounts.all_funding_accounts_mut() {
             let acc_path = acc
                 .managed_account_type()
                 .to_account_type()
@@ -326,68 +375,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                      coins the local wallet cannot sign; choose a signable funds account"
                 )));
             }
-            matched = true;
-            for utxo in acc.spendable_utxos(height) {
-                selected_value = selected_value.saturating_add(utxo.value());
-                if let Some(path) = acc.address_derivation_path(&utxo.address) {
-                    path_map.insert(utxo.address.clone(), path);
-                }
-                selected_inputs.push(utxo.clone());
-            }
+            selected = Some(acc);
+            break;
         }
-        if !matched {
-            return Err(PlatformWalletError::AssetLockTransaction(format!(
+        let selected = selected.ok_or_else(|| {
+            PlatformWalletError::AssetLockTransaction(format!(
                 "no spendable funds account matches funding derivation path {funding_path}"
-            )));
-        }
+            ))
+        })?;
+
         tracing::debug!(
             target_duffs,
             height,
             %funding_path,
-            selected_value,
-            selected_inputs = selected_inputs.len(),
-            resolver_entries = path_map.len(),
-            "single-account asset-lock funding: selected account UTXO set assembled"
+            candidate_utxos = selected.utxos.len(),
+            "single-account asset-lock funding: selecting + signing (LargestFirst)"
         );
-
-        // Change must land on a Standard (BIP44) account: non-Standard accounts
-        // (CoinJoin / DashPay-receiving) cannot derive change. Route it to the
-        // BIP44 account at `account_index`.
-        let acc = wallet
-            .get_bip44_account(account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::AssetLockTransaction(format!(
-                    "BIP44 account {account_index} not found for asset-lock change routing"
-                ))
-            })?
-            .clone();
-        let credit_outputs: Vec<TxOut> = credit_output_fundings
-            .iter()
-            .map(|f| f.output.clone())
-            .collect();
-
-        // Derive the change address from the BIP44 account (scoped `&mut`
-        // borrow; the builder below owns the cloned change address, so no
-        // account borrow is held across the signer await).
-        let change_addr = {
-            let change_acc = info
-                .core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get_mut(&account_index)
-                .ok_or_else(|| {
-                    PlatformWalletError::AssetLockTransaction(format!(
-                        "managed BIP44 account {account_index} not found for asset-lock change routing"
-                    ))
-                })?;
-            change_acc
-                .next_change_address(Some(&acc.account_xpub), true)
-                .map_err(|e| {
-                    PlatformWalletError::AssetLockTransaction(format!(
-                        "failed to derive change address on BIP44 account {account_index}: {e}"
-                    ))
-                })?
-        };
 
         let builder = TransactionBuilder::new()
             .set_fee_rate(FeeRate::new(fee_per_kb))
@@ -408,16 +411,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .set_special_payload(TransactionPayload::AssetLockPayloadType(
                 AssetLockPayload::new(credit_outputs),
             ))
+            // Seed the selected account's spendable UTXOs AND capture its
+            // reservation ledger (`set_funding` clones the account's
+            // `ReservationSet` into the builder and filters out any UTXO already
+            // reserved by another in-flight build). `build_signed`'s internal
+            // `assemble_unsigned` then reserves the chosen inputs there, holding
+            // them across build → broadcast. `set_funding` also seeds a change
+            // address, but for a non-Standard (CoinJoin / DashPay) account that
+            // derivation fails and is swallowed to `None`; we override it next
+            // with the transparent BIP44 change sink regardless.
+            .set_funding(selected, &bip44_acc)
             .set_change_address(change_addr)
-            .add_inputs(selected_inputs)
             .require_final_inputs();
 
-        tracing::debug!(
-            target_duffs,
-            "single-account asset-lock funding: selecting + signing (LargestFirst)"
-        );
         let (transaction, fee) = builder
-            .build_signed(signer, move |addr| path_map.get(&addr).cloned())
+            .build_signed(signer, |addr| selected.address_derivation_path(&addr))
             .await
             .map_err(|e| map_builder_error(e, target_duffs))?;
         tracing::debug!(
@@ -470,6 +478,73 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             "single-account asset-lock funding: credit-output key derived; returning built tx"
         );
         Ok((transaction, path))
+    }
+
+    /// Release the UTXO reservation held for `tx` after its broadcast came back
+    /// [`BroadcastError::Rejected`](crate::broadcaster::BroadcastError::Rejected),
+    /// targeting the account that actually holds it.
+    ///
+    /// Shielded funding with an explicit `funding_path` reserves on the single
+    /// funds account named by that path — which may be a non-BIP44
+    /// CoinJoin/DashPay account (dashpay/platform#4184) — so a rejected shielded
+    /// broadcast must release there. Every other funding type, and shielded
+    /// funding with the default (`None`) path (which funds from the BIP44
+    /// account at `account_index`), reserves on that BIP44 account and reuses
+    /// the shared
+    /// [`release_reservation_after_rejected_broadcast`](crate::wallet::reservations::release_reservation_after_rejected_broadcast)
+    /// helper. Releasing the wrong account would be a silent no-op (the
+    /// outpoints wouldn't be in its set), stranding the inputs until the
+    /// reservation-TTL backstop — hence the explicit routing here.
+    async fn release_asset_lock_funding_reservation(
+        &self,
+        tx: &Transaction,
+        account_index: u32,
+        funding_type: AssetLockFundingType,
+        funding_path: &Option<DerivationPath>,
+    ) {
+        if funding_type == AssetLockFundingType::AssetLockShieldedAddressTopUp {
+            if let Some(path) = funding_path {
+                let wm = self.wallet_manager.read().await;
+                let Some((_, info)) = wm.get_wallet_and_info(&self.wallet_id) else {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(self.wallet_id),
+                        "could not release shielded asset-lock reservation: wallet not found"
+                    );
+                    return;
+                };
+                let network = info.core_wallet.network();
+                for acc in info.core_wallet.accounts.all_funding_accounts() {
+                    if acc
+                        .managed_account_type()
+                        .to_account_type()
+                        .derivation_path(network)
+                        .map(|p| p == *path)
+                        .unwrap_or(false)
+                    {
+                        acc.release_reservation(tx);
+                        return;
+                    }
+                }
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    %path,
+                    "could not release shielded asset-lock reservation: no funds account \
+                     matches the funding path"
+                );
+                return;
+            }
+        }
+
+        // Non-shielded funding, or shielded funding with the default (`None`)
+        // path: the reservation lives on the BIP44 account at `account_index`.
+        crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+            &self.wallet_manager,
+            &self.wallet_id,
+            key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            account_index,
+            tx,
+        )
+        .await;
     }
 
     /// Peek at the next unused address from a funding account without
@@ -969,7 +1044,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
         let build_persist_guard = self.build_persist_serial.lock().await;
 
-        // 1. Build the asset lock transaction.
+        // 1. Build the asset lock transaction. Clone `funding_path` so it
+        //    survives for the reservation-release path below (a rejected
+        //    broadcast releases from the account this path named).
         let (tx, path) = self
             .build_asset_lock_transaction(
                 amount_duffs,
@@ -977,7 +1054,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 funding_type,
                 identity_index,
                 signer,
-                funding_path,
+                funding_path.clone(),
             )
             .await?;
 
@@ -1040,14 +1117,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         );
 
         // 3. Broadcast. On a definitive pre-send rejection, untrack the
-        //    `Built` row BEFORE releasing the funding reservation (the
-        //    asset-lock builder funds from the BIP44 account at
-        //    `account_index`): while the reservation is held the inputs
-        //    cannot be re-selected by a new build, and once the row is gone
-        //    `resume_asset_lock` can no longer re-drive the rejected
-        //    transaction — so at no point is the row resumable while its
-        //    inputs are re-spendable. A `MaybeSent` failure keeps both the
-        //    reservation and the resumable row.
+        //    `Built` row BEFORE releasing the funding reservation: while the
+        //    reservation is held the inputs cannot be re-selected by a new
+        //    build, and once the row is gone `resume_asset_lock` can no longer
+        //    re-drive the rejected transaction — so at no point is the row
+        //    resumable while its inputs are re-spendable. A `MaybeSent` failure
+        //    keeps both the reservation and the resumable row.
         if let Err(e) = self.broadcaster.broadcast(&tx).await {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
@@ -1061,12 +1136,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
                 self.queue_asset_lock_changeset(cs_untrack);
                 if removed_built_row {
-                    crate::wallet::reservations::release_reservation_after_rejected_broadcast(
-                        &self.wallet_manager,
-                        &self.wallet_id,
-                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
-                        account_index,
+                    // Release from whichever account actually holds the
+                    // reservation: the selected funds account for shielded
+                    // funding (possibly the CoinJoin/DashPay account named by
+                    // `funding_path`), or the BIP44 account at `account_index`
+                    // for every non-shielded funding type.
+                    self.release_asset_lock_funding_reservation(
                         &tx,
+                        account_index,
+                        funding_type,
+                        &funding_path,
                     )
                     .await;
                 }
@@ -2351,6 +2430,149 @@ mod tests {
                 "expected typed AssetLockInsufficientFunds for the named account, got {other:?}"
             ),
         }
+    }
+
+    /// Like [`split_asset_lock_manager`] but over an `AlwaysOkBroadcaster`, so a
+    /// build+broadcast leaves the funding reservation HELD (a successful
+    /// broadcast keeps the reservation until the tx is processed back in).
+    async fn split_asset_lock_manager_ok(
+        bip44_duffs: u64,
+        coinjoin_duffs: u64,
+    ) -> (Arc<AssetLockManager<AlwaysOkBroadcaster>>, WalletSigner) {
+        let (wallet_manager, wallet_id, signer) =
+            crate::test_support::split_funded_wallet_manager(bip44_duffs, coinjoin_duffs).await;
+        let persistence = Arc::new(CapturingPersistence::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(AlwaysOkBroadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+        (manager, signer)
+    }
+
+    /// The account-level derivation path of CoinJoin account 0 — generic sibling
+    /// of [`coinjoin_account_path`] usable with any broadcaster.
+    async fn coinjoin_account_path_for<B: TransactionBroadcaster>(
+        manager: &AssetLockManager<B>,
+    ) -> DerivationPath {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let wm = manager.wallet_manager.read().await;
+        let (_, info) = wm
+            .get_wallet_and_info(&manager.wallet_id)
+            .expect("wallet present");
+        let network = info.core_wallet.network();
+        info.core_wallet
+            .accounts
+            .coinjoin_accounts
+            .get(&0)
+            .expect("coinjoin account 0 present")
+            .managed_account_type()
+            .to_account_type()
+            .derivation_path(network)
+            .expect("coinjoin account-level path")
+    }
+
+    /// dashpay/platform#4184 reservation regression: a selected-account
+    /// (CoinJoin) shielded build must reserve its inputs in the CoinJoin
+    /// account's OWN ledger and HOLD them across broadcast. Otherwise a
+    /// concurrent normal Core send (the BIP44 `build_asset_lock_with_signer`
+    /// path) or a CoinJoin mix could reselect the same UTXOs in the
+    /// build→broadcast window and double-spend — the wallet write lock and
+    /// `shield_guard` only serialize *shielded* builds. Proven via the observable
+    /// proxy the other reservation tests use: while the single CoinJoin UTXO is
+    /// reserved, a fresh build over that account fails at input selection.
+    #[tokio::test]
+    async fn shielded_selected_account_build_reserves_its_inputs() {
+        // 0.09 DASH BIP44 (change sink) + a single 0.2 DASH CoinJoin UTXO.
+        let (manager, signer) = split_asset_lock_manager_ok(9_000_000, 20_000_000).await;
+        let coinjoin_path = coinjoin_account_path_for(&*manager).await;
+
+        // Build + broadcast a lock funded strictly from the CoinJoin account. A
+        // successful broadcast keeps the reservation held.
+        manager
+            .broadcast_funded_asset_lock(
+                15_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(coinjoin_path.clone()),
+            )
+            .await
+            .expect("first shielded build+broadcast must succeed");
+
+        // The single CoinJoin UTXO is now reserved, so a second build over the
+        // same account cannot reselect it and fails at input selection.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                15_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(coinjoin_path),
+            )
+            .await;
+        assert!(
+            matches!(
+                rebuild,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "the selected CoinJoin UTXO must stay reserved across broadcast so a \
+             concurrent build cannot reselect it, got {rebuild:?}"
+        );
+    }
+
+    /// A rejected shielded broadcast must release the reservation held on the
+    /// SELECTED (CoinJoin) account — not the BIP44 change-sink account — so a
+    /// fresh build immediately reselects the freed coin. Guards the path-aware
+    /// [`AssetLockManager::release_asset_lock_funding_reservation`]: a naive
+    /// release against BIP44 would silently no-op and strand the CoinJoin coin
+    /// until the TTL backstop.
+    #[tokio::test]
+    async fn rejected_shielded_selected_account_broadcast_releases_reservation() {
+        let (manager, signer) = split_asset_lock_manager(9_000_000, 20_000_000).await;
+        let coinjoin_path = coinjoin_account_path(&manager).await;
+
+        let result = manager
+            .create_funded_asset_lock_proof(
+                15_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(coinjoin_path.clone()),
+            )
+            .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "rejected broadcast should surface as TransactionBroadcast, got {result:?}"
+        );
+
+        // The CoinJoin reservation was released on rejection: a fresh build over
+        // the same single-UTXO account reselects the freed coin and succeeds.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                15_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(coinjoin_path),
+            )
+            .await;
+        assert!(
+            rebuild.is_ok(),
+            "a rejected selected-account broadcast must release the CoinJoin \
+             reservation so the coin is reselectable, got {rebuild:?}"
+        );
     }
 
     /// On-device regression: a real CoinJoin account holds many small mixed

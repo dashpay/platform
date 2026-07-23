@@ -1081,14 +1081,37 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
         // (`AssetLockInsufficientFunds`) reaches the host as its dedicated code
         // instead of the generic `ErrorWalletOperation` — the host surfaces the
         // shortfall accordingly. The message stays prefixed for continuity with
-        // the existing dash-wallet log matcher.
-        let code = PlatformWalletFFIResultCode::for_platform_wallet_error(&e);
+        // the existing dash-wallet log matcher. A genuinely-generic failure maps
+        // to `ErrorWalletOperation` (this entry point's historical generic code),
+        // NOT the catch-all `ErrorUnknown` that
+        // `for_platform_wallet_error` returns for unmapped variants.
+        let code = platform_wallet_error_code_or_wallet_operation(&e);
         return PlatformWalletFFIResult::err(
             code,
             format!("shielded fund-from-asset-lock failed: {e}"),
         );
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// Map a [`PlatformWalletError`] to its dedicated FFI code, falling back to
+/// `ErrorWalletOperation` (this module's historical generic funding-failure
+/// code) instead of the catch-all `ErrorUnknown` that
+/// [`PlatformWalletFFIResultCode::for_platform_wallet_error`] returns for
+/// variants without a dedicated code. Typed variants (e.g.
+/// `AssetLockInsufficientFunds`) keep their dedicated code; only the generic
+/// arm changes, restoring the pre-re-scope contract where a generic
+/// fund-from-asset-lock failure surfaced as `ErrorWalletOperation(6)` rather
+/// than `ErrorUnknown(99)`.
+fn platform_wallet_error_code_or_wallet_operation(
+    error: &PlatformWalletError,
+) -> PlatformWalletFFIResultCode {
+    match PlatformWalletFFIResultCode::for_platform_wallet_error(error) {
+        PlatformWalletFFIResultCode::ErrorUnknown => {
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        }
+        typed => typed,
+    }
 }
 
 /// Resume a shielded fund-from-asset-lock by outpoint.
@@ -1233,8 +1256,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
             .await
     });
     if let Err(e) = result {
-        // Keep the typed code (a resume can still surface asset-lock shortfalls).
-        let code = PlatformWalletFFIResultCode::for_platform_wallet_error(&e);
+        // Keep the typed code (a resume can still surface asset-lock shortfalls),
+        // but map a genuinely-generic failure to `ErrorWalletOperation` rather
+        // than the catch-all `ErrorUnknown` — same generic-arm contract as the
+        // build entry point above.
+        let code = platform_wallet_error_code_or_wallet_operation(&e);
         return PlatformWalletFFIResult::err(
             code,
             format!("shielded resume fund-from-asset-lock failed: {e}"),
