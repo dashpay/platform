@@ -43,6 +43,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch:
     /// `main_control_group_can_be_modified`. The v0 report must stay unchanged for
     /// protocol versions where it is already live; newer validation versions pass the
     /// controlling rule here.
+    #[allow(clippy::too_many_arguments)]
     fn validate_state_v0_with_reported_action_takers(
         &self,
         platform: &PlatformStateRef,
@@ -75,6 +76,7 @@ impl TokenConfigUpdateTransitionActionStateValidationV0 for TokenConfigUpdateTra
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn validate_state_v0_with_reported_action_takers(
         &self,
         platform: &PlatformStateRef,
