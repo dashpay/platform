@@ -46,7 +46,9 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 /// v13 also enables DPNS username transfers and sales:
 /// * `DRIVE_ABCI_VALIDATION_VERSIONS_V9` bumps data trigger bindings to v1,
 ///   dropping the reject bindings for Transfer, Purchase and UpdatePrice on
-///   DPNS `domain` documents.
+///   DPNS `domain` documents. It also revises the shielded identity-create
+///   exit-denomination set: 0.03 and 0.25 DASH are added and 0.3 DASH is
+///   retired, giving 0.03 / 0.1 / 0.25 / 0.5 / 1 DASH.
 /// * `DRIVE_VERSION_V8` bumps the document transfer/purchase high-level
 ///   operation conversions to v1, which rewrite a transferred or purchased
 ///   domain's `records.identity` to the new owner so the username resolves
