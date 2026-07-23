@@ -258,6 +258,46 @@ fn read_cstring_opt(
     }
 }
 
+/// Read an OPTIONAL Java `String` into `Option<CString>`, like
+/// [`read_cstring_opt`] but treating a genuine JNI read error as a hard failure
+/// (throws + `Err(())`) rather than silently normalizing it to `None`.
+///
+/// Use this for a money-source parameter such as `fundingPath`, where the two
+/// outcomes MUST NOT be conflated: JVM null means "absent" (fund from the
+/// default BIP44 account — `Ok(None)`), but a failed `get_string` means the
+/// caller *did* pass a path we couldn't read, and silently degrading that to
+/// the default account would fund the lock from the wrong coins. The memo path
+/// keeps the lenient [`read_cstring_opt`], where a read error harmlessly
+/// degrades to "no memo". Empty and interior-NUL handling match the lenient
+/// helper (empty → `Ok(None)`; interior NUL → throws + `Err(())`).
+fn read_cstring_opt_strict(
+    env: &mut JNIEnv,
+    s: &JString,
+    field: &str,
+) -> Result<Option<std::ffi::CString>, ()> {
+    if s.is_null() {
+        return Ok(None);
+    }
+    let owned: String = match env.get_string(s) {
+        Ok(v) => v.into(),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            return Err(());
+        }
+    };
+    if owned.is_empty() {
+        return Ok(None);
+    }
+    match std::ffi::CString::new(owned) {
+        Ok(c) => Ok(Some(c)),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
+    }
+}
+
 /// The default Orchard payment address for `account` on the wallet's bound
 /// shielded sub-wallet — bridges `platform_wallet_manager_shielded_default_address`.
 /// Returns the 43 raw bytes (11-byte diversifier + 32-byte pk_d) as a
@@ -365,8 +405,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             .map_or((ptr::null(), 0usize), |v| (v.as_ptr(), v.len()));
         // Optional BIP32 derivation-path string naming the single funds account
         // (null = the unmixed BIP44 account). Passed to the FFI as UTF-8 bytes
-        // (without the trailing NUL) + length.
-        let funding_path = match read_cstring_opt(env, &funding_path, "fundingPath") {
+        // (without the trailing NUL) + length. Uses the STRICT reader: a genuine
+        // read error must throw, not silently degrade this money-source param to
+        // the default BIP44 account (which would fund from the wrong coins).
+        let funding_path = match read_cstring_opt_strict(env, &funding_path, "fundingPath") {
             Ok(v) => v,
             Err(()) => return,
         };

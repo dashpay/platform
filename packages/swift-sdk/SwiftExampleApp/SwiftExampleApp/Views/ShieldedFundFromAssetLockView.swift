@@ -248,14 +248,14 @@ struct ShieldedFundFromAssetLockView: View {
         let options = coreAccountOptions
         Section {
             if options.isEmpty {
-                Text("No spendable Core (BIP44 standard) accounts on this wallet.")
+                Text("No spendable Core funds accounts on this wallet.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
                 Picker("Core Account", selection: $fundingCoreAccountIndex) {
                     Text("Select…").tag(Optional<UInt32>.none)
-                    ForEach(options, id: \.accountIndex) { opt in
-                        Text("Account #\(opt.accountIndex) — \(formatDuffs(opt.balanceDuffs))")
+                    ForEach(options) { opt in
+                        Text("\(opt.typeLabel) #\(opt.accountIndex) — \(formatDuffs(opt.balanceDuffs))")
                             .tag(Optional(opt.accountIndex))
                     }
                 }
@@ -264,9 +264,11 @@ struct ShieldedFundFromAssetLockView: View {
             Text("Core Source")
         } footer: {
             Text(
-                "The selected Core account's UTXOs are locked into an asset lock; "
-                    + "the locked DASH becomes shielded credits on the destination "
-                    + "Orchard address."
+                "Supplies the transparent CHANGE address, and is the default "
+                    + "funding source when the Funding Account path below is blank. "
+                    + "Non-Standard accounts (CoinJoin, DashPay) are listed so their "
+                    + "balances are visible — to actually draw the lock from one, "
+                    + "enter its account-level path in the Funding Account field."
             )
         }
     }
@@ -782,9 +784,30 @@ struct ShieldedFundFromAssetLockView: View {
 
     // MARK: - Derived
 
-    private struct CoreAccountOption {
+    private struct CoreAccountOption: Identifiable {
         let accountIndex: UInt32
         let balanceDuffs: UInt64
+        /// Core account discriminant (`0` Standard, `1` CoinJoin, `12` DashPay
+        /// receiving) and, for Standard, the BIP44(`0`)/BIP32(`1`) split. Kept so
+        /// non-Standard funds accounts can be surfaced in the picker with a label
+        /// (dashpay/platform#4184).
+        let typeTag: UInt8
+        let standardTag: UInt8
+
+        /// Stable identity for `ForEach`: a CoinJoin account can share its
+        /// `accountIndex` with a Standard account (both are account 0), so the
+        /// index alone is not unique.
+        var id: String { "\(typeTag)-\(standardTag)-\(accountIndex)" }
+
+        /// Short label distinguishing the funds-account kind in the picker row.
+        var typeLabel: String {
+            switch typeTag {
+            case 0: return standardTag == 0 ? "BIP44" : "BIP32"
+            case 1: return "CoinJoin"
+            case 12: return "DashPay"
+            default: return "Account"
+            }
+        }
     }
 
     private struct PlatformAccountOption {
@@ -830,14 +853,24 @@ struct ShieldedFundFromAssetLockView: View {
         return UInt64(creditsDouble.rounded(.toNearestOrAwayFromZero))
     }
 
+    /// Spendable Core FUNDS accounts eligible to fund an asset lock. Standard
+    /// (`typeTag == 0`, BIP44/BIP32), CoinJoin (`1`), and DashPay-receiving
+    /// (`12`) all hold L1 UTXOs; keys-only accounts (identity/asset-lock/
+    /// provider) and watch-only DashPay-external (`13`, unsignable) are excluded.
+    /// Non-Standard accounts are surfaced too (dashpay/platform#4184) so their
+    /// balances are visible — the actual funding source is the `fundingPath`
+    /// field; the account selected here supplies the transparent change sink and
+    /// is the default source when `fundingPath` is blank.
     private var coreAccountOptions: [CoreAccountOption] {
         walletManager.accountBalances(for: wallet.walletId)
-            .filter { $0.typeTag == 0 && $0.standardTag == 0 && $0.confirmed > 0 }
-            .sorted { $0.index < $1.index }
+            .filter { ($0.typeTag == 0 || $0.typeTag == 1 || $0.typeTag == 12) && $0.confirmed > 0 }
+            .sorted { ($0.typeTag, $0.standardTag, $0.index) < ($1.typeTag, $1.standardTag, $1.index) }
             .map {
                 CoreAccountOption(
                     accountIndex: $0.index,
-                    balanceDuffs: $0.confirmed
+                    balanceDuffs: $0.confirmed,
+                    typeTag: $0.typeTag,
+                    standardTag: $0.standardTag
                 )
             }
     }
@@ -845,6 +878,15 @@ struct ShieldedFundFromAssetLockView: View {
     private var selectedCoreAccountBalanceDuffs: UInt64 {
         guard let idx = fundingCoreAccountIndex else { return 0 }
         return coreAccountOptions.first(where: { $0.accountIndex == idx })?.balanceDuffs ?? 0
+    }
+
+    /// True when the user named an explicit funding source via a non-blank
+    /// `fundingPath` (dashpay/platform#4184). The lock then draws from THAT
+    /// account (e.g. the DIP-9 CoinJoin account), and the selected Core account
+    /// only supplies change — so `canSubmit` must not gate on the Core account's
+    /// balance covering the full amount.
+    private var hasExplicitFundingPath: Bool {
+        !fundingPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Fresh-build path: L1 duffs the user typed in the Amount field.
@@ -875,10 +917,16 @@ struct ShieldedFundFromAssetLockView: View {
                 && credits <= selectedPlatformAccountCredits
         }
         let amount = parsedDuffs ?? 0
+        // With an explicit funding path the lock draws from that named account,
+        // not the selected Core account (which only sinks change) — so don't gate
+        // on the selected account's balance covering the full amount. The Rust
+        // side still fails with a typed insufficient-funds error if the named
+        // account can't cover the lock.
+        let selectedCoversAmount = hasExplicitFundingPath || selectedCoreAccountBalanceDuffs >= amount
         return fundingCoreAccountIndex != nil
             && recipientRaw43 != nil
             && amount >= Self.minDuffs
-            && selectedCoreAccountBalanceDuffs >= amount
+            && selectedCoversAmount
             && activeController == nil
     }
 
