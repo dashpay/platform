@@ -271,8 +271,10 @@ pub trait DocumentTransitionV0Methods {
     fn data(&self) -> Option<&BTreeMap<String, Value>>;
     /// Returns the first document-data container depth greater than `max_depth`.
     ///
-    /// The document's root property map counts as depth one. The traversal borrows transition
-    /// data so invalid nesting can be rejected before action construction clones recursive values.
+    /// Each property value receives the full depth budget; the enclosing data map is a plain
+    /// `BTreeMap`, not a decoded [`Value`] container, so it is not counted — matching the wire
+    /// decoder's per-value ceiling. The traversal borrows transition data so invalid nesting can
+    /// be rejected before action construction clones recursive values.
     fn first_data_depth_exceeding(&self, max_depth: usize) -> Option<usize>;
     /// get the revision of transition if exits
     fn revision(&self) -> Option<Revision>;
@@ -352,17 +354,9 @@ impl DocumentTransitionV0Methods for DocumentTransition {
     }
 
     fn first_data_depth_exceeding(&self, max_depth: usize) -> Option<usize> {
-        let data = self.data()?;
-
-        if max_depth == 0 {
-            return Some(1);
-        }
-
-        data.values().find_map(|value| {
-            value
-                .first_depth_exceeding(max_depth - 1)
-                .map(|depth| depth + 1)
-        })
+        self.data()?
+            .values()
+            .find_map(|value| value.first_depth_exceeding(max_depth))
     }
 
     fn revision(&self) -> Option<Revision> {
@@ -587,9 +581,9 @@ mod tests {
         let create = make_create_transition(data.clone());
         let replace = make_replace_transition(data);
 
-        // Root property map is depth 1 and the two arrays reach depth 3.
-        assert_eq!(create.first_data_depth_exceeding(2), Some(3));
-        assert_eq!(replace.first_data_depth_exceeding(3), None);
+        // The enclosing data map is not counted; the two arrays reach depth 2.
+        assert_eq!(create.first_data_depth_exceeding(1), Some(2));
+        assert_eq!(replace.first_data_depth_exceeding(2), None);
     }
 
     #[test]

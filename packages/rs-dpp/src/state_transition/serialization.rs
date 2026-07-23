@@ -469,6 +469,54 @@ mod tests {
     }
 
     #[test]
+    fn document_batch_value_depth_limits_align_between_decode_and_validation() {
+        // Every decodable document value must also satisfy the consensus depth rule, so depth
+        // violations always fail the same way: as an undecodable transition. A value at the
+        // decoder ceiling must therefore round-trip and pass the validation-side depth check.
+        let max_depth = PlatformVersion::latest()
+            .system_limits
+            .max_document_value_depth
+            .expect("latest protocol should enforce document value depth")
+            as usize;
+        let nested = (1..max_depth).fold(Value::Array(vec![Value::Null]), |value, _| {
+            Value::Array(vec![value])
+        });
+        let document_transition =
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::default(),
+                    identity_contract_nonce: 1,
+                    document_type_name: "test".to_string(),
+                    data_contract_id: Identifier::default(),
+                }),
+                entropy: [0; 32],
+                data: BTreeMap::from([("nested".to_string(), nested)]),
+                prefunded_voting_balance: None,
+            }));
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(max_depth),
+            None
+        );
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(max_depth - 1),
+            Some(max_depth)
+        );
+
+        let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            transitions: vec![BatchedTransition::Document(document_transition)],
+            ..Default::default()
+        }));
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("the state transition should encode below the byte limit");
+
+        let recovered =
+            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
+                .expect("a value at the decoder ceiling must decode");
+        assert_eq!(state_transition, recovered);
+    }
+
+    #[test]
     fn deserialize_empty_bytes_should_fail() {
         let result = StateTransition::deserialize_from_bytes(&[]);
         assert!(

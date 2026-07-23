@@ -48,7 +48,18 @@ impl DataContract {
         };
 
         if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
-            if let Some(actual_depth) = value.first_depth_exceeding(max_depth as usize) {
+            let max_depth = max_depth as usize;
+            // The enclosing properties map mirrors the transition's plain `BTreeMap` data
+            // wrapper, which the wire decoder never counts: each property value receives the
+            // full depth budget so no decodable payload can violate this rule.
+            let excess_depth = match &value {
+                Value::Map(map) => map.iter().find_map(|(key, property_value)| {
+                    key.first_depth_exceeding(max_depth)
+                        .or_else(|| property_value.first_depth_exceeding(max_depth))
+                }),
+                other => other.first_depth_exceeding(max_depth),
+            };
+            if let Some(actual_depth) = excess_depth {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ConsensusError::BasicError(BasicError::ValueError(
                         ValueError::new_from_string(format!(
@@ -159,7 +170,7 @@ mod tests {
             .max_document_value_depth
             .expect("latest protocol should enforce document value depth");
         let value = nested_document_value(
-            max_depth as usize,
+            max_depth as usize + 1,
             Value::Text(
                 "x".repeat(platform_version.system_limits.max_field_value_size as usize + 1),
             ),
@@ -192,7 +203,7 @@ mod tests {
             .max_document_value_depth
             .expect("latest protocol should enforce document value depth");
         let value = nested_document_value(
-            max_depth as usize - 1,
+            max_depth as usize,
             Value::Text(
                 "x".repeat(platform_version.system_limits.max_field_value_size as usize + 1),
             ),
