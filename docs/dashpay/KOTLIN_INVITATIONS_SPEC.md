@@ -353,6 +353,29 @@ state → parked until a wallet exists → claim sheet, with the claim-in-flight
   copy). The funded two-wallet race remains manual, as on iOS.
 - **Acceptance gate:** the funded create→claim e2e on the emulator against testnet.
 
+### Funded e2e evidence (2026-07-23, arm64 emulator + testnet)
+
+- Instrumented tier: 32/32 green (Room `MIGRATION_7_8` + full v1→v8 chain,
+  `persistenceBridgeDescriptorsAllResolve`, FFI smoke; 3 testnet-gated skips).
+- Create (DP-12/16): 0.03 DASH voucher funded + InstantSend-locked, legacy link
+  emitted, row landed in Room + Sent list as `Created` (outpoint `f9ef7f5b…:0`).
+- Claim (DP-13): link pasted → valid preview → new identity `292ebab4…`
+  registered with 2 818 643 580 credits, funded solely by the voucher.
+- Already-consumed (DP-19 classifier, live): reclaiming the claimed voucher hit
+  consensus 10504 → neutral "This invitation was already claimed.", row →
+  `Claimed`, reclaim affordance gone.
+- Interrupted create: a second create timed out waiting for its InstantSend
+  lock — the funded row (`732bf38c…:0`) was already persisted and reclaimable,
+  proving the persist-before-proof-wait ordering on Android.
+- Reclaim-as-top-up (DP-17): that voucher consumed into identity `7023bed1…`,
+  balance 49 818 637 700 → 52 736 112 114 credits, row → `Reclaimed`.
+- Malformed link (DP-15): garbage URI → "Invalid invitation link.", claim
+  disabled, no side effects.
+- Not exercised here: the two-wallet contact-bootstrap (DP-14 — inviter had no
+  DPNS username, so the opt-in toggle was correctly disabled) and
+  reclaim-as-register (DP-18 — same FFI + wrapper as the seam-tested claim
+  path); both remain manual QA, matching iOS.
+
 ## 8. Failure modes
 
 - **Capability over-attestation / silent persist skips** → voucher-key reuse (the
