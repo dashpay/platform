@@ -1,3 +1,15 @@
+## [4.1.0-rc.1](https://github.com/dashpay/platform/compare/v4.1.0-beta.2...v4.1.0-rc.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* **drive:** version the compacted address-balance proof wire format ([#4224](https://github.com/dashpay/platform/issues/4224))
+
+
+### Documentation
+
+* document the new-npm-package publish gotcha ([#4219](https://github.com/dashpay/platform/issues/4219))
+
 ## [4.1.0-beta.2](https://github.com/dashpay/platform/compare/v4.1.0-beta.1...v4.1.0-beta.2) (2026-07-23)
 
 
