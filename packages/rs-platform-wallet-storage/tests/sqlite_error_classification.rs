@@ -77,6 +77,21 @@ fn sqlite_oom() -> WalletStorageError {
     ))
 }
 
+#[test]
+fn core_transaction_mismatch_display_uses_domain_height_labels() {
+    let confirmed = WalletStorageError::CoreTransactionEntryMismatch {
+        typed_txid: "11".repeat(32),
+        blob_txid: "22".repeat(32),
+        typed_height: Some(200),
+        blob_height: None,
+    }
+    .to_string();
+    assert!(confirmed.contains("typed height=200"));
+    assert!(confirmed.contains("blob height=unconfirmed"));
+    assert!(!confirmed.contains("Some("));
+    assert!(!confirmed.contains("None"));
+}
+
 /// One representative sample per `WalletStorageError` variant.
 ///
 /// The samples are passed through a wildcard-free `match` below; the
@@ -130,6 +145,12 @@ fn samples() -> Vec<WalletStorageError> {
             blob_outpoint: "txid:1".into(),
             typed_account_index: 5,
             blob_account_index: 9,
+        },
+        WalletStorageError::CoreTransactionEntryMismatch {
+            typed_txid: "11".repeat(32),
+            blob_txid: "22".repeat(32),
+            typed_height: Some(100),
+            blob_height: Some(101),
         },
         WalletStorageError::BlobTooLarge {
             len_bytes: 32 * 1024 * 1024,
@@ -278,6 +299,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
+            }
+            WalletStorageError::CoreTransactionEntryMismatch { .. } => {
+                (false, "core_transaction_entry_mismatch")
             }
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
