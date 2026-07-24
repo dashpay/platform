@@ -43,7 +43,13 @@ runner-specific Swift bootstrap gap. On the first post-recovery execution on
 before the existing missing-default recovery could run. Run `30066193991`
 proved the expanded recovery regressions and all completed platform suites, but
 the Dashmate local-network job was cancelled at its separate 15-minute cap
-after a healthy cold helper-image pull consumed 11 minutes 13 seconds.
+after a healthy cold helper-image pull consumed 11 minutes 13 seconds. Run
+`30067533791` proved that timeout correction and every platform E2E, then
+reached Swift on the required `mac-runner-1`. The mocked keychain lifecycle
+passed and explicit add to the temporary keychain succeeded, but the
+unqualified smoke lookup returned `SecKeychainSearchCopyNext` and exit 44.
+A targeted second attempt on the same runner failed identically, ruling out a
+short preference-propagation delay.
 
 ## Independent spec review findings applied
 
@@ -824,10 +830,13 @@ before mutation, then establish the restorable baseline described below.
 Before building, perform a throwaway generic-password add/read/delete cycle
 after selecting the keychain, compare the read value exactly without logging
 it, and assert that the selected user default is the ephemeral path. Add to the
-explicit job keychain, but read and delete through the default search path just
-as `WalletStorage` does. This turns stale permissions, search-list omissions,
-or Security session failures into a short provisioning diagnostic instead of
-two opaque test failures after the iOS framework build.
+explicit job keychain and pass that same explicit path to the CLI read and
+delete. The CLI process's current preference domain can differ from the
+explicit user domain on a headless service runner; its implicit lookup is not a
+valid assertion about the later Swift test process. This cycle instead proves
+that the newly created keychain itself can perform all three item operations
+and turns stale permissions or Security session failures into a short
+provisioning diagnostic.
 
 Install the EXIT trap after read-only preference discovery and immediately
 after the temporary directory and keychain path are assigned, before
@@ -849,9 +858,35 @@ must remain true.
 
 The existing `IdentityResolverSignIntegrationTests` remain the behavioral
 regression because they exercise `WalletStorage`, identity resolution, and FFI
-signing end to end. Verify the current fixed-path script's `-61` failure and
-the new ephemeral setup on `mac-runner-1`, then run the complete Swift job so
-both `swift test` and the simulator `xcodebuild` phase finish.
+signing end to end. On macOS, select the user preference domain in this
+test-only suite before its unqualified `SecItemAdd`/`SecItemCopyMatching`
+operations. Under `#if os(macOS)`, first capture the exact current domain with
+`SecKeychainGetPreferenceDomain`, register guaranteed XCTest teardown, then set
+the user domain. Check every OSStatus and fail the test loudly; teardown must
+restore the captured domain and also fail loudly if restoration fails.
+Implement this in `setUpWithError`: import Security only on macOS, annotate the
+override `@available(macOS, deprecated: 10.10, message: ...)` so the intentional
+deprecated file-keychain APIs compile under warnings-as-errors, initialize the
+typed domain as `.user`, and translate a failing get/set/restore OSStatus to
+`NSError(domain: NSOSStatusErrorDomain, code: Int(status))`. Register
+`addTeardownBlock` immediately after a successful get and before the set, so a
+setter that mutates then returns failure is still restored.
+`SecKeychainSetPreferenceDomain` is process-local, but still process-global
+within the test executable. Invoke this CI `swift test` with explicit
+`--no-parallel` (already SwiftPM's default) so no other test can observe the
+temporary override. The only SecItem-using tests in this target are the two
+actor-isolated methods in this class, and each restores its own captured
+domain. Keeping this transaction at the integration-test boundary avoids
+changing production SDK behavior, and the compile guard leaves iOS unchanged.
+Verify the current fixed-path script's `-61` failure, the implicit-domain
+exit-44 failure, and the new setup on `mac-runner-1`, then run the complete
+Swift job so both `swift test` and the simulator `xcodebuild` phase finish.
+Do not count a raw standalone
+`swift test --filter IdentityResolverSignIntegrationTests` as runner-specific
+proof because it omits the shell keychain lifecycle. The accepted focused
+evidence must run inside the same `run_tests.sh` bootstrap, execute both
+identity-resolver methods with no skips, and restore the prior process domain;
+the final complete job remains mandatory.
 
 Why this boundary: deleting or repairing the fixed home keychain would mutate
 shared runner state and can race concurrent or interrupted jobs. Retrying
@@ -860,6 +895,24 @@ the integration tests would hide the infrastructure contract they are intended
 to verify. A per-job keychain removes cross-run state while preserving the
 production storage and signing path under the one-job-per-runner-user
 invariant.
+
+Apple documents that ordinary programs default to the user keychain preference
+domain while processes in a root-session daemon default to the system domain.
+The runner-specific failure proves that the shell smoke's unqualified
+current-domain search missed an item added to the explicitly selected
+user-domain keychain. A different current domain is consistent with the
+root-session behavior; a stale implicit aggregate search context has the same
+observable result, and CI did not directly measure which one applies. Apple's
+SecurityTool source identifies `SecKeychainSearchCopyNext` as the generic-item
+find path, not list/default repair. Making the CLI smoke explicit and choosing
+the user domain inside the macOS integration-test process addresses both
+possibilities without persisting system/common-domain changes or teaching
+production wallet code about CI keychain paths.
+
+References:
+
+- https://developer.apple.com/documentation/security/seckeychainsetpreferencedomain(_:)
+- https://github.com/apple-oss-distributions/Security/blob/main/SecurityTool/macOS/keychain_find.c
 
 ### 1j. Recover when the Swift runner has no resolvable default keychain
 
@@ -933,8 +986,8 @@ temporary keychain. The readable-list recovery remains reversible and does not
 need this additional opt-in.
 
 The temporary keychain flow remains unchanged: prepend the unique keychain to
-the saved search list, make it default, smoke-test unqualified reads/deletes,
-and run the real Swift tests. Install the EXIT trap after a private temporary
+the saved search list, make it default, smoke-test explicit reads/deletes
+against that keychain, and run the real Swift tests. Install the EXIT trap after a private temporary
 directory and path are assigned but before any Security preference repair or
 keychain creation. Treat repair as a small transaction:
 
@@ -1009,6 +1062,29 @@ the exact current run keychain path; only that path may be unlocked,
 configured, item-mutated, or deleted. A different path under the managed
 namespace remains a protected prior orphan, not another acceptable temporary
 keychain.
+
+Model the explicit user preference domain separately from the CLI process's
+implicit current-domain search context. Seed a current domain that omits the
+new temporary keychain, allow explicit add to that keychain, and make an
+unqualified generic-password lookup emit the observed
+`SecKeychainSearchCopyNext` diagnostic and return 44. Against the current
+script, force the later fake body to return sentinel 23 and record exit 44 as
+the red proof. After the fix, require the smoke read and delete to name the
+exact current keychain; they must reach the sentinel body and preserve 23 even
+while the fake current domain remains stale. Keep the existing default-path
+checks for explicit user-domain mutation and cleanup.
+
+Allowlist the exact item argv shapes and reject missing, wrong, or extra
+arguments: the current red lookup has six arguments after `security`
+(`find-generic-password -a ACCOUNT -s SERVICE -w`), the fixed lookup has the
+exact current keychain as argument seven, and fixed delete has that exact path
+as argument six. Explicit lookup/delete bypass the immutable fake implicit
+list, read/remove only the item stored in the temporary keychain, and never
+record the password or smoke value. The red command log must prove explicit
+add completed, the exact unqualified lookup emitted the observed diagnostic
+and returned 44, and delete/body were not reached. The green log must prove
+explicit find and delete used the exact temporary path, `body-swift` ran, and
+cleanup preserved sentinel 23.
 
 Seed an existing login keychain, a second eligible keychain that precedes it,
 duplicate canonical spellings, and a dead search-list entry while making the
@@ -1124,6 +1200,16 @@ Alternatives rejected:
   before removal.
 - Change `WalletStorage` to pass an explicit keychain: that changes production
   API behavior to solve CI host state and bypasses the integration contract.
+- Configure the system/common keychain domain from the shell: that broadens a
+  test-only user preference into persistent host-wide state and requires a
+  second destructive baseline transaction. The Swift test process can select
+  its intended user domain locally.
+- Retry the unqualified smoke lookup: two independent `mac-runner-1`
+  executions failed at the same boundary, and item-not-found is deterministic
+  when the current-domain list omits the explicit keychain.
+- Only make the CLI smoke explicit: that would remove the false-negative shell
+  check but leave `IdentityResolverSignIntegrationTests` using the runner
+  process's wrong current domain. Both process boundaries need explicit intent.
 
 ### 1k. Refresh rotated quorum keys before WASM proof waits
 
@@ -1669,7 +1755,7 @@ WASM non-document proof wait
 Swift CI test process
   -> sanitize the user search list and establish a live prior-or-recovery default
   -> create one keychain under a durable, job-unique managed directory
-  -> unlock/select it, add it to search, and prove default add/read/delete access
+  -> unlock/select it, assert the user default, and prove explicit-path add/read/delete
   -> run signing integration and simulator tests
   -> restore default/search list and delete the temporary keychain on exit
 ```
@@ -1798,6 +1884,14 @@ Swift CI test process
 - The Swift runner has a stale or unwritable keychain from another job: the
   unique path avoids it, and the smoke check fails before the expensive build
   if the new keychain is not writable.
+- The Security CLI process has a stale implicit current-domain search list:
+  the smoke add/read/delete names the exact temporary keychain and therefore
+  tests that keychain rather than a different preference domain. The macOS
+  identity-resolver integration suite captures its current domain, selects the
+  user domain inside its own non-parallel process before exercising
+  production's unqualified SecItem calls, and restores the captured domain in
+  guaranteed teardown. No system/common preference is persisted and
+  production SDK code is unchanged.
 - The Swift user domain has no resolvable default: the eligible conventional
   login or first eligible search-list keychain becomes the repaired cleanup
   fallback. Dead, out-of-home, symlinked, unowned, or unwritable entries are
@@ -1887,8 +1981,9 @@ Swift CI test process
 12. On `mac-runner-1`, retain the fixed-path `SecItemAdd(-61)` failure as the
     red observation. Provision and smoke-test a unique temporary keychain,
     force an early nonzero exit to verify default restoration and removal, then
-    run `swift test --filter IdentityResolverSignIntegrationTests` and the
-    complete Swift workflow through its simulator `xcodebuild` phase.
+    run the complete `run_tests.sh` bootstrap/job. Require both
+    `IdentityResolverSignIntegrationTests` methods with no skips and the
+    simulator `xcodebuild` phase.
 13. Add the mocked exit-44 keychain regression and run it against the current
     script. Record that it exits before provisioning and does not install a
     cleanup trap. Reorder capture, apply the strict per-user fallback
@@ -1987,6 +2082,19 @@ Swift CI test process
     30-minute cold-pull-safe budget as the platform test-suite workflow, raise
     its job timeout without changing test-level deadlines, and rerun all three
     Dashmate E2Es to completion.
+19. Retain Swift job `89412899861` and targeted attempt-3 job `89414141829`
+    as the red implicit-domain observation. Split the fake's explicit user
+    preferences from its implicit current-domain search list, allow explicit
+    add, and record the current script returning 44 instead of the forced body
+    sentinel 23. Pass the exact temporary keychain to the CLI smoke read/delete
+    and transactionally select the user preference domain only inside the
+    macOS `IdentityResolverSignIntegrationTests`: check every get/set/restore
+    status and prove successful selection plus exact-domain restoration under
+    explicit non-parallel execution. Locally record shell syntax, the pre-fix
+    fake exit 44, the post-fix sentinel 23, and Swift warnings-as-errors
+    compilation. For runner-specific proof, use the complete bootstrap/job
+    rather than a raw filtered `swift test`; require both resolver tests with
+    no skips and the simulator `xcodebuild` phase on `mac-runner-1`.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test

@@ -240,26 +240,48 @@ fake_security_add_item() {
 }
 
 fake_security_find_item() {
-  if [ "$#" -ne 6 ] || [ "$2" != "-a" ] || [ "$4" != "-s" ] \
-    || [ "$6" != "-w" ]; then
+  if { [ "$#" -ne 6 ] && [ "$#" -ne 7 ]; } \
+    || [ "$2" != "-a" ] || [ "$4" != "-s" ] || [ "$6" != "-w" ]; then
     return 94
   fi
-  current_default="$(cat "$FAKE_SECURITY_STATE/default_path")"
-  fake_require_current_keychain "$current_default"
+
+  if [ "$#" -eq 6 ]; then
+    if [ "$(cat "$FAKE_SECURITY_STATE/implicit_search_mode")" = "stale" ]; then
+      fake_log "item-find-implicit-miss"
+      echo "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." >&2
+      return 44
+    fi
+    keychain_path="$(cat "$FAKE_SECURITY_STATE/default_path")"
+    log_entry="item-find-implicit"
+  else
+    keychain_path="$7"
+    log_entry="item-find-explicit|$keychain_path"
+  fi
+
+  fake_require_current_keychain "$keychain_path"
   [ -e "$FAKE_SECURITY_STATE/item_exists" ]
-  fake_log "item-find-default"
+  fake_log "$log_entry"
   printf '%s\n' "writable"
 }
 
 fake_security_delete_item() {
-  if [ "$#" -ne 5 ] || [ "$2" != "-a" ] || [ "$4" != "-s" ]; then
+  if { [ "$#" -ne 5 ] && [ "$#" -ne 6 ]; } \
+    || [ "$2" != "-a" ] || [ "$4" != "-s" ]; then
     return 94
   fi
-  current_default="$(cat "$FAKE_SECURITY_STATE/default_path")"
-  fake_require_current_keychain "$current_default"
+
+  if [ "$#" -eq 5 ]; then
+    keychain_path="$(cat "$FAKE_SECURITY_STATE/default_path")"
+    log_entry="item-delete-implicit"
+  else
+    keychain_path="$6"
+    log_entry="item-delete-explicit|$keychain_path"
+  fi
+
+  fake_require_current_keychain "$keychain_path"
   [ -e "$FAKE_SECURITY_STATE/item_exists" ]
   /bin/rm -f "$FAKE_SECURITY_STATE/item_exists"
-  fake_log "item-delete-default"
+  fake_log "$log_entry"
 }
 
 fake_security_delete_keychain() {
@@ -350,6 +372,9 @@ if [ "$(basename "$0")" = "bash" ]; then
 fi
 
 if [ "$(basename "$0")" = "swift" ]; then
+  if [ "$#" -ne 2 ] || [ "$1" != "test" ] || [ "$2" != "--no-parallel" ]; then
+    exit 94
+  fi
   fake_log "body-swift"
   if [ "$(cat "$FAKE_SECURITY_STATE/body_mode")" = "sentinel23" ]; then
     exit 23
@@ -441,6 +466,7 @@ new_case() {
   printf '%s\n' "ok" > "$case_state/initial_default_mode"
   : > "$case_state/initial_default_output"
   printf '%s\n' "no_simulator" > "$case_state/body_mode"
+  printf '%s\n' "current" > "$case_state/implicit_search_mode"
   printf '%s\n' "1" > "$case_state/repair_opt_in"
   : > "$case_state/search_list"
   : > "$case_state/default_path"
@@ -459,8 +485,7 @@ new_case() {
   chmod 600 "$case_login" "$case_second" "$case_outside"
 }
 
-run_case() {
-  expected_status="$1"
+execute_case() {
   : > "$case_state/current_keychain"
   /bin/rm -f "$case_state/failure_used"
   printf '%s\n' "0" > "$case_state/default_query_count"
@@ -478,6 +503,11 @@ run_case() {
     /bin/bash "$RUN_TESTS_SCRIPT" > "$case_dir/stdout" 2> "$case_dir/stderr"
   case_status=$?
   set -e
+}
+
+run_case() {
+  expected_status="$1"
+  execute_case
   if [ "$case_status" -ne "$expected_status" ]; then
     cat "$case_dir/stderr" >&2
     fail_test "$case_name exit status (expected '$expected_status', got '$case_status')"
@@ -514,6 +544,55 @@ assert_current_keychain_retained() {
     fail_test "$case_name did not retain the current managed keychain"
   fi
 }
+
+new_case stale_implicit_search_uses_explicit_smoke_keychain
+write_search_list "$case_state/search_list" "$case_login"
+printf '%s\n' "$case_login" > "$case_state/default_path"
+printf '%s\n' "sentinel23" > "$case_state/body_mode"
+printf '%s\n' "stale" > "$case_state/implicit_search_mode"
+execute_case
+case "$case_status" in
+  44)
+    if ! grep -F -x "item-add-temp" "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name did not add the smoke item to the temporary keychain"
+    fi
+    if ! grep -F -x "item-find-implicit-miss" "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name did not reproduce the stale implicit lookup"
+    fi
+    if grep -E '^(item-delete-|body-)' "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name reached delete or the test body after the implicit lookup failed"
+    fi
+    if ! grep -F -x \
+      "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." \
+      "$case_dir/stderr" >/dev/null; then
+      fail_test "$case_name did not reproduce the runner's exact Security diagnostic"
+    fi
+    ;;
+  23)
+    smoke_keychain="$(cat "$case_state/current_keychain")"
+    if ! grep -F -x "item-find-explicit|$smoke_keychain" \
+      "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name did not read the smoke item from the explicit temporary keychain"
+    fi
+    if ! grep -F -x "item-delete-explicit|$smoke_keychain" \
+      "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name did not delete the smoke item from the explicit temporary keychain"
+    fi
+    if ! grep -F -x "body-swift" "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name did not reach the serialized Swift test body"
+    fi
+    if grep -F -x "item-find-implicit-miss" "$case_state/command.log" >/dev/null; then
+      fail_test "$case_name still used the stale implicit lookup"
+    fi
+    ;;
+  *)
+    cat "$case_dir/stderr" >&2
+    fail_test "$case_name unexpected exit status '$case_status'"
+    ;;
+esac
+assert_equal "23" "$case_status" "$case_name primary status"
+assert_no_temporary_artifacts
+assert_cleanup_order
 
 new_case exit44_list_prefers_login
 write_search_list "$case_state/search_list" "$case_second"

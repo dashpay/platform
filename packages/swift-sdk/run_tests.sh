@@ -536,14 +536,16 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   STORED_SMOKE_VALUE="$(security find-generic-password \
     -a "$KEYCHAIN_SMOKE_ACCOUNT" \
     -s "$KEYCHAIN_SMOKE_SERVICE" \
-    -w)"
+    -w \
+    "$CI_KEYCHAIN")"
   if [ "$STORED_SMOKE_VALUE" != "$KEYCHAIN_SMOKE_VALUE" ]; then
     echo "CI test keychain read-back did not match the stored value" >&2
     exit 1
   fi
   security delete-generic-password \
     -a "$KEYCHAIN_SMOKE_ACCOUNT" \
-    -s "$KEYCHAIN_SMOKE_SERVICE"
+    -s "$KEYCHAIN_SMOKE_SERVICE" \
+    "$CI_KEYCHAIN"
   unset CI_KEYCHAIN_PASSWORD STORED_SMOKE_VALUE KEYCHAIN_SMOKE_VALUE
 fi
 
@@ -561,7 +563,7 @@ fi
 
 bash build_ios.sh --target tests --profile dev
 
-swift test
+swift test --no-parallel
 
 xcodebuild test \
   -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
