@@ -56,6 +56,8 @@ Given current root version and its type:
 3. Run `yarn release -v=<target-version>` (this pushes a branch and opens a PR — an outward-facing action; confirm before running unless already told to proceed).
 4. Report back: new version, the `release_<version>` branch, the changelog-from tag used, and the PR URL. Verify the bump landed in `package.json` + `Cargo.toml` and that the versions match.
 
+**Changelog base tag.** `find_latest_tag.js` resolves the tag the changelog is generated from and `release.sh` prints it (`Changelog base tag : <tag>`) for verification before generating — an interactive run also pauses for confirmation. The base must be the **immediately-preceding release** (by creation date); a too-far-back base regenerates already-present `CHANGELOG.md` sections and duplicates them. The resolver bases a first prerelease of a new id (e.g. the first `rc` after betas) off the newest prerelease on that `X.Y.0` line, and warns if existing tags would be duplicated. If the base is ever wrong, abort and re-run with `-c=<correct-tag>`.
+
 ## First 4.1 beta example
 
 Current version `4.0.0` on branch `v4.1-dev`, cutting the first 4.1 beta:
@@ -96,29 +98,32 @@ Changelog link for the notes: `https://github.com/dashpay/platform/blob/v<versio
 
 4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release. The Kotlin and Swift SDK jobs run in the same workflow but take longer (the Kotlin native build can run ~3 h) — the release page fills in as they finish. The Maven Central deploy runs automatically after the Kotlin build (no approval gate); note that PR CI does **not** exercise the release-profile arm64 SDK builds, so an SDK build break surfaces here first — for a stable release, confirm the SDK jobs were green on the preceding rc. To re-run just one SDK release: `gh workflow run release-kotlin-sdk.yml --ref v<version> -f tag=v<version>` (same for `release-swift-sdk.yml`) — must be dispatched **at the tag ref**, with the **plain tag name** as input (no `refs/tags/` prefix). **Confirm with the release owner immediately before dispatching**: the re-run attaches public release assets and the Kotlin one can publish an irrevocable Maven Central version (no approval gate). Works only for tags that already contain these workflow files (post-consolidation); for older tags, dispatch at the dev branch — assets attach, Maven deploy skips — and use the manual runbook in `packages/kotlin-sdk/PUBLISHING.md` for Maven.
 
-## Known gotcha: a brand-new npm package breaks the publish
+## Known gotcha: a new npm package without a trusted publisher breaks the publish
 
-`release.yml`'s **Release NPM packages** job publishes with `yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public` over **npm trusted-publishers OIDC**. OIDC trusted publishing can **only publish to a package that already exists** on npm with a trusted publisher configured — it **cannot create (bootstrap) a brand-new package**. So the first release after someone adds a new `@dashevo/*` package fails: the job publishes every existing package fine, then exits 1 on the new one (which is `404 Not Found` on the registry). `--access public` and `--tolerate-republish` are already set — they are **not** the fix.
+`release.yml`'s **Release NPM packages** job publishes with `yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public` over **npm trusted-publishers OIDC**. OIDC can only publish to a package that has a **trusted publisher configured** on npm for it. Two ways a new `@dashevo/*` package trips this:
 
-**Symptom:** the release run's "Release NPM packages" job fails; `yarn` reports `The command failed in workspace @dashevo/<new-pkg> ... exit code 1`; `npm view @dashevo/<new-pkg>` → `E404`, while the other contracts show the release version.
+- **Never published** — the package does not exist on npm; OIDC cannot bootstrap it (`404`).
+- **Exists but has no trusted publisher** — e.g. it was first-published manually with a token. The package exists, but OIDC has nothing to authenticate against, so publishing a *new version* fails. This is the subtle one: a one-off manual publish is **not** a permanent fix — the publish job keeps failing on that package **every** release until the trusted publisher is configured.
 
-**Fix (needs `@dashevo` publish rights + a 2FA OTP — a human with npm access must do it):**
+`--access public` and `--tolerate-republish` are already set — they are **not** the fix.
 
-1. Check out the package at the released version and publish it once with a token (not OIDC). The npm dist-tag matches CI's: for a prerelease it is `<major>.<minor>-<suffix>` (e.g. `4.1-beta`); for a stable release it is `latest`. Read it from an already-published package: `npm view @dashevo/dpns-contract dist-tags`.
+**Symptom:** the run's "Release NPM packages" job fails; `yarn` reports `The command failed in workspace @dashevo/<pkg> ... exit code 1`. The per-package error is `YN0033: No authentication configured for request` (no trusted publisher) or a `404`/`E404` (never published). Confirm which package and how it was last published:
 
 ```sh
-git checkout origin/<dev-branch> -- packages/<new-pkg>          # get the released version
-cd packages/<new-pkg>
-npm publish --access public --tag <major.minor-suffix> --otp=<code>
-git checkout HEAD -- packages/<new-pkg>                          # restore working tree
+# what published the latest version — GitHub Actions (OIDC) has a trustedPublisher field; a
+# human username means it was a manual token publish and OIDC is NOT wired up:
+curl -s https://registry.npmjs.org/@dashevo/<pkg>/<version> | python3 -c "import sys,json;print(json.load(sys.stdin).get('_npmUser'))"
 ```
 
-2. Re-run the failed job — `--tolerate-republish` now skips every package (all already at the release version) → green:
+**Permanent fix (a human with owner rights on the package, via the npm web UI):** configure the trusted publisher, then re-run the failed job.
+
+1. npmjs.com → the package → **Access** → **Trusted Publisher** → **GitHub Actions**: organization/user `dashpay`, repository `platform`, workflow filename `release.yml`, environment **blank** (the `release-npm` job uses no environment). Save.
+2. Re-run the failed job — OIDC now publishes the missing version and `--tolerate-republish` skips the rest → green:
 
 ```sh
 gh run rerun <release-run-id> --repo dashpay/platform --failed
 ```
 
-After this first publish the package exists on npm, so **every later release publishes it automatically**. Note: right after publishing, `npm view` may still `404` for a few minutes (npm CDN negative-cache); the `http fetch PUT 200` line in `~/.npm/_logs/…` confirms the publish landed.
+**Stopgap only (does not stop the recurrence):** publish the exact release version once with a token, then re-run the failed job (`--tolerate-republish` skips it). The dist-tag matches CI's — prerelease `<major>.<minor>-<suffix>` (e.g. `4.1-rc`), stable `latest` (`npm view @dashevo/dpns-contract dist-tags`). This unblocks the current release but the next one fails the same way until the trusted publisher is configured.
 
-**Prevention:** whenever you add a new publishable npm package to the monorepo, first-publish it manually (or set up its trusted publisher on npm) **before** cutting the release that would ship it.
+**Prevention:** whenever you add a new publishable npm package, configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) **before** cutting the release that ships it. `release.sh` prints this reminder after opening the release PR.
