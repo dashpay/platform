@@ -9,6 +9,18 @@ const wait = require('../../lib/wait');
 const TRANSACTION_PROPAGATION_TIMEOUT_MS = 120000;
 const TRANSACTION_POLL_INTERVAL_MS = 500;
 
+async function waitForTransaction(account, transactionId) {
+  const deadline = Date.now() + TRANSACTION_PROPAGATION_TIMEOUT_MS;
+  let transactions = account.getTransactions();
+
+  while (!transactions[transactionId] && Date.now() < deadline) {
+    await wait(TRANSACTION_POLL_INTERVAL_MS);
+    transactions = account.getTransactions();
+  }
+
+  return transactions;
+}
+
 describe('e2e', function e2eTest() {
   this.bail(true);
 
@@ -109,17 +121,8 @@ describe('e2e', function e2eTest() {
 
         restoredAccount = await restoredWallet.getWalletAccount();
 
-        let transactions = restoredAccount.getTransactions();
-        const transactionPropagationDeadline = Date.now() + TRANSACTION_PROPAGATION_TIMEOUT_MS;
-
         // A mempool transaction may need the next block before a restored wallet can discover it.
-        while (
-          !transactions[firstTransaction.id]
-          && Date.now() < transactionPropagationDeadline
-        ) {
-          await wait(TRANSACTION_POLL_INTERVAL_MS);
-          transactions = restoredAccount.getTransactions();
-        }
+        const transactions = await waitForTransaction(restoredAccount, firstTransaction.id);
 
         const transactionIds = Object.keys(transactions);
 
@@ -139,7 +142,8 @@ describe('e2e', function e2eTest() {
           waitForBalanceToChange(restoredAccount),
         ]);
 
-        const transactionIds = Object.keys(restoredAccount.getTransactions());
+        const transactions = await waitForTransaction(restoredAccount, secondTransaction.id);
+        const transactionIds = Object.keys(transactions);
 
         expect(transactionIds).to.have.lengthOf(2);
 
@@ -158,7 +162,8 @@ describe('e2e', function e2eTest() {
           await waitForBalanceToChange(emptyAccount);
         }
 
-        transactionIds = Object.keys(emptyAccount.getTransactions());
+        const transactions = await waitForTransaction(emptyAccount, secondTransaction.id);
+        transactionIds = Object.keys(transactions);
 
         expect(transactionIds).to.have.lengthOf(2);
 

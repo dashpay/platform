@@ -1312,9 +1312,21 @@ Refresh the transaction snapshot on every iteration. If the deadline expires,
 let the unchanged assertions fail with the observed transaction state.
 
 This waits for the contract the test actually verifies and cannot miss a
-previously emitted event. Keep the polling local to this one E2E rather than
-introducing a generic helper for a single use. Remove the now-unused
-`EVENTS.BLOCKHEADER` import and the unconditional balance-change wait.
+previously emitted event. Keep the polling local to this E2E file. Once the
+same race is observed after the second transfer, extract the repeated polling
+into a file-local `waitForTransaction(account, transactionId)` helper.
+After the existing broadcast/balance-change synchronization, poll specifically
+for `secondTransaction.id` before reading the final transaction map. Preserve
+the exact count of two and the exact first/second ID membership assertions;
+waiting for a balance change alone is insufficient because the balance event
+can precede insertion into `getTransactions()`. Remove the now-unused
+`EVENTS.BLOCKHEADER` import.
+
+Use the same helper before the final `emptyAccount` transaction-map assertion.
+That case also waits only for a balance change and can observe the identical
+ordering. The suite's `bail(true)` stopped job `89421190675` at the preceding
+restored-account failure, so the downstream assertion was not evidence that it
+is safe. Poll for `secondTransaction.id` there while retaining both exact IDs.
 
 Run `30055515569` proves this polling begins too late to repair the remaining
 failure. Retain it as the bounded propagation assertion, and repair the
@@ -1448,6 +1460,77 @@ At least one composition regression must exercise account provider
 initialization and worker start selection from the same persisted context,
 rather than testing only the scalar worker result.
 
+### 1o. Gate WASM functional suites on proof-context readiness once
+
+Run `30073553894`, package-functional job `89421190499`, started a healthy
+local network but reached the WASM functional command before the quorum
+sidecar exposed an eligible masternode to `WasmTrustedContext.prefetchLocal()`.
+Eight serial suite hooks each spent their independent 60-second budget and
+failed before later suites found the now-warm network. The run still completed
+51 tests, proving this was a shared startup precondition rather than eight
+independent query regressions. The current error formatting reduced the
+wasm-bindgen rejection to `[object Object]`, and the final partial interval
+spun hundreds of attempts without sleeping.
+
+Add a dedicated Node-only `tests/functional-readiness.mjs` Mocha root-hook
+plugin and register it alongside the existing bootstrap in the Node
+`test:functional` command. Export `mochaHooks.beforeAll` as a function, give
+that hook a bounded 10-minute readiness budget and an explicit 630-second
+Mocha timeout, import and initialize `dist/sdk.compressed.js`, and call the
+existing `prefetchLocalReady({ timeoutMs: 600_000 })` once before any Node
+functional suite begins. The extra 30 seconds covers module initialization and
+the trusted-context constructor's roughly 15-second worst-case in-flight
+request tail, so the helper—not Mocha—owns an unavailable-network failure and
+can surface its last concrete error. Free the returned `WasmTrustedContext`
+after readiness is proved. Mocha runs `beforeAll` once before all tests in its
+default serial mode, so every suite keeps its own existing 60- or 90-second
+timeout and immediate context construction remains a regression guard after
+the shared precondition has been met. Do not put this hook in
+`functional-bootstrap.cjs`: Karma also webpacks that shared file, while the
+readiness hook is intentionally a Node precondition whose successful run warms
+the same local network before Karma starts.
+
+Keep `prefetchLocalReady` bounded and state-based. Sleep for the smaller of the
+configured interval and remaining deadline after every failed attempt so the
+last partial interval cannot busy-loop. If the rejection is an object with a
+`message` field, surface that field before falling back to `String(error)`;
+never log or ignore a successful context. A preflight failure must abort the
+functional command with the last concrete readiness error. Add a narrow
+dependency seam for the prefetch function, monotonic clock, and sleeper, used
+only by a focused unit regression. With deterministic time, prove a rejection
+one millisecond before the deadline sleeps exactly that final millisecond,
+does not retry after the deadline, and reports the object rejection's
+`message` instead of `[object Object]`.
+
+Raise only `.github/workflows/tests-packges-functional.yml` from 15 to 30
+minutes. The job includes cold image pulls, wallet and JavaScript SDK
+functional tests, the new bounded proof-context gate, the WASM Node suite, and
+Karma. The existing 15-minute run reached cleanup at roughly 14 minutes after
+the sequential readiness failures, so keeping it would convert the fixed
+warm-up path into a workflow cancellation. This matches the cold-pull-safe
+budget already used by the main/browser and Dashmate E2E workflows without
+changing any production request timeout.
+
+Do not increase every suite timeout: that repeats the same startup wait
+serially and can turn one unavailable network into many minutes of redundant
+failures. Do not add an arbitrary sleep: readiness is already defined by the
+real trusted-context constructor. Do not move this WASM proof-specific
+precondition into the shared local-network action: wallet, Dash SDK, browser,
+and Dashmate jobs have different readiness contracts, and all would pay the
+extra wait. Do not reuse the shared browser bootstrap for the Node-only hook:
+that expands the Karma webpack graph and couples browser startup to Node's
+Mocha lifecycle. Do not treat a rerun as the fix; the failure is bounded and
+reproducible on a slow cold start.
+
+The red integration evidence is job `89421190499`: eight `before` hooks
+timed out and `prefetchLocalReady` reported the network unavailable after
+60 seconds. The green proof is the complete package-functional job: the root
+gate must report readiness, all Node WASM functional suites must pass without
+hook timeouts, and Karma must complete within the 30-minute job budget.
+Separately, main-suite job `89421190675` is the red second-transaction evidence:
+`wallet.spec.js:144` observed only the first transaction after the balance
+changed. The green main suite must retain both exact transaction IDs.
+
 ### 2. Add a Core-tip convergence gate before mining
 
 Use Dashmate's existing
@@ -1541,11 +1624,12 @@ workflow unconditionally downloads the JavaScript build artifact, and its
 current `always()` condition can otherwise start after a failed build and
 produce a secondary missing-artifact failure.
 
-Set both reusable E2E workflows to a bounded 30-minute job timeout. Their cold
-helper-image pulls are part of the job budget and can consume more than 11
+Set all three reusable E2E workflows to a bounded 30-minute job timeout. Their
+cold helper-image pulls are part of the job budget and can consume more than 11
 minutes before a test starts; the prior 15-minute limit cancelled healthy main,
-browser, and Dashmate local-network executions. This does not change any test
-or service-level timeout.
+browser, Dashmate local-network, and package-functional executions. The
+package-functional budget also contains the bounded proof-context readiness
+gate described above. This does not change any production request timeout.
 
 Preserve the existing version-change, schedule, and manual-dispatch paths. Do
 not change the ECR guard or fork behavior.
@@ -2095,6 +2179,27 @@ Swift CI test process
     compilation. For runner-specific proof, use the complete bootstrap/job
     rather than a raw filtered `swift test`; require both resolver tests with
     no skips and the simulator `xcodebuild` phase on `mac-runner-1`.
+20. Retain final-head package-functional job `89421190499` as the red shared
+    readiness observation. Add one serial Mocha root `beforeAll` gate using
+    the real initialized WASM trusted-context constructor with a bounded
+    10-minute retry budget and a 630-second Mocha timeout, free the preflight
+    context, and keep every suite's own short hook guard. With an injected
+    prefetch function, clock, and sleeper, prove red-to-green that the retry
+    helper sleeps through its final partial interval, stops at the deadline,
+    and surfaces an object rejection's message. The helper must own the
+    unavailable-network error before Mocha's timeout. Run the WASM unit suite,
+    raise the package-functional workflow to the same 30-minute
+    cold-pull-safe budget as the other reusable E2E workflows, then rerun the
+    complete package-functional job through both Node and Karma.
+21. Retain final-head main-suite job `89421190675` as the red restored-wallet
+    state-ordering observation. Reuse one file-local bounded
+    transaction-ID polling helper for the restored first transaction, the
+    restored account's second transaction, and the empty account's observation
+    of that second transaction. Poll immediately after the restored account is
+    created for the first observation; for both second-transaction observations,
+    retain the existing balance-change synchronization and then require the
+    transaction to appear in `getTransactions()` before each unchanged
+    count/membership assertion. Rerun the complete main suite.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test
@@ -2110,7 +2215,7 @@ or silently report it as passing.
 - Verify every prerequisite and E2E condition consumes the signal.
 - Verify Dashmate E2Es require both build results and that both local-network
   cache consumers have an identical fixture-input hash component.
-- Verify both reusable E2E workflows retain a 30-minute job timeout.
+- Verify all three reusable E2E workflows retain a 30-minute job timeout.
 - Review the filter paths against every local-network script and reusable
   workflow loaded by the platform tests.
 
