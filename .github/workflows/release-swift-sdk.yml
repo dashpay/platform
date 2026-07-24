@@ -1,0 +1,222 @@
+name: Release Swift SDK FFI
+
+# Part of the platform release: called from release.yml with the platform
+# release tag (vX.Y.Z[-pre.N]). Builds DashSDKFFI.xcframework at the tag's
+# commit and attaches the zip + its SwiftPM checksum to the platform GitHub
+# release under versioned asset names.
+#
+# The workflow_dispatch trigger is a re-run/emergency path only: it
+# re-releases the xcframework for an EXISTING platform release without
+# rebuilding everything release.yml's own dispatch would.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Platform release tag (vX.Y.Z[-pre.N])'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Existing platform release tag to (re-)release the xcframework for
+          (vX.Y.Z[-pre.N], optionally as refs/tags/vX.Y.Z[-pre.N]).
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    name: Build and release DashSDKFFI
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: write # attach the xcframework to the platform release
+    # Serialize same-tag runs (e.g. an emergency dispatch racing the
+    # release-triggered run) so the asset-exists guard cannot be bypassed by
+    # two concurrent builds. Never cancel a release build in progress.
+    concurrency:
+      group: release-swift-sdk-${{ inputs.tag }}
+      cancel-in-progress: false
+
+    steps:
+      # Same guard as release-kotlin-sdk.yml: normalize/validate the tag,
+      # refuse anything that is not an existing platform release tag with a
+      # published GitHub release, and hand checkout an explicit refs/tags/
+      # ref so a dispatch can never build from a branch. The release-exists
+      # check also guarantees the attach step below can never CREATE a
+      # release (softprops creates one when none exists).
+      - name: Resolve and validate release tag
+        id: release-ref
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${INPUT_TAG#refs/tags/}"
+          case "$TAG" in
+            refs/*|*/*)
+              echo "::error::'$INPUT_TAG' is not a plain tag name — provide an existing platform release tag (vX.Y.Z[-pre.N])."
+              exit 1
+              ;;
+          esac
+          # bash [[ =~ ]] matches the WHOLE string, so a multiline dispatch
+          # input can never pass validation and inject extra GITHUB_OUTPUT
+          # lines.
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "::error::Tag '$TAG' is not a platform release tag (expected vX.Y.Z[-pre.N])."
+            exit 1
+          fi
+          if ! gh api "repos/${REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::No existing tag 'refs/tags/${TAG}' in ${REPO}."
+            exit 1
+          fi
+          if ! gh api "repos/${REPO}/releases/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::No published GitHub release for tag '${TAG}' — the SDK release attaches to the platform release and never creates one."
+            exit 1
+          fi
+          {
+            echo "checkout_ref=refs/tags/${TAG}"
+            echo "tag_name=${TAG}"
+            echo "version=${TAG#v}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing DashSDKFFI ${TAG#v} for platform release ${TAG}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release-ref.outputs.checkout_ref }}
+
+      - name: Resolve built commit SHA
+        id: resolve-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.*'
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Set up Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Add iOS Rust targets
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Install cbindgen (for header generation)
+        run: |
+          brew install cbindgen || true
+
+      - name: Install protoc (Protocol Buffers compiler)
+        uses: arduino/setup-protoc@v3
+        with:
+          version: '32.x'
+
+      - name: Build DashSDKFFI.xcframework and install into Swift package
+        run: |
+          bash packages/swift-sdk/build_ios.sh --target all --profile release
+
+      - name: Zip XCFramework and compute checksum
+        id: zip
+        env:
+          VERSION: ${{ steps.release-ref.outputs.version }}
+        run: |
+          cd packages/swift-sdk
+          ditto -c -k --sequesterRsrc --keepParent DashSDKFFI.xcframework "DashSDKFFI-${VERSION}.xcframework.zip"
+          swift package compute-checksum "DashSDKFFI-${VERSION}.xcframework.zip" > "DashSDKFFI-${VERSION}.checksum.txt"
+          echo "checksum=$(cat "DashSDKFFI-${VERSION}.checksum.txt")" >> "$GITHUB_OUTPUT"
+
+      # Same two defenses as the Kotlin job: hard-fail if the tag was
+      # force-moved away from the commit this run built, and never overwrite
+      # an already-attached versioned zip — SwiftPM consumers pin the zip by
+      # checksum, so replacing attached bytes would break them. A deliberate
+      # re-release must delete the assets first.
+      - name: Verify tag still resolves to the built commit
+        id: tag-guard
+        env:
+          TAG: ${{ steps.release-ref.outputs.tag_name }}
+          ZIP_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
+          SUM_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
+          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the tag's current commit, dereferencing an annotated tag
+          # to the commit it points at.
+          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
+          fi
+          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach."
+            exit 1
+          fi
+          # The zip and its checksum are a pair: skip only when BOTH are
+          # already attached. Exactly one attached means an earlier run died
+          # mid-attach — re-attaching a fresh (not byte-reproducible) build
+          # next to the survivor would let the checksum contradict the zip,
+          # so fail and ask for a deliberate cleanup instead.
+          ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
+          HAVE_ZIP=$(echo "$ASSETS" | grep -Fxc "$ZIP_ASSET" || true)
+          HAVE_SUM=$(echo "$ASSETS" | grep -Fxc "$SUM_ASSET" || true)
+          if [ "$HAVE_ZIP" = "1" ] && [ "$HAVE_SUM" = "1" ]; then
+            echo "asset_exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release ${TAG} already has ${ZIP_ASSET} + ${SUM_ASSET} from an earlier run — leaving them untouched. Delete both assets deliberately to re-release."
+          elif [ "$HAVE_ZIP" = "1" ] || [ "$HAVE_SUM" = "1" ]; then
+            echo "::error::Release ${TAG} has only one of ${ZIP_ASSET} / ${SUM_ASSET} — an earlier attach was interrupted. Delete the surviving asset and re-run."
+            exit 1
+          else
+            echo "asset_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Attach to the PLATFORM release: only tag_name + files. Passing name/
+      # body/prerelease/generate_release_notes here would overwrite the
+      # platform release's own notes, title or prerelease flag.
+      - name: Attach XCFramework to the platform release
+        if: steps.tag-guard.outputs.asset_exists != 'true'
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.release-ref.outputs.tag_name }}
+          files: |
+            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
+            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
+
+      # The durable home for the consumer checksum is the checksum.txt release
+      # asset; this summary is a convenience copy. Skipped when the attach was
+      # skipped: this run's freshly computed checksum would describe THIS
+      # build, not the (not byte-reproducible) zip actually attached earlier.
+      - name: Write SwiftPM usage to the job summary
+        if: steps.tag-guard.outputs.asset_exists != 'true'
+        env:
+          TAG: ${{ steps.release-ref.outputs.tag_name }}
+          VERSION: ${{ steps.release-ref.outputs.version }}
+          CHECKSUM: ${{ steps.zip.outputs.checksum }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## DashSDKFFI ${VERSION}
+
+          SwiftPM usage:
+
+          \`\`\`swift
+          .binaryTarget(
+            name: "DashSDKFFI",
+            url: "https://github.com/${REPO}/releases/download/${TAG}/DashSDKFFI-${VERSION}.xcframework.zip",
+            checksum: "${CHECKSUM}"
+          )
+          \`\`\`
+          EOF
