@@ -83,6 +83,13 @@ pub struct DrivePlatformStateMethodVersions {
 pub struct DriveSavedBlockTransactionsMethodVersions {
     pub store_address_balances: FeatureVersion,
     pub fetch_address_balances: FeatureVersion,
+    /// Wire format of the compacted address-balance-changes proof. 0 emits a
+    /// single GroveDB proof; 1 emits the two-proof
+    /// `CompactedAddressBalanceProof` bincode envelope (predecessor +
+    /// forward). Must move in lockstep with
+    /// `DriveVerifyAddressFundsMethodVersions::verify_compacted_address_balance_changes`,
+    /// which selects the matching decoder on the client side.
+    pub prove_compacted_address_balance_changes: FeatureVersion,
     pub compact_address_balances: FeatureVersion,
     pub cleanup_expired_address_balances: FeatureVersion,
     /// Maximum number of blocks to store before compaction is triggered
