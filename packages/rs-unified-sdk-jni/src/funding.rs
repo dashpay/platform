@@ -151,6 +151,43 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
     Some(id)
 }
 
+/// Secret-key sibling of [`read_id32`]: same 32-byte contract, but the
+/// returned buffer is wrapped in [`zeroize::Zeroizing`] (scrubbed on drop) and
+/// the intermediate JNI `Vec<u8>` copy is explicitly zeroized before it is
+/// dropped. Use for private/bearer key material only — mirrors
+/// `transactions::read_key32_zeroizing`. A one-time invitation spending key is
+/// bearer spend authority, so it must not linger in unsanitized buffers.
+fn read_key32_zeroizing(
+    env: &mut JNIEnv,
+    arr: &JByteArray,
+    field: &str,
+) -> Option<zeroize::Zeroizing<[u8; 32]>> {
+    use zeroize::Zeroize;
+
+    if arr.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} byte[] was null"));
+        return None;
+    }
+    let mut bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} byte[] was invalid"));
+            return None;
+        }
+    };
+    if bytes.len() != 32 {
+        let len = bytes.len();
+        bytes.zeroize();
+        throw_sdk_exception(env, 1, &format!("{field} must be 32 bytes, got {len}"));
+        return None;
+    }
+    let mut key = zeroize::Zeroizing::new([0u8; 32]);
+    key.copy_from_slice(&bytes);
+    bytes.zeroize();
+    Some(key)
+}
+
 /// Read a required 43-byte raw Orchard recipient address from a Java
 /// `byte[]` (11-byte diversifier + 32-byte pk_d); throws + returns None on
 /// the wrong length / a JNI error.
@@ -831,7 +868,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
-        let Some(sk) = read_id32(env, &one_time_sk, "oneTimeSk") else {
+        // Bearer spend authority for a funded invitation: carry it through a
+        // `Zeroizing` buffer (scrubbed on drop) instead of the generic
+        // `read_id32`, whose intermediate JNI copy and returned array are left
+        // unsanitized. `sk` derefs to `[u8; 32]`, so `sk.as_ptr()` below is
+        // unchanged, and the secret is wiped when `sk` drops after the FFI call.
+        let Some(sk) = read_key32_zeroizing(env, &one_time_sk, "oneTimeSk") else {
             return ptr::null_mut();
         };
         let Some(change_raw) = read_recipient43(env, &change_address_raw43) else {
