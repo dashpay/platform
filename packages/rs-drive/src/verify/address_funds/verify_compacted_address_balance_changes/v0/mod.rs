@@ -212,7 +212,7 @@ impl Drive {
             let row_decode_config = bincode::config::standard()
                 .with_big_endian()
                 .with_limit::<MAX_COMPACTED_BALANCE_ROW_DECODE_BYTES>();
-            let (address_balances, _): (
+            let (address_balances, consumed): (
                 BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
                 usize,
             ) = bincode::decode_from_slice(&serialized_data, row_decode_config).map_err(|e| {
@@ -221,6 +221,14 @@ impl Drive {
                     e
                 )))
             })?;
+            // Wire-safe tightening (parity with v1): honest encoders emit
+            // rows with no trailing bytes, so rejecting them cannot break
+            // legacy peers.
+            if consumed != serialized_data.len() {
+                return Err(Error::Proof(ProofError::CorruptedProof(
+                    "compacted address balance row contains trailing bytes".to_string(),
+                )));
+            }
 
             compacted_changes.push((range_start, range_end, address_balances));
         }
