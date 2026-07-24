@@ -379,6 +379,26 @@ pub(crate) enum DashpayLeg {
     ExternalAccount,
 }
 
+/// An account-level xpub whose private keys the wallet under test does NOT
+/// hold — derived from a SEPARATE random wallet. Models a DashPay contact's
+/// decrypted xpub, from which production builds the watch-only
+/// `DashpayExternalAccount` (`is_watch_only: true`,
+/// `wallet/identity/network/contacts.rs`). Any well-formed testnet account
+/// xpub serves as a single-pool account key; using a FOREIGN one makes the
+/// account unsignable by the local seed exactly as it is in production, so an
+/// asset-lock builder that (wrongly) selected its UTXOs would sign them with
+/// the local mnemonic's key and produce an invalid input signature.
+fn foreign_contact_account_xpub() -> ExtendedPubKey {
+    let foreign = TestWalletContext::new_random();
+    foreign
+        .wallet
+        .accounts
+        .standard_bip44_accounts
+        .get(&0)
+        .expect("foreign wallet has BIP44 account 0")
+        .account_xpub
+}
+
 /// Builds a testnet wallet manager whose balance is SPLIT across BIP44 account
 /// 0 (`bip44_duffs`) and a DashPay funds account (`dashpay_duffs`) — the
 /// DashPay analogue of [`split_funded_wallet_manager`]'s BIP44 + CoinJoin split.
@@ -402,26 +422,6 @@ pub(crate) enum DashpayLeg {
 /// seed and is signable end-to-end; the `ExternalAccount` account is watch-only
 /// (its xpub is a contact's, from a foreign seed), so the local signer CANNOT
 /// sign its UTXOs — the asset-lock builder must exclude them.
-/// An account-level xpub whose private keys the wallet under test does NOT
-/// hold — derived from a SEPARATE random wallet. Models a DashPay contact's
-/// decrypted xpub, from which production builds the watch-only
-/// `DashpayExternalAccount` (`is_watch_only: true`,
-/// `wallet/identity/network/contacts.rs`). Any well-formed testnet account
-/// xpub serves as a single-pool account key; using a FOREIGN one makes the
-/// account unsignable by the local seed exactly as it is in production, so an
-/// asset-lock builder that (wrongly) selected its UTXOs would sign them with
-/// the local mnemonic's key and produce an invalid input signature.
-fn foreign_contact_account_xpub() -> ExtendedPubKey {
-    let foreign = TestWalletContext::new_random();
-    foreign
-        .wallet
-        .accounts
-        .standard_bip44_accounts
-        .get(&0)
-        .expect("foreign wallet has BIP44 account 0")
-        .account_xpub
-}
-
 pub(crate) async fn split_funded_wallet_manager_dashpay(
     bip44_duffs: u64,
     dashpay_duffs: u64,
