@@ -7,7 +7,8 @@ use crate::mock::MockResponse;
 use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::Identifier;
+use crate::platform::types::evonode::EvoNode;
+use crate::platform::{FetchUnproved, Identifier};
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
@@ -23,6 +24,7 @@ use dpp::dashcore::Network;
 use dpp::prelude::IdentityNonce;
 use dpp::version::PlatformVersion;
 use drive::grovedb::operations::proof::GroveDBProof;
+use drive_proof_verifier::types::evonode_status::EvoNodeStatus;
 use drive_proof_verifier::FromProof;
 pub use http::Uri;
 #[cfg(feature = "mocks")]
@@ -42,6 +44,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic, Arc};
+use std::time::Duration;
 #[cfg(feature = "mocks")]
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
@@ -71,6 +74,11 @@ const fn min_protocol_version(network: Network) -> u32 {
 
 /// Default signed-metadata freshness window for network SDKs.
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
+
+/// Per-node timeout for the best-effort peer protocol-version probe
+/// ([`Sdk::prefer_peers_with_latest_protocol_version`]). Probes run
+/// concurrently, so this also bounds the total probe time.
+const PEER_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
@@ -374,8 +382,16 @@ impl Sdk {
     /// succeeds. Refresh therefore inherits the exact cryptographic trust of
     /// ordinary traffic; it adds no second, weaker source of truth.
     ///
+    /// Before the proven queries, this best-effort probes the known DAPI peers and
+    /// biases future peer selection towards nodes supporting this client's latest
+    /// protocol version (see [`Self::prefer_peers_with_latest_protocol_version`]).
+    /// The probe is unproven and can never fail this call; it only reorders peer
+    /// preference, it does not feed the version ratchet.
+    ///
     /// On a pinned SDK ([`SdkBuilder::with_version`], `version_pinned`
-    /// on) this issues no request and returns the pinned version.
+    /// on) this issues no proven query and returns the pinned version (the
+    /// best-effort peer probe above still runs — peer preference is orthogonal
+    /// to version pinning).
     ///
     /// If the fetch fails the failure is **non-fatal**: whatever version was
     /// already learned is kept — we never fall back to an unverified one. Note
@@ -386,14 +402,19 @@ impl Sdk {
     /// ratchet step is proof-verified and upward-only, so a partial refresh can
     /// only ever leave the SDK closer to the network's real version.
     ///
-    /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) this is a
-    /// no-op that returns the current version: refresh relies on a proven query,
-    /// so with proofs off there is no trusted source to ratchet from.
+    /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) the
+    /// proven ratchet is skipped and the current version is returned: refresh
+    /// relies on a proven query, so with proofs off there is no trusted source
+    /// to ratchet from. The peer probe still runs.
     ///
     /// Returns the SDK's protocol version number after the (possible) ratchet.
     ///
     /// [`SdkBuilder::with_version`]: SdkBuilder::with_version
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
+        // Best-effort: bias peer selection towards nodes that already support
+        // this client's newest protocol version. Never fails, never ratchets.
+        self.prefer_peers_with_latest_protocol_version().await;
+
         if !self.prove() {
             return Ok(self.protocol_version_number());
         }
@@ -410,6 +431,96 @@ impl Sdk {
             }
         }
         Ok(self.protocol_version_number())
+    }
+
+    /// Best-effort: probe DAPI peers for the protocol version they support and
+    /// prefer peers supporting this client's latest protocol version.
+    ///
+    /// Concurrently issues an unproven `getStatus` to every live address in the
+    /// SDK's address list (per-node timeout [`PEER_VERSION_PROBE_TIMEOUT`], no
+    /// retries, no banning) and records each node's reported
+    /// `version.protocol.drive.latest` — the highest protocol version that
+    /// node's software supports, i.e. the version it desires/votes for. It then
+    /// marks [`PlatformVersion::latest()`] (this client's newest supported
+    /// protocol version) as the preferred peer version, so subsequent requests
+    /// pick, when possible, peers whose reported version is at least ours.
+    ///
+    /// The preference is strictly best-effort:
+    /// - probe failures are ignored (the node stays in rotation, unranked);
+    /// - when no live peer is known to support the target version, selection
+    ///   falls back to any live peer — no peer is ever excluded by version;
+    /// - the probe is *unproven* and feeds only peer ordering, never the SDK's
+    ///   protocol-version ratchet, which stays proof-driven
+    ///   ([`Self::maybe_update_protocol_version`]).
+    ///
+    /// Called automatically by [`Self::refresh_protocol_version`] (i.e. on app
+    /// start and network switch in the mobile SDKs); callable directly for
+    /// custom startup flows. On a mock SDK this is a no-op.
+    ///
+    /// Returns the number of live peers found to support the target version.
+    pub async fn prefer_peers_with_latest_protocol_version(&self) -> usize {
+        #[cfg(feature = "mocks")]
+        if matches!(self.inner, SdkInstance::Mock { .. }) {
+            return 0;
+        }
+
+        let target = PlatformVersion::latest().protocol_version;
+        let address_list = self.address_list();
+        let addresses = address_list.get_live_addresses();
+
+        let settings = RequestSettings {
+            connect_timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
+            timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
+            retries: Some(0),
+            ban_failed_address: Some(false),
+            max_decoding_message_size: None,
+        };
+
+        let probes = addresses.into_iter().map(|address| async move {
+            let result = EvoNodeStatus::fetch_unproved_with_settings(
+                self,
+                EvoNode::new(address.clone()),
+                settings,
+            )
+            .await;
+            (address, result)
+        });
+
+        let mut preferred_count = 0;
+        for (address, result) in futures::future::join_all(probes).await {
+            let supported = match result {
+                Ok((Some(status), _)) => status
+                    .version
+                    .protocol
+                    .and_then(|protocol| protocol.drive)
+                    .map(|drive| drive.latest),
+                Ok((None, _)) => None,
+                Err(error) => {
+                    tracing::debug!(
+                        target: "dash_sdk::protocol_version",
+                        %address,
+                        %error,
+                        "peer protocol-version probe failed; leaving peer unranked"
+                    );
+                    None
+                }
+            };
+
+            address_list.set_supported_protocol_version(&address, supported);
+            if supported.is_some_and(|version| version >= target) {
+                preferred_count += 1;
+            }
+        }
+
+        address_list.set_preferred_protocol_version(Some(target));
+        tracing::debug!(
+            target: "dash_sdk::protocol_version",
+            target_protocol_version = target,
+            preferred_peers = preferred_count,
+            "peer protocol-version probe complete; preferring peers supporting our latest version"
+        );
+
+        preferred_count
     }
 
     /// Retrieve object `O` from proof contained in `request` (of type `R`) and `response`.

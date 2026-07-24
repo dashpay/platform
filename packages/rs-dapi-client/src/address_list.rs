@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -78,6 +79,11 @@ pub struct AddressStatus {
     /// on [`AddressStatus::unban`]. Sourced from the error that caused
     /// the ban (see `update_address_ban_status`).
     ban_reason: Option<String>,
+    /// Highest protocol version this node reports supporting
+    /// (`version.protocol.drive.latest` from `getStatus`), when known.
+    /// Unlike the ban fields this survives [`AddressStatus::unban`]:
+    /// version knowledge is orthogonal to node health.
+    supported_protocol_version: Option<u32>,
 }
 
 impl AddressStatus {
@@ -172,6 +178,10 @@ pub enum AddressListError {
 pub struct AddressList {
     addresses: Arc<RwLock<HashMap<Address, AddressStatus>>>,
     base_ban_period: Duration,
+    /// Protocol version peers should support for [`AddressList::get_live_address`]
+    /// to prefer them; `0` means no preference. Shared across clones (like the
+    /// address map) so a preference set on one clone applies everywhere.
+    preferred_protocol_version: Arc<AtomicU32>,
 }
 
 impl Default for AddressList {
@@ -197,7 +207,54 @@ impl AddressList {
         AddressList {
             addresses: Arc::new(RwLock::new(HashMap::new())),
             base_ban_period,
+            preferred_protocol_version: Arc::new(AtomicU32::new(0)),
         }
+    }
+
+    /// Set (or clear with `None`) the protocol version peers should support for
+    /// [`AddressList::get_live_address`] to prefer them.
+    ///
+    /// The preference is best-effort: selection falls back to any live address
+    /// when no live address is known to support `version` (see
+    /// [`AddressList::get_live_address`]). Protocol versions start at 1, so `0`
+    /// is rejected as if `None` was passed.
+    pub fn set_preferred_protocol_version(&self, version: Option<u32>) {
+        self.preferred_protocol_version
+            .store(version.unwrap_or(0), Ordering::Relaxed);
+    }
+
+    /// Get the preferred protocol version for peer selection, if set.
+    pub fn preferred_protocol_version(&self) -> Option<u32> {
+        match self.preferred_protocol_version.load(Ordering::Relaxed) {
+            0 => None,
+            version => Some(version),
+        }
+    }
+
+    /// Record the highest protocol version `address` reports supporting
+    /// (`version.protocol.drive.latest` from `getStatus`), or clear it with
+    /// `None` when a fresh probe could not determine it.
+    ///
+    /// Returns `false` if the address is not in the list.
+    pub fn set_supported_protocol_version(&self, address: &Address, version: Option<u32>) -> bool {
+        let mut guard = self.addresses.write().unwrap();
+
+        let Some(status) = guard.get_mut(address) else {
+            return false;
+        };
+
+        status.supported_protocol_version = version;
+
+        true
+    }
+
+    /// Get the highest protocol version `address` reports supporting, when known.
+    pub fn supported_protocol_version(&self, address: &Address) -> Option<u32> {
+        let guard = self.addresses.read().unwrap();
+
+        guard
+            .get(address)
+            .and_then(|status| status.supported_protocol_version)
     }
 
     /// Bans address
@@ -298,6 +355,15 @@ impl AddressList {
     ///
     /// An address is considered live when it has never been banned or when its
     /// ban period has already expired.
+    ///
+    /// When a preferred protocol version is set (see
+    /// [`AddressList::set_preferred_protocol_version`]), selection is
+    /// best-effort biased towards it: a live address whose reported supported
+    /// protocol version (see [`AddressList::set_supported_protocol_version`])
+    /// is at least the preferred one is chosen first, and only when no such
+    /// address exists does selection fall back to a random live address —
+    /// including nodes whose version is unknown or lower. Nodes are never
+    /// excluded by version alone.
     pub fn get_live_address(&self) -> Option<Address> {
         // TODO(low): module-wide `.read()/.write().unwrap()` panics on a
         // poisoned lock; adopt poison-tolerant locking consistently (SEC-003).
@@ -306,14 +372,34 @@ impl AddressList {
         let mut rng = SmallRng::from_entropy();
         let now = chrono::Utc::now();
 
+        let is_live = |status: &AddressStatus| {
+            status
+                .banned_until
+                .map(|banned_until| banned_until < now)
+                .unwrap_or(true)
+        };
+
+        if let Some(preferred) = self.preferred_protocol_version() {
+            let preferred_address = guard
+                .iter()
+                .filter(|(_, status)| {
+                    is_live(status)
+                        && status
+                            .supported_protocol_version
+                            .map(|version| version >= preferred)
+                            .unwrap_or(false)
+                })
+                .choose(&mut rng)
+                .map(|(addr, _)| addr.clone());
+
+            if preferred_address.is_some() {
+                return preferred_address;
+            }
+        }
+
         guard
             .iter()
-            .filter(|(_, status)| {
-                status
-                    .banned_until
-                    .map(|banned_until| banned_until < now)
-                    .unwrap_or(true)
-            })
+            .filter(|(_, status)| is_live(status))
             .choose(&mut rng)
             .map(|(addr, _)| addr.clone())
     }
@@ -959,6 +1045,167 @@ mod tests {
             list.is_banned(&addr),
             "is_banned() must still be true after window expiry (ban_count not reset)"
         );
+    }
+
+    #[test]
+    fn test_preferred_protocol_version_roundtrip() {
+        let list = AddressList::new();
+        assert_eq!(list.preferred_protocol_version(), None);
+
+        list.set_preferred_protocol_version(Some(13));
+        assert_eq!(list.preferred_protocol_version(), Some(13));
+
+        list.set_preferred_protocol_version(None);
+        assert_eq!(list.preferred_protocol_version(), None);
+
+        // 0 is the "no preference" sentinel — setting it behaves like None.
+        list.set_preferred_protocol_version(Some(0));
+        assert_eq!(list.preferred_protocol_version(), None);
+    }
+
+    #[test]
+    fn test_set_supported_protocol_version_unknown_address() {
+        let list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        assert!(!list.set_supported_protocol_version(&addr, Some(13)));
+        assert_eq!(list.supported_protocol_version(&addr), None);
+    }
+
+    #[test]
+    fn test_set_supported_protocol_version_roundtrip() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        assert_eq!(list.supported_protocol_version(&addr), None);
+        assert!(list.set_supported_protocol_version(&addr, Some(13)));
+        assert_eq!(list.supported_protocol_version(&addr), Some(13));
+        assert!(list.set_supported_protocol_version(&addr, None));
+        assert_eq!(list.supported_protocol_version(&addr), None);
+    }
+
+    /// With a preference set, only live addresses whose reported supported
+    /// version is at least the preferred one are selected — nodes with an
+    /// unknown or lower version are skipped while a matching node exists.
+    #[test]
+    fn test_get_live_address_prefers_supporting_peers() {
+        let mut list = AddressList::new();
+        let matching: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let older: Address = "http://127.0.0.1:3001".parse().unwrap();
+        let unknown: Address = "http://127.0.0.1:3002".parse().unwrap();
+
+        list.add(matching.clone());
+        list.add(older.clone());
+        list.add(unknown.clone());
+
+        list.set_supported_protocol_version(&matching, Some(13));
+        list.set_supported_protocol_version(&older, Some(12));
+        list.set_preferred_protocol_version(Some(13));
+
+        // Random selection: sample repeatedly, must always land on `matching`.
+        for _ in 0..50 {
+            assert_eq!(list.get_live_address(), Some(matching.clone()));
+        }
+    }
+
+    /// A peer reporting a version *newer* than the preferred one also counts
+    /// as preferred (>= semantics): it supports our latest version too.
+    #[test]
+    fn test_get_live_address_newer_peer_counts_as_preferred() {
+        let mut list = AddressList::new();
+        let newer: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let older: Address = "http://127.0.0.1:3001".parse().unwrap();
+
+        list.add(newer.clone());
+        list.add(older.clone());
+
+        list.set_supported_protocol_version(&newer, Some(14));
+        list.set_supported_protocol_version(&older, Some(12));
+        list.set_preferred_protocol_version(Some(13));
+
+        for _ in 0..50 {
+            assert_eq!(list.get_live_address(), Some(newer.clone()));
+        }
+    }
+
+    /// Best-effort fallback: when no live peer is known to support the
+    /// preferred version, selection falls back to any live peer instead of
+    /// returning None.
+    #[test]
+    fn test_get_live_address_falls_back_when_no_peer_matches() {
+        let mut list = AddressList::new();
+        let older: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let unknown: Address = "http://127.0.0.1:3001".parse().unwrap();
+
+        list.add(older.clone());
+        list.add(unknown.clone());
+
+        list.set_supported_protocol_version(&older, Some(12));
+        list.set_preferred_protocol_version(Some(13));
+
+        let selected = list
+            .get_live_address()
+            .expect("fallback must select a peer");
+        assert!(selected == older || selected == unknown);
+    }
+
+    /// A banned matching peer must not be selected: the ban filter applies
+    /// before the version preference, falling back to live non-matching peers.
+    #[test]
+    fn test_get_live_address_banned_preferred_peer_falls_back() {
+        let mut list = AddressList::new();
+        let matching: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let older: Address = "http://127.0.0.1:3001".parse().unwrap();
+
+        list.add(matching.clone());
+        list.add(older.clone());
+
+        list.set_supported_protocol_version(&matching, Some(13));
+        list.set_supported_protocol_version(&older, Some(12));
+        list.set_preferred_protocol_version(Some(13));
+
+        list.ban(&matching);
+
+        for _ in 0..50 {
+            assert_eq!(list.get_live_address(), Some(older.clone()));
+        }
+    }
+
+    /// The supported version recorded for a node survives unban: version
+    /// knowledge is orthogonal to node health.
+    #[test]
+    fn test_supported_protocol_version_survives_unban() {
+        let mut list = AddressList::new();
+        let addr: Address = "http://127.0.0.1:3000".parse().unwrap();
+        list.add(addr.clone());
+
+        list.set_supported_protocol_version(&addr, Some(13));
+        list.ban(&addr);
+        list.unban(&addr);
+
+        assert_eq!(list.supported_protocol_version(&addr), Some(13));
+    }
+
+    /// The preference and reported versions are shared across clones, like the
+    /// address map itself, so a preference set through one handle (e.g. the
+    /// SDK's) applies to selection through another (e.g. the DAPI client's).
+    #[test]
+    fn test_protocol_version_preference_shared_across_clones() {
+        let mut list = AddressList::new();
+        let matching: Address = "http://127.0.0.1:3000".parse().unwrap();
+        let older: Address = "http://127.0.0.1:3001".parse().unwrap();
+        list.add(matching.clone());
+        list.add(older.clone());
+
+        let clone = list.clone();
+        clone.set_supported_protocol_version(&matching, Some(13));
+        clone.set_supported_protocol_version(&older, Some(12));
+        clone.set_preferred_protocol_version(Some(13));
+
+        assert_eq!(list.preferred_protocol_version(), Some(13));
+        for _ in 0..50 {
+            assert_eq!(list.get_live_address(), Some(matching.clone()));
+        }
     }
 
     /// Invariant 1 at the ladder source: the exponential ban window is
