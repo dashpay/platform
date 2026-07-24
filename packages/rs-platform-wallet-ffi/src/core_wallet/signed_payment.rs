@@ -60,7 +60,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
     let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
 
     let result =
-        runtime().block_on(SIGNED_PAYMENT_REGISTRY.broadcast(token as ReservationToken, &core));
+        runtime().block_on(SIGNED_PAYMENT_REGISTRY.broadcast(ReservationToken::from(token), &core));
 
     match result {
         Ok(txid) => {
@@ -107,6 +107,6 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
 /// Always safe to call; `token` is a plain value.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_signed_payment_release(token: u64) -> PlatformWalletFFIResult {
-    runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(token as ReservationToken));
+    runtime().block_on(SIGNED_PAYMENT_REGISTRY.release(ReservationToken::from(token)));
     PlatformWalletFFIResult::ok()
 }

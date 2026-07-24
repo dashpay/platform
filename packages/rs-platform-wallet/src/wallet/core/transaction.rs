@@ -115,6 +115,62 @@ impl SignedCoreTransaction {
     pub fn reservation_token(&self) -> Option<ReservationToken> {
         self.reservation_token
     }
+
+    /// Consume this finalized transaction into the owned parts the deferred
+    /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry) stores.
+    ///
+    /// Consuming (rather than cloning) is what enforces unique reservation
+    /// ownership: `SignedCoreTransaction` is deliberately not `Clone`, so a
+    /// finalize yields exactly one ownership object and the registry can be
+    /// handed it exactly once — a caller cannot mint two live tokens that name
+    /// the same held reservation (`dashpay/platform#4185`). The transaction,
+    /// funding account, and reservation height are derived here, not supplied
+    /// independently by the caller.
+    pub(crate) fn into_registered_parts(self) -> RegisteredPaymentParts {
+        RegisteredPaymentParts {
+            transaction: self.transaction,
+            funding_account_type: self.funding_account_type,
+            funding_account_index: self.funding_account_index,
+            reservation_height: self.reservation_height,
+            reservation_token: self.reservation_token,
+        }
+    }
+}
+
+/// The owned facts the deferred-payment registry takes over when it registers a
+/// finalized transaction. Produced only by
+/// [`SignedCoreTransaction::into_registered_parts`], which consumes the
+/// non-`Clone` ownership object exactly once.
+pub(crate) struct RegisteredPaymentParts {
+    pub(crate) transaction: Transaction,
+    pub(crate) funding_account_type: AccountTypePreference,
+    pub(crate) funding_account_index: u32,
+    pub(crate) reservation_height: u32,
+    pub(crate) reservation_token: Option<ReservationToken>,
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl SignedCoreTransaction {
+    /// Build a `SignedCoreTransaction` directly, for tests that need a finalized
+    /// ownership object without running the full funding + signing pipeline
+    /// (e.g. the registry and FFI destroy/lifecycle tests).
+    pub fn new_for_test(
+        transaction: Transaction,
+        fee: u64,
+        funding_account_type: AccountTypePreference,
+        funding_account_index: u32,
+        reservation_height: u32,
+        reservation_token: Option<ReservationToken>,
+    ) -> Self {
+        Self {
+            transaction,
+            fee,
+            funding_account_type,
+            funding_account_index,
+            reservation_height,
+            reservation_token,
+        }
+    }
 }
 
 fn account(

@@ -77,7 +77,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::ReservationToken as FundingReservationToken;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::wallet::core::CoreWallet;
+use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
 use crate::PlatformWalletError;
 
 /// Opaque handle to a registered, signed-but-unsent payment. Minted by
@@ -85,7 +85,40 @@ use crate::PlatformWalletError;
 /// [`SignedPaymentRegistry::broadcast`] or
 /// [`SignedPaymentRegistry::release`]. Values are unique for the process
 /// lifetime and never reused, so a stale token can always be recognised.
-pub type ReservationToken = u64;
+///
+/// A distinct newtype rather than a bare `u64` alias so a payment handle can
+/// never be silently confused with any other numeric identifier (the funding
+/// [`FundingReservationToken`], an account index, a raw height). It crosses the
+/// C ABI as a `u64` — [`from`](ReservationToken::from) / [`as_u64`](ReservationToken::as_u64)
+/// are the only conversions, applied at the FFI boundary.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ReservationToken(u64);
+
+impl ReservationToken {
+    /// The raw wire value handed back across the FFI boundary to the host.
+    pub const fn as_u64(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<u64> for ReservationToken {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl From<ReservationToken> for u64 {
+    fn from(token: ReservationToken) -> Self {
+        token.0
+    }
+}
+
+impl std::fmt::Display for ReservationToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// Maximum age, in `last_processed_height` blocks, of a registered token before
 /// its broadcast or release is refused.
@@ -105,16 +138,17 @@ pub type ReservationToken = u64;
 /// for `last_processed_height` to lag a few blocks behind the true tip.
 const RESERVATION_MAX_AGE_BLOCKS: u32 = 20;
 
-/// Whether a token registered at `registered_height` is too old to act on at
-/// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). Unknown heights (the
-/// wallet was gone at register or is gone now) disable the guard — the
-/// wallet-mismatch / account-lookup paths already reject those cases.
-fn reservation_expired(registered_height: Option<u32>, current_height: Option<u32>) -> bool {
-    match (registered_height, current_height) {
-        (Some(registered), Some(current)) => {
-            current.saturating_sub(registered) >= RESERVATION_MAX_AGE_BLOCKS
-        }
-        _ => false,
+/// Whether a token stamped at `registered_height` is too old to act on at
+/// `current_height` (see [`RESERVATION_MAX_AGE_BLOCKS`]). The registration
+/// height is mandatory — it is derived from the finalized
+/// [`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction)
+/// the registry consumed. An unknown *current* height (the wallet is gone from
+/// the manager now) disables the guard: the wallet-mismatch / account-lookup
+/// paths already reject those cases.
+fn reservation_expired(registered_height: u32, current_height: Option<u32>) -> bool {
+    match current_height {
+        Some(current) => current.saturating_sub(registered_height) >= RESERVATION_MAX_AGE_BLOCKS,
+        None => false,
     }
 }
 
@@ -169,14 +203,14 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     /// key-wallet TTL backstop.
     account_type: AccountTypePreference,
     account_index: u32,
-    /// Wallet `last_processed_height` captured at registration — the exact clock
-    /// `build_signed` / `finalize_transaction` stamps the funding reservation
-    /// with. Compared against the wallet's current `last_processed_height` to
-    /// refuse a broadcast/release once the reservation could plausibly have been
-    /// swept by key-wallet's TTL (see [`RESERVATION_MAX_AGE_BLOCKS`]). `None` when
-    /// the wallet was not resolvable at registration, which disables the age
-    /// guard for this entry.
-    registered_height: Option<u32>,
+    /// Wallet `last_processed_height` captured inside the funding critical
+    /// section — the exact clock `finalize_transaction` stamps the funding
+    /// reservation with (`SignedCoreTransaction::reservation_height`). Compared
+    /// against the wallet's current `last_processed_height` to refuse a
+    /// broadcast/release once the reservation could plausibly have been swept by
+    /// key-wallet's TTL (see [`RESERVATION_MAX_AGE_BLOCKS`]). Mandatory: it is
+    /// derived from the consumed ownership object, never sampled independently.
+    registered_height: u32,
     /// The key-wallet [`FundingReservationToken`] stamped onto the funding
     /// inputs when `finalize_transaction` reserved them
     /// (`SignedCoreTransaction::reservation_token`), or `None` if the build
@@ -228,49 +262,40 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Take ownership of a built, signed `tx` (whose funding UTXOs `finalize`
-    /// already reserved) and return an opaque token for a later
+    /// Take ownership of a finalized [`SignedCoreTransaction`] (whose funding
+    /// UTXOs `finalize` already reserved) and return an opaque token for a later
     /// [`broadcast`](Self::broadcast) or [`release`](Self::release).
+    ///
+    /// `signed` is **consumed**, which is what enforces unique reservation
+    /// ownership: `SignedCoreTransaction` is not `Clone`, so a single finalize
+    /// can be registered at most once — there is no way to mint two live tokens
+    /// that name the same held reservation (`dashpay/platform#4185`). The built
+    /// transaction, the funding account, the mandatory reservation height
+    /// (`SignedCoreTransaction::reservation_height` — captured inside the
+    /// funding critical section before the potentially-slow external signer ran,
+    /// so the age guard measures the reservation's true age rather than a
+    /// post-signing sample), and the owner-guard token
+    /// (`SignedCoreTransaction::reservation_token`) are all derived from that
+    /// object here rather than supplied independently by the caller.
     ///
     /// `core` is the wallet the payment was built against; it is captured so the
     /// later operation acts on the exact reservation state that holds the inputs.
-    ///
-    /// `registered_height` MUST be the `last_processed_height` the funding
-    /// reservation was stamped with — the height captured **inside** the funding
-    /// critical section, *before* signing (`SignedCoreTransaction::reservation_height`).
-    /// The caller passes it in rather than the registry sampling a fresh
-    /// `last_processed_height` here, which would be taken *after* the
-    /// (potentially slow, external) signer ran: a slow signer could let the
-    /// wallet advance so that a freshly-sampled height makes the token look
-    /// young while the reservation it covers has already aged toward
-    /// key-wallet's TTL. `None` disables the age guard for this entry (the
-    /// wallet-mismatch / account-lookup paths still reject a re-created wallet).
-    /// See [`RESERVATION_MAX_AGE_BLOCKS`].
-    ///
-    /// `funding_reservation_token` MUST be the key-wallet token the build
-    /// stamped onto the reserved inputs (`SignedCoreTransaction::reservation_token`)
-    /// so a later broadcast-reject or release frees only inputs this build still
-    /// owns; `None` disables the owner guard (never the case for a funded
-    /// finalize, which always reserves).
     pub async fn register(
         &self,
         core: CoreWallet<B>,
-        tx: Transaction,
-        account_type: AccountTypePreference,
-        account_index: u32,
-        registered_height: Option<u32>,
-        funding_reservation_token: Option<FundingReservationToken>,
+        signed: SignedCoreTransaction,
     ) -> ReservationToken {
-        let token = self.next_token.fetch_add(1, Ordering::SeqCst);
+        let parts = signed.into_registered_parts();
+        let token = ReservationToken(self.next_token.fetch_add(1, Ordering::SeqCst));
         self.lock().insert(
             token,
             RegisteredPayment {
                 core,
-                tx,
-                account_type,
-                account_index,
-                registered_height,
-                funding_reservation_token,
+                tx: parts.transaction,
+                account_type: parts.funding_account_type,
+                account_index: parts.funding_account_index,
+                registered_height: parts.reservation_height,
+                funding_reservation_token: parts.reservation_token,
             },
         );
         token
@@ -395,43 +420,6 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         Self::reconcile_removed_entry(entry).await;
     }
 
-    /// Release and drop every outstanding token bound to `wallet`'s *generation*
-    /// ([`CoreWallet::is_same_generation`](crate::CoreWallet::is_same_generation)),
-    /// returning how many were removed. Called from `platform_wallet_destroy`
-    /// when the **final** handle to a live wallet generation is destroyed.
-    ///
-    /// Unlike [`remove_entries_for_wallet`](Self::remove_entries_for_wallet)
-    /// (which drops without releasing at generation *teardown*), the generation
-    /// here is still live in its manager — destroying the last wrapper handle
-    /// does not remove the logical wallet, and the same wallet can be handed out
-    /// again. So each token's reservation is RELEASED against that still-live
-    /// generation (honouring the age guard), rather than left stranded in the
-    /// account `ReservationSet` until key-wallet's TTL. Race-free: matching is by
-    /// generation, and a generation that was actually torn down
-    /// (`remove_wallet`) has already had its tokens swept there, so this finds
-    /// none and cannot release against a re-created generation's inputs.
-    pub async fn release_entries_for_wallet(&self, wallet: &CoreWallet<B>) -> usize {
-        // Take the matching entries out under the lock, then reconcile each with
-        // the guard dropped (the reconcile path awaits).
-        let taken: Vec<RegisteredPayment<B>> = {
-            let mut entries = self.lock();
-            let tokens: Vec<ReservationToken> = entries
-                .iter()
-                .filter(|(_, entry)| entry.core.is_same_generation(wallet))
-                .map(|(token, _)| *token)
-                .collect();
-            tokens
-                .into_iter()
-                .filter_map(|token| entries.remove(&token))
-                .collect()
-        };
-        let count = taken.len();
-        for entry in taken {
-            Self::reconcile_removed_entry(entry).await;
-        }
-        count
-    }
-
     /// Drop every outstanding token bound to `wallet` (same shared
     /// `WalletManager` and `wallet_id`), WITHOUT releasing, returning how many
     /// were removed.
@@ -453,7 +441,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
 
     /// Number of outstanding (registered but not yet broadcast/released) tokens.
     /// Exposed under `test-utils` so downstream FFI-layer tests (e.g. the
-    /// `platform_wallet_destroy` final-alias sweep) can observe registry state.
+    /// `platform_wallet_destroy` lifecycle tests) can observe registry state.
     #[cfg(any(test, feature = "test-utils"))]
     pub fn outstanding(&self) -> usize {
         self.lock().len()
@@ -475,12 +463,14 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
-    use super::{SignedPaymentError, SignedPaymentRegistry, RESERVATION_MAX_AGE_BLOCKS};
+    use super::{
+        ReservationToken, SignedPaymentError, SignedPaymentRegistry, RESERVATION_MAX_AGE_BLOCKS,
+    };
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::test_support::{
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
-    use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::{CoreWallet, SignedCoreTransaction};
 
     /// The [`AccountTypePreference`] a `build_signed_tx` funding account maps to
     /// — the registry now retains the full account handle (CoinJoin included),
@@ -573,17 +563,19 @@ mod tests {
     }
 
     /// Build + sign a payment exactly as the deferred send path does:
-    /// `build_signed_reserved` reserves the inputs, leaves the reservation held
-    /// for the later broadcast/release, and returns the key-wallet
-    /// [`ReservationToken`](key_wallet::ReservationToken) stamped onto them so
-    /// the test can register it for an owner-guarded release.
+    /// `build_signed_reserved` reserves the inputs and leaves the reservation
+    /// held for the later broadcast/release. Returns a finalized
+    /// [`SignedCoreTransaction`] — the same non-`Clone` ownership object the
+    /// production `finalize_transaction` path yields — so the test hands it to
+    /// [`SignedPaymentRegistry::register`] exactly once (it captures the funding
+    /// account, the reservation height, and the key-wallet owner-guard token).
     async fn build_signed_tx<B: TransactionBroadcaster, S: Signer>(
         core: &CoreWallet<B>,
         account_type: StandardAccountType,
         account_index: u32,
         outputs: &[(DashAddress, u64)],
         signer: &S,
-    ) -> Result<(Transaction, Option<key_wallet::ReservationToken>), PlatformWalletError> {
+    ) -> Result<SignedCoreTransaction, PlatformWalletError> {
         let mut wm = core.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_and_info_mut(&core.wallet_id())
@@ -626,13 +618,20 @@ mod tests {
         for (addr, amount) in outputs {
             builder = builder.add_output(addr, *amount);
         }
-        let (tx, _fee, reservation_token) = builder
+        let (tx, fee, reservation_token) = builder
             .build_signed_reserved(signer, |addr| {
                 managed_account.address_derivation_path(&addr)
             })
             .await
             .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-        Ok((tx, reservation_token))
+        Ok(SignedCoreTransaction::new_for_test(
+            tx,
+            fee,
+            preference(account_type),
+            account_index,
+            current_height,
+            reservation_token,
+        ))
     }
 
     /// Happy path: a registered token broadcasts the exact bytes it was built
@@ -644,7 +643,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -653,19 +652,10 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let expected_bytes = dashcore::consensus::serialize(&tx);
-        let expected_txid = tx.txid();
+        let expected_bytes = dashcore::consensus::serialize(signed.transaction());
+        let expected_txid = signed.transaction().txid();
 
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
         assert_eq!(registry.outstanding(), 1);
 
         // Broadcast through a *clone* of the same wallet instance — the
@@ -696,19 +686,10 @@ mod tests {
             let (core, signer, outputs) = funded_core_wallet(account_type, broadcaster).await;
             let registry = SignedPaymentRegistry::new();
 
-            let (tx, reservation_token) = build_signed_tx(&core, account_type, 0, &outputs, &signer)
+            let signed = build_signed_tx(&core, account_type, 0, &outputs, &signer)
                 .await
                 .expect("build should succeed");
-            let token = registry
-                .register(
-                    core.clone(),
-                    tx,
-                    preference(account_type),
-                    0,
-                    core.last_processed_height().await,
-                    reservation_token,
-                )
-                .await;
+            let token = registry.register(core.clone(), signed).await;
 
             // With the reservation held, an immediate rebuild finds no
             // spendable UTXO and fails.
@@ -769,16 +750,7 @@ mod tests {
             .await
             .expect("coinjoin finalize should succeed");
 
-        let token = registry
-            .register(
-                core.clone(),
-                finalized.transaction().clone(),
-                AccountTypePreference::CoinJoin,
-                0,
-                Some(finalized.reservation_height()),
-                finalized.reservation_token(),
-            )
-            .await;
+        let token = registry.register(core.clone(), finalized).await;
 
         // Reservation held: a second CoinJoin finalize finds no unreserved input.
         let blocked = core
@@ -826,7 +798,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -835,16 +807,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         registry
             .broadcast(token, &core)
@@ -870,7 +833,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -879,16 +842,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         registry.release(token).await;
         // Second release: no panic, no error, still consumed.
@@ -905,7 +859,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -914,16 +868,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         registry.release(token).await;
         let sent = registry.broadcast(token, &core).await;
@@ -946,10 +891,11 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry: SignedPaymentRegistry<CountingBroadcaster> = SignedPaymentRegistry::new();
 
-        let sent = registry.broadcast(9999, &core).await;
-        assert!(matches!(sent, Err(SignedPaymentError::StaleToken(9999))));
+        let unknown = ReservationToken::from(9999);
+        let sent = registry.broadcast(unknown, &core).await;
+        assert!(matches!(sent, Err(SignedPaymentError::StaleToken(t)) if t == unknown));
         // Releasing an unknown token is a no-op, not a panic.
-        registry.release(9999).await;
+        registry.release(unknown).await;
     }
 
     /// A token minted against one wallet instance cannot be broadcast through a
@@ -968,7 +914,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster_b).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core_a,
             StandardAccountType::BIP44Account,
             0,
@@ -977,16 +923,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core_a.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core_a.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core_a.clone(), signed).await;
 
         let sent = registry.broadcast(token, &core_b).await;
         assert!(
@@ -1015,7 +952,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1024,16 +961,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         let sent = registry.broadcast(token, &core).await;
         assert!(
@@ -1072,7 +1000,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = Arc::new(SignedPaymentRegistry::new());
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1081,16 +1009,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         let mut handles = Vec::new();
         for _ in 0..8 {
@@ -1118,45 +1037,14 @@ mod tests {
         );
     }
 
-    /// Concurrent registrations hand out distinct tokens.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn concurrent_registers_yield_distinct_tokens() {
-        let broadcaster = Arc::new(CountingBroadcaster::new());
-        let (core, signer, outputs) =
-            funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
-        // One built tx is enough; we register clones of it many times to probe
-        // the token allocator, not the reservation logic.
-        let (tx, reservation_token) = build_signed_tx(
-            &core,
-            StandardAccountType::BIP44Account,
-            0,
-            &outputs,
-            &signer,
-        )
-        .await
-        .expect("build should succeed");
-        let registry = Arc::new(SignedPaymentRegistry::new());
-
-        let mut handles = Vec::new();
-        for _ in 0..16 {
-            let registry = Arc::clone(&registry);
-            let core = core.clone();
-            let tx = tx.clone();
-            handles.push(tokio::spawn(async move {
-                let height = core.last_processed_height().await;
-                registry
-                    .register(core, tx, AccountTypePreference::BIP44, 0, height, reservation_token)
-                    .await
-            }));
-        }
-        let mut tokens = Vec::new();
-        for handle in handles {
-            tokens.push(handle.await.expect("task panicked"));
-        }
-        let unique: std::collections::HashSet<_> = tokens.iter().copied().collect();
-        assert_eq!(unique.len(), tokens.len(), "all tokens must be distinct");
-        assert_eq!(registry.outstanding(), 16);
-    }
+    // NOTE: the former `concurrent_registers_yield_distinct_tokens` test
+    // registered sixteen clones of ONE reserved transaction to probe the token
+    // allocator. That is exactly the duplicate-capability pattern unique
+    // ownership now forbids: `register` consumes a non-`Clone`
+    // `SignedCoreTransaction`, so a single reservation can be registered at most
+    // once (`dashpay/platform#4185`). Token distinctness is guaranteed by
+    // construction (the `AtomicU64` allocator), and concurrent consumption is
+    // covered by `concurrent_broadcasts_serialize_to_one_send`.
 
     /// Force the wallet's `last_processed_height` forward, simulating chain
     /// progress between build/register and a later broadcast/release — the window
@@ -1189,7 +1077,7 @@ mod tests {
             .last_processed_height()
             .await
             .expect("last processed height");
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1198,16 +1086,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         // Advance past the age bound but stay below key-wallet's 24-block TTL, so
         // the reservation is provably still held (only our guard has tripped).
@@ -1255,7 +1134,7 @@ mod tests {
             .last_processed_height()
             .await
             .expect("last processed height");
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1264,16 +1143,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         advance_processed_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
 
@@ -1306,7 +1176,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1315,16 +1185,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         // A sibling handle over the SAME manager Arc but a different wallet_id —
         // `Arc::ptr_eq` on `wallet_manager` is true, so only the wallet_id check
@@ -1367,7 +1228,7 @@ mod tests {
         .await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx_a, reservation_token_a) = build_signed_tx(
+        let signed_a = build_signed_tx(
             &core_a,
             StandardAccountType::BIP44Account,
             0,
@@ -1376,17 +1237,8 @@ mod tests {
         )
         .await
         .expect("build A should succeed");
-        let token_a = registry
-            .register(
-                core_a.clone(),
-                tx_a,
-                AccountTypePreference::BIP44,
-                0,
-                core_a.last_processed_height().await,
-                reservation_token_a,
-            )
-            .await;
-        let (tx_b, reservation_token_b) = build_signed_tx(
+        let token_a = registry.register(core_a.clone(), signed_a).await;
+        let signed_b = build_signed_tx(
             &core_b,
             StandardAccountType::BIP44Account,
             0,
@@ -1395,16 +1247,7 @@ mod tests {
         )
         .await
         .expect("build B should succeed");
-        let _token_b = registry
-            .register(
-                core_b.clone(),
-                tx_b,
-                AccountTypePreference::BIP44,
-                0,
-                core_b.last_processed_height().await,
-                reservation_token_b,
-            )
-            .await;
+        let _token_b = registry.register(core_b.clone(), signed_b).await;
         assert_eq!(registry.outstanding(), 2);
 
         let removed = registry.remove_entries_for_wallet(&core_a);
@@ -1435,72 +1278,14 @@ mod tests {
         );
     }
 
-    /// Regression for the final-alias-destroy leak: `release_entries_for_wallet`
-    /// must RELEASE each of the generation's reservations against the still-live
-    /// wallet, not merely drop them, so a wallet handed out again can respend the
-    /// inputs instead of leaving them reserved until key-wallet's TTL. This is
-    /// the destroy-time half of the teardown policy, and the counterpart to
-    /// `remove_entries_for_wallet` (drop-only, at actual generation teardown).
-    #[tokio::test]
-    async fn release_entries_for_wallet_frees_the_reservation() {
-        let broadcaster = Arc::new(RecordingBroadcaster::new());
-        let (core, signer, outputs) =
-            funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
-        let registry = SignedPaymentRegistry::new();
-
-        let (tx, reservation_token) = build_signed_tx(
-            &core,
-            StandardAccountType::BIP44Account,
-            0,
-            &outputs,
-            &signer,
-        )
-        .await
-        .expect("build should succeed");
-        let _token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
-
-        // Reservation held: an immediate rebuild fails at input selection.
-        let blocked = build_signed_tx(
-            &core,
-            StandardAccountType::BIP44Account,
-            0,
-            &outputs,
-            &signer,
-        )
-        .await;
-        assert!(
-            matches!(blocked, Err(PlatformWalletError::TransactionBuild(_))),
-            "rebuild must fail while the reservation is held, got {blocked:?}"
-        );
-
-        // Final-alias destroy path: release (not drop) the generation's tokens.
-        let released = registry.release_entries_for_wallet(&core).await;
-        assert_eq!(released, 1, "the generation's one token is reconciled");
-        assert_eq!(registry.outstanding(), 0);
-
-        // The released input is spendable again — the rebuild now succeeds.
-        let rebuilt = build_signed_tx(
-            &core,
-            StandardAccountType::BIP44Account,
-            0,
-            &outputs,
-            &signer,
-        )
-        .await;
-        assert!(
-            rebuilt.is_ok(),
-            "release_entries_for_wallet must free the reservation, got {rebuilt:?}"
-        );
-    }
+    // NOTE: the former `release_entries_for_wallet_frees_the_reservation` test
+    // is removed with the `release_entries_for_wallet` method it exercised.
+    // Destroying wrapper aliases no longer releases deferred-payment tokens: a
+    // wrapper handle does not own the payment, so its destruction must leave the
+    // token live and broadcastable (`dashpay/platform#4185`, blocker 2). Token
+    // reservations are reconciled by the payment owner (explicit
+    // broadcast/release) or dropped at actual generation teardown
+    // (`remove_entries_for_wallet`).
 
     /// Regression for the wrong-wallet-broadcast token theft: a mismatched
     /// caller must return `WalletMismatch` WITHOUT consuming the entry, so the
@@ -1522,7 +1307,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster_b).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core_a,
             StandardAccountType::BIP44Account,
             0,
@@ -1531,16 +1316,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core_a.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core_a.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core_a.clone(), signed).await;
 
         // Wrong wallet: mismatch, and the token MUST survive for its owner.
         let mismatched = registry.broadcast(token, &core_b).await;
@@ -1603,7 +1379,7 @@ mod tests {
             .last_processed_height()
             .await
             .expect("last processed height");
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1612,23 +1388,18 @@ mod tests {
         )
         .await
         .expect("build should succeed");
+        // The finalized object carries the reservation's OWN stamp height,
+        // captured at build time — not a value the caller samples at register.
+        assert_eq!(signed.reservation_height(), reservation_height);
 
         // Slow signer: the wallet advanced to just under the age bound while
         // signing. A fresh sample here would read `reservation_height +
         // MAX_AGE - 1`.
         advance_processed_height(&core, reservation_height + RESERVATION_MAX_AGE_BLOCKS - 1).await;
 
-        // Register with the reservation's OWN stamp height, not a fresh sample.
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                Some(reservation_height),
-                reservation_token,
-            )
-            .await;
+        // Register: the age baseline is the reservation height the consumed
+        // object carries, not the advanced `last_processed_height` sampled now.
+        let token = registry.register(core.clone(), signed).await;
 
         // One block past the reservation height (still below the 24-block TTL)
         // trips the guard because the baseline is `reservation_height`.
@@ -1680,7 +1451,7 @@ mod tests {
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
         let registry = SignedPaymentRegistry::new();
 
-        let (tx, reservation_token) = build_signed_tx(
+        let signed = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
             0,
@@ -1689,16 +1460,7 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                tx,
-                AccountTypePreference::BIP44,
-                0,
-                core.last_processed_height().await,
-                reservation_token,
-            )
-            .await;
+        let token = registry.register(core.clone(), signed).await;
 
         // Reservation held: a rebuild fails at input selection.
         let blocked = build_signed_tx(
@@ -1797,20 +1559,14 @@ mod tests {
             )
             .await
             .expect("first finalize should succeed");
-        let token = registry
-            .register(
-                core.clone(),
-                finalized.transaction().clone(),
-                AccountTypePreference::BIP44,
-                0,
-                Some(finalized.reservation_height()),
-                finalized.reservation_token(),
-            )
-            .await;
+        // Capture the built tx before `register` consumes the ownership object;
+        // the sweep below needs it to release the outpoint by hand.
+        let finalized_tx = finalized.transaction().clone();
+        let token = registry.register(core.clone(), finalized).await;
 
         // Model key-wallet's TTL sweep: the outpoint returns to the selectable
         // pool, but the registry still holds T1.
-        force_release_reservation(&core, finalized.transaction()).await;
+        force_release_reservation(&core, &finalized_tx).await;
 
         // A concurrent build re-selects and re-reserves that same outpoint under
         // a NEW token T2. Held alive so its reservation persists to the end.
@@ -1849,7 +1605,10 @@ mod tests {
             )
             .await;
         assert!(
-            matches!(third, Err(PlatformWalletError::CoreInsufficientFunds { .. })),
+            matches!(
+                third,
+                Err(PlatformWalletError::CoreInsufficientFunds { .. })
+            ),
             "the re-taken reservation must survive build 1's rejected broadcast, got {third:?}"
         );
 
