@@ -76,9 +76,24 @@ const fn min_protocol_version(network: Network) -> u32 {
 const DEFAULT_METADATA_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
 /// Per-node timeout for the best-effort peer protocol-version probe
-/// ([`Sdk::prefer_peers_with_latest_protocol_version`]). Probes run
-/// concurrently, so this also bounds the total probe time.
+/// ([`Sdk::prefer_peers_with_latest_protocol_version`]).
 const PEER_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(4);
+
+/// Maximum number of peers sampled per protocol-version probe. Bootstrap
+/// address lists can hold hundreds of seeds (mainnet ships ~340 Evo nodes);
+/// probing a random sample is enough to find preferred peers without a
+/// connection storm, and unprobed peers stay usable via the best-effort
+/// fallback in peer selection.
+const MAX_PEER_VERSION_PROBES: usize = 16;
+
+/// Maximum number of protocol-version probe connections in flight at once.
+const PEER_VERSION_PROBE_CONCURRENCY: usize = 8;
+
+/// Overall wall-clock budget for one protocol-version probe pass. Results
+/// that arrived before the deadline are kept; outstanding probes are dropped
+/// (their nodes simply stay unranked). Keeps app-start latency bounded even
+/// when several sampled peers hang until [`PEER_VERSION_PROBE_TIMEOUT`].
+const PEER_VERSION_PROBE_TOTAL_BUDGET: Duration = Duration::from_secs(6);
 
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
@@ -415,8 +430,9 @@ impl Sdk {
         // this client's newest protocol version. Never fails, never ratchets.
         // Deliberately sequenced before (not overlapped with) the proven query
         // below so that query already picks a preferred, up-to-date peer —
-        // probes run concurrently, so the added latency is one status
-        // round-trip (bounded by PEER_VERSION_PROBE_TIMEOUT).
+        // probes are sampled and run concurrently, so the added latency is
+        // typically one status round-trip and hard-capped by
+        // PEER_VERSION_PROBE_TOTAL_BUDGET.
         self.prefer_peers_with_latest_protocol_version().await;
 
         if !self.prove() {
@@ -440,9 +456,12 @@ impl Sdk {
     /// Best-effort: probe DAPI peers for the protocol version they support and
     /// prefer peers supporting this client's latest protocol version.
     ///
-    /// Concurrently issues an unproven `getStatus` to every live address in the
-    /// SDK's address list (per-node timeout [`PEER_VERSION_PROBE_TIMEOUT`], no
-    /// retries, no banning) and records each node's reported
+    /// Issues an unproven `getStatus` to a random sample of up to
+    /// [`MAX_PEER_VERSION_PROBES`] live addresses from the SDK's address list —
+    /// at most [`PEER_VERSION_PROBE_CONCURRENCY`] connections in flight, each
+    /// with a [`PEER_VERSION_PROBE_TIMEOUT`] per-node timeout, no retries, no
+    /// banning, and an overall [`PEER_VERSION_PROBE_TOTAL_BUDGET`] wall-clock
+    /// cap — and records each node's reported
     /// `version.protocol.drive.latest` — the highest protocol version that
     /// node's software supports, i.e. the version it desires/votes for. It then
     /// marks [`PlatformVersion::latest()`] (this client's newest supported
@@ -450,7 +469,8 @@ impl Sdk {
     /// pick, when possible, peers whose reported version is at least ours.
     ///
     /// The preference is strictly best-effort:
-    /// - probe failures are ignored (the node stays in rotation, unranked);
+    /// - probe failures are ignored (the node stays in rotation, unranked), as
+    ///   are peers outside the sample or unanswered within the budget;
     /// - when no live peer is known to support the target version, selection
     ///   falls back to any live peer — no peer is ever excluded by version;
     /// - the probe is *unproven* and feeds only peer ordering, never the SDK's
@@ -461,8 +481,10 @@ impl Sdk {
     /// start and network switch in the mobile SDKs); callable directly for
     /// custom startup flows. On a mock SDK this is a no-op.
     ///
-    /// Returns the number of live peers found to support the target version.
+    /// Returns the number of probed peers found to support the target version.
     pub async fn prefer_peers_with_latest_protocol_version(&self) -> usize {
+        use futures::StreamExt;
+
         #[cfg(feature = "mocks")]
         if matches!(self.inner, SdkInstance::Mock { .. }) {
             return 0;
@@ -470,7 +492,7 @@ impl Sdk {
 
         let target = PlatformVersion::latest().protocol_version;
         let address_list = self.address_list();
-        let addresses = address_list.get_live_addresses();
+        let addresses = address_list.sample_live_addresses(MAX_PEER_VERSION_PROBES);
 
         let settings = RequestSettings {
             connect_timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
@@ -480,18 +502,27 @@ impl Sdk {
             max_decoding_message_size: None,
         };
 
-        let probes = addresses.into_iter().map(|address| async move {
-            let result = EvoNodeStatus::fetch_unproved_with_settings(
-                self,
-                EvoNode::new(address.clone()),
-                settings,
-            )
-            .await;
-            (address, result)
-        });
+        // Bounded fan-out: sampled peers only, limited concurrency, and an
+        // overall deadline. `take_until` keeps results that completed before
+        // the budget elapsed and drops the rest (those nodes stay unranked).
+        let mut probes = std::pin::pin!(futures::stream::iter(addresses.into_iter().map(
+            |address| async move {
+                let result = EvoNodeStatus::fetch_unproved_with_settings(
+                    self,
+                    EvoNode::new(address.clone()),
+                    settings,
+                )
+                .await;
+                (address, result)
+            }
+        ))
+        .buffer_unordered(PEER_VERSION_PROBE_CONCURRENCY)
+        .take_until(rs_dapi_client::transport::sleep(
+            PEER_VERSION_PROBE_TOTAL_BUDGET,
+        )));
 
         let mut preferred_count = 0;
-        for (address, result) in futures::future::join_all(probes).await {
+        while let Some((address, result)) = probes.next().await {
             let supported = match result {
                 Ok((Some(status), _)) => status
                     .version

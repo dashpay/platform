@@ -440,6 +440,32 @@ impl AddressList {
             .collect()
     }
 
+    /// Randomly sample up to `count` distinct not-banned addresses.
+    ///
+    /// Uses the same liveness filter as [`Self::get_live_addresses`]. Intended
+    /// to bound best-effort maintenance fan-outs (e.g. protocol-version
+    /// probes) so they never contact every known node at once.
+    pub fn sample_live_addresses(&self, count: usize) -> Vec<Address> {
+        let guard = self.addresses.read().unwrap();
+
+        let mut rng = SmallRng::from_entropy();
+        let now = chrono::Utc::now();
+
+        guard
+            .iter()
+            .filter(|(_, status)| {
+                status
+                    .banned_until
+                    .map(|banned_until| banned_until < now)
+                    .unwrap_or(true)
+            })
+            .map(|(addr, _)| addr)
+            .choose_multiple(&mut rng, count)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
     /// Get an owned snapshot of every address' ban state.
     ///
     /// Clones the current state into an owned `Vec<AddressBanInfo>` so
@@ -1045,6 +1071,35 @@ mod tests {
             list.is_banned(&addr),
             "is_banned() must still be true after window expiry (ban_count not reset)"
         );
+    }
+
+    /// `sample_live_addresses` bounds the fan-out: returns at most `count`
+    /// distinct live addresses, skips banned ones, and returns everything
+    /// live when the list is smaller than `count`.
+    #[test]
+    fn test_sample_live_addresses_bounds_and_filters() {
+        let mut list = AddressList::new();
+        let banned: Address = "http://127.0.0.1:3999".parse().unwrap();
+        for port in 3000..3010 {
+            list.add(format!("http://127.0.0.1:{port}").parse().unwrap());
+        }
+        list.add(banned.clone());
+        list.ban(&banned);
+
+        // Cap below the live count: exactly `count` distinct live addresses.
+        let sample = list.sample_live_addresses(4);
+        assert_eq!(sample.len(), 4);
+        let unique: std::collections::HashSet<_> = sample.iter().collect();
+        assert_eq!(unique.len(), 4, "sampled addresses must be distinct");
+        assert!(!sample.contains(&banned), "banned address must be excluded");
+
+        // Cap above the live count: all 10 live addresses, banned excluded.
+        let sample = list.sample_live_addresses(100);
+        assert_eq!(sample.len(), 10);
+        assert!(!sample.contains(&banned));
+
+        // Zero cap: empty sample.
+        assert!(list.sample_live_addresses(0).is_empty());
     }
 
     #[test]

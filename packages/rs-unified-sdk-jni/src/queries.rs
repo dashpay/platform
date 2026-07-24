@@ -936,8 +936,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_evonode
 /// Refresh the SDK's protocol version from the network (proven
 /// `getEpochsInfo` ratchet — see `dash_sdk_refresh_protocol_version`) and
 /// return the resulting version as a decimal string, or null after
-/// throwing. Backs the protocol-version-gated shielded denomination picker
-/// (Kotlin port of iOS `SDK.refreshProtocolVersion`).
+/// throwing. Also runs the bounded best-effort peer protocol-version probe
+/// first (see `Sdk::prefer_peers_with_latest_protocol_version`), so the
+/// call performs network I/O even for a pinned SDK and blocks the calling
+/// thread for the probe + query duration — the Kotlin wrapper marshals it
+/// onto `Dispatchers.IO`. Backs the protocol-version-gated shielded
+/// denomination picker (Kotlin port of iOS `SDK.refreshProtocolVersion`).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_QueriesNative_refreshProtocolVersion(
     mut env: JNIEnv,

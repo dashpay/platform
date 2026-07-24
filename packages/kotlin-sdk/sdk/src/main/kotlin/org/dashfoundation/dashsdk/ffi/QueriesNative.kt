@@ -277,8 +277,11 @@ internal object QueriesNative {
 
     /**
      * Refresh the SDK's protocol version from the network (proven
-     * `getEpochsInfo` ratchet). Returns the resulting version as a decimal
-     * string, or null.
+     * `getEpochsInfo` ratchet, preceded by a bounded best-effort peer
+     * protocol-version probe that biases peer selection). Blocks the calling
+     * thread for the probe + query duration — call from a background
+     * dispatcher only. Returns the resulting version as a decimal string,
+     * or null.
      */
     external fun refreshProtocolVersion(sdk: Long): String?
 
