@@ -124,15 +124,20 @@ open class KeystoreManager(
      * hosts can display / log the actual protection level.
      *
      * Non-mutating: presence checks and the lock-screen probe only — never
-     * generates a key. Once the auth-gated alias has been provisioned (with
-     * its gate — the only way it is ever created), the effective policy is
-     * [KeySecurityPolicy.AUTH_GATED] regardless of later lock-screen churn:
-     * the gate is baked into the existing key.
+     * generates a key. The lock-screen probe runs BEFORE the auth-gated
+     * alias-presence check (dashpay/platform#4183 review): removing the secure
+     * lock screen PERMANENTLY invalidates the auth-gated key's private half
+     * (`KeyPermanentlyInvalidatedException`) even though Android retains its
+     * public half and certificate — so a provisioned alias on a now-lockless
+     * device is unusable for signing, and this surface must report
+     * [KeySecurityPolicy.DEVICE_BOUND] for that state rather than lying
+     * AUTH_GATED. Ordering matches [resolveIdentityKeysWriteAlias] so the
+     * write path and this report never disagree.
      */
     open fun effectiveKeySecurityPolicy(): KeySecurityPolicy = when {
         keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND -> KeySecurityPolicy.DEVICE_BOUND
-        hasIdentityKeysKey(KEYS_ALIAS_AUTH_GATED) -> KeySecurityPolicy.AUTH_GATED
         !deviceSecureProbe() -> KeySecurityPolicy.DEVICE_BOUND
+        hasIdentityKeysKey(KEYS_ALIAS_AUTH_GATED) -> KeySecurityPolicy.AUTH_GATED
         else -> KeySecurityPolicy.AUTH_GATED
     }
 
@@ -165,13 +170,23 @@ open class KeystoreManager(
      */
     private fun resolveIdentityKeysWriteAlias(): String {
         if (keySecurityPolicy == KeySecurityPolicy.DEVICE_BOUND) return KEYS_ALIAS_DEVICE_BOUND
-        if (hasIdentityKeysKey(KEYS_ALIAS_AUTH_GATED)) return KEYS_ALIAS_AUTH_GATED
+        // Probe the CURRENT lock-screen state BEFORE accepting an existing
+        // auth-gated alias (dashpay/platform#4183 review). Android keeps the
+        // auth-gated keypair's public half + certificate after the private
+        // half has been permanently invalidated by a lock-screen / credential
+        // removal, so a write would encrypt "successfully" (encryption uses
+        // only the retained public key) under an alias whose private half will
+        // always throw KeyPermanentlyInvalidatedException at sign time. On a
+        // now-lockless device the alias is unusable — degrade to DEVICE_BOUND
+        // (or throw under requireAuthGated) instead of reusing it. This also
+        // stops requireAuthGated from being silently bypassed by a stale alias.
         if (!deviceSecureProbe()) {
             return degradeAuthGatedWrite(
                 "no secure lock screen (KeyguardManager.isDeviceSecure=false)",
                 cause = null,
             )
         }
+        if (hasIdentityKeysKey(KEYS_ALIAS_AUTH_GATED)) return KEYS_ALIAS_AUTH_GATED
         return try {
             // Provision the gated keypair up front so a mid-generation
             // KeyMint rejection (lock removed after the probe, or an OEM

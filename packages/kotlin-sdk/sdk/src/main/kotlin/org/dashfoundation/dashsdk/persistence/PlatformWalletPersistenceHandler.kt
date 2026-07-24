@@ -1228,9 +1228,20 @@ class PlatformWalletPersistenceHandler(
         identityId: ByteArray,
         keyId: Int,
     ): Int = guarded {
+        val identityBase58 = identityId.toBase58String()
         stage(walletId) { db ->
-            db.publicKeyDao().deleteByIdentityAndKeyId(identityId.toBase58String(), keyId)
+            db.publicKeyDao().deleteByIdentityAndKeyId(identityBase58, keyId)
         }
+        // The row is gone, so a pending-repair entry for it is now a phantom:
+        // the key can never be re-derived/repaired into an identity that no
+        // longer carries it (dashpay/platform#4183 review). Drop it from
+        // [pendingIdentityKeys]. Staged with the round (mirroring the upsert
+        // path): published only if the deletion commits and discarded on
+        // rollback, so a rolled-back removal keeps the pre-round map intact.
+        stagePendingKeyDelta(
+            walletId.toHex(),
+            clearPendingKeyByIdentityKeyDelta(identityBase58, keyId),
+        )
         0
     }
 
@@ -2588,6 +2599,28 @@ class PlatformWalletPersistenceHandler(
         { if (publicKeyHex in it) it - publicKeyHex else it }
 
     /**
+     * Delta that drops any pending entry for the identity key
+     * ([identityIdBase58], [keyId]) — the shape [onPersistIdentityKeyRemoval]
+     * has (the map is keyed by public-key hex, which a removal callback does
+     * not carry, so it matches on the entry's identity + keyId instead).
+     * No-op (returns the same map instance) when nothing matches, mirroring
+     * [clearPendingKeyDelta] so an unrelated removal publishes no map update.
+     */
+    private fun clearPendingKeyByIdentityKeyDelta(
+        identityIdBase58: String,
+        keyId: Int,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { map ->
+            if (map.values.any { it.identityIdBase58 == identityIdBase58 && it.keyId == keyId }) {
+                map.filterValues {
+                    !(it.identityIdBase58 == identityIdBase58 && it.keyId == keyId)
+                }
+            } else {
+                map
+            }
+        }
+
+    /**
      * Stage [delta] with the wallet's open round (published atomically by
      * [publishPendingKeyDeltas] after the round's transaction commits,
      * discarded on rollback/abort), or publish immediately when no round is
@@ -2834,7 +2867,19 @@ class PlatformWalletPersistenceHandler(
             val walletId = identity.walletId ?: continue
             val pubkeyHex = row.publicKeyData.toHex()
             val usable = row.privateKeyKeychainIdentifier != null &&
-                runCatching { isPrivateKeyDecryptable(pubkeyHex) }.getOrDefault(false)
+                try {
+                    isPrivateKeyDecryptable(pubkeyHex)
+                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                    // The probe is suspend; runCatching turned its cancellation
+                    // into `false`, marking the row pending and returning
+                    // normally so callers (loadPersistedWallets, invalidation
+                    // bookkeeping) never observed the cancellation. Rethrow to
+                    // preserve structured concurrency; only genuine probe
+                    // failures become an unusable result (dashpay/platform#4183).
+                    throw cancellation
+                } catch (_: Throwable) {
+                    false
+                }
             if (usable) continue
             entries += PendingIdentityKey(
                 walletIdHex = walletId.toHex(),

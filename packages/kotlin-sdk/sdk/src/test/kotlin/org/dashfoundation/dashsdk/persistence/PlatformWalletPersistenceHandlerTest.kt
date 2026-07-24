@@ -1146,6 +1146,49 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(handler.pendingIdentityKeys.value.isEmpty())
     }
 
+    @Test
+    fun identityKeyRemovalClearsThePendingEntry() = runTest {
+        // dashpay/platform#4183 review: a pending-repair entry must not outlive
+        // the key it describes. A derive failure records the key as pending;
+        // removing that key (onPersistIdentityKeyRemoval) must drop the now-
+        // phantom entry — a repair could never re-derive a key into an identity
+        // that no longer carries it.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 20 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 15 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        // A committed removal round deletes the row AND clears the pending entry.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyRemoval(walletId, identityId, 0)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun rolledBackIdentityKeyRemovalKeepsThePendingEntry() = runTest {
+        // The removal's pending-clear is staged with the round (mirroring the
+        // upsert path): an aborted round discards both the row deletion and the
+        // pending-clear, so the pre-round pending entry survives untouched.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 21 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 16 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyRemoval(walletId, identityId, 0)
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
     /**
      * Regression (dashpay/platform#4060, finding de3cf44a71fc): the pending
      * record is staged with the round, not published mid-round — the

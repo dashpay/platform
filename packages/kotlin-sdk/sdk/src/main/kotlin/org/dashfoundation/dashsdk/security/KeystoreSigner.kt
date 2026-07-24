@@ -95,6 +95,13 @@ class KeystoreSigner(
                     return@launch
                 }
                 signWithStoredKey(pubkeyBytes, data, completionToken)
+            } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                // NEVER swallow structured-concurrency cancellation (a teardown
+                // of the signer's IO scope): rethrow so the coroutine unwinds
+                // instead of masking the cancellation as a native completion
+                // (dashpay/platform#4183 review). The generic Exception handler
+                // below would otherwise catch it and call completeSign.
+                throw cancellation
             } catch (e: Exception) {
                 // Classify before completing: a KeyPermanentlyInvalidatedException
                 // anywhere in the sign path means the key is unavailable until
@@ -133,7 +140,18 @@ class KeystoreSigner(
                 // round-2 finding 2). Record the invalidation durably first
                 // (finding 3) — best-effort: bookkeeping failure must not
                 // eat the typed completion.
-                runCatching { onSigningKeyInvalidated?.invoke(storageKey) }
+                try {
+                    onSigningKeyInvalidated?.invoke(storageKey)
+                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                    // The invalidation callback is suspend; runCatching would
+                    // have swallowed its cancellation one layer too low and let
+                    // the sign continue. Rethrow so structured-concurrency
+                    // cancellation propagates (dashpay/platform#4183 review).
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Best-effort bookkeeping: a non-cancellation failure must
+                    // not eat the typed completion below.
+                }
                 SignerNative.completeSign(
                     completionToken,
                     null,

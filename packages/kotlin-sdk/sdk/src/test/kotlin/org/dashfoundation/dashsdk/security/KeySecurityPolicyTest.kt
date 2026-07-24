@@ -133,16 +133,20 @@ class KeySecurityPolicyTest {
     }
 
     @Test
-    fun effectivePolicyIsAuthGatedOnceTheGatedAliasExists() {
-        // A provisioned gated alias carries its gate in the key itself —
-        // later lock-screen churn cannot remove it, so the effective policy
-        // stays AUTH_GATED even while the probe reports lockless.
+    fun effectivePolicyDegradesWhenLockScreenRemovedAfterProvisioning() {
+        // dashpay/platform#4183 review: a provisioned gated alias on a device
+        // that is NOW lockless is unusable — removing the secure lock screen
+        // permanently invalidates the auth-gated key's private half
+        // (KeyPermanentlyInvalidatedException) even though Android retains its
+        // public half. The lock-screen probe therefore runs BEFORE the
+        // alias-presence check, and the effective policy must report
+        // DEVICE_BOUND for that state rather than lie AUTH_GATED.
         val m = manager(
             KeySecurityPolicy.AUTH_GATED,
             deviceSecure = false,
             authGatedAliasProvisioned = true,
         )
-        assertEquals(KeySecurityPolicy.AUTH_GATED, m.effectiveKeySecurityPolicy())
+        assertEquals(KeySecurityPolicy.DEVICE_BOUND, m.effectiveKeySecurityPolicy())
     }
 
     @Test
