@@ -47,20 +47,27 @@ repository/organization level:
 | `JRELEASER_GPG_PASSPHRASE` | passphrase for that GPG key |
 | `JRELEASER_GPG_PUBLIC_KEY` | GPG public key (not sensitive, but keep it alongside the others) |
 
-Then **delete the repository-scoped and organization-scoped copies of these same five names**
-(Settings → Secrets and variables → Actions, and the org secrets list).
+Then **delete the repository-scoped copies and remove `dashpay/platform`'s access to any
+organization-scoped copies of these same five names** (Settings → Secrets and variables → Actions,
+and the organization secrets list). Delete an organization secret entirely only if no other
+repository uses it; otherwise update its repository access policy to exclude `dashpay/platform`.
 
-> **This deletion is the crux.** As long as a repo/org copy exists, any unprotected job in the repo
-> can still read the credentials, and the security finding that motivated #4193 is not actually
-> closed. After this step, only the approved `maven-central` job can see them.
+> **Removing this repository's access is the crux.** As long as a repository-scoped copy exists, or
+> an organization-scoped copy remains available to `dashpay/platform`, an unprotected job in this
+> repository can still read the credentials and the security finding that motivated #4193 is not
+> actually closed. After this step, only the approved `maven-central` job can see them.
 >
 > `JRELEASER_GPG_PUBLIC_KEY` is a public key and not itself sensitive, but move it too so all five
 > live in one place and the build job has no reason to touch the environment.
 
 ## 4. Verify
 
-1. Push a real `kotlin-sdk-vX.Y.Z` tag (or use the workflow's `workflow_dispatch` with an existing
-   tag). The run should **pause** at the `maven-central-deploy` job showing *"Waiting for review."*
+1. Push a real `kotlin-sdk-vX.Y.Z` tag. To verify with `workflow_dispatch`, dispatch the
+   workflow **at that tag ref**, for example:
+   `gh workflow run kotlin-sdk-release.yml --ref kotlin-sdk-vX.Y.Z -f tag=kotlin-sdk-vX.Y.Z`.
+   Supplying only the `tag` input while dispatching from a branch does not satisfy a tag-only
+   environment policy. The run should **pause** at the `maven-central-deploy` job showing
+   *"Waiting for review."*
 2. It proceeds to publish only after an approved reviewer clicks **Approve and deploy**.
 3. Confirm the `build-and-release` job has **no** access to the five secrets — after #4193 it does
    not reference them at all; its only context token is the auto-provided `GITHUB_TOKEN`.
@@ -78,5 +85,7 @@ Then **delete the repository-scoped and organization-scoped copies of these same
 
 > On `dashpay/platform`, create a `maven-central` GitHub Environment with required reviewers (and a
 > `kotlin-sdk-v*` tag policy), add the five `JRELEASER_*` publishing secrets as **environment**
-> secrets, and **delete the repository/organization-scoped copies** of those same secrets. Code
+> secrets, and **delete the repository-scoped copies and revoke this repo's access to any
+> organization-scoped copies** of those same secrets (delete an org secret outright only if no
+> other repository uses it). Code
 > side: dashpay/platform#4193.
