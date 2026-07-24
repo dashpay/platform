@@ -962,6 +962,7 @@ mod dpns_username_transfer_tests {
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
     use dpp::data_contract::DataContract;
+    use dpp::data_contracts::SystemDataContract;
     use dpp::document::Document;
     use dpp::identity::{Identity, IdentityPublicKey};
     use dpp::util::hash::hash_double;
@@ -1439,6 +1440,265 @@ mod dpns_username_transfer_tests {
     #[tokio::test]
     async fn test_dpns_username_transfer_protocol_version_12_rejected() {
         run_dpns_username_transfer_at_protocol_version(12, false).await;
+    }
+
+    #[tokio::test]
+    async fn test_v12_username_survives_retried_v13_transition_and_records_transfer() {
+        let platform_version_12 = PlatformVersion::get(12).expect("expected platform version 12");
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut rng = StdRng::seed_from_u64(438);
+
+        let alice = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+        let (bob, _, _) = setup_identity(&mut platform, 450, dash_to_credits!(0.5));
+        let (document, _) = register_dpns_username(
+            &mut platform,
+            &alice,
+            &mut rng,
+            "upgrade7",
+            platform_version_12,
+        )
+        .await;
+
+        let committed_root_before = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash");
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: dpp::block::epoch::Epoch::new(2).expect("expected epoch"),
+        };
+
+        let platform_state = platform.state.load();
+        let rejected_transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &rejected_transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the speculative transition to succeed");
+        drop(rejected_transaction);
+        drop(platform_state);
+
+        let committed_root_after_rejection = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash");
+        assert_eq!(
+            committed_root_before, committed_root_after_rejection,
+            "dropping a rejected transition transaction must preserve committed state"
+        );
+        let cached_dpns_v12 = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .find_by_id(SystemDataContract::DPNS.id(), 12)
+            .expect("explicit v12 lookup must survive a speculative v13 cache reload");
+        let cached_v12_domain = cached_dpns_v12
+            .document_type_for_name("domain")
+            .expect("DPNS must contain its domain document type");
+        assert!(!cached_v12_domain.documents_keep_transfer_history());
+        assert!(!cached_v12_domain.documents_keep_purchase_history());
+        assert!(!cached_v12_domain.documents_keep_pricing_history());
+        assert_eq!(
+            query_domain_documents_by_record_identity(&platform, &cached_dpns_v12, alice.0.id())
+                .len(),
+            1,
+            "the v12 username must remain after a rejected transition"
+        );
+
+        let platform_state = platform.state.load();
+        let retry_transaction = platform.drive.grove.start_transaction();
+        platform
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_state,
+                &block_info,
+                &retry_transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the retried transition to succeed");
+        platform
+            .drive
+            .grove
+            .commit_transaction(retry_transaction)
+            .unwrap()
+            .expect("expected to commit the retried transition");
+        drop(platform_state);
+
+        let committed_root_after_transition = platform
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a committed root hash");
+        assert_ne!(
+            committed_root_before, committed_root_after_transition,
+            "the committed transition must install the v13 contracts"
+        );
+
+        let mut clean_control = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let mut clean_control_rng = StdRng::seed_from_u64(438);
+        let clean_control_alice = setup_identity(&mut clean_control, 958, dash_to_credits!(0.5));
+        setup_identity(&mut clean_control, 450, dash_to_credits!(0.5));
+        register_dpns_username(
+            &mut clean_control,
+            &clean_control_alice,
+            &mut clean_control_rng,
+            "upgrade7",
+            platform_version_12,
+        )
+        .await;
+        let clean_control_root_before = clean_control
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected a clean-control committed root hash");
+        assert_eq!(
+            committed_root_before, clean_control_root_before,
+            "the clean control must begin from the same populated v12 state"
+        );
+        let clean_control_state = clean_control.state.load();
+        let clean_control_transaction = clean_control.drive.grove.start_transaction();
+        clean_control
+            .perform_events_on_first_block_of_protocol_change(
+                &clean_control_state,
+                &block_info,
+                &clean_control_transaction,
+                12,
+                platform_version_13,
+            )
+            .expect("expected the clean-control transition to succeed");
+        clean_control
+            .drive
+            .grove
+            .commit_transaction(clean_control_transaction)
+            .unwrap()
+            .expect("expected to commit the clean-control transition");
+        drop(clean_control_state);
+        let clean_control_root_after_transition = clean_control
+            .drive
+            .grove
+            .root_hash(None, &platform_version_13.drive.grove_version)
+            .unwrap()
+            .expect("expected the clean-control transition root hash");
+        assert_eq!(
+            committed_root_after_transition, clean_control_root_after_transition,
+            "retry after a rejected candidate must match a clean transition from the same v12 state"
+        );
+
+        let dpns_contract_v13 = Arc::clone(&platform.drive.cache.system_data_contracts.load_dpns());
+        let mut alice_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract_v13, alice.0.id());
+        assert_eq!(
+            alice_documents.len(),
+            1,
+            "the v12 username must survive the committed transition"
+        );
+        let mut document_after_upgrade = alice_documents
+            .pop()
+            .expect("expected the pre-upgrade username");
+        assert_eq!(document_after_upgrade.id(), document.id());
+
+        let mut upgraded_state = platform.state.load().as_ref().clone();
+        upgraded_state.set_current_protocol_version_in_consensus(13);
+        upgraded_state.set_next_epoch_protocol_version(13);
+        platform.state.store(Arc::new(upgraded_state));
+
+        let domain = dpns_contract_v13
+            .document_type_for_name("domain")
+            .expect("expected the domain document type");
+        document_after_upgrade.set_revision(Some(2));
+        let (alice_identity, signer, key) = &alice;
+        let transfer = BatchTransition::new_document_transfer_transition_from_document(
+            document_after_upgrade,
+            domain,
+            bob.id(),
+            key,
+            4,
+            0,
+            None,
+            signer,
+            platform_version_13,
+            None,
+        )
+        .await
+        .expect("expected to create the post-upgrade transfer");
+        let serialized_transfer = transfer
+            .serialize_to_bytes()
+            .expect("expected to serialize the post-upgrade transfer");
+
+        let platform_state = platform.state.load();
+        let transfer_transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .process_raw_state_transitions(
+                &[serialized_transfer],
+                &platform_state,
+                &BlockInfo {
+                    time_ms: block_info.time_ms + 3_000,
+                    height: block_info.height + 1,
+                    core_height: block_info.core_height,
+                    epoch: block_info.epoch,
+                },
+                &transfer_transaction,
+                platform_version_13,
+                false,
+                None,
+            )
+            .expect("expected to process the post-upgrade transfer");
+        platform
+            .drive
+            .grove
+            .commit_transaction(transfer_transaction)
+            .unwrap()
+            .expect("expected to commit the post-upgrade transfer");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        let bob_documents =
+            query_domain_documents_by_record_identity(&platform, &dpns_contract_v13, bob.id());
+        assert_eq!(bob_documents.len(), 1);
+        let transferred_document = bob_documents
+            .first()
+            .expect("expected transferred username");
+        assert_eq!(transferred_document.id(), document.id());
+        assert_eq!(transferred_document.owner_id(), bob.id());
+        assert_identity_record(transferred_document, bob.id());
+
+        let transfer_history = query_history_documents(
+            &platform,
+            "transfer",
+            dpns_contract_v13.id(),
+            transferred_document.id(),
+        );
+        assert_eq!(transfer_history.len(), 1);
+        assert_eq!(transfer_history[0].owner_id(), alice_identity.id());
+        assert_eq!(
+            transfer_history[0]
+                .properties()
+                .get_identifier("toIdentityId")
+                .expect("expected transfer recipient"),
+            bob.id()
+        );
     }
 
     async fn run_dpns_username_transfer_at_protocol_version(
