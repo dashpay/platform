@@ -51,6 +51,7 @@ jobs:
         env:
           DISPATCH_TAG: ${{ github.event.inputs.tag }}
           PUSH_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -72,9 +73,26 @@ jobs:
               exit 1
             fi
             echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
-          else
+          elif [ "$EVENT_NAME" = "push" ]; then
             # Tag-push trigger: github.ref is already refs/tags/kotlin-sdk-*.
             echo "checkout_ref=${PUSH_REF}" >> "$GITHUB_OUTPUT"
+          else
+            # workflow_dispatch with NO `tag` input. github.ref is whatever ref
+            # the run was started from — typically a BRANCH — so it must not be
+            # trusted as a release source: an omitted input on a branch dispatch
+            # would otherwise fall through to the tag-push handling above and
+            # publish a Maven version derived from a moving branch. Only accept
+            # an empty input when the dispatch itself was started at a tag ref;
+            # otherwise require an explicit existing tag.
+            case "$PUSH_REF" in
+              refs/tags/*)
+                echo "checkout_ref=${PUSH_REF}" >> "$GITHUB_OUTPUT"
+                ;;
+              *)
+                echo "::error::workflow_dispatch requires the 'tag' input (an existing kotlin-sdk-* tag) or must be dispatched at a tag ref — refusing to release from '${PUSH_REF}', which is not a tag."
+                exit 1
+                ;;
+            esac
           fi
 
       - name: Checkout repository
@@ -213,7 +231,50 @@ jobs:
         working-directory: packages/kotlin-sdk
         run: ./gradlew :sdk:assembleRelease --stacktrace
 
+      # The GitHub-release asset has a FIXED name (sdk-release.aar) and
+      # softprops/action-gh-release overwrites a same-named asset by default, so
+      # without this guard a force-moved kotlin-sdk-v* tag could let a later run
+      # (built from commit B) replace the AAR of a version already published
+      # IMMUTABLY to Maven Central from commit A — the two channels would then
+      # disagree and rejecting the later Maven deploy would not restore the
+      # asset. Pinning the deploy checkout to the built SHA only protects a
+      # single run. Two defenses here:
+      #   1. Hard-fail if the tag no longer resolves to the exact commit this
+      #      run built (an in-run / pre-attach force-move).
+      #   2. Never overwrite an sdk-release.aar already attached for this tag:
+      #      once attached (and possibly published to immutable Maven Central)
+      #      the artifact is frozen, so the attach step is skipped rather than
+      #      clobbering it. A deliberate re-release must delete the asset/tag
+      #      first. Skipping (not failing) keeps emergency re-runs able to reach
+      #      the deploy job while leaving the original AAR untouched.
+      - name: Verify tag still resolves to the built commit
+        id: tag-guard
+        env:
+          TAG: ${{ steps.sdk-version.outputs.tag_name }}
+          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the tag's current commit, dereferencing an annotated tag to
+          # the commit it points at.
+          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
+          fi
+          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach/deploy so the GitHub-release AAR and any already-published Maven Central version for ${TAG} cannot drift."
+            exit 1
+          fi
+          if gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name' 2>/dev/null | grep -Fxq 'sdk-release.aar'; then
+            echo "asset_exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release ${TAG} already has an sdk-release.aar from an earlier run — leaving it untouched. The GitHub-release AAR is never overwritten, so it cannot diverge from an immutable Maven Central version. Delete the asset/tag deliberately to re-release."
+          else
+            echo "asset_exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Attach AAR to release
+        if: steps.tag-guard.outputs.asset_exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.sdk-version.outputs.tag_name }}

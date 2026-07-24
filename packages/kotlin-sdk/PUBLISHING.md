@@ -49,28 +49,21 @@ secrets are installed**:
    release (e.g. the `org.dashj` publisher). This is the human gate: the
    workflow pauses at the deploy job until a reviewer approves, and the
    approval is the last chance to stop an irrevocable publish.
-3. Only then install the Central secrets (below). Install the five secrets at
-   **repository/organization scope** so the build job's fail-fast precondition
-   check can see them (that check runs before the long native build, so a
-   misconfiguration aborts early — and it reads secrets at repo/org scope, not
-   from the environment). Do **not** scope them environment-only: that would
-   make the presence check compute `deploy=false` and silently disable
-   publishing (green build, only a `::notice`). The `maven-central` environment
-   provides the required-reviewer human gate; if you additionally want the
-   secret *values* withheld from the build job, add environment-scoped copies
-   that override at deploy time — but the repo/org-scoped names must remain for
-   the presence check.
+3. Only then install the five Central/GPG secrets listed below as
+   **environment secrets on `maven-central`**. Do not create repository- or
+   organization-scoped copies: those scopes would make the credentials
+   available to jobs that have not passed this environment's reviewer gate.
 If a `kotlin-sdk-v*` tag is pushed while no reviewer approves, the deploy job
 simply waits and can be rejected — the GitHub-release AAR is already attached
 by job 1 regardless.
 
 **Secrets gate:** the Maven deploy steps only run when the Sonatype Central
-Portal credentials are configured as GitHub repository secrets. That Portal
-token is currently a personal token (held by HashEngineering, the `org.dashj`
-publisher), so until it is installed as repo secrets the deploy steps **skip
-with a notice** instead of failing — the tag still produces the
-GitHub-release AAR, and the Maven release can be done manually with the
-runbook below, **from the tag's commit with the tag's version**. Required
+Portal credentials are configured as secrets on the **`maven-central`
+environment**. That Portal token is currently a personal token (held by
+HashEngineering, the `org.dashj` publisher), so until it is installed there
+the deploy steps **skip with a notice** instead of failing — the tag still
+produces the GitHub-release AAR, and the Maven release can be done manually
+with the runbook below, **from the tag's commit with the tag's version**. Required
 secrets (names match the env vars in the next section):
 `JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME`,
 `JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD`, `JRELEASER_GPG_PUBLIC_KEY`,
