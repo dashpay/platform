@@ -40,7 +40,10 @@ transaction state it asserts. Run `30060856240` proved every platform E2E,
 the restored-wallet fix, and the full Rust matrix, then exposed one remaining
 runner-specific Swift bootstrap gap. On the first post-recovery execution on
 `mac-runner-1`, the user-domain search-list query itself returned exit 44
-before the existing missing-default recovery could run.
+before the existing missing-default recovery could run. Run `30066193991`
+proved the expanded recovery regressions and all completed platform suites, but
+the Dashmate local-network job was cancelled at its separate 15-minute cap
+after a healthy cold helper-image pull consumed 11 minutes 13 seconds.
 
 ## Independent spec review findings applied
 
@@ -1452,6 +1455,12 @@ workflow unconditionally downloads the JavaScript build artifact, and its
 current `always()` condition can otherwise start after a failed build and
 produce a secondary missing-artifact failure.
 
+Set both reusable E2E workflows to a bounded 30-minute job timeout. Their cold
+helper-image pulls are part of the job budget and can consume more than 11
+minutes before a test starts; the prior 15-minute limit cancelled healthy main,
+browser, and Dashmate local-network executions. This does not change any test
+or service-level timeout.
+
 Preserve the existing version-change, schedule, and manual-dispatch paths. Do
 not change the ECR guard or fork behavior.
 
@@ -1973,6 +1982,11 @@ Swift CI test process
     instead of `-1` before the clamp and passed afterward. The expanded final
     worker/account/ChainStore selection passes 97 tests, and the complete
     wallet integration suite passes 25 tests.
+18. Retain Dashmate local-network job `89398900680` as the red timeout
+    observation. Assert that the reusable Dashmate job has at least the same
+    30-minute cold-pull-safe budget as the platform test-suite workflow, raise
+    its job timeout without changing test-level deadlines, and rerun all three
+    Dashmate E2Es to completion.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test
@@ -1988,6 +2002,7 @@ or silently report it as passing.
 - Verify every prerequisite and E2E condition consumes the signal.
 - Verify Dashmate E2Es require both build results and that both local-network
   cache consumers have an identical fixture-input hash component.
+- Verify both reusable E2E workflows retain a 30-minute job timeout.
 - Review the filter paths against every local-network script and reusable
   workflow loaded by the platform tests.
 
