@@ -96,7 +96,7 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "core_utxos",
-            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, height, spent) VALUES (?1, ?2, 0, X'00', NULL, 0)",
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) VALUES (?1, ?2, 0, X'00', 0)",
             &[&wallet_id.as_slice(), &outpoint],
         ),
         (
@@ -239,6 +239,35 @@ fn tc030_core_utxos_dead_metadata_columns_removed() {
 
     assert!(!columns.iter().any(|column| column == "account_index"));
     assert!(!columns.iter().any(|column| column == "spent_in_txid"));
+}
+
+/// Confirmation height is single-sourced in nullable `core_transactions` rows.
+#[test]
+fn tc031_confirmation_height_is_single_sourced_in_core_transactions() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let conn = persister.lock_conn_for_test();
+    let mut utxo_stmt = conn.prepare("PRAGMA table_info(core_utxos)").unwrap();
+    let utxo_columns: Vec<String> = utxo_stmt
+        .query_map([], |row| row.get(1))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(!utxo_columns.iter().any(|column| column == "height"));
+
+    let mut transaction_stmt = conn
+        .prepare("PRAGMA table_info(core_transactions)")
+        .unwrap();
+    let transaction_columns: Vec<(String, bool)> = transaction_stmt
+        .query_map([], |row| Ok((row.get(1)?, row.get::<_, i64>(3)? == 0)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(transaction_columns
+        .iter()
+        .any(|(column, _nullable)| column == "height"));
+    assert!(transaction_columns
+        .iter()
+        .any(|(column, nullable)| column == "record_blob" && *nullable));
 }
 
 /// load() on empty post-migrate DB is empty.

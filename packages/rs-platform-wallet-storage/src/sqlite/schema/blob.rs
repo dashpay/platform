@@ -197,6 +197,12 @@ mod tests {
             vout: 9,
         };
         let bytes = encode_outpoint(&op).unwrap();
+        assert_eq!(bytes[0], 32, "bincode prefixes the txid byte-array length");
+        assert_eq!(
+            &bytes[1..33],
+            AsRef::<[u8]>::as_ref(&op.txid),
+            "the txid must occupy SQLite substr bytes 2 through 33"
+        );
         assert_eq!(decode_outpoint(&bytes).unwrap(), op);
     }
 

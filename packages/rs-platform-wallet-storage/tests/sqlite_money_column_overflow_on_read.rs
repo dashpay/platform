@@ -101,8 +101,8 @@ fn core_utxo_value_negative_on_disk_errors_on_read() {
         // Insert an unspent UTXO so the value cast is reached.
         conn.execute(
             "INSERT INTO core_utxos \
-                (wallet_id, outpoint, value, script, height, spent) \
-             VALUES (?1, ?2, ?3, X'00', NULL, 0)",
+                (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, ?3, X'00', 0)",
             params![w.as_slice(), &outpoint, -1i64],
         )
         .unwrap();

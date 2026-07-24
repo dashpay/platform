@@ -37,7 +37,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover the current `core_utxos` shape and the V001 tables; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004) and the V005–V006 pool columns, are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. Diagrams and the [Tables](#tables) section below cover the current `core_utxos` shape and the V001 tables; `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V003), plus `invitations` (V004), the V005–V006 pool columns, and V008's shielded viewing keys are not yet documented here — see the [Migrations](#migrations) log for what they add in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -71,10 +71,10 @@ erDiagram
         BLOB wallet_id PK
         BLOB txid PK "32-byte Txid"
         INTEGER height "NULL if unconfirmed"
-        BLOB block_hash "NULL if unconfirmed"
-        INTEGER block_time "NULL if unconfirmed"
-        INTEGER finalized "0 | 1"
-        BLOB record_blob "bincode-encoded TransactionRecord"
+        BLOB block_hash "NULL on height-only rows and while unconfirmed"
+        INTEGER block_time "NULL on height-only rows and while unconfirmed"
+        INTEGER finalized "0 | 1; always 0 on height-only rows"
+        BLOB record_blob "NULL for height-only UTXO rows"
     }
 
     CORE_UTXOS {
@@ -82,7 +82,6 @@ erDiagram
         BLOB outpoint PK "bincode-encoded OutPoint"
         INTEGER value "satoshis"
         BLOB script "scriptPubKey bytes"
-        INTEGER height "NULL if unconfirmed"
         INTEGER spent "0 | 1"
     }
 
@@ -362,9 +361,17 @@ available.
 
 ### `core_transactions`
 
-One row per transaction the wallet has seen. `height`, `block_hash`, and
-`block_time` are NULL while the transaction is unconfirmed. `finalized`
-is `1` once block context is present.
+One row per transaction the wallet has seen. A transaction whose record has not
+been persisted still gets a row, carrying only the confirmation height its
+UTXOs report — all UTXOs of that transaction share it. `height` is the sole
+persisted UTXO confirmation-height source: `NULL` is the sole unconfirmed
+marker, and height `0` is a legal confirmed height. On height-only rows,
+`record_blob`, `block_hash`, and `block_time` are NULL and `finalized` is `0`;
+`finalized` is meaningful only on blob-bearing rows. A blob-bearing row always
+takes precedence over a height-only write, even when the latter reports a
+different height. `WalletStorageError::CoreTransactionEntryMismatch` detects
+typed/blob disagreement so readers can trust the blob and repair derived
+columns.
 
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -373,7 +380,8 @@ is `1` once block context is present.
 ### `core_utxos`
 
 One row per UTXO, spent or unspent. Owning-account identity is derived from
-`core_address_pool` while loading wallet state.
+`core_address_pool` while loading wallet state, and confirmation height is
+derived from `core_transactions.height`.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -681,3 +689,5 @@ having to grep this repo.
 | V005 | `V005__pool_public_key.rs` | Adds nullable `public_key` and `key_type` columns to `core_address_pool`, preserving typed pre-derived public keys that a watch-only account cannot regenerate (closes #4113). |
 | V006 | `V006__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |
 | V007 | `V007__drop_core_utxo_metadata.rs` | Removes unused `core_utxos.account_index` and `core_utxos.spent_in_txid` metadata and the associated cleanup trigger; owning-account identity is resolved from `core_address_pool` during reads. |
+| V008 | `V008__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
+| V009 | `V009__single_source_core_confirmation_height.rs` | Rebuilds `core_transactions` with nullable `record_blob` for height-only rows, preserves existing transaction metadata and blobs, and drops `core_utxos.height` so UTXO confirmation height has one authority (#4178). |

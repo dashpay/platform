@@ -15,6 +15,10 @@ use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
 
+fn optional_height_display(height: Option<u32>) -> String {
+    height.map_or_else(|| "unconfirmed".to_owned(), |height| height.to_string())
+}
+
 /// Which automatic-backup operation was attempted when the
 /// configured backup directory was missing or otherwise unwritable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -303,6 +307,22 @@ pub enum WalletStorageError {
         blob_account_index: u32,
     },
 
+    /// A `core_transactions` row's typed txid or height disagreed with its
+    /// decoded transaction record.
+    #[error(
+        "core transaction entry fields disagree with typed columns \
+         (typed txid={typed_txid}, blob txid={blob_txid}, \
+          typed height={}, blob height={})",
+        optional_height_display(*.typed_height),
+        optional_height_display(*.blob_height)
+    )]
+    CoreTransactionEntryMismatch {
+        typed_txid: String,
+        blob_txid: String,
+        typed_height: Option<u32>,
+        blob_height: Option<u32>,
+    },
+
     /// A blob exceeded the decode allocation cap (default 16 MiB).
     /// Separate from [`Self::BlobDecode`] so operators can distinguish an
     /// oversize blob from a structural decode failure.
@@ -484,6 +504,7 @@ impl WalletStorageError {
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
+            | Self::CoreTransactionEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
@@ -572,6 +593,7 @@ impl WalletStorageError {
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
             Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
+            Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
             Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",
