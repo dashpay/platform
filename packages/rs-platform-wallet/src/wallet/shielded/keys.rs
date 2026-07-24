@@ -273,17 +273,30 @@ pub fn orchard_address_from_spending_key(
 /// and re-rolled until it is a valid Orchard key — an invalid draw is
 /// negligibly rare and the same acceptance loop the `orchard` crate's own
 /// dummy-key generator runs.
-pub fn generate_one_time_orchard_key() -> ([u8; 32], [u8; ORCHARD_RAW_ADDRESS_LEN]) {
+///
+/// Uses [`RngCore::try_fill_bytes`] rather than `fill_bytes`: the latter
+/// *panics* when the OS entropy source fails. This function is called from a
+/// `#[no_mangle] extern "C"` FFI export, where a panic cannot unwind across
+/// the C ABI and would abort the whole process before the JNI panic guard can
+/// run. Surfacing the entropy failure as a typed
+/// [`PlatformWalletError::ShieldedKeyDerivation`] instead lets the FFI layer
+/// return a normal error to the host.
+pub fn generate_one_time_orchard_key(
+) -> Result<([u8; 32], [u8; ORCHARD_RAW_ADDRESS_LEN]), PlatformWalletError> {
     use rand::{rngs::OsRng, RngCore};
 
     let mut rng = OsRng;
     loop {
         let mut sk_bytes = [0u8; 32];
-        rng.fill_bytes(&mut sk_bytes);
+        rng.try_fill_bytes(&mut sk_bytes).map_err(|e| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "OS RNG entropy source failed while generating a one-time Orchard key: {e}"
+            ))
+        })?;
         if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(sk_bytes)) {
             let fvk = FullViewingKey::from(&sk);
             let address = fvk.address_at(0u32, Scope::External).to_raw_address_bytes();
-            return (sk_bytes, address);
+            return Ok((sk_bytes, address));
         }
     }
 }
@@ -488,7 +501,7 @@ mod tests {
     /// only the spending key, must re-derive the same recipient.
     #[test]
     fn one_time_key_generate_roundtrips_to_its_address() {
-        let (sk, address) = generate_one_time_orchard_key();
+        let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
         let rederived = orchard_address_from_spending_key(sk)
             .expect("a freshly generated sk is a valid Orchard SpendingKey");
         assert_eq!(
@@ -509,7 +522,7 @@ mod tests {
             SpendingKey,
         };
 
-        let (sk_bytes, address_bytes) = generate_one_time_orchard_key();
+        let (sk_bytes, address_bytes) = generate_one_time_orchard_key().expect("OS RNG available");
 
         // Re-derive exactly the viewing keys a claimer would hold.
         let sk: SpendingKey = Option::from(SpendingKey::from_bytes(sk_bytes))
@@ -567,7 +580,7 @@ mod tests {
     /// returned.
     #[test]
     fn address_from_spending_key_is_deterministic() {
-        let (sk, address) = generate_one_time_orchard_key();
+        let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
         let a = orchard_address_from_spending_key(sk).expect("valid sk");
         let b = orchard_address_from_spending_key(sk).expect("valid sk");
         assert_eq!(a, b, "same sk must derive the same address");
@@ -581,8 +594,8 @@ mod tests {
     /// fixed value). A collision here would be a catastrophic RNG failure.
     #[test]
     fn generate_produces_distinct_keys() {
-        let (sk_a, addr_a) = generate_one_time_orchard_key();
-        let (sk_b, addr_b) = generate_one_time_orchard_key();
+        let (sk_a, addr_a) = generate_one_time_orchard_key().expect("OS RNG available");
+        let (sk_b, addr_b) = generate_one_time_orchard_key().expect("OS RNG available");
         assert_ne!(sk_a, sk_b, "distinct draws must differ");
         assert_ne!(
             addr_a, addr_b,

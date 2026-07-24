@@ -1584,7 +1584,20 @@ pub unsafe extern "C" fn platform_wallet_generate_one_time_orchard_key(
     check_ptr!(out_sk_32);
     check_ptr!(out_address_43);
 
-    let (sk, address) = generate_one_time_orchard_key();
+    // `generate_one_time_orchard_key` uses `try_fill_bytes`, so an OS entropy
+    // failure returns a typed error here rather than panicking. That matters:
+    // this is a `#[no_mangle] extern "C"` export, so a panic would abort the
+    // process across the C ABI before any JNI panic guard could convert it —
+    // an OS RNG failure must surface as a normal error, never a hard abort.
+    let (sk, address) = match generate_one_time_orchard_key() {
+        Ok(pair) => pair,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                e.to_string(),
+            );
+        }
+    };
     std::ptr::copy_nonoverlapping(sk.as_ptr(), out_sk_32, 32);
     std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
     PlatformWalletFFIResult::ok()
