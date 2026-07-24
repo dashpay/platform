@@ -8,7 +8,7 @@ use crate::mock::{provider::GrpcContextProvider, MockDashPlatformSdk};
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::types::evonode::EvoNode;
-use crate::platform::{FetchUnproved, Identifier};
+use crate::platform::Identifier;
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
@@ -469,13 +469,25 @@ impl Sdk {
     /// pick, when possible, peers whose reported version is at least ours.
     ///
     /// The preference is strictly best-effort:
-    /// - probe failures are ignored (the node stays in rotation, unranked), as
-    ///   are peers outside the sample or unanswered within the budget;
+    /// - the rankings of all sampled peers are cleared at the start of each
+    ///   pass, so a probe that fails — or is dropped by the total budget —
+    ///   leaves its peer unranked rather than preserving a stale claim from
+    ///   an earlier pass;
     /// - when no live peer is known to support the target version, selection
-    ///   falls back to any live peer — no peer is ever excluded by version;
+    ///   falls back to any live peer — and even when preferred peers exist,
+    ///   selection is only *weighted* towards them, never exclusive (see
+    ///   `AddressList::get_live_address`), because the reported version is an
+    ///   unproved self-assertion;
     /// - the probe is *unproven* and feeds only peer ordering, never the SDK's
     ///   protocol-version ratchet, which stays proof-driven
     ///   ([`Self::maybe_update_protocol_version`]).
+    ///
+    /// Probes execute their transport directly against the target address
+    /// instead of going through the `DapiClient` executor: the executor pairs
+    /// every response with an address *it* selected, so a targeted probe
+    /// routed through it would attribute one peer's success to an unrelated
+    /// peer and mutate that peer's ban state. Direct execution keeps probes
+    /// free of any health-state side effects.
     ///
     /// Called automatically by [`Self::refresh_protocol_version`] (i.e. on app
     /// start and network switch in the mobile SDKs); callable directly for
@@ -483,18 +495,28 @@ impl Sdk {
     ///
     /// Returns the number of probed peers found to support the target version.
     pub async fn prefer_peers_with_latest_protocol_version(&self) -> usize {
+        use drive_proof_verifier::unproved::FromUnproved;
         use futures::StreamExt;
+        use rs_dapi_client::transport::{PlatformGrpcClient, TransportClient};
+        use rs_dapi_client::ConnectionPool;
 
-        #[cfg(feature = "mocks")]
-        if matches!(self.inner, SdkInstance::Mock { .. }) {
-            return 0;
-        }
+        let dapi = match &self.inner {
+            SdkInstance::Dapi { dapi, .. } => dapi,
+            #[cfg(feature = "mocks")]
+            SdkInstance::Mock { .. } => return 0,
+        };
 
         let target = PlatformVersion::latest().protocol_version;
-        let address_list = self.address_list();
+        let address_list = dapi.address_list();
         let addresses = address_list.sample_live_addresses(MAX_PEER_VERSION_PROBES);
 
-        let settings = RequestSettings {
+        // A fresh pass owns the rankings of every sampled peer: clear them up
+        // front so an unanswered probe cannot leave a stale claim behind.
+        for address in &addresses {
+            address_list.set_supported_protocol_version(address, None);
+        }
+
+        let probe_settings = RequestSettings {
             connect_timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
             timeout: Some(PEER_VERSION_PROBE_TIMEOUT),
             retries: Some(0),
@@ -507,13 +529,65 @@ impl Sdk {
         // the budget elapsed and drops the rest (those nodes stay unranked).
         let mut probes = std::pin::pin!(futures::stream::iter(addresses.into_iter().map(
             |address| async move {
-                let result = EvoNodeStatus::fetch_unproved_with_settings(
-                    self,
-                    EvoNode::new(address.clone()),
-                    settings,
-                )
-                .await;
-                (address, result)
+                let applied = self
+                    .dapi_client_settings
+                    .override_by(probe_settings)
+                    .finalize();
+                #[cfg(not(target_arch = "wasm32"))]
+                let applied = applied.with_ca_certificate(dapi.ca_certificate.clone());
+
+                // Direct transport execution — deliberately NOT
+                // `self.execute(..)`: see the health-state note in the method
+                // docs. `EvoNode` connects to its own address; the client we
+                // pass only satisfies the transport signature.
+                let node = EvoNode::new(address.clone());
+                let pool = ConnectionPool::new(1);
+                let result = match PlatformGrpcClient::with_uri_and_settings(
+                    address.uri().clone(),
+                    &applied,
+                    &pool,
+                ) {
+                    Ok(mut client) => node.clone().execute_transport(&mut client, &applied).await,
+                    Err(error) => Err(error),
+                };
+
+                let supported = match result {
+                    Ok(response) => {
+                        match <EvoNodeStatus as FromUnproved<EvoNode>>::maybe_from_unproved_with_metadata(
+                            node,
+                            response,
+                            self.network,
+                            self.version(),
+                        ) {
+                            Ok((Some(status), _)) => status
+                                .version
+                                .protocol
+                                .and_then(|protocol| protocol.drive)
+                                .map(|drive| drive.latest),
+                            Ok((None, _)) => None,
+                            Err(error) => {
+                                tracing::debug!(
+                                    target: "dash_sdk::protocol_version",
+                                    %address,
+                                    %error,
+                                    "peer protocol-version probe response invalid; leaving peer unranked"
+                                );
+                                None
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        tracing::debug!(
+                            target: "dash_sdk::protocol_version",
+                            %address,
+                            %error,
+                            "peer protocol-version probe failed; leaving peer unranked"
+                        );
+                        None
+                    }
+                };
+
+                (address, supported)
             }
         ))
         .buffer_unordered(PEER_VERSION_PROBE_CONCURRENCY)
@@ -522,25 +596,7 @@ impl Sdk {
         )));
 
         let mut preferred_count = 0;
-        while let Some((address, result)) = probes.next().await {
-            let supported = match result {
-                Ok((Some(status), _)) => status
-                    .version
-                    .protocol
-                    .and_then(|protocol| protocol.drive)
-                    .map(|drive| drive.latest),
-                Ok((None, _)) => None,
-                Err(error) => {
-                    tracing::debug!(
-                        target: "dash_sdk::protocol_version",
-                        %address,
-                        %error,
-                        "peer protocol-version probe failed; leaving peer unranked"
-                    );
-                    None
-                }
-            };
-
+        while let Some((address, supported)) = probes.next().await {
             address_list.set_supported_protocol_version(&address, supported);
             if supported.is_some_and(|version| version >= target) {
                 preferred_count += 1;
