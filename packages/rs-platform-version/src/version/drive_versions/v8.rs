@@ -9,7 +9,7 @@ use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_ID
 use crate::version::drive_versions::drive_state_transition_method_versions::v3::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3;
 use crate::version::drive_versions::drive_structure_version::v1::DRIVE_STRUCTURE_V1;
 use crate::version::drive_versions::drive_token_method_versions::v1::DRIVE_TOKEN_METHOD_VERSIONS_V1;
-use crate::version::drive_versions::drive_verify_method_versions::v1::DRIVE_VERIFY_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_verify_method_versions::v2::DRIVE_VERIFY_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::drive_vote_method_versions::v2::DRIVE_VOTE_METHOD_VERSIONS_V2;
 use crate::version::drive_versions::{
     DriveAssetLockMethodVersions, DriveBalancesMethodVersions, DriveBatchOperationsMethodVersion,
@@ -67,7 +67,7 @@ pub const DRIVE_VERSION_V8: DriveVersion = DriveVersion {
             add_estimation_costs_for_adding_asset_lock: 0,
             fetch_asset_lock_outpoint_info: 0,
         },
-        verify: DRIVE_VERIFY_METHOD_VERSIONS_V1,
+        verify: DRIVE_VERIFY_METHOD_VERSIONS_V2, // changed in v8: compacted address-balance proof envelope (verify v1)
         identity: DRIVE_IDENTITY_METHOD_VERSIONS_V1,
         token: DRIVE_TOKEN_METHOD_VERSIONS_V1,
         platform_system: DrivePlatformSystemMethodVersions {
@@ -120,6 +120,7 @@ pub const DRIVE_VERSION_V8: DriveVersion = DriveVersion {
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
+            prove_compacted_address_balance_changes: 1,
             compact_address_balances: 0,
             cleanup_expired_address_balances: 0,
             max_blocks_before_compaction: 64,
