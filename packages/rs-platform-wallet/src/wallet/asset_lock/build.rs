@@ -392,6 +392,32 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             "single-account asset-lock funding: selecting + signing (LargestFirst)"
         );
 
+        // Resolve the wallet-level `Account` whose account-level derivation path
+        // equals `funding_path` — the SELECTED account's own signing-side account.
+        // `set_funding` calls `funds_acc.next_change_address(Some(&acc.account_xpub))`
+        // BEFORE the `set_change_address` override below, so `acc` MUST be the
+        // selected account, not the BIP44 change account. Passing the BIP44 xpub
+        // for an explicitly-selected Standard BIP32 account with no pre-generated
+        // unused internal address makes key-wallet derive `[1, index]` from the
+        // wrong xpub and record it under the BIP32 account's path — poisoning that
+        // pool so a later normal BIP32 send can use a change entry whose signer key
+        // does not match the address (dashpay/platform#4184 review). The change
+        // OUTPUT of this transaction is still routed to the transparent BIP44 sink
+        // by `set_change_address` regardless. For the default BIP44 account this
+        // resolves to `bip44_acc` itself (unchanged behavior); for a non-Standard
+        // (CoinJoin / DashPay) account `next_change_address` fails and is swallowed
+        // to `None` so the xpub is immaterial, and the `bip44_acc` fallback (no
+        // matching wallet account found) preserves the prior behavior.
+        let funding_wallet_acc = wallet
+            .all_accounts()
+            .into_iter()
+            .find(|a| {
+                a.derivation_path()
+                    .map(|p| p == funding_path)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(&bip44_acc);
+
         let builder = TransactionBuilder::new()
             .set_fee_rate(FeeRate::new(fee_per_kb))
             .set_current_height(height)
@@ -419,8 +445,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // them across build → broadcast. `set_funding` also seeds a change
             // address, but for a non-Standard (CoinJoin / DashPay) account that
             // derivation fails and is swallowed to `None`; we override it next
-            // with the transparent BIP44 change sink regardless.
-            .set_funding(selected, &bip44_acc)
+            // with the transparent BIP44 change sink regardless. `funding_wallet_acc`
+            // is the SELECTED account's own wallet-level `Account` (see above), so
+            // its xpub — not the BIP44 change account's — governs any pool mutation
+            // `set_funding` performs on `selected`.
+            .set_funding(selected, funding_wallet_acc)
             .set_change_address(change_addr)
             .require_final_inputs();
 
