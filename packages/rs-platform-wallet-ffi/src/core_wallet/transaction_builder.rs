@@ -240,29 +240,15 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     let len = serialized.len();
 
     // Register the reserved+signed tx for deferred submission. `finalize` already
-    // committed the reservation; register just takes ownership of the built tx so
-    // a later broadcast/release can reconcile it, capturing the wallet instance
-    // whose `ReservationSet` holds the inputs.
+    // committed the reservation; `register` CONSUMES the `SignedCoreTransaction`
+    // ownership object (deriving its transaction, funding account, reservation
+    // height, and owner-guard token internally) and captures the wallet instance
+    // whose `ReservationSet` holds the inputs. Because the object is consumed
+    // exactly once, this finalize can yield at most one token — no second token
+    // can ever name the same reservation (`dashpay/platform#4185`, blocker 1).
     let token = runtime().block_on(
-        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.register(
-            wallet.core().clone(),
-            finalized.transaction().clone(),
-            // Retain the FULL account handle (CoinJoin included), not just the
-            // `StandardAccountType` subset: `finalize` reserved the selected
-            // inputs regardless of variant, so a CoinJoin-funded deferred payment
-            // must be able to release them immediately on rejection/abandon
-            // rather than stranding them until the 24-block TTL.
-            account_type.into(),
-            account_index,
-            // Baseline the age guard on the reservation's OWN stamp height,
-            // captured inside finalize's funding critical section before the
-            // external signer ran — never a fresh post-signing sample.
-            Some(finalized.reservation_height()),
-            // The key-wallet reservation token finalize stamped onto the funding
-            // inputs, so a later broadcast-reject or release frees only inputs
-            // this build still owns (owner-guarded; `dashpay/platform#4185`).
-            finalized.reservation_token(),
-        ),
+        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+            .register(wallet.core().clone(), finalized),
     );
 
     *out_tx = FFICoreTransaction {
@@ -270,7 +256,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
         tx_len: len,
         fee,
     };
-    *out_token = token;
+    *out_token = token.as_u64();
     *out_fee = fee;
     *out_txid = c_txid.into_raw();
     // Borrowed view into the just-written `out_tx` buffer; the caller copies the
