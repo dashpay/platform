@@ -516,8 +516,9 @@ public final class SDK: @unchecked Sendable {
   /// best-effort peer probe above still runs, so this call performs network
   /// I/O even when pinned. Bridges `dash_sdk_refresh_protocol_version`.
   ///
-  /// This call blocks the calling thread until the probe and the proven query
-  /// complete — invoke it from a background queue/task, never the main thread.
+  /// This call blocks the calling thread until the probe and, when applicable,
+  /// the proven query complete — invoke it from a background queue/task, never
+  /// the main thread.
   ///
   /// - Returns: the SDK's protocol version number after the (possible) ratchet.
   @discardableResult
