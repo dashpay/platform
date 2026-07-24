@@ -413,6 +413,10 @@ impl Sdk {
     pub async fn refresh_protocol_version(&self) -> Result<u32, Error> {
         // Best-effort: bias peer selection towards nodes that already support
         // this client's newest protocol version. Never fails, never ratchets.
+        // Deliberately sequenced before (not overlapped with) the proven query
+        // below so that query already picks a preferred, up-to-date peer —
+        // probes run concurrently, so the added latency is one status
+        // round-trip (bounded by PEER_VERSION_PROBE_TIMEOUT).
         self.prefer_peers_with_latest_protocol_version().await;
 
         if !self.prove() {
