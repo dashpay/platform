@@ -99,7 +99,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ),
     (
         "core_state.rs",
-        "SELECT length(record_blob), record_blob FROM core_transactions",
+        "SELECT length(txid), txid, height, length(record_blob), record_blob",
     ),
     (
         "core_state.rs",

@@ -241,19 +241,33 @@ fn tc030_core_utxos_dead_metadata_columns_removed() {
     assert!(!columns.iter().any(|column| column == "spent_in_txid"));
 }
 
-/// `core_transactions.height` is the sole persisted confirmation-height source.
+/// Confirmation height is single-sourced in nullable `core_transactions` rows.
 #[test]
-fn tc031_core_utxos_height_column_removed() {
+fn tc031_confirmation_height_is_single_sourced_in_core_transactions() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
-    let mut stmt = conn.prepare("PRAGMA table_info(core_utxos)").unwrap();
-    let columns: Vec<String> = stmt
+    let mut utxo_stmt = conn.prepare("PRAGMA table_info(core_utxos)").unwrap();
+    let utxo_columns: Vec<String> = utxo_stmt
         .query_map([], |row| row.get(1))
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
+    assert!(!utxo_columns.iter().any(|column| column == "height"));
 
-    assert!(!columns.iter().any(|column| column == "height"));
+    let mut transaction_stmt = conn
+        .prepare("PRAGMA table_info(core_transactions)")
+        .unwrap();
+    let transaction_columns: Vec<(String, bool)> = transaction_stmt
+        .query_map([], |row| Ok((row.get(1)?, row.get::<_, i64>(3)? == 0)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(transaction_columns
+        .iter()
+        .any(|(column, _nullable)| column == "height"));
+    assert!(transaction_columns
+        .iter()
+        .any(|(column, nullable)| column == "record_blob" && *nullable));
 }
 
 /// load() on empty post-migrate DB is empty.

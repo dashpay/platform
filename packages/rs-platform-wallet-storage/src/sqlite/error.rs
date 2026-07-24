@@ -303,6 +303,20 @@ pub enum WalletStorageError {
         blob_account_index: u32,
     },
 
+    /// A `core_transactions` row's typed txid or height disagreed with its
+    /// decoded transaction record.
+    #[error(
+        "core transaction entry fields disagree with typed columns \
+         (typed txid={typed_txid}, blob txid={blob_txid}, \
+          typed height={typed_height:?}, blob height={blob_height:?})"
+    )]
+    CoreTransactionEntryMismatch {
+        typed_txid: String,
+        blob_txid: String,
+        typed_height: Option<u32>,
+        blob_height: Option<u32>,
+    },
+
     /// A blob exceeded the decode allocation cap (default 16 MiB).
     /// Separate from [`Self::BlobDecode`] so operators can distinguish an
     /// oversize blob from a structural decode failure.
@@ -484,6 +498,7 @@ impl WalletStorageError {
             | Self::MissingAccount { .. }
             | Self::AccountRejected { .. }
             | Self::AssetLockEntryMismatch { .. }
+            | Self::CoreTransactionEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. }
             | Self::RehydrationPoolMismatch { .. }
@@ -572,6 +587,7 @@ impl WalletStorageError {
             Self::ProviderKeyAccountConflict { .. } => "provider_key_account_conflict",
             Self::TypedPoolKeyConflict { .. } => "typed_pool_key_conflict",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
+            Self::CoreTransactionEntryMismatch { .. } => "core_transaction_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
             Self::RehydrationPoolMismatch { .. } => "rehydration_pool_mismatch",

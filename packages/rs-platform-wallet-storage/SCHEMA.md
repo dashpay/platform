@@ -74,7 +74,7 @@ erDiagram
         BLOB block_hash "NULL if unconfirmed"
         INTEGER block_time "NULL if unconfirmed"
         INTEGER finalized "0 | 1"
-        BLOB record_blob "bincode-encoded TransactionRecord"
+        BLOB record_blob "NULL for height-only UTXO rows"
     }
 
     CORE_UTXOS {
@@ -361,9 +361,12 @@ available.
 
 ### `core_transactions`
 
-One row per transaction the wallet has seen. `height`, `block_hash`, and
-`block_time` are NULL while the transaction is unconfirmed. `finalized`
-is `1` once block context is present.
+One row per transaction the wallet has seen or recordless UTXO it tracks.
+`height` is the sole persisted UTXO confirmation-height source. A recordless
+UTXO uses a height-only row: `record_blob`, `block_hash`, and `block_time` are
+NULL, `finalized` is `0`, and `height` is NULL when the UTXO is unconfirmed.
+Blob-bearing rows contain the full transaction record and matching typed
+metadata; `finalized` is `1` once block context is present.
 
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -682,4 +685,4 @@ having to grep this repo.
 | V006 | `V006__pool_reserved_at.rs` | Adds nullable `core_address_pool.reserved_at` to persist `AddressState::Reserved` timestamps while available and used rows remain unreserved. |
 | V007 | `V007__drop_core_utxo_metadata.rs` | Removes unused `core_utxos.account_index` and `core_utxos.spent_in_txid` metadata and the associated cleanup trigger; owning-account identity is resolved from `core_address_pool` during reads. |
 | V008 | `V008__shielded_viewing_keys.rs` | Adds `shielded_viewing_keys` to persist Orchard full viewing keys by wallet and shielded account. |
-| V009 | `V009__drop_core_utxos_height.rs` | Drops `core_utxos.height`; UTXO confirmation height is sourced solely from `core_transactions.height` (#4178). |
+| V009 | `V009__single_source_core_confirmation_height.rs` | Rebuilds `core_transactions` with nullable `record_blob` for height-only rows, preserves existing transaction metadata and blobs, and drops `core_utxos.height` so UTXO confirmation height has one authority (#4178). |
