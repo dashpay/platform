@@ -209,6 +209,88 @@ fn tc_b_031_populated_v001_migration_preserves_data() {
     );
 }
 
+/// V009 must preserve a legacy confirmed UTXO whose transaction record was
+/// never persisted and whose confirmation height therefore lives only on the
+/// pre-V009 `core_utxos` row.
+#[test]
+fn v009_backfills_recordless_confirmed_utxo_height() {
+    use dashcore::hashes::Hash;
+
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("recordless-v008.db");
+    let wallet_id = wid(0xC3);
+    let txid = dashcore::Txid::from_byte_array([0x91; 32]);
+    let outpoint = dashcore::OutPoint::new(txid, 7);
+    let encoded_outpoint =
+        platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap();
+    let legacy_unconfirmed_txid = dashcore::Txid::from_byte_array([0x92; 32]);
+    let legacy_unconfirmed_outpoint = dashcore::OutPoint::new(legacy_unconfirmed_txid, 8);
+    let encoded_legacy_unconfirmed_outpoint =
+        platform_wallet_storage::sqlite::schema::blob::encode_outpoint(
+            &legacy_unconfirmed_outpoint,
+        )
+        .unwrap();
+    {
+        let mut conn = Connection::open(&path).unwrap();
+        mig::runner()
+            .set_target(refinery::Target::Version(8))
+            .run(&mut conn)
+            .unwrap();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, height, spent) \
+             VALUES (?1, ?2, 42, X'51', 321, 0)",
+            rusqlite::params![wallet_id.as_slice(), encoded_outpoint],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, height, spent) \
+             VALUES (?1, ?2, 43, X'51', 0, 0)",
+            rusqlite::params![wallet_id.as_slice(), encoded_legacy_unconfirmed_outpoint],
+        )
+        .unwrap();
+        assert_eq!(schema_version(&conn), 8);
+    }
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let conn = persister.lock_conn_for_test();
+    let (height, record_blob): (Option<i64>, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT height, record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            rusqlite::params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(&txid)],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(height, Some(321));
+    assert!(
+        record_blob.is_none(),
+        "backfill must create a height-only row"
+    );
+    let legacy_unconfirmed_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            rusqlite::params![
+                wallet_id.as_slice(),
+                AsRef::<[u8]>::as_ref(&legacy_unconfirmed_txid)
+            ],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        legacy_unconfirmed_rows, 0,
+        "legacy height zero was the unconfirmed sentinel and must not be backfilled"
+    );
+}
+
 /// TC-B-036 — the empty wallet inside the populated store migrates without a
 /// NOT NULL violation and reads empty-but-valid.
 #[test]

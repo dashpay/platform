@@ -2,7 +2,7 @@
 
 #[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -66,6 +66,8 @@ fn chain_lock_height(bytes: &[u8]) -> Option<u32> {
 }
 
 /// Apply a `CoreChangeSet` inside a transaction.
+///
+/// Recordless UTXOs write monotonic height-only rows; transaction records win.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -105,20 +107,36 @@ pub fn apply(
     // snapshot (`account_address_pools`) is the derived-address source used
     // to resolve UTXO ownership during rehydration.
     if !cs.new_utxos.is_empty() {
-        let mut transaction_stmt = tx.prepare_cached(
+        // Blob-bearing records always win; height-only writes never overwrite them.
+        // Placeholder confirmation is `height IS NOT NULL`; `finalized` stays 0.
+        let mut height_only_stmt = tx.prepare_cached(
             "INSERT INTO core_transactions \
                 (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
              VALUES (?1, ?2, ?3, NULL, NULL, 0, NULL) \
-             ON CONFLICT(wallet_id, txid) DO UPDATE SET height = excluded.height \
+             ON CONFLICT(wallet_id, txid) DO UPDATE SET height = \
+                CASE \
+                    WHEN excluded.height IS NOT NULL \
+                         AND (core_transactions.height IS NULL \
+                              OR excluded.height > core_transactions.height) \
+                    THEN excluded.height \
+                    ELSE core_transactions.height \
+                END \
              WHERE core_transactions.record_blob IS NULL",
         )?;
         let mut utxo_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.new_utxos {
-            transaction_stmt.execute(params![
+            let affected = height_only_stmt.execute(params![
                 wallet_id.as_slice(),
                 AsRef::<[u8]>::as_ref(&utxo.outpoint.txid),
                 utxo.is_confirmed.then_some(i64::from(utxo.height)),
             ])?;
+            if affected == 0 {
+                tracing::debug!(
+                    txid = %utxo.outpoint.txid,
+                    "existing transaction record blocked a stale height-only write; \
+                     refresh the record itself to update its confirmation height"
+                );
+            }
             execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
         }
     }
@@ -223,8 +241,8 @@ fn upsert_sync_state(
         .unwrap_or((None, None, None));
     // Monotonic-max semantics for sync watermarks.
     let current = (
-        sync_height_u32("core_sync_state.last_processed_height", current_raw.0)?,
-        sync_height_u32("core_sync_state.synced_height", current_raw.1)?,
+        height_column_u32("core_sync_state.last_processed_height", current_raw.0)?,
+        height_column_u32("core_sync_state.synced_height", current_raw.1)?,
     );
     let lp = match (current.0, last_processed) {
         (Some(a), Some(b)) => Some(a.max(b)),
@@ -310,9 +328,13 @@ pub fn load_state(
     let mut utxo_accounts: HashMap<dashcore::OutPoint, OwningAccount> = HashMap::new();
 
     let mut transaction_heights: HashMap<dashcore::Txid, Option<u32>> = HashMap::new();
+    let mut blob_backed_transaction_heights = HashSet::new();
+    let mut transaction_repairs = Vec::new();
     {
         use dashcore::hashes::Hash;
 
+        // Pre-read length gates keep fixed-width txids and record blobs from
+        // being materialized before their stored sizes are validated.
         let mut stmt = conn.prepare(
             "SELECT length(txid), txid, height, length(record_blob), record_blob \
              FROM core_transactions WHERE wallet_id = ?1",
@@ -322,20 +344,35 @@ pub fn load_state(
             blob::check_fixed_width(row.get::<_, i64>(0)?, 32, "core_transactions.txid")?;
             let txid_bytes: Vec<u8> = row.get(1)?;
             let txid = dashcore::Txid::from_slice(&txid_bytes)?;
-            let height = row
-                .get::<_, Option<i64>>(2)?
-                .map(|height| {
-                    crate::sqlite::util::safe_cast::i64_to_u32("core_transactions.height", height)
-                })
-                .transpose()?;
+            let height =
+                height_column_u32("core_transactions.height", row.get::<_, Option<i64>>(2)?)?;
+            let mut effective_txid = txid;
+            let mut effective_height = height;
             if let Some(record_blob_len) = row.get::<_, Option<i64>>(3)? {
                 blob::check_size(record_blob_len)?;
                 let payload: Vec<u8> = row.get(4)?;
                 let record = blob::decode::<TransactionRecord>(&payload)?;
-                ensure_transaction_record_matches_columns(&txid, height, &record)?;
+                effective_txid = record.txid;
+                effective_height = record.block_info().map(|block_info| block_info.height());
+                if let Err(mismatch) =
+                    ensure_transaction_record_matches_columns(&txid, height, &record)
+                {
+                    warn_transaction_record_mismatch(&txid, height, &record, &mismatch);
+                    transaction_repairs.push((txid, effective_txid, effective_height));
+                }
                 cs.records.push(record);
+                transaction_heights.insert(effective_txid, effective_height);
+                blob_backed_transaction_heights.insert(effective_txid);
+            } else if !blob_backed_transaction_heights.contains(&effective_txid) {
+                transaction_heights
+                    .entry(effective_txid)
+                    .or_insert(effective_height);
             }
-            transaction_heights.insert(txid, height);
+        }
+        drop(rows);
+        drop(stmt);
+        for (typed_txid, blob_txid, blob_height) in transaction_repairs {
+            repair_transaction_columns_soft(conn, wallet_id, &typed_txid, &blob_txid, blob_height);
         }
     }
 
@@ -426,8 +463,8 @@ pub fn load_state(
             let cl_bytes: Option<Vec<u8>> = row.get(3)?;
             // Fail-hard on an out-of-range watermark (corruption never skipped).
             cs.last_processed_height =
-                sync_height_u32("core_sync_state.last_processed_height", lp)?;
-            cs.synced_height = sync_height_u32("core_sync_state.synced_height", sy)?;
+                height_column_u32("core_sync_state.last_processed_height", lp)?;
+            cs.synced_height = height_column_u32("core_sync_state.synced_height", sy)?;
             // Soft-fail on a corrupt chain-lock blob — a single bad byte must
             // not prevent loading; the next ChainLock event repopulates.
             if let Some(bytes) = cl_bytes {
@@ -493,9 +530,9 @@ pub fn load_used_addresses(
     Ok(out)
 }
 
-/// Convert a stored sync-height column to `u32`, erroring on overflow
+/// Convert a stored height column to `u32`, erroring on overflow
 /// rather than silently truncating a corrupt/out-of-range value.
-fn sync_height_u32(
+fn height_column_u32(
     field: &'static str,
     value: Option<i64>,
 ) -> Result<Option<u32>, WalletStorageError> {
@@ -508,6 +545,8 @@ fn sync_height_u32(
 ///
 /// Returns `Ok(None)` when the row is absent or carries only confirmation
 /// height metadata.
+/// A height-only row is not synthesized because UTXO height is not attested
+/// block context and must not masquerade as a `BlockInfo`.
 pub fn get_tx_record(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -523,22 +562,23 @@ pub fn get_tx_record(
     let Some(row) = rows.next()? else {
         return Ok(None);
     };
-    let height = row
-        .get::<_, Option<i64>>(0)?
-        .map(|height| {
-            crate::sqlite::util::safe_cast::i64_to_u32("core_transactions.height", height)
-        })
-        .transpose()?;
+    let height = height_column_u32("core_transactions.height", row.get::<_, Option<i64>>(0)?)?;
     let Some(record_blob_len) = row.get::<_, Option<i64>>(1)? else {
         return Ok(None);
     };
     blob::check_size(record_blob_len)?;
     let payload: Vec<u8> = row.get(2)?;
     let record = blob::decode(&payload)?;
-    ensure_transaction_record_matches_columns(txid, height, &record)?;
+    drop(rows);
+    drop(stmt);
+    if let Err(mismatch) = ensure_transaction_record_matches_columns(txid, height, &record) {
+        warn_transaction_record_mismatch(txid, height, &record, &mismatch);
+        repair_transaction_columns_soft(conn, wallet_id, txid, &record.txid, record.height());
+    }
     Ok(Some(record))
 }
 
+/// Diagnose typed txid/height columns that disagree with the authoritative blob.
 fn ensure_transaction_record_matches_columns(
     typed_txid: &dashcore::Txid,
     typed_height: Option<u32>,
@@ -554,6 +594,59 @@ fn ensure_transaction_record_matches_columns(
         });
     }
     Ok(())
+}
+
+fn warn_transaction_record_mismatch(
+    typed_txid: &dashcore::Txid,
+    typed_height: Option<u32>,
+    record: &TransactionRecord,
+    mismatch: &WalletStorageError,
+) {
+    let blob_height = record.block_info().map(|block_info| block_info.height());
+    tracing::warn!(
+        typed_txid = %typed_txid,
+        blob_txid = %record.txid,
+        typed_height = ?typed_height,
+        blob_height = ?blob_height,
+        error = %mismatch,
+        "core transaction typed columns disagree with its record; \
+         using the blob and repairing the derived columns"
+    );
+}
+
+fn repair_transaction_columns_soft(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    typed_txid: &dashcore::Txid,
+    blob_txid: &dashcore::Txid,
+    blob_height: Option<u32>,
+) {
+    let result = conn.execute(
+        "UPDATE core_transactions SET txid = ?1, height = ?2 \
+         WHERE wallet_id = ?3 AND txid = ?4",
+        params![
+            AsRef::<[u8]>::as_ref(blob_txid),
+            blob_height.map(i64::from),
+            wallet_id.as_slice(),
+            AsRef::<[u8]>::as_ref(typed_txid),
+        ],
+    );
+    match result {
+        Ok(1) => {}
+        Ok(affected) => tracing::warn!(
+            typed_txid = %typed_txid,
+            blob_txid = %blob_txid,
+            affected,
+            "core transaction typed-column repair did not update one row; \
+             continuing with blob values"
+        ),
+        Err(error) => tracing::warn!(
+            typed_txid = %typed_txid,
+            blob_txid = %blob_txid,
+            error = %error,
+            "core transaction typed-column repair failed; continuing with blob values"
+        ),
+    }
 }
 
 /// Row representing one unspent UTXO. Used by tests that probe the
@@ -798,6 +891,79 @@ mod tests {
     }
 
     #[test]
+    fn height_only_placeholder_does_not_regress() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x49u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let txid = Txid::from_byte_array([0x86u8; 32]);
+        let mut utxo = sample_utxo(txid, 500, true);
+        for stale in [
+            CoreChangeSet {
+                new_utxos: vec![utxo.clone()],
+                ..Default::default()
+            },
+            {
+                utxo.height = 400;
+                CoreChangeSet {
+                    new_utxos: vec![utxo.clone()],
+                    ..Default::default()
+                }
+            },
+            {
+                utxo.height = 0;
+                utxo.is_confirmed = false;
+                CoreChangeSet {
+                    new_utxos: vec![utxo],
+                    ..Default::default()
+                }
+            },
+        ] {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &wallet_id, &stale).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        assert_eq!(state.new_utxos[0].height, 500);
+        assert!(state.new_utxos[0].is_confirmed);
+    }
+
+    #[test]
+    fn load_state_treats_height_zero_as_confirmed() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x4Au8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let txid = Txid::from_byte_array([0x87u8; 32]);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                new_utxos: vec![sample_utxo(txid, 0, true)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+
+        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet).unwrap();
+        assert_eq!(state.new_utxos[0].height, 0);
+        assert!(state.new_utxos[0].is_confirmed);
+    }
+
+    #[test]
     fn transaction_record_always_overrides_height_only_placeholder() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
@@ -938,7 +1104,7 @@ mod tests {
     }
 
     #[test]
-    fn load_state_rejects_transaction_blob_txid_mismatch() {
+    fn load_state_soft_fails_and_repairs_transaction_blob_txid_mismatch() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x46u8; 32];
@@ -969,16 +1135,84 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
-            .expect_err("typed txid must agree with record_blob");
-        assert!(matches!(
-            err,
-            WalletStorageError::CoreTransactionEntryMismatch { .. }
-        ));
+        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
+            .expect("a reconstructible typed txid mismatch must not abort wallet loading");
+        assert_eq!(state.records[0].txid, blob_txid);
+        let repaired: Vec<u8> = conn
+            .query_row(
+                "SELECT txid FROM core_transactions WHERE wallet_id = ?1",
+                params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(repaired, AsRef::<[u8]>::as_ref(&blob_txid));
     }
 
     #[test]
-    fn load_state_rejects_transaction_blob_height_mismatch() {
+    fn load_state_blob_height_wins_when_typed_repair_collides_in_either_scan_order() {
+        for (case, typed_byte) in [0x10, 0xF0].into_iter().enumerate() {
+            let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+            crate::sqlite::migrations::run(&mut conn).unwrap();
+            let wallet_id = [0x50 + case as u8; 32];
+            conn.execute(
+                "INSERT INTO wallets (wallet_id, network, birth_height) \
+                 VALUES (?1, 'testnet', 0)",
+                params![&wallet_id[..]],
+            )
+            .unwrap();
+
+            let blob_txid = Txid::from_byte_array([0x80; 32]);
+            let typed_txid = Txid::from_byte_array([typed_byte; 32]);
+            let confirmed_utxo = sample_utxo(blob_txid, 500, true);
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    new_utxos: vec![confirmed_utxo.clone()],
+                    records: vec![transaction_record(
+                        blob_txid,
+                        TransactionContext::InChainLockedBlock(BlockInfo::new(
+                            500,
+                            BlockHash::from_byte_array([0x38; 32]),
+                            1_735_690_000,
+                        )),
+                    )],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+            conn.execute(
+                "UPDATE core_transactions SET txid = ?1 WHERE wallet_id = ?2",
+                params![AsRef::<[u8]>::as_ref(&typed_txid), wallet_id.as_slice()],
+            )
+            .unwrap();
+
+            let mut stale_utxo = confirmed_utxo;
+            stale_utxo.height = 100;
+            let tx = conn.transaction().unwrap();
+            apply(
+                &tx,
+                &wallet_id,
+                &CoreChangeSet {
+                    new_utxos: vec![stale_utxo],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            tx.commit().unwrap();
+
+            let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
+                .expect("a blocked repair must still reconstruct blob-authoritative state");
+            let loaded = state.new_utxos.first().expect("UTXO must load");
+            assert_eq!(loaded.height, 500, "failed scan-order case {case}");
+            assert!(loaded.is_confirmed);
+        }
+    }
+
+    #[test]
+    fn load_state_soft_fails_and_repairs_transaction_blob_height_mismatch() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let wallet_id = [0x47u8; 32];
@@ -1015,12 +1249,106 @@ mod tests {
         )
         .unwrap();
 
-        let err = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
-            .expect_err("typed height must agree with record_blob");
-        assert!(matches!(
-            err,
-            WalletStorageError::CoreTransactionEntryMismatch { .. }
-        ));
+        let (state, _) = load_state(&conn, &wallet_id, dashcore::Network::Testnet)
+            .expect("a reconstructible typed height mismatch must not abort wallet loading");
+        assert_eq!(state.records[0].height(), Some(500));
+        let repaired: Option<i64> = conn
+            .query_row(
+                "SELECT height FROM core_transactions WHERE wallet_id = ?1",
+                params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(repaired, Some(500));
+    }
+
+    #[test]
+    fn get_tx_record_soft_fails_and_repairs_blob_txid_mismatch() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x4Bu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let blob_txid = Txid::from_byte_array([0x88u8; 32]);
+        let typed_txid = Txid::from_byte_array([0x89u8; 32]);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![transaction_record(blob_txid, TransactionContext::Mempool)],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        conn.execute(
+            "UPDATE core_transactions SET txid = ?1 WHERE wallet_id = ?2",
+            params![AsRef::<[u8]>::as_ref(&typed_txid), wallet_id.as_slice()],
+        )
+        .unwrap();
+
+        let record = get_tx_record(&conn, &wallet_id, &typed_txid)
+            .expect("a reconstructible typed txid mismatch must not abort point reads")
+            .expect("blob-bearing row must return its record");
+        assert_eq!(record.txid, blob_txid);
+        assert!(get_tx_record(&conn, &wallet_id, &blob_txid)
+            .unwrap()
+            .is_some());
+    }
+
+    #[test]
+    fn get_tx_record_soft_fails_and_repairs_blob_height_mismatch() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x4Cu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+
+        let txid = Txid::from_byte_array([0x8Au8; 32]);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &CoreChangeSet {
+                records: vec![transaction_record(
+                    txid,
+                    TransactionContext::InChainLockedBlock(BlockInfo::new(
+                        600,
+                        BlockHash::from_byte_array([0x37u8; 32]),
+                        1_735_689_900,
+                    )),
+                )],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        tx.commit().unwrap();
+        conn.execute(
+            "UPDATE core_transactions SET height = 601 WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+        )
+        .unwrap();
+
+        let record = get_tx_record(&conn, &wallet_id, &txid)
+            .expect("a reconstructible typed height mismatch must not abort point reads")
+            .expect("blob-bearing row must return its record");
+        assert_eq!(record.height(), Some(600));
+        let repaired: Option<i64> = conn
+            .query_row(
+                "SELECT height FROM core_transactions WHERE wallet_id = ?1",
+                params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(repaired, Some(600));
     }
 
     /// `load_used_addresses` (the address-reuse-guard rehydration path called

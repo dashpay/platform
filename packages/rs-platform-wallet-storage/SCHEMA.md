@@ -71,9 +71,9 @@ erDiagram
         BLOB wallet_id PK
         BLOB txid PK "32-byte Txid"
         INTEGER height "NULL if unconfirmed"
-        BLOB block_hash "NULL if unconfirmed"
-        INTEGER block_time "NULL if unconfirmed"
-        INTEGER finalized "0 | 1"
+        BLOB block_hash "NULL on height-only rows and while unconfirmed"
+        INTEGER block_time "NULL on height-only rows and while unconfirmed"
+        INTEGER finalized "0 | 1; always 0 on height-only rows"
         BLOB record_blob "NULL for height-only UTXO rows"
     }
 
@@ -361,12 +361,17 @@ available.
 
 ### `core_transactions`
 
-One row per transaction the wallet has seen or recordless UTXO it tracks.
-`height` is the sole persisted UTXO confirmation-height source. A recordless
-UTXO uses a height-only row: `record_blob`, `block_hash`, and `block_time` are
-NULL, `finalized` is `0`, and `height` is NULL when the UTXO is unconfirmed.
-Blob-bearing rows contain the full transaction record and matching typed
-metadata; `finalized` is `1` once block context is present.
+One row per transaction the wallet has seen. A transaction whose record has not
+been persisted still gets a row, carrying only the confirmation height its
+UTXOs report — all UTXOs of that transaction share it. `height` is the sole
+persisted UTXO confirmation-height source: `NULL` is the sole unconfirmed
+marker, and height `0` is a legal confirmed height. On height-only rows,
+`record_blob`, `block_hash`, and `block_time` are NULL and `finalized` is `0`;
+`finalized` is meaningful only on blob-bearing rows. A blob-bearing row always
+takes precedence over a height-only write, even when the latter reports a
+different height. `WalletStorageError::CoreTransactionEntryMismatch` detects
+typed/blob disagreement so readers can trust the blob and repair derived
+columns.
 
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.

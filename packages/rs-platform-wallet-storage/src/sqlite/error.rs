@@ -15,6 +15,10 @@ use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
 
+fn optional_height_display(height: Option<u32>) -> String {
+    height.map_or_else(|| "unconfirmed".to_owned(), |height| height.to_string())
+}
+
 /// Which automatic-backup operation was attempted when the
 /// configured backup directory was missing or otherwise unwritable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -308,7 +312,9 @@ pub enum WalletStorageError {
     #[error(
         "core transaction entry fields disagree with typed columns \
          (typed txid={typed_txid}, blob txid={blob_txid}, \
-          typed height={typed_height:?}, blob height={blob_height:?})"
+          typed height={}, blob height={})",
+        optional_height_display(*.typed_height),
+        optional_height_display(*.blob_height)
     )]
     CoreTransactionEntryMismatch {
         typed_txid: String,

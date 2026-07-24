@@ -366,6 +366,102 @@ fn copy_core_utxos_to_v001(source: &rusqlite::Connection, destination: &rusqlite
     }
 }
 
+#[test]
+fn copy_core_utxos_to_v001_preserves_legacy_row_shape() {
+    use dashcore::hashes::Hash;
+
+    let mut source = rusqlite::Connection::open_in_memory().unwrap();
+    platform_wallet_storage::sqlite::migrations::run(&mut source).unwrap();
+    let wallet_id = wid(0xD1);
+    let txid = dashcore::Txid::from_byte_array([0x92; 32]);
+    let outpoint = dashcore::OutPoint::new(txid, 3);
+    let encoded_outpoint =
+        platform_wallet_storage::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap();
+    let script = vec![0x51];
+    source
+        .execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .unwrap();
+    source
+        .execute(
+            "INSERT INTO core_transactions \
+                (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
+             VALUES (?1, ?2, 222, NULL, NULL, 0, NULL)",
+            rusqlite::params![wallet_id.as_slice(), AsRef::<[u8]>::as_ref(&txid)],
+        )
+        .unwrap();
+    source
+        .execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, pool_type, address_index, script) \
+             VALUES (?1, 'standard_bip44', 7, 0, 0, ?2)",
+            rusqlite::params![wallet_id.as_slice(), &script],
+        )
+        .unwrap();
+    source
+        .execute(
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 1234, ?3, 0)",
+            rusqlite::params![wallet_id.as_slice(), &encoded_outpoint, &script],
+        )
+        .unwrap();
+
+    let mut destination = rusqlite::Connection::open_in_memory().unwrap();
+    platform_wallet_storage::sqlite::migrations::runner()
+        .set_target(refinery::Target::Version(1))
+        .run(&mut destination)
+        .unwrap();
+    destination
+        .execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            rusqlite::params![wallet_id.as_slice()],
+        )
+        .unwrap();
+    copy_core_utxos_to_v001(&source, &destination);
+
+    let copied: (
+        Vec<u8>,
+        Vec<u8>,
+        i64,
+        Vec<u8>,
+        Option<i64>,
+        i64,
+        i64,
+        Option<Vec<u8>>,
+    ) = destination
+        .query_row(
+            "SELECT wallet_id, outpoint, value, script, height, account_index, spent, \
+                        spent_in_txid \
+                 FROM core_utxos",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                ))
+            },
+        )
+        .unwrap();
+    assert_eq!(copied.0, wallet_id);
+    assert_eq!(copied.1, encoded_outpoint);
+    assert_eq!(copied.2, 1234);
+    assert_eq!(copied.3, script);
+    assert_eq!(copied.4, Some(222));
+    assert_eq!(copied.5, 7);
+    assert_eq!(copied.6, 0);
+    assert!(copied.7.is_none());
+}
+
 /// Fixture regenerator. Ignored by default — run explicitly to rebuild the
 /// committed fixture:
 /// `cargo test -p platform-wallet-storage --test fixture_gen -- --ignored regenerate`.
@@ -396,10 +492,8 @@ fn regenerate_populated_v001_fixture() {
         .run(&mut conn)
         .expect("apply V001 only to fixture");
 
-    // Lift every populated V001 table from the built store. FKs are off for the
-    // bulk load (the source is already consistent). `refinery_schema_history`
-    // and empty tables (e.g. the V002-altered, unpopulated `platform_addresses`)
-    // are skipped, so `SELECT *` never straddles a V002/V003 column change.
+    // Lift populated V001 tables from the built store with FKs disabled.
+    // `core_utxos` crosses a later column-shape change and is copied explicitly.
     conn.execute(
         "ATTACH DATABASE ?1 AS built",
         rusqlite::params![src.to_str().expect("utf8 src path")],
@@ -502,6 +596,17 @@ fn populated_v001_fixture_is_present_and_openable() {
         )
         .unwrap();
     assert_eq!(utxo_count, 1, "full wallet has one unspent UTXO");
+    let account_index: i64 = conn
+        .query_row(
+            "SELECT account_index FROM core_utxos WHERE wallet_id = ?1",
+            rusqlite::params![full.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        account_index, 0,
+        "V001 hardcodes account_index=0 — the pre-redirect writer gap"
+    );
 
     let tx_count: i64 = conn
         .query_row(

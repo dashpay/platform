@@ -66,14 +66,6 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "accounts.rs",
         "SELECT length(wallet_id), wallet_id, account_index, key_class,",
     ),
-    // Provider platform-node-key reader: pre-read length() gates on both
-    // fixed-width key columns.
-    (
-        "accounts.rs",
-        "SELECT key_index, length(public_key), public_key, length(node_id), node_id",
-    ),
-    // list_unspent_utxos (test-helper reader, ungated — global SQLITE_LIMIT_LENGTH covers it).
-    ("core_state.rs", "SELECT outpoint, value, script, account_index"),
     // load_state unspent-UTXO reader: pre-read length() gates on outpoint and script.
     (
         "core_state.rs",
@@ -151,6 +143,7 @@ fn tc_p1_003_prepare_cached_in_writers() {
         .join("sqlite")
         .join("schema");
     let mut offenders: Vec<(String, usize, String)> = Vec::new();
+    let mut allowlist_hits = vec![0usize; READ_ONLY_PREPARE_ALLOWED.len()];
     for entry in std::fs::read_dir(&schema_dir).expect("read schema dir") {
         let entry = entry.expect("schema dir entry");
         let path = entry.path();
@@ -184,8 +177,10 @@ fn tc_p1_003_prepare_cached_in_writers() {
                 .join("\n");
             let allowed = READ_ONLY_PREPARE_ALLOWED
                 .iter()
-                .any(|(f, sql)| *f == file_name && probe.contains(sql));
-            if allowed {
+                .enumerate()
+                .find(|(_, (f, sql))| *f == file_name && probe.contains(sql));
+            if let Some((allowlist_index, _)) = allowed {
+                allowlist_hits[allowlist_index] += 1;
                 continue;
             }
             offenders.push((file_name.to_string(), idx + 1, (*line).to_string()));
@@ -195,6 +190,15 @@ fn tc_p1_003_prepare_cached_in_writers() {
         offenders.is_empty(),
         "writer paths must use `prepare_cached`; offenders: {:#?}",
         offenders
+    );
+    let stale_allowlist_entries: Vec<_> = READ_ONLY_PREPARE_ALLOWED
+        .iter()
+        .zip(allowlist_hits)
+        .filter_map(|(entry, hits)| (hits == 0).then_some(entry))
+        .collect();
+    assert!(
+        stale_allowlist_entries.is_empty(),
+        "read-only prepare allowlist entries must match a call site: {stale_allowlist_entries:#?}"
     );
 }
 

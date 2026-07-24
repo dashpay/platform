@@ -77,6 +77,21 @@ fn sqlite_oom() -> WalletStorageError {
     ))
 }
 
+#[test]
+fn core_transaction_mismatch_display_uses_domain_height_labels() {
+    let confirmed = WalletStorageError::CoreTransactionEntryMismatch {
+        typed_txid: "11".repeat(32),
+        blob_txid: "22".repeat(32),
+        typed_height: Some(200),
+        blob_height: None,
+    }
+    .to_string();
+    assert!(confirmed.contains("typed height=200"));
+    assert!(confirmed.contains("blob height=unconfirmed"));
+    assert!(!confirmed.contains("Some("));
+    assert!(!confirmed.contains("None"));
+}
+
 /// One representative sample per `WalletStorageError` variant.
 ///
 /// The samples are passed through a wildcard-free `match` below; the
