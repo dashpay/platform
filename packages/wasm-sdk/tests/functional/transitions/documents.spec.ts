@@ -706,14 +706,29 @@ describe('Document State Transitions', function describeDocumentStateTransitions
         tokenPaymentInfo: makeTokenPaymentInfo(3n),
       });
 
-      const purchasedDocument = await client.getDocument(
+      const purchaseDeadline = Date.now() + 30000;
+      let purchasedDocument = await client.getDocument(
         tokenPaidContractId,
         'tokenPaidListing',
         tokenPaidDocumentId,
       );
+      while (
+        purchasedDocument?.ownerId.toString() !== testData.identityId3
+        && Date.now() < purchaseDeadline
+      ) {
+        await new Promise((resolve) => { setTimeout(resolve, 500); });
+        purchasedDocument = await client.getDocument(
+          tokenPaidContractId,
+          'tokenPaidListing',
+          tokenPaidDocumentId,
+        );
+      }
 
       expect(purchasedDocument).to.exist();
-      expect(purchasedDocument.ownerId.toString()).to.equal(testData.identityId3);
+      expect(purchasedDocument.ownerId.toString()).to.equal(
+        testData.identityId3,
+        `owner did not converge in 30s; last owner: ${purchasedDocument.ownerId}`,
+      );
       await expectTokenBalance(testData.identityId2, tokenPaidTokenId, 26n);
       await expectTokenBalance(testData.identityId3, tokenPaidTokenId, 47n);
       await expectTokenBalance(testData.identityId, tokenPaidTokenId, 927n);

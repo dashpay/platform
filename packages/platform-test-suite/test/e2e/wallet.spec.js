@@ -4,8 +4,10 @@ const getDAPISeeds = require('../../lib/test/getDAPISeeds');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
+const wait = require('../../lib/wait');
 
-const { EVENTS } = Dash.WalletLib;
+const TRANSACTION_PROPAGATION_TIMEOUT_MS = 120000;
+const TRANSACTION_POLL_INTERVAL_MS = 500;
 
 describe('e2e', function e2eTest() {
   this.bail(true);
@@ -108,14 +110,16 @@ describe('e2e', function e2eTest() {
         restoredAccount = await restoredWallet.getWalletAccount();
 
         let transactions = restoredAccount.getTransactions();
+        const transactionPropagationDeadline = Date.now() + TRANSACTION_PROPAGATION_TIMEOUT_MS;
 
-        // Wait for new block if transaction has not been propagated yet
-        if (Object.keys(transactions).length === 0) {
-          await new Promise((resolve) => { restoredAccount.once(EVENTS.BLOCKHEADER, resolve); });
+        // A mempool transaction may need the next block before a restored wallet can discover it.
+        while (
+          !transactions[firstTransaction.id]
+          && Date.now() < transactionPropagationDeadline
+        ) {
+          await wait(TRANSACTION_POLL_INTERVAL_MS);
           transactions = restoredAccount.getTransactions();
         }
-
-        await waitForBalanceToChange(restoredAccount);
 
         const transactionIds = Object.keys(transactions);
 

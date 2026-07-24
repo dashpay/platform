@@ -31,7 +31,12 @@ keychain recovery and all completed integration targets, but two healthy test
 suite jobs exhausted their 15-minute cap after cold helper-image pulls. Run
 `30048343835` then proved the corrected timeout and exposed a long-lived WASM
 context gap: after the local quorum rotated, browser proof verification could
-not find the new quorum hash in the connect-time cache.
+not find the new quorum hash in the connect-time cache. Run `30052329512`
+proved that refresh path in the exact credit-transfer regression and left two
+test-harness propagation failures: the functional document-purchase test read
+an independently queried stale owner immediately after broadcast, and the
+restored-wallet E2E depended on an unbounded block-header event instead of the
+transaction state it asserts.
 
 ## Independent spec review findings applied
 
@@ -118,6 +123,14 @@ must-fix findings are incorporated below:
 19. Swift workflow wiring is part of the Swift trigger surface. Changes to the
     reusable workflow itself launch its path-filtered job, and the deterministic
     keychain regression runs explicitly under `/bin/bash`.
+20. Document purchase uses state-aware owner polling rather than the
+    neighboring fixed two-second sleep. The sleep does not establish
+    convergence and could reproduce the same stale-owner read under load.
+21. Restored-wallet polling allows 120 seconds. The local miner runs every 60
+    seconds, so the earlier 20-second proposal could fail a healthy transaction
+    that entered the mempool just after a block. The longer finite deadline
+    covers a full mining interval plus propagation margin without approaching
+    the suite timeout.
 
 The reviewers differed on trigger breadth. The failure-mode review recommended
 also treating every immediate/transitive `js-dapi-client` dependency (starting
@@ -232,6 +245,22 @@ schedule, or a manual dispatch:
     cache-miss HTTP inside the proof verifier. The local network rotated after
     that snapshot, so the next valid proof required an asynchronously refreshed
     current/previous quorum set.
+13. Functional job `89358698815` in run `30052329512` successfully purchased
+    a token-gated document, then immediately fetched it through an independent
+    query and observed the seller as its owner. Other mutation cases in the
+    same functional file acknowledge cross-node propagation delay, but the
+    purchase case omitted a state-aware owner wait.
+14. Main-suite job `89358698922` in the same run timed out after 950 seconds in
+    `restored wallet / should have all transaction from before at first`.
+    In source, the test awaits `getWalletAccount()`, takes a transaction
+    snapshot, and attaches a one-shot `EVENTS.BLOCKHEADER` listener with no
+    deadline when the snapshot is empty. That wait can miss an earlier event or
+    wait forever if the stream does not deliver a later one. The completed run
+    proves the test did not settle before the suite timeout, but the stack does
+    not identify which awaited source line consumed each part of the interval.
+    The after-hook
+    `stopReadingHistorical` null dereference was teardown fallout observed
+    after the timeout, not the primary failure.
 
 The initial browser error in
 `GetStatusResponse.createFromProto` is not a third root cause. RS-DAPI
@@ -308,6 +337,14 @@ It cannot keep Platform consensus alive, so it is outside this fix.
   tests only after 14 minutes and later failed at the rotated-quorum cache
   miss described above. This is the red integration observation, not a
   deterministic rotation test.
+- PR run `30052329512`: Rust unit/nextest/clippy, Kotlin, Swift, all three
+  Dashmate E2Es, both browser shards, and every other functional/main test
+  passed. Browser shard 1 passed the exact prior credit-transfer regression
+  after a quorum rotation. Functional packages failed only because the
+  document-purchase case read the prior owner without a state-aware propagation
+  wait. The main suite reported 75 passing and 17 pending before the
+  restored-wallet case exhausted its suite timeout; source inspection found an
+  unbounded post-synchronization block-header listener in that case.
 
 ### Local deterministic reproduction
 
@@ -360,6 +397,22 @@ the other response to a new exact hash/key, and then prove that independent
 refresh preserves the successful cache update. With both endpoints failing, a
 seeded known key must remain usable while an unknown hash remains rejected.
 
+The remaining document-purchase failure is reproduced by the completed
+functional CI run: broadcast succeeds, but the immediately following query can
+be served by a node that has not yet applied the transition. The surrounding
+functional cases establish the need to accommodate cross-node propagation; the
+repair polls the queried document until the expected owner is observed or a
+30-second deadline expires.
+
+The restored-wallet hang is deterministic at the test boundary. A one-shot
+event promise attached after an event has fired never settles unless another
+event happens. The account state is the contract under test, so bounded polling
+of `getTransactions()` avoids event ordering and preserves the exact
+transaction-ID assertions. The 120-second deadline exceeds one full 60-second
+local mining interval plus propagation margin while remaining far below the
+950-second suite cap. Run `30052329512` is the red integration observation; no
+production wallet behavior changes for this repair.
+
 ## Goals
 
 - A new DAPI-backed online wallet initializes its SPV chain from the configured
@@ -385,6 +438,10 @@ seeded known key must remain usable while an unknown hash remains rejected.
 - Long-lived trusted WASM contexts refresh current and previous quorum keys
   before proof preparation, without enabling synchronous browser refetch or
   accepting a proof whose requested quorum hash/key cannot verify it.
+- Functional document-purchase reads poll for the expected owner with a finite
+  deadline before asserting it.
+- Restored-wallet E2Es wait on the transaction state they assert, with a
+  finite deadline, rather than on a header event that may already have fired.
 - Swift CI provisions a fresh writable keychain for each job and restores the
   runner's prior default keychain even when tests fail.
 - A local Dashmate group does not start mining until every Core node reports
@@ -408,6 +465,8 @@ seeded known key must remain usable while an unknown hash remains rejected.
   supplied by an unverified state-transition payload.
 - Changing production `WalletStorage` behavior or replacing Keychain-backed
   signing tests with an in-memory implementation.
+- Changing wallet synchronization or block-header provider cleanup to repair a
+  test-only missed-event wait.
 - Relaxing platform-value's strict binary serializer, which is also used on
   consensus/app-hash paths.
 - Expanding E2Es to every source change in the monorepo.
@@ -936,6 +995,43 @@ proof remains the full main and both browser E2E jobs; record a rotation in
 logs when using it as refresh evidence rather than inferring rotation from
 duration.
 
+### 1l. Poll the purchased document's owner before asserting
+
+After `documentPurchase` resolves, query the document until it exists with the
+buyer as owner or a 30-second deadline expires, using the 500-millisecond
+interval already established for state-aware token-balance polling in the same
+suite. Retain the existing existence and exact-owner assertions and report the
+last observed owner on failure. The polling belongs in the functional test
+because the purchase broadcast is already accepted; the failure is an
+immediate cross-node read with no read-your-writes guarantee. Keep this
+single-use loop local to the purchase case.
+
+Do not weaken the owner assertion, retry without a deadline or expected-state
+condition, or add a production SDK delay. Those approaches would respectively
+hide a failed purchase, permit another hang, or impose test-network
+coordination on SDK callers.
+
+### 1m. Replace the restored-wallet missed-event wait with bounded state polling
+
+Keep `getWalletAccount()` and the exact transaction-count/ID assertions. If the
+restored account's first transaction is not present yet, poll
+`getTransactions()` for that specific transaction ID every 500 milliseconds
+and stop after 120 seconds. That deadline covers one full 60-second local mining
+interval plus propagation/retry margin and matches the client's configured
+InstantLock-scale wait while remaining far below the 950-second suite cap.
+Refresh the transaction snapshot on every iteration. If the deadline expires,
+let the unchanged assertions fail with the observed transaction state.
+
+This waits for the contract the test actually verifies and cannot miss a
+previously emitted event. Keep the polling local to this one E2E rather than
+introducing a generic helper for a single use. Remove the now-unused
+`EVENTS.BLOCKHEADER` import and the unconditional balance-change wait.
+
+Do not change production wallet synchronization or make provider cleanup
+null-tolerant in this amendment. The completed run shows the null dereference
+as teardown fallout after the primary timed-out test; changing cleanup would
+mask that fallout without making the restored transaction observable.
+
 ### 2. Add a Core-tip convergence gate before mining
 
 Use Dashmate's existing
@@ -1323,6 +1419,13 @@ Swift CI test process
 - A quorum rotates after preparation but before the result proof: the current
   call can reject the missing key. It is never accepted unverified; a later
   call refreshes again. Typed wait-only refresh-and-retry is deferred.
+- The purchased document never exposes the buyer as owner within 30 seconds:
+  the existing exact-owner assertion fails with the last observed owner
+  instead of accepting stale state.
+- The restored transaction is already present: polling is skipped. If it
+  arrives during the bounded interval, the refreshed snapshot is asserted. If
+  it never arrives, the original count/ID assertions fail instead of hanging
+  until the suite timeout.
 - The Swift runner has a stale or unwritable keychain from another job: the
   unique path avoids it, and the smoke check fails before the expensive build
   if the new keychain is not writable.
@@ -1422,6 +1525,16 @@ Swift CI test process
     statically confirm all four proof-verifying waits use the common boundary.
     Rerun the full main and both browser E2E jobs; the former credit-transfer
     test must pass after an observed quorum rotation.
+15. Retain functional job `89358698815` as the red cross-node purchase
+    observation. Poll the queried document for the expected owner immediately
+    after purchase, then rerun the complete functional package job and preserve
+    the exact existence, owner, and token-balance assertions.
+16. Retain main-suite job `89358698922` as the red missed-event observation.
+    Replace the unbounded header listener with bounded polling for
+    `firstTransaction.id` for up to 120 seconds, preserving the
+    transaction-count and ID assertions. Rerun the main E2E job and confirm the
+    restored-wallet case settles without its 950-second suite timeout or
+    cleanup fallout.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test
