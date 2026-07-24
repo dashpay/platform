@@ -36,7 +36,11 @@ proved that refresh path in the exact credit-transfer regression and left two
 test-harness propagation failures: the functional document-purchase test read
 an independently queried stale owner immediately after broadcast, and the
 restored-wallet E2E depended on an unbounded block-header event instead of the
-transaction state it asserts.
+transaction state it asserts. Run `30060856240` proved every platform E2E,
+the restored-wallet fix, and the full Rust matrix, then exposed one remaining
+runner-specific Swift bootstrap gap. On the first post-recovery execution on
+`mac-runner-1`, the user-domain search-list query itself returned exit 44
+before the existing missing-default recovery could run.
 
 ## Independent spec review findings applied
 
@@ -131,6 +135,38 @@ must-fix findings are incorporated below:
     that entered the mempool just after a block. The longer finite deadline
     covers a full mining interval plus propagation margin without approaching
     the suite timeout.
+22. An unreadable Swift search list is not equivalent to an empty list. Its
+    partial output is untrusted, and replacement is irreversible because no
+    raw preference can be restored. This branch requires the workflow's
+    explicit dedicated-runner authorization, preserves an eligible queried
+    default ahead of eligible login, and otherwise fails before mutation.
+23. Swift cleanup is dependency-aware. It must read back a live eligible
+    baseline default and a search list that still contains that default before
+    removing the temporary keychain. When that safety condition cannot be
+    proved, cleanup fails but deliberately retains the temporary keychain and
+    active containment instead of recreating a dangling default.
+24. The unreadable-list regression emits eligible-looking partial output,
+    covers both recoverable statuses, rejects ineligible default paths, and
+    injects cleanup as well as setup failures. Final acceptance reruns the
+    completed Swift job until the fix executes on `mac-runner-1`; a green
+    `mac-runner-2` job alone does not prove the runner-specific repair.
+25. A keychain retained for cleanup containment cannot live under
+    `RUNNER_TEMP`, which GitHub purges after the job. Each job instead uses a
+    unique directory in a dedicated mode-700 user-keychain namespace.
+    Successful cleanup removes the exact keychain and run directory; future
+    recovery excludes retained managed orphans and never reuses their unknown
+    passwords.
+26. The namespace and orphan lifecycle are part of the regression contract.
+    A symlink, non-directory, or pre-existing non-0700 namespace fails before
+    Security mutation. The fake permits keychain mutation only for the current
+    run's exact created path. A two-run case proves the next run filters
+    retained managed entries, uses a distinct keychain, and neither reuses nor
+    deletes earlier orphans.
+27. Managed-entry filtering cannot depend on the keychain file still existing.
+    Normalize absolute path components before the namespace comparison, then
+    retain an existing-file canonical comparison for aliases. Missing and
+    symlinked managed leaves are removed, while a path containing
+    `dash-ci-tests/..` that resolves outside the namespace is preserved.
 
 The reviewers differed on trigger breadth. The failure-mode review recommended
 also treating every immediate/transitive `js-dapi-client` dependency (starting
@@ -270,6 +306,17 @@ schedule, or a manual dispatch:
     Node throws before the worker's later provider listener can reject its
     historical promise. Provider state remains `HISTORICAL_SYNC` with a null
     reader, causing the after-hook `stopReadingHistorical` null dereference.
+15. Swift job `89392039361` in run `30060856240` ran on `mac-runner-1`.
+    Its mocked keychain lifecycle regression passed, then the real
+    `run_tests.sh` exited in 230 milliseconds with the same
+    `SecKeychainSearchCopyNext` message and shell status 44 as the earlier
+    missing-default failure. The only unguarded Security read before the
+    default query is `security list-keychains -d user`; `set -e` therefore
+    exits before the current default recovery. The four preceding post-fix
+    Swift jobs ran on `mac-runner-2` and passed. The fake Security harness
+    models initial default-query failures but always makes the initial
+    search-list query succeed, so it did not cover this persistent-runner
+    state.
 
 The initial browser error in
 `GetStatusResponse.createFromProto` is not a third root cause. RS-DAPI
@@ -757,13 +804,18 @@ proof root needs a larger proof-format and API change.
 ### 1i. Provision an ephemeral writable Swift CI keychain
 
 In `packages/swift-sdk/run_tests.sh`, replace the fixed keychain under the
-persistent runner home with a unique directory created by `mktemp -d` under
-`RUNNER_TEMP` (falling back to the system temporary directory). Create one
-keychain inside a mode-700 directory for the current job and do not suppress
-provisioning errors. Generate a per-job random password without printing it,
-unlock with that password, configure a finite timeout longer than the
-90-minute workflow limit, add it to the user-domain search list, and select it
-as the user-domain default. Capture the raw default and complete search list
+persistent runner home with a unique directory created by `mktemp -d` below a
+dedicated mode-700 `$HOME/Library/Keychains/dash-ci-tests` namespace. The
+namespace must be a real directory owned and writable by the runner user, not
+a symlink. If it already exists with any mode other than 0700, fail instead of
+silently changing shared persistent state. Do not place a possibly selected
+keychain under `RUNNER_TEMP`:
+GitHub empties that directory after each job, outside this script's EXIT trap.
+Create one keychain inside the unique directory for the current job and do not
+suppress provisioning errors. Generate a per-job random password without
+printing it, unlock with that password, configure a finite timeout longer than
+the 90-minute workflow limit, add it to the user-domain search list, and select
+it as the user-domain default. Capture the raw default and complete search list
 before mutation, then establish the restorable baseline described below.
 
 Before building, perform a throwaway generic-password add/read/delete cycle
@@ -808,37 +860,74 @@ invariant.
 
 ### 1j. Recover when the Swift runner has no resolvable default keychain
 
-In `packages/swift-sdk/run_tests.sh`, read and parse the complete user-domain
-search list before querying the current default. Keep the raw list and repaired
-candidate separate. Canonicalize and exact-deduplicate candidate entries
-without reordering them. A keychain is eligible as an automatic recovery
-default only when its final path component is not a symlink, it resolves to a
-regular file strictly below the canonical
+In `packages/swift-sdk/run_tests.sh`, capture the output and status of the
+user-domain search-list query before querying the current default. Parse the
+complete list only when the query succeeds. Preserve the existing fail-closed
+behavior for an unrelated query error or a successful but empty list. Treat
+shell status 37 or 44 as a missing/unresolvable preference that can be repaired
+from a successfully queried, validated current default followed by the
+conventional login keychain; do not parse or trust partial output from a
+failed list query. Keep any readable raw list and repaired candidate separate.
+Canonicalize and exact-deduplicate candidate entries without
+reordering them. A keychain is eligible as an automatic recovery default only
+when its final path component is not a symlink, it resolves to a regular file
+strictly below the canonical
 `$HOME/Library/Keychains` directory, and it is owned and writable by the runner
-user. Candidate entries must originate in the user-domain list or be the exact
+user. Candidate entries must originate in the readable user-domain list, be a
+successfully queried default while that list is unavailable, or be the exact
 conventional login path. This prevents an arbitrary readable file in `/tmp` or
 another user's/shared keychain from becoming the CI user's default merely
 because it appeared in stale preferences. Do not use
 `security show-keychain-info` as a validity probe: macOS 26.5.1 returns
 `errSecParam` for this runner's known-good login keychain. The transactional
 list/default mutation and readback below are the Security acceptance check.
+Always filter paths below the canonical managed `dash-ci-tests` namespace
+before checking coherent baselines or selecting automatic recovery candidates.
+Preserve an otherwise coherent readable search list exactly after that
+managed-entry filtering. A retained orphan has an unknown random password; the
+next job repairs away from it but never reuses or deletes it implicitly.
+Namespace membership must not require the leaf file to exist: normalize `.`
+and `..` components lexically for absolute paths and also compare the
+canonical path when the file exists. This filters missing and symlinked managed
+leaves without falsely dropping a path that spells
+`dash-ci-tests/../login.keychain-db`.
 
-If the default query succeeds and resolves to a live keychain already in the
-search list, preserve it and the coherent search list exactly. If the query
-returns a missing path, or fails with the observed missing-default shell status
-44 or no-default status 37, first consider the conventional per-user
+When the list query succeeds, preserve the existing behavior. If the default
+query resolves to a live keychain already in the search list, preserve it and
+the coherent search list exactly. If the default query returns a missing path,
+or fails with missing-default shell status 44 or no-default status 37, first
+consider the conventional per-user
 `$HOME/Library/Keychains/login.keychain-db` only when it passes the same
 eligibility predicate, then fall back to the first eligible search-list
 keychain. A recovered login keychain may be added to the candidate list even
 when stale preferences omitted it because its canonical location, ownership,
 writability, and conventional per-user location independently establish it as
 the runner's keychain. Put the selected recovery default first and keep the
-remaining eligible candidate order stable. Fail before creating the ephemeral
-keychain or mutating Security preferences when the raw list is empty, neither
-source yields a restorable keychain, or the default query returns any other
-status. A nonempty raw list is required because the Security CLI rejects
-`list-keychains -d user -s` with zero entries, so an empty list cannot be
-restored transactionally.
+remaining eligible candidate order stable.
+
+When the list query itself returns 37 or 44, still query the current default.
+If that query succeeds and its path passes the same recovery predicate, put it
+first in the replacement candidate list. Append the conventional login path
+when it is eligible and distinct. If the default query also returns 37 or 44,
+recover from eligible login alone. Any other default-query error remains
+fatal. This ordering prevents a possibly partial list replacement from
+dropping an otherwise valid current default. The failed list query provides no
+restorable raw list, so partial list output and unrelated filesystem entries
+are not candidates. Fail before creating the ephemeral keychain or mutating
+Security preferences when a successful list query is empty or no eligible
+fallback exists. A successful nonempty raw list remains required for the
+existing reversible repair path because the Security CLI rejects
+`list-keychains -d user -s` with zero entries.
+
+Because replacing an unreadable list permanently discards an unknown
+preference snapshot, require
+`DASH_SWIFT_CI_ALLOW_UNREADABLE_KEYCHAIN_REPAIR=1` before entering this branch.
+The reusable Swift workflow sets this repository-controlled opt-in on its real
+build/test step to assert that the macOS user is dedicated to the self-hosted
+runner. `CI` or `GITHUB_ACTIONS` alone is not authorization. Without the exact
+opt-in, return a diagnostic before mutating preferences or creating the
+temporary keychain. The readable-list recovery remains reversible and does not
+need this additional opt-in.
 
 The temporary keychain flow remains unchanged: prepend the unique keychain to
 the saved search list, make it default, smoke-test unqualified reads/deletes,
@@ -846,8 +935,10 @@ and run the real Swift tests. Install the EXIT trap after a private temporary
 directory and path are assigned but before any Security preference repair or
 keychain creation. Treat repair as a small transaction:
 
-1. Mark the raw search list as needing restoration before setting the candidate
-   list.
+1. When the raw search list was read successfully, mark it as needing
+   restoration before setting the candidate list. When the list query failed
+   with 37 or 44, mark candidate containment active before that first
+   mutation because no trustworthy raw list can be restored.
 2. Set the candidate list before setting its default because Security only
    accepts a default present in the active list.
 3. Immediately before attempting to set the candidate default, promote the
@@ -858,10 +949,15 @@ keychain creation. Treat repair as a small transaction:
 5. Promote the candidate to the cleanup baseline only after all list, default,
    and readback operations succeed.
 
-A list-setting failure restores the raw search list. From immediately before
-the default-setting attempt onward, any command failure deliberately retains
-the candidate list so a possibly newly selected default remains resolvable;
-restoring a raw list that omitted the recovered login keychain could create a
+A list-setting failure restores the raw search list only when that list was
+read successfully and was nonempty. For a failed list query, cleanup leaves
+the original broken state when the repair command failed before mutation or
+the validated default/login candidate when it mutated before returning
+failure;
+there is no trustworthy prior list to replay. From immediately before the
+default-setting attempt onward, any command failure deliberately retains the
+candidate list so a possibly newly selected default remains resolvable.
+Restoring a raw list that omitted the recovered login keychain could create a
 new dangling preference. No temporary keychain has been created at this point.
 After promotion, cleanup restores the selected baseline default while that
 keychain is still in the active temporary-plus-baseline list, restores the
@@ -871,6 +967,23 @@ successful command cannot evade cleanup. This deliberately repairs only
 dangling preferences by selecting a pre-existing, validated per-user keychain;
 it does not create, delete, unlock, reconfigure, or item-mutate any pre-existing
 keychain.
+
+Cleanup must treat those operations as dependencies rather than independent
+best efforts. After attempting to restore the baseline default, query it again
+even when the setter returned nonzero and verify that it canonicalizes through
+the general existing-keychain check to the already accepted baseline default.
+Do not reapply the stricter automatic-recovery predicate: a coherent readable
+baseline may legitimately be outside the per-user keychain directory. Only
+then attempt to restore the baseline search list. Read that list back and
+verify the active baseline default is present and the temporary path is
+absent. Only after both readbacks prove a
+non-dangling baseline may cleanup delete the temporary keychain and remove its
+directory. Any setter or readback failure still marks cleanup failed. If the
+safety readback cannot be completed or does not prove the invariant, retain
+the temporary keychain and current search-list containment, print its
+non-secret path for runner maintenance, and fail cleanup. This may leave a
+job-local artifact after a failed job, but it cannot leave a deleted keychain
+selected as the persistent user's default.
 
 Keep this logic compatible with Apple's `/bin/bash` 3.2. Use indexed arrays,
 quoted expansions, and a linear exact-string membership check for stable
@@ -888,33 +1001,89 @@ uses a private temporary `HOME` and `RUNNER_TEMP`; its fake Security command
 allowlists exact argv shapes, never records password or smoke-test values, and
 models the real invariant that `default-keychain -s PATH` fails unless `PATH`
 is in the active search list. It rejects any create, delete, unlock,
-configuration, or item mutation against a seeded keychain; only the temporary
-keychain may be changed.
+configuration, or item mutation against a seeded keychain. On create, record
+the exact current run keychain path; only that path may be unlocked,
+configured, item-mutated, or deleted. A different path under the managed
+namespace remains a protected prior orphan, not another acceptable temporary
+keychain.
 
 Seed an existing login keychain, a second eligible keychain that precedes it,
 duplicate canonical spellings, and a dead search-list entry while making the
-initial default query return the observed exit 44. Against the current script,
-the regression must fail with 44 before provisioning. After the fix, force a
+initial default query return the observed exit 44. Separately, make the first
+search-list query emit a plausible eligible non-login path as partial output
+and then return the exact observed exit 44. Against the current script, the
+latter regression must return 44 before provisioning. After the fix, force a
 later simulator-selection failure and assert that its status remains
-authoritative, login becomes the recovered default, the canonical live-only
-search list is restored, and the temporary keychain and directory are removed.
-The command log must show cleanup in baseline-default, baseline-list,
-temporary-delete order without containing generated secrets.
+authoritative, the partial path was ignored, login becomes the recovered
+default, the expected login-only repaired baseline is retained, and the
+temporary keychain and directory are removed. The command log must show cleanup in
+baseline-default, baseline-list, temporary-delete order without containing
+generated secrets.
 
 Add distinct cases for a valid coherent default that is not the first
 search-list entry, exit-zero with a now-missing default path, a missing login
-keychain that selects the first eligible list entry, an empty raw list under
-`/bin/bash -u`, and no eligible fallback failing before preference mutation or
-temporary-keychain creation. An unrelated default-query failure must preserve
-its status and perform no mutation. Inject a failure at every repair and
-temporary preference mutation/readback boundary; each case must preserve the
-primary failure, restore the documented raw or candidate-containment or
-committed-baseline state, and leak no temporary keychain. In particular,
-simulate a candidate-default command that mutates then fails, and inject each
-readback failure after recovering a login keychain absent from the raw list;
-the candidate list must still contain the possibly newly selected default. The
-EXIT trap cannot recover from SIGKILL, so the one-runner-per-user operational
-invariant and future stale-entry sanitization remain necessary.
+keychain that selects the first eligible readable-list entry, an empty
+successful raw list under `/bin/bash -u`, and no eligible fallback failing
+before preference mutation or temporary-keychain creation. An unrelated
+default-query or search-list-query failure must preserve its status and perform
+no mutation. A missing-list failure without a valid current default or
+conventional login must also fail before mutation. Add a readable-default case
+that preserves it ahead of login. Make the successful default ineligible in
+turn through an out-of-home path, a symlink, and missing write permission;
+eligible login must be the only replacement, or the script must fail without
+mutation when login is unavailable. Retain the production ownership predicate
+and verify its `-O` guard statically; an unprivileged portable harness cannot
+create a foreign-owned file inside its private home. Exercise both initial-list
+statuses 37 and 44. Inject a failure at every repair and temporary preference
+mutation/readback boundary, including the first list repair when no raw list
+was readable; each setup case must preserve the primary failure, retain the
+documented raw or candidate-containment or committed-baseline state, and leak
+no temporary keychain.
+
+Also classify cleanup-stage baseline-default and baseline-list setters in the
+fake Security command, inject failure before mutation, after mutation, and on
+each readback, and assert the selected default always exists and remains in the
+active list. Cases where cleanup cannot prove the safe baseline must retain the
+temporary keychain; cases whose failed command nevertheless applied and whose
+readbacks prove the invariant may remove it but still report cleanup failure.
+In particular, simulate candidate list/default commands that mutate then fail,
+and inject each setup readback failure after recovering a login keychain absent
+from the raw list; the candidate list must still contain the possibly newly
+selected default. The EXIT trap cannot recover from SIGKILL, so the
+one-runner-per-user operational invariant and future stale-entry sanitization
+remain necessary.
+
+Give the fake body both a successful mode and a configurable sentinel failure.
+At least one cleanup-only failure must turn an otherwise successful run
+nonzero. A separate case combines a cleanup failure with the body sentinel and
+asserts that the sentinel status remains authoritative. After an unproved
+cleanup retains containment, delete the fake `RUNNER_TEMP` tree to model
+GitHub's post-job purge and assert the selected managed keychain still exists
+and remains listed.
+
+Reuse that retained state for a second invocation with the same private
+`HOME`. Seed another non-default managed orphan in the active list. The second
+run must filter both managed entries before baseline selection, repair to
+eligible login or another non-managed candidate, create a distinct current
+keychain, and complete successful cleanup. Assert the current run's keychain
+and directory are removed, both earlier orphan files still exist, and the
+final default and search list contain no managed path. This pins both
+next-run recovery and exact-path deletion.
+
+Add a coherent non-managed default whose readable list also contains an
+existing managed orphan, a missing managed leaf, and a managed symlink. Assert
+all managed spellings are filtered even though only one is a live regular
+file. Include a `dash-ci-tests/..` alias for the coherent default and assert it
+is preserved because its normalized location is outside the managed
+namespace. Separately use a coherent default outside
+`$HOME/Library/Keychains` and prove dependency-aware cleanup restores it via
+the general existing-keychain predicate rather than the stricter recovery
+predicate.
+
+Before any normal case, cover pre-existing namespace hazards: a symlink, a
+regular file, and a real directory with mode other than 0700 must each fail
+before any Security mutation or managed child creation. A valid pre-existing
+owned, writable mode-700 directory is reused without changing its mode.
 
 Add `.github/workflows/swift-sdk-build.yml` to the `swift-sdk-changed` path
 filter in `.github/workflows/tests.yml`, so a change to this regression wiring
@@ -935,6 +1104,21 @@ Alternatives rejected:
 - Restore the raw search list after the job: dead entries would recreate the
   incoherent default/search context that caused exit 44. The raw list is used
   only for rollback until a validated replacement baseline commits.
+- Ignore a failed search-list query and parse its partial output: status 44
+  says the lookup did not produce a trustworthy preference snapshot, so using
+  any emitted path would invent a cleanup baseline.
+- Always replace the user list with login: this would discard a healthy
+  caller-selected search order on every CI run. Recovery is restricted to the
+  two known statuses where no raw baseline can be read, and preserves a
+  successfully queried validated default ahead of login.
+- Use `GITHUB_ACTIONS` as sufficient authority for irreversible repair:
+  untrusted or reused runner-user contexts could then lose legitimate
+  preferences. The explicit workflow opt-in documents the dedicated-user
+  invariant at the mutation boundary.
+- Always delete the temporary keychain during cleanup: if baseline-default
+  restoration failed before mutation, that would delete the active default and
+  recreate the failure on the next job. Verified restoration is required
+  before removal.
 - Change `WalletStorage` to pass an explicit keychain: that changes production
   API behavior to solve CI host state and bypasses the integration contract.
 
@@ -1350,8 +1534,10 @@ verification rather than repair its missing trusted input.
 The self-hosted runner persists home-directory state between jobs. Reusing,
 deleting, or chmod-ing one global keychain couples runs and can interfere with
 an interrupted or concurrent job. Suppressing creation failure is what allowed
-the unwritable state to reach the tests. A unique temporary keychain makes
-ownership and cleanup job-local.
+the unwritable state to reach the tests. A unique managed keychain makes
+ownership and cleanup job-local. Its durable namespace exists only so a failed
+cleanup cannot be invalidated by GitHub's post-job temporary-directory purge;
+successful jobs still delete their exact unique keychain and directory.
 
 ### Mock Keychain in the Swift signing integration tests
 
@@ -1473,7 +1659,7 @@ WASM non-document proof wait
 
 Swift CI test process
   -> sanitize the user search list and establish a live prior-or-recovery default
-  -> create one keychain under a job-local temporary directory
+  -> create one keychain under a durable, job-unique managed directory
   -> unlock/select it, add it to search, and prove default add/read/delete access
   -> run signing integration and simulator tests
   -> restore default/search list and delete the temporary keychain on exit
@@ -1606,16 +1792,36 @@ Swift CI test process
 - The Swift user domain has no resolvable default: the eligible conventional
   login or first eligible search-list keychain becomes the repaired cleanup
   fallback. Dead, out-of-home, symlinked, unowned, or unwritable entries are
-  not restored. An empty raw list, no eligible fallback, or an unrelated
-  default-query error fails before mutating keychain preferences.
+  not restored.
+- The Swift user-domain search-list query returns missing-preference status 37
+  or 44: a successfully queried validated current default is preserved first,
+  followed by a distinct validated conventional login keychain. Partial list
+  output is ignored. The irreversible branch requires the workflow's explicit
+  dedicated-runner repair opt-in. A successful empty list, no eligible
+  candidate, missing opt-in, or an unrelated query error fails before
+  mutation.
 - Swift baseline repair fails while setting only the candidate list: the trap
-  restores the nonempty raw list and does not create a temporary keychain.
+  restores the nonempty raw list when one was read; otherwise it leaves the
+  unknown original or possibly applied validated default/login candidate
+  rather than replaying an invented empty baseline. No temporary keychain is
+  created.
   From before the default-setting attempt onward, cleanup retains candidate
   containment so a possibly mutated default stays resolvable. The candidate
   becomes the cleanup baseline only after list/default readback.
 - Swift tests or setup fail: the exit trap restores the selected baseline
   default keychain before deleting this job's keychain. Cleanup errors do not
-  hide a primary failure and fail an otherwise successful run.
+  hide a primary failure and fail an otherwise successful run. If restoration
+  cannot be read back as a live default contained in the restored list,
+  cleanup retains and reports the temporary containment instead of deleting
+  the possibly active keychain.
+- GitHub purges `RUNNER_TEMP` after the job: the managed keychain is below the
+  user keychain directory, so retained containment remains valid. Future runs
+  exclude that namespace from baselines and recovery candidates, repair to a
+  validated non-managed keychain, and leave orphan deletion to maintenance.
+- The managed namespace is a symlink, non-directory, wrong-mode directory, or
+  not owned/writable by the runner: setup fails before keychain preference
+  mutation or child creation. The script never follows or chmods an
+  unexpected persistent namespace.
 - The Swift job is killed with SIGKILL: no shell trap can restore preferences
   or delete the temporary keychain. The next job's eligibility checks and
   unique path avoid blindly reusing it, but runner maintenance remains
@@ -1687,7 +1893,37 @@ Swift CI test process
     failure and prove candidate containment remains active. Run the regression
     explicitly with `/bin/bash -u`, then invoke it with `/bin/bash` from the
     reusable Swift workflow before the real keychain setup.
-14. Retain browser shard 1's exact rotated-quorum cache miss as the integration
+14. Extend the fake Security state machine so its initial search-list query can
+    emit plausible partial output and return the observed status 44. Confirm
+    the unchanged script returns 44 before provisioning. Capture and classify
+    the list query, ignore output on nonzero status, select only the validated
+    current default and conventional login for 37/44, activate containment
+    before the first unrecoverable-list mutation, and rerun to the forced
+    simulator failure. Assert the observed both-queries-missing case ignores
+    the partial path and leaves a login-only default/list, temporary artifacts
+    are gone, and cleanup order is unchanged. Add readable-default
+    preservation, status-37, no-fallback, missing-opt-in, ineligible-default,
+    and unrelated-status fail-closed cases plus before/after-mutation failures
+    for the no-raw-list repair. Retain the successful-empty-list regression
+    unchanged. Inject baseline-default and baseline-list cleanup failures
+    before mutation, after mutation, and on readback; prove cleanup deletes the
+    temporary keychain only after a live contained baseline is verified. Use a
+    successful fake body to prove cleanup failure alone returns nonzero, a
+    sentinel body failure to prove primary-status preservation, and simulated
+    `RUNNER_TEMP` purging to prove retained containment remains durable.
+    Reinvoke the script against that retained state with a second protected
+    managed orphan, and prove managed entries are filtered, a distinct current
+    keychain is used, only that current keychain is deleted, and the final
+    baseline contains no managed path. Reject symlink, non-directory, and
+    non-0700 pre-existing managed namespaces before Security mutation.
+    With a coherent non-managed default, filter existing, missing, and
+    symlinked managed list entries while preserving a `dash-ci-tests/..` alias
+    that normalizes outside the namespace. Prove a coherent default outside
+    the user keychain directory also survives selection and cleanup.
+    Run the completed real Swift job on the new head, inspect its runner name,
+    and rerun that job if necessary until the complete bootstrap and test suite
+    pass on `mac-runner-1`.
+15. Retain browser shard 1's exact rotated-quorum cache miss as the integration
     red observation. At the trusted-provider boundary, serve controlled current
     and previous responses and prove refresh attempts both endpoints after
     either partial failure, preserves a seeded known key after total failure,

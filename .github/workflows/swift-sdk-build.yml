@@ -106,5 +106,6 @@ jobs:
           # The self-hosted runner persists Cargo's target cache between jobs.
           # Keep only one Apple architecture's intermediates at a time.
           PRUNE_CARGO_TARGETS: "1"
+          DASH_SWIFT_CI_ALLOW_UNREADABLE_KEYCHAIN_REPAIR: "1"
         run: |
           bash packages/swift-sdk/run_tests.sh

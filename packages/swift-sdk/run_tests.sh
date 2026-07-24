@@ -48,6 +48,9 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   canonicalize_recovery_keychain() {
     canonical_path="$(canonicalize_existing_keychain "$1")" || return 1
     case "$canonical_path" in
+      "$CANONICAL_CI_KEYCHAIN_ROOT"/*)
+        return 1
+        ;;
       "$CANONICAL_USER_KEYCHAIN_DIR"/*)
         ;;
       *)
@@ -72,24 +75,116 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     return 1
   }
 
-  RAW_USER_KEYCHAINS_OUTPUT="$(security list-keychains -d user)"
-  RAW_USER_KEYCHAINS=()
-  while IFS= read -r keychain_path; do
-    keychain_path="$(printf '%s\n' "$keychain_path" | normalize_security_keychain_path)"
-    if [ -n "$keychain_path" ]; then
-      RAW_USER_KEYCHAINS+=("$keychain_path")
+  canonicalize_lexical_absolute_path() {
+    lexical_path="$1"
+    case "$lexical_path" in
+      /*)
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+
+    IFS='/' read -r -a lexical_components <<< "$lexical_path"
+    lexical_normalized_components=()
+    lexical_index=0
+    while [ "$lexical_index" -lt "${#lexical_components[@]}" ]; do
+      lexical_component="${lexical_components[$lexical_index]}"
+      case "$lexical_component" in
+        ""|.)
+          ;;
+        ..)
+          lexical_normalized_length="${#lexical_normalized_components[@]}"
+          if [ "$lexical_normalized_length" -gt 0 ]; then
+            unset "lexical_normalized_components[$((lexical_normalized_length - 1))]"
+          fi
+          ;;
+        *)
+          lexical_normalized_components+=("$lexical_component")
+          ;;
+      esac
+      lexical_index=$((lexical_index + 1))
+    done
+
+    lexical_result=""
+    lexical_index=0
+    while [ "$lexical_index" -lt "${#lexical_normalized_components[@]}" ]; do
+      lexical_result="$lexical_result/${lexical_normalized_components[$lexical_index]}"
+      lexical_index=$((lexical_index + 1))
+    done
+    if [ -z "$lexical_result" ]; then
+      lexical_result="/"
     fi
-  done <<< "$RAW_USER_KEYCHAINS_OUTPUT"
-  if [ "${#RAW_USER_KEYCHAINS[@]}" -eq 0 ]; then
-    echo "Cannot repair an empty user keychain search list" >&2
-    exit 1
-  fi
+    printf '%s\n' "$lexical_result"
+  }
+
+  keychain_path_is_managed() {
+    normalized_keychain_path="$(
+      canonicalize_lexical_absolute_path "$1"
+    )" || return 1
+    case "$normalized_keychain_path" in
+      "$CANONICAL_CI_KEYCHAIN_ROOT"/*)
+        return 0
+        ;;
+    esac
+    return 1
+  }
 
   if ! CANONICAL_USER_KEYCHAIN_DIR="$(
     cd "$HOME/Library/Keychains" 2>/dev/null && pwd -P
   )"; then
     echo "The user keychain directory is unavailable" >&2
     exit 1
+  fi
+
+  CI_KEYCHAIN_ROOT="$CANONICAL_USER_KEYCHAIN_DIR/dash-ci-tests"
+  if [ -e "$CI_KEYCHAIN_ROOT" ] || [ -L "$CI_KEYCHAIN_ROOT" ]; then
+    if [ -L "$CI_KEYCHAIN_ROOT" ] || [ ! -d "$CI_KEYCHAIN_ROOT" ] \
+      || [ ! -O "$CI_KEYCHAIN_ROOT" ] || [ ! -w "$CI_KEYCHAIN_ROOT" ] \
+      || [ "$(stat -f '%Lp' "$CI_KEYCHAIN_ROOT")" != "700" ]; then
+      echo "The managed CI keychain directory is not a private user directory" >&2
+      exit 1
+    fi
+  else
+    mkdir -m 700 "$CI_KEYCHAIN_ROOT"
+  fi
+  CANONICAL_CI_KEYCHAIN_ROOT="$(cd "$CI_KEYCHAIN_ROOT" && pwd -P)"
+
+  RAW_USER_KEYCHAINS_OUTPUT=""
+  USER_KEYCHAIN_LIST_QUERY_STATUS=0
+  if RAW_USER_KEYCHAINS_OUTPUT="$(
+    security list-keychains -d user 2>&1
+  )"; then
+    USER_KEYCHAIN_LIST_QUERY_STATUS=0
+  else
+    USER_KEYCHAIN_LIST_QUERY_STATUS=$?
+  fi
+
+  RAW_USER_KEYCHAINS=()
+  USER_KEYCHAIN_LIST_AVAILABLE=0
+  if [ "$USER_KEYCHAIN_LIST_QUERY_STATUS" -eq 0 ]; then
+    USER_KEYCHAIN_LIST_AVAILABLE=1
+    while IFS= read -r keychain_path; do
+      keychain_path="$(
+        printf '%s\n' "$keychain_path" | normalize_security_keychain_path
+      )"
+      if [ -n "$keychain_path" ]; then
+        RAW_USER_KEYCHAINS+=("$keychain_path")
+      fi
+    done <<< "$RAW_USER_KEYCHAINS_OUTPUT"
+    if [ "${#RAW_USER_KEYCHAINS[@]}" -eq 0 ]; then
+      echo "Cannot repair an empty user keychain search list" >&2
+      exit 1
+    fi
+  else
+    case "$USER_KEYCHAIN_LIST_QUERY_STATUS" in
+      37|44)
+        ;;
+      *)
+        printf '%s\n' "$RAW_USER_KEYCHAINS_OUTPUT" >&2
+        exit "$USER_KEYCHAIN_LIST_QUERY_STATUS"
+        ;;
+    esac
   fi
 
   RAW_DEFAULT_KEYCHAIN_OUTPUT=""
@@ -121,47 +216,101 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   BASELINE_USER_KEYCHAINS=()
   BASELINE_COMMITTED=0
   DEFAULT_IS_COHERENT=0
+  FILTERED_USER_KEYCHAINS=()
+
+  if [ "$USER_KEYCHAIN_LIST_AVAILABLE" -eq 1 ]; then
+    raw_index=0
+    while [ "$raw_index" -lt "${#RAW_USER_KEYCHAINS[@]}" ]; do
+      raw_path="${RAW_USER_KEYCHAINS[$raw_index]}"
+      is_managed_path=0
+      if keychain_path_is_managed "$raw_path"; then
+        is_managed_path=1
+      elif canonical_raw_path="$(
+        canonicalize_existing_keychain "$raw_path"
+      )"; then
+        case "$canonical_raw_path" in
+          "$CANONICAL_CI_KEYCHAIN_ROOT"/*)
+            is_managed_path=1
+            ;;
+        esac
+      fi
+      if [ "$is_managed_path" -eq 0 ]; then
+        FILTERED_USER_KEYCHAINS+=("$raw_path")
+      fi
+      raw_index=$((raw_index + 1))
+    done
+  fi
 
   if [ "$DEFAULT_QUERY_STATUS" -eq 0 ] && [ -n "$RAW_DEFAULT_KEYCHAIN" ]; then
     if canonical_default="$(
       canonicalize_existing_keychain "$RAW_DEFAULT_KEYCHAIN"
     )"; then
-      raw_index=0
-      while [ "$raw_index" -lt "${#RAW_USER_KEYCHAINS[@]}" ]; do
-        raw_path="${RAW_USER_KEYCHAINS[$raw_index]}"
-        if canonical_raw_path="$(canonicalize_existing_keychain "$raw_path")" \
-          && [ "$canonical_raw_path" = "$canonical_default" ]; then
-          DEFAULT_IS_COHERENT=1
-          break
-        fi
-        raw_index=$((raw_index + 1))
-      done
+      case "$canonical_default" in
+        "$CANONICAL_CI_KEYCHAIN_ROOT"/*)
+          ;;
+        *)
+          filtered_index=0
+          while [ "$filtered_index" -lt "${#FILTERED_USER_KEYCHAINS[@]}" ]; do
+            filtered_path="${FILTERED_USER_KEYCHAINS[$filtered_index]}"
+            if canonical_filtered_path="$(
+              canonicalize_existing_keychain "$filtered_path"
+            )" && [ "$canonical_filtered_path" = "$canonical_default" ]; then
+              DEFAULT_IS_COHERENT=1
+              break
+            fi
+            filtered_index=$((filtered_index + 1))
+          done
+          ;;
+      esac
     fi
   fi
 
   RECOVERY_USER_KEYCHAINS=()
   if [ "$DEFAULT_IS_COHERENT" -eq 1 ]; then
     BASELINE_DEFAULT_KEYCHAIN="$RAW_DEFAULT_KEYCHAIN"
-    BASELINE_USER_KEYCHAINS=("${RAW_USER_KEYCHAINS[@]}")
+    BASELINE_USER_KEYCHAINS=("${FILTERED_USER_KEYCHAINS[@]}")
     BASELINE_COMMITTED=1
   else
-    LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
-    if canonical_login="$(canonicalize_recovery_keychain "$LOGIN_KEYCHAIN")"; then
-      RECOVERY_USER_KEYCHAINS+=("$canonical_login")
-    fi
-
-    raw_index=0
-    while [ "$raw_index" -lt "${#RAW_USER_KEYCHAINS[@]}" ]; do
-      raw_path="${RAW_USER_KEYCHAINS[$raw_index]}"
-      if canonical_raw_path="$(canonicalize_recovery_keychain "$raw_path")"; then
-        if [ "${#RECOVERY_USER_KEYCHAINS[@]}" -eq 0 ] \
-          || ! keychain_array_contains \
-            "$canonical_raw_path" "${RECOVERY_USER_KEYCHAINS[@]}"; then
-          RECOVERY_USER_KEYCHAINS+=("$canonical_raw_path")
+    if [ "$USER_KEYCHAIN_LIST_AVAILABLE" -eq 0 ]; then
+      if [ "${DASH_SWIFT_CI_ALLOW_UNREADABLE_KEYCHAIN_REPAIR:-}" != "1" ]; then
+        echo "Unreadable keychain search-list repair is not authorized" >&2
+        exit 1
+      fi
+      if [ "$DEFAULT_QUERY_STATUS" -eq 0 ] \
+        && [ -n "$RAW_DEFAULT_KEYCHAIN" ]; then
+        if canonical_default_candidate="$(
+          canonicalize_recovery_keychain "$RAW_DEFAULT_KEYCHAIN"
+        )"; then
+          RECOVERY_USER_KEYCHAINS+=("$canonical_default_candidate")
         fi
       fi
-      raw_index=$((raw_index + 1))
-    done
+    fi
+
+    LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+    if canonical_login="$(canonicalize_recovery_keychain "$LOGIN_KEYCHAIN")"; then
+      if [ "${#RECOVERY_USER_KEYCHAINS[@]}" -eq 0 ] \
+        || ! keychain_array_contains \
+          "$canonical_login" "${RECOVERY_USER_KEYCHAINS[@]}"; then
+        RECOVERY_USER_KEYCHAINS+=("$canonical_login")
+      fi
+    fi
+
+    if [ "$USER_KEYCHAIN_LIST_AVAILABLE" -eq 1 ]; then
+      filtered_index=0
+      while [ "$filtered_index" -lt "${#FILTERED_USER_KEYCHAINS[@]}" ]; do
+        filtered_path="${FILTERED_USER_KEYCHAINS[$filtered_index]}"
+        if canonical_filtered_path="$(
+          canonicalize_recovery_keychain "$filtered_path"
+        )"; then
+          if [ "${#RECOVERY_USER_KEYCHAINS[@]}" -eq 0 ] \
+            || ! keychain_array_contains \
+              "$canonical_filtered_path" "${RECOVERY_USER_KEYCHAINS[@]}"; then
+            RECOVERY_USER_KEYCHAINS+=("$canonical_filtered_path")
+          fi
+        fi
+        filtered_index=$((filtered_index + 1))
+      done
+    fi
 
     if [ "${#RECOVERY_USER_KEYCHAINS[@]}" -eq 0 ]; then
       echo "No eligible user keychain is available for default recovery" >&2
@@ -169,7 +318,7 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
     fi
   fi
 
-  CI_KEYCHAIN_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/dash-ci-keychain.XXXXXX")"
+  CI_KEYCHAIN_DIR="$(mktemp -d "$CANONICAL_CI_KEYCHAIN_ROOT/run.XXXXXX")"
   CI_KEYCHAIN="$CI_KEYCHAIN_DIR/tests.keychain-db"
   CI_KEYCHAIN_MAY_EXIST=0
   CI_DEFAULT_MAY_HAVE_CHANGED=0
@@ -180,18 +329,81 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   cleanup_ci_keychain() {
     original_status=$?
     cleanup_status=0
+    safe_to_remove_ci_keychain=0
     trap - EXIT
 
-    if [ "${BASELINE_COMMITTED:-0}" -eq 1 ]; then
-      if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-        if ! security default-keychain \
+    if [ "${CI_KEYCHAIN_MAY_EXIST:-0}" -eq 1 ] \
+      && [ "${BASELINE_COMMITTED:-0}" -eq 1 ]; then
+      baseline_default_is_active=0
+      if [ "${CI_DEFAULT_MAY_HAVE_CHANGED:-0}" -eq 1 ] \
+        && ! security default-keychain \
           -d user -s "$BASELINE_DEFAULT_KEYCHAIN"; then
+        cleanup_status=1
+      fi
+
+      CLEANUP_DEFAULT_OUTPUT=""
+      if CLEANUP_DEFAULT_OUTPUT="$(
+        security default-keychain -d user 2>&1
+      )"; then
+        cleanup_default="$(
+          printf '%s\n' "$CLEANUP_DEFAULT_OUTPUT" \
+            | normalize_security_keychain_path
+        )"
+        if canonical_cleanup_default="$(
+          canonicalize_existing_keychain "$cleanup_default"
+        )" && canonical_baseline_default="$(
+          canonicalize_existing_keychain "$BASELINE_DEFAULT_KEYCHAIN"
+        )" && [ "$canonical_cleanup_default" = "$canonical_baseline_default" ]; then
+          baseline_default_is_active=1
+        else
           cleanup_status=1
         fi
+      else
+        printf '%s\n' "$CLEANUP_DEFAULT_OUTPUT" >&2
+        cleanup_status=1
       fi
-      if [ "${CI_SEARCH_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ]; then
-        if ! security list-keychains \
-          -d user -s "${BASELINE_USER_KEYCHAINS[@]}"; then
+
+      if [ "$baseline_default_is_active" -eq 1 ]; then
+        if [ "${CI_SEARCH_LIST_MAY_HAVE_CHANGED:-0}" -eq 1 ] \
+          && ! security list-keychains \
+            -d user -s "${BASELINE_USER_KEYCHAINS[@]}"; then
+          cleanup_status=1
+        fi
+
+        CLEANUP_LIST_OUTPUT=""
+        if CLEANUP_LIST_OUTPUT="$(security list-keychains -d user 2>&1)"; then
+          baseline_default_is_listed=0
+          ci_keychain_is_listed=0
+          while IFS= read -r keychain_path; do
+            keychain_path="$(
+              printf '%s\n' "$keychain_path" \
+                | normalize_security_keychain_path
+            )"
+            if [ -n "$keychain_path" ]; then
+              if [ "$keychain_path" = "$CI_KEYCHAIN" ]; then
+                ci_keychain_is_listed=1
+              fi
+              if canonical_list_path="$(
+                canonicalize_existing_keychain "$keychain_path"
+              )"; then
+                if [ "$canonical_list_path" = "$CI_KEYCHAIN" ]; then
+                  ci_keychain_is_listed=1
+                fi
+                if [ "$canonical_list_path" = "$canonical_baseline_default" ]; then
+                  baseline_default_is_listed=1
+                fi
+              fi
+            fi
+          done <<< "$CLEANUP_LIST_OUTPUT"
+
+          if [ "$baseline_default_is_listed" -eq 1 ] \
+            && [ "$ci_keychain_is_listed" -eq 0 ]; then
+            safe_to_remove_ci_keychain=1
+          else
+            cleanup_status=1
+          fi
+        else
+          printf '%s\n' "$CLEANUP_LIST_OUTPUT" >&2
           cleanup_status=1
         fi
       fi
@@ -202,12 +414,21 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
         cleanup_status=1
       fi
     fi
+
     if [ "${CI_KEYCHAIN_MAY_EXIST:-0}" -eq 1 ]; then
-      if ! security delete-keychain "$CI_KEYCHAIN"; then
+      if [ "$safe_to_remove_ci_keychain" -eq 1 ]; then
+        if ! security delete-keychain "$CI_KEYCHAIN"; then
+          cleanup_status=1
+        fi
+      else
+        echo "Retaining CI keychain containment at $CI_KEYCHAIN" >&2
         cleanup_status=1
       fi
     fi
-    if [ -d "${CI_KEYCHAIN_DIR:-}" ]; then
+
+    if [ -d "${CI_KEYCHAIN_DIR:-}" ] \
+      && { [ "${CI_KEYCHAIN_MAY_EXIST:-0}" -eq 0 ] \
+        || [ "$safe_to_remove_ci_keychain" -eq 1 ]; }; then
       if ! rmdir "$CI_KEYCHAIN_DIR"; then
         cleanup_status=1
       fi
@@ -227,7 +448,11 @@ if [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
   chmod 700 "$CI_KEYCHAIN_DIR"
 
   if [ "$BASELINE_COMMITTED" -eq 0 ]; then
-    REPAIR_LIST_MAY_HAVE_CHANGED=1
+    if [ "$USER_KEYCHAIN_LIST_AVAILABLE" -eq 1 ]; then
+      REPAIR_LIST_MAY_HAVE_CHANGED=1
+    else
+      REPAIR_CONTAINMENT_ACTIVE=1
+    fi
     security list-keychains \
       -d user -s "${RECOVERY_USER_KEYCHAINS[@]}"
 
