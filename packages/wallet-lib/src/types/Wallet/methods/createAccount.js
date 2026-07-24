@@ -1,5 +1,6 @@
 const { WALLET_TYPES } = require('../../../CONSTANTS');
 const EVENTS = require('../../../EVENTS');
+const deriveBlockHeadersResumeContext = require('../../ChainStore/deriveBlockHeadersResumeContext');
 /**
  * Will derivate to a new account.
  * @param {object} accountOpts - options to pass, will autopopulate some
@@ -29,15 +30,29 @@ async function createAccount(accountOpts) {
 
   if (!this.offlineMode) {
     const chainStore = this.storage.getDefaultChainStore();
-    const { blockHeaders, lastSyncedHeaderHeight } = chainStore.state;
     const blockHeadersProvider = this.transport?.client?.blockHeadersProvider;
 
     if (blockHeadersProvider && !this.blockHeadersProviderInitializationPromise) {
-      const firstHeaderHeight = blockHeaders.length > 0
-        ? lastSyncedHeaderHeight - blockHeaders.length + 1
-        : lastSyncedHeaderHeight;
-      this.blockHeadersProviderInitializationPromise = blockHeadersProvider
-        .initializeChainWith(blockHeaders, firstHeaderHeight);
+      this.blockHeadersProviderInitializationPromise = (async () => {
+        const resumeContext = deriveBlockHeadersResumeContext(chainStore.state);
+
+        if (resumeContext.requiresHeaderStateReset) {
+          chainStore.resetBlockHeaders();
+
+          const hasPersistentAutosave = this.storage.autosave
+            && this.storage.adapter
+            && typeof this.storage.adapter.setItem === 'function';
+
+          if (hasPersistentAutosave) {
+            await this.storage.saveState();
+          }
+        }
+
+        await blockHeadersProvider.initializeChainWith(
+          resumeContext.blockHeaders,
+          resumeContext.firstHeaderHeight,
+        );
+      })();
     }
 
     if (this.blockHeadersProviderInitializationPromise) {

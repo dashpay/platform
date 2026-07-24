@@ -250,17 +250,26 @@ schedule, or a manual dispatch:
     query and observed the seller as its owner. Other mutation cases in the
     same functional file acknowledge cross-node propagation delay, but the
     purchase case omitted a state-aware owner wait.
-14. Main-suite job `89358698922` in the same run timed out after 950 seconds in
-    `restored wallet / should have all transaction from before at first`.
-    In source, the test awaits `getWalletAccount()`, takes a transaction
-    snapshot, and attaches a one-shot `EVENTS.BLOCKHEADER` listener with no
-    deadline when the snapshot is empty. That wait can miss an earlier event or
-    wait forever if the stream does not deliver a later one. The completed run
-    proves the test did not settle before the suite timeout, but the stack does
-    not identify which awaited source line consumed each part of the interval.
-    The after-hook
-    `stopReadingHistorical` null dereference was teardown fallout observed
-    after the timeout, not the primary failure.
+14. Main-suite jobs `89358698922` and `89367415858` timed out after 950 seconds
+    in `restored wallet / should have all transaction from before at first`.
+    The bounded transaction poll added after the first failure did not run:
+    `getWalletAccount()` remained pending. The restored wallet has no
+    authenticated stored headers but passes
+    `skipSynchronizationBeforeHeight`. `BlockHeadersSyncWorker` therefore
+    requests one header at the current remote height. `SpvChain` intentionally
+    rejects that batch as an unauthenticated remote checkpoint. In the second
+    run, the restored client fetched status and issued repeated finite
+    height-1402/count-1 header requests. Source tracing and the resulting
+    `HISTORICAL_SYNC`/null-reader teardown state identify rejected historical
+    header synchronization; the absence of a finite transaction request alone
+    would not, because transaction history can be skipped when its start is
+    already the remote tip.
+    On terminal error, `BlockHeadersProvider` destroys its reader and emits the
+    special Node `error` event. DAPIClient's earlier forwarding listener
+    re-emits `error` without checking whether DAPIClient has a listener, so
+    Node throws before the worker's later provider listener can reject its
+    historical promise. Provider state remains `HISTORICAL_SYNC` with a null
+    reader, causing the after-hook `stopReadingHistorical` null dereference.
 
 The initial browser error in
 `GetStatusResponse.createFromProto` is not a third root cause. RS-DAPI
@@ -404,14 +413,15 @@ functional cases establish the need to accommodate cross-node propagation; the
 repair polls the queried document until the expected owner is observed or a
 30-second deadline expires.
 
-The restored-wallet hang is deterministic at the test boundary. A one-shot
-event promise attached after an event has fired never settles unless another
-event happens. The account state is the contract under test, so bounded polling
-of `getTransactions()` avoids event ordering and preserves the exact
-transaction-ID assertions. The 120-second deadline exceeds one full 60-second
-local mining interval plus propagation margin while remaining far below the
-950-second suite cap. Run `30052329512` is the red integration observation; no
-production wallet behavior changes for this repair.
+The restored-wallet propagation check still benefits from bounded account-state
+polling, but run `30055515569` disproves it as the initialization fix. The
+production regression is that the header worker interprets the unsafe
+transaction-history shortcut as permission to trust a remote header
+checkpoint. That interpretation became invalid when SPV header validation
+stopped accepting unauthenticated remote roots. Header synchronization must
+begin at genesis whenever the store has no coherent authenticated header
+material; transaction synchronization may retain the caller's bounded scan
+height.
 
 ## Goals
 
@@ -424,6 +434,9 @@ production wallet behavior changes for this repair.
   time-based DGW target.
 - A persisted wallet restores each authenticated header at its actual height,
   so subsequent synchronization stays anchored to local state.
+- A header store without a resumable persisted header context always
+  authenticates headers from genesis, while transaction synchronization may
+  still honor its configured history shortcut.
 - Legacy test-suite state-transition verification accepts authenticated,
   height-pinned affected-state results for transition families whose proofs
   cannot establish exact execution, without accepting unproved data or
@@ -465,8 +478,11 @@ production wallet behavior changes for this repair.
   supplied by an unverified state-transition payload.
 - Changing production `WalletStorage` behavior or replacing Keychain-backed
   signing tests with an in-memory implementation.
-- Changing wallet synchronization or block-header provider cleanup to repair a
-  test-only missed-event wait.
+- Weakening SPV checkpoint authentication to preserve an unsafe synchronization
+  shortcut.
+- Redesigning provider/worker error propagation or concurrent start/stop
+  lifecycle. The observed error-ordering defect remains follow-up work; the
+  authenticated header start prevents this E2E from entering that error path.
 - Relaxing platform-value's strict binary serializer, which is also used on
   consensus/app-hash paths.
 - Expanding E2Es to every source change in the monorepo.
@@ -1027,10 +1043,137 @@ previously emitted event. Keep the polling local to this one E2E rather than
 introducing a generic helper for a single use. Remove the now-unused
 `EVENTS.BLOCKHEADER` import and the unconditional balance-change wait.
 
-Do not change production wallet synchronization or make provider cleanup
-null-tolerant in this amendment. The completed run shows the null dereference
-as teardown fallout after the primary timed-out test; changing cleanup would
-mask that fallout without making the restored transaction observable.
+Run `30055515569` proves this polling begins too late to repair the remaining
+failure. Retain it as the bounded propagation assertion, and repair the
+historical-header bootstrap separately below.
+
+### 1n. Anchor stores without a resumable header context to genesis
+
+Define one pure resume-context function and use it from both
+`Wallet#createAccount` and `BlockHeadersSyncWorker.getStartBlockHeight`.
+Mechanically, persisted state is resumable at `lastSyncedHeaderHeight` only
+when:
+
+- `lastSyncedHeaderHeight` is a safe integer no lower than `-1`;
+- `blockHeaders` is an array containing at least two entries; and
+- `firstHeaderHeight = lastSyncedHeaderHeight - blockHeaders.length + 1` is
+  nonnegative.
+
+An invalid state type or height range is a storage/schema error and must reject
+loudly. A well-typed but insufficient context (zero headers, exactly one
+header, or a negative implied first height) is never selected as proof material:
+discard it without interpreting its header contents and return a genesis
+context containing an empty header list, provider height `-1`, historical start
+height 1, and whether the existing header state requires normalization. For a
+resumable context, return the stored headers, their implied first height, and
+`lastSyncedHeaderHeight` as the historical start.
+Only the selected resumable context is content-validated. Its first persisted
+header is the locally trusted root; provider/SPV initialization normalizes it
+and validates linkage and consensus rules for its descendants. Invalid content
+in a selected resumable context rejects account creation.
+
+`createAccount` must initialize the provider from the exact headers and first
+height selected by that context. Thus insufficient material initializes the
+provider from its configured network genesis instead of leaving a stored remote
+root behind. Before provider initialization, add a narrow ChainStore operation
+that atomically normalizes an insufficient header context by setting
+`blockHeaders` to an empty array, `lastSyncedHeaderHeight` to `-1`, and clearing
+`headersMetadata` and `hashesByHeight`. Do not reset `chainHeight`,
+transactions, transaction metadata, or `lastSyncedBlockHeight`.
+Clamp `ChainStore#exportState`'s reorg-safe height floor to the existing `-1`
+unsynced sentinel. Without that floor, persisting normalized state while
+`chainHeight` is below the six-block reorg window serializes impossible
+`-6..-2` heights that the next restore correctly rejects.
+
+When autosave and a writable adapter are active, await `Storage#saveState`
+after this in-memory normalization and before provider initialization. A save
+failure rejects all waiting account requests before provider initialization;
+the old durable state remains and will be normalized again on a later restart.
+When persistence is explicitly disabled with `autoSave: false`, or there is no
+writable adapter, preserve that public configuration: normalization is
+in-memory-only and provider initialization may proceed. Do not mistake
+`saveState()`'s `false` no-op return for completed durability or force a write
+against the caller's storage policy.
+
+Assign the entire derive/normalize/conditional-save/initialize operation to the
+wallet's existing shared initialization promise before its first await, so
+concurrent account requests cannot race normalization or initialize the
+provider before an applicable durability boundary. A clean default genesis
+context is already normalized and does not need a redundant save.
+
+Provider-level tests must prove both selected contexts establish the
+predecessor required by their historical start: genesis height 0 for start
+height 1, and `lastSyncedHeaderHeight - 1` for a resumable context. This is an
+existing `BlockHeadersProvider.initializeChainWith` contract and a composition
+test invariant, not a new runtime dependency from wallet account creation onto
+provider internals.
+
+`BlockHeadersSyncWorker` must choose only the context's historical start and
+must not consider transaction-history shortcuts. Leave `TransactionsSyncWorker`
+unchanged so `skipSynchronization` and `skipSynchronizationBeforeHeight` still
+bound transaction scanning.
+
+This decouples header authentication from transaction discovery. It fixes both
+the restored-wallet case and new wallets whose tip exceeds
+`maxHeadersToKeep`; either currently asks SPV to accept a remote root that SPV
+correctly prohibits. Do not merely delete the unsafe option from the E2E,
+because that would hide the same public wallet regression. Do not relax
+`SpvChain` checkpoint validation or wait for the transaction to confirm first;
+neither action authenticates the requested remote header.
+
+This changes a cold mainnet wallet from a bounded recent-header download to
+genesis-to-tip authentication. Persisted header storage remains bounded, but
+bootstrap time and dash-spv's runtime memory can increase. Accept that cost for
+secure correctness: the wallet has no governed trusted checkpoint from which
+it could safely start. A future checkpoint/performance design can restore
+bounded bootstrap without treating a caller's transaction scan hint as header
+trust.
+
+The provider/DAPI error ordering exposed by the rejected checkpoint is real,
+but repairing it safely requires a separate lifecycle design covering worker
+failure propagation and concurrent start/stop calls. Keep that broader change
+out of this fix; choosing an authenticated header start avoids the intentional
+SPV rejection and therefore the broken error path in the failing E2E.
+
+Replace the contradictory header-worker expectations that currently let
+`skipSynchronization` choose tip-minus-window and let
+`skipSynchronizationBeforeHeight` beat stored header state. Add red-to-green
+boundary regressions proving:
+
+- zero headers plus a numeric height select an empty/genesis provider context
+  and historical height 1;
+- exactly one header plus a numeric height does the same;
+- exactly one header plus a positive stale height and populated header indexes
+  resets and saves only header state before provider initialization; a
+  subsequent genesis-rooted historical chain update advances from `-1`
+  without the stale-height error and persists coherent new header state;
+- exporting and rehydrating normalized state at chain height 0 preserves both
+  unsynced height sentinels as `-1` instead of producing `-6`;
+- with that save deterministically deferred, concurrent account requests share
+  one initialization operation: normalization and save run once, provider
+  initialization does not run until save resolves, and then runs once;
+- if the shared save rejects, every waiting account request receives the
+  failure, provider initialization and account creation never run, and a later
+  restart can retry normalization against the still-stale durable state;
+- with `autoSave: false` and a persistent adapter present, normalization stays
+  in memory, no adapter write is forced, and provider initialization proceeds
+  from genesis; a later restart safely repeats normalization;
+- the minimal two-header context initializes the provider from the implied
+  first height, leaves the predecessor indexed after provider initialization,
+  and resumes historical synchronization at the stored tip;
+- a negative implied first height falls back to the empty/genesis context;
+- malformed contents in a selected resumable context reject during provider/SPV
+  initialization, while unused insufficient material is safely discarded;
+- non-array headers, unsafe numeric heights, and heights below `-1` reject at
+  the pure resume-context boundary;
+- both unsafe options leave those header decisions unchanged; and
+- the existing transaction-worker tests retain the configured
+  `skipSynchronizationBeforeHeight` and current-tip `skipSynchronization`
+  behavior.
+
+At least one composition regression must exercise account provider
+initialization and worker start selection from the same persisted context,
+rather than testing only the scalar worker result.
 
 ### 2. Add a Core-tip convergence gate before mining
 
@@ -1365,6 +1508,37 @@ Swift CI test process
   skips provider initialization, preserving the public transport contract.
 - Provider initialization fails: callers receive the failure and no account is
   added to the wallet.
+- An empty wallet configures a transaction-history skip above genesis: header
+  synchronization still starts at genesis, while transaction synchronization
+  starts at the requested height.
+- A populated wallet configures a skip above its stored tip: header
+  synchronization resumes from the authenticated stored tip instead of
+  replacing it with an unauthenticated remote checkpoint.
+- A well-typed store has zero or one header, or its implied first height is
+  negative: account creation first normalizes header-only state, persists it
+  when persistence is enabled, initializes the provider from network genesis,
+  and the header worker requests height 1.
+- An insufficient header store retains a positive stale header tip or metadata:
+  normalization clears that header-only baseline before synchronization, so
+  genesis-rooted updates can advance monotonically without affecting stored
+  transactions or the observed remote chain height.
+- Concurrent accounts encounter a stale insufficient context: all callers
+  await one normalize/save/initialize promise, so the provider cannot observe
+  or initialize from state that has not passed the applicable durability
+  boundary.
+- Header-state persistence fails: every waiting account request rejects before
+  provider initialization; the prior durable state is retried and normalized
+  on a later wallet start.
+- Header-state persistence is disabled: in-memory normalization still protects
+  the running wallet and provider initialization, no write is forced, and a
+  later restart repeats the same safe normalization.
+- A normalized wallet is saved before the chain reaches the reorg window:
+  exported header and block sync sentinels remain `-1`, so rehydration accepts
+  the state and safely resumes from genesis.
+- A selected resumable header context contains malformed descendants:
+  provider/SPV initialization rejects account creation. Insufficient material
+  is never selected or interpreted; it is safely discarded in favor of
+  genesis.
 - An offline wallet creates an account: it still avoids all transport and
   provider access.
 - A fast-mined regtest chain fills the DGW history window: the validator keeps
@@ -1532,9 +1706,37 @@ Swift CI test process
 16. Retain main-suite job `89358698922` as the red missed-event observation.
     Replace the unbounded header listener with bounded polling for
     `firstTransaction.id` for up to 120 seconds, preserving the
-    transaction-count and ID assertions. Rerun the main E2E job and confirm the
-    restored-wallet case settles without its 950-second suite timeout or
-    cleanup fallout.
+    transaction-count and ID assertions.
+17. Retain main-suite job `89367415858` as the red authenticated-bootstrap
+    observation. First run focused worker regressions against the current
+    start-height logic and record the unsafe height and tip-minus-window
+    results. Replace those contradictory header assertions with 0-, 1-, and
+    minimal 2-header boundaries plus a negative implied first-height case.
+    Through the shared context, prove account initialization roots the provider
+    at genesis whenever material is insufficient and the worker requests
+    height 1; prove provider initialization indexes genesis height 0 and a
+    valid two-header context indexes the stored-tip predecessor before resuming
+    from its authenticated tip. Feed the insufficient composition case one
+    stored header, a positive stale header tip, and populated header indexes;
+    prove header-only state is normalized and saved before provider
+    initialization, then deliver a genesis-rooted chain update and prove it
+    advances and persists without the stale-height error. Exercise malformed
+    linkage in a selected resumable context as a fail-loud provider
+    initialization case. Explicitly run the
+    transaction-worker cases proving `skipSynchronizationBeforeHeight` still
+    returns the configured height and `skipSynchronization` still returns the
+    current chain height. Rerun the main E2E job and confirm the restored wallet
+    authenticates headers from genesis, scans transactions from the captured
+    pre-transfer height, and settles without the 950-second timeout or cleanup
+    fallout.
+
+    Local red-to-green evidence: the focused pre-fix worker/account/ChainStore
+    run had 14 failures and 39 passes, including exact `1000`, `1200`, and
+    `1300` unsafe header starts. The same set passed after the repair. The
+    review-added low-chain export regression separately failed with `-6`
+    instead of `-1` before the clamp and passed afterward. The expanded final
+    worker/account/ChainStore selection passes 97 tests, and the complete
+    wallet integration suite passes 25 tests.
 
 If generated WASM artifacts or Yarn unplugged dependencies block those suites,
 install/build the repository-prescribed prerequisites; do not bypass the test

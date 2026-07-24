@@ -2,6 +2,7 @@ const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvi
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const EVENTS = require('../../../EVENTS');
+const deriveBlockHeadersResumeContext = require('../../../types/ChainStore/deriveBlockHeadersResumeContext');
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
@@ -207,46 +208,18 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   /**
-   * Determines starting point considering options
-   * and last save checkpoint
-   * @returns {number|number}
+   * Determines the starting point from persisted authenticated headers.
+   * @returns {number}
    */
   getStartBlockHeight() {
     const chainStore = this.storage.getDefaultChainStore();
-    const bestBlockHeight = chainStore.state.chainHeight;
+    const resumeContext = deriveBlockHeadersResumeContext(chainStore.state);
 
-    let height;
-
-    const {
-      skipSynchronizationBeforeHeight,
-      skipSynchronization,
-    } = (this.storage.application.syncOptions || {});
-
-    if (skipSynchronization) {
-      this.logger.debug(`[BlockHeadersSyncWorker] Wallet created from a new mnemonic. Sync only last ${this.maxHeadersToKeep} blocks.`);
-      const syncFrom = bestBlockHeight - this.maxHeadersToKeep;
-      return syncFrom < 1 ? 1 : syncFrom;
+    if (resumeContext.startBlockHeight > 1) {
+      this.logger.debug(`[BlockHeadersSyncWorker] Last resumable header height is ${resumeContext.startBlockHeight}`);
     }
 
-    const { lastSyncedHeaderHeight } = chainStore.state;
-
-    if (typeof lastSyncedHeaderHeight !== 'number') {
-      throw new Error(`Invalid last synced header height ${lastSyncedHeaderHeight}`);
-    }
-
-    const skipBefore = parseInt(skipSynchronizationBeforeHeight, 10);
-
-    if (skipBefore > lastSyncedHeaderHeight) {
-      this.logger.debug(`[BlockHeadersSyncWorker] UNSAFE option skipSynchronizationBeforeHeight is set to ${skipBefore}`);
-      height = skipBefore;
-    } else if (lastSyncedHeaderHeight > -1) {
-      this.logger.debug(`[BlockHeadersSyncWorker] Last synced header height is ${lastSyncedHeaderHeight}`);
-      height = lastSyncedHeaderHeight;
-    } else {
-      height = 1;
-    }
-
-    return height;
+    return resumeContext.startBlockHeight;
   }
 
   /**
