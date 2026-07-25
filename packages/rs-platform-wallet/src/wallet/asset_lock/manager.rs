@@ -146,6 +146,31 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// `status_persist_serial → wallet_manager.write() → drop(wallet) →
     /// enqueue → drop(serial)` shape, so no cycle exists.
     pub(super) status_persist_serial: tokio::sync::Mutex<()>,
+    /// Test-only gauge of tasks currently BLOCKED on
+    /// [`status_persist_serial`](Self::status_persist_serial):
+    /// incremented before the `lock().await` and decremented the moment
+    /// it is acquired (see
+    /// [`lock_status_persist_serial`](Self::lock_status_persist_serial)),
+    /// so a non-zero value means "some task reached the ordering
+    /// boundary and cannot get past it while the current holder keeps
+    /// the lock".
+    ///
+    /// This is the arrival signal the ordering tests rendezvous on. A
+    /// sleep only shows that time passed — it cannot distinguish "the
+    /// competing task is queued at the mutex" from "the competing task
+    /// has not been scheduled yet", so a test that released its parked
+    /// holder after a delay could grade an unserialized implementation
+    /// as passing whenever the scheduler happened to run things in the
+    /// non-regressing order. Because the counter is maintained by the
+    /// lock helper itself, an implementation that stops taking the
+    /// mutex never increments it, and the waiting test fails instead of
+    /// silently passing.
+    ///
+    /// Covers the async acquirers only. The one `blocking_lock` caller
+    /// (`recover_tracked_asset_lock`) runs outside the async runtime,
+    /// so no test can observe it mid-wait.
+    #[cfg(test)]
+    pub(super) status_serial_waiters: std::sync::atomic::AtomicUsize,
     /// Test-only pause point inside
     /// [`resume_asset_lock`](Self::resume_asset_lock), between the
     /// read-locked status snapshot and the write-locked `Built` →
@@ -193,12 +218,87 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             build_persist_serial: tokio::sync::Mutex::new(()),
             status_persist_serial: tokio::sync::Mutex::new(()),
             #[cfg(test)]
+            status_serial_waiters: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
             build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(test)]
             resume_pre_promote_gate: std::sync::Mutex::new(None),
             #[cfg(test)]
             promote_post_cas_gate: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Acquire [`status_persist_serial`](Self::status_persist_serial).
+    ///
+    /// Every async mutate→enqueue pair goes through here rather than
+    /// locking the field directly, so the test-only
+    /// [`status_serial_waiters`](Self::status_serial_waiters) gauge sees
+    /// every arrival at the ordering boundary. In non-test builds this
+    /// compiles to the bare `lock().await`.
+    pub(super) async fn lock_status_persist_serial(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        // RAII rather than a bare decrement after the await: if the
+        // caller's future is dropped while still queued, the count must
+        // come back down, or a cancelled task would leave the gauge
+        // permanently non-zero and every later wait would return
+        // instantly on a phantom arrival.
+        #[cfg(test)]
+        struct WaiterGauge<'a>(&'a std::sync::atomic::AtomicUsize);
+        #[cfg(test)]
+        impl Drop for WaiterGauge<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        #[cfg(test)]
+        let waiting = {
+            self.status_serial_waiters
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            WaiterGauge(&self.status_serial_waiters)
+        };
+
+        let guard = self.status_persist_serial.lock().await;
+
+        // Dropped on acquisition, not on release: the gauge answers
+        // "who is still queued at the boundary", so the holder must not
+        // count itself.
+        #[cfg(test)]
+        drop(waiting);
+
+        guard
+    }
+
+    /// Test-only: wait until at least `n` tasks are blocked on
+    /// [`status_persist_serial`](Self::status_persist_serial).
+    ///
+    /// The rendezvous the ordering tests use in place of a sleep. The
+    /// caller must already hold the mutex (or otherwise know it is
+    /// held), so an arrival observed here is an arrival that provably
+    /// cannot proceed past the boundary. Polls rather than using a
+    /// `Notify` because the waiters are inside the production lock
+    /// helper, which must stay free of test-only signalling on the
+    /// contended path.
+    ///
+    /// Panics after ~10s so a genuine hang fails loudly instead of
+    /// running until the harness times out.
+    #[cfg(test)]
+    pub(super) async fn await_status_serial_waiters(&self, n: usize) {
+        for _ in 0..2_000 {
+            if self
+                .status_serial_waiters
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= n
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!(
+            "timed out waiting for {n} task(s) to block on status_persist_serial \
+             (saw {}) — either the competing task never reached the ordering \
+             boundary, or the code under test no longer acquires the mutex there",
+            self.status_serial_waiters
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
     }
 
     /// Queue an `AssetLockChangeSet` onto the per-wallet persister.

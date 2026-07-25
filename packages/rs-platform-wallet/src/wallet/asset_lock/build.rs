@@ -2215,11 +2215,47 @@ mod tests {
                 .await
         });
 
-        // Give the finalizer a real chance to get its enqueue in first.
-        // Pre-fix it does exactly that and the promoter's older snapshot
-        // lands last; post-fix it is queued behind the ordering mutex.
-        tokio::task::yield_now().await;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Wait until the finalizer has provably had its chance to enqueue
+        // first — not merely until some time has passed. Exactly one of
+        // two states must be observed, mirroring the build-gate test
+        // above:
+        //
+        // - the finalizer ENQUEUED (a new changeset landed): the
+        //   unserialized behavior, where nothing held it back and its
+        //   newer snapshot is already durable. The promoter's older
+        //   snapshot then lands last on release and the caller's ordering
+        //   assertion fires — deterministically, because we release only
+        //   after observing the store, never before it happened;
+        // - the finalizer is QUEUED on `status_persist_serial` (waiter
+        //   gauge non-zero): the fixed behavior. The promoter holds that
+        //   mutex across its parked window, so the finalizer came to rest
+        //   at the boundary and provably cannot enqueue before we release.
+        //
+        // A sleep distinguished neither: "no new changeset yet" could just
+        // mean the finalizer had not been scheduled, so the pre-fix
+        // implementation could enqueue in the non-regressing order after
+        // the release and falsely pass.
+        let queued_before_finalize = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+        loop {
+            let finalizer_enqueued = persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len()
+                > queued_before_finalize;
+            let finalizer_blocked = manager
+                .status_serial_waiters
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= 1;
+            if finalizer_enqueued || finalizer_blocked {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
 
         // 3. Release the stale promoter.
         release.notify_one();
@@ -2381,7 +2417,23 @@ mod tests {
                 .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
                 .await
         });
-        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Rendezvous on the resume actually REACHING the ordering
+        // boundary, rather than sleeping and hoping it got there. The
+        // waiter gauge is incremented by the production lock helper
+        // before its `lock().await` and dropped on acquisition, so a
+        // count of 1 while this test holds the mutex means the resume's
+        // promotion is queued on it and cannot have enqueued anything.
+        //
+        // This is what makes the "nothing was queued" assertion below
+        // evidence of serialization. After a sleep it was not: an
+        // unchanged changeset count could equally mean the resume task
+        // had never been scheduled. It also fails loudly if the resume
+        // path ever stops routing its promotion through the mutex —
+        // the gauge would stay at zero and the wait would panic, where
+        // the sleep version would have read the resulting silence as
+        // success.
+        manager.await_status_serial_waiters(1).await;
 
         assert_eq!(
             persistence

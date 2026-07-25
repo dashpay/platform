@@ -63,7 +63,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// that — and an unserialized `Built` enqueue landing afterwards
     /// would regress the durable row to the pre-broadcast state.
     pub(crate) async fn track_asset_lock(&self, lock: TrackedAssetLock) -> AssetLockChangeSet {
-        let _serial = self.status_persist_serial.lock().await;
+        let _serial = self.lock_status_persist_serial().await;
 
         let cs = {
             let mut wm = self.wallet_manager.write().await;
@@ -113,7 +113,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// finalize's proof-bearing snapshot, Swift would delete the row
     /// that snapshot had just written.
     pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
-        let _serial = self.status_persist_serial.lock().await;
+        let _serial = self.lock_status_persist_serial().await;
 
         let cs = {
             let mut wm = self.wallet_manager.write().await;
@@ -193,7 +193,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // terminal `Consumed` snapshot cannot be overtaken by a
         // concurrent status writer's older one (see
         // `status_persist_serial`). Acquired BEFORE `wallet_manager`.
-        let _serial = self.status_persist_serial.lock().await;
+        let _serial = self.lock_status_persist_serial().await;
 
         // Build the changeset under the write lock, then release the
         // lock before queueing — `queue_asset_lock_changeset` calls
@@ -271,7 +271,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<BuiltPromotion, PlatformWalletError> {
         // Hold the ordering mutex across mutate → enqueue. Acquired
         // BEFORE `wallet_manager` (see the field's lock-ordering note).
-        let _serial = self.status_persist_serial.lock().await;
+        let _serial = self.lock_status_persist_serial().await;
 
         let promotion = self.compare_and_set_built_to_broadcast(out_point).await?;
 
@@ -361,7 +361,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
         // Hold the ordering mutex across mutate → enqueue. Acquired
         // BEFORE `wallet_manager` (see the field's lock-ordering note).
-        let _serial = self.status_persist_serial.lock().await;
+        let _serial = self.lock_status_persist_serial().await;
 
         // Scoped so the wallet write guard is released before the
         // synchronous persister call below.
