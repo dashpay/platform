@@ -1348,7 +1348,9 @@ impl PlatformWallet {
     pub async fn identity_create_from_one_time_key<P, IS>(
         &self,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
-        one_time_sk: [u8; 32],
+        // Bearer spend authority carried in a `Zeroizing` buffer so this layer's copy
+        // of the one-time spending key is scrubbed on drop (#4204 key-hygiene).
+        one_time_sk: zeroize::Zeroizing<[u8; 32]>,
         funding_birth_height: Option<u32>,
         change_address: dpp::address_funds::OrchardAddress,
         identity_index: u32,

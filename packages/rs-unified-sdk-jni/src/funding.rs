@@ -986,7 +986,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_generat
     _class: JClass,
 ) -> jni::sys::jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        let mut sk = [0u8; 32];
+        // Bearer spend authority: hold the native `sk` and the combined `out`
+        // blob (its first 32 bytes are the spending key) in `Zeroizing` buffers so
+        // both are scrubbed on drop, including any early return (#4204 key-hygiene).
+        let mut sk = zeroize::Zeroizing::new([0u8; 32]);
         let mut addr = [0u8; 43];
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_generate_one_time_orchard_key(
@@ -998,10 +1001,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_generat
             return ptr::null_mut();
         }
         // sk ‖ addr — a 75-byte blob the Kotlin side slices into (sk32, addr43).
-        let mut out = [0u8; 75];
-        out[..32].copy_from_slice(&sk);
+        let mut out = zeroize::Zeroizing::new([0u8; 75]);
+        out[..32].copy_from_slice(&sk[..]);
         out[32..].copy_from_slice(&addr);
-        env.byte_array_from_slice(&out)
+        env.byte_array_from_slice(&out[..])
             .map(|a| a.into_raw())
             .unwrap_or(ptr::null_mut())
     })

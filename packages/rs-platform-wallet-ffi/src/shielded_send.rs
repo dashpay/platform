@@ -895,7 +895,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_o
 
     // Copy the one-time spending key (32 bytes; the caller's safety contract
     // guarantees the length — no companion length arg crosses the C ABI).
-    let mut one_time_sk = [0u8; 32];
+    // Bearer spend authority: hold this FFI-layer copy in a `Zeroizing` buffer so
+    // it is scrubbed on drop. It is moved into the wallet layer, which likewise
+    // carries it in `Zeroizing` (#4204 key-hygiene).
+    let mut one_time_sk = zeroize::Zeroizing::new([0u8; 32]);
     std::ptr::copy_nonoverlapping(one_time_sk_bytes, one_time_sk.as_mut_ptr(), 32);
 
     // Decode the claimer's own 43-byte default Orchard change address.
@@ -1589,7 +1592,7 @@ pub unsafe extern "C" fn platform_wallet_generate_one_time_orchard_key(
     // this is a `#[no_mangle] extern "C"` export, so a panic would abort the
     // process across the C ABI before any JNI panic guard could convert it —
     // an OS RNG failure must surface as a normal error, never a hard abort.
-    let (sk, address) = match generate_one_time_orchard_key() {
+    let (mut sk, address) = match generate_one_time_orchard_key() {
         Ok(pair) => pair,
         Err(e) => {
             return PlatformWalletFFIResult::err(
@@ -1600,6 +1603,9 @@ pub unsafe extern "C" fn platform_wallet_generate_one_time_orchard_key(
     };
     std::ptr::copy_nonoverlapping(sk.as_ptr(), out_sk_32, 32);
     std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
+    // Wipe this native copy of the one-time spending key now that it has been
+    // handed to the caller's `out_sk_32` buffer (#4204 key-hygiene).
+    zeroize::Zeroize::zeroize(&mut sk);
     PlatformWalletFFIResult::ok()
 }
 
