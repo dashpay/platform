@@ -1711,8 +1711,15 @@ where
         }
     }
 
+    // Wait for proven execution, mirroring the pool-funded sibling verbatim. A
+    // Type-20 IdentityCreateFromShieldedPool proof authenticates the spent
+    // nullifiers and resulting identity as an affected-state snapshot; it cannot
+    // bind the complete Orchard request, so the current proof contract marks it as
+    // affected-state. Use `wait_for_affected_state` — the strict `wait_for_response`
+    // would classify every valid claim proof as `ExecutionNotProved`, drop into the
+    // ambiguous fallback, and risk reporting a successful claim as unconfirmed.
     let proof_result = match st
-        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
         .await
     {
         Ok(result) => result,
