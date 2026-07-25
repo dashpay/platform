@@ -18,6 +18,7 @@ use crate::error::PlatformWalletError;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
+use super::tracking::BuiltPromotion;
 
 // ---------------------------------------------------------------------------
 // Blocking accessor (for synchronous / evo-tool contexts)
@@ -219,7 +220,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
 
         // 1. Look up the tracked lock — snapshot the fields we need.
-        let (tx, status, existing_proof, account_index) = {
+        let (tx, mut status, mut existing_proof, account_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -251,25 +252,72 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             )
         };
 
+        // Test-only pause between the read-locked snapshot above and the
+        // write-locked compare-and-set below, so a test can deterministically
+        // hold this resume on a stale `Built` snapshot while another flow
+        // finalizes the same row. No-op unless a test installed the gate.
+        #[cfg(test)]
+        {
+            let gate = self
+                .resume_pre_promote_gate
+                .lock()
+                .expect("resume pre-promote gate mutex")
+                .clone();
+            if let Some(gate) = gate {
+                // Signal first: the snapshot above is taken, so whatever the
+                // test does next is guaranteed to race a stale `Built`.
+                gate.arrived.notify_one();
+                gate.release.notified().await;
+            }
+        }
+
+        // 1b. Promote `Built` → `Broadcast` BEFORE calling `broadcast(&tx)`.
+        // The snapshot above dropped the read lock, so a concurrent
+        // create-path Rejected cleanup can race the re-broadcast: if the row
+        // is still `Built` when `untrack_asset_lock` runs, the guard doesn't
+        // fire, the row is deleted, and the funding reservation is released
+        // while this call is still handing the same transaction to the
+        // network. Advancing first pushes the status past `Built` under the
+        // write lock, so either (a) we win and the untrack guard preserves
+        // the row + reservation, or (b) untrack ran first, the row is
+        // already gone, and this promotion fails before we ever call
+        // `broadcast(&tx)`.
+        //
+        // The promotion is a compare-and-set rather than an unconditional
+        // write because that same dropped read lock lets TWO resumes both
+        // snapshot `Built`. If the first one broadcasts, obtains a proof and
+        // finalizes the row to `InstantSendLocked` / `ChainLocked` (step 3),
+        // an unconditional write from this delayed second caller would
+        // downgrade the finalized row to `Broadcast` while leaving the proof
+        // attached, and persist that inconsistent state. Instead we re-read
+        // the row's current status and proof under the write lock and
+        // re-dispatch from there — the arms below then take the already-have-
+        // a-proof path instead of waiting again for a proof we already hold.
+        if status == AssetLockStatus::Built {
+            match self.promote_built_to_broadcast(out_point).await? {
+                BuiltPromotion::Promoted(cs) => self.queue_asset_lock_changeset(cs),
+                BuiltPromotion::AlreadyAdvanced {
+                    current_status,
+                    current_proof,
+                } => {
+                    tracing::info!(
+                        outpoint = %out_point,
+                        status = ?current_status,
+                        has_proof = current_proof.is_some(),
+                        "resume_asset_lock: row advanced past Built concurrently — \
+                         re-dispatching from its current state"
+                    );
+                    status = current_status;
+                    existing_proof = current_proof;
+                }
+            }
+        }
+
         // 2. Resume from the current status.
         let proof = match status {
             AssetLockStatus::Built => {
-                // Advance the tracked row to `Broadcast` BEFORE calling
-                // `broadcast(&tx)`. The snapshot above dropped the read lock,
-                // so a concurrent create-path Rejected cleanup can race the
-                // re-broadcast: if the row is still `Built` when
-                // `untrack_asset_lock` runs, the guard doesn't fire, the row
-                // is deleted, and the funding reservation is released while
-                // this call is still handing the same transaction to the
-                // network. Advancing first pushes the status past `Built`
-                // under the write lock, so either (a) we win and the untrack
-                // guard preserves the row + reservation, or (b) untrack ran
-                // first, the row is already gone, and this advance fails
-                // before we ever call `broadcast(&tx)`.
-                let cs = self
-                    .advance_asset_lock_status(out_point, AssetLockStatus::Broadcast, None)
-                    .await?;
-                self.queue_asset_lock_changeset(cs);
+                // Promoted to `Broadcast` in step 1b — this arm owns that
+                // promotion, so it is the one that re-broadcasts.
                 match self.broadcaster.broadcast(&tx).await {
                     Ok(_) => {}
                     Err(e @ BroadcastError::Rejected { .. }) => {

@@ -9,6 +9,22 @@ use crate::error::PlatformWalletError;
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 
+/// Outcome of the compare-and-set `Built` → `Broadcast` promotion in
+/// [`AssetLockManager::promote_built_to_broadcast`].
+#[derive(Debug)]
+pub(crate) enum BuiltPromotion {
+    /// The row was still `Built` and is now `Broadcast`. Carries the
+    /// changeset the caller must queue.
+    Promoted(AssetLockChangeSet),
+    /// A concurrent flow already advanced the row past `Built`. Nothing
+    /// was mutated; the caller re-dispatches from these values rather
+    /// than overwriting them.
+    AlreadyAdvanced {
+        current_status: AssetLockStatus,
+        current_proof: Option<dpp::prelude::AssetLockProof>,
+    },
+}
+
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// The recorded [`AssetLockFundingType`] of a tracked lock, or `None`
     /// when the outpoint is not tracked. Used by the funding resolver to
@@ -157,10 +173,66 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Ok(cs)
     }
 
+    /// Compare-and-set the pre-broadcast
+    /// [`Built`](AssetLockStatus::Built) →
+    /// [`Broadcast`](AssetLockStatus::Broadcast) promotion, under the
+    /// wallet write lock.
+    ///
+    /// `resume_asset_lock` snapshots the tracked row under a *read* lock
+    /// and drops it before promoting, so two callers can both observe
+    /// `Built`. If the first one goes on to broadcast, obtain a proof and
+    /// store `InstantSendLocked` / `ChainLocked` with that proof attached,
+    /// an unconditional write from the delayed second caller would
+    /// downgrade the finalized row back to `Broadcast` while leaving the
+    /// proof attached — an inconsistent `Broadcast + Some(proof)` state
+    /// that also gets persisted (changesets are last-write-wins). A later
+    /// resume would then take the `Broadcast` arm and wait for a proof it
+    /// already holds.
+    ///
+    /// So the promotion only fires while the row is *still* `Built`.
+    /// Otherwise nothing is mutated and the caller is handed the row's
+    /// current status and proof to re-dispatch from.
+    ///
+    /// Still errors when the outpoint is untracked: that means a
+    /// concurrent `untrack_asset_lock` removed a rejected row (releasing
+    /// its funding reservation), and the caller must abort before
+    /// re-broadcasting a transaction whose inputs are re-spendable.
+    pub(crate) async fn promote_built_to_broadcast(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<BuiltPromotion, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let entry = info.tracked_asset_locks.get_mut(out_point).ok_or_else(|| {
+            PlatformWalletError::AssetLockProofWait(format!(
+                "Asset lock {} is not tracked",
+                out_point
+            ))
+        })?;
+
+        if entry.status != AssetLockStatus::Built {
+            return Ok(BuiltPromotion::AlreadyAdvanced {
+                current_status: entry.status.clone(),
+                current_proof: entry.proof.clone(),
+            });
+        }
+
+        entry.status = AssetLockStatus::Broadcast;
+        let mut cs = AssetLockChangeSet::default();
+        cs.asset_locks.insert(*out_point, (&*entry).into());
+        Ok(BuiltPromotion::Promoted(cs))
+    }
+
     /// Advance the status of a tracked asset lock and optionally attach the proof.
     ///
     /// Returns an [`AssetLockChangeSet`] carrying a full snapshot of the
     /// updated entry.
+    ///
+    /// Assigns unconditionally — callers that race another writer for the
+    /// same row must gate the write themselves (see
+    /// [`promote_built_to_broadcast`](Self::promote_built_to_broadcast)).
     pub(crate) async fn advance_asset_lock_status(
         &self,
         out_point: &OutPoint,

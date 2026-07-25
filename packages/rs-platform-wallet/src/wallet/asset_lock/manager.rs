@@ -19,6 +19,17 @@ use key_wallet_manager::WalletManager;
 /// Default fee rate in duffs per kilobyte for asset lock transactions.
 pub(super) const DEFAULT_FEE_PER_KB: u64 = 1000;
 
+/// Test-only rendezvous for
+/// [`AssetLockManager::resume_pre_promote_gate`]. `arrived` fires once a
+/// resume has taken its read-locked status snapshot; the resume then
+/// blocks on `release`.
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct ResumePrePromoteGate {
+    pub(super) arrived: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
+}
+
 /// Manages the full asset lock lifecycle: build, broadcast, proof, and tracking.
 ///
 /// Shared across sub-wallets via `Arc<AssetLockManager>` so that any sub-wallet
@@ -83,6 +94,22 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// yet have collected its pool snapshot.
     #[cfg(test)]
     pub(super) build_serial_gate: std::sync::atomic::AtomicUsize,
+    /// Test-only pause point inside
+    /// [`resume_asset_lock`](Self::resume_asset_lock), between the
+    /// read-locked status snapshot and the write-locked `Built` →
+    /// `Broadcast` compare-and-set. When set, a resume signals `arrived`
+    /// and then awaits `release` at that point, which lets a test hold a
+    /// resume on a stale `Built` snapshot while another flow finalizes
+    /// the same row to `InstantSendLocked` / `ChainLocked` — the exact
+    /// interleave the compare-and-set exists to survive.
+    ///
+    /// Both halves matter for determinism: `arrived` proves the resume
+    /// really did snapshot `Built` BEFORE the test finalized the row (so
+    /// the snapshot under test is genuinely stale), and `release` holds
+    /// it there until the finalize has landed. `None` (the default)
+    /// makes the hook a no-op.
+    #[cfg(test)]
+    pub(super) resume_pre_promote_gate: std::sync::Mutex<Option<ResumePrePromoteGate>>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -105,6 +132,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             build_persist_serial: tokio::sync::Mutex::new(()),
             #[cfg(test)]
             build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            resume_pre_promote_gate: std::sync::Mutex::new(None),
         }
     }
 

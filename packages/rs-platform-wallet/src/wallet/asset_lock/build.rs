@@ -625,7 +625,7 @@ mod tests {
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
-    use crate::wallet::asset_lock::manager::AssetLockManager;
+    use crate::wallet::asset_lock::manager::{AssetLockManager, ResumePrePromoteGate};
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -1713,6 +1713,193 @@ mod tests {
             matches!(rebuild, Err(PlatformWalletError::AssetLockTransaction(_))),
             "rebuild must fail at input selection while the reservation is \
              held for the retained Broadcast row, got {rebuild:?}"
+        );
+    }
+
+    /// `MaybeSent` on every call (leaving the tracked row at `Built` with
+    /// its funding reservation held), counting calls so a test can assert
+    /// that a stale resume did NOT re-broadcast.
+    struct CountingMaybeSentBroadcaster {
+        call_count: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for CountingMaybeSentBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            Err(BroadcastError::MaybeSent {
+                reason: "create-path leaves the row at Built for a later resume".to_string(),
+            })
+        }
+    }
+
+    /// Regression: a `resume_asset_lock` holding a STALE `Built` snapshot
+    /// must not downgrade a row that a concurrent flow already finalized.
+    ///
+    /// Two resumes can both snapshot `Built` under the read lock (which is
+    /// dropped before the pre-broadcast promotion). If the first one
+    /// broadcasts, obtains a proof and stores `ChainLocked` + proof, an
+    /// unconditional `Built -> Broadcast` write from the delayed second
+    /// caller would downgrade the finalized row to `Broadcast` while
+    /// leaving the proof attached — an inconsistent `Broadcast +
+    /// Some(proof)` state that also gets persisted (changesets are
+    /// last-write-wins). A later resume would then take the `Broadcast`
+    /// arm and wait for a proof the row already holds, potentially
+    /// forever.
+    ///
+    /// The compare-and-set in `promote_built_to_broadcast` makes the
+    /// stale caller observe the advanced row instead, re-dispatch from its
+    /// current status, and reuse the attached proof.
+    #[tokio::test]
+    async fn stale_built_resume_does_not_downgrade_a_concurrently_finalized_row() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        // A `MaybeSent` create leaves the row at `Built` with the funding
+        // reservation held — the state a resume picks up from. The
+        // broadcaster counts calls so the test can prove the stale resume
+        // never re-broadcast (it took the already-have-a-proof arm).
+        let broadcaster = Arc::new(CountingMaybeSentBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let (op, lock) = info
+                .tracked_asset_locks
+                .iter()
+                .next()
+                .expect("built row tracked");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+            *op
+        };
+
+        // 1. Install the pre-promote gate, then start a resume. It takes the
+        //    read-locked `Built` snapshot and parks before the
+        //    compare-and-set — this is the stale caller.
+        let arrived = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        *manager
+            .resume_pre_promote_gate
+            .lock()
+            .expect("resume pre-promote gate mutex") = Some(ResumePrePromoteGate {
+            arrived: Arc::clone(&arrived),
+            release: Arc::clone(&release),
+        });
+
+        let manager_stale = Arc::clone(&manager);
+        let stale_resume = tokio::spawn(async move {
+            manager_stale
+                .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
+                .await
+        });
+
+        // Wait until the resume has actually taken its `Built` snapshot.
+        // Without this the finalize below could land first and the resume
+        // would read `ChainLocked` directly — never exercising the race.
+        arrived.notified().await;
+
+        // 2. While it is parked, another flow finalizes the SAME row to
+        //    `ChainLocked` with a proof attached — exactly what the winning
+        //    resume's step 3 does.
+        let chain_proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 1234,
+            out_point,
+        });
+        let cs = manager
+            .advance_asset_lock_status(
+                &out_point,
+                AssetLockStatus::ChainLocked,
+                Some(chain_proof.clone()),
+            )
+            .await
+            .expect("finalize the row");
+        manager.queue_asset_lock_changeset(cs);
+
+        // 3. Release the stale resume. Without the compare-and-set it would
+        //    now write `Broadcast` over the finalized row.
+        release.notify_one();
+        let resumed = stale_resume.await.expect("stale resume task joined");
+
+        // The stale caller re-dispatched into the already-have-a-proof arm:
+        // it neither re-broadcast nor waited for a proof. Both are
+        // observable — `wait_for_proof` would have returned `FinalityTimeout`
+        // against the 10ms deadline (no SPV record exists in this fixture),
+        // and the `Built`/`Broadcast` arms both broadcast before waiting.
+        //
+        // The resume still fails at its LAST step (step 4, credit-output
+        // path re-derivation): this fixture's funding-account address pool
+        // does not retain the peeked credit-output address, so
+        // `rederive_credit_output_path` cannot resolve it. That is a
+        // pre-existing fixture limitation unrelated to the race — reaching
+        // it at all proves the proof was reused, since a resume that waited
+        // would have failed earlier with `FinalityTimeout`.
+        assert!(
+            matches!(
+                resumed,
+                Err(PlatformWalletError::AssetLockTransaction(ref m))
+                    if m.contains("not found in funding account")
+            ),
+            "stale resume must reach credit-output re-derivation (proving it \
+             reused the attached proof rather than waiting for a new one), \
+             got {resumed:?}"
+        );
+        assert_eq!(
+            broadcaster.call_count.load(Ordering::SeqCst),
+            1,
+            "only the create-path broadcast may have happened: a stale resume \
+             that re-dispatched from ChainLocked must not re-broadcast"
+        );
+
+        // The row is still finalized: status never regressed to `Broadcast`
+        // and the proof is intact.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row still tracked");
+            assert_eq!(
+                lock.status,
+                AssetLockStatus::ChainLocked,
+                "stale Built snapshot must not downgrade the finalized row"
+            );
+            assert_eq!(
+                lock.proof.as_ref(),
+                Some(&chain_proof),
+                "the concurrently-attached proof must survive"
+            );
+        }
+
+        // No persisted changeset carries the inconsistent
+        // `Broadcast + Some(proof)` pair.
+        let stored = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex");
+        let inconsistent = stored
+            .iter()
+            .filter_map(|cs| cs.asset_locks.as_ref())
+            .filter_map(|al| al.asset_locks.get(&out_point))
+            .any(|entry| entry.status == AssetLockStatus::Broadcast && entry.proof.is_some());
+        assert!(
+            !inconsistent,
+            "no changeset may persist a Broadcast row with a proof attached"
         );
     }
 }
