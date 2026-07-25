@@ -178,11 +178,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// [`Broadcast`](AssetLockStatus::Broadcast) promotion, under the
     /// wallet write lock.
     ///
-    /// `resume_asset_lock` snapshots the tracked row under a *read* lock
-    /// and drops it before promoting, so two callers can both observe
-    /// `Built`. If the first one goes on to broadcast, obtain a proof and
-    /// store `InstantSendLocked` / `ChainLocked` with that proof attached,
-    /// an unconditional write from the delayed second caller would
+    /// Shared by BOTH `Built` → `Broadcast` writers, because both hold a
+    /// stale view of the row across an unbounded `broadcast(&tx)` await:
+    ///
+    /// - `resume_asset_lock` snapshots the row under a *read* lock and
+    ///   drops it before promoting, so two resumes can both observe
+    ///   `Built`.
+    /// - `broadcast_funded_asset_lock` tracks the row as `Built`, then
+    ///   awaits its own broadcast before promoting — during which a
+    ///   concurrent resume can pick the same outpoint up.
+    ///
+    /// Either way, if the other flow goes on to broadcast, obtain a proof
+    /// and store `InstantSendLocked` / `ChainLocked` with that proof
+    /// attached, an unconditional write from the delayed caller would
     /// downgrade the finalized row back to `Broadcast` while leaving the
     /// proof attached — an inconsistent `Broadcast + Some(proof)` state
     /// that also gets persisted (changesets are last-write-wins). A later
@@ -191,7 +199,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// So the promotion only fires while the row is *still* `Built`.
     /// Otherwise nothing is mutated and the caller is handed the row's
-    /// current status and proof to re-dispatch from.
+    /// current status and proof. `resume_asset_lock` re-dispatches from
+    /// them; the create path has nothing to re-dispatch (its proof wait
+    /// lives in a separate method) and simply leaves them intact.
     ///
     /// Still errors when the outpoint is untracked: that means a
     /// concurrent `untrack_asset_lock` removed a rejected row (releasing

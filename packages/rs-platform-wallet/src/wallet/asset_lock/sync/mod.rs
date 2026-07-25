@@ -6,4 +6,8 @@
 
 mod proof;
 mod recovery;
-mod tracking;
+/// `pub(super)` so the create path in `build.rs` — the other
+/// `Built` → `Broadcast` writer — can name
+/// [`BuiltPromotion`](tracking::BuiltPromotion) and share the same
+/// compare-and-set instead of writing the status unconditionally.
+pub(super) mod tracking;

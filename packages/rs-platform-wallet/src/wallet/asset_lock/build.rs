@@ -20,6 +20,7 @@ use key_wallet::wallet::Wallet;
 use crate::error::PlatformWalletError;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
+use super::sync::tracking::BuiltPromotion;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 // ---------------------------------------------------------------------------
@@ -554,10 +555,44 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         // 4. Transition to Broadcast and queue the changeset.
-        let cs_broadcast = self
-            .advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
-            .await?;
-        self.queue_asset_lock_changeset(cs_broadcast);
+        //
+        // Compare-and-set, not an unconditional write: the row was tracked as
+        // `Built` back in step 2 and the await above is unbounded, so a
+        // concurrent `resume_asset_lock` (the FFI catch-up scanner and the
+        // funding resolver both drive one for any tracked outpoint) can pick
+        // the row up, broadcast the same transaction, obtain a proof and
+        // finalize it to `InstantSendLocked` / `ChainLocked` while this call
+        // is still parked in `broadcast(&tx)`. Assigning `Broadcast`
+        // unconditionally on the way out would then downgrade that finalized
+        // row, and because `advance_asset_lock_status` leaves the existing
+        // proof attached when passed `None`, it would recreate — and persist,
+        // changesets being last-write-wins — the inconsistent
+        // `Broadcast + Some(proof)` state. A later resume takes the
+        // `Broadcast` arm and waits for a proof the row already holds,
+        // unbounded for the user-facing funding flows.
+        //
+        // So promote only while the row is still `Built`. If it advanced, its
+        // status and proof are strictly further along than anything this call
+        // could write, so leave them untouched: our broadcast still succeeded,
+        // which is all this create-only half reports. Unlike
+        // `resume_asset_lock` there is nothing to re-dispatch — the proof wait
+        // lives in `wait_for_funded_asset_lock_proof`, the caller's next step.
+        match self.promote_built_to_broadcast(&out_point).await? {
+            BuiltPromotion::Promoted(cs) => self.queue_asset_lock_changeset(cs),
+            BuiltPromotion::AlreadyAdvanced {
+                current_status,
+                current_proof,
+            } => {
+                tracing::info!(
+                    outpoint = %out_point,
+                    status = ?current_status,
+                    has_proof = current_proof.is_some(),
+                    "broadcast_funded_asset_lock: row advanced past Built \
+                     concurrently during the broadcast — keeping its current \
+                     state instead of downgrading it to Broadcast"
+                );
+            }
+        }
 
         Ok((path, out_point))
     }
@@ -1888,6 +1923,177 @@ mod tests {
 
         // No persisted changeset carries the inconsistent
         // `Broadcast + Some(proof)` pair.
+        let stored = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex");
+        let inconsistent = stored
+            .iter()
+            .filter_map(|cs| cs.asset_locks.as_ref())
+            .filter_map(|al| al.asset_locks.get(&out_point))
+            .any(|entry| entry.status == AssetLockStatus::Broadcast && entry.proof.is_some());
+        assert!(
+            !inconsistent,
+            "no changeset may persist a Broadcast row with a proof attached"
+        );
+    }
+
+    /// Broadcaster that stages the create-side counterpart of the race:
+    /// "during" the create path's own broadcast — i.e. while
+    /// `broadcast_funded_asset_lock` is parked in this await, after it
+    /// tracked the row as `Built` and before its `Built` → `Broadcast`
+    /// promotion — a concurrent `resume_asset_lock` picks the same outpoint
+    /// up, broadcasts, obtains a proof and finalizes the row to
+    /// `ChainLocked` (its step 3). Then the original broadcast returns `Ok`.
+    ///
+    /// Mutating the row in place stands in for that winning resume without
+    /// needing a second task: the point under test is what the create path
+    /// writes on its way out, and doing it inline makes the interleave
+    /// deterministic rather than scheduler-dependent. The finalize is
+    /// deliberately in-memory only, so any persisted
+    /// `Broadcast + Some(proof)` changeset can only have come from the
+    /// create path itself.
+    struct FinalizeDuringBroadcastBroadcaster {
+        wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        call_count: AtomicUsize,
+        /// The proof the simulated resume attaches, so the test can assert
+        /// it survived byte-for-byte.
+        proof: Mutex<Option<dpp::prelude::AssetLockProof>>,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for FinalizeDuringBroadcastBroadcaster {
+        async fn broadcast(&self, transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .expect("wallet present");
+            let lock = info
+                .tracked_asset_locks
+                .values_mut()
+                .next()
+                .expect("Built row tracked before broadcast");
+            assert_eq!(
+                lock.status,
+                AssetLockStatus::Built,
+                "create path must have tracked the row as Built before broadcasting"
+            );
+            let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: 4016,
+                out_point: lock.out_point,
+            });
+            lock.status = AssetLockStatus::ChainLocked;
+            lock.proof = Some(proof.clone());
+            *self.proof.lock().expect("staged proof mutex") = Some(proof);
+            drop(wm);
+
+            Ok(transaction.txid())
+        }
+    }
+
+    /// Regression: the create path's `Built` → `Broadcast` promotion must be
+    /// a compare-and-set too, not just resume's.
+    ///
+    /// `broadcast_funded_asset_lock` tracks the row as `Built`, then awaits
+    /// `broadcaster.broadcast(&tx)` — an unbounded network call. A
+    /// concurrent `resume_asset_lock` (the FFI catch-up scanner and the
+    /// funding resolver both drive one for any tracked outpoint) can pick
+    /// the row up in that window, broadcast the same transaction, obtain a
+    /// proof and finalize it to `InstantSendLocked` / `ChainLocked`. When
+    /// the original broadcast then returns `Ok`, an unconditional
+    /// `advance_asset_lock_status(.., Broadcast, None)` downgrades that
+    /// finalized row — and because `None` leaves the existing proof
+    /// attached, it recreates the inconsistent `Broadcast + Some(proof)`
+    /// state and persists it (changesets are last-write-wins). A later
+    /// resume takes the `Broadcast` arm and waits for a proof the row
+    /// already holds, unbounded for the user-facing funding flows.
+    ///
+    /// With the compare-and-set the promotion is skipped, the finalized
+    /// status and proof survive, and the successful broadcast is still
+    /// reported as success — this create-only half has nothing to
+    /// re-dispatch, since the proof wait lives in
+    /// `wait_for_funded_asset_lock_proof`.
+    #[tokio::test]
+    async fn create_broadcast_does_not_downgrade_a_row_finalized_during_the_broadcast() {
+        let (wallet_manager, wallet_id, _balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+
+        let broadcaster = Arc::new(FinalizeDuringBroadcastBroadcaster {
+            wallet_manager: Arc::clone(&wallet_manager),
+            wallet_id,
+            call_count: AtomicUsize::new(0),
+            proof: Mutex::new(None),
+        });
+        let persistence = Arc::new(CapturingPersistence::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::clone(&broadcaster),
+            WalletPersister::new(
+                wallet_id,
+                Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+
+        // The broadcast itself succeeds, so the create half reports success
+        // even though it did not own the final status.
+        let (_path, out_point) = manager
+            .broadcast_funded_asset_lock(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("a successful broadcast must still be reported as success");
+
+        assert_eq!(
+            broadcaster.call_count.load(Ordering::SeqCst),
+            1,
+            "the create-only half must broadcast exactly once — it has no \
+             re-dispatch path and must not re-broadcast after observing the \
+             advanced row"
+        );
+
+        let staged_proof = broadcaster
+            .proof
+            .lock()
+            .expect("staged proof mutex")
+            .clone()
+            .expect("the simulated resume staged a proof");
+
+        // The finalized row survives the create path's exit.
+        {
+            let wm = wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet still present");
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row still tracked");
+            assert_eq!(
+                lock.status,
+                AssetLockStatus::ChainLocked,
+                "a row finalized during the broadcast must not be downgraded \
+                 to Broadcast on the way out"
+            );
+            assert_eq!(
+                lock.proof.as_ref(),
+                Some(&staged_proof),
+                "the concurrently-attached proof must survive"
+            );
+        }
+
+        // …and the inconsistent pair was never persisted either.
         let stored = persistence
             .stored
             .lock()
