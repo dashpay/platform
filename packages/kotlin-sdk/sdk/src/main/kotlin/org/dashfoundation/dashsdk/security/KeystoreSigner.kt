@@ -87,20 +87,40 @@ class KeystoreSigner(
     ) {
         // Return immediately (vtable contract); work on IO.
         scope.launch {
+            // Idempotent completion guard. The native completeSign reclaims the
+            // PendingSign box via `Box::from_raw(token)` (rs-unified-sdk-jni),
+            // so a SECOND call with the same token is a double-free (undefined
+            // behavior) — the ABI requires EXACTLY one completion per token.
+            // Routing every completion through this guard makes each path fire
+            // at most once, including the cancellation path below that can race
+            // with an already-fired typed completion on the invalidation route.
+            val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+            val complete: (ByteArray?, Int, String?) -> Unit = { sig, code, msg ->
+                if (completed.compareAndSet(false, true)) {
+                    SignerNative.completeSign(completionToken, sig, code, msg)
+                }
+            }
             try {
                 // Platform-payment addresses (0xFF) have no stored private
                 // key — derive on demand from (mnemonic, derivationPath).
                 if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
-                    signPlatformAddressOnDemand(pubkeyBytes, data, completionToken)
+                    signPlatformAddressOnDemand(pubkeyBytes, data, complete)
                     return@launch
                 }
-                signWithStoredKey(pubkeyBytes, data, completionToken)
+                signWithStoredKey(pubkeyBytes, data, complete)
             } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
-                // NEVER swallow structured-concurrency cancellation (a teardown
-                // of the signer's IO scope): rethrow so the coroutine unwinds
-                // instead of masking the cancellation as a native completion
-                // (dashpay/platform#4183 review). The generic Exception handler
-                // below would otherwise catch it and call completeSign.
+                // Structured-concurrency cancellation: a teardown of the signer's
+                // IO scope, or cancellation surfaced by the suspend invalidation
+                // callback. The `scope.launch` job is INDEPENDENT of the Rust
+                // request, so rethrowing alone does NOT cancel the native
+                // receiver — the JNI PendingSign token would leak until the
+                // five-minute SIGN_ASYNC_COMPLETION_TIMEOUT. Release it NOW,
+                // exactly once: if a typed key-unavailable completion already
+                // fired on the invalidation path this is a no-op (guard),
+                // otherwise it completes with the generic cancellation result.
+                // Then rethrow so the coroutine still unwinds — NEVER swallow
+                // cancellation (dashpay/platform#4183 review).
+                complete(null, SignerNative.SIGNER_ERROR_CODE_GENERIC, "signing cancelled")
                 throw cancellation
             } catch (e: Exception) {
                 // Classify before completing: a KeyPermanentlyInvalidatedException
@@ -108,12 +128,7 @@ class KeystoreSigner(
                 // re-derived, and must surface as the typed code on the FIRST
                 // attempt — not as an opaque generic failure (#4060 round-2
                 // finding 2).
-                SignerNative.completeSign(
-                    completionToken,
-                    null,
-                    completionErrorCodeFor(e),
-                    e.message ?: "signing failed",
-                )
+                complete(null, completionErrorCodeFor(e), e.message ?: "signing failed")
             }
         }
     }
@@ -122,7 +137,7 @@ class KeystoreSigner(
     private suspend fun signWithStoredKey(
         pubkeyBytes: ByteArray,
         data: ByteArray,
-        completionToken: Long,
+        complete: (ByteArray?, Int, String?) -> Unit,
     ) {
         var key: ByteArray? = null
         try {
@@ -137,28 +152,42 @@ class KeystoreSigner(
                 // unavailable until re-derived — complete with the TYPED
                 // code on this first attempt instead of letting the generic
                 // catch-all label it an opaque signing failure (#4060
-                // round-2 finding 2). Record the invalidation durably first
-                // (finding 3) — best-effort: bookkeeping failure must not
-                // eat the typed completion.
+                // round-2 finding 2).
+                val keyUnavailableMessage =
+                    "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
+                        "${storageKey.take(16)}… (key permanently invalidated: " +
+                        "${e.message ?: "re-enrollment"})"
+                // Record the invalidation durably first (finding 3) —
+                // best-effort: bookkeeping failure must not eat the typed
+                // completion.
                 try {
                     onSigningKeyInvalidated?.invoke(storageKey)
                 } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
                     // The invalidation callback is suspend; runCatching would
                     // have swallowed its cancellation one layer too low and let
-                    // the sign continue. Rethrow so structured-concurrency
-                    // cancellation propagates (dashpay/platform#4183 review).
+                    // the sign continue. The key-unavailable result is ALREADY
+                    // known here, so complete the native token with the TYPED
+                    // code before unwinding — otherwise the cancellation would
+                    // skip the completion below and strand the PendingSign token
+                    // until the five-minute timeout. Then rethrow so
+                    // structured-concurrency cancellation still propagates. The
+                    // outer cancellation catch's completion is a no-op (the
+                    // idempotent guard) — no double-free
+                    // (dashpay/platform#4183 review).
+                    complete(
+                        null,
+                        SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
+                        keyUnavailableMessage,
+                    )
                     throw cancellation
                 } catch (_: Throwable) {
                     // Best-effort bookkeeping: a non-cancellation failure must
                     // not eat the typed completion below.
                 }
-                SignerNative.completeSign(
-                    completionToken,
+                complete(
                     null,
                     SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
-                    "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
-                        "${storageKey.take(16)}… (key permanently invalidated: " +
-                        "${e.message ?: "re-enrollment"})",
+                    keyUnavailableMessage,
                 )
                 return
             }
@@ -173,8 +202,7 @@ class KeystoreSigner(
                 // machine prefix — NOT for mixed old-native/new-Kotlin
                 // builds, which the completion JNI arity change makes
                 // unsupported outright.
-                SignerNative.completeSign(
-                    completionToken,
+                complete(
                     null,
                     SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
                     "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
@@ -184,15 +212,13 @@ class KeystoreSigner(
             }
             val signature = SignerNative.signWithPrivateKey(key, network.ffiValue, data)
             if (signature != null) {
-                SignerNative.completeSign(
-                    completionToken,
+                complete(
                     signature,
                     SignerNative.SIGNER_ERROR_CODE_GENERIC,
                     null,
                 )
             } else {
-                SignerNative.completeSign(
-                    completionToken,
+                complete(
                     null,
                     SignerNative.SIGNER_ERROR_CODE_GENERIC,
                     "signing returned no data",
@@ -213,7 +239,7 @@ class KeystoreSigner(
     private suspend fun signPlatformAddressOnDemand(
         addressHash: ByteArray,
         data: ByteArray,
-        completionToken: Long,
+        complete: (ByteArray?, Int, String?) -> Unit,
     ) {
         val hashHex = addressHash.joinToString("") { "%02x".format(it) }
         // The hash may live in several wallets' rows (per-wallet
@@ -222,8 +248,7 @@ class KeystoreSigner(
         // so scan for the first signable candidate.
         val rows = platformAddressDao.getAllByAddressHash(addressHash)
         if (rows.isEmpty()) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
                 SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no platform address row for $hashHex",
@@ -234,8 +259,7 @@ class KeystoreSigner(
             it.derivationPath.isNotEmpty() && storage.hasMnemonic(it.walletId)
         }
         if (row == null) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
                 SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no signable platform address row for $hashHex " +
@@ -248,8 +272,7 @@ class KeystoreSigner(
         // discipline, applied here to the signing path).
         val mnemonicUtf8 = storage.retrieveMnemonicUtf8(row.walletId)
         if (mnemonicUtf8 == null) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
                 SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no mnemonic stored for wallet of platform address $hashHex",
@@ -265,15 +288,13 @@ class KeystoreSigner(
             SignerNative.signWithMnemonicAndPathInto(m, path, net, payload)
         }
         if (signature != null) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 signature,
                 SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 null,
             )
         } else {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
                 SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "signing returned no data",
