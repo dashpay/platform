@@ -1578,7 +1578,9 @@ where
 pub async fn identity_create_from_one_time_key<S, P, IS>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
-    one_time_sk: [u8; 32],
+    // Bearer spend authority: carried in a `Zeroizing` buffer so every wallet-layer
+    // copy of the one-time spending key is scrubbed on drop (#4204 key-hygiene).
+    one_time_sk: zeroize::Zeroizing<[u8; 32]>,
     funding_birth_height: Option<u32>,
     change_address: &OrchardAddress,
     public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
@@ -1603,7 +1605,7 @@ where
     // Derive the Orchard key material from the one-time spending key. `from_bytes`
     // returns a `CtOption`; an invalid scalar means the caller handed us a
     // non-key, which is a hard input error.
-    let sk: SpendingKey = Option::from(SpendingKey::from_bytes(one_time_sk)).ok_or_else(|| {
+    let sk: SpendingKey = Option::from(SpendingKey::from_bytes(*one_time_sk)).ok_or_else(|| {
         PlatformWalletError::ShieldedKeyDerivation(
             "one-time spending key is not a valid Orchard SpendingKey".to_string(),
         )

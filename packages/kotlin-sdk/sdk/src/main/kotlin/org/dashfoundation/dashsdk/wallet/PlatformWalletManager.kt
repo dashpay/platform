@@ -2323,11 +2323,17 @@ data class OneTimeOrchardKey(
  */
 fun generateOneTimeOrchardKey(): OneTimeOrchardKey {
     val blob = mapNativeErrors { FundingNative.generateOneTimeOrchardKey() }
-    require(blob.size == 75) { "expected a 75-byte sk||address blob, got ${blob.size}" }
-    return OneTimeOrchardKey(
-        spendingKey = blob.copyOfRange(0, 32),
-        address = blob.copyOfRange(32, 75),
-    )
+    // The blob's first 32 bytes are bearer spend authority; wipe the transient
+    // JVM copy once the two owned arrays have been sliced out (#4204 key-hygiene).
+    try {
+        require(blob.size == 75) { "expected a 75-byte sk||address blob, got ${blob.size}" }
+        return OneTimeOrchardKey(
+            spendingKey = blob.copyOfRange(0, 32),
+            address = blob.copyOfRange(32, 75),
+        )
+    } finally {
+        blob.fill(0)
+    }
 }
 
 /**
