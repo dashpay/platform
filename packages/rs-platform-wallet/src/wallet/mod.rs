@@ -26,4 +26,6 @@ pub use platform_wallet::{
     PlatformWallet, PlatformWalletInfo, WalletId, WalletStateReadGuard, WalletStateWriteGuard,
 };
 pub use provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
-pub use signed_payment_registry::{ReservationToken, SignedPaymentError, SignedPaymentRegistry};
+pub use signed_payment_registry::{
+    RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
+};

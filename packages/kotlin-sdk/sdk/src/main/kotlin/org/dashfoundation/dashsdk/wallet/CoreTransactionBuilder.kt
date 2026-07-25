@@ -188,7 +188,26 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
             accountIndex,
             coreSignerHandle,
         )
-        return ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
+        // Native finalization has ALREADY inserted the payment and committed its
+        // reservation by the time this blob returns; the token only gains its
+        // owning NativeCleaner once fromRegisterBlob finishes constructing the
+        // SignedCoreTransaction. So if construction throws (allocation failure, a
+        // malformed blob from an ABI mismatch, or Cleaner-registration failure)
+        // the native token would be registered with no JVM owner able to release
+        // it, leaking the reservation until key-wallet's TTL. Parse the token
+        // first (its 8 big-endian bytes lead the blob) and release it defensively
+        // if ownership construction fails, mirroring the owner-guarded release on
+        // the rest of the deferred path (dashpay/platform#4185).
+        var token: Long? = null
+        return try {
+            token = java.nio.ByteBuffer.wrap(blob).long
+            ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(blob)
+        } catch (error: Throwable) {
+            token?.let { value ->
+                runCatching { WalletManagerNative.coreWalletReleaseSignedPayment(value) }
+            }
+            throw error
+        }
     }
 
     override fun close() {
