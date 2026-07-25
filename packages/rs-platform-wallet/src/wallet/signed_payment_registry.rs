@@ -66,7 +66,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use dashcore::{Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
@@ -184,6 +184,33 @@ pub enum SignedPaymentError {
     Broadcast(#[from] PlatformWalletError),
 }
 
+/// The wallet handed to [`SignedPaymentRegistry::register`] is **not** the
+/// generation the payment was finalized against, so registering it would bind
+/// the reservation to the wrong wallet. Registration is refused up front rather
+/// than minting a token that later broadcasts through — and runs cleanup
+/// against — a wallet whose `ReservationSet` never held the inputs
+/// (`dashpay/platform#4185`).
+///
+/// The rejected [`SignedCoreTransaction`] is returned so its held funding
+/// reservation is **never stranded**: the caller still owns it and can release
+/// it through the correct wallet ([`CoreWallet::abandon_transaction`]) or drop
+/// it. This mirrors the owner-guarded discipline of the rest of the deferred
+/// path — an ownership object is never dropped on a failure path without the
+/// caller getting a chance to reconcile its reservation.
+#[derive(Debug)]
+pub struct RegisterWrongGeneration {
+    /// The finalized payment `register` refused to bind, handed back intact.
+    pub signed: SignedCoreTransaction,
+}
+
+impl std::fmt::Display for RegisterWrongGeneration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("registration wallet is not the generation the payment was finalized against")
+    }
+}
+
+impl std::error::Error for RegisterWrongGeneration {}
+
 /// A built, signed transaction whose funding UTXOs are reserved, awaiting a
 /// deferred broadcast or an explicit release.
 struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
@@ -278,13 +305,43 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// (`SignedCoreTransaction::reservation_token`) are all derived from that
     /// object here rather than supplied independently by the caller.
     ///
-    /// `core` is the wallet the payment was built against; it is captured so the
-    /// later operation acts on the exact reservation state that holds the inputs.
-    pub async fn register(
+    /// `core` is the wallet the token is bound to for its later broadcast /
+    /// release. It **must** be the same wallet *generation* the payment was
+    /// finalized against — validated here against the unforgeable
+    /// `origin_generation` marker `SignedCoreTransaction` captured at finalize.
+    /// Binding to any other wallet is refused with [`RegisterWrongGeneration`]
+    /// (the rejected `signed` handed back so its reservation is not stranded):
+    /// otherwise safe public code could finalize through wallet A and
+    /// `register(core_b, signed_from_a)`, after which broadcasting through B
+    /// would pass the generation check and submit A's transaction through B's
+    /// broadcaster while cleanup ran against B and A's real reservation leaked
+    /// until its TTL. Deriving/validating the core from the consumed object
+    /// (rather than trusting a separate argument) upholds the documented
+    /// guarantee that a token is bound to the generation whose `ReservationSet`
+    /// owns the inputs.
+    ///
+    /// Synchronous **by design**: the body performs the reservation-owning
+    /// insertion with no `.await`, so there is no future that could be dropped
+    /// before its first poll and silently drop the consumed `signed` — and its
+    /// held reservation — without inserting it. An `async fn` here would only
+    /// move `signed` into a future whose body runs on the first poll; dropping
+    /// that future before polling would leak the reservation to key-wallet's TTL
+    /// (`dashpay/platform#4185`). Callers invoke it directly.
+    pub fn register(
         &self,
         core: CoreWallet<B>,
         signed: SignedCoreTransaction,
-    ) -> ReservationToken {
+    ) -> Result<ReservationToken, RegisterWrongGeneration> {
+        // Bind the payment to the EXACT generation it was finalized against.
+        // `core.generation()` and `signed.origin_generation()` are the same kind
+        // of per-generation balance `Arc` `is_same_generation` pointer-compares;
+        // a mismatch means `core` is a different (switched / stale / unrelated)
+        // wallet than the one whose `ReservationSet` holds the inputs. Refuse
+        // BEFORE consuming `signed`, and hand it back so the caller can reconcile
+        // its reservation.
+        if !Arc::ptr_eq(core.generation(), signed.origin_generation()) {
+            return Err(RegisterWrongGeneration { signed });
+        }
         let parts = signed.into_registered_parts();
         let token = ReservationToken(self.next_token.fetch_add(1, Ordering::SeqCst));
         self.lock().insert(
@@ -298,7 +355,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
                 funding_reservation_token: parts.reservation_token,
             },
         );
-        token
+        Ok(token)
     }
 
     /// Broadcast the payment behind `token`, reconciling its UTXO reservation on
@@ -464,7 +521,8 @@ mod tests {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     use super::{
-        ReservationToken, SignedPaymentError, SignedPaymentRegistry, RESERVATION_MAX_AGE_BLOCKS,
+        RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
+        RESERVATION_MAX_AGE_BLOCKS,
     };
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::test_support::{
@@ -631,6 +689,10 @@ mod tests {
             account_index,
             current_height,
             reservation_token,
+            // Stamp the finalizing generation so registering through this same
+            // `core` passes the registry's generation binding, exactly as the
+            // production finalize path does.
+            core.generation().clone(),
         ))
     }
 
@@ -655,7 +717,9 @@ mod tests {
         let expected_bytes = dashcore::consensus::serialize(signed.transaction());
         let expected_txid = signed.transaction().txid();
 
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
         assert_eq!(registry.outstanding(), 1);
 
         // Broadcast through a *clone* of the same wallet instance — the
@@ -689,7 +753,9 @@ mod tests {
             let signed = build_signed_tx(&core, account_type, 0, &outputs, &signer)
                 .await
                 .expect("build should succeed");
-            let token = registry.register(core.clone(), signed).await;
+            let token = registry
+                .register(core.clone(), signed)
+                .expect("test registers with the finalizing generation");
 
             // With the reservation held, an immediate rebuild finds no
             // spendable UTXO and fails.
@@ -750,7 +816,9 @@ mod tests {
             .await
             .expect("coinjoin finalize should succeed");
 
-        let token = registry.register(core.clone(), finalized).await;
+        let token = registry
+            .register(core.clone(), finalized)
+            .expect("test registers with the finalizing generation");
 
         // Reservation held: a second CoinJoin finalize finds no unreserved input.
         let blocked = core
@@ -807,7 +875,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         registry
             .broadcast(token, &core)
@@ -842,7 +912,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         registry.release(token).await;
         // Second release: no panic, no error, still consumed.
@@ -868,7 +940,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         registry.release(token).await;
         let sent = registry.broadcast(token, &core).await;
@@ -923,7 +997,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core_a.clone(), signed).await;
+        let token = registry
+            .register(core_a.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         let sent = registry.broadcast(token, &core_b).await;
         assert!(
@@ -939,6 +1015,79 @@ mod tests {
             registry.outstanding(),
             1,
             "a mismatched broadcast must NOT consume the rightful owner's token"
+        );
+    }
+
+    /// Regression for `dashpay/platform#4185` blocker: registration must bind the
+    /// token to the SAME wallet generation the payment was finalized against, not
+    /// to a separately-supplied wallet. Registering a payment finalized through
+    /// wallet A through an unrelated wallet B is refused up front with
+    /// [`RegisterWrongGeneration`], no token is minted (so B can never broadcast
+    /// A's transaction through B's broadcaster or run cleanup against B), and the
+    /// rejected `SignedCoreTransaction` is handed back so A's reservation is not
+    /// stranded — releasing it through A frees the input for an immediate rebuild.
+    #[tokio::test]
+    async fn register_rejects_a_different_wallet_generation() {
+        let (core_a, signer_a, outputs_a) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(CountingBroadcaster::new()),
+        )
+        .await;
+        // A separate wallet-manager instance stands in for an unrelated / re-created
+        // generation: same account shape, different generation-identity `Arc`.
+        let (core_b, _signer_b, _outputs_b) = funded_core_wallet(
+            StandardAccountType::BIP44Account,
+            Arc::new(CountingBroadcaster::new()),
+        )
+        .await;
+        let registry = SignedPaymentRegistry::new();
+
+        let signed = build_signed_tx(
+            &core_a,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs_a,
+            &signer_a,
+        )
+        .await
+        .expect("build should succeed");
+
+        // Registering A's finalized payment through wallet B is refused, and no
+        // token is minted.
+        let baseline = registry.outstanding();
+        let rejected = registry.register(core_b.clone(), signed);
+        let RegisterWrongGeneration { signed } = match rejected {
+            Err(err) => err,
+            Ok(_) => panic!("registering through a different generation must be refused"),
+        };
+        assert_eq!(
+            registry.outstanding(),
+            baseline,
+            "a rejected registration must not mint a token"
+        );
+
+        // Registering through the correct generation (an alias of A) is accepted:
+        // the guard binds to generation identity, not wallet-manager pointer.
+        let token = registry
+            .register(core_a.clone(), signed)
+            .expect("registering through the finalizing generation must be accepted");
+        assert_eq!(registry.outstanding(), baseline + 1);
+
+        // The reservation is A's and is reachable: releasing the token frees the
+        // input, so an immediate rebuild on A succeeds — nothing was stranded.
+        registry.release(token).await;
+        assert_eq!(registry.outstanding(), baseline);
+        let rebuilt = build_signed_tx(
+            &core_a,
+            StandardAccountType::BIP44Account,
+            0,
+            &outputs_a,
+            &signer_a,
+        )
+        .await;
+        assert!(
+            rebuilt.is_ok(),
+            "the reservation must be reachable after a rejected mis-binding, got {rebuilt:?}"
         );
     }
 
@@ -961,7 +1110,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         let sent = registry.broadcast(token, &core).await;
         assert!(
@@ -1009,7 +1160,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         let mut handles = Vec::new();
         for _ in 0..8 {
@@ -1086,7 +1239,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         // Advance past the age bound but stay below key-wallet's 24-block TTL, so
         // the reservation is provably still held (only our guard has tripped).
@@ -1143,7 +1298,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         advance_processed_height(&core, registered_height + RESERVATION_MAX_AGE_BLOCKS + 2).await;
 
@@ -1185,7 +1342,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         // A sibling handle over the SAME manager Arc but a different wallet_id —
         // `Arc::ptr_eq` on `wallet_manager` is true, so only the wallet_id check
@@ -1237,7 +1396,9 @@ mod tests {
         )
         .await
         .expect("build A should succeed");
-        let token_a = registry.register(core_a.clone(), signed_a).await;
+        let token_a = registry
+            .register(core_a.clone(), signed_a)
+            .expect("test registers with the finalizing generation");
         let signed_b = build_signed_tx(
             &core_b,
             StandardAccountType::BIP44Account,
@@ -1247,7 +1408,9 @@ mod tests {
         )
         .await
         .expect("build B should succeed");
-        let _token_b = registry.register(core_b.clone(), signed_b).await;
+        let _token_b = registry
+            .register(core_b.clone(), signed_b)
+            .expect("test registers with the finalizing generation");
         assert_eq!(registry.outstanding(), 2);
 
         let removed = registry.remove_entries_for_wallet(&core_a);
@@ -1316,7 +1479,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core_a.clone(), signed).await;
+        let token = registry
+            .register(core_a.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         // Wrong wallet: mismatch, and the token MUST survive for its owner.
         let mismatched = registry.broadcast(token, &core_b).await;
@@ -1399,7 +1564,9 @@ mod tests {
 
         // Register: the age baseline is the reservation height the consumed
         // object carries, not the advanced `last_processed_height` sampled now.
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         // One block past the reservation height (still below the 24-block TTL)
         // trips the guard because the baseline is `reservation_height`.
@@ -1460,7 +1627,9 @@ mod tests {
         )
         .await
         .expect("build should succeed");
-        let token = registry.register(core.clone(), signed).await;
+        let token = registry
+            .register(core.clone(), signed)
+            .expect("test registers with the finalizing generation");
 
         // Reservation held: a rebuild fails at input selection.
         let blocked = build_signed_tx(
@@ -1562,7 +1731,9 @@ mod tests {
         // Capture the built tx before `register` consumes the ownership object;
         // the sweep below needs it to release the outpoint by hand.
         let finalized_tx = finalized.transaction().clone();
-        let token = registry.register(core.clone(), finalized).await;
+        let token = registry
+            .register(core.clone(), finalized)
+            .expect("test registers with the finalizing generation");
 
         // Model key-wallet's TTL sweep: the outpoint returns to the selectable
         // pool, but the registry still holds T1.

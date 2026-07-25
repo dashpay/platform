@@ -108,6 +108,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         &self.balance
     }
 
+    /// This handle's per-generation identity marker, cloned — for tests (and
+    /// downstream FFI-crate tests via `test-utils`) that build a finalized
+    /// [`SignedCoreTransaction`](crate::SignedCoreTransaction) with
+    /// [`new_for_test`](crate::SignedCoreTransaction::new_for_test) and must
+    /// stamp it with the SAME generation they then register it against, exactly
+    /// as the production `finalize_transaction` path binds a token to the
+    /// finalizing wallet.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn test_generation_marker(&self) -> Arc<WalletBalance> {
+        Arc::clone(&self.balance)
+    }
+
     pub async fn set_gap_limit(
         &self,
         account_type: AccountTypePreference,
