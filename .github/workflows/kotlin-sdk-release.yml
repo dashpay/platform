@@ -42,19 +42,40 @@ jobs:
       # A workflow_dispatch `tag` input is free-form and actions/checkout would
       # happily resolve it to a BRANCH (or any ref), which would let a manual
       # run publish a Maven version derived from a moving branch instead of an
-      # immutable tag. Resolve the ref HERE and hard-fail unless it names an
-      # existing tag, then hand the checkout an explicit refs/tags/<tag> ref so
-      # it can never bind to a branch. The tag-push trigger is already
-      # tag-bound (github.ref is refs/tags/kotlin-sdk-*) and skips the lookup.
+      # immutable tag. Even a valid tag ref is MUTABLE: handing checkout a
+      # refs/tags/<tag> ref lets a writer force-move the tag from commit A to
+      # commit B between the run's trigger and this checkout, so checkout would
+      # build B while the run (and the pending maven-central approval) originated
+      # from A — code would be substituted behind the human gate. So resolve an
+      # IMMUTABLE COMMIT SHA here and hand THAT to checkout:
+      #   * tag push  -> the event SHA (github.sha), the commit the tag pointed
+      #                  at when the run was created;
+      #   * dispatch  -> peel the selected tag to the commit it currently names
+      #                  (dereferencing an annotated tag object).
+      # Checkout then binds to a fixed commit, never a moving ref, and the
+      # later tag-to-SHA guards (attach-time here, and re-validated after
+      # approval in the deploy job) still catch a force-move.
       - name: Resolve and validate release ref
         id: release-ref
         env:
           DISPATCH_TAG: ${{ github.event.inputs.tag }}
           PUSH_REF: ${{ github.ref }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Peel a tag to the immutable COMMIT sha it currently points at,
+          # dereferencing an annotated tag object to its target commit.
+          peel_tag_to_commit() {
+            tag="$1"
+            obj_type=$(gh api "repos/${REPO}/git/ref/tags/${tag}" --jq '.object.type') || return 1
+            obj_sha=$(gh api "repos/${REPO}/git/ref/tags/${tag}" --jq '.object.sha') || return 1
+            if [ "$obj_type" = "tag" ]; then
+              obj_sha=$(gh api "repos/${REPO}/git/tags/${obj_sha}" --jq '.object.sha') || return 1
+            fi
+            printf '%s\n' "$obj_sha"
+          }
           if [ -n "$DISPATCH_TAG" ]; then
             # Accept either the short tag or a full refs/tags/ ref; reject
             # anything else (a bare branch name, refs/heads/..., or a slashed
@@ -72,10 +93,13 @@ jobs:
               echo "::error::No existing tag 'refs/tags/${TAG}' in ${REPO}. workflow_dispatch can only (re-)release an existing tag, never a branch or arbitrary ref."
               exit 1
             fi
-            echo "checkout_ref=refs/tags/${TAG}" >> "$GITHUB_OUTPUT"
+            SHA=$(peel_tag_to_commit "$TAG") || { echo "::error::Could not resolve tag '${TAG}' to a commit."; exit 1; }
+            echo "checkout_sha=${SHA}" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT_NAME" = "push" ]; then
-            # Tag-push trigger: github.ref is already refs/tags/kotlin-sdk-*.
-            echo "checkout_ref=${PUSH_REF}" >> "$GITHUB_OUTPUT"
+            # Tag-push trigger: the event SHA is the immutable commit the tag
+            # pointed at when this run was created. Use it directly — a
+            # post-trigger force-move of the tag cannot change it.
+            echo "checkout_sha=${EVENT_SHA}" >> "$GITHUB_OUTPUT"
           else
             # workflow_dispatch with NO `tag` input. github.ref is whatever ref
             # the run was started from — typically a BRANCH — so it must not be
@@ -83,10 +107,13 @@ jobs:
             # would otherwise fall through to the tag-push handling above and
             # publish a Maven version derived from a moving branch. Only accept
             # an empty input when the dispatch itself was started at a tag ref;
-            # otherwise require an explicit existing tag.
+            # otherwise require an explicit existing tag. Peel that tag to its
+            # commit so checkout still binds to an immutable SHA.
             case "$PUSH_REF" in
               refs/tags/*)
-                echo "checkout_ref=${PUSH_REF}" >> "$GITHUB_OUTPUT"
+                TAG="${PUSH_REF#refs/tags/}"
+                SHA=$(peel_tag_to_commit "$TAG") || { echo "::error::Could not resolve tag '${TAG}' to a commit."; exit 1; }
+                echo "checkout_sha=${SHA}" >> "$GITHUB_OUTPUT"
                 ;;
               *)
                 echo "::error::workflow_dispatch requires the 'tag' input (an existing kotlin-sdk-* tag) or must be dispatched at a tag ref — refusing to release from '${PUSH_REF}', which is not a tag."
@@ -98,11 +125,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Always an explicit refs/tags/<tag> (validated above) or the
-          # tag-push github.ref — never the raw dispatch input — so the
-          # released AAR is built from the tag's commit and a manual run can
-          # never build from a branch.
-          ref: ${{ steps.release-ref.outputs.checkout_ref }}
+          # An immutable COMMIT SHA resolved above — never a mutable tag/branch
+          # ref — so the released AAR is built from a fixed commit that a
+          # force-moved tag cannot substitute behind the environment approval,
+          # and a manual run can never build from a branch.
+          ref: ${{ steps.release-ref.outputs.checkout_sha }}
 
       - name: Resolve built commit SHA
         id: resolve-sha
@@ -349,9 +376,42 @@ jobs:
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The build job's tag-guard verified tag -> built SHA, but that ran BEFORE
+      # this job's (possibly long) human-approval pause. A writer could
+      # force-move the tag DURING that pause: the checkout below is pinned to the
+      # immutable built SHA so this job still stages the approved code, but Maven
+      # Central would then publish the approved version under a tag that now
+      # identifies a DIFFERENT commit, breaking the tag-as-source-of-truth
+      # invariant. So immediately after approval — before checkout or staging —
+      # re-resolve and peel the release tag and abort unless it STILL points at
+      # the exact commit that was built and approved.
+      - name: Revalidate release tag resolves to the built commit (post-approval)
+        if: steps.secrets-gate.outputs.proceed == 'true'
+        env:
+          TAG: ${{ needs.build-and-release.outputs.tag_name }}
+          BUILT_SHA: ${{ needs.build-and-release.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Resolve the tag's current commit, dereferencing an annotated tag to
+          # the commit it points at.
+          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
+          fi
+          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this release was built and approved for ${BUILT_SHA} — the tag was force-moved during the approval pause. Refusing to publish so the Maven Central version cannot be released under a tag that identifies a different commit."
+            exit 1
+          fi
+          echo "::notice::Tag ${TAG} still resolves to the approved commit ${BUILT_SHA} — proceeding to publish."
+
       - name: Checkout repository
         if: steps.secrets-gate.outputs.proceed == 'true'
-        uses: actions/checkout@v4
+        # Pinned to a reviewed full commit SHA (v4) — a mutable major ref could
+        # be force-moved to substitute this checkout before the credentialed
+        # Gradle/jreleaser steps below receive the Maven Central token + GPG key.
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Pin to the exact SHA the build job resolved, NOT the tag ref: the
           # deploy job runs after an arbitrarily long human-approval pause, and
@@ -362,14 +422,14 @@ jobs:
 
       - name: Set up JDK 17
         if: steps.secrets-gate.outputs.proceed == 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
         if: steps.secrets-gate.outputs.proceed == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
           # No Rust/cargo here — the native libraries are downloaded below. The
           # NDK is still needed because AGP strips the packaged .so at assemble
@@ -381,14 +441,14 @@ jobs:
 
       - name: Restore native libraries from the build job
         if: steps.secrets-gate.outputs.proceed == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: kotlin-sdk-jnilibs
           path: packages/kotlin-sdk/sdk/src/main/jniLibs
 
       - name: Setup Gradle
         if: steps.secrets-gate.outputs.proceed == 'true'
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
 
       # Stages the signed release AAR + sources/javadoc jars into
       # sdk/build/staging-deploy. Task dependencies enforce the publish
