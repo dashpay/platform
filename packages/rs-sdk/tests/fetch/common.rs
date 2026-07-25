@@ -114,11 +114,16 @@ pub fn mock_data_contract(
 /// `ExtendedEpochInfo::fetch_current` expectation and consumes it, leaving the SDK
 /// ratcheted to `LATEST_VERSION`.
 pub(crate) async fn bootstrap_mock_sdk_to_latest(sdk: &mut Sdk) {
+    // `fetch_current` issues two queries: a genesis probe, then a descending
+    // fetch from the hinted current epoch (mock expectation metadata reports
+    // epoch 0, so the hint is 0).
+    let probe_query = LimitQuery {
+        query: EpochQuery::genesis(),
+        limit: Some(1),
+        start_info: None,
+    };
     let query = LimitQuery {
-        query: EpochQuery {
-            start: None,
-            ascending: false,
-        },
+        query: EpochQuery::newest_at_or_below(0),
         limit: Some(1),
         start_info: None,
     };
@@ -132,6 +137,10 @@ pub(crate) async fn bootstrap_mock_sdk_to_latest(sdk: &mut Sdk) {
         protocol_version: dpp::version::LATEST_VERSION,
     });
 
+    sdk.mock()
+        .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+        .await
+        .expect("register epoch probe expectation");
     sdk.mock()
         .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch.clone()))
         .await

@@ -266,7 +266,7 @@ mod tests {
     use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use crate::util::batch::GroveDbOpBatch;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::epoch::Epoch;
+    use dpp::block::epoch::{Epoch, MAX_EPOCH};
 
     #[test]
     fn should_prove_and_verify_epoch_infos_ascending() {
@@ -441,6 +441,35 @@ mod tests {
                 protocol_version: platform_version.protocol_version,
             }
             .into()
+        );
+
+        // Descending with a start above the current epoch does NOT skip forward to
+        // the newest started epoch: the initial state structure pre-creates empty
+        // epoch trees ahead of the current one, and the query limit is consumed by
+        // those empty trees, so the proof verifiably contains no epochs at all.
+        // This is why "fetch the current epoch" cannot be expressed as a single
+        // descending query from MAX_EPOCH — the SDK's `fetch_current` must first
+        // learn the current epoch index and use it as an explicit start (as the
+        // in-range `Some(1)` queries above do).
+        let max_start_proof = drive
+            .prove_epochs_infos(MAX_EPOCH, 1, false, None, platform_version)
+            .expect("should prove epoch infos from MAX_EPOCH");
+
+        let (_root_hash, far_future_start_infos) = Drive::verify_epoch_infos(
+            &max_start_proof,
+            1,
+            Some(MAX_EPOCH),
+            1,
+            false,
+            platform_version,
+        )
+        .expect("should verify epoch infos descending from MAX_EPOCH");
+
+        assert_eq!(
+            far_future_start_infos.len(),
+            0,
+            "descending from inside the pre-created empty epoch window must \
+             provably return no epochs, not the newest started epoch"
         );
     }
 }

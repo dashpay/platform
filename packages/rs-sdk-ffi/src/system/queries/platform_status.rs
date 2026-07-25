@@ -4,8 +4,7 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
 use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dash_sdk::platform::types::epoch::EpochQuery;
-use dash_sdk::platform::{FetchMany, LimitQuery};
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use std::ffi::CString;
 use std::os::raw::c_void;
 
@@ -64,40 +63,29 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
 
     rt.block_on(async move {
         // Query for the most recent epoch
-        let query = LimitQuery {
-            query: EpochQuery {
-                start: None,
-                ascending: false, // Get most recent first
-            },
-            limit: Some(1),
-            start_info: None,
-        };
+        match ExtendedEpochInfo::fetch_current(&sdk).await {
+            Ok(epoch) => {
+                // Calculate current block height
+                // This is an approximation - the actual current block height would need a different query
+                let block_height = epoch.first_block_height();
+                let core_height = epoch.first_core_block_height();
 
-        match ExtendedEpochInfo::fetch_many(&sdk, query).await {
-            Ok(epochs) => {
-                // Get the first (most recent) epoch
-                if let Some((_, Some(epoch))) = epochs.iter().next() {
-                    // Calculate current block height
-                    // This is an approximation - the actual current block height would need a different query
-                    let block_height = epoch.first_block_height();
-                    let core_height = epoch.first_core_block_height();
-
-                    let json = format!(
-                        r#"{{"version":{},"network":"{}","blockHeight":{},"coreHeight":{}}}"#,
-                        10, // Protocol version
-                        network_str,
-                        block_height,
-                        core_height
-                    );
-                    Ok(json)
-                } else {
-                    // If no epochs found, return default values
-                    let json = format!(
-                        r#"{{"version":{},"network":"{}","blockHeight":0,"coreHeight":0}}"#,
-                        10, network_str
-                    );
-                    Ok(json)
-                }
+                let json = format!(
+                    r#"{{"version":{},"network":"{}","blockHeight":{},"coreHeight":{}}}"#,
+                    10, // Protocol version
+                    network_str,
+                    block_height,
+                    core_height
+                );
+                Ok(json)
+            }
+            Err(dash_sdk::Error::EpochNotFound) => {
+                // If no epochs found, return default values
+                let json = format!(
+                    r#"{{"version":{},"network":"{}","blockHeight":0,"coreHeight":0}}"#,
+                    10, network_str
+                );
+                Ok(json)
             }
             Err(e) => Err(format!("Failed to fetch platform status: {}", e)),
         }

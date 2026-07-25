@@ -2104,12 +2104,16 @@ mod test {
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
 
-        // Must match the query `ExtendedEpochInfo::fetch_current` issues.
+        // Must match the two queries `ExtendedEpochInfo::fetch_current` issues:
+        // a genesis probe, then a descending fetch from the hinted current epoch
+        // (mock expectation metadata reports epoch 0, so the hint is 0).
+        let probe_query = LimitQuery {
+            query: EpochQuery::genesis(),
+            limit: Some(1),
+            start_info: None,
+        };
         let query = LimitQuery {
-            query: EpochQuery {
-                start: None,
-                ascending: false,
-            },
+            query: EpochQuery::newest_at_or_below(0),
             limit: Some(1),
             start_info: None,
         };
@@ -2123,6 +2127,10 @@ mod test {
             protocol_version: dpp::version::LATEST_VERSION,
         });
 
+        sdk.mock()
+            .expect_fetch::<ExtendedEpochInfo, _>(probe_query, Some(epoch.clone()))
+            .await
+            .expect("register epoch probe expectation");
         sdk.mock()
             .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch))
             .await
