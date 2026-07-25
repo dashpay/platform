@@ -55,6 +55,47 @@ pub enum AssetLockStatus {
     Consumed,
 }
 
+impl AssetLockStatus {
+    /// Position of this variant in the asset lock's forward-only
+    /// lifecycle, used to reject a delayed writer's *backward* status
+    /// write (see
+    /// [`advance_asset_lock_status`](crate::wallet::asset_lock::manager::AssetLockManager::advance_asset_lock_status)).
+    ///
+    /// A lock only ever moves forward: it is built, broadcast, covered
+    /// by an InstantSend lock, then by a ChainLock, then consumed. But
+    /// the two proof-bearing stages are produced by *independent*
+    /// waiters — an IS-lock arrives from one SPV event and a ChainLock
+    /// from another — so nothing about the call order guarantees the
+    /// stronger one is written last. A delayed
+    /// `InstantSendLocked + IS proof` write landing after a
+    /// `ChainLocked + CL proof` one would replace strictly better
+    /// evidence with weaker evidence, in memory and durably. Comparing
+    /// ranks is what lets the write be refused.
+    ///
+    /// Ranks are assigned by an exhaustive match on named variants
+    /// rather than by `as u8` on the declaration order. The two agree
+    /// today, but the enum's order is also load-bearing for the FFI
+    /// discriminants (`status_from_u8`) and the SQLite label domain,
+    /// and this ordering is a *semantic* claim about the lifecycle —
+    /// tying it to declaration position would let a future reordering
+    /// silently redefine which writes count as downgrades. The match
+    /// has no `_` arm, so adding a variant is a compile error here, the
+    /// same signal the enum's `#[non_exhaustive]` note describes.
+    ///
+    /// `Consumed` ranks highest: it is terminal, and its entry is
+    /// dropped from `tracked_asset_locks` outright (so in practice an
+    /// advance against it fails the tracked-row lookup first).
+    pub(crate) fn lifecycle_rank(&self) -> u8 {
+        match self {
+            AssetLockStatus::Built => 0,
+            AssetLockStatus::Broadcast => 1,
+            AssetLockStatus::InstantSendLocked => 2,
+            AssetLockStatus::ChainLocked => 3,
+            AssetLockStatus::Consumed => 4,
+        }
+    }
+}
+
 /// A tracked asset lock. Private keys are NOT stored here — they're
 /// re-derived from funding_type + identity_index via key-wallet's Wallet.
 #[derive(Debug, Clone)]
@@ -84,5 +125,54 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
             status: lock.status.clone(),
             proof: lock.proof.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AssetLockStatus;
+
+    /// The lifecycle order the monotonicity guard enforces, written out
+    /// in full. Pinned by value rather than derived from the enum so a
+    /// reordering of the declaration (which the FFI discriminants and
+    /// the SQLite label domain also depend on) cannot silently redefine
+    /// which writes count as downgrades.
+    #[test]
+    fn lifecycle_rank_pins_the_forward_only_order() {
+        assert_eq!(AssetLockStatus::Built.lifecycle_rank(), 0);
+        assert_eq!(AssetLockStatus::Broadcast.lifecycle_rank(), 1);
+        assert_eq!(AssetLockStatus::InstantSendLocked.lifecycle_rank(), 2);
+        assert_eq!(AssetLockStatus::ChainLocked.lifecycle_rank(), 3);
+        assert_eq!(AssetLockStatus::Consumed.lifecycle_rank(), 4);
+    }
+
+    /// Every variant is strictly ordered against every other, and the
+    /// single comparison the guard actually turns on — a ChainLocked row
+    /// outranking a late InstantSendLocked write — holds.
+    #[test]
+    fn lifecycle_rank_is_strictly_increasing_across_the_lifecycle() {
+        let lifecycle = [
+            AssetLockStatus::Built,
+            AssetLockStatus::Broadcast,
+            AssetLockStatus::InstantSendLocked,
+            AssetLockStatus::ChainLocked,
+            AssetLockStatus::Consumed,
+        ];
+        for pair in lifecycle.windows(2) {
+            assert!(
+                pair[0].lifecycle_rank() < pair[1].lifecycle_rank(),
+                "{:?} must rank strictly below {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+
+        assert!(
+            AssetLockStatus::InstantSendLocked.lifecycle_rank()
+                < AssetLockStatus::ChainLocked.lifecycle_rank(),
+            "an InstantSendLocked write arriving after a ChainLocked one must \
+             be recognizable as a downgrade — this is the comparison the \
+             monotonicity guard in `advance_asset_lock_status` turns on"
+        );
     }
 }

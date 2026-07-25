@@ -2698,4 +2698,382 @@ mod tests {
             "the refused untrack must not have queued a row deletion"
         );
     }
+
+    /// Regression (monotonicity): a delayed `InstantSendLocked + IS proof`
+    /// write must not downgrade a row a concurrent flow already finalized
+    /// to `ChainLocked + CL proof` — in memory or durably.
+    ///
+    /// Serialization alone does not close this. `status_persist_serial`
+    /// makes each writer's mutation and enqueue one indivisible unit, so
+    /// the durable order matches the in-memory order — but the two
+    /// proof-bearing writes come from INDEPENDENT waiters
+    /// (`wait_for_proof` returns whichever SPV event fires first; the
+    /// IS→CL upgrade paths can finalize a ChainLock while an earlier IS
+    /// waiter is still parked), so nothing orders them. Released after
+    /// the finalize, the IS waiter's write was internally consistent and
+    /// perfectly serialized — and still strictly regressed the row: the
+    /// status fell below the `>= InstantSendLocked` predicates the
+    /// catch-up scanner and the "ready to fund" UI filter on, and,
+    /// because the caller passes `Some(is_proof)`, the ChainLock proof
+    /// was swapped out for the IS one that a rejection retry had
+    /// upgraded AWAY from. A restart then reloaded the weaker proof.
+    ///
+    /// Interleave, with no sleep anywhere in it:
+    ///
+    /// 1. an IS writer enters `advance_asset_lock_status` and parks on
+    ///    the pre-lock gate — before the ordering mutex, so the finalize
+    ///    below can run its whole unit rather than queueing behind it;
+    /// 2. the test finalizes the SAME row to `ChainLocked` + chain proof
+    ///    and awaits that call, so the stronger write is provably
+    ///    complete and enqueued before the IS writer resumes;
+    /// 3. the IS writer is released and joined.
+    ///
+    /// Then both halves of the shared state must still read
+    /// `ChainLocked` + chain proof, and the refused write must have
+    /// enqueued nothing at all.
+    ///
+    /// Caller-return semantics are asserted too: the refusal is `Ok`, not
+    /// an error, and carries an empty changeset. The delayed caller's own
+    /// IS proof is still valid evidence for the submission it is about to
+    /// make (every production caller returns/uses the proof it already
+    /// holds, never anything from the changeset) — the guard constrains
+    /// SHARED state, not what the caller may do with the proof in hand.
+    #[tokio::test]
+    async fn a_late_instant_send_write_cannot_downgrade_a_chain_locked_row() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+
+        use crate::wallet::asset_lock::manager::AdvancePreLockGate;
+
+        // `MaybeSent` leaves the row tracked at `Built`; the test drives
+        // the status transitions itself.
+        let broadcaster = Arc::new(CountingMaybeSentBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let (op, lock) = info
+                .tracked_asset_locks
+                .iter()
+                .next()
+                .expect("built row tracked");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+            *op
+        };
+
+        // Advance to `Broadcast` first, so the IS write under test is a
+        // legal forward transition in isolation — its refusal below is
+        // then attributable to the concurrent finalize, not to the write
+        // being backwards on its own.
+        manager
+            .advance_asset_lock_status(&out_point, AssetLockStatus::Broadcast, None)
+            .await
+            .expect("Broadcast is a forward transition from Built");
+
+        let chain_proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 4016,
+            out_point,
+        });
+        let instant_proof = dpp::prelude::AssetLockProof::Instant(InstantAssetLockProof::new(
+            dashcore::ephemerealdata::instant_lock::InstantLock::default(),
+            dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            0,
+        ));
+        assert_ne!(
+            instant_proof, chain_proof,
+            "the two proofs must be distinguishable for the assertions below \
+             to mean anything"
+        );
+
+        // 1. Park an `InstantSendLocked` writer before the ordering
+        //    mutex. The gate is one-shot (taken, not cloned), so the
+        //    finalize in step 2 — same method — runs straight through
+        //    instead of parking too.
+        let arrived = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        *manager
+            .advance_pre_lock_gate
+            .lock()
+            .expect("advance pre-lock gate mutex") = Some(AdvancePreLockGate {
+            arrived: Arc::clone(&arrived),
+            release: Arc::clone(&release),
+        });
+
+        let manager_is_writer = Arc::clone(&manager);
+        let is_writer_proof = instant_proof.clone();
+        let is_writer = tokio::spawn(async move {
+            manager_is_writer
+                .advance_asset_lock_status(
+                    &out_point,
+                    AssetLockStatus::InstantSendLocked,
+                    Some(is_writer_proof),
+                )
+                .await
+        });
+
+        // The IS writer has provably entered the method and cannot
+        // proceed. This is the arrival signal, not a sleep: it fires from
+        // inside the call under test, so "the finalize below races a
+        // parked IS write" is a fact rather than a scheduling hope.
+        arrived.notified().await;
+
+        // 2. Finalize the row to `ChainLocked` + chain proof and AWAIT
+        //    it. Awaiting inline is safe (and is the point): the IS
+        //    writer parks before taking `status_persist_serial`, so it
+        //    holds nothing this call needs. On return the stronger write
+        //    is complete — mutated in memory and enqueued.
+        let finalize_cs = manager
+            .advance_asset_lock_status(
+                &out_point,
+                AssetLockStatus::ChainLocked,
+                Some(chain_proof.clone()),
+            )
+            .await
+            .expect("the ChainLock finalize must succeed");
+        assert!(
+            !<crate::changeset::changeset::AssetLockChangeSet as crate::changeset::Merge>::is_empty(
+                &finalize_cs
+            ),
+            "the finalize must have produced a real changeset — otherwise the \
+             race below is not against a completed stronger write"
+        );
+
+        let queued_after_finalize = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
+        // 3. Release the delayed IS writer.
+        release.notify_one();
+        let refused = is_writer
+            .await
+            .expect("IS writer task joined")
+            .expect("a refused downgrade must be reported as Ok, not an error");
+        assert!(
+            <crate::changeset::changeset::AssetLockChangeSet as crate::changeset::Merge>::is_empty(
+                &refused
+            ),
+            "the refused downgrade must return an EMPTY changeset — a populated \
+             one would be replayed as an `InstantSendLocked + IS proof` row by \
+             any caller that queued it, reintroducing the regression"
+        );
+
+        // In-memory state kept the stronger status AND the stronger proof.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row still tracked");
+            assert_eq!(
+                lock.status,
+                AssetLockStatus::ChainLocked,
+                "a late InstantSendLocked write must not roll the in-memory row \
+                 back below ChainLocked — it would fall under the \
+                 `>= InstantSendLocked` predicates the catch-up scanner and the \
+                 ready-to-fund filter use"
+            );
+            assert_eq!(
+                lock.proof.as_ref(),
+                Some(&chain_proof),
+                "the ChainLock proof must survive: it is what an IS-rejection \
+                 retry upgraded TO, and reinstating the IS proof re-arms the \
+                 very rejection that upgrade resolved"
+            );
+        }
+
+        // Durable state — replayed through the real downstream semantics
+        // (round order, last-write-wins merge, unconditional upsert) —
+        // agrees, and the refused write reached the persister not at all.
+        let durable = persistence
+            .durable_asset_lock(&out_point)
+            .expect("the finalized row must be durable");
+        assert_eq!(
+            durable.status,
+            AssetLockStatus::ChainLocked,
+            "the durable row must stay ChainLocked; the load path treats a \
+             regressed status as still-pending and would resume a lock whose \
+             proof it already had"
+        );
+        assert_eq!(
+            durable.proof.as_ref(),
+            Some(&chain_proof),
+            "the durable proof must stay the ChainLock one — a restart reloads \
+             exactly this row"
+        );
+        assert_eq!(
+            persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len(),
+            queued_after_finalize,
+            "the refused downgrade must enqueue nothing at all; even a \
+             correctly-ordered stale round is last-write-wins downstream"
+        );
+    }
+
+    /// The monotonicity guard must refuse only BACKWARD writes. Forward
+    /// transitions and equal-rank proof attachment/refresh — the shapes
+    /// the production callers actually depend on — must still mutate and
+    /// enqueue.
+    ///
+    /// Equal-rank matters as much as forward here, and for two live
+    /// reasons: `resolve_status_with_in_memory` classifies a tx with an
+    /// InstantSend context as `InstantSendLocked` with NO proof (it has
+    /// no IS-lock data), so the first real proof arrives as a same-status
+    /// write; and the IS→CL upgrade paths re-write `ChainLocked` with a
+    /// freshly-built ChainLock proof at a newer height. A guard written
+    /// as `<=` instead of `<` would silently drop both.
+    #[tokio::test]
+    async fn monotonicity_guard_allows_forward_and_same_status_proof_writes() {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let broadcaster = Arc::new(CountingMaybeSentBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            *info
+                .tracked_asset_locks
+                .keys()
+                .next()
+                .expect("built row tracked")
+        };
+
+        // Forward, one rank at a time, ending on a proof-bearing write.
+        for status in [
+            AssetLockStatus::Broadcast,
+            AssetLockStatus::InstantSendLocked,
+        ] {
+            let cs = manager
+                .advance_asset_lock_status(&out_point, status.clone(), None)
+                .await
+                .expect("a forward transition must succeed");
+            assert!(
+                !<crate::changeset::changeset::AssetLockChangeSet as crate::changeset::Merge>::is_empty(&cs),
+                "the forward transition to {status:?} must produce a changeset"
+            );
+        }
+
+        // Same-status proof ATTACHMENT: the row is already
+        // `InstantSendLocked` with no proof (exactly what
+        // `resolve_status_with_in_memory` leaves behind), and the first
+        // real proof arrives at equal rank.
+        let chain_proof_low = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 4016,
+            out_point,
+        });
+        let attach = manager
+            .advance_asset_lock_status(
+                &out_point,
+                AssetLockStatus::InstantSendLocked,
+                Some(chain_proof_low.clone()),
+            )
+            .await
+            .expect("same-status proof attachment must succeed");
+        assert!(
+            !<crate::changeset::changeset::AssetLockChangeSet as crate::changeset::Merge>::is_empty(
+                &attach
+            ),
+            "attaching the first proof at equal rank must produce a changeset — \
+             `resolve_status_with_in_memory` sets InstantSendLocked with no \
+             proof, so this is how that row ever gets one"
+        );
+
+        // Forward to `ChainLocked`, then a same-status REFRESH with a
+        // ChainLock proof at a newer height — the IS→CL upgrade shape.
+        manager
+            .advance_asset_lock_status(
+                &out_point,
+                AssetLockStatus::ChainLocked,
+                Some(chain_proof_low),
+            )
+            .await
+            .expect("advancing to ChainLocked must succeed");
+        let chain_proof_high = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 4129,
+            out_point,
+        });
+        let refresh = manager
+            .advance_asset_lock_status(
+                &out_point,
+                AssetLockStatus::ChainLocked,
+                Some(chain_proof_high.clone()),
+            )
+            .await
+            .expect("same-status proof refresh must succeed");
+        assert!(
+            !<crate::changeset::changeset::AssetLockChangeSet as crate::changeset::Merge>::is_empty(
+                &refresh
+            ),
+            "re-writing ChainLocked with a freshly-upgraded proof must produce a \
+             changeset — this is the IS-rejection retry path"
+        );
+
+        // Both halves reflect the refreshed proof.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row still tracked");
+            assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+            assert_eq!(
+                lock.proof.as_ref(),
+                Some(&chain_proof_high),
+                "the refreshed proof must be the one in memory"
+            );
+        }
+        let durable = persistence
+            .durable_asset_lock(&out_point)
+            .expect("the row must be durable");
+        assert_eq!(durable.status, AssetLockStatus::ChainLocked);
+        assert_eq!(
+            durable.proof.as_ref(),
+            Some(&chain_proof_high),
+            "the refreshed proof must be the durable one"
+        );
+    }
 }

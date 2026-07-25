@@ -386,11 +386,60 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Returns an [`AssetLockChangeSet`] carrying a full snapshot of the
     /// updated entry. The changeset has ALREADY been queued for
     /// persistence before return; the value is surfaced so callers and
-    /// tests can inspect the diff.
+    /// tests can inspect the diff. When the write is refused as a
+    /// downgrade (below) the changeset is EMPTY and nothing was queued.
     ///
-    /// Assigns unconditionally — callers that race another writer for the
-    /// same row must gate the write themselves (see
-    /// [`promote_built_to_broadcast`](Self::promote_built_to_broadcast)).
+    /// Forward-only within the [`AssetLockStatus`] lifecycle — callers
+    /// that race another writer for the same row need no gate of their
+    /// own for the *backward* case. A `Built` → `Broadcast` race still
+    /// needs [`promote_built_to_broadcast`](Self::promote_built_to_broadcast),
+    /// which is a different question (both writers agree on the target
+    /// status; the loser must learn the row already advanced so it can
+    /// re-dispatch).
+    ///
+    /// # Monotonicity
+    ///
+    /// A write whose `new_status` ranks strictly BELOW the row's current
+    /// status (see [`AssetLockStatus::lifecycle_rank`]) mutates nothing,
+    /// replaces no proof, and enqueues no snapshot.
+    ///
+    /// This is not the same race the ordering mutex closes. The mutex
+    /// makes each writer's mutation and enqueue one indivisible unit, so
+    /// the durable order matches the in-memory order — but two writers
+    /// that are each internally consistent can still arrive in the wrong
+    /// ORDER, because the IS-lock and ChainLock waiters are independent:
+    /// `wait_for_proof` returns whichever SPV event fires first, and the
+    /// IS→CL upgrade paths (`upgrade_to_chain_lock_proof` after a
+    /// Platform IS rejection, `validate_or_upgrade_proof` on a stale
+    /// quorum) can complete a ChainLocked write while an earlier IS
+    /// waiter is still parked. Released afterwards, that IS waiter would
+    /// write `InstantSendLocked` over `ChainLocked` and — since it
+    /// passes `Some(is_proof)` — swap the ChainLock proof out for the IS
+    /// one, in memory and durably.
+    ///
+    /// Both halves matter. The status regression alone puts the row
+    /// below the `>= InstantSendLocked` predicates the catch-up scanner
+    /// and the "ready to fund" UI filter on. The proof swap is worse:
+    /// the ChainLock proof is the one that survives quorum rotation, and
+    /// it is what an IS rejection retry upgraded TO — reinstating the IS
+    /// proof re-arms exactly the rejection that upgrade resolved, and a
+    /// restart reloads the weaker proof from the durable row.
+    ///
+    /// **Caller-return semantics are deliberately unchanged.** A refused
+    /// caller gets `Ok(empty changeset)`, not an error: its own proof is
+    /// still valid evidence for the submission it is about to make, and
+    /// every production caller returns/uses the proof it already holds
+    /// rather than anything from the changeset. So the delayed IS caller
+    /// may go on submitting with its IS proof; only the SHARED state
+    /// (in-memory row and durable row) is held at the stronger proof.
+    ///
+    /// Equal-rank writes are NOT refused, so same-status proof
+    /// attachment and refresh keep working: attaching the first proof to
+    /// a row already marked `InstantSendLocked` by
+    /// `resolve_status_with_in_memory` (which sets that status with
+    /// `None`, since it has no IS-lock data), and re-writing
+    /// `ChainLocked` with a freshly-upgraded ChainLock proof at a newer
+    /// height.
     ///
     /// # Ordering
     ///
@@ -415,6 +464,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
+        // Test-only pause BEFORE the ordering mutex, so a test can hold
+        // this writer while a competing finalize runs its whole
+        // mutate→enqueue unit to completion. One-shot: taken rather than
+        // cloned, so the competing finalize (same method) runs straight
+        // through. See `advance_pre_lock_gate`.
+        #[cfg(test)]
+        {
+            let gate = self
+                .advance_pre_lock_gate
+                .lock()
+                .expect("advance pre-lock gate mutex")
+                .take();
+            if let Some(gate) = gate {
+                gate.arrived.notify_one();
+                gate.release.notified().await;
+            }
+        }
+
         // Hold the ordering mutex across mutate → enqueue. Acquired
         // BEFORE `wallet_manager` (see the field's lock-ordering note).
         let _serial = self.lock_status_persist_serial().await;
@@ -433,6 +500,33 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     out_point
                 ))
             })?;
+
+            // Monotonicity guard — see the `# Monotonicity` section.
+            // Checked here, under the same `status_persist_serial` the
+            // mutation and enqueue hold, so the status it reads is the
+            // one this unit is about to overwrite: no concurrent writer
+            // can finalize the row between the comparison and the
+            // assignment.
+            //
+            // Bail out with an EMPTY changeset rather than an error. The
+            // row is already at least as advanced as what this caller
+            // would have written, which is a success from the wallet
+            // state's point of view, and the caller's own proof stays
+            // usable for its pending submission.
+            if new_status.lifecycle_rank() < entry.status.lifecycle_rank() {
+                tracing::info!(
+                    outpoint = %out_point,
+                    current_status = ?entry.status,
+                    refused_status = ?new_status,
+                    current_has_proof = entry.proof.is_some(),
+                    refused_carries_proof = proof.is_some(),
+                    "advance_asset_lock_status: refusing a status downgrade — \
+                     keeping the row's stronger status and proof; the caller \
+                     may still use the proof it obtained"
+                );
+                return Ok(AssetLockChangeSet::default());
+            }
+
             entry.status = new_status;
             if proof.is_some() {
                 entry.proof = proof;

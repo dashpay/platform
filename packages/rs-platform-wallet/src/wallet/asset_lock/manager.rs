@@ -48,6 +48,28 @@ pub(super) struct PromotePostCasGate {
     pub(super) release: Arc<Notify>,
 }
 
+/// Test-only rendezvous for
+/// [`AssetLockManager::advance_pre_lock_gate`]. `arrived` fires once an
+/// [`advance_asset_lock_status`](AssetLockManager::advance_asset_lock_status)
+/// call has entered but BEFORE it acquires
+/// [`status_persist_serial`](AssetLockManager::status_persist_serial);
+/// the writer then blocks on `release`.
+///
+/// Parked *before* the mutex on purpose. The hazard the monotonicity
+/// guard closes is a writer that is late relative to another writer's
+/// whole mutate→enqueue unit — an IS-lock waiter released after a
+/// ChainLock finalize has already completed. A gate placed after the
+/// mutex could not produce that: the parked writer would hold the lock,
+/// the ChainLock finalize would queue behind it, and the IS write would
+/// land FIRST (a legal `Broadcast` → `InstantSendLocked` advance), which
+/// is the opposite interleave.
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct AdvancePreLockGate {
+    pub(super) arrived: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
+}
+
 /// Manages the full asset lock lifecycle: build, broadcast, proof, and tracking.
 ///
 /// Shared across sub-wallets via `Arc<AssetLockManager>` so that any sub-wallet
@@ -244,6 +266,21 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// default) makes the hook a no-op.
     #[cfg(test)]
     pub(super) promote_post_cas_gate: std::sync::Mutex<Option<PromotePostCasGate>>,
+    /// Test-only pause point at the very top of
+    /// [`advance_asset_lock_status`](Self::advance_asset_lock_status),
+    /// before [`status_persist_serial`](Self::status_persist_serial) is
+    /// taken. Lets a test hold an `InstantSendLocked` writer there while
+    /// another flow finalizes the same row to `ChainLocked` with a
+    /// ChainLock proof — the delayed-downgrade interleave the
+    /// monotonicity guard exists to refuse. `None` (the default) makes
+    /// the hook a no-op.
+    ///
+    /// Consumed on arrival (taken, not cloned), so only the FIRST
+    /// advance parks: the finalize the test performs while the IS writer
+    /// waits goes through the same method and must not deadlock against
+    /// the gate it is racing.
+    #[cfg(test)]
+    pub(super) advance_pre_lock_gate: std::sync::Mutex<Option<AdvancePreLockGate>>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -274,6 +311,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             resume_pre_promote_gate: std::sync::Mutex::new(None),
             #[cfg(test)]
             promote_post_cas_gate: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            advance_pre_lock_gate: std::sync::Mutex::new(None),
         }
     }
 
