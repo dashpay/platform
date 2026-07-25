@@ -99,7 +99,7 @@ pub fn build_sdk(config: &Config) -> FrameworkResult<(Arc<Sdk>, Arc<TrustedHttpC
     // so the clone passed into the SDK shares the `known_contracts` /
     // `known_token_configurations` maps with the `Arc` we hand back.
     let sdk = builder
-        .with_version(initial_pv)
+        .with_initial_version(initial_pv)
         .with_context_provider(context_provider.clone())
         .build()
         .map_err(|e| {

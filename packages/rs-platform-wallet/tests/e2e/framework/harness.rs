@@ -37,7 +37,7 @@ use super::spv;
 use super::wait;
 use super::wait_hub::WaitEventHub;
 use super::workdir;
-use super::FrameworkResult;
+use super::{FrameworkError, FrameworkResult};
 
 /// Deadline for the SPV mn-list to reach `Synced` during framework
 /// init. Internally raised to `COLD_CACHE_TIMEOUT_FLOOR` (600s) by
@@ -421,6 +421,9 @@ impl E2eContext {
         let cancel_token = CancellationToken::new();
 
         let (sdk, context_provider) = sdk::build_sdk(&config)?;
+        sdk.refresh_protocol_version()
+            .await
+            .map_err(|err| FrameworkError::Sdk(format!("refresh protocol version: {err}")))?;
 
         // Register the withdrawals system contract on the context
         // provider's known-contracts cache. The shielded-withdrawal (SH-019,
