@@ -191,7 +191,7 @@ jobs:
             --locked \
             -E 'not test(~shield)'
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
@@ -207,7 +207,7 @@ jobs:
             --locked \
             -- shield
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
@@ -374,7 +374,7 @@ jobs:
             --locked \
             --partition count:${{ matrix.partition }}/4
         env:
-          RUST_MIN_STACK: 4194304
+          RUST_MIN_STACK: 8388608
           CARGO_INCREMENTAL: "0"
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
