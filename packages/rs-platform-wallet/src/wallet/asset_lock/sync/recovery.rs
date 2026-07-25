@@ -86,7 +86,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None => self.resolve_status_with_in_memory(in_memory_record, account_index, &out_point),
         };
 
-        // Phase 3 (lock held): commit the tracked-asset-lock entry.
+        // Phase 3 (locks held): commit the tracked-asset-lock entry and
+        // enqueue it as one serialized unit. Without the ordering mutex
+        // a concurrent flow could finalize this row and enqueue its
+        // proof-bearing snapshot in the window between the insert below
+        // and the enqueue, leaving the older recovered snapshot durable
+        // (see `status_persist_serial`). `blocking_lock` matches the
+        // `blocking_write` already used here — this method is documented
+        // as callable only OUTSIDE a tokio async context.
+        let _serial = self.status_persist_serial.blocking_lock();
+
         // We re-check `tracked_asset_locks.contains_key` because
         // another caller could have raced in during phase 2 — first
         // writer wins.
@@ -295,7 +304,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // a-proof path instead of waiting again for a proof we already hold.
         if status == AssetLockStatus::Built {
             match self.promote_built_to_broadcast(out_point).await? {
-                BuiltPromotion::Promoted(cs) => self.queue_asset_lock_changeset(cs),
+                // The promotion queued its own changeset, atomically with
+                // the compare-and-set — see `status_persist_serial`.
+                BuiltPromotion::Promoted(_cs) => {}
                 BuiltPromotion::AlreadyAdvanced {
                     current_status,
                     current_proof,
@@ -403,10 +414,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
-        let cs = self
+        // Queued by `advance_asset_lock_status` itself, atomically with
+        // the in-memory write.
+        let _cs = self
             .advance_asset_lock_status(out_point, new_status, Some(proof.clone()))
             .await?;
-        self.queue_asset_lock_changeset(cs);
 
         // 4. Re-derive the one-time credit-output derivation path.
         let path = {

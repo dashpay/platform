@@ -500,7 +500,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         // 2. Track as Built and queue the changeset onto the persister
         //    so a crash after broadcast leaves a row we can recover from.
-        let cs_built = self
+        // `track_asset_lock` queues the changeset itself, as one
+        // serialized unit with the in-memory insert.
+        let _cs_built = self
             .track_asset_lock(TrackedAssetLock {
                 out_point,
                 transaction: tx.clone(),
@@ -512,7 +514,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 proof: None,
             })
             .await;
-        self.queue_asset_lock_changeset(cs_built);
 
         tracing::debug!(
             %txid,
@@ -530,6 +531,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    reservation and the resumable row.
         if let Err(e) = self.broadcaster.broadcast(&tx).await {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
+                // `untrack_asset_lock` queues the changeset itself, as one
+                // serialized unit with the in-memory removal.
                 let cs_untrack = self.untrack_asset_lock(&out_point).await;
                 // Release only when the Built row was actually removed. If
                 // the untrack guard fired instead — a concurrent
@@ -538,9 +541,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // the inputs must stay reserved exactly like a `MaybeSent`
                 // outcome, or the still-tracked row would be resumable while
                 // its inputs are re-spendable.
-                let removed_built_row = cs_untrack.removed.contains(&out_point);
-                self.queue_asset_lock_changeset(cs_untrack);
-                if removed_built_row {
+                if cs_untrack.removed.contains(&out_point) {
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
@@ -578,7 +579,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // `resume_asset_lock` there is nothing to re-dispatch — the proof wait
         // lives in `wait_for_funded_asset_lock_proof`, the caller's next step.
         match self.promote_built_to_broadcast(&out_point).await? {
-            BuiltPromotion::Promoted(cs) => self.queue_asset_lock_changeset(cs),
+            // The promotion queued its own changeset, atomically with the
+            // compare-and-set, so a concurrent finalize cannot have its
+            // newer snapshot overtaken by this older one.
+            BuiltPromotion::Promoted(_cs) => {}
             BuiltPromotion::AlreadyAdvanced {
                 current_status,
                 current_proof,
@@ -628,10 +632,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             dpp::prelude::AssetLockProof::Instant(_) => AssetLockStatus::InstantSendLocked,
             dpp::prelude::AssetLockProof::Chain(_) => AssetLockStatus::ChainLocked,
         };
-        let cs_final = self
+        // Queued by `advance_asset_lock_status` itself, atomically with
+        // the in-memory write.
+        let _cs_final = self
             .advance_asset_lock_status(out_point, status, Some(proof.clone()))
             .await?;
-        self.queue_asset_lock_changeset(cs_final);
 
         Ok(proof)
     }
@@ -654,13 +659,16 @@ mod tests {
 
     use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
     use crate::changeset::{
-        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        AssetLockEntry, ClientStartState, PersistenceError, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
     };
     use crate::test_support::{
         funded_wallet_manager, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
         AlwaysRejectedBroadcaster, WalletSigner,
     };
-    use crate::wallet::asset_lock::manager::{AssetLockManager, ResumePrePromoteGate};
+    use crate::wallet::asset_lock::manager::{
+        AssetLockManager, PromotePostCasGate, ResumePrePromoteGate,
+    };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -679,6 +687,41 @@ mod tests {
     }
 
     impl CapturingPersistence {
+        /// The durable row for `out_point` after replaying every stored
+        /// round in arrival order.
+        ///
+        /// Models the real downstream semantics exactly, which is what
+        /// makes this a persistence-order assertion rather than a
+        /// "was it ever queued" one:
+        ///
+        /// - `FFIPersister::store_round` serializes rounds by acquisition
+        ///   order, so replay order == the order `store()` was called;
+        /// - `AssetLockChangeSet::merge` is last-write-wins per outpoint;
+        /// - Swift's `persistAssetLocks` upsert overwrites `statusRaw` /
+        ///   `proofBytes` unconditionally, and each `removed` entry
+        ///   deletes the row.
+        ///
+        /// `None` means no row survives — either none was ever written or
+        /// the last round removed it. Since the load path reconstructs
+        /// `tracked_asset_locks` from exactly these rows, this is also
+        /// what a restart would read back.
+        fn durable_asset_lock(&self, out_point: &OutPoint) -> Option<AssetLockEntry> {
+            let stored = self.stored.lock().expect("capturing persistence mutex");
+            let mut row: Option<AssetLockEntry> = None;
+            for cs in stored.iter() {
+                let Some(al) = cs.asset_locks.as_ref() else {
+                    continue;
+                };
+                if let Some(entry) = al.asset_locks.get(out_point) {
+                    row = Some(entry.clone());
+                }
+                if al.removed.contains(out_point) {
+                    row = None;
+                }
+            }
+            row
+        }
+
         /// Outpoints queued for persisted-row deletion across all stored
         /// changesets.
         fn removed_outpoints(&self) -> Vec<OutPoint> {
@@ -2106,6 +2149,270 @@ mod tests {
         assert!(
             !inconsistent,
             "no changeset may persist a Broadcast row with a proof attached"
+        );
+    }
+
+    /// Drives a promoter into the post-CAS / pre-enqueue window, finalizes
+    /// and enqueues the same row from another task while it is parked, then
+    /// releases it — and returns the durable row that results.
+    ///
+    /// Shared by both `Built` → `Broadcast` regression tests below so the
+    /// create and resume paths are proven against the *same* interleave.
+    /// The promotion is invoked directly rather than through
+    /// `broadcast_funded_asset_lock` / `resume_asset_lock` because it is
+    /// the single primitive both callers now route through — see the
+    /// per-path tests for the proof that they do.
+    async fn durable_row_after_promote_finalize_interleave<B: TransactionBroadcaster + 'static>(
+        manager: Arc<AssetLockManager<B>>,
+        persistence: Arc<CapturingPersistence>,
+        out_point: OutPoint,
+    ) -> (Option<AssetLockEntry>, dpp::prelude::AssetLockProof) {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        // 1. Park a promoter between its compare-and-set and its enqueue —
+        //    the exact window in which the stale `Broadcast + None`
+        //    snapshot had not yet been handed to the persister.
+        let arrived = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        *manager
+            .promote_post_cas_gate
+            .lock()
+            .expect("promote post-CAS gate mutex") = Some(PromotePostCasGate {
+            arrived: Arc::clone(&arrived),
+            release: Arc::clone(&release),
+        });
+
+        let manager_promoter = Arc::clone(&manager);
+        let promoter = tokio::spawn(async move {
+            manager_promoter
+                .promote_built_to_broadcast(&out_point)
+                .await
+        });
+
+        // The promoter has mutated the row to `Broadcast` in memory and is
+        // holding before the enqueue. Its snapshot is now genuinely stale
+        // with respect to anything written next.
+        arrived.notified().await;
+
+        // 2. Finalize the SAME row to `ChainLocked + proof` and enqueue
+        //    that — what a winning concurrent flow's step 3 does. Runs in
+        //    its own task: with the fix this call BLOCKS on the ordering
+        //    mutex until the promoter enqueues, so awaiting it inline here
+        //    would deadlock against the `release` below.
+        let chain_proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 4016,
+            out_point,
+        });
+        let manager_finalizer = Arc::clone(&manager);
+        let finalize_proof = chain_proof.clone();
+        let finalizer = tokio::spawn(async move {
+            manager_finalizer
+                .advance_asset_lock_status(
+                    &out_point,
+                    AssetLockStatus::ChainLocked,
+                    Some(finalize_proof),
+                )
+                .await
+        });
+
+        // Give the finalizer a real chance to get its enqueue in first.
+        // Pre-fix it does exactly that and the promoter's older snapshot
+        // lands last; post-fix it is queued behind the ordering mutex.
+        tokio::task::yield_now().await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // 3. Release the stale promoter.
+        release.notify_one();
+        promoter
+            .await
+            .expect("promoter task joined")
+            .expect("promotion must not error");
+        finalizer
+            .await
+            .expect("finalizer task joined")
+            .expect("finalize must not error");
+
+        (persistence.durable_asset_lock(&out_point), chain_proof)
+    }
+
+    /// Regression (persistence ordering): a `Built` → `Broadcast` promotion
+    /// must not let its older snapshot reach the persister AFTER a
+    /// concurrent finalize enqueued a newer proof-bearing one.
+    ///
+    /// The compare-and-set alone fixed only the in-memory half. The
+    /// promoter mutated the row under `wallet_manager.write()`, returned a
+    /// `Broadcast` changeset, and RELEASED that lock before the caller
+    /// enqueued it. In that post-CAS / pre-enqueue window another flow
+    /// could take the wallet lock, finalize the row to `ChainLocked +
+    /// proof`, and enqueue that snapshot first — after which the delayed
+    /// promoter enqueued its `Broadcast + None` one last.
+    ///
+    /// Nothing downstream repairs the inversion: `FFIPersister::store_round`
+    /// serializes rounds by acquisition order (preserving the reversal),
+    /// `AssetLockChangeSet::merge` is last-write-wins, and Swift's
+    /// `persistAssetLocks` upsert overwrites `statusRaw` / `proofBytes`
+    /// unconditionally. So memory stayed `ChainLocked` while the DURABLE row
+    /// regressed to `Broadcast` with no proof — and since the load path
+    /// treats `statusRaw < 2` as still-pending, a restart resumed a lock
+    /// whose proof it already had.
+    ///
+    /// Pre-fix this test observes the regressed durable row and fails; the
+    /// shared `status_persist_serial` makes mutation+enqueue one unit, so
+    /// the finalize now blocks until the promoter has enqueued and the
+    /// durable order matches the in-memory order.
+    #[tokio::test]
+    async fn promotion_cannot_enqueue_a_stale_snapshot_after_a_concurrent_finalize() {
+        // A `MaybeSent` create leaves the row `Built` — the state a
+        // promotion acts on.
+        let broadcaster = Arc::new(CountingMaybeSentBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let (op, lock) = info
+                .tracked_asset_locks
+                .iter()
+                .next()
+                .expect("built row tracked");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+            *op
+        };
+
+        let (durable, chain_proof) = durable_row_after_promote_finalize_interleave(
+            Arc::clone(&manager),
+            Arc::clone(&persistence),
+            out_point,
+        )
+        .await;
+
+        // In-memory finality was never in question — it is the durable
+        // state that regressed.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let lock = info
+                .tracked_asset_locks
+                .get(&out_point)
+                .expect("row still tracked");
+            assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+        }
+
+        let durable = durable.expect("a durable row must exist");
+        assert_eq!(
+            durable.status,
+            AssetLockStatus::ChainLocked,
+            "the durable row must not regress below the finalized in-memory \
+             status: a stale promoter enqueued its Broadcast snapshot after \
+             the finalize, and last-write-wins made it the row a restart reads"
+        );
+        assert_eq!(
+            durable.proof.as_ref(),
+            Some(&chain_proof),
+            "the durable row must keep the finalized proof — dropping it makes \
+             a restart re-wait for a proof the wallet already had"
+        );
+    }
+
+    /// The resume path routes its `Built` → `Broadcast` promotion through
+    /// the same serialized primitive as the create path.
+    ///
+    /// The test above proves the primitive orders mutation before enqueue;
+    /// this one pins that `resume_asset_lock` actually goes through it, so
+    /// the fix cannot regress to covering only the create caller. Asserted
+    /// structurally rather than by re-running the interleave: the resume
+    /// promotion happens mid-call, so parking it on the post-CAS gate would
+    /// stall the whole resume rather than isolate the window.
+    #[tokio::test]
+    async fn resume_promotion_enqueues_under_the_shared_ordering_mutex() {
+        let broadcaster = Arc::new(CountingMaybeSentBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            *info
+                .tracked_asset_locks
+                .keys()
+                .next()
+                .expect("built row tracked")
+        };
+
+        // Hold the ordering mutex, then start a resume. Its promotion must
+        // block on the mutex, which means it cannot have enqueued anything.
+        let serial = manager.status_persist_serial.lock().await;
+        let queued_before = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
+        let manager_resume = Arc::clone(&manager);
+        let resume = tokio::spawn(async move {
+            manager_resume
+                .resume_asset_lock(&out_point, Some(Duration::from_millis(10)))
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        assert_eq!(
+            persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len(),
+            queued_before,
+            "a resume whose promotion is blocked on `status_persist_serial` \
+             must not have enqueued an asset-lock changeset — if it did, the \
+             resume path is bypassing the shared ordering mutex and can still \
+             reorder against a concurrent finalize"
+        );
+        assert!(
+            manager.status_persist_serial.try_lock().is_err(),
+            "the ordering mutex must still be held by this test — otherwise the \
+             assertion above proves nothing about serialization"
+        );
+
+        drop(serial);
+        let _ = resume.await.expect("resume task joined");
+
+        // Once released the promotion completes and its snapshot is durable.
+        let durable = persistence
+            .durable_asset_lock(&out_point)
+            .expect("the released resume must have enqueued its promotion");
+        assert!(
+            durable.status != AssetLockStatus::Built,
+            "the resume's promotion must have advanced the durable row past \
+             Built, got {:?}",
+            durable.status
         );
     }
 }

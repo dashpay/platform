@@ -238,7 +238,9 @@ impl PlatformAddressWallet {
                 // the stale IS proof Platform just rejected. The
                 // catch-up scanner / Resume path then has a
                 // truthful status to work from.
-                let cs = self
+                // `advance_asset_lock_status` queues the changeset itself,
+                // atomically with the in-memory write.
+                let _cs = self
                     .asset_locks
                     .advance_asset_lock_status(
                         &out_point,
@@ -246,7 +248,6 @@ impl PlatformAddressWallet {
                         Some(chain_proof.clone()),
                     )
                     .await?;
-                self.asset_locks.queue_asset_lock_changeset(cs);
                 submit_with_cl_height_retry(settings, |s| {
                     addresses.top_up_with_signers(
                         &self.sdk,

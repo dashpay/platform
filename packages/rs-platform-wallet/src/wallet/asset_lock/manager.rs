@@ -30,6 +30,22 @@ pub(super) struct ResumePrePromoteGate {
     pub(super) release: Arc<Notify>,
 }
 
+/// Test-only rendezvous for
+/// [`AssetLockManager::promote_post_cas_gate`]. `arrived` fires once a
+/// `Built` → `Broadcast` promotion has mutated the in-memory row but has
+/// NOT yet enqueued its changeset; the promoter then blocks on `release`.
+///
+/// This is precisely the window in which a stale promoter could enqueue
+/// its older `Broadcast + None` snapshot AFTER a concurrent flow already
+/// enqueued a newer proof-bearing one — the ordering hazard
+/// [`AssetLockManager::status_persist_serial`] exists to close.
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct PromotePostCasGate {
+    pub(super) arrived: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
+}
+
 /// Manages the full asset lock lifecycle: build, broadcast, proof, and tracking.
 ///
 /// Shared across sub-wallets via `Arc<AssetLockManager>` so that any sub-wallet
@@ -94,6 +110,42 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// yet have collected its pool snapshot.
     #[cfg(test)]
     pub(super) build_serial_gate: std::sync::atomic::AtomicUsize,
+    /// Serializes every asset-lock **status mutation + persistence
+    /// enqueue** pair, so the order in which rows are mutated in memory
+    /// is the order in which their snapshots reach the persister.
+    ///
+    /// `wallet_manager`'s write lock alone is not enough. Each mutator
+    /// (`promote_built_to_broadcast`, `advance_asset_lock_status`, …)
+    /// takes it, mutates, and RELEASES it before returning the
+    /// changeset the caller then hands to `queue_asset_lock_changeset`.
+    /// In that post-mutation/pre-enqueue window another flow can acquire
+    /// the wallet lock, finalize the same row to `InstantSendLocked` /
+    /// `ChainLocked` with a proof, and enqueue that newer snapshot
+    /// first — after which the delayed writer enqueues its older
+    /// `Broadcast + None` snapshot LAST. Nothing downstream repairs the
+    /// inversion: `FFIPersister::store_round` only serializes rounds by
+    /// acquisition order (so it faithfully preserves the reversed
+    /// order), `AssetLockChangeSet::merge` is last-write-wins, and
+    /// Swift's `persistAssetLocks` upsert overwrites `statusRaw` /
+    /// `proofBytes` unconditionally. Memory stays finalized while the
+    /// durable row regresses to `Broadcast`, and because the load path
+    /// treats `statusRaw < 2` as still-pending, a restart resumes a lock
+    /// whose proof it already had.
+    ///
+    /// Held across mutation → enqueue, and deliberately NOT across the
+    /// unbounded awaits (`broadcast`, `wait_for_proof`) that surround
+    /// them: only the relative order of the two adjacent steps needs
+    /// serializing. A dedicated mutex rather than extending the
+    /// `wallet_manager` write guard because `queue_asset_lock_changeset`
+    /// calls the persister synchronously — on iOS that reenters Swift
+    /// via FFI — and holding the wallet lock across that would serialize
+    /// every unrelated wallet reader behind host I/O.
+    ///
+    /// Lock ordering: acquire this BEFORE `wallet_manager`, never the
+    /// reverse. Every holder follows the same
+    /// `status_persist_serial → wallet_manager.write() → drop(wallet) →
+    /// enqueue → drop(serial)` shape, so no cycle exists.
+    pub(super) status_persist_serial: tokio::sync::Mutex<()>,
     /// Test-only pause point inside
     /// [`resume_asset_lock`](Self::resume_asset_lock), between the
     /// read-locked status snapshot and the write-locked `Built` →
@@ -110,6 +162,15 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// makes the hook a no-op.
     #[cfg(test)]
     pub(super) resume_pre_promote_gate: std::sync::Mutex<Option<ResumePrePromoteGate>>,
+    /// Test-only pause point inside
+    /// [`promote_and_queue_built_to_broadcast`](Self::promote_and_queue_built_to_broadcast),
+    /// between the compare-and-set mutation and the persistence enqueue.
+    /// Lets a test hold a promoter in that window while another flow
+    /// finalizes and enqueues the same row, which is the interleave
+    /// [`Self::status_persist_serial`] exists to prevent. `None` (the
+    /// default) makes the hook a no-op.
+    #[cfg(test)]
+    pub(super) promote_post_cas_gate: std::sync::Mutex<Option<PromotePostCasGate>>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
@@ -130,10 +191,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             broadcaster,
             persister,
             build_persist_serial: tokio::sync::Mutex::new(()),
+            status_persist_serial: tokio::sync::Mutex::new(()),
             #[cfg(test)]
             build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(test)]
             resume_pre_promote_gate: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            promote_post_cas_gate: std::sync::Mutex::new(None),
         }
     }
 

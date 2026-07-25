@@ -14,7 +14,9 @@ use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
 #[derive(Debug)]
 pub(crate) enum BuiltPromotion {
     /// The row was still `Built` and is now `Broadcast`. Carries the
-    /// changeset the caller must queue.
+    /// changeset, which has ALREADY been queued for persistence before
+    /// return — the value is surfaced only so tests and callers can
+    /// inspect the diff.
     Promoted(AssetLockChangeSet),
     /// A concurrent flow already advanced the row past `Built`. Nothing
     /// was mutated; the caller re-dispatches from these values rather
@@ -45,17 +47,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// Track a new asset lock in memory, returning a changeset describing
-    /// the inserted entry.
+    /// the inserted entry. The changeset has ALREADY been queued for
+    /// persistence before return; the value is surfaced so callers and
+    /// tests can inspect the diff.
     ///
     /// If an entry already exists at `out_point`, it is overwritten.
+    ///
+    /// # Ordering
+    ///
+    /// Mutation and enqueue happen as one unit under
+    /// [`status_persist_serial`](AssetLockManager::status_persist_serial),
+    /// for the same reason the promotion does. The insert is what makes
+    /// the row visible to `resume_asset_lock`, so the moment the wallet
+    /// lock drops a resume can promote it to `Broadcast` and enqueue
+    /// that — and an unserialized `Built` enqueue landing afterwards
+    /// would regress the durable row to the pre-broadcast state.
     pub(crate) async fn track_asset_lock(&self, lock: TrackedAssetLock) -> AssetLockChangeSet {
-        let mut wm = self.wallet_manager.write().await;
-        let mut cs = AssetLockChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            let out_point = lock.out_point;
-            cs.asset_locks.insert(out_point, (&lock).into());
-            info.tracked_asset_locks.insert(out_point, lock);
-        }
+        let _serial = self.status_persist_serial.lock().await;
+
+        let cs = {
+            let mut wm = self.wallet_manager.write().await;
+            let mut cs = AssetLockChangeSet::default();
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                let out_point = lock.out_point;
+                cs.asset_locks.insert(out_point, (&lock).into());
+                info.tracked_asset_locks.insert(out_point, lock);
+            }
+            cs
+        };
+
+        self.queue_asset_lock_changeset(cs.clone());
         cs
     }
 
@@ -75,25 +96,46 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// [`Built`](AssetLockStatus::Built): if a concurrent flow advanced it
     /// (e.g. a `resume_asset_lock` that re-broadcast in the window between
     /// the rejected broadcast and this cleanup), the progress is kept
-    /// rather than clobbered. The caller queues the changeset (call sites
-    /// live in `asset_lock/build.rs`, inside the module).
+    /// rather than clobbered.
+    ///
+    /// The changeset has ALREADY been queued for persistence before
+    /// return; the value is surfaced so the caller can tell whether the
+    /// row was actually removed (`removed` non-empty) — `build.rs` gates
+    /// releasing the funding reservation on exactly that.
+    ///
+    /// # Ordering
+    ///
+    /// Mutation and enqueue happen as one unit under
+    /// [`status_persist_serial`](AssetLockManager::status_persist_serial).
+    /// The `Built` guard is itself a compare-and-set against the same
+    /// concurrent finalizer, so it needs the same protection: were the
+    /// row-deleting `removed` enqueue to land after a concurrent
+    /// finalize's proof-bearing snapshot, Swift would delete the row
+    /// that snapshot had just written.
     pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
-        let mut wm = self.wallet_manager.write().await;
-        let mut cs = AssetLockChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-            match info.tracked_asset_locks.get(out_point) {
-                Some(entry) if entry.status == AssetLockStatus::Built => {
-                    info.tracked_asset_locks.remove(out_point);
-                    cs.removed.insert(*out_point);
+        let _serial = self.status_persist_serial.lock().await;
+
+        let cs = {
+            let mut wm = self.wallet_manager.write().await;
+            let mut cs = AssetLockChangeSet::default();
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                match info.tracked_asset_locks.get(out_point) {
+                    Some(entry) if entry.status == AssetLockStatus::Built => {
+                        info.tracked_asset_locks.remove(out_point);
+                        cs.removed.insert(*out_point);
+                    }
+                    Some(entry) => tracing::warn!(
+                        outpoint = %out_point,
+                        status = ?entry.status,
+                        "untrack_asset_lock: lock advanced past Built concurrently — leaving it tracked"
+                    ),
+                    None => {}
                 }
-                Some(entry) => tracing::warn!(
-                    outpoint = %out_point,
-                    status = ?entry.status,
-                    "untrack_asset_lock: lock advanced past Built concurrently — leaving it tracked"
-                ),
-                None => {}
             }
-        }
+            cs
+        };
+
+        self.queue_asset_lock_changeset(cs.clone());
         cs
     }
 
@@ -147,6 +189,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         out_point: &OutPoint,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
+        // Hold the ordering mutex across mutate → enqueue so the
+        // terminal `Consumed` snapshot cannot be overtaken by a
+        // concurrent status writer's older one (see
+        // `status_persist_serial`). Acquired BEFORE `wallet_manager`.
+        let _serial = self.status_persist_serial.lock().await;
+
         // Build the changeset under the write lock, then release the
         // lock before queueing — `queue_asset_lock_changeset` calls
         // the persister synchronously and we don't want to hold the
@@ -207,7 +255,58 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// concurrent `untrack_asset_lock` removed a rejected row (releasing
     /// its funding reservation), and the caller must abort before
     /// re-broadcasting a transaction whose inputs are re-spendable.
+    ///
+    /// # Ordering
+    ///
+    /// The compare-and-set and the persistence enqueue happen as one
+    /// unit under [`status_persist_serial`](AssetLockManager::status_persist_serial),
+    /// so a promotion can never enqueue its `Broadcast + None` snapshot
+    /// after a concurrent finalize enqueued a newer proof-bearing one.
+    /// Both `Built` → `Broadcast` callers (create and resume) go through
+    /// here, so neither can reorder against the other or against
+    /// `advance_asset_lock_status`.
     pub(crate) async fn promote_built_to_broadcast(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<BuiltPromotion, PlatformWalletError> {
+        // Hold the ordering mutex across mutate → enqueue. Acquired
+        // BEFORE `wallet_manager` (see the field's lock-ordering note).
+        let _serial = self.status_persist_serial.lock().await;
+
+        let promotion = self.compare_and_set_built_to_broadcast(out_point).await?;
+
+        // Test-only pause in the post-CAS / pre-enqueue window. Under the
+        // serialization above a concurrent finalize now blocks here rather
+        // than slipping its newer snapshot in ahead of ours.
+        #[cfg(test)]
+        {
+            let gate = self
+                .promote_post_cas_gate
+                .lock()
+                .expect("promote post-CAS gate mutex")
+                .clone();
+            if let Some(gate) = gate {
+                gate.arrived.notify_one();
+                gate.release.notified().await;
+            }
+        }
+
+        if let BuiltPromotion::Promoted(ref cs) = promotion {
+            self.queue_asset_lock_changeset(cs.clone());
+        }
+        Ok(promotion)
+    }
+
+    /// The compare-and-set half of
+    /// [`promote_built_to_broadcast`](Self::promote_built_to_broadcast):
+    /// mutates the in-memory row under the wallet write lock and returns
+    /// the resulting changeset WITHOUT queueing it.
+    ///
+    /// Private and callable only from `promote_built_to_broadcast`, which
+    /// owns the ordering mutex — splitting it out keeps the wallet write
+    /// guard scoped to the mutation so it is released before the
+    /// synchronous persister call.
+    async fn compare_and_set_built_to_broadcast(
         &self,
         out_point: &OutPoint,
     ) -> Result<BuiltPromotion, PlatformWalletError> {
@@ -238,34 +337,56 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Advance the status of a tracked asset lock and optionally attach the proof.
     ///
     /// Returns an [`AssetLockChangeSet`] carrying a full snapshot of the
-    /// updated entry.
+    /// updated entry. The changeset has ALREADY been queued for
+    /// persistence before return; the value is surfaced so callers and
+    /// tests can inspect the diff.
     ///
     /// Assigns unconditionally — callers that race another writer for the
     /// same row must gate the write themselves (see
     /// [`promote_built_to_broadcast`](Self::promote_built_to_broadcast)).
+    ///
+    /// # Ordering
+    ///
+    /// Like the promotion, the mutation and the enqueue happen as one
+    /// unit under [`status_persist_serial`](AssetLockManager::status_persist_serial).
+    /// This is the finalizing half of the pair: without the shared mutex
+    /// a proof-bearing `InstantSendLocked` / `ChainLocked` snapshot can
+    /// be enqueued BEFORE a concurrently-delayed promoter enqueues its
+    /// older `Broadcast + None` one, regressing the durable row.
     pub(crate) async fn advance_asset_lock_status(
         &self,
         out_point: &OutPoint,
         new_status: AssetLockStatus,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) -> Result<AssetLockChangeSet, PlatformWalletError> {
-        let mut wm = self.wallet_manager.write().await;
-        let info = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let entry = info.tracked_asset_locks.get_mut(out_point).ok_or_else(|| {
-            PlatformWalletError::AssetLockProofWait(format!(
-                "Asset lock {} is not tracked",
-                out_point
-            ))
-        })?;
-        entry.status = new_status;
-        if proof.is_some() {
-            entry.proof = proof;
-        }
+        // Hold the ordering mutex across mutate → enqueue. Acquired
+        // BEFORE `wallet_manager` (see the field's lock-ordering note).
+        let _serial = self.status_persist_serial.lock().await;
 
-        let mut cs = AssetLockChangeSet::default();
-        cs.asset_locks.insert(*out_point, (&*entry).into());
+        // Scoped so the wallet write guard is released before the
+        // synchronous persister call below.
+        let cs = {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&self.wallet_id)
+                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let entry = info.tracked_asset_locks.get_mut(out_point).ok_or_else(|| {
+                PlatformWalletError::AssetLockProofWait(format!(
+                    "Asset lock {} is not tracked",
+                    out_point
+                ))
+            })?;
+            entry.status = new_status;
+            if proof.is_some() {
+                entry.proof = proof;
+            }
+
+            let mut cs = AssetLockChangeSet::default();
+            cs.asset_locks.insert(*out_point, (&*entry).into());
+            cs
+        };
+
+        self.queue_asset_lock_changeset(cs.clone());
         Ok(cs)
     }
 }
