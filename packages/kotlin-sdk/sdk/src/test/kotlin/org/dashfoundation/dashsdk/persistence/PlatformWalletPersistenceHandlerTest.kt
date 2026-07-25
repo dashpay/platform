@@ -1033,9 +1033,13 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     private fun upsertIdentityKey(pubkey: ByteArray, identityId: ByteArray) {
+        upsertIdentityKeyWithKeyId(pubkey, identityId, keyId = 0)
+    }
+
+    private fun upsertIdentityKeyWithKeyId(pubkey: ByteArray, identityId: ByteArray, keyId: Int) {
         handler.onChangesetBegin(walletId)
         handler.onPersistIdentityKeyUpsert(
-            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            walletId, identityId, keyId, 0, 0, 0, false, false, 0,
             pubkey, ByteArray(20), true, walletId,
             true, 3, 5, 0, ByteArray(32), null,
         )
@@ -1187,6 +1191,70 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertNotNull(db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0))
         assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun identityRemovalClearsEveryPendingEntryForThatIdentity() = runTest {
+        // dashpay/platform#4183 review: deleting an identity cascades away ALL
+        // of its public-key rows, so every pending-repair entry for that
+        // identity is a phantom afterwards — a repair could never re-derive a
+        // key into an identity that no longer exists. All of them must clear
+        // (not just one keyId, as onPersistIdentityKeyRemoval handles).
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 22 }
+        seedIdentity(identityId)
+        // Two watch-only keys under the same identity, different keyIds.
+        val pubkey0 = ByteArray(33) { 17 }
+        val pubkey1 = ByteArray(33) { 18 }
+        upsertIdentityKeyWithKeyId(pubkey0, identityId, keyId = 0)
+        upsertIdentityKeyWithKeyId(pubkey1, identityId, keyId = 1)
+        assertEquals(2, handler.pendingIdentityKeys.value.size)
+
+        // A committed identity-removal round deletes the rows AND clears every
+        // pending entry for the identity.
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
+    }
+
+    @Test
+    fun rolledBackIdentityRemovalKeepsThePendingEntries() = runTest {
+        // The identity-removal pending-clear is staged with the round: an
+        // aborted round discards both the identity deletion and the clear, so
+        // the pre-round pending entry survives untouched.
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 23 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 19 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = false)
+
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+    }
+
+    @Test
+    fun walletDeletionClearsWalletScopedPendingEntries() = runTest {
+        // dashpay/platform#4183 review: a wallet wipe cascades away all of its
+        // identities and their public-key rows, so every pending-repair entry
+        // scoped to that wallet is a phantom afterwards. deleteWalletData must
+        // prune them (Room's cascade cannot mutate the process-local
+        // StateFlow).
+        handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined, ThrowingDeriver())
+        val identityId = ByteArray(32) { 24 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 20 }
+        upsertIdentityKey(pubkey, identityId)
+        assertNotNull(handler.pendingIdentityKeys.value[pubkey.toHex()])
+
+        handler.deleteWalletData(walletId)
+
+        assertTrue(handler.pendingIdentityKeys.value.isEmpty())
     }
 
     /**

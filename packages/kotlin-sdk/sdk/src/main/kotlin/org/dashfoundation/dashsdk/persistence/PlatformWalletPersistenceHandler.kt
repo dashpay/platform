@@ -1042,7 +1042,20 @@ class PlatformWalletPersistenceHandler(
     }
 
     override fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = guarded {
+        val identityBase58 = identityId.toBase58String()
         stage(walletId) { db -> db.identityDao().deleteByIdentityId(identityId) }
+        // The identity delete cascades away all of its public-key rows, so
+        // every pending-repair entry for this identity is now a phantom —
+        // the key can never be re-derived/repaired into an identity that no
+        // longer exists (dashpay/platform#4183 review). Drop them all from
+        // [pendingIdentityKeys]. Staged with the round (mirroring
+        // [onPersistIdentityKeyRemoval]): published only if the deletion
+        // commits and discarded on rollback, so a rolled-back removal keeps
+        // the pre-round map intact.
+        stagePendingKeyDelta(
+            walletId.toHex(),
+            clearPendingKeyByIdentityDelta(identityBase58),
+        )
         0
     }
 
@@ -2569,6 +2582,16 @@ class PlatformWalletPersistenceHandler(
                 }
             }
         }
+        // Only AFTER the delete transaction commits: prune every pending
+        // repair entry scoped to this wallet. The cascade above removed all
+        // of the wallet's identities and their public-key rows, so those
+        // entries are now phantoms whose rows and derivation breadcrumbs no
+        // longer exist — leaving them would keep signalling hosts to repair
+        // keys that can never be re-derived (dashpay/platform#4183 review).
+        // Placed past the transaction (not staged with a round) so a throw
+        // that rolls the delete back skips this line and preserves the valid
+        // signals (Room's cascade cannot mutate this process-local StateFlow).
+        _pendingIdentityKeys.update(clearPendingKeyByWalletDelta(walletId.toHex()))
     }
 
     // ── Pending identity-key bookkeeping (#4053) ──────────────────────
@@ -2615,6 +2638,45 @@ class PlatformWalletPersistenceHandler(
                 map.filterValues {
                     !(it.identityIdBase58 == identityIdBase58 && it.keyId == keyId)
                 }
+            } else {
+                map
+            }
+        }
+
+    /**
+     * Delta that drops EVERY pending entry belonging to identity
+     * [identityIdBase58] (all of its key ids) — the shape
+     * [onPersistIdentityRemoval] has. When an identity is removed Room
+     * cascades away all of its `public_keys` rows, so each of its pending
+     * repair entries is now a phantom (the key can never be re-derived into
+     * an identity that no longer exists). No-op (returns the same map
+     * instance) when nothing matches, mirroring [clearPendingKeyDelta] so an
+     * unrelated removal publishes no map update.
+     */
+    private fun clearPendingKeyByIdentityDelta(
+        identityIdBase58: String,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { map ->
+            if (map.values.any { it.identityIdBase58 == identityIdBase58 }) {
+                map.filterValues { it.identityIdBase58 != identityIdBase58 }
+            } else {
+                map
+            }
+        }
+
+    /**
+     * Delta that drops EVERY pending entry belonging to wallet
+     * [walletIdHex] — the shape [deleteWalletDataLocked] has. A wallet wipe
+     * cascades away all of its identities and their `public_keys` rows, so
+     * every pending repair entry scoped to it is a phantom afterwards.
+     * No-op (returns the same map instance) when nothing matches.
+     */
+    private fun clearPendingKeyByWalletDelta(
+        walletIdHex: String,
+    ): (Map<String, PendingIdentityKey>) -> Map<String, PendingIdentityKey> =
+        { map ->
+            if (map.values.any { it.walletIdHex == walletIdHex }) {
+                map.filterValues { it.walletIdHex != walletIdHex }
             } else {
                 map
             }

@@ -738,6 +738,15 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
             Err(ProtocolError::Generic(format!(
                 "{DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX}{msg}"
             )))
+        } else if msg.starts_with(DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX) {
+            // Only the typed branch above may produce a Generic payload that
+            // STARTS with the reserved marker — that is exactly the
+            // representation platform-wallet-ffi restores to code 31. A
+            // foreign generic-code (non-key-unavailable) message that happens
+            // to begin with the marker would otherwise impersonate a typed
+            // completion, so disambiguate it by pushing the marker off
+            // position 0 (dashpay/platform#4183 review).
+            Err(ProtocolError::Generic(format!("generic_signer_error: {msg}")))
         } else {
             Err(ProtocolError::Generic(msg))
         }
