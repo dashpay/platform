@@ -62,8 +62,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// lock drops a resume can promote it to `Broadcast` and enqueue
     /// that — and an unserialized `Built` enqueue landing afterwards
     /// would regress the durable row to the pre-broadcast state.
-    pub(crate) async fn track_asset_lock(&self, lock: TrackedAssetLock) -> AssetLockChangeSet {
+    ///
+    /// # Lifecycle
+    ///
+    /// Errors with
+    /// [`AssetLockManagerInactive`](PlatformWalletError::AssetLockManagerInactive)
+    /// when the owning wallet has been removed. Checked under the
+    /// ordering mutex, so a removal racing this call either completes
+    /// first (and this insert is refused) or waits for it (and the row
+    /// belongs to the wallet being removed, not to a replacement).
+    pub(crate) async fn track_asset_lock(
+        &self,
+        lock: TrackedAssetLock,
+    ) -> Result<AssetLockChangeSet, PlatformWalletError> {
         let _serial = self.lock_status_persist_serial().await;
+        self.ensure_active_under_serial(&_serial)?;
 
         let cs = {
             let mut wm = self.wallet_manager.write().await;
@@ -77,7 +90,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         self.queue_asset_lock_changeset(cs.clone());
-        cs
+        Ok(cs)
     }
 
     /// Remove a tracked asset lock whose funding transaction was
@@ -112,8 +125,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// row-deleting `removed` enqueue to land after a concurrent
     /// finalize's proof-bearing snapshot, Swift would delete the row
     /// that snapshot had just written.
-    pub(crate) async fn untrack_asset_lock(&self, out_point: &OutPoint) -> AssetLockChangeSet {
+    ///
+    /// # Lifecycle
+    ///
+    /// Errors with
+    /// [`AssetLockManagerInactive`](PlatformWalletError::AssetLockManagerInactive)
+    /// when the owning wallet has been removed — checked under the
+    /// ordering mutex. This is the arm that matters most for a stale
+    /// handle: the `removed` set DELETES the durable row, so a retired
+    /// manager reaching this method after a re-import would erase a
+    /// replacement wallet's freshly-tracked lock.
+    pub(crate) async fn untrack_asset_lock(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<AssetLockChangeSet, PlatformWalletError> {
         let _serial = self.lock_status_persist_serial().await;
+        self.ensure_active_under_serial(&_serial)?;
 
         let cs = {
             let mut wm = self.wallet_manager.write().await;
@@ -136,7 +163,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         self.queue_asset_lock_changeset(cs.clone());
-        cs
+        Ok(cs)
     }
 
     /// Mark a tracked asset lock as
@@ -174,6 +201,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   nothing queued.
     /// - `Err(WalletNotFound)` — the wallet id is unknown to the
     ///   manager. Always a programmer error / stale handle.
+    /// - `Err(AssetLockManagerInactive)` — the owning wallet was
+    ///   removed from the `PlatformWalletManager`. Checked under the
+    ///   ordering mutex, before the wallet lookup, so a re-imported
+    ///   wallet that happens to share the same deterministic id cannot
+    ///   have its rows consumed through the retired handle.
     ///
     /// **Why queue internally** (unlike `track_asset_lock` /
     /// `advance_asset_lock_status`, which return a changeset and let
@@ -194,6 +226,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // concurrent status writer's older one (see
         // `status_persist_serial`). Acquired BEFORE `wallet_manager`.
         let _serial = self.lock_status_persist_serial().await;
+        // Authoritative stale-handle check: under the mutex, before the
+        // wallet lookup below can resolve a REPLACEMENT wallet that
+        // re-import installed under the same deterministic id.
+        self.ensure_active_under_serial(&_serial)?;
 
         // Build the changeset under the write lock, then release the
         // lock before queueing — `queue_asset_lock_changeset` calls
@@ -265,6 +301,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Both `Built` → `Broadcast` callers (create and resume) go through
     /// here, so neither can reorder against the other or against
     /// `advance_asset_lock_status`.
+    ///
+    /// # Lifecycle
+    ///
+    /// Errors with
+    /// [`AssetLockManagerInactive`](PlatformWalletError::AssetLockManagerInactive)
+    /// when the owning wallet has been removed. Both callers reach this
+    /// method only after an unbounded `broadcast(&tx)` await, so the
+    /// under-mutex check — not the entry-point one — is what stops a
+    /// resume that began before the removal from writing to a
+    /// replacement wallet's row.
     pub(crate) async fn promote_built_to_broadcast(
         &self,
         out_point: &OutPoint,
@@ -272,6 +318,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // Hold the ordering mutex across mutate → enqueue. Acquired
         // BEFORE `wallet_manager` (see the field's lock-ordering note).
         let _serial = self.lock_status_persist_serial().await;
+        self.ensure_active_under_serial(&_serial)?;
 
         let promotion = self.compare_and_set_built_to_broadcast(out_point).await?;
 
@@ -353,6 +400,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// a proof-bearing `InstantSendLocked` / `ChainLocked` snapshot can
     /// be enqueued BEFORE a concurrently-delayed promoter enqueues its
     /// older `Broadcast + None` one, regressing the durable row.
+    ///
+    /// # Lifecycle
+    ///
+    /// Errors with
+    /// [`AssetLockManagerInactive`](PlatformWalletError::AssetLockManagerInactive)
+    /// when the owning wallet has been removed. Every caller reaches
+    /// this after an unbounded proof wait, which is precisely the span
+    /// a `remove_wallet` + re-import can complete inside — so the
+    /// under-mutex check is the one that matters here.
     pub(crate) async fn advance_asset_lock_status(
         &self,
         out_point: &OutPoint,
@@ -362,6 +418,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // Hold the ordering mutex across mutate → enqueue. Acquired
         // BEFORE `wallet_manager` (see the field's lock-ordering note).
         let _serial = self.lock_status_persist_serial().await;
+        self.ensure_active_under_serial(&_serial)?;
 
         // Scoped so the wallet write guard is released before the
         // synchronous persister call below.

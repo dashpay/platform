@@ -567,10 +567,62 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Remove a wallet from the manager.
+    ///
+    /// # Asset-lock manager lifecycle
+    ///
+    /// The wallet's [`AssetLockManager`](crate::AssetLockManager) is
+    /// retired *before* the shared `WalletManager` entry is dropped, and
+    /// only then is anything else torn down. That ordering is
+    /// load-bearing, not tidiness:
+    ///
+    /// * Subordinate handles outlive this call. `PlatformWallet` hands out
+    ///   `Arc<AssetLockManager<_>>` clones (the FFI parks them in its own
+    ///   handle storage), so a caller can still hold — and drive — the old
+    ///   manager after the wallet is gone. The manager resolves state
+    ///   through the shared `WalletManager` by `wallet_id` alone.
+    /// * `wallet_id` is deterministic in (seed, network). Re-importing the
+    ///   same mnemonic recreates the *same* id over a brand-new
+    ///   `PlatformWalletInfo` and a brand-new `AssetLockManager` with its
+    ///   own `status_persist_serial`. A retained old manager would then be
+    ///   live against replacement state, and the two managers would mutate
+    ///   and persist the same asset-lock rows under *different* mutexes —
+    ///   reintroducing across instances exactly the stale-snapshot enqueue
+    ///   reversal that serialization fixes within one instance.
+    ///
+    /// `AssetLockManager::deactivate` closes that window from both sides:
+    /// it takes the old manager's `status_persist_serial`, so it cannot
+    /// land in the middle of somebody's mutate→enqueue unit (removal waits
+    /// for the unit to finish), and every such unit re-reads the flag once
+    /// it holds that same mutex, so anything parked on an await when the
+    /// flag flipped fails before it can touch a wallet row or the
+    /// persister. Because re-registration must first `insert_wallet` into
+    /// the shared `WalletManager` — which still holds this wallet's entry
+    /// at this point — no replacement can exist until deactivation is
+    /// already done.
+    ///
+    /// `deactivate` is called with no other lock held. It acquires
+    /// `status_persist_serial`, and holders of that mutex go on to take
+    /// `wallet_manager.write()`; calling it under `wallet_manager` would
+    /// invert the documented lock order and deadlock.
+    ///
+    /// Idempotency is unchanged: a wallet absent from `self.wallets` still
+    /// returns [`PlatformWalletError::WalletNotFound`] after the shared
+    /// `WalletManager` entry is cleaned up, and `deactivate` is itself a
+    /// no-op on an already-retired manager.
     pub async fn remove_wallet(
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        // Retire the asset-lock manager first, holding nothing else. Note
+        // the read guard is dropped before `deactivate` awaits.
+        let existing = {
+            let wallets = self.wallets.read().await;
+            wallets.get(wallet_id).map(Arc::clone)
+        };
+        if let Some(wallet) = &existing {
+            wallet.asset_locks().deactivate().await;
+        }
+
         let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
             let mut wm = self.wallet_manager.write().await;
             let ids = match wm.get_wallet_info(wallet_id) {
@@ -842,5 +894,341 @@ mod register_wallet_duplicate_tests {
             matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
         );
+    }
+}
+
+/// Cross-instance lifecycle: an `AssetLockManager` handle retained across
+/// `remove_wallet` must not become live against the replacement wallet a
+/// same-mnemonic re-import installs under the same deterministic id.
+#[cfg(test)]
+mod retained_asset_lock_manager_tests {
+    use std::sync::{Arc, Mutex};
+
+    use dashcore::OutPoint;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use key_wallet::Network;
+
+    use crate::changeset::{
+        AssetLockEntry, ClientStartState, PersistenceError, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    // Canonical all-`abandon` BIP-39 test vector. Deterministic, which is
+    // the whole point here: re-importing it yields the SAME wallet id.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    /// Records every changeset so the test can assert what a retired
+    /// handle did — and did not — push into the SHARED persistence
+    /// pipeline the replacement wallet also writes through.
+    #[derive(Default)]
+    struct CapturingPersister {
+        stored: Mutex<Vec<PlatformWalletChangeSet>>,
+    }
+
+    impl CapturingPersister {
+        /// The durable asset-lock row for `out_point` after replaying
+        /// every stored round in arrival order (last-write-wins per
+        /// outpoint; a `removed` entry deletes it). Same replay model as
+        /// the asset-lock module's own persistence-order tests.
+        fn durable_asset_lock(&self, out_point: &OutPoint) -> Option<AssetLockEntry> {
+            let stored = self.stored.lock().expect("capturing persister mutex");
+            let mut row: Option<AssetLockEntry> = None;
+            for cs in stored.iter() {
+                let Some(al) = cs.asset_locks.as_ref() else {
+                    continue;
+                };
+                if let Some(entry) = al.asset_locks.get(out_point) {
+                    row = Some(entry.clone());
+                }
+                if al.removed.contains(out_point) {
+                    row = None;
+                }
+            }
+            row
+        }
+
+        /// Count of rounds carrying an asset-lock sub-changeset. Wallet
+        /// registration queues plenty of other rounds, so the lifecycle
+        /// assertions filter on this rather than the total.
+        fn asset_lock_rounds(&self) -> usize {
+            self.stored
+                .lock()
+                .expect("capturing persister mutex")
+                .iter()
+                .filter(|cs| cs.asset_locks.is_some())
+                .count()
+        }
+    }
+
+    impl PlatformWalletPersistence for CapturingPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored
+                .lock()
+                .expect("capturing persister mutex")
+                .push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// A synthetic tracked lock. The lifecycle assertions are about which
+    /// manager may mutate the row, not about how it was funded, so the
+    /// transaction can be an empty one — nothing here broadcasts.
+    fn tracked_lock(out_point: OutPoint, status: AssetLockStatus) -> TrackedAssetLock {
+        TrackedAssetLock {
+            out_point,
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 1_000_000,
+            status,
+            proof: None,
+        }
+    }
+
+    /// Regression: `remove_wallet` must retire the wallet's
+    /// `AssetLockManager`, so a handle retained across removal cannot
+    /// mutate or persist the state of the wallet a re-import installs
+    /// under the same id.
+    ///
+    /// `wallet_id` is deterministic in (seed, network) and the FFI parks
+    /// `Arc<AssetLockManager<_>>` clones in its own handle storage, which
+    /// outlive `platform_wallet_manager_remove_wallet`. The manager
+    /// resolves everything through the shared `WalletManager` by
+    /// `wallet_id` alone, so before this fix the old handle silently
+    /// re-attached to the replacement `PlatformWalletInfo` — and the two
+    /// managers then mutated and persisted the same rows under *different*
+    /// `status_persist_serial` mutexes, reintroducing across instances the
+    /// snapshot reordering serialization fixes within one.
+    ///
+    /// The `untrack` arm is the sharpest: its changeset's `removed` set
+    /// DELETES the durable row, so a stale handle taking that path would
+    /// erase an asset lock the replacement wallet had just tracked.
+    #[tokio::test]
+    async fn retained_asset_lock_manager_cannot_touch_a_reimported_wallet() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(CapturingPersister::default());
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            event_handler,
+        ));
+
+        let network = Network::Testnet;
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let seed_bytes = mnemonic.to_seed("");
+
+        // `Some(0)` skips the SPV birth-height lookup, so nothing here
+        // consults SPV or the network.
+        let original = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+        let wallet_id = original.wallet_id();
+        let retained = Arc::clone(original.asset_locks());
+
+        // Negative control: while the wallet is registered, the very
+        // operations asserted-refused below succeed through this exact
+        // handle. Without it, "the retained handle failed" could just
+        // mean the test never had a working mutation path.
+        let control_out_point = OutPoint::null();
+        retained
+            .track_asset_lock(tracked_lock(control_out_point, AssetLockStatus::Built))
+            .await
+            .expect("a live manager must be able to track");
+        assert_eq!(
+            persister
+                .durable_asset_lock(&control_out_point)
+                .expect("the control row must be durable")
+                .status,
+            AssetLockStatus::Built,
+        );
+
+        // Remove the wallet, then re-import the SAME mnemonic/network.
+        manager
+            .remove_wallet(&wallet_id)
+            .await
+            .expect("remove should return the wallet");
+        let replacement = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("re-import of the same mnemonic should succeed");
+
+        assert_eq!(
+            replacement.wallet_id(),
+            wallet_id,
+            "the re-import must reuse the deterministic id — otherwise this \
+             test is not exercising the collision the fix is about"
+        );
+        assert!(
+            !Arc::ptr_eq(replacement.asset_locks(), &retained),
+            "the re-import must have built a fresh asset-lock manager with \
+             its own ordering mutex — that is what makes the retained handle \
+             dangerous"
+        );
+
+        // The replacement wallet tracks a row of its own. This is the
+        // state a stale handle must not be able to reach.
+        let replacement_out_point = OutPoint {
+            txid: dashcore::Txid::from_raw_hash(dashcore::hashes::Hash::all_zeros()),
+            vout: 7,
+        };
+        replacement
+            .asset_locks()
+            .track_asset_lock(tracked_lock(
+                replacement_out_point,
+                AssetLockStatus::Broadcast,
+            ))
+            .await
+            .expect("the replacement's own manager must be live");
+
+        let rounds_before_stale_attempts = persister.asset_lock_rounds();
+
+        // Every status mutate→enqueue primitive refuses through the
+        // retired handle.
+        let track = retained
+            .track_asset_lock(tracked_lock(control_out_point, AssetLockStatus::Built))
+            .await;
+        assert!(
+            matches!(track, Err(PlatformWalletError::AssetLockManagerInactive(_))),
+            "a retired handle must not insert rows into the replacement \
+             wallet, got {track:?}"
+        );
+
+        let untrack = retained.untrack_asset_lock(&replacement_out_point).await;
+        assert!(
+            matches!(
+                untrack,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a retired handle must not untrack the replacement wallet's row — \
+             the changeset's `removed` set would DELETE it, got {untrack:?}"
+        );
+
+        let advance = retained
+            .advance_asset_lock_status(&replacement_out_point, AssetLockStatus::ChainLocked, None)
+            .await;
+        assert!(
+            matches!(
+                advance,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a retired handle must not advance the replacement wallet's row, \
+             got {advance:?}"
+        );
+
+        let promote = retained
+            .promote_built_to_broadcast(&replacement_out_point)
+            .await;
+        assert!(
+            matches!(
+                promote,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a retired handle must not promote the replacement wallet's row, \
+             got {promote:?}"
+        );
+
+        let consume = retained.consume_asset_lock(&replacement_out_point).await;
+        assert!(
+            matches!(
+                consume,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a retired handle must not consume the replacement wallet's row, \
+             got {consume:?}"
+        );
+
+        // Neither in-memory nor durable replacement state moved.
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&wallet_id)
+                .expect("the replacement wallet is registered");
+            let row = info
+                .tracked_asset_locks
+                .get(&replacement_out_point)
+                .expect("the replacement's row must still be tracked");
+            assert_eq!(
+                row.status,
+                AssetLockStatus::Broadcast,
+                "no refused operation may have mutated the replacement row"
+            );
+            assert!(
+                !info.tracked_asset_locks.contains_key(&control_out_point),
+                "the retired handle's re-track must not have injected a row \
+                 into the replacement wallet"
+            );
+        }
+        assert_eq!(
+            persister.asset_lock_rounds(),
+            rounds_before_stale_attempts,
+            "no refused operation may enqueue through the SHARED persister — \
+             changesets are last-write-wins and `removed` deletes rows, so a \
+             single stale round is enough to corrupt the replacement wallet"
+        );
+        assert_eq!(
+            persister
+                .durable_asset_lock(&replacement_out_point)
+                .expect("the replacement's durable row must survive")
+                .status,
+            AssetLockStatus::Broadcast,
+        );
+
+        // Idempotency of the removal path itself is unchanged: a second
+        // removal of a wallet that is gone still reports WalletNotFound
+        // (the FFI maps that to ok), and retiring an already-retired
+        // manager is a no-op rather than a panic or a hang.
+        let unknown = [0xABu8; 32];
+        assert!(
+            matches!(
+                manager.remove_wallet(&unknown).await,
+                Err(PlatformWalletError::WalletNotFound(_))
+            ),
+            "removing an unknown wallet must still surface WalletNotFound"
+        );
+        retained.deactivate().await;
     }
 }

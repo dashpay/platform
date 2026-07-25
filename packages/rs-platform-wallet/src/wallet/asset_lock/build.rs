@@ -431,6 +431,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // dropped before the broadcast (only snapshot ordering needs
         // serializing; the UI's own single-flight guard is NOT sufficient —
         // a dismissed sheet's unstructured task keeps running).
+        // Fail a stale handle before spending a build (which allocates a
+        // funding index and reserves inputs) on a wallet that is gone.
+        // Advisory only — the authoritative refusal is the same check
+        // under `status_persist_serial` inside `track_asset_lock` and
+        // `promote_built_to_broadcast`, since a removal can land during
+        // the build or the broadcast await below.
+        self.ensure_active()?;
+
         // Test-only occupancy gauge for the serialization gate (see
         // `build_serial_gate`). RAII so every exit path — including the
         // pre-broadcast aborts below — decrements.
@@ -501,7 +509,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // 2. Track as Built and queue the changeset onto the persister
         //    so a crash after broadcast leaves a row we can recover from.
         // `track_asset_lock` queues the changeset itself, as one
-        // serialized unit with the in-memory insert.
+        // serialized unit with the in-memory insert. It also re-checks
+        // the manager's lifecycle state under the ordering mutex, so a
+        // wallet removed during the build above aborts here — before a
+        // transaction reaches the wire and before a row is written that
+        // a replacement wallet would inherit.
         let _cs_built = self
             .track_asset_lock(TrackedAssetLock {
                 out_point,
@@ -513,7 +525,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 status: AssetLockStatus::Built,
                 proof: None,
             })
-            .await;
+            .await?;
 
         tracing::debug!(
             %txid,
@@ -533,7 +545,26 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
                 // `untrack_asset_lock` queues the changeset itself, as one
                 // serialized unit with the in-memory removal.
-                let cs_untrack = self.untrack_asset_lock(&out_point).await;
+                //
+                // It refuses outright once the wallet has been removed from
+                // the manager. Treat that exactly like the untrack guard
+                // below: skip the release. The wallet whose reservation this
+                // call took no longer exists, and `wallet_id` now resolves to
+                // whatever replacement was registered under the same
+                // deterministic id — releasing there would free inputs the
+                // replacement never reserved.
+                let removed_row = match self.untrack_asset_lock(&out_point).await {
+                    Ok(cs_untrack) => cs_untrack.removed.contains(&out_point),
+                    Err(untrack_err) => {
+                        tracing::warn!(
+                            %txid,
+                            error = %untrack_err,
+                            "rejected broadcast could not untrack the Built row; \
+                             leaving the funding reservation alone"
+                        );
+                        false
+                    }
+                };
                 // Release only when the Built row was actually removed. If
                 // the untrack guard fired instead — a concurrent
                 // `resume_asset_lock` advanced the row past `Built`, positive
@@ -541,7 +572,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // the inputs must stay reserved exactly like a `MaybeSent`
                 // outcome, or the still-tracked row would be resumable while
                 // its inputs are re-spendable.
-                if cs_untrack.removed.contains(&out_point) {
+                if removed_row {
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
                         &self.wallet_manager,
                         &self.wallet_id,
@@ -2465,6 +2496,206 @@ mod tests {
             "the resume's promotion must have advanced the durable row past \
              Built, got {:?}",
             durable.status
+        );
+    }
+
+    /// Regression (lifecycle): retiring an `AssetLockManager` must be a
+    /// BARRIER around the mutate→enqueue unit, not a flag flipped
+    /// whenever the removal happens to run.
+    ///
+    /// Two properties, both asserted here on a rendezvous rather than a
+    /// sleep:
+    ///
+    /// 1. **Deactivation waits.** A promoter parked between its
+    ///    compare-and-set and its enqueue holds `status_persist_serial`.
+    ///    `deactivate` must queue behind it — if it could flip the flag
+    ///    in that window, the promoter would resume, fail its own
+    ///    (already-taken) check or, worse, be interrupted with the row
+    ///    mutated in memory and its changeset never handed to the
+    ///    persister: exactly the mid-unit tear this mutex exists to
+    ///    prevent.
+    /// 2. **Nothing lands afterwards.** Once `deactivate` returns, every
+    ///    status mutate→enqueue primitive refuses with
+    ///    `AssetLockManagerInactive` and queues nothing — including the
+    ///    ones whose callers only arrive here after an unbounded
+    ///    `broadcast` / proof wait, which is the span a `remove_wallet`
+    ///    plus a same-mnemonic re-import completes inside.
+    ///
+    /// The rendezvous is the production `status_serial_waiters` gauge:
+    /// while this test's promoter provably holds the mutex, a waiter
+    /// count of 1 means `deactivate` came to rest at the boundary and
+    /// cannot have flipped the flag. A sleep would have proved nothing —
+    /// "the flag is still set" could equally mean the task had not been
+    /// scheduled yet.
+    #[tokio::test]
+    async fn deactivation_waits_for_the_in_flight_unit_then_refuses_every_later_mutation() {
+        let broadcaster = Arc::new(CountingMaybeSentBroadcaster {
+            call_count: AtomicUsize::new(0),
+        });
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        // `MaybeSent` leaves the row at `Built` — the state a promotion
+        // acts on.
+        let _ = manager
+            .create_funded_asset_lock_proof(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        let out_point = {
+            let wm = manager.wallet_manager.read().await;
+            let (_, info) = wm
+                .get_wallet_and_info(&manager.wallet_id)
+                .expect("wallet present");
+            let (op, lock) = info
+                .tracked_asset_locks
+                .iter()
+                .next()
+                .expect("built row tracked");
+            assert_eq!(lock.status, AssetLockStatus::Built);
+            *op
+        };
+
+        // 1. Park a promoter post-CAS / pre-enqueue. It holds
+        //    `status_persist_serial` for the whole parked window.
+        let arrived = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        *manager
+            .promote_post_cas_gate
+            .lock()
+            .expect("promote post-CAS gate mutex") = Some(PromotePostCasGate {
+            arrived: Arc::clone(&arrived),
+            release: Arc::clone(&release),
+        });
+        let manager_promoter = Arc::clone(&manager);
+        let promoter = tokio::spawn(async move {
+            manager_promoter
+                .promote_built_to_broadcast(&out_point)
+                .await
+        });
+        arrived.notified().await;
+
+        let queued_before_deactivate = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
+        // 2. Start the removal-side retirement. It must block.
+        let manager_deactivate = Arc::clone(&manager);
+        let deactivator = tokio::spawn(async move { manager_deactivate.deactivate().await });
+
+        // Rendezvous on `deactivate` REACHING the ordering boundary.
+        manager.await_status_serial_waiters(1).await;
+
+        assert!(
+            manager.active.load(Ordering::SeqCst),
+            "`deactivate` must not retire the manager while an in-flight \
+             mutate→enqueue unit still holds `status_persist_serial` — it \
+             would strand the promoter with the row mutated in memory and \
+             its changeset never enqueued"
+        );
+        assert!(
+            manager.status_persist_serial.try_lock().is_err(),
+            "the parked promoter must still hold the ordering mutex — \
+             otherwise the assertion above proves nothing about the barrier"
+        );
+
+        // 3. Release the promoter; its unit must complete in full.
+        release.notify_one();
+        let promotion = promoter
+            .await
+            .expect("promoter task joined")
+            .expect("a promotion that started before the removal must complete");
+        assert!(
+            matches!(promotion, super::BuiltPromotion::Promoted(_)),
+            "the in-flight promotion must have promoted the row, got {promotion:?}"
+        );
+        deactivator.await.expect("deactivator task joined");
+
+        assert!(
+            persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len()
+                > queued_before_deactivate,
+            "the in-flight unit's changeset must have reached the persister \
+             before deactivation completed — a retirement that cut in would \
+             leave memory ahead of the durable row"
+        );
+        assert_eq!(
+            persistence
+                .durable_asset_lock(&out_point)
+                .expect("the promoted row must be durable")
+                .status,
+            AssetLockStatus::Broadcast,
+        );
+
+        // 4. Every status mutate→enqueue primitive now refuses, and
+        //    queues nothing.
+        let queued_after_deactivate = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
+        let advance = manager
+            .advance_asset_lock_status(&out_point, AssetLockStatus::ChainLocked, None)
+            .await;
+        assert!(
+            matches!(
+                advance,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a finalize arriving after retirement must be refused, got {advance:?}"
+        );
+
+        let promote = manager.promote_built_to_broadcast(&out_point).await;
+        assert!(
+            matches!(
+                promote,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a promotion arriving after retirement must be refused, got {promote:?}"
+        );
+
+        let untrack = manager.untrack_asset_lock(&out_point).await;
+        assert!(
+            matches!(
+                untrack,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "an untrack arriving after retirement must be refused — it would \
+             DELETE the durable row, got {untrack:?}"
+        );
+
+        let consume = manager.consume_asset_lock(&out_point).await;
+        assert!(
+            matches!(
+                consume,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "a consume arriving after retirement must be refused, got {consume:?}"
+        );
+
+        assert_eq!(
+            persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len(),
+            queued_after_deactivate,
+            "no refused operation may enqueue anything — a retired manager \
+             that still reaches the shared persister can overwrite or delete \
+             a replacement wallet's rows"
+        );
+        assert!(
+            persistence.removed_outpoints().is_empty(),
+            "the refused untrack must not have queued a row deletion"
         );
     }
 }

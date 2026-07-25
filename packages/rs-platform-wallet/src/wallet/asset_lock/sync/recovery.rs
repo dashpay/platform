@@ -34,6 +34,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// on-chain context from `ManagedWalletInfo` to determine the correct
     /// status (and constructs a `ChainAssetLockProof` if the TX is in a
     /// chain-locked block).
+    ///
+    /// # Lifecycle
+    ///
+    /// Silently no-ops (with a warning) when the owning wallet has been
+    /// removed from the `PlatformWalletManager`. This path returns `()`
+    /// — it is a best-effort catch-up whose every other failure mode is
+    /// already logged-and-dropped — so a stale handle is refused the
+    /// same way rather than by a signature change.
+    ///
+    /// Like the async mutators, the authoritative check happens AFTER
+    /// `status_persist_serial` is taken and before the commit-phase
+    /// wallet lookup: phase 2 resolves status without any lock held and
+    /// may call into host persistence, which is more than enough time
+    /// for a removal (and a re-import re-creating the same
+    /// deterministic id) to land. The advisory pre-check up front only
+    /// saves that work.
     #[allow(clippy::too_many_arguments)]
     pub fn recover_asset_lock_blocking(
         &self,
@@ -45,6 +61,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: OutPoint,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) {
+        if let Err(e) = self.ensure_active() {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "recover_asset_lock_blocking: refusing to recover through a \
+                 retired asset-lock manager"
+            );
+            return;
+        }
+
         // Phase 1 (lock held): claim the tracked-asset-lock slot and
         // pull the in-memory record out so the lookup work is
         // bounded to a single hashmap fetch.
@@ -95,6 +121,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // `blocking_write` already used here — this method is documented
         // as callable only OUTSIDE a tokio async context.
         let _serial = self.status_persist_serial.blocking_lock();
+
+        // Authoritative stale-handle check, under the same mutex
+        // `deactivate` must hold to retire this manager — so a removal
+        // racing phase 2 either finished (and this insert is refused)
+        // or is still waiting for this critical section to end.
+        if let Err(e) = self.ensure_active_under_serial(&_serial) {
+            tracing::warn!(
+                outpoint = %out_point,
+                error = %e,
+                "recover_asset_lock_blocking: wallet was removed while resolving \
+                 the lock's status — dropping the recovery instead of writing to \
+                 replacement wallet state"
+            );
+            return;
+        }
 
         // We re-check `tracked_asset_locks.contains_key` because
         // another caller could have raced in during phase 2 — first
@@ -227,6 +268,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         timeout: Option<Duration>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
         tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
+
+        // Fail a stale handle before doing any work. Advisory only —
+        // this call goes on to await a broadcast and a proof, so the
+        // removal it is meant to catch can equally land afterwards. The
+        // guarantee comes from the same check inside
+        // `promote_built_to_broadcast` / `advance_asset_lock_status`,
+        // taken under `status_persist_serial`.
+        self.ensure_active()?;
 
         // 1. Look up the tracked lock — snapshot the fields we need.
         let (tx, mut status, mut existing_proof, account_index) = {

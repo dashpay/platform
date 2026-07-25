@@ -4,12 +4,14 @@
 //! waiting for proofs, and tracking lifecycle status. Shared across sub-wallets
 //! via `Arc<AssetLockManager>`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tokio::sync::{Notify, RwLock};
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -187,6 +189,52 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// makes the hook a no-op.
     #[cfg(test)]
     pub(super) resume_pre_promote_gate: std::sync::Mutex<Option<ResumePrePromoteGate>>,
+    /// Whether this manager may still mutate and persist asset-lock
+    /// state. Set once, `true` → `false`, by
+    /// [`deactivate`](Self::deactivate) when the owning wallet is
+    /// removed from its `PlatformWalletManager`.
+    ///
+    /// # Why a manager can outlive its wallet
+    ///
+    /// `AssetLockManager` resolves its target by `wallet_id` alone,
+    /// through the *shared* `WalletManager`. Wallet ids are
+    /// deterministic in (seed, network), so removing a wallet and
+    /// re-importing the same mnemonic re-creates the identical id over
+    /// a brand-new `PlatformWalletInfo` — and `PlatformWallet::new`
+    /// builds a brand-new `AssetLockManager` with its own
+    /// [`status_persist_serial`](Self::status_persist_serial). Any
+    /// `Arc<AssetLockManager>` retained across that removal (an FFI
+    /// `asset_lock_manager` handle the host never destroyed, or a
+    /// resume task still parked in `wait_for_proof`) therefore becomes
+    /// live again against the *replacement* wallet's rows. Two managers
+    /// would then mutate and enqueue the same row under two different
+    /// mutexes, which is exactly the unserialized mutate→enqueue
+    /// interleave `status_persist_serial` exists to prevent — only now
+    /// across instances, where a single mutex cannot see it.
+    ///
+    /// # Why the check must live under `status_persist_serial`
+    ///
+    /// A bare `if !active { return }` before an `await` is racy: the
+    /// removal can land in the window between the check and the
+    /// mutation. So the authoritative test is taken AFTER acquiring
+    /// `status_persist_serial` and before the wallet lookup (see
+    /// [`ensure_active_under_serial`](Self::ensure_active_under_serial)),
+    /// and `deactivate` flips the flag while HOLDING that same mutex.
+    /// That gives both halves of the guarantee:
+    ///
+    /// - removal waits for any in-flight mutate→enqueue unit to finish
+    ///   (it cannot take the mutex until the holder releases it), so no
+    ///   changeset is stranded mid-unit;
+    /// - every operation that starts, or resumes from an await, after
+    ///   the flip observes `false` before touching the wallet row or
+    ///   the persister.
+    ///
+    /// `SeqCst` rather than `Relaxed` because the flag is also read
+    /// outside the mutex by the cheap early-out checks on the public
+    /// entry points; those are advisory (they only avoid wasted work),
+    /// but keeping one ordering for a single-writer flag costs nothing
+    /// here and avoids reasoning about two.
+    pub(super) active: AtomicBool,
     /// Test-only pause point inside
     /// [`promote_and_queue_built_to_broadcast`](Self::promote_and_queue_built_to_broadcast),
     /// between the compare-and-set mutation and the persistence enqueue.
@@ -217,6 +265,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             persister,
             build_persist_serial: tokio::sync::Mutex::new(()),
             status_persist_serial: tokio::sync::Mutex::new(()),
+            active: AtomicBool::new(true),
             #[cfg(test)]
             status_serial_waiters: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(test)]
@@ -265,6 +314,88 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         drop(waiting);
 
         guard
+    }
+
+    /// Retire this manager: no later operation may mutate or persist
+    /// asset-lock state through it.
+    ///
+    /// Called by
+    /// [`PlatformWalletManager::remove_wallet`](crate::manager::PlatformWalletManager::remove_wallet)
+    /// BEFORE the wallet's entry is dropped from the shared
+    /// `WalletManager`, so a retained handle can never observe (let
+    /// alone write) the `PlatformWalletInfo` that a later re-import of
+    /// the same mnemonic installs under the same deterministic
+    /// `wallet_id`. See [`active`](Self::active) for why a manager can
+    /// outlive its wallet at all.
+    ///
+    /// The flag is flipped while HOLDING
+    /// [`status_persist_serial`](Self::status_persist_serial), which is
+    /// what makes the retirement a barrier rather than a hint:
+    ///
+    /// - it cannot take the mutex until any in-flight mutate→enqueue
+    ///   unit has released it, so removal never interrupts one halfway
+    ///   (mutated in memory, changeset not yet handed to the persister);
+    /// - once it returns, every subsequent acquirer — including
+    ///   operations that had already started and were parked on
+    ///   `broadcast` / `wait_for_proof` — sees `false` at
+    ///   [`ensure_active_under_serial`](Self::ensure_active_under_serial)
+    ///   before it touches the wallet row or the persister.
+    ///
+    /// Idempotent: a second call is a no-op (it still takes the mutex,
+    /// so it still waits out any in-flight unit).
+    ///
+    /// Must NOT be called while holding the `wallet_manager` lock — the
+    /// mutate→enqueue units this waits on acquire `wallet_manager`
+    /// themselves, so doing so would invert the documented
+    /// `status_persist_serial → wallet_manager` order and deadlock.
+    pub(crate) async fn deactivate(&self) {
+        let _serial = self.lock_status_persist_serial().await;
+        let was_active = self.active.swap(false, Ordering::SeqCst);
+        if was_active {
+            tracing::debug!(
+                wallet_id = %hex::encode(self.wallet_id),
+                "AssetLockManager deactivated: its wallet was removed from the manager"
+            );
+        }
+    }
+
+    /// The authoritative stale-handle check, taken by every asset-lock
+    /// status mutate→enqueue primitive AFTER it has acquired
+    /// [`status_persist_serial`](Self::status_persist_serial) and
+    /// BEFORE it looks the wallet up.
+    ///
+    /// Ordering is the whole point: the caller already holds the mutex
+    /// that [`deactivate`](Self::deactivate) must take to flip the
+    /// flag, so a `true` observed here cannot go stale for the
+    /// remainder of the critical section — the mutation and its
+    /// enqueue both complete against the wallet this manager was built
+    /// for. Checking before the mutex (as the public entry points also
+    /// do, cheaply) is only an early-out; it can be invalidated by a
+    /// removal landing during the very next `await`.
+    pub(super) fn ensure_active_under_serial(
+        &self,
+        _serial: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(), PlatformWalletError> {
+        self.ensure_active()
+    }
+
+    /// Cheap advisory activity check for public entry points
+    /// (`resume_asset_lock`, `broadcast_funded_asset_lock`, …), so a
+    /// stale handle fails immediately instead of doing a build or an
+    /// unbounded proof wait whose mutation will be refused anyway.
+    ///
+    /// NOT sufficient on its own — a removal can land between this
+    /// check and any later await. The under-mutex
+    /// [`ensure_active_under_serial`](Self::ensure_active_under_serial)
+    /// is what actually closes the race.
+    pub(super) fn ensure_active(&self) -> Result<(), PlatformWalletError> {
+        if self.active.load(Ordering::SeqCst) {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::AssetLockManagerInactive(hex::encode(
+                self.wallet_id,
+            )))
+        }
     }
 
     /// Test-only: wait until at least `n` tasks are blocked on
