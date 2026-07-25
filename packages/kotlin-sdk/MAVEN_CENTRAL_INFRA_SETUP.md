@@ -72,12 +72,19 @@ repository uses it; otherwise update its repository access policy to exclude `da
 3. Confirm the `build-and-release` job has **no** access to the five secrets — after #4193 it does
    not reference them at all; its only context token is the auto-provided `GITHUB_TOKEN`.
 
-> **Transitional note.** Because the build job can no longer read secrets, the "secrets not
-> configured" case is detected only *after* environment approval — the gated job's first step
-> (`Check Maven Central publishing secrets`) no-ops the publish when the secrets are absent. Until
-> step 3 is done, a valid release tag will therefore prompt a reviewer for what becomes a no-op.
-> Completing step 3 makes this moot. The partial-secret hard-fail guard is preserved, just
-> relocated behind the gate.
+> **Transitional note — a pre-migration approval is NOT a safe no-op.** The secret check runs only
+> *after* environment approval, in the gated `maven-central-deploy` job. It is tempting to assume
+> that, before step 3, that job sees no secrets and simply no-ops — but GitHub's secret precedence
+> does not confine an environment job to environment-scoped secrets. An environment secret only
+> *overrides* a same-named repository/organization secret; when the environment secret is **absent**,
+> an accessible repository- or organization-scoped copy still resolves through `${{ secrets.NAME }}`.
+> Section 3 notes these five credentials currently exist at those broader scopes, so until step 3
+> revokes this repository's access, they remain readable in the gated job. Approving a valid
+> `kotlin-sdk-v*` release tag can therefore pass the all-or-nothing check and perform an
+> **irrevocable Maven Central publish** — not a no-op test. Complete step 3 **before** approving any
+> verification run. Only when all five secrets are genuinely unavailable to this repository does the
+> gated job no-op; a partially available set still hard-fails (that guard is preserved, just
+> relocated behind the gate).
 
 ---
 
