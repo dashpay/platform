@@ -242,14 +242,30 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // Register the reserved+signed tx for deferred submission. `finalize` already
     // committed the reservation; `register` CONSUMES the `SignedCoreTransaction`
     // ownership object (deriving its transaction, funding account, reservation
-    // height, and owner-guard token internally) and captures the wallet instance
+    // height, and owner-guard token internally) and binds the token to the wallet
     // whose `ReservationSet` holds the inputs. Because the object is consumed
     // exactly once, this finalize can yield at most one token — no second token
     // can ever name the same reservation (`dashpay/platform#4185`, blocker 1).
-    let token = runtime().block_on(
-        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
-            .register(wallet.core().clone(), finalized),
-    );
+    //
+    // `register` is SYNCHRONOUS: its reservation-owning insert runs inline with
+    // no future that could be dropped before its first poll and silently strand
+    // the consumed reservation (`dashpay/platform#4185`). It also validates that
+    // this wallet is the exact generation `finalize` bound the payment to; that
+    // always holds here (we register through the very wallet that finalized), but
+    // on the impossible mismatch it hands the finalized payment back so we
+    // release its reservation (owner-guarded) rather than leaking it.
+    let token = match crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+        .register(wallet.core().clone(), finalized)
+    {
+        Ok(token) => token,
+        Err(err) => {
+            runtime().block_on(wallet.core().abandon_transaction(&err.signed));
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorReservationWalletMismatch,
+                "deferred payment was finalized against a different wallet generation".to_string(),
+            );
+        }
+    };
 
     *out_tx = FFICoreTransaction {
         tx_bytes: Box::into_raw(serialized.into_boxed_slice()) as *mut u8,

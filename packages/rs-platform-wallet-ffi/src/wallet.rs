@@ -472,9 +472,13 @@ mod destroy_tests {
                         0,
                         0,
                         None,
+                        // Bind the finalized payment to this exact wallet
+                        // generation so `register` accepts it (it now validates
+                        // the wallet against the finalizing generation).
+                        core.test_generation_marker(),
                     ),
                 )
-                .await;
+                .expect("register with the same generation");
             assert_eq!(SIGNED_PAYMENT_REGISTRY.outstanding(), baseline + 1);
             (manager, handle_a, handle_b, token, baseline)
         });
