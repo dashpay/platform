@@ -5,8 +5,11 @@ use grovedb::TransactionArg;
 
 impl Drive {
     /// Re-reads a data contract from state and re-seeds the in-memory data contract cache
-    /// with it. Call this from a protocol-upgrade migration for **every** contract the
-    /// migration writes.
+    /// with it. Call this from a protocol-upgrade migration for every contract the
+    /// migration **rewrites** — i.e. any contract that existed before the migration and
+    /// so may already sit in a node's cache. A contract the migration introduces for the
+    /// first time needs no refresh: the cache holds no negative entries, so no node can
+    /// have a stale copy of a contract that never existed.
     ///
     /// CONSENSUS-CRITICAL. Contracts written by a state transition go through the drive
     /// operation batch, whose `RemoveDataContractFromCache` finalization task evicts the

@@ -691,26 +691,25 @@ impl<C> Platform<C> {
 
         // CONSENSUS-CRITICAL. Both writes above go straight to state and bypass the drive
         // operation batch, whose finalization task is what normally evicts a superseded
-        // contract from the data contract cache. Every contract a migration writes must
-        // therefore be refreshed here explicitly.
+        // contract from the data contract cache. A migration that rewrites a contract
+        // that may already be cached must therefore refresh the cache explicitly.
         //
-        // DPNS is the one that can actually be stale, and the consequences are severe:
-        // the pre-v13 DPNS was stored with a v0 `DataContractConfig`, the v2 contract
-        // written above carries a v1 config, and `DocumentV0::serialize` selects
-        // `serialize_v0` for the former and `serialize_v2` for the latter. A node holding
-        // the pre-migration DPNS in cache would keep writing DPNS documents with a `00`
-        // version prefix while a node with a cold cache writes `02` — the same block,
-        // two different app hashes.
-        for contract_id in [
-            document_history_contract.id().to_buffer(),
+        // Here that is DPNS, and the consequences of skipping it are severe: the pre-v13
+        // DPNS was stored with a v0 `DataContractConfig`, the v2 contract written above
+        // carries a v1 config, and `DocumentV0::serialize` selects `serialize_v0` for
+        // the former and `serialize_v2` for the latter. A node holding the pre-migration
+        // DPNS in cache would keep writing DPNS documents with a `00` version prefix
+        // while a node with a cold cache writes `02` — the same block, two different app
+        // hashes.
+        //
+        // The document history contract needs no refresh: it first comes into existence
+        // in this transition, and the data contract cache holds no negative entries, so
+        // no node can have a stale copy.
+        self.drive.refresh_data_contract_cache_from_state(
             dpns_contract.id().to_buffer(),
-        ] {
-            self.drive.refresh_data_contract_cache_from_state(
-                contract_id,
-                Some(transaction),
-                platform_version,
-            )?;
-        }
+            Some(transaction),
+            platform_version,
+        )?;
 
         Ok(())
     }
