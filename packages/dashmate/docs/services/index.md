@@ -64,6 +64,7 @@ Dashmate runs and orchestrate Dash Platform components:
 - [Core](./core.md): Dash Core service
 - [Platform](./platform.md): Platform services (Drive, Tenderdash, DAPI)
 - [Gateway](./gateway.md): API Gateway service
+  - [Validating an Envoy version bump](./gateway-envoy-upgrade.md): pre-bump checks for the gateway image
 - [Quorum List](./quorum_list.md): Optional quorum list sidecar (local preset)
 - [Dashmate Helper](./dashmate_helper.md): Helper service for Dashmate CLI
 

@@ -321,6 +321,12 @@ The admin interface is a powerful tool but presents security risks:
 | **Rate Limiter Redis**    | Redis                | 6379          | (fixed internal)                                 | (internal)            | -               |
 
 
+## Upgrading Envoy
+
+The Envoy image is pinned in `configs/defaults/getBaseConfigFactory.js`. Before changing that pin,
+validate the rendered configuration against the candidate release — see
+[Validating an Envoy version bump](./gateway-envoy-upgrade.md).
+
 ## Best Practices
 
 1. **Security**: Restrict admin and metrics access to trusted networks
