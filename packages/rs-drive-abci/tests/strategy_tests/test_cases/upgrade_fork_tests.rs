@@ -810,7 +810,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .find_by_id(SystemDataContract::DPNS.id(), 13)
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_13)
+            .expect("expected the DPNS lookup to succeed")
             .expect("the public activation path must cache DPNS v2");
         let domain = dpns_v13
             .document_type_for_name("domain")
@@ -823,7 +824,11 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .find_by_id(SystemDataContract::DocumentHistory.id(), 13)
+            .find_by_id(
+                SystemDataContract::DocumentHistory.id(),
+                platform_version_13
+            )
+            .expect("expected the document history lookup to succeed")
             .is_some());
         drop(abci_app);
 
@@ -874,7 +879,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .find_by_id(SystemDataContract::DPNS.id(), 13)
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_13)
+            .expect("expected the DPNS lookup to succeed")
             .expect("restart must reconstruct DPNS v2");
         let reopened_domain = reopened_dpns_v13
             .document_type_for_name("domain")
@@ -886,7 +892,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .find_by_id(SystemDataContract::DPNS.id(), 12)
+            .find_by_id(SystemDataContract::DPNS.id(), platform_version_12)
+            .expect("expected the DPNS lookup to succeed")
             .expect("restart must materialize explicitly requested DPNS v1");
         let reopened_domain_v12 = reopened_dpns_v12
             .document_type_for_name("domain")
@@ -898,7 +905,11 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .find_by_id(SystemDataContract::DocumentHistory.id(), 13)
+            .find_by_id(
+                SystemDataContract::DocumentHistory.id(),
+                platform_version_13
+            )
+            .expect("expected the document history lookup to succeed")
             .is_some());
     }
 

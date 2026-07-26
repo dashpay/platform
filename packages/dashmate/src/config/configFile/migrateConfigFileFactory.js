@@ -19,9 +19,7 @@ export default function migrateConfigFileFactory(getConfigFileMigrations) {
      * @type {Object}
      */
     const migratedConfigFile = Object.keys(configFileMigrations)
-      .filter((version) => (
-        semver.gt(version, fromVersion) && semver.lte(version, toVersion)
-      ))
+      .filter((version) => semver.gt(version, fromVersion))
       .sort(semver.compare)
       .reduce((migratedOptions, version) => {
         const migrationFunction = configFileMigrations[version];

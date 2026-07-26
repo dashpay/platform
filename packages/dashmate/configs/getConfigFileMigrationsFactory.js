@@ -1561,22 +1561,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      '4.1.0-beta.3': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            // beta.2 could stamp a stable config with its own format version
-            // without updating these major-derived official image tags.
-            // Preserve private registries, digests, and deliberate custom tags.
-            if (options.platform?.drive?.abci?.docker?.image === 'dashpay/drive:4') {
-              options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
-            }
-            if (options.platform?.dapi?.rsDapi?.docker?.image === 'dashpay/rs-dapi:4') {
-              options.platform.dapi.rsDapi.docker.image = base.get('platform.dapi.rsDapi.docker.image');
-            }
-          });
-
-        return configFile;
-      },
     };
   }
 
