@@ -194,17 +194,41 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // variant. The `Private` arm would only come from the soft-
         // wallet `build_asset_lock` path which we no longer call from
         // platform-wallet — defensively bail if it appears.
+        // `build_asset_lock_with_signer` has already RESERVED the transaction's
+        // inputs on the BIP44 account at `account_index`. The two error arms
+        // below abandon that signed-but-un-broadcast transaction, so — like the
+        // shielded path above — each must roll the reservation back or the
+        // inputs stay stranded until the reservation-TTL backstop
+        // (dashpay/platform#4184 review). These arms are defensive (the
+        // signer-driven builder always returns a non-empty `Public`), but the
+        // rollback keeps the invariant total: no abandon path strands inputs.
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockCreditKeys;
         let path = match result.keys {
-            AssetLockCreditKeys::Public(mut keys) => {
-                let (_pubkey, path) = keys.drain(..).next().ok_or_else(|| {
-                    PlatformWalletError::AssetLockTransaction(
+            AssetLockCreditKeys::Public(mut keys) => match keys.drain(..).next() {
+                Some((_pubkey, path)) => path,
+                None => {
+                    if let Some(acc) = info
+                        .core_wallet
+                        .accounts
+                        .standard_bip44_accounts
+                        .get(&account_index)
+                    {
+                        acc.release_reservation(&result.transaction);
+                    }
+                    return Err(PlatformWalletError::AssetLockTransaction(
                         "Builder returned no credit-output keys".to_string(),
-                    )
-                })?;
-                path
-            }
+                    ));
+                }
+            },
             AssetLockCreditKeys::Private(_) => {
+                if let Some(acc) = info
+                    .core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&account_index)
+                {
+                    acc.release_reservation(&result.transaction);
+                }
                 return Err(PlatformWalletError::AssetLockTransaction(
                     "Builder returned Private keys; signer-driven path expected Public".to_string(),
                 ));
@@ -473,39 +497,91 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // mirroring the pinned single-account builder's phase-1/2/3 sequence
         // (peek without marking → signer round-trip → commit the index) so a
         // signer failure never irreversibly consumes a pool index.
-        let (path, index) = {
-            let credit_account = info
-                .core_wallet
-                .accounts
-                .asset_lock_shielded_address_topup
-                .as_mut()
-                .ok_or_else(|| {
-                    PlatformWalletError::AssetLockTransaction(
-                        "Asset lock shielded address top-up account not found".to_string(),
-                    )
-                })?;
-            credit_account
-                .peek_next_path()
-                .map_err(|e| PlatformWalletError::AssetLockTransaction(e.to_string()))?
-        };
-        signer.public_key(&path).await.map_err(|e| {
-            PlatformWalletError::AssetLockTransaction(format!("signer public_key failed: {e}"))
-        })?;
-        {
-            let credit_account = info
-                .core_wallet
-                .accounts
-                .asset_lock_shielded_address_topup
-                .as_mut()
-                .ok_or_else(|| {
-                    PlatformWalletError::AssetLockTransaction(
-                        "Asset lock shielded address top-up account not found".to_string(),
-                    )
-                })?;
-            credit_account
-                .mark_first_pool_index_used(index)
-                .map_err(|e| PlatformWalletError::AssetLockTransaction(e.to_string()))?;
+        //
+        // `build_signed` above already RESERVED this transaction's inputs in the
+        // selected account's `ReservationSet`, and the reservation is normally
+        // held all the way to broadcast. But every step below can still fail
+        // (missing shielded-topup account, `peek_next_path`, the signer
+        // round-trip, `mark_first_pool_index_used`), and each such failure
+        // abandons a signed transaction that never reaches the wire. Without a
+        // rollback those reserved inputs would stay stranded until the
+        // reservation-TTL backstop (~24 blocks), silently withholding the coins
+        // from any other send in the meantime (dashpay/platform#4184 review,
+        // thepastaclaw). So derive the key inside an inner future whose `Result`
+        // we inspect, and on ANY error release the reservation before
+        // propagating. The lookup mirrors `release_asset_lock_funding_reservation`
+        // (match the selected funds account by `funding_path`); it must run on a
+        // fresh shared borrow of `info` because the `&mut selected` used for
+        // `set_funding` cannot be revived across the credit-account borrows above.
+        let derive_credit_key = async {
+            let (path, index) = {
+                let credit_account = info
+                    .core_wallet
+                    .accounts
+                    .asset_lock_shielded_address_topup
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Asset lock shielded address top-up account not found".to_string(),
+                        )
+                    })?;
+                credit_account
+                    .peek_next_path()
+                    .map_err(|e| PlatformWalletError::AssetLockTransaction(e.to_string()))?
+            };
+            signer.public_key(&path).await.map_err(|e| {
+                PlatformWalletError::AssetLockTransaction(format!("signer public_key failed: {e}"))
+            })?;
+            {
+                let credit_account = info
+                    .core_wallet
+                    .accounts
+                    .asset_lock_shielded_address_topup
+                    .as_mut()
+                    .ok_or_else(|| {
+                        PlatformWalletError::AssetLockTransaction(
+                            "Asset lock shielded address top-up account not found".to_string(),
+                        )
+                    })?;
+                credit_account
+                    .mark_first_pool_index_used(index)
+                    .map_err(|e| PlatformWalletError::AssetLockTransaction(e.to_string()))?;
+            }
+            Ok::<DerivationPath, PlatformWalletError>(path)
         }
+        .await;
+
+        let path = match derive_credit_key {
+            Ok(path) => path,
+            Err(e) => {
+                // Abandon path: roll back the reservation `build_signed` placed
+                // on the selected funds account so its inputs are immediately
+                // reselectable, rather than stranded until the reservation-TTL
+                // backstop.
+                let mut released = false;
+                for acc in info.core_wallet.accounts.all_funding_accounts() {
+                    if acc
+                        .managed_account_type()
+                        .to_account_type()
+                        .derivation_path(network)
+                        .map(|p| p == funding_path)
+                        .unwrap_or(false)
+                    {
+                        acc.release_reservation(&transaction);
+                        released = true;
+                        break;
+                    }
+                }
+                if !released {
+                    tracing::warn!(
+                        %funding_path,
+                        "abandoned signed asset-lock tx but could not release its reservation: \
+                         no funds account matches the funding path (inputs will free on TTL)"
+                    );
+                }
+                return Err(e);
+            }
+        };
 
         tracing::debug!(
             selected_inputs = transaction.input.len(),
@@ -1117,6 +1193,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         if let Err(e) = pool_durability {
             tracing::error!(error = %e, "failed to persist asset-lock funding index");
             if funding_type == AssetLockFundingType::IdentityInvitation {
+                // Aborting a SIGNED but un-broadcast transaction: `build`'s inputs
+                // are still reserved (the reservation is held from build through
+                // broadcast). Roll it back before bailing, or the funding inputs
+                // stay stranded until the reservation-TTL backstop
+                // (dashpay/platform#4184 review — abandon before broadcast). Safe
+                // to route through `release_asset_lock_funding_reservation` here:
+                // `build_asset_lock_transaction` already dropped the wallet write
+                // lock on return, so re-acquiring the read lock does not deadlock.
+                self.release_asset_lock_funding_reservation(
+                    &tx,
+                    account_index,
+                    funding_type,
+                    &funding_path,
+                )
+                .await;
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
                     "aborted before broadcast: could not durably record the invitation \
                      funding index (broadcasting anyway would risk voucher-key reuse on \
