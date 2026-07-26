@@ -472,16 +472,45 @@ jobs:
       # Uploads the staged artifacts to Maven Central. Task dependencies run
       # verifyJniLibsForRemotePublish and verifyStagedAarForRemotePublish
       # first, so a stale or nativeless staged AAR can never be deployed.
+      #
+      # The post-approval revalidation step above runs BEFORE checkout, setup,
+      # artifact restore and staging — a writer could still force-move the tag
+      # during that window, after the check passed but before this irrevocable
+      # publish. So the tag->built-SHA guard is repeated HERE, inline and in the
+      # SAME step as jreleaserDeploy, immediately before the deploy command:
+      # with no intervening workflow step, a force-move landing before publish
+      # is caught and aborts the run. This cannot make a mutable Git ref and an
+      # external publication atomic (protect the kotlin-sdk-* tags in repo
+      # settings for that — see PUBLISHING.md); it is the defense-in-depth
+      # last check that shrinks the window to this step alone.
       - name: Deploy to Maven Central (jreleaserDeploy, version from tag)
         if: steps.secrets-gate.outputs.proceed == 'true'
         working-directory: packages/kotlin-sdk
         env:
           SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
+          TAG: ${{ needs.build-and-release.outputs.tag_name }}
+          BUILT_SHA: ${{ needs.build-and-release.outputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
           JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME }}
           JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD: ${{ secrets.JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD }}
           JRELEASER_GPG_PUBLIC_KEY: ${{ secrets.JRELEASER_GPG_PUBLIC_KEY }}
           JRELEASER_GPG_SECRET_KEY: ${{ secrets.JRELEASER_GPG_SECRET_KEY }}
           JRELEASER_GPG_PASSPHRASE: ${{ secrets.JRELEASER_GPG_PASSPHRASE }}
-        run: >-
-          ./gradlew :sdk:jreleaserDeploy
-          -PsdkVersion="$SDK_VERSION" --stacktrace
+        run: |
+          # Final tag->built-SHA guard, in the SAME step as the publish so no
+          # workflow step runs between it and jreleaserDeploy. Resolve the tag's
+          # current commit, dereferencing an annotated tag to the commit it
+          # points at, and abort unless it STILL equals the built/approved SHA.
+          OBJ_TYPE=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.type')
+          OBJ_SHA=$(gh api "repos/${REPO}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [ "$OBJ_TYPE" = "tag" ]; then
+            OBJ_SHA=$(gh api "repos/${REPO}/git/tags/${OBJ_SHA}" --jq '.object.sha')
+          fi
+          if [ "$OBJ_SHA" != "$BUILT_SHA" ]; then
+            echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this release was built and approved for ${BUILT_SHA} — the tag was force-moved before deploy. Refusing to publish so the Maven Central version cannot be released under a tag that identifies a different commit."
+            exit 1
+          fi
+          echo "::notice::Tag ${TAG} still resolves to the approved commit ${BUILT_SHA} at deploy time — publishing."
+          ./gradlew :sdk:jreleaserDeploy \
+            -PsdkVersion="$SDK_VERSION" --stacktrace

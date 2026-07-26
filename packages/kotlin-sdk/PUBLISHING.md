@@ -24,15 +24,18 @@ Pushing a `kotlin-sdk-vX.Y.Z` tag runs
 
 In CI the version is never passed by hand — it comes only from the tag — so
 the Maven Central artifact and the GitHub-release AAR are always the same
-commit under the same version (the deploy job checks out the same tag and
-re-stages the native libraries the build job produced, rather than rebuilding
-them). Tags that would derive a `-SNAPSHOT` version are rejected. A
+commit under the same version (the deploy job checks out the exact commit SHA
+the build job built — not the mutable tag ref — and re-stages the native
+libraries that build produced, rather than rebuilding them; the tag is
+re-validated against that SHA after approval, and once more inline immediately
+before the deploy). Tags that would derive a `-SNAPSHOT` version are rejected. A
 `kotlin-sdk-*` tag without the `vX.Y.Z` form still gets its GitHub-release AAR
 but skips the Maven deploy (there is no version to derive). The workflow's
 manual `workflow_dispatch` path is for re-runs/emergencies only: it takes an
 *existing* tag name — either the short `kotlin-sdk-vX.Y.Z` form or a full
-`refs/tags/kotlin-sdk-vX.Y.Z` ref — checks out that tag, and derives the
-version from it the same way; it has no version input.
+`refs/tags/kotlin-sdk-vX.Y.Z` ref — resolves it to the commit it currently
+points at, checks out that commit, and derives the version from the tag the
+same way; it has no version input.
 
 ### The human gate: the `maven-central` environment (required before secrets)
 
