@@ -1561,6 +1561,25 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.1.0-rc.2': (configFile) => {
+        // Move the Platform Gateway onto the Envoy 1.39 line. Only configs still
+        // carrying the previously shipped 1.35.x image are re-pinned; an image
+        // the operator chose themselves (private fork, vendor-patched build,
+        // floating tag) is left alone. Pulled from the base config so it tracks
+        // whatever is pinned there.
+        // Keyed at the next release, not the released 4.1.0-rc.1: the runner
+        // skips fromVersion===toVersion, so a key equal to an operator's current
+        // version never fires.
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const docker = options.platform?.gateway?.docker;
+            if (docker && /^dashpay\/envoy:1\.35\./.test(docker.image)) {
+              docker.image = base.get('platform.gateway.docker.image');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
