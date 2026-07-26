@@ -866,7 +866,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_withdrawals();
+            .load_withdrawals(platform_version)
+            .expect("expected the withdrawals system contract");
 
         let data_contract_id = withdrawals.id();
         let document_type_name = "withdrawal";
@@ -1031,7 +1032,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_withdrawals();
+            .load_withdrawals(platform_version)
+            .expect("expected the withdrawals system contract");
 
         let data_contract_id = withdrawals.id();
         let document_type_name = "withdrawal";
@@ -1196,7 +1198,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_withdrawals();
+            .load_withdrawals(platform_version)
+            .expect("expected the withdrawals system contract");
 
         let data_contract_id = withdrawals.id();
         let document_type_name = "withdrawal";
@@ -1353,7 +1356,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_withdrawals();
+            .load_withdrawals(platform_version)
+            .expect("expected the withdrawals system contract");
 
         let data_contract_id = withdrawals.id();
         let document_type_name = "withdrawal";
@@ -1525,7 +1529,8 @@ mod tests {
             .drive
             .cache
             .system_data_contracts
-            .load_withdrawals();
+            .load_withdrawals(platform_version)
+            .expect("expected the withdrawals system contract");
 
         let data_contract_id = withdrawals.id();
         let document_type_name = "withdrawal";
