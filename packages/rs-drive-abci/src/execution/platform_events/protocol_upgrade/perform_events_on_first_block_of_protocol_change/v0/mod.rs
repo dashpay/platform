@@ -5,6 +5,7 @@ use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::hashes::Hash;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
@@ -688,6 +689,29 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        // CONSENSUS-CRITICAL. Both writes above go straight to state and bypass the drive
+        // operation batch, whose finalization task is what normally evicts a superseded
+        // contract from the data contract cache. Every contract a migration writes must
+        // therefore be refreshed here explicitly.
+        //
+        // DPNS is the one that can actually be stale, and the consequences are severe:
+        // the pre-v13 DPNS was stored with a v0 `DataContractConfig`, the v2 contract
+        // written above carries a v1 config, and `DocumentV0::serialize` selects
+        // `serialize_v0` for the former and `serialize_v2` for the latter. A node holding
+        // the pre-migration DPNS in cache would keep writing DPNS documents with a `00`
+        // version prefix while a node with a cold cache writes `02` — the same block,
+        // two different app hashes.
+        for contract_id in [
+            document_history_contract.id().to_buffer(),
+            dpns_contract.id().to_buffer(),
+        ] {
+            self.drive.refresh_data_contract_cache_from_state(
+                contract_id,
+                Some(transaction),
+                platform_version,
+            )?;
+        }
+
         Ok(())
     }
 }
@@ -1012,6 +1036,134 @@ mod tests {
         assert!(domain.documents_keep_transfer_history());
         assert!(domain.documents_keep_purchase_history());
         assert!(domain.documents_keep_pricing_history());
+    }
+
+    /// CONSENSUS REGRESSION, reproducing the testnet divergence at block 467,976.
+    ///
+    /// DPNS has been stored with a **v0** `DataContractConfig` ever since it was
+    /// registered at genesis under protocol version 1. The v13 transition rewrites it
+    /// with the v2 schema, which carries a **v1** config. That rewrite goes straight to
+    /// state and bypasses the drive operation batch, whose finalization task is what
+    /// normally evicts a superseded contract from the data contract cache — so a node
+    /// that had been up long enough to have read DPNS once kept serving the v0-config
+    /// copy for the rest of its process lifetime, while a node whose cache was cold read
+    /// the migrated one.
+    ///
+    /// That difference reaches state. `DocumentV0::serialize` selects `serialize_v0` for
+    /// a contract whose config is v0 and `serialize_v2` otherwise, so the warm node wrote
+    /// DPNS documents with a leading `00` and the cold node wrote the identical document
+    /// with a leading `02`. One byte, a different Merk node hash, a different app hash.
+    #[test]
+    fn test_transition_to_version_13_refreshes_warm_dpns_contract_cache() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_version_12 = PlatformVersion::get(12).expect("expected platform version 12");
+        let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
+
+        let dpns_id = *SystemDataContract::DPNS.id().as_bytes();
+
+        // Put state where testnet actually was: DPNS as it was written at genesis under
+        // protocol version 1, carrying a v0 config. Nothing had rewritten it since.
+        let genesis_dpns =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::first())
+                .expect("expected to load the genesis-era DPNS contract");
+
+        platform
+            .drive
+            .apply_contract(
+                &genesis_dpns,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version_12,
+            )
+            .expect("expected to store the genesis-era DPNS contract");
+
+        // Warm the global cache the way a long-lived node does: a read with no
+        // transaction, which is also the path every read-only DAPI query takes.
+        let warm = platform
+            .drive
+            .get_contract_with_fetch_info(dpns_id, true, None, platform_version_12)
+            .expect("expected to fetch DPNS")
+            .expect("expected DPNS to exist")
+            .contract
+            .clone();
+
+        let warm_preorder = warm
+            .document_type_for_name("preorder")
+            .expect("expected the preorder document type");
+        let document = warm_preorder
+            .random_document(Some(42), platform_version_12)
+            .expect("expected to build a preorder document");
+
+        assert_eq!(
+            document
+                .serialize(warm_preorder, &warm, platform_version_12)
+                .expect("expected to serialize")
+                .first()
+                .copied(),
+            Some(0),
+            "precondition: the pre-migration contract serializes preorders with the v0 prefix"
+        );
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+
+        platform
+            .transition_to_version_13(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        // The block execution read path: a transactional fetch, which consults the block
+        // cache first and then falls back to the global cache. Before the fix this fell
+        // through to the stale global entry and returned the v0-config contract.
+        let migrated = platform
+            .drive
+            .get_contract_with_fetch_info(dpns_id, false, Some(&transaction), platform_version)
+            .expect("expected to fetch DPNS")
+            .expect("expected DPNS to exist after the transition")
+            .contract
+            .clone();
+
+        assert!(
+            migrated
+                .document_type_for_name("domain")
+                .expect("expected the domain document type")
+                .documents_keep_transfer_history(),
+            "a warm node must see the migrated DPNS v2 contract, not its cached copy"
+        );
+
+        // The consensus-visible consequence, asserted directly: the very same preorder
+        // document must now serialize with the v2 prefix, matching what a node with a
+        // cold cache writes into the block.
+        let migrated_preorder = migrated
+            .document_type_for_name("preorder")
+            .expect("expected the preorder document type");
+
+        assert_eq!(
+            document
+                .serialize(migrated_preorder, &migrated, platform_version)
+                .expect("expected to serialize")
+                .first()
+                .copied(),
+            Some(2),
+            "a warm node must serialize preorders identically to a cold node after the migration"
+        );
     }
 
     // test_transition_to_version_9 removed: requires prior state from versions 4-8

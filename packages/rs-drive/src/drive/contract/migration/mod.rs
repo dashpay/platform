@@ -1,1 +1,2 @@
+mod refresh_contract_cache;
 mod strip_unknown_document_schema_properties;
