@@ -1,3 +1,19 @@
+## [4.1.0-rc.2](https://github.com/dashpay/platform/compare/v4.1.0-rc.1...v4.1.0-rc.2) (2026-07-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** bump gateway Envoy to 1.39.0 (#4233)
+
+### Features
+
+* **dashmate:** bump gateway Envoy to 1.39.0 ([#4233](https://github.com/dashpay/platform/issues/4233))
+
+
+### Bug Fixes
+
+* **platform:** harden v12 to v13 protocol upgrades ([#4222](https://github.com/dashpay/platform/issues/4222))
+
 ## [4.1.0-rc.1](https://github.com/dashpay/platform/compare/v4.1.0-beta.2...v4.1.0-rc.1) (2026-07-24)
 
 
