@@ -25,7 +25,7 @@ yarn node scripts/validate-envoy-config.js v1.35.11 v1.39.0
 # add the runtime checks (starts Envoy + the rate limiter + redis on a throwaway network)
 yarn node scripts/validate-envoy-config.js --smoke v1.39.0
 
-# the custom image, once docker-envoy has built it
+# the custom image docker-envoy publishes, which is what dashmate actually runs
 yarn node scripts/validate-envoy-config.js --smoke dashpay/envoy:1.39.0-impr.1
 
 yarn node scripts/validate-envoy-config.js --list        # the variant matrix
@@ -78,14 +78,17 @@ real upstreams — run `yarn test:suite` against a node for that.
 
 ## Assessment: v1.35.11 → v1.39.0 (July 2026)
 
+This is the bump the pin now carries — `dashpay/envoy:1.39.0-impr.1`.
+
 Verdict: **go**, no config edits required. 8/8 variants validate clean and all runtime checks pass
-on `envoyproxy/envoy:v1.39.0`, with results identical to the `v1.35.11` baseline (which was also run
-through the custom `dashpay/envoy:1.35.11-impr.1` image). No field in the rendered config is
+on `envoyproxy/envoy:v1.39.0` and on the custom `dashpay/envoy:1.39.0-impr.1` (both its amd64 and
+arm64 manifests), with results identical to the `v1.35.11` baseline (which was also run
+through `dashpay/envoy:1.35.11-impr.1`). No field in the rendered config is
 deprecated or removed at v1.39.0, and nothing in the `1.36.0`–`1.39.0` release notes removes config
 we use. `envoyproxy/ratelimit:3fcc3609` (April 2024) still interoperates: the filter's
 `transport_api_version: V3` remains current, and the over-limit path was exercised end to end.
 
-Two behavior changes will alter how the gateway behaves once bumped, without changing the config:
+Two behavior changes do alter how the gateway behaves on this version, without changing the config:
 
 - **The overload actions keyed on `global_downstream_max_connections` start working.** v1.37.0 fixed
   that monitor to actually trigger actions ("previously, actions never triggered"). So
@@ -116,11 +119,11 @@ separately as rapid-reset hardening.
 
 ### Notes for the bump
 
-- `dashpay/envoy` has no 1.39 build yet; docker-envoy has to publish `dashpay/envoy:1.39.0-impr.N`
-  first, then re-run the harness against it (the supervisor entrypoint is handled). That wrapper only
-  needs its `FROM` bumped: v1.39.0 still ships Ubuntu 22.04 without python3, so the `apt install`
-  step is still required, and `envoy --restart-epoch`/`--log-level` — all `start_envoy.sh` uses —
-  still exist.
+- The hot-restart supervisor in the custom image is outside what the harness covers, because it
+  overrides the entrypoint to reach Envoy's flags. It was checked by hand on
+  `dashpay/envoy:1.39.0-impr.1`: the container boots through `hot-restarter.py` at epoch 0, `SIGHUP`
+  forks a child at epoch 1 and the parent exits cleanly, which is the zero-downtime path dashmate
+  uses after certificate renewal. Worth repeating on future bumps.
 - v1.39.0 is the only 1.39 release; the HTTP/2 flood-protection fix was not backported to the
   1.35–1.38 patch lines. The pin is also two patches behind on its own line — v1.35.13 carries the
   June 2026 CVE batch, none of which touch the extensions this gateway loads.

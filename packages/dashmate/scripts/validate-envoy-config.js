@@ -19,7 +19,7 @@
  *   yarn node scripts/validate-envoy-config.js                      # pinned version
  *   yarn node scripts/validate-envoy-config.js v1.39.0              # candidate
  *   yarn node scripts/validate-envoy-config.js v1.35.11 v1.39.0     # side by side
- *   yarn node scripts/validate-envoy-config.js dashpay/envoy:1.35.11-impr.1
+ *   yarn node scripts/validate-envoy-config.js dashpay/envoy:1.39.0-impr.1
  *
  * Options:
  *   --image=<repo>     image repository for bare tags (default: envoyproxy/envoy)
@@ -186,7 +186,7 @@ function parseArgs(argv) {
 
 /**
  * The pinned gateway image is a custom build of a stock Envoy release
- * (`dashpay/envoy:1.35.11-impr.1` wraps `envoyproxy/envoy:v1.35.11`), so the
+ * (`dashpay/envoy:1.39.0-impr.1` wraps `envoyproxy/envoy:v1.39.0`), so the
  * baseline tag is the pinned version without the build suffix.
  *
  * @param {Config} config
