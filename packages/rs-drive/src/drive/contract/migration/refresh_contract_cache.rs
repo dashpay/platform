@@ -33,7 +33,14 @@ impl Drive {
     /// `get_contract_with_fetch_info`: a concurrent read-only query thread (which reads
     /// committed state, with no transaction, and does populate the global cache) could
     /// otherwise race a pre-migration copy back into the global cache between the
-    /// eviction and the re-seed.
+    /// eviction and the re-seed. The other half of that race — a query thread that read
+    /// the pre-migration contract, was descheduled, and performs its cache insert only
+    /// after the migrated contract was promoted to the global cache — is closed by the
+    /// monotonic version guard in [`DataContractCache::insert`], which requires every
+    /// migration rewrite to bump the contract's version (the v13 DPNS rewrite goes
+    /// 1 → 2).
+    ///
+    /// [`DataContractCache::insert`]: crate::cache::DataContractCache::insert
     ///
     /// Billing is unaffected. `fetch_contract_v0` computes the cached `OperationCost`
     /// with grovedb value caching disabled precisely so the cost of a contract fetch is
