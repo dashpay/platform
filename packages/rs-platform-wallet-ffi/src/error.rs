@@ -2,6 +2,39 @@ use platform_wallet::PlatformWalletError;
 use std::ffi::CString;
 use std::os::raw::c_char;
 
+/// Compile-time drift guard for the signer key-unavailable machine prefix.
+///
+/// `platform-wallet` cannot depend on this FFI crate, so it mirrors the
+/// reserved prefix locally (`platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX`)
+/// to promote a structured signer failure to [`PlatformWalletError::Sdk`]
+/// *before* an operation wrapper stringifies it. This crate — which sees both
+/// definitions — pins the mirror byte-identical to the canonical
+/// [`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`], so any drift is a
+/// build failure rather than a silent code-31 regression
+/// (dashpay/platform#4183 review).
+const fn const_str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+const _: () = assert!(
+    const_str_eq(
+        platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX,
+        rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX,
+    ),
+    "platform-wallet's mirrored SIGNER_KEY_UNAVAILABLE_PREFIX drifted from \
+     rs-sdk-ffi's canonical DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX"
+);
+
 #[macro_export]
 macro_rules! deref_ptr {
     ($ptr:expr) => {{
