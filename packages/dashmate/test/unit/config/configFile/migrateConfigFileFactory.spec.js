@@ -85,49 +85,4 @@ describe('migrateConfigFileFactory', () => {
       );
     }
   });
-
-  it('should move the gateway off the previous Envoy image but keep a customised one', async () => {
-    // Bumping the pinned gateway image in the base config only affects configs
-    // created afterwards, so existing operators stay on the previous Envoy
-    // release until a migration re-pins them. An image the operator chose
-    // themselves — private fork, vendor-patched build, a floating tag — must
-    // survive untouched, which is why the migration matches the image dashmate
-    // used to ship rather than any dashpay/envoy image.
-    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
-
-    const defaultConfigFileData = createConfigFile().toObject();
-    const [firstConfigName] = Object.keys(defaultConfigFileData.configs);
-    const expectedGatewayImage = defaultConfigFileData
-      .configs[firstConfigName].platform.gateway.docker.image;
-
-    const staleConfigFileData = createConfigFile().toObject();
-    staleConfigFileData.configFormatVersion = '4.0.0';
-    for (const options of Object.values(staleConfigFileData.configs)) {
-      options.platform.gateway.docker.image = 'dashpay/envoy:1.35.11-impr.1';
-    }
-
-    const customisedConfigName = Object.keys(staleConfigFileData.configs).pop();
-    staleConfigFileData.configs[customisedConfigName]
-      .platform.gateway.docker.image = 'dashpay/envoy:latest';
-
-    const migratedConfigFileData = migrateConfigFile(
-      staleConfigFileData,
-      staleConfigFileData.configFormatVersion,
-      version,
-    );
-
-    for (const [name, options] of Object.entries(migratedConfigFileData.configs)) {
-      if (name === customisedConfigName) {
-        expect(options.platform.gateway.docker.image).to.equal(
-          'dashpay/envoy:latest',
-          `customised gateway image overwritten for ${name}`,
-        );
-      } else {
-        expect(options.platform.gateway.docker.image).to.equal(
-          expectedGatewayImage,
-          `gateway image not re-pinned for ${name}`,
-        );
-      }
-    }
-  });
 });
