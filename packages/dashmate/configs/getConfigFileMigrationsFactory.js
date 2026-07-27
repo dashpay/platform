@@ -1581,32 +1581,42 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '4.1.0-rc.3': (configFile) => {
-        // The drive and rs-dapi image tags are derived from the package version:
-        // the major on a stable release, the major plus the prerelease id on a
-        // prerelease. Crossing that boundary changes the tag, so operators
-        // upgrading from a release of this major keep pulling the images of the
-        // line they installed until the tags are re-pinned from the base config.
-        // Keyed at the next release, not the released 4.1.0-rc.2: the runner
-        // skips fromVersion===toVersion, so a key equal to an operator's current
-        // version never fires.
+        // The drive and rs-dapi image tags are derived from the package version
+        // in configs/defaults/getBaseConfigFactory.js: the major on a stable
+        // release, the major plus the prerelease identifier on a prerelease.
+        // Crossing that boundary changes the tag, so operators upgrading from a
+        // release of this major keep pulling the images of the line they
+        // installed until the tags are re-pinned from the base config.
+        // Keyed one release ahead of the change: the runner skips
+        // fromVersion === toVersion, so a migration keyed at an operator's
+        // current version never fires.
         //
-        // Only the stock Dash tags for this major are moved. An image the
-        // operator chose themselves (private fork, vendor-patched build, tag
-        // pinned to an exact version) is left alone.
-        const stockImagePatterns = {
-          'platform.drive.abci.docker': /^dashpay\/drive:4(-[a-z]+)?$/,
-          'platform.dapi.rsDapi.docker': /^dashpay\/rs-dapi:4(-[a-z]+)?$/,
-        };
+        // Only the tags releases of this major actually publish are moved, so
+        // an image the operator chose themselves keeps whatever they set: a
+        // fork, a registry-qualified name, a tag pinned to an exact version,
+        // and a locally built tag such as dashpay/drive:4-local. The prerelease
+        // identifiers are listed rather than matched loosely because anything
+        // broader also matches operator-chosen tags in this namespace. An
+        // identifier a later release invents is skipped rather than guessed at,
+        // which leaves the operator untouched instead of overwriting them.
+        //
+        // Configs older than 4.0.0 cross the unconditional re-pin in the
+        // '4.0.0' migration first, so they never reach here carrying an image
+        // of their own.
+        const stockDriveImage = /^dashpay\/drive:4(-(rc|dev|beta|alpha|pr|hotfix))?$/;
+        const stockRsDapiImage = /^dashpay\/rs-dapi:4(-(rc|dev|beta|alpha|pr|hotfix))?$/;
 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            Object.entries(stockImagePatterns)
-              .forEach(([dockerPath, stockImagePattern]) => {
-                const docker = lodash.get(options, dockerPath);
-                if (docker && stockImagePattern.test(docker.image)) {
-                  docker.image = base.get(`${dockerPath}.image`);
-                }
-              });
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
           });
 
         return configFile;
