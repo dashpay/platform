@@ -285,14 +285,16 @@ jobs:
   maven-central-deploy:
     name: Deploy to Maven Central (version from tag)
     needs: build-and-release
-    # Runs only when the RUN's ref is a tag: the maven-central environment's
-    # v* tag policy would reject a branch ref anyway, but rejection fails the
-    # job — skipping keeps a branch-ref dispatch (the only way to re-attach
-    # assets for a tag that predates these workflow files, since a dispatch
-    # loads the workflow from the selected ref) green while still never
-    # deploying from it. Maven for such tags goes through the manual runbook
-    # in packages/kotlin-sdk/PUBLISHING.md.
-    if: startsWith(github.ref, 'refs/tags/')
+    # Runs only when the RUN's ref is exactly the target tag — not merely
+    # some tag: binding the ref to inputs.tag stops a dispatch started at tag
+    # A from publishing input tag B under the environment authorization A's
+    # ref earned, and keeps the v* tag policy meaningful. A branch-ref
+    # dispatch (the only way to re-attach assets for a tag that predates
+    # these workflow files, since a dispatch loads the workflow from the
+    # selected ref) skips this job cleanly instead of failing at the
+    # environment policy; Maven for such tags goes through the manual
+    # runbook in packages/kotlin-sdk/PUBLISHING.md.
+    if: ${{ github.ref == format('refs/tags/{0}', inputs.tag) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
