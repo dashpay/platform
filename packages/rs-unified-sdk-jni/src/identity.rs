@@ -686,6 +686,271 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
     })
 }
 
+// ── DashPay invitations (DIP-13) ──────────────────────────────────────
+
+/// Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
+/// at the invitation derivation path and return a shareable
+/// `dashpay://invite` link. Thin marshaler over
+/// `platform_wallet_create_invitation`; the whole
+/// fund/broadcast/persist/proof/export pipeline lives in platform-wallet.
+///
+/// Funds `amountDuffs` from BIP-44 account `fundingAccountIndex`, signed by
+/// the Core-side resolver `coreSignerHandle` (a `MnemonicResolverHandle` —
+/// the SAME handle `registerIdentityWithFunding` passes as its trailing
+/// `coreSignerHandle`). No identity / `SignerHandle` is needed: this is pure
+/// voucher creation, no identity is registered.
+///
+/// The contact-bootstrap opt-in is OPTIONAL. Pass a 32-byte
+/// `inviterIdentityId` (and then a non-null `inviterUsername`) to embed the
+/// inviter so the invitee can send a contact request back; pass a null
+/// `inviterIdentityId` for a pure funding voucher (`inviterUsername` is then
+/// ignored). Only the username is carried in the link — the id bytes drive
+/// the opt-in flag but are not embedded (the invitee resolves the id from the
+/// username via DPNS).
+///
+/// `nowUnix` is the current unix time in seconds (the FFI can't read the
+/// clock deterministically); it must be `> 0`. The advisory ~24h expiry is
+/// derived Rust-side.
+///
+/// ## Durability gate
+///
+/// `create_invitation` refuses to run unless the persistence backend reports
+/// the full `INVITATION_CREATION` capability — which, on Android, requires the
+/// `onPersistInvitationUpsert` bridge callback to be wired (see
+/// `tramp_persist_invitations` in `persistence.rs`). The voucher's one-time
+/// key is HD-derived from the persisted funding index, so a backend that
+/// can't durably record the invitation could re-export the same bearer key
+/// after a restart; the call fails closed BEFORE any funds move when the
+/// bridge doesn't implement invitation persistence.
+///
+/// ## Return
+///
+/// A `byte[]` blob: the first 36 bytes are the funding outpoint
+/// (`txid[32] || vout_le[4]` — the same 36-byte encoding the persistence
+/// layer keys invitation rows by), and the remaining bytes are the UTF-8
+/// `dashpay://invite` URI. **The URI embeds the bearer voucher key — the
+/// Kotlin caller MUST NOT log it or persist it anywhere but the share sheet.**
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_createInvitation(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    amount_duffs: jlong,
+    funding_account_index: jint,
+    inviter_identity_id: JByteArray,
+    inviter_username: JString,
+    now_unix: jlong,
+    core_signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        // Reject sign / range errors at the boundary before they bit-cast to
+        // huge unsigned values across the FFI.
+        if amount_duffs <= 0 {
+            throw_sdk_exception(env, 1, "amountDuffs must be positive");
+            return ptr::null_mut();
+        }
+        if funding_account_index < 0 {
+            throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if now_unix <= 0 || now_unix > u32::MAX as jlong {
+            throw_sdk_exception(
+                env,
+                1,
+                "nowUnix must be a valid unix timestamp (1..=u32::MAX)",
+            );
+            return ptr::null_mut();
+        }
+        if core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "coreSignerHandle must be non-null");
+            return ptr::null_mut();
+        }
+
+        // Optional contact-bootstrap opt-in: a null `inviterIdentityId` ⇒ pure
+        // funding voucher (username ignored). When present it must be 32 bytes,
+        // and the username is then required — enforced here for a clear boundary
+        // error before the call (the FFI enforces the same rule).
+        let inviter_id: Option<[u8; 32]> = if inviter_identity_id.is_null() {
+            None
+        } else {
+            match read_id32(env, &inviter_identity_id, "inviterIdentityId") {
+                Some(id) => Some(id),
+                None => return ptr::null_mut(), // read_id32 already threw
+            }
+        };
+        let inviter_username_c =
+            match read_optional_cstring(env, &inviter_username, "inviterUsername") {
+                Ok(c) => c,
+                Err(()) => return ptr::null_mut(), // already threw
+            };
+        if inviter_id.is_some() && inviter_username_c.is_none() {
+            throw_sdk_exception(
+                env,
+                1,
+                "inviterUsername is required when inviterIdentityId is provided",
+            );
+            return ptr::null_mut();
+        }
+
+        let mut out_uri: *mut c_char = ptr::null_mut();
+        let mut out_outpoint = OutPointFFI {
+            txid: [0u8; 32],
+            vout: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_create_invitation(
+                wallet_handle as Handle,
+                amount_duffs as u64,
+                funding_account_index as u32,
+                inviter_id.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
+                inviter_username_c
+                    .as_ref()
+                    .map_or(ptr::null(), |c| c.as_ptr()),
+                now_unix as u32,
+                core_signer_handle as *mut MnemonicResolverHandle,
+                &mut out_uri as *mut *mut c_char,
+                &mut out_outpoint as *mut OutPointFFI,
+            )
+        };
+        // `inviter_id` / `inviter_username_c` own the buffers the pointers above
+        // referenced; they stay in scope through the FFI call.
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_uri.is_null() {
+            throw_sdk_exception(env, 99, "createInvitation returned success but no URI");
+            return ptr::null_mut();
+        }
+
+        // Copy the (secret) URI out, then free the Rust string. It is copied
+        // straight into the return blob and never logged.
+        let uri_bytes = unsafe { CStr::from_ptr(out_uri) }.to_bytes().to_vec();
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_uri) };
+
+        // Blob: outpoint (`txid[32] || vout_le[4]`) then the UTF-8 URI. The
+        // outpoint uses the same 36-byte encoding the persistence layer keys
+        // invitation rows by, so Kotlin has ONE outpoint shape everywhere.
+        let mut blob = Vec::with_capacity(36 + uri_bytes.len());
+        blob.extend_from_slice(&out_outpoint.txid);
+        blob.extend_from_slice(&out_outpoint.vout.to_le_bytes());
+        blob.extend_from_slice(&uri_bytes);
+
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Claim a DashPay invitation (DIP-13): register a NEW identity for the
+/// invitee, funded by the imported voucher carried in `uri`. Thin marshaler
+/// over `platform_wallet_claim_invitation`.
+///
+/// `uri` is the `dashpay://invite?…` link. `pubkeysBlob` is the invitee's own
+/// new-identity keys in the SAME flat layout `registerIdentityWithFunding`
+/// consumes (`u32 rowCount` then per row `u32 keyId, u16 pubkeyLen, pubkey`),
+/// each key stamped with its canonical DPP role by `keyId`. `signerHandle`
+/// signs those identity keys; the asset-lock's outer state-transition
+/// signature is produced from the imported raw voucher key, so NO Core-side
+/// resolver signer is needed here. `nowUnix` is accepted for C-ABI parity but
+/// currently unused (the legacy link carries no expiry, so claim has no time
+/// gate).
+///
+/// The contact-bootstrap ("establish contact with the sender?") is NOT done
+/// here — the UI asks the invitee and, on confirm, calls the existing
+/// contact-request path.
+///
+/// Returns the 32-byte new identity id. The standalone `ManagedIdentity`
+/// handle the FFI produces is destroyed here — Room learns of the new
+/// identity through the persistence changeset, not through this handle
+/// (mirrors `registerIdentityWithFunding`).
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_claimInvitation(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    uri: JString,
+    identity_index: jint,
+    pubkeys_blob: JByteArray,
+    signer_handle: jlong,
+    now_unix: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if identity_index < 0 {
+            throw_sdk_exception(env, 1, "identityIndex must be non-negative");
+            return ptr::null_mut();
+        }
+        if now_unix < 0 || now_unix > u32::MAX as jlong {
+            throw_sdk_exception(env, 1, "nowUnix must be in 0..=u32::MAX");
+            return ptr::null_mut();
+        }
+        if signer_handle == 0 {
+            throw_sdk_exception(env, 1, "signerHandle must be non-null");
+            return ptr::null_mut();
+        }
+
+        let uri_str: String = match env.get_string(&uri) {
+            Ok(s) => s.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "uri string was null/invalid");
+                return ptr::null_mut();
+            }
+        };
+        let c_uri = match CString::new(uri_str) {
+            Ok(c) => c,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "uri contained an interior NUL");
+                return ptr::null_mut();
+            }
+        };
+
+        // Decode the invitee's own new-identity keys — same blob layout and
+        // canonical keyId→role stamping as `registerIdentityWithFunding`
+        // (`decode_registration_pubkeys_blob` enforces ≥1 key, no duplicate
+        // key IDs, keyId 0 = MASTER + AUTHENTICATION), then lower each row to
+        // its FFI form via the row's own `to_ffi()`.
+        let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
+            return ptr::null_mut();
+        };
+        let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
+
+        let mut out_id = [0u8; 32];
+        let mut out_managed: Handle = 0;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_claim_invitation(
+                wallet_handle as Handle,
+                c_uri.as_ptr(),
+                identity_index as u32,
+                ffi_rows.as_ptr(),
+                ffi_rows.len(),
+                signer_handle as *mut SignerHandle,
+                now_unix as u32,
+                &mut out_id as *mut [u8; 32],
+                &mut out_managed as *mut Handle,
+            )
+        };
+        // `c_uri` / `decoded` / `ffi_rows` own the buffers the pointers above
+        // referenced; they stay in scope through the FFI call.
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        // The new identity is folded into Rust's IdentityManager and lands in
+        // Room via the persister changeset; the standalone managed handle would
+        // otherwise leak, so drop it.
+        if out_managed != 0 {
+            let mut destroy = unsafe { platform_wallet_ffi::managed_identity_destroy(out_managed) };
+            unsafe { platform_wallet_ffi_result_free(&mut destroy) };
+        }
+
+        env.byte_array_from_slice(&out_id)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 // ── Registration (Platform-address funded) ────────────────────────────
 
 /// Register a new identity funded by the wallet's already-committed

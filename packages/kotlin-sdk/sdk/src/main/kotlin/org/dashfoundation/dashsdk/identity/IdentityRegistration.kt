@@ -287,6 +287,130 @@ class IdentityRegistration internal constructor(
     }
 
     /**
+     * A freshly created DashPay invitation (DIP-13).
+     *
+     * @property outPoint 36-byte funding outpoint (`txid[32] || vout_le[4]`) —
+     *   the same key the persistence layer stores the invitation row under.
+     * @property uri the shareable `dashpay://invite` link. **This is a bearer
+     *   secret: it embeds the one-time voucher key. Never log it or persist it
+     *   anywhere but the OS share sheet.**
+     */
+    data class CreatedInvitation(
+        val outPoint: ByteArray,
+        val uri: String,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is CreatedInvitation) return false
+            return outPoint.contentEquals(other.outPoint) && uri == other.uri
+        }
+
+        override fun hashCode(): Int = 31 * outPoint.contentHashCode() + uri.hashCode()
+
+        /** Redacts the bearer URI so an accidental log/toString never leaks the voucher key. */
+        override fun toString(): String = "CreatedInvitation(outPoint=<36b>, uri=<redacted>)"
+    }
+
+    /**
+     * Create a DashPay invitation (DIP-13): fund a one-time asset-lock voucher
+     * and return a shareable link. No identity is registered. The Rust
+     * durability gate refuses to run unless invitation persistence is wired,
+     * so this fails closed before any funds move on a backend that can't
+     * durably record the voucher.
+     *
+     * @param amountDuffs voucher amount in duffs (must be positive).
+     * @param fundingAccountIndex BIP-44 account the voucher is funded from.
+     * @param inviterIdentityId optional 32-byte inviter id enabling the
+     *   contact-bootstrap opt-in; `null` for a pure funding voucher. When
+     *   non-null, [inviterUsername] is required.
+     * @param inviterUsername inviter DPNS username carried in the link.
+     * @param nowUnix current unix time in seconds (must be > 0).
+     * @param coreSignerHandle `MnemonicResolverHandle` for the funding-spend
+     *   signature (the SAME handle [registerWithWalletFunding] takes).
+     * @return the funding outpoint plus the bearer link — see [CreatedInvitation].
+     */
+    suspend fun createInvitation(
+        walletHandle: Long,
+        amountDuffs: Long,
+        fundingAccountIndex: Int,
+        inviterIdentityId: ByteArray? = null,
+        inviterUsername: String? = null,
+        nowUnix: Long,
+        coreSignerHandle: Long,
+    ): CreatedInvitation = gate.op {
+        require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
+        require(fundingAccountIndex >= 0) {
+            "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
+        }
+        require(nowUnix > 0) { "nowUnix must be a positive unix timestamp, got $nowUnix" }
+        inviterIdentityId?.let {
+            require(it.size == 32) { "inviterIdentityId must be 32 bytes, got ${it.size}" }
+            require(inviterUsername != null) {
+                "inviterUsername is required when inviterIdentityId is provided"
+            }
+        }
+        val blob = mapNativeErrors {
+            IdentityNative.createInvitation(
+                walletHandle,
+                amountDuffs,
+                fundingAccountIndex,
+                inviterIdentityId,
+                inviterUsername,
+                nowUnix,
+                coreSignerHandle,
+            )
+        }
+        // Blob layout (fixed by the JNI): outpoint[36] (txid[32] || vout_le[4])
+        // then the UTF-8 URI. Anything shorter is a contract violation.
+        require(blob.size >= 36) {
+            "createInvitation returned a ${blob.size}-byte blob; expected >= 36"
+        }
+        CreatedInvitation(
+            outPoint = blob.copyOfRange(0, 36),
+            uri = String(blob.copyOfRange(36, blob.size), Charsets.UTF_8),
+        )
+    }
+
+    /**
+     * Claim a DashPay invitation (DIP-13): register a NEW identity for the
+     * invitee, funded by the imported voucher carried in [uri]. The
+     * contact-bootstrap ("establish contact with the sender?") is NOT done
+     * here — the UI asks the invitee and calls the contact-request path on
+     * confirm. [keys] are the invitee's own new-identity rows (built via
+     * [RegistrationKeys.buildRegistrationRows]) — the SAME codec path
+     * [registerWithWalletFunding] uses.
+     *
+     * @param uri the `dashpay://invite?…` link (a bearer secret — never log it).
+     * @param identityIndex identity slot for the new identity.
+     * @param signerHandle identity-key `SignerHandle`. No Core resolver is
+     *   needed: the asset-lock's outer signature comes from the voucher key.
+     * @param nowUnix accepted for ABI parity; currently unused Rust-side.
+     * @return the 32-byte new identity id.
+     */
+    suspend fun claimInvitation(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        keys: List<IdentityPubkey>,
+        signerHandle: Long,
+        nowUnix: Long,
+    ): ByteArray = gate.op {
+        require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
+        require(uri.isNotBlank()) { "uri must not be blank" }
+        require(keys.isNotEmpty()) { "keys must not be empty" }
+        mapNativeErrors {
+            IdentityNative.claimInvitation(
+                walletHandle,
+                uri,
+                identityIndex,
+                IdentityPubkeyCodec.encode(keys),
+                signerHandle,
+                nowUnix,
+            )
+        }
+    }
+
+    /**
      * Register a new identity funded by the wallet's already-committed
      * Platform-payment (DIP-17) address balances — the ID-08 path, distinct
      * from [registerWithWalletFunding] (ID-01) which builds a new Core asset

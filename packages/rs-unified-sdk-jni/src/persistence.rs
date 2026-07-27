@@ -54,7 +54,8 @@ use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
-    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
+    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI,
+    PaymentRestoreEntryFFI,
     PersistenceCallbacks, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI,
     TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
     UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
@@ -171,11 +172,15 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         on_get_core_tx_record_fn: Some(tramp_get_core_tx_record),
         on_get_core_tx_record_free_fn: Some(tramp_get_core_tx_record_free),
         on_persist_asset_locks_fn: Some(tramp_persist_asset_locks),
-        // Android hasn't wired DIP-13 invitation persistence yet. Leaving this
-        // `None` keeps `FFIPersister::persists_durably()` fail-closed, so the
-        // invitation flow refuses to run on Android rather than create a
-        // non-durable voucher whose one-time key could be reused on restart.
-        on_persist_invitations_fn: None,
+        // DIP-13 invitation persistence. Wiring this trampoline is what makes
+        // `FFIPersister` report `PersistenceCapabilities::INVITATIONS`, so the
+        // durability gate in `create_invitation` (which requires the full
+        // `INVITATION_CREATION` mask) passes on Android. The Kotlin bridge must
+        // durably store each upsert (`onPersistInvitationUpsert`) and honour
+        // removals (`onPersistInvitationRemoval`); a bridge that no-ops these
+        // would report the capability without real durability and could
+        // re-export the same one-time voucher key after a restart.
+        on_persist_invitations_fn: Some(tramp_persist_invitations),
         release_fn: Some(release_persistence_ctx),
     }
 }
@@ -1294,6 +1299,80 @@ unsafe extern "C" fn tramp_persist_asset_locks(
                 env.call_method(
                     bridge,
                     "onPersistAssetLockRemoval",
+                    "([B[B)I",
+                    &[(&wid).into(), (&opb).into()],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        Ok(0)
+    })
+}
+
+// ── Invitations (DIP-13) ──────────────────────────────────────────────
+
+/// Forward a DIP-13 sent-invitation changeset (`InvitationChangeSet`) to the
+/// Kotlin bridge — one `onPersistInvitationUpsert` per funded-voucher record
+/// (keyed by outpoint) and one `onPersistInvitationRemoval` per tombstoned
+/// outpoint. Every [`InvitationEntryFFI`] field is plain-old-data (no owned
+/// tx / proof buffers), so this is a strict subset of
+/// [`tramp_persist_asset_locks`] with no buffer lifetime to manage.
+///
+/// Wiring this callback (vs leaving the slot `None`) is exactly what flips
+/// `FFIPersister` to report `PersistenceCapabilities::INVITATIONS`, which
+/// `create_invitation` requires before it moves any funds. The bridge must
+/// therefore make these writes genuinely durable — a no-op implementation
+/// would defeat the gate.
+///
+/// Field marshaling: `walletId` and `outPoint` (`txid[32] || vout_le[4]`) go
+/// out as `byte[]`; `fundingIndex` as an unsigned-in-`int` (small HD index,
+/// mirroring `onPersistAssetLockUpsert`'s `accountIndex`); `amountDuffs`,
+/// `expiryUnix`, and `createdAtSecs` as `long` (the two u32 unix timestamps
+/// widen into `long` so they never wrap negative past 2038); `hasInviter`
+/// (0/1) and `status` (0=Created,1=Claimed,2=Reclaimed) as `byte`.
+unsafe extern "C" fn tramp_persist_invitations(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    upserts_ptr: *const InvitationEntryFFI,
+    upserts_count: usize,
+    removed_ptr: *const [u8; 36],
+    removed_count: usize,
+) -> i32 {
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        for e in slice_or_empty(upserts_ptr, upserts_count) {
+            let code = env.with_local_frame(16, |env| {
+                let outpoint = env.byte_array_from_slice(&e.out_point)?;
+                env.call_method(
+                    bridge,
+                    "onPersistInvitationUpsert",
+                    "([B[BIJJJBB)I",
+                    &[
+                        (&wid).into(),
+                        (&outpoint).into(),
+                        JValue::Int(e.funding_index as i32),
+                        JValue::Long(e.amount_duffs as i64),
+                        JValue::Long(e.expiry_unix as i64),
+                        JValue::Long(e.created_at_secs as i64),
+                        JValue::Byte(e.has_inviter as i8),
+                        JValue::Byte(e.status as i8),
+                    ],
+                )?
+                .i()
+            })?;
+            if code != 0 {
+                return Ok(code);
+            }
+        }
+        for op in slice_or_empty(removed_ptr, removed_count) {
+            let code = env.with_local_frame(16, |env| {
+                let opb = env.byte_array_from_slice(op)?;
+                env.call_method(
+                    bridge,
+                    "onPersistInvitationRemoval",
                     "([B[B)I",
                     &[(&wid).into(), (&opb).into()],
                 )?
@@ -4141,7 +4220,10 @@ mod tests {
         let callbacks = build_vtable(ptr::null_mut());
         assert!(callbacks.on_changeset_begin_fn.is_some());
         assert!(callbacks.on_changeset_end_fn.is_some());
-        assert!(callbacks.on_persist_invitations_fn.is_none());
+        // DIP-13 invitation persistence is now wired; the slot being `Some` is
+        // what makes `FFIPersister` report the `INVITATIONS` capability so the
+        // `create_invitation` durability gate passes on Android.
+        assert!(callbacks.on_persist_invitations_fn.is_some());
     }
 
     #[cfg(feature = "shielded")]

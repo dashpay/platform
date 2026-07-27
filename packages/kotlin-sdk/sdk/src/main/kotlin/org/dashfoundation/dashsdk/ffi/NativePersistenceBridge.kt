@@ -486,6 +486,40 @@ abstract class NativePersistenceBridge {
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
 
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    /**
+     * One `InvitationEntryFFI` upsert (`tramp_persist_invitations` in
+     * `persistence.rs`). Descriptor `([B[BIJJJBB)I`.
+     *
+     * Wiring this callback durably is what lets `FFIPersister` report the
+     * `INVITATIONS` capability, which the Rust `create_invitation` durability
+     * gate requires before it moves any funds — a no-op override would defeat
+     * the gate and risk re-exporting a one-time voucher key after a restart.
+     *
+     * @param outPoint 36-byte funding outpoint (`txid[32] || vout_le[4]`).
+     * @param fundingIndex DIP-13 funding index the voucher key derives from
+     *   (unsigned, carried in an `Int`).
+     * @param expiryUnix advisory expiry, unix seconds (widened to `Long`).
+     * @param createdAtSecs creation time, unix seconds (widened to `Long`).
+     * @param hasInviter 1 if the link carries inviter/contact-bootstrap info, else 0.
+     * @param status 0 = Created, 1 = Claimed, 2 = Reclaimed.
+     */
+    @Suppress("LongParameterList")
+    open fun onPersistInvitationUpsert(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        fundingIndex: Int,
+        amountDuffs: Long,
+        expiryUnix: Long,
+        createdAtSecs: Long,
+        hasInviter: Byte,
+        status: Byte,
+    ): Int = 0
+
+    /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
+    open fun onPersistInvitationRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
     // ── Shielded persist ──────────────────────────────────────────────
 
     /** One `ShieldedNoteFFI`. Descriptor `([B[BIJ[B[BJBJ[B)I`. */

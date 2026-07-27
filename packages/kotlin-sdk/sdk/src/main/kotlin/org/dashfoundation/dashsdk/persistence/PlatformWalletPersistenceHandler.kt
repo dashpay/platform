@@ -37,6 +37,7 @@ import org.dashfoundation.dashsdk.ffi.UnresolvedAssetLockTxRecordData
 import org.dashfoundation.dashsdk.ffi.WalletRestoreData
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
+import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.CoreAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DashpayContactRequestEntity
@@ -127,6 +128,7 @@ class PlatformWalletPersistenceHandler(
 
     override fun persistenceCapabilitiesBits(): Long =
         CAPABILITY_ATOMIC_CHANGESETS or
+            CAPABILITY_INVITATIONS or
             CAPABILITY_ASSET_LOCK_FUNDING_INDICES or
             CAPABILITY_SHIELDED_VIEWING_KEYS or
             CAPABILITY_PROVIDER_TRANSACTIONS or
@@ -1503,6 +1505,40 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    // ── Invitations (DIP-13) ──────────────────────────────────────────
+
+    override fun onPersistInvitationUpsert(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        fundingIndex: Int,
+        amountDuffs: Long,
+        expiryUnix: Long,
+        createdAtSecs: Long,
+        hasInviter: Byte,
+        status: Byte,
+    ): Int = guarded {
+        stage(walletId) { db ->
+            db.invitationDao().upsert(
+                InvitationEntity(
+                    outPoint = outPoint,
+                    walletId = walletId,
+                    fundingIndex = fundingIndex,
+                    amountDuffs = amountDuffs,
+                    expiryUnix = expiryUnix,
+                    createdAtSecs = createdAtSecs,
+                    hasInviter = hasInviter.toInt() and 0xFF,
+                    statusRaw = status.toInt() and 0xFF,
+                ),
+            )
+        }
+        0
+    }
+
+    override fun onPersistInvitationRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
+        stage(walletId) { db -> db.invitationDao().deleteByOutPoint(outPoint) }
+        0
+    }
+
     // ── Shielded persist ──────────────────────────────────────────────
 
     override fun onPersistShieldedNote(
@@ -2557,6 +2593,7 @@ class PlatformWalletPersistenceHandler(
             database.txoDao().deleteByWallet(walletId)
             database.documentDao().deletePendingInputsByWallet(walletId)
             database.assetLockDao().deleteByWallet(walletId)
+            database.invitationDao().deleteByWallet(walletId)
             database.platformAddressDao().deleteByWallet(walletId)
             database.shieldedDao().deleteNotesByWallet(walletId)
             database.shieldedDao().deleteOutgoingNotesByWallet(walletId)
@@ -3004,6 +3041,7 @@ class PlatformWalletPersistenceHandler(
     companion object {
         internal const val PERSISTENCE_CAPABILITIES_VERSION: Int = 1
         internal const val CAPABILITY_ATOMIC_CHANGESETS: Long = 0x01
+        internal const val CAPABILITY_INVITATIONS: Long = 0x02
         internal const val CAPABILITY_ASSET_LOCK_FUNDING_INDICES: Long = 0x04
         internal const val CAPABILITY_SHIELDED_VIEWING_KEYS: Long = 0x08
         internal const val CAPABILITY_PROVIDER_TRANSACTIONS: Long = 0x10

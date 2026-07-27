@@ -173,6 +173,61 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
+     * Create a DashPay invitation (DIP-13): fund a one-time asset-lock
+     * voucher and return a shareable `dashpay://invite` link. No identity is
+     * registered — this is pure voucher creation.
+     *
+     * @param amountDuffs voucher amount in duffs (must be positive).
+     * @param fundingAccountIndex BIP-44 account the voucher is funded from.
+     * @param inviterIdentityId optional 32-byte inviter id enabling the
+     *   contact-bootstrap opt-in; `null` for a pure funding voucher. When
+     *   non-null, [inviterUsername] is required.
+     * @param inviterUsername inviter DPNS username carried in the link (only
+     *   used when [inviterIdentityId] is non-null).
+     * @param nowUnix current unix time in seconds (must be > 0); the advisory
+     *   ~24h expiry is derived Rust-side.
+     * @param coreSignerHandle `MnemonicResolverHandle` for the funding-spend
+     *   signature (the SAME handle [registerIdentityWithFunding] takes).
+     * @return a blob: `outpoint[36] (txid[32] || vout_le[4]) || utf8Uri`. The
+     *   URI embeds the bearer voucher key — never log or persist it beyond
+     *   the share sheet.
+     */
+    external fun createInvitation(
+        walletHandle: Long,
+        amountDuffs: Long,
+        fundingAccountIndex: Int,
+        inviterIdentityId: ByteArray?,
+        inviterUsername: String?,
+        nowUnix: Long,
+        coreSignerHandle: Long,
+    ): ByteArray
+
+    /**
+     * Claim a DashPay invitation (DIP-13): register a NEW identity for the
+     * invitee, funded by the imported voucher carried in [uri].
+     *
+     * @param uri the `dashpay://invite?…` link (a bearer secret).
+     * @param identityIndex identity slot for the new identity.
+     * @param pubkeysBlob the invitee's new-identity key rows, SAME layout as
+     *   [registerIdentityWithFunding] (encoded by
+     *   [org.dashfoundation.dashsdk.identity.IdentityPubkeyCodec.encode]).
+     * @param signerHandle identity-key `SignerHandle`. The asset-lock's outer
+     *   signature comes from the imported voucher key, so no Core resolver is
+     *   needed here.
+     * @param nowUnix accepted for ABI parity; currently unused (the legacy
+     *   link carries no expiry).
+     * @return the 32-byte new identity id.
+     */
+    external fun claimInvitation(
+        walletHandle: Long,
+        uri: String,
+        identityIndex: Int,
+        pubkeysBlob: ByteArray,
+        signerHandle: Long,
+        nowUnix: Long,
+    ): ByteArray
+
+    /**
      * Register a new identity funded by the wallet's already-committed
      * Platform-payment (DIP-17) address balances — the ID-08 create path,
      * distinct from [registerIdentityWithFunding] (ID-01) which builds a
