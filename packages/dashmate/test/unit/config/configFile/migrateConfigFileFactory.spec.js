@@ -183,6 +183,7 @@ describe('migrateConfigFileFactory', () => {
     // it the unconditional re-pin in the '4.0.0' migration overwrites every
     // image regardless, operator-chosen ones included.
     const FROM_VERSION = '4.0.0';
+    // Kept in step with the identifiers the migration itself lists.
     const STOCK_PRERELEASE_IDS = ['alpha', 'beta', 'dev', 'hotfix', 'pr', 'rc'];
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
@@ -194,12 +195,15 @@ describe('migrateConfigFileFactory', () => {
     const expectedRsDapiImage = defaultConfigFileData
       .configs[firstConfigName].platform.dapi.rsDapi.docker.image;
 
-    const migrateImage = (image) => {
+    // Both images are named explicitly rather than derived from one another, so
+    // a case added later cannot seed the rs-dapi slot with a drive image and
+    // pass without testing anything.
+    const migrateImages = (driveImage, rsDapiImage) => {
       const configFileData = createConfigFile().toObject();
       configFileData.configFormatVersion = FROM_VERSION;
       for (const options of Object.values(configFileData.configs)) {
-        options.platform.drive.abci.docker.image = image;
-        options.platform.dapi.rsDapi.docker.image = image.replace('/drive:', '/rs-dapi:');
+        options.platform.drive.abci.docker.image = driveImage;
+        options.platform.dapi.rsDapi.docker.image = rsDapiImage;
       }
 
       const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
@@ -207,39 +211,44 @@ describe('migrateConfigFileFactory', () => {
       return migrated.configs[firstConfigName].platform;
     };
 
-    const stockImages = ['dashpay/drive:4', ...STOCK_PRERELEASE_IDS.map((id) => `dashpay/drive:4-${id}`)];
+    const stockTags = ['4', ...STOCK_PRERELEASE_IDS.map((id) => `4-${id}`)];
 
-    for (const image of stockImages) {
-      const platform = migrateImage(image);
+    for (const tag of stockTags) {
+      const platform = migrateImages(`dashpay/drive:${tag}`, `dashpay/rs-dapi:${tag}`);
 
       expect(platform.drive.abci.docker.image).to.equal(
         expectedDriveImage,
-        `stock drive image ${image} was not moved`,
+        `stock drive image dashpay/drive:${tag} was not moved`,
       );
       expect(platform.dapi.rsDapi.docker.image).to.equal(
         expectedRsDapiImage,
-        `stock rs-dapi image derived from ${image} was not moved`,
+        `stock rs-dapi image dashpay/rs-dapi:${tag} was not moved`,
       );
     }
 
     const operatorImages = [
-      'dashpay/drive:4-patched', // vendor-patched build under the stock namespace
-      'dashpay/drive:4-local', // locally built image, operator's own tag
-      'dashpay/drive:4.0.1', // pinned to an exact version
-      'dashpay/drive:latest', // floating tag the operator opted into
-      'registry.example.com/drive:4-rc', // private registry
+      // vendor-patched build under the stock namespace
+      ['dashpay/drive:4-patched', 'dashpay/rs-dapi:4-patched'],
+      // locally built image, operator's own tag
+      ['dashpay/drive:4-local', 'dashpay/rs-dapi:4-local'],
+      // pinned to an exact version
+      ['dashpay/drive:4.0.1', 'dashpay/rs-dapi:4.0.1'],
+      // floating tag the operator opted into
+      ['dashpay/drive:latest', 'dashpay/rs-dapi:latest'],
+      // private registry
+      ['registry.example.com/drive:4-rc', 'registry.example.com/rs-dapi:4-rc'],
     ];
 
-    for (const image of operatorImages) {
-      const platform = migrateImage(image);
+    for (const [driveImage, rsDapiImage] of operatorImages) {
+      const platform = migrateImages(driveImage, rsDapiImage);
 
       expect(platform.drive.abci.docker.image).to.equal(
-        image,
-        `operator drive image ${image} was overwritten`,
+        driveImage,
+        `operator drive image ${driveImage} was overwritten`,
       );
       expect(platform.dapi.rsDapi.docker.image).to.equal(
-        image.replace('/drive:', '/rs-dapi:'),
-        `operator rs-dapi image derived from ${image} was overwritten`,
+        rsDapiImage,
+        `operator rs-dapi image ${rsDapiImage} was overwritten`,
       );
     }
   });

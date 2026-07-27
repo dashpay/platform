@@ -1603,6 +1603,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // Configs older than 4.0.0 cross the unconditional re-pin in the
         // '4.0.0' migration first, so they never reach here carrying an image
         // of their own.
+        //
+        // The major below matches the tag being migrated away from, not the one
+        // being migrated to, so it stays 4 permanently: a config can only reach
+        // this migration carrying a tag a 4.x release wrote. A later major
+        // needs its own migration rather than an edit here.
         const stockDriveImage = /^dashpay\/drive:4(-(rc|dev|beta|alpha|pr|hotfix))?$/;
         const stockRsDapiImage = /^dashpay\/rs-dapi:4(-(rc|dev|beta|alpha|pr|hotfix))?$/;
 
