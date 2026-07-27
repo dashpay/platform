@@ -51,7 +51,7 @@ pub use activity::{
     ScanDeriveInput, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
     ShieldedDirection,
 };
-pub use coordinator::NetworkShieldedCoordinator;
+pub use coordinator::{NetworkShieldedCoordinator, ShieldedInstall};
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;

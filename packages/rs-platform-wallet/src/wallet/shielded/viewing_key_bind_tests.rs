@@ -18,7 +18,7 @@ use key_wallet::account::StandardAccountType;
 
 use crate::changeset::PersistenceError;
 use crate::changeset::PlatformWalletPersistence;
-use crate::changeset::{ClientStartState, PlatformWalletChangeSet};
+use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
 use crate::test_support::funded_wallet_manager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator, SubwalletId};
@@ -33,6 +33,7 @@ use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinato
 struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
     serve: Mutex<BTreeMap<SubwalletId, Vec<u8>>>,
+    serve_subwallets: Mutex<BTreeMap<SubwalletId, ShieldedSubwalletStartState>>,
     load_calls: Mutex<usize>,
 }
 
@@ -54,6 +55,12 @@ impl CapturingPersistence {
     /// restarted session finds.
     fn serve_viewing_keys(&self, rows: BTreeMap<SubwalletId, Vec<u8>>) {
         *self.serve.lock().expect("serve lock") = rows;
+    }
+
+    /// Stage the per-subwallet snapshot `load()` hands back, so a bind's
+    /// restore has something to apply (and therefore reaches the store).
+    fn serve_subwallets(&self, rows: BTreeMap<SubwalletId, ShieldedSubwalletStartState>) {
+        *self.serve_subwallets.lock().expect("serve_subwallets lock") = rows;
     }
 
     fn load_calls(&self) -> usize {
@@ -83,6 +90,11 @@ impl PlatformWalletPersistence for CapturingPersistence {
         *self.load_calls.lock().expect("load_calls lock") += 1;
         let mut start = ClientStartState::default();
         start.shielded.viewing_keys = self.serve.lock().expect("serve lock").clone();
+        start.shielded.per_subwallet = self
+            .serve_subwallets
+            .lock()
+            .expect("serve_subwallets lock")
+            .clone();
         Ok(start)
     }
 }
@@ -251,6 +263,175 @@ async fn bind_persists_viewing_keys_and_restart_rebinds_seedlessly() {
         persister2.captured_viewing_keys().is_empty(),
         "seedless rebind must not re-emit viewing keys"
     );
+}
+
+/// A seed whose derived key disagrees with the persisted one must not
+/// bind. The wallet's durable notes, activity and watermark are keyed by
+/// `(wallet_id, account_index)` alone, so nothing marks which key
+/// produced them: upserting the new key would leave the old key's notes
+/// counted but unspendable, and its watermark in force — hiding the new
+/// key's own history from every subsequent scan. Fail closed instead,
+/// changing neither the persisted rows nor the coordinator.
+#[tokio::test]
+async fn bind_rejects_a_viewing_key_change_for_an_already_persisted_account() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("rekey_refused"));
+
+    // Durable row from an earlier bind, under a different seed.
+    let persisted =
+        crate::wallet::shielded::OrchardKeySet::from_seed(&[0x99u8; 64], Network::Testnet, 0)
+            .expect("derive")
+            .viewing_keys();
+    let mut rows = BTreeMap::new();
+    rows.insert(
+        SubwalletId::new(wallet.wallet_id(), 0),
+        persisted.to_fvk_bytes().to_vec(),
+    );
+    persister.serve_viewing_keys(rows);
+
+    let err = wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+        .await
+        .expect_err("a re-keyed account must not bind over the old key's state");
+    assert!(
+        format!("{err}").contains("differs"),
+        "error must name the key conflict: {err}"
+    );
+
+    assert!(!wallet.is_shielded_bound().await, "nothing was installed");
+    assert!(
+        persister.captured_viewing_keys().is_empty(),
+        "the conflicting key must not be upserted over the persisted row"
+    );
+    assert!(
+        coordinator.registered_subwallets().await.is_empty(),
+        "the coordinator must not be registered with the rejected key"
+    );
+}
+
+/// A wallet the manager has removed cannot bind shielded state back onto
+/// the coordinator. Callers resolve an `Arc<PlatformWallet>` and keep it
+/// across the bind (which may resolve a mnemonic through the host, so it
+/// is not short), so a removal can land in between; re-registering would
+/// resurrect shielded history the host believes it deleted, on the very
+/// next sync pass.
+#[tokio::test]
+async fn bind_after_wallet_removal_is_refused() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("detached_bind"));
+
+    wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+        .await
+        .expect("first bind succeeds");
+    assert_eq!(coordinator.registered_subwallets().await.len(), 1);
+
+    // What `PlatformWalletManager::remove_wallet` does to this handle.
+    wallet.mark_shielded_detached();
+    coordinator.unregister_wallet(wallet.wallet_id()).await;
+
+    let err = wallet
+        .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+        .await
+        .expect_err("a removed wallet must not re-register itself");
+    assert!(
+        format!("{err}").contains("removed from the manager"),
+        "error must name the removal: {err}"
+    );
+    assert!(
+        coordinator.registered_subwallets().await.is_empty(),
+        "the removed wallet must stay unregistered"
+    );
+}
+
+/// Two binds of one wallet must not interleave. Each publishes the
+/// viewing-grade map on the handle and then replaces the coordinator's
+/// registration; interleaved, the two commits can land in opposite
+/// orders, leaving sync trial-decrypting under one bind's keys while
+/// addresses, balances and spends use the other's.
+///
+/// The first bind is parked mid-transaction by holding the store lock its
+/// restore needs, then a second bind is started: it must not be able to
+/// publish its registration until the first one commits.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("bind_interleave"));
+    let wallet_id = wallet.wallet_id();
+
+    // Give the restore something to apply so it reaches the store lock.
+    let mut snapshot = BTreeMap::new();
+    snapshot.insert(
+        SubwalletId::new(wallet_id, 0),
+        ShieldedSubwalletStartState {
+            last_synced_index: 1,
+            ..Default::default()
+        },
+    );
+    persister.serve_subwallets(snapshot);
+
+    // Park bind A inside its transaction: it registers, then blocks in
+    // the restore on the store write lock this test holds.
+    let store_guard = coordinator.store().write().await;
+    let bind_a = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
+                .await
+        })
+    };
+    for _ in 0..200 {
+        if !coordinator.registered_subwallets().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert_eq!(
+        coordinator.registered_subwallets().await.len(),
+        1,
+        "bind A must have registered and parked in its restore"
+    );
+
+    // Bind B adds an account, so its registration would not need the
+    // store lock: only the transaction can hold it back.
+    let bind_b = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .bind_shielded(&[0x42u8; 64], &[0, 1], &coordinator)
+                .await
+        })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(
+        coordinator.registered_subwallets().await.len(),
+        1,
+        "bind B must not publish its registration while bind A's transaction is open"
+    );
+
+    drop(store_guard);
+    bind_a.await.expect("bind A task").expect("bind A");
+    bind_b.await.expect("bind B task").expect("bind B");
+
+    let registered: Vec<u32> = coordinator
+        .registered_subwallets()
+        .await
+        .into_iter()
+        .map(|id| id.account_index)
+        .collect();
+    assert_eq!(
+        registered,
+        wallet.shielded_account_indices().await,
+        "the coordinator's registration and the wallet's own keys must agree once \
+         both binds have run"
+    );
+    assert_eq!(registered, vec![0, 1], "the last bind to run wins");
 }
 
 /// First-launch shape: no persisted rows → `Ok(false)`, no state
