@@ -1,3 +1,10 @@
+## [4.1.0-rc.3](https://github.com/dashpay/platform/compare/v4.1.0-rc.2...v4.1.0-rc.3) (2026-07-27)
+
+
+### Bug Fixes
+
+* **dashmate:** migrate Drive and DAPI images onto the prerelease line ([#4235](https://github.com/dashpay/platform/issues/4235))
+
 ## [4.1.0-rc.2](https://github.com/dashpay/platform/compare/v4.1.0-rc.1...v4.1.0-rc.2) (2026-07-26)
 
 
