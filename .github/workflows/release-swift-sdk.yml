@@ -20,8 +20,10 @@ on:
     inputs:
       tag:
         description: >-
-          Existing platform release tag to (re-)release the xcframework for
-          (vX.Y.Z[-pre.N], optionally as refs/tags/vX.Y.Z[-pre.N]).
+          Existing platform release tag to (re-)release the xcframework for.
+          Plain tag name only (vX.Y.Z[-pre.N]) — ref forms like refs/tags/...
+          are rejected so the per-tag concurrency lock and asset guards all
+          key on one canonical spelling.
         required: true
         type: string
 
@@ -53,10 +55,15 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${INPUT_TAG#refs/tags/}"
+          # Plain tag names only — no refs/tags/ (or any slashed) form. The
+          # job-level concurrency group keys on the raw inputs.tag (GHA
+          # expressions cannot normalize strings), so accepting aliases for
+          # the same tag would mint separate locks and let two runs race the
+          # asset-exists guard.
+          TAG="$INPUT_TAG"
           case "$TAG" in
-            refs/*|*/*)
-              echo "::error::'$INPUT_TAG' is not a plain tag name — provide an existing platform release tag (vX.Y.Z[-pre.N])."
+            */*)
+              echo "::error::'$INPUT_TAG' is not a plain tag name — pass the bare platform tag (vX.Y.Z[-pre.N]); ref spellings like refs/tags/... are rejected."
               exit 1
               ;;
           esac
@@ -186,11 +193,14 @@ jobs:
       # Attach to the PLATFORM release: only tag_name + files. Passing name/
       # body/prerelease/generate_release_notes here would overwrite the
       # platform release's own notes, title or prerelease flag.
+      # overwrite_files: false makes a same-name upload race fail loudly
+      # instead of silently replacing an asset the guard above vouched for.
       - name: Attach XCFramework to the platform release
         if: steps.tag-guard.outputs.asset_exists != 'true'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.release-ref.outputs.tag_name }}
+          overwrite_files: false
           files: |
             packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
             packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt

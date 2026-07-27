@@ -40,9 +40,19 @@ gh workflow run release-kotlin-sdk.yml --ref vX.Y.Z -f tag=vX.Y.Z
 
 Dispatching at the tag ref matters: the `maven-central` environment's tag
 policy matches the *run's ref*, so a branch-ref dispatch cannot reach the
-publishing secrets. The dispatch input must name an existing tag that already
-has a published GitHub release; the workflow refuses branches and never
-creates a release.
+publishing secrets. The dispatch input must be the plain tag name (no
+`refs/tags/` prefix — aliases are rejected so concurrency locks and asset
+guards key on one spelling) for an existing tag that already has a published
+GitHub release; the workflow refuses branches and never creates a release.
+**Confirm with the release owner before dispatching** — the re-run can attach
+public release assets and publish an irrevocable Maven Central version.
+
+Note: a dispatch loads the workflow file *from the selected ref*, so this
+re-run path only works for tags created after the consolidation landed. For
+an older tag, dispatch at the dev branch (`--ref vX-dev -f tag=vX.Y.Z`):
+build and asset attach still run against the tag's commit, while the Maven
+deploy job skips on the branch ref — publish those to Maven with the manual
+runbook below instead.
 
 ### The `maven-central` environment (where the secrets live)
 

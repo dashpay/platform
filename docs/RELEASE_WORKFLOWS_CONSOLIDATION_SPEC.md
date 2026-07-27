@@ -61,11 +61,21 @@ on `github.event_name == "push"` / reads `github.event.inputs.*`; under
 - `workflow_call`: the tag arrives as `inputs.tag` (trusted — comes from
   `github.event.release.tag_name` on a published release). Checkout at
   `refs/tags/<tag>`.
-- `workflow_dispatch`: input is free-form → keep #4193's guards: accept only
-  a plain tag name or `refs/tags/` form, `gh api`-verify the tag exists,
-  hand checkout an explicit `refs/tags/<tag>`. The dispatch **must be started
-  at the tag ref in the UI/CLI** — the environment's tag policy matches
-  `github.ref`, not the checked-out commit (documented in PUBLISHING.md).
+- `workflow_dispatch`: input is free-form → keep #4193's guards, tightened
+  after review: accept **only a plain tag name** (no `refs/tags/` alias —
+  the per-tag concurrency groups key on the raw `inputs.tag`, and GHA
+  expressions cannot normalize strings, so aliases would mint separate locks
+  and race the asset guards), `gh api`-verify the tag exists, hand checkout
+  an explicit `refs/tags/<tag>`. The dispatch **must be started at the tag
+  ref in the UI/CLI** for the Maven deploy — the environment's tag policy
+  matches `github.ref`, not the checked-out commit (documented in
+  PUBLISHING.md). Caveat (review finding): a dispatch loads the workflow
+  file **from the selected ref**, so the emergency path only exists for tags
+  created after this change merges; for older tags, dispatching at the dev
+  branch still builds + attaches (checkout is the validated tag) while the
+  Maven deploy job skips cleanly (`if: startsWith(github.ref,
+  'refs/tags/')`) instead of failing at the environment policy — Maven for
+  those goes through the manual runbook.
 
 Two-job structure (adapted from #4193):
 
@@ -78,8 +88,15 @@ Two-job structure (adapted from #4193):
     branch is dead under platform tags and is dropped.)
   - build native libs (both ABIs, release profile) + release AAR (existing
     steps unchanged);
-  - **tag guard** (#4193): hard-fail if the tag no longer resolves to the
-    built SHA; skip-not-overwrite if the asset already exists;
+  - **tag guard** (#4193, extended after review): hard-fail if the tag no
+    longer resolves to the built SHA. The AAR attaches together with a
+    `.commit.txt` provenance asset recording the built commit; when both
+    already exist, the run proceeds to the Maven deploy only if the recorded
+    commit equals this run's built commit (else hard-fail — the existing
+    GitHub AAR and the would-be Maven artifact would come from different
+    commits); exactly one of the pair present → hard-fail (interrupted
+    attach, provenance unverifiable). Attach passes `overwrite_files: false`
+    so a same-name race fails loudly;
   - **release-exists guard** (review finding): `softprops` *creates* a
     release when none exists — on the dispatch path assert the GitHub
     release for the tag already exists, so a dispatch can never mint one;
@@ -255,13 +272,17 @@ existing tag pins (broader repo-wide SHA-pinning is out of scope).
 ## Test / verification plan
 
 1. `actionlint` on all changed workflow files.
-2. Dry-run against the existing `v4.1.0-rc.1` tag via each reusable
-   workflow's dispatch (started **at the tag ref**): AAR + xcframework
-   attach to that release; release body/name/prerelease flag unchanged;
-   Maven deploy pauses at the gate (skip-with-notice if secrets not yet
-   installed; full publish once they are and a reviewer approves).
+2. Partial dry-run (review finding: a dispatch loads the workflow from the
+   selected ref, so pre-consolidation tags like `v4.1.0-rc.1` cannot start
+   these workflows at their own tag ref): dispatch each reusable workflow
+   **at the dev branch ref** with `tag=v4.1.0-rc.1` — build runs, assets
+   attach to that release, release body/name/prerelease flag unchanged, and
+   the Maven deploy job skips (branch ref). This exercises everything except
+   the deploy.
 3. Verify the build job's token saw no publishing secrets (job log audit).
-4. Next real prerelease exercises the `release: published` path end-to-end.
+4. The next published prerelease (its tag contains these workflows)
+   exercises the `release: published` path — including the Maven Central
+   publish — end-to-end.
 
 ## Resolved questions (Ivan, 2026-07-25)
 

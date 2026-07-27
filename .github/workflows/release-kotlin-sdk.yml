@@ -27,8 +27,10 @@ on:
     inputs:
       tag:
         description: >-
-          Existing platform release tag to (re-)release the Kotlin SDK for
-          (vX.Y.Z[-pre.N], optionally as refs/tags/vX.Y.Z[-pre.N]).
+          Existing platform release tag to (re-)release the Kotlin SDK for.
+          Plain tag name only (vX.Y.Z[-pre.N]) — ref forms like refs/tags/...
+          are rejected so the per-tag concurrency locks and asset guards all
+          key on one canonical spelling.
         required: true
         type: string
 
@@ -72,10 +74,15 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${INPUT_TAG#refs/tags/}"
+          # Plain tag names only — no refs/tags/ (or any slashed) form. The
+          # job-level concurrency groups key on the raw inputs.tag (GHA
+          # expressions cannot normalize strings), so accepting aliases for
+          # the same tag would mint separate locks and let two runs race the
+          # asset-exists guards.
+          TAG="$INPUT_TAG"
           case "$TAG" in
-            refs/*|*/*)
-              echo "::error::'$INPUT_TAG' is not a plain tag name — provide an existing platform release tag (vX.Y.Z[-pre.N])."
+            */*)
+              echo "::error::'$INPUT_TAG' is not a plain tag name — pass the bare platform tag (vX.Y.Z[-pre.N]); ref spellings like refs/tags/... are rejected."
               exit 1
               ;;
           esac
@@ -180,19 +187,24 @@ jobs:
         working-directory: packages/kotlin-sdk
         run: ./gradlew :sdk:assembleRelease --stacktrace
 
-      # Two defenses against a force-moved tag splitting the GitHub-release
-      # AAR from the (immutable) Maven Central artifact of the same version:
+      # Defenses against a force-moved tag splitting the GitHub-release AAR
+      # from the (immutable) Maven Central artifact of the same version:
       #   1. Hard-fail if the tag no longer resolves to the exact commit this
       #      run built.
-      #   2. Never overwrite an AAR already attached for this version: once
-      #      attached (and possibly published to Maven Central) the artifact
-      #      is frozen; a re-run skips the attach rather than clobbering it.
-      #      A deliberate re-release must delete the asset first.
+      #   2. The AAR is attached together with a <asset>.commit.txt recording
+      #      the commit it was built from. When both already exist, this run
+      #      may proceed to the Maven deploy ONLY if that recorded commit
+      #      equals the commit this run built — otherwise the existing GitHub
+      #      AAR and the Maven artifact this run would publish came from
+      #      different commits, and the run hard-fails instead of letting the
+      #      two channels drift. An attached AAR is never overwritten; a
+      #      deliberate re-release must delete both assets first.
       - name: Verify tag still resolves to the built commit
         id: tag-guard
         env:
           TAG: ${{ steps.release-ref.outputs.tag_name }}
-          ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
+          AAR_ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
+          COMMIT_ASSET: dash-sdk-android-${{ steps.release-ref.outputs.version }}.commit.txt
           BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -208,29 +220,47 @@ jobs:
             echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach/deploy."
             exit 1
           fi
-          if gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name' | grep -Fxq "$ASSET"; then
+          ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
+          HAVE_AAR=$(echo "$ASSETS" | grep -Fxc "$AAR_ASSET" || true)
+          HAVE_COMMIT=$(echo "$ASSETS" | grep -Fxc "$COMMIT_ASSET" || true)
+          if [ "$HAVE_AAR" = "1" ] && [ "$HAVE_COMMIT" = "1" ]; then
+            RECORDED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "$COMMIT_ASSET" --output - | tr -d '[:space:]')
+            if [ "$RECORDED_SHA" != "$BUILT_SHA" ]; then
+              echo "::error::Release ${TAG} carries ${AAR_ASSET} built from ${RECORDED_SHA}, but this run built ${BUILT_SHA} — deploying would publish a different commit to Maven Central than the attached AAR. Delete both assets deliberately to re-release."
+              exit 1
+            fi
             echo "asset_exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Release ${TAG} already has ${ASSET} from an earlier run — leaving it untouched. Delete the asset deliberately to re-release."
+            echo "::notice::Release ${TAG} already has ${AAR_ASSET} built from this same commit — leaving it untouched; the Maven deploy may proceed."
+          elif [ "$HAVE_AAR" = "1" ] || [ "$HAVE_COMMIT" = "1" ]; then
+            echo "::error::Release ${TAG} has only one of ${AAR_ASSET} / ${COMMIT_ASSET} — an earlier attach was interrupted, so the existing asset's provenance cannot be verified. Delete the surviving asset and re-run."
+            exit 1
           else
             echo "asset_exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Rename AAR to versioned asset name
+      - name: Prepare versioned assets (AAR + build provenance)
         env:
           VERSION: ${{ steps.release-ref.outputs.version }}
-        run: >-
-          cp packages/kotlin-sdk/sdk/build/outputs/aar/sdk-release.aar
-          "packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${VERSION}.aar"
+          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
+        run: |
+          cd packages/kotlin-sdk/sdk/build/outputs/aar
+          cp sdk-release.aar "dash-sdk-android-${VERSION}.aar"
+          printf '%s\n' "$BUILT_SHA" > "dash-sdk-android-${VERSION}.commit.txt"
 
       # Attach to the PLATFORM release: only tag_name + files. Passing name/
       # body/prerelease/generate_release_notes here would overwrite the
       # platform release's own notes, title or prerelease flag.
+      # overwrite_files: false makes a same-name upload race fail loudly
+      # instead of silently replacing an asset the guard above vouched for.
       - name: Attach AAR to the platform release
         if: steps.tag-guard.outputs.asset_exists != 'true'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.release-ref.outputs.tag_name }}
-          files: packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
+          overwrite_files: false
+          files: |
+            packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.aar
+            packages/kotlin-sdk/sdk/build/outputs/aar/dash-sdk-android-${{ steps.release-ref.outputs.version }}.commit.txt
 
       # Hand the freshly built native libraries to the deploy job so it
       # re-stages the SAME .so (same commit, same tag) without repeating the
@@ -255,6 +285,14 @@ jobs:
   maven-central-deploy:
     name: Deploy to Maven Central (version from tag)
     needs: build-and-release
+    # Runs only when the RUN's ref is a tag: the maven-central environment's
+    # v* tag policy would reject a branch ref anyway, but rejection fails the
+    # job — skipping keeps a branch-ref dispatch (the only way to re-attach
+    # assets for a tag that predates these workflow files, since a dispatch
+    # loads the workflow from the selected ref) green while still never
+    # deploying from it. Maven for such tags goes through the manual runbook
+    # in packages/kotlin-sdk/PUBLISHING.md.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
