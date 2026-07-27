@@ -638,71 +638,75 @@ impl PlatformWallet {
         *slot = Some(account_views.clone());
         drop(slot);
 
-        // Idempotent re-bind fast path: hosts re-run bind liberally
-        // (launch fires it twice — a direct call plus the wallet-set
-        // observer — and again on Sync Now / wallet navigation).
-        // When this wallet is already registered with the exact same
-        // account → FVK map, the coordinator's in-memory state is
-        // strictly fresher than any persister snapshot (the
-        // snapshot's rows were produced FROM it), so the
-        // unregister → purge → restore cycle below can only destroy
-        // information. Worse, against an in-flight sync pass those
-        // store-lock acquisitions queue behind the pass's write
-        // guard and then wipe the pass's freshly-discovered notes
-        // and watermark, restoring a snapshot loaded before the
-        // pass ran — the "note discovered by sync is unspendable
-        // until app restart" / "every pass rescans from 0" failure.
-        // Re-register (cheap, non-destructive — it never touches
-        // per-subwallet store state) to refresh the persister
-        // handle, and skip the purge + restore entirely.
-        if coordinator
+        // Compute idempotence BEFORE registering — after
+        // register_wallet the registration always matches.
+        let identical = coordinator
             .wallet_registration_matches(self.wallet_id, &account_views)
-            .await
-        {
-            coordinator
-                .register_wallet(self.wallet_id, account_views, self.persister.clone())
-                .await;
-            return Ok(());
-        }
+            .await;
 
-        // Rebind is replace-not-merge (the doc contract above).
-        // `register_wallet` replaces the coordinator's `accounts`
-        // entries for this wallet, but it does NOT touch the
-        // store's per-`SubwalletId` state — so a same-process
-        // rebind would otherwise leave stale watermarks, orphaned
-        // accounts dropped from the new bind set, and abandoned
-        // `pending_nullifiers` reservations behind (the latter can
-        // make note selection skip spendable notes). Unregister
-        // first to purge that state; it's a no-op on first bind.
-        coordinator.unregister_wallet(self.wallet_id).await;
-
-        // Register on the coordinator BEFORE restoring so the
-        // restore path's "is this account registered?" gate
-        // sees this wallet's subwallets.
+        // (Re-)register on the coordinator. This is non-destructive
+        // by construction: the persister handle is replaced, never
+        // removed (a sync pass finishing mid-bind always finds one),
+        // and per-subwallet store state is purged only for accounts
+        // this registration DROPS or re-keys — accounts that remain
+        // bound with the same viewing key keep their in-memory notes
+        // and watermark. A re-bind racing an in-flight sync pass can
+        // therefore no longer wipe the pass's results (the former
+        // unregister-then-register cycle here purged the whole
+        // wallet behind the pass's store lock and then restored a
+        // pre-pass snapshot — the "note discovered by sync is
+        // unspendable until app restart" / "every pass rescans from
+        // 0" failure). Registration also runs BEFORE the restore so
+        // the restore path's "is this account registered?" gate sees
+        // this wallet's subwallets.
         coordinator
             .register_wallet(self.wallet_id, account_views, self.persister.clone())
             .await;
 
+        // Idempotent re-bind fast path: hosts re-run bind liberally
+        // (launch fires it twice — a direct call plus the wallet-set
+        // observer — and again on Sync Now / wallet navigation). When
+        // the registration is unchanged AND a prior hydration
+        // succeeded, the coordinator's in-memory state is strictly
+        // fresher than any persister snapshot (the snapshot's rows
+        // were produced FROM it), so re-running the restore could
+        // only re-apply older data — skip it. The hydration flag is
+        // load-bearing: a matching registration alone doesn't prove
+        // the store was ever hydrated (the first bind's load/restore
+        // may have failed transiently and is only logged), and
+        // skipping on registration match alone would leave notes and
+        // the watermark absent until a full rescan or restart.
+        if identical && coordinator.is_hydrated(self.wallet_id).await {
+            return Ok(());
+        }
+
         // Rehydrate per-subwallet notes / sync watermarks from
         // the persister's start state if any are present for
-        // this wallet. The lookup is cheap: load() is the
-        // boot-time snapshot, indexed by SubwalletId. Errors are
-        // logged but not fatal — first-launch wallets simply
-        // see no persisted state.
+        // this wallet. The restore is additive and monotonic
+        // (`restore_for_wallet` never rewinds a watermark or
+        // overwrites a known note), so applying a snapshot on top
+        // of retained live state is safe. Errors are logged but
+        // not fatal — first-launch wallets simply see no persisted
+        // state; the hydration flag stays unset on failure so the
+        // next re-bind retries the restore instead of fast-pathing
+        // over an unhydrated store.
         match preloaded.map(Ok).unwrap_or_else(|| self.persister.load()) {
-            Ok(start) => {
-                if let Err(e) = coordinator
-                    .restore_for_wallet(self.wallet_id, &start.shielded)
-                    .await
-                {
+            Ok(start) => match coordinator
+                .restore_for_wallet(self.wallet_id, &start.shielded)
+                .await
+            {
+                Ok(()) => coordinator.mark_hydrated(self.wallet_id, true).await,
+                Err(e) => {
+                    coordinator.mark_hydrated(self.wallet_id, false).await;
                     tracing::warn!(
                         wallet_id = %hex::encode(self.wallet_id),
                         error = %e,
                         "Failed to restore shielded snapshot at bind time"
                     );
                 }
-            }
+            },
             Err(e) => {
+                coordinator.mark_hydrated(self.wallet_id, false).await;
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     error = %e,
