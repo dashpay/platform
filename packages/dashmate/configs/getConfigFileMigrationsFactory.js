@@ -1611,6 +1611,33 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.1.0': (configFile) => {
+        // Counterpart of the release-candidate migration for the stable release.
+        // An operator who ran a 4.1 release candidate carries a `-rc` image tag,
+        // and the migration that set it no longer fires once they are on the rc
+        // line. Re-pin the drive and rs-dapi tags from the base config so a
+        // stable upgrade moves them off `4-rc` onto the stable `4` images.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
