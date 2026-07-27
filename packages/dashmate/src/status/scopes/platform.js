@@ -7,6 +7,31 @@ import determineStatus from '../determineStatus.js';
 import ContainerIsNotPresentError from '../../docker/errors/ContainerIsNotPresentError.js';
 import ServiceIsNotRunningError from '../../docker/errors/ServiceIsNotRunningError.js';
 
+function parseProtocolVersion(protocolVersion) {
+  if (protocolVersion === null || typeof protocolVersion === 'undefined') {
+    return null;
+  }
+
+  const protocolVersionString = protocolVersion.toString().trim();
+
+  if (!/^\d+$/.test(protocolVersionString)) {
+    return null;
+  }
+
+  const parsedProtocolVersion = Number(protocolVersionString);
+
+  if (!Number.isSafeInteger(parsedProtocolVersion) || parsedProtocolVersion < 0) {
+    return null;
+  }
+
+  return parsedProtocolVersion;
+}
+
+function getConsensusParamsAppVersion(tenderdashConsensusParams) {
+  return tenderdashConsensusParams?.result?.consensus_params?.version?.app_version
+    ?? tenderdashConsensusParams?.consensus_params?.version?.app_version;
+}
+
 /**
  * @returns {getPlatformScopeFactory}
  * @param {DockerCompose} dockerCompose
@@ -116,13 +141,21 @@ export default function getPlatformScopeFactory(
           tenderdashStatusResponse,
           tenderdashNetInfoResponse,
           tenderdashAbciInfoResponse,
+          tenderdashConsensusParams,
         ] = await Promise.all([
           fetch(`http://${tenderdashHost}:${port}/status`),
           fetch(`http://${tenderdashHost}:${port}/net_info`),
           fetch(`http://${tenderdashHost}:${port}/abci_info`),
+          fetch(`http://${tenderdashHost}:${port}/consensus_params`)
+            .then((response) => response.json())
+            .catch(() => null),
         ]);
 
-        const [tenderdashStatus, tenderdashNetInfo, tenderdashAbciInfo] = await Promise.all([
+        const [
+          tenderdashStatus,
+          tenderdashNetInfo,
+          tenderdashAbciInfo,
+        ] = await Promise.all([
           tenderdashStatusResponse.json(),
           tenderdashNetInfoResponse.json(),
           tenderdashAbciInfoResponse.json(),
@@ -144,14 +177,14 @@ export default function getPlatformScopeFactory(
         }
 
         info.version = version;
-        // Prefer live application_info.version (current after in-process upgrades).
-        // Tenderdash may omit application_info entirely (json omitempty when ABCIInfo
-        // fails, or older builds without the field). Fall back to
-        // node_info.protocol_version.app only then — that snapshot can be stale, so it
-        // must not win when the live field is present.
-        const appProtocolVersion = tenderdashStatus.application_info?.version
-          ?? tenderdashStatus.node_info.protocol_version.app;
-        info.protocolVersion = parseInt(appProtocolVersion, 10);
+        const activeProtocolVersion = parseProtocolVersion(
+          getConsensusParamsAppVersion(tenderdashConsensusParams),
+        );
+        const nodeInfoProtocolVersion = parseProtocolVersion(
+          tenderdashStatus.node_info.protocol_version.app,
+        );
+
+        info.protocolVersion = activeProtocolVersion ?? nodeInfoProtocolVersion;
         // abci_info app_version reflects the installed software's desired/supported version.
         info.desiredProtocolVersion = tenderdashAbciInfo.response.app_version;
         info.listening = listening;
