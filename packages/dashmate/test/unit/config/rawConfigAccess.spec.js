@@ -19,6 +19,10 @@ const ALLOWED_RAW_READERS = {
   'src/config/Config.js': null,
   // reset restores stored intent
   'src/listr/tasks/resetNodeTaskFactory.js': 2,
+  // migrations copy defaults into a config, so they must copy what is recorded:
+  // reading effective values here would write a resolved image back into every
+  // config that crosses them, undoing the point of storing intent
+  'configs/getConfigFileMigrationsFactory.js': null,
   // base config is inherited by each network config, intent included
   'configs/defaults/getTestnetConfigFactory.js': 1,
   'configs/defaults/getLocalConfigFactory.js': 1,

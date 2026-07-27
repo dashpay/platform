@@ -226,4 +226,32 @@ describe('migrateConfigFileFactory', () => {
       }
     }
   });
+
+  it('should carry an operator image from the oldest migratable config to the newest', async () => {
+    // The strongest form of the guarantee: a config old enough to cross every
+    // migration in the table still arrives with the operator's image intact.
+    // These re-pins used to overwrite unconditionally, so an operator running
+    // their own build lost it at the first one they crossed - far earlier than
+    // any guard could see it.
+    const customDriveImage = 'registry.example.com/security-patched-drive:stable';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const oldConfigFileData = getConfigFileDataV0250();
+    for (const options of Object.values(oldConfigFileData.configs)) {
+      options.platform.drive.abci.docker.image = customDriveImage;
+    }
+
+    const migrated = migrateConfigFile(
+      oldConfigFileData,
+      oldConfigFileData.configFormatVersion,
+      version,
+    );
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(options.platform.drive.abci.docker.image).to.equal(
+        customDriveImage,
+        `operator drive image was overwritten for ${name}`,
+      );
+    }
+  });
 });

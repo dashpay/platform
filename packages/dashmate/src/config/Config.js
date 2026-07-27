@@ -157,11 +157,12 @@ export default class Config {
    * @return {*}
    */
   get(path, isRequired = false) {
-    // Cloned, not handed out by reference: callers assign the result into other
-    // configs (migrations do this constantly), and sharing a reference with a
-    // default config would alias them together - and would spread the frozen
-    // snapshot into objects that later need mutating.
-    const value = lodashCloneDeep(lodashGet(this.#effectiveOptions, path));
+    // Detached and frozen: detached so a caller assigning this into another
+    // config cannot alias the two together, frozen so writing through it fails
+    // loudly instead of being silently discarded. Callers that need to build new
+    // state from a default read it with getStored(), which returns a mutable
+    // copy of what is actually recorded.
+    const value = deepFreeze(lodashCloneDeep(lodashGet(this.#effectiveOptions, path)));
 
     if (value === undefined) {
       throw new InvalidOptionPathError(path);

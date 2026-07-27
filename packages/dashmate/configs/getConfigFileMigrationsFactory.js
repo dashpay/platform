@@ -42,6 +42,26 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       return defaultConfigs.get(baseConfigName);
     }
 
+    /**
+     * Re-pin a platform image, but only where it still holds a tag a release
+     * published.
+     *
+     * These re-pins existed to keep a version-derived image current, and they
+     * used to overwrite whatever was there. An operator running their own build
+     * lost it the first time they crossed one, long before any later migration
+     * could tell their image apart from a stale default.
+     *
+     * @param {Object} docker - the service's docker options, if present
+     * @param {string} repository - image repository the service is published under
+     * @param {string} image - image to move to
+     */
+    function repinStockImage(docker, repository, image) {
+      if (docker && stockImagePatternAnyVersion(repository).test(docker.image)) {
+        // eslint-disable-next-line no-param-reassign
+        docker.image = image;
+      }
+    }
+
     function getDefaultConfigByNetwork(network) {
       if (network === NETWORK_MAINNET) {
         return defaultConfigs.get('mainnet');
@@ -61,21 +81,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             // Update images
-            options.core.docker.image = base.get('core.docker.image');
+            options.core.docker.image = base.getStored('core.docker.image');
 
-            options.core.sentinel.docker.image = base.get('core.sentinel.docker.image');
+            options.core.sentinel.docker.image = base.getStored('core.sentinel.docker.image');
 
-            options.dashmate.helper.docker.image = base.get('dashmate.helper.docker.image');
+            options.dashmate.helper.docker.image = base.getStored('dashmate.helper.docker.image');
 
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
 
-            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', base.getStored('platform.drive.abci.docker.image'));
 
             if (options.platform?.dapi?.api && base.has('platform.dapi.api.docker.image')) {
-              options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', base.getStored('platform.dapi.api.docker.image'));
             }
 
-            options.platform.gateway.docker.image = base.get('platform.gateway.docker.image');
+            options.platform.gateway.docker.image = base.getStored('platform.gateway.docker.image');
           });
 
         return configFile;
@@ -85,10 +105,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             // Update dashmate helper port
-            options.dashmate.helper.api.port = base.get('dashmate.helper.api.port');
+            options.dashmate.helper.api.port = base.getStored('dashmate.helper.api.port');
 
             // Add pprof config
-            options.platform.drive.tenderdash.pprof = base.get('platform.drive.tenderdash.pprof');
+            options.platform.drive.tenderdash.pprof = base.getStored('platform.drive.tenderdash.pprof');
 
             // Set different ports for local network if exists
             if (options.group === 'local') {
@@ -103,7 +123,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.24.13': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.core.docker.image = base.get('core.docker.image');
+            options.core.docker.image = base.getStored('core.docker.image');
           });
 
         return configFile;
@@ -111,11 +131,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.24.15': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.docker.network.bindIp = base.get('docker.network.bindIp');
+            options.docker.network.bindIp = base.getStored('docker.network.bindIp');
 
             if (options.network === 'testnet') {
               options.platform.drive.tenderdash
-                .genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+                .genesis.initial_core_chain_locked_height = testnet.getStored('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
             }
           });
 
@@ -124,21 +144,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.24.16': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.gateway.docker = base.get('platform.gateway.docker');
+            options.platform.gateway.docker = base.getStored('platform.gateway.docker');
 
             if (options.platform?.dapi?.api && base.has('platform.dapi.api.docker.build')) {
-              options.platform.dapi.api.docker.build = base.get('platform.dapi.api.docker.build');
+              options.platform.dapi.api.docker.build = base.getStored('platform.dapi.api.docker.build');
             }
 
-            options.platform.drive.abci.docker.build = base.get('platform.drive.abci.docker.build');
+            options.platform.drive.abci.docker.build = base.getStored('platform.drive.abci.docker.build');
 
-            options.dashmate.helper.docker.build = base.get('dashmate.helper.docker.build');
+            options.dashmate.helper.docker.build = base.getStored('dashmate.helper.docker.build');
 
             delete options.dashmate.helper.docker.image;
             delete options.core.reindex;
 
             if (options.network === 'testnet') {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
             }
           });
 
@@ -147,7 +167,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.24.17': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.docker.baseImage = base.get('docker.baseImage');
+            options.docker.baseImage = base.getStored('docker.baseImage');
           });
 
         return configFile;
@@ -155,7 +175,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.24.20': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.core.docker.image = base.get('core.docker.image');
+            options.core.docker.image = base.getStored('core.docker.image');
           });
         return configFile;
       },
@@ -176,7 +196,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             delete options.core.sentinel;
 
             if ([NETWORK_LOCAL, NETWORK_TESTNET].includes(options.network)) {
-              options.core.docker.image = base.get('core.docker.image');
+              options.core.docker.image = base.getStored('core.docker.image');
             }
           });
         return configFile;
@@ -185,13 +205,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network !== NETWORK_MAINNET) {
-              options.core.docker.image = base.get('core.docker.image');
+              options.core.docker.image = base.getStored('core.docker.image');
 
               if (options.platform?.dapi?.api && base.has('platform.dapi.api.docker.image')) {
-                options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
+                repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', base.getStored('platform.dapi.api.docker.image'));
               }
-              options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
-              options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+              repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', base.getStored('platform.drive.abci.docker.image'));
+              options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
             }
 
             if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
@@ -203,14 +223,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash
-                .genesis.initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+                .genesis.initial_core_chain_locked_height = testnet.getStored('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
             }
 
             if (defaultConfigs.has(name) && !options.platform.drive.tenderdash.metrics) {
               options.platform.drive.tenderdash.metrics = defaultConfigs.get(name)
-                .get('platform.drive.tenderdash.metrics');
+                .getStored('platform.drive.tenderdash.metrics');
             }
           });
         return configFile;
@@ -219,7 +239,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
+              options.platform.drive.tenderdash.p2p.seeds = testnet.getStored('platform.drive.tenderdash.p2p.seeds');
             }
           });
         return configFile;
@@ -228,11 +248,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network !== NETWORK_MAINNET) {
-              options.core.docker.image = base.get('core.docker.image');
+              options.core.docker.image = base.getStored('core.docker.image');
             }
 
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
           });
@@ -241,8 +261,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.0-dev.33': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.epochTime = base.get('platform.drive.abci.epochTime');
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.abci.epochTime = base.getStored('platform.drive.abci.epochTime');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
             options.platform.drive.tenderdash.log.path = null;
 
             if (options.platform.drive.abci.log.jsonFile.level === 'fatal') {
@@ -254,14 +274,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
               options.platform.drive.tenderdash.genesis
-                .initial_core_chain_locked_height = testnet.get('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
+                .initial_core_chain_locked_height = testnet.getStored('platform.drive.tenderdash.genesis.initial_core_chain_locked_height');
             }
 
             if (options.network !== NETWORK_MAINNET) {
-              options.core.docker.image = base.get('core.docker.image');
+              options.core.docker.image = base.getStored('core.docker.image');
             }
           });
 
@@ -271,11 +291,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.abci.epochTime = testnet.get('platform.drive.abci.epochTime');
+              options.platform.drive.abci.epochTime = testnet.getStored('platform.drive.abci.epochTime');
             }
-            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', base.getStored('platform.drive.abci.docker.image'));
             if (options.platform?.dapi?.api && base.has('platform.dapi.api.docker.image')) {
-              options.platform.dapi.api.docker.image = base.get('platform.dapi.api.docker.image');
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', base.getStored('platform.dapi.api.docker.image'));
             }
           });
 
@@ -286,7 +306,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.platform.drive.abci.log;
 
-            options.platform.drive.abci.logs = base.get('platform.drive.abci.logs');
+            options.platform.drive.abci.logs = base.getStored('platform.drive.abci.logs');
           });
 
         return configFile;
@@ -325,7 +345,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       },
       '0.25.11': (configFile) => {
         if (configFile.configs.base) {
-          configFile.configs.base.core.docker.image = base.get('core.docker.image');
+          configFile.configs.base.core.docker.image = base.getStored('core.docker.image');
         }
         if (configFile.configs.local) {
           configFile.configs.local.platform.dapi.envoy.ssl.provider = SSL_PROVIDERS.SELF_SIGNED;
@@ -336,7 +356,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.log.level = 'info';
 
             if (options.network !== NETWORK_MAINNET && options.network !== NETWORK_TESTNET) {
-              options.core.docker.image = base.get('core.docker.image');
+              options.core.docker.image = base.getStored('core.docker.image');
             }
 
             options.core.docker.commandArgs = [];
@@ -347,13 +367,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.12': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
 
             if (options.network === NETWORK_TESTNET) {
-              options.core.docker.image = base.get('core.docker.image');
+              options.core.docker.image = base.getStored('core.docker.image');
 
               if (name !== base.getName()) {
-                options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+                options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
                 options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 14000;
                 options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
               }
@@ -365,11 +385,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16-rc.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.core.insight = base.get('core.insight');
-            options.core.docker.image = base.get('core.docker.image');
+            options.core.insight = base.getStored('core.insight');
+            options.core.docker.image = base.getStored('core.docker.image');
 
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
               options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
@@ -381,7 +401,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== base.getName()) {
-              options.platform.drive.tenderdash.genesis.chain_id = testnet.get('platform.drive.tenderdash.genesis.chain_id');
+              options.platform.drive.tenderdash.genesis.chain_id = testnet.getStored('platform.drive.tenderdash.genesis.chain_id');
               options.platform.drive.tenderdash.genesis.initial_core_chain_locked_height = 1400;
               options.platform.drive.tenderdash.genesis.genesis_time = '2024-07-17T17:15:00.000Z';
             }
@@ -392,7 +412,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16-rc.6': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.core.docker.image = base.get('core.docker.image');
+            options.core.docker.image = base.getStored('core.docker.image');
           });
 
         return configFile;
@@ -400,16 +420,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.16-rc.7': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
 
             delete options.docker.network.bindIp;
 
-            options.core.p2p.host = base.get('core.p2p.host');
-            options.core.rpc.host = base.get('core.rpc.host');
+            options.core.p2p.host = base.getStored('core.p2p.host');
+            options.core.rpc.host = base.getStored('core.rpc.host');
             options.platform.dapi.envoy.http.host = '0.0.0.0';
-            options.platform.drive.tenderdash.p2p.host = base.get('platform.drive.tenderdash.p2p.host');
-            options.platform.drive.tenderdash.rpc.host = base.get('platform.drive.tenderdash.rpc.host');
-            options.platform.drive.tenderdash.metrics.host = base.get('platform.drive.tenderdash.metrics.host');
+            options.platform.drive.tenderdash.p2p.host = base.getStored('platform.drive.tenderdash.p2p.host');
+            options.platform.drive.tenderdash.rpc.host = base.getStored('platform.drive.tenderdash.rpc.host');
+            options.platform.drive.tenderdash.metrics.host = base.getStored('platform.drive.tenderdash.metrics.host');
           });
 
         return configFile;
@@ -417,7 +437,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '0.25.19': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
           });
 
         return configFile;
@@ -428,7 +448,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.dapi.envoy.http.connectTimeout = '5s';
             options.platform.dapi.envoy.http.responseTimeout = '15s';
 
-            options.platform.drive.tenderdash.rpc.maxOpenConnections = base.get('platform.drive.tenderdash.rpc.maxOpenConnections');
+            options.platform.drive.tenderdash.rpc.maxOpenConnections = base.getStored('platform.drive.tenderdash.rpc.maxOpenConnections');
 
             let defaultConfigName = 'base';
             if (options.group === 'local' || name === 'local') {
@@ -436,14 +456,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
             const defaultConfig = defaultConfigs.get(defaultConfigName);
 
-            options.platform.drive.tenderdash.p2p.flushThrottleTimeout = defaultConfig.get('platform.drive.tenderdash.p2p.flushThrottleTimeout');
-            options.platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize = defaultConfig.get('platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize');
-            options.platform.drive.tenderdash.p2p.sendRate = defaultConfig.get('platform.drive.tenderdash.p2p.sendRate');
-            options.platform.drive.tenderdash.p2p.recvRate = defaultConfig.get('platform.drive.tenderdash.p2p.recvRate');
+            options.platform.drive.tenderdash.p2p.flushThrottleTimeout = defaultConfig.getStored('platform.drive.tenderdash.p2p.flushThrottleTimeout');
+            options.platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize = defaultConfig.getStored('platform.drive.tenderdash.p2p.maxPacketMsgPayloadSize');
+            options.platform.drive.tenderdash.p2p.sendRate = defaultConfig.getStored('platform.drive.tenderdash.p2p.sendRate');
+            options.platform.drive.tenderdash.p2p.recvRate = defaultConfig.getStored('platform.drive.tenderdash.p2p.recvRate');
 
-            options.platform.drive.tenderdash.mempool = lodash.clone(base.get('platform.drive.tenderdash.mempool'));
-            options.platform.drive.tenderdash.consensus.peer = base.get('platform.drive.tenderdash.consensus.peer');
-            options.platform.drive.tenderdash.consensus.unsafeOverride = base.get('platform.drive.tenderdash.consensus.unsafeOverride');
+            options.platform.drive.tenderdash.mempool = lodash.clone(base.getStored('platform.drive.tenderdash.mempool'));
+            options.platform.drive.tenderdash.consensus.peer = base.getStored('platform.drive.tenderdash.consensus.peer');
+            options.platform.drive.tenderdash.consensus.unsafeOverride = base.getStored('platform.drive.tenderdash.consensus.unsafeOverride');
           });
 
         return configFile;
@@ -452,7 +472,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.platform?.dapi?.api && base.has('platform.dapi.api.docker.deploy')) {
-              options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+              options.platform.dapi.api.docker.deploy = base.getStored('platform.dapi.api.docker.deploy');
             }
           });
 
@@ -517,7 +537,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (options.platform?.dapi?.api && base.has('platform.dapi.api.docker.deploy')) {
-              options.platform.dapi.api.docker.deploy = base.get('platform.dapi.api.docker.deploy');
+              options.platform.dapi.api.docker.deploy = base.getStored('platform.dapi.api.docker.deploy');
             }
 
             let baseConfigName = name;
@@ -528,7 +548,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             options.platform.drive.abci.chainLock = defaultConfigs.get(baseConfigName)
-              .get('platform.drive.abci.chainLock');
+              .getStored('platform.drive.abci.chainLock');
           });
 
         return configFile;
@@ -537,9 +557,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            options.core.docker.image = defaultConfig.get('core.docker.image');
+            options.core.docker.image = defaultConfig.getStored('core.docker.image');
 
-            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = defaultConfig.getStored('platform.drive.tenderdash.docker.image');
           });
 
         return configFile;
@@ -547,7 +567,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.5': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.mempool.cacheSize = base.get('platform.drive.tenderdash.mempool.cacheSize');
+            options.platform.drive.tenderdash.mempool.cacheSize = base.getStored('platform.drive.tenderdash.mempool.cacheSize');
           });
 
         return configFile;
@@ -555,10 +575,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.6': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.platform.drive.abci.tokioConsole = base.get('platform.drive.abci.tokioConsole');
+            options.platform.drive.abci.tokioConsole = base.getStored('platform.drive.abci.tokioConsole');
 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            options.platform.drive.tenderdash.docker.image = defaultConfig.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = defaultConfig.getStored('platform.drive.tenderdash.docker.image');
           });
 
         return configFile;
@@ -567,11 +587,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.getStored('platform.drive.tenderdash.genesis'));
             }
 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            options.core.docker.image = defaultConfig.get('core.docker.image');
+            options.core.docker.image = defaultConfig.getStored('core.docker.image');
           });
 
         return configFile;
@@ -580,7 +600,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            options.core.docker.image = defaultConfig.get('core.docker.image');
+            options.core.docker.image = defaultConfig.getStored('core.docker.image');
           });
 
         return configFile;
@@ -588,14 +608,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.9': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            options.platform.drive.tenderdash.mempool.timeoutCheckTx = defaultConfig.get('platform.drive.tenderdash.mempool.timeoutCheckTx');
-            options.platform.drive.tenderdash.mempool.txEnqueueTimeout = defaultConfig.get('platform.drive.tenderdash.mempool.txEnqueueTimeout');
-            options.platform.drive.tenderdash.mempool.txSendRateLimit = defaultConfig.get('platform.drive.tenderdash.mempool.txSendRateLimit');
-            options.platform.drive.tenderdash.mempool.txRecvRateLimit = defaultConfig.get('platform.drive.tenderdash.mempool.txRecvRateLimit');
-            options.platform.drive.tenderdash.rpc.timeoutBroadcastTx = defaultConfig.get('platform.drive.tenderdash.rpc.timeoutBroadcastTx');
+            options.platform.drive.tenderdash.mempool.timeoutCheckTx = defaultConfig.getStored('platform.drive.tenderdash.mempool.timeoutCheckTx');
+            options.platform.drive.tenderdash.mempool.txEnqueueTimeout = defaultConfig.getStored('platform.drive.tenderdash.mempool.txEnqueueTimeout');
+            options.platform.drive.tenderdash.mempool.txSendRateLimit = defaultConfig.getStored('platform.drive.tenderdash.mempool.txSendRateLimit');
+            options.platform.drive.tenderdash.mempool.txRecvRateLimit = defaultConfig.getStored('platform.drive.tenderdash.mempool.txRecvRateLimit');
+            options.platform.drive.tenderdash.rpc.timeoutBroadcastTx = defaultConfig.getStored('platform.drive.tenderdash.rpc.timeoutBroadcastTx');
           });
 
         return configFile;
@@ -603,7 +623,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.10': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
           });
 
         return configFile;
@@ -612,27 +632,27 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             // Update tenderdash config
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
-            options.platform.drive.tenderdash.mempool.maxConcurrentCheckTx = base.get('platform.drive.tenderdash.mempool.maxConcurrentCheckTx');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.mempool.maxConcurrentCheckTx = base.getStored('platform.drive.tenderdash.mempool.maxConcurrentCheckTx');
 
             // Add metrics to Drive ABCI
-            options.platform.drive.abci.metrics = base.get('platform.drive.abci.metrics');
+            options.platform.drive.abci.metrics = base.getStored('platform.drive.abci.metrics');
 
             // Envoy -> Gateway
             if (options.platform.dapi.envoy) {
               options.platform.gateway = lodash.cloneDeep(options.platform.dapi.envoy);
 
               // add new options
-              options.platform.gateway.maxConnections = base.get('platform.gateway.maxConnections');
-              options.platform.gateway.maxHeapSizeInBytes = base.get('platform.gateway.maxHeapSizeInBytes');
-              options.platform.gateway.metrics = base.get('platform.gateway.metrics');
-              options.platform.gateway.admin = base.get('platform.gateway.admin');
-              options.platform.gateway.upstreams = base.get('platform.gateway.upstreams');
-              options.platform.gateway.log = base.get('platform.gateway.log');
+              options.platform.gateway.maxConnections = base.getStored('platform.gateway.maxConnections');
+              options.platform.gateway.maxHeapSizeInBytes = base.getStored('platform.gateway.maxHeapSizeInBytes');
+              options.platform.gateway.metrics = base.getStored('platform.gateway.metrics');
+              options.platform.gateway.admin = base.getStored('platform.gateway.admin');
+              options.platform.gateway.upstreams = base.getStored('platform.gateway.upstreams');
+              options.platform.gateway.log = base.getStored('platform.gateway.log');
 
               // http -> listeners
               options.platform.gateway.listeners = lodash.cloneDeep(
-                base.get('platform.gateway.listeners'),
+                base.getStored('platform.gateway.listeners'),
               );
 
               options.platform.gateway.listeners.dapiAndDrive.host = options.platform.dapi.envoy
@@ -643,12 +663,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete options.platform.gateway.http;
 
               // update rate limiter
-              options.platform.gateway.rateLimiter.docker = base.get('platform.gateway.rateLimiter.docker');
-              options.platform.gateway.rateLimiter.unit = base.get('platform.gateway.rateLimiter.unit');
-              options.platform.gateway.rateLimiter.requestsPerUnit = base.get('platform.gateway.rateLimiter.requestsPerUnit');
-              options.platform.gateway.rateLimiter.blacklist = base.get('platform.gateway.rateLimiter.blacklist');
-              options.platform.gateway.rateLimiter.whitelist = base.get('platform.gateway.rateLimiter.whitelist');
-              options.platform.gateway.rateLimiter.metrics = base.get('platform.gateway.rateLimiter.metrics');
+              options.platform.gateway.rateLimiter.docker = base.getStored('platform.gateway.rateLimiter.docker');
+              options.platform.gateway.rateLimiter.unit = base.getStored('platform.gateway.rateLimiter.unit');
+              options.platform.gateway.rateLimiter.requestsPerUnit = base.getStored('platform.gateway.rateLimiter.requestsPerUnit');
+              options.platform.gateway.rateLimiter.blacklist = base.getStored('platform.gateway.rateLimiter.blacklist');
+              options.platform.gateway.rateLimiter.whitelist = base.getStored('platform.gateway.rateLimiter.whitelist');
+              options.platform.gateway.rateLimiter.metrics = base.getStored('platform.gateway.rateLimiter.metrics');
 
               delete options.platform.gateway.rateLimiter.fillInterval;
               delete options.platform.gateway.rateLimiter.maxTokens;
@@ -658,7 +678,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete options.platform.dapi.envoy;
 
               // update image
-              options.platform.gateway.docker.image = base.get('platform.gateway.docker.image');
+              options.platform.gateway.docker.image = base.getStored('platform.gateway.docker.image');
             }
 
             // rename non conventional field
@@ -711,10 +731,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const networkConfig = getDefaultConfigByNetwork(options.network);
 
             options.platform.drive.abci.chainLock.quorum = {
-              llmqType: networkConfig.get('platform.drive.abci.chainLock.quorum.llmqType'),
-              dkgInterval: networkConfig.get('platform.drive.abci.chainLock.quorum.dkgInterval'),
-              activeSigners: networkConfig.get('platform.drive.abci.chainLock.quorum.activeSigners'),
-              rotation: networkConfig.get('platform.drive.abci.chainLock.quorum.rotation'),
+              llmqType: networkConfig.getStored('platform.drive.abci.chainLock.quorum.llmqType'),
+              dkgInterval: networkConfig.getStored('platform.drive.abci.chainLock.quorum.dkgInterval'),
+              activeSigners: networkConfig.getStored('platform.drive.abci.chainLock.quorum.activeSigners'),
+              rotation: networkConfig.getStored('platform.drive.abci.chainLock.quorum.rotation'),
             };
 
             delete options.platform.drive.abci.chainLock.llmqType;
@@ -722,20 +742,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             delete options.platform.drive.abci.chainLock.dkgInterval;
 
             options.platform.drive.abci.validatorSet.quorum = {
-              llmqType: networkConfig.get('platform.drive.abci.validatorSet.quorum.llmqType'),
-              dkgInterval: networkConfig.get('platform.drive.abci.validatorSet.quorum.dkgInterval'),
-              activeSigners: networkConfig.get('platform.drive.abci.validatorSet.quorum.activeSigners'),
-              rotation: networkConfig.get('platform.drive.abci.validatorSet.quorum.rotation'),
+              llmqType: networkConfig.getStored('platform.drive.abci.validatorSet.quorum.llmqType'),
+              dkgInterval: networkConfig.getStored('platform.drive.abci.validatorSet.quorum.dkgInterval'),
+              activeSigners: networkConfig.getStored('platform.drive.abci.validatorSet.quorum.activeSigners'),
+              rotation: networkConfig.getStored('platform.drive.abci.validatorSet.quorum.rotation'),
             };
 
             delete options.platform.drive.abci.validatorSet.llmqType;
 
             options.platform.drive.abci.instantLock = {
               quorum: {
-                llmqType: networkConfig.get('platform.drive.abci.instantLock.quorum.llmqType'),
-                dkgInterval: networkConfig.get('platform.drive.abci.instantLock.quorum.dkgInterval'),
-                activeSigners: networkConfig.get('platform.drive.abci.instantLock.quorum.activeSigners'),
-                rotation: networkConfig.get('platform.drive.abci.instantLock.quorum.rotation'),
+                llmqType: networkConfig.getStored('platform.drive.abci.instantLock.quorum.llmqType'),
+                dkgInterval: networkConfig.getStored('platform.drive.abci.instantLock.quorum.dkgInterval'),
+                activeSigners: networkConfig.getStored('platform.drive.abci.instantLock.quorum.activeSigners'),
+                rotation: networkConfig.getStored('platform.drive.abci.instantLock.quorum.rotation'),
               },
             };
           });
@@ -745,15 +765,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.0.0-dev.17': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
-            options.platform.drive.abci.grovedbVisualizer = base.get('platform.drive.abci.grovedbVisualizer');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
+            options.platform.drive.abci.grovedbVisualizer = base.getStored('platform.drive.abci.grovedbVisualizer');
 
             // Update Core image
             options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
-              .get('core.docker.image');
+              .getStored('core.docker.image');
 
             // Update Core RPC auth configuration
-            options.core.rpc.users = base.get('core.rpc.users');
+            options.core.rpc.users = base.getStored('core.rpc.users');
             options.core.rpc.users.dashmate.password = options.core.rpc.password;
 
             delete options.core.rpc.user;
@@ -766,12 +786,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([name, options]) => {
             // Update Core image
             options.core.docker.image = getDefaultConfigByNameOrGroup(name, options.group)
-              .get('core.docker.image');
+              .getStored('core.docker.image');
 
-            options.core.devnet.llmq = base.get('core.devnet.llmq');
+            options.core.devnet.llmq = base.getStored('core.devnet.llmq');
 
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.getStored('platform.drive.tenderdash.genesis'));
             }
           });
         return configFile;
@@ -786,10 +806,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             delete options.platform.withdrawals;
 
             // Update tenderdash image
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
 
             // Replace quorumsign with qurumplatformsign in Core RPC Tenderdash auth whitelist
-            options.core.rpc.users.tenderdash.whitelist = base.get('core.rpc.users.tenderdash.whitelist');
+            options.core.rpc.users.tenderdash.whitelist = base.getStored('core.rpc.users.tenderdash.whitelist');
           });
         return configFile;
       },
@@ -797,12 +817,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.getStored('platform.drive.tenderdash.genesis'));
             }
 
             // Update tenderdash image
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
-            options.core.rpc.users.drive_consensus.whitelist = base.get('core.rpc.users.drive_consensus.whitelist');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
+            options.core.rpc.users.drive_consensus.whitelist = base.getStored('core.rpc.users.drive_consensus.whitelist');
           });
         return configFile;
       },
@@ -810,12 +830,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (name === 'base') {
-              options.platform.drive.tenderdash.mempool = base.get('platform.drive.tenderdash.mempool');
-              options.platform.drive.tenderdash.genesis = base.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.mempool = base.getStored('platform.drive.tenderdash.mempool');
+              options.platform.drive.tenderdash.genesis = base.getStored('platform.drive.tenderdash.genesis');
             } else if (options.network === NETWORK_MAINNET) {
-              options.platform.drive.tenderdash.p2p = mainnet.get('platform.drive.tenderdash.p2p');
-              options.platform.drive.tenderdash.mempool = mainnet.get('platform.drive.tenderdash.mempool');
-              options.platform.drive.tenderdash.genesis = mainnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.p2p = mainnet.getStored('platform.drive.tenderdash.p2p');
+              options.platform.drive.tenderdash.mempool = mainnet.getStored('platform.drive.tenderdash.mempool');
+              options.platform.drive.tenderdash.genesis = mainnet.getStored('platform.drive.tenderdash.genesis');
 
               if (options.platform.drive.tenderdash.node.id !== null) {
                 options.platform.enable = true;
@@ -823,8 +843,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             // Update tenderdash image
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
-            options.core.docker.image = base.get('core.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
+            options.core.docker.image = base.getStored('core.docker.image');
           });
         return configFile;
       },
@@ -832,9 +852,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.core.indexes = [];
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1');
             }
           });
         return configFile;
@@ -879,12 +899,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (options.network === NETWORK_MAINNET && name !== 'base') {
-              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.getStored('platform.drive.tenderdash.p2p.seeds');
             }
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1-dev');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1-dev');
               options.platform.dapi.api.waitForStResultTimeout = 120000;
             }
 
@@ -898,16 +918,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 .consensus_params = lodash.cloneDeep(consensusParams);
             }
 
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
           });
         return configFile;
       },
       '1.1.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1');
             }
 
             if (options.network === NETWORK_TESTNET) {
@@ -962,9 +982,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.3.0-dev.3': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1-dev');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1-dev');
             }
 
             // Update core log settings
@@ -1005,9 +1025,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1');
             }
           });
         return configFile;
@@ -1016,9 +1036,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.3';
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1-dev');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1-dev');
             }
           });
         return configFile;
@@ -1039,9 +1059,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.4.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1');
             }
           });
         return configFile;
@@ -1050,11 +1070,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_MAINNET && name !== 'base') {
-              options.platform.drive.tenderdash.p2p.seeds = mainnet.get('platform.drive.tenderdash.p2p.seeds');
+              options.platform.drive.tenderdash.p2p.seeds = mainnet.getStored('platform.drive.tenderdash.p2p.seeds');
             }
 
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.p2p.seeds = testnet.get('platform.drive.tenderdash.p2p.seeds');
+              options.platform.drive.tenderdash.p2p.seeds = testnet.getStored('platform.drive.tenderdash.p2p.seeds');
             }
           });
         return configFile;
@@ -1062,9 +1082,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.6.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1-dev';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1-dev');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1-dev';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1-dev');
             }
           });
         return configFile;
@@ -1072,9 +1092,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '1.6.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1');
             }
           });
         return configFile;
@@ -1092,9 +1112,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:1';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:1');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:1';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:1');
             }
           });
         return configFile;
@@ -1104,9 +1124,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:2-dev');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:2-dev');
             }
           });
         return configFile;
@@ -1116,9 +1136,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:2-rc');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:2-rc');
             }
           });
         return configFile;
@@ -1128,9 +1148,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             delete options.core.miner.mediantime;
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:2');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:2');
             }
           });
         return configFile;
@@ -1139,7 +1159,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis.consensus_params'));
+              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.getStored('platform.drive.tenderdash.genesis.consensus_params'));
             }
           });
         return configFile;
@@ -1149,12 +1169,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             // Add ZMQ configuration if it doesn't exist
             if (!options.core.zmq) {
-              options.core.zmq = base.get('core.zmq');
+              options.core.zmq = base.getStored('core.zmq');
             }
 
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:2-dev');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:2-dev');
             }
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1-dev';
           });
@@ -1166,11 +1186,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
 
             if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.getStored('platform.dapi.rsDapi'));
               return;
             }
 
-            const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
+            const defaultMetrics = defaultConfig.getStored('platform.dapi.rsDapi.metrics');
 
             if (options.platform.dapi.rsDapi.healthCheck) {
               options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(
@@ -1192,23 +1212,23 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (!options.platform.dapi.rsDapi.logs) {
-              options.platform.dapi.rsDapi.logs = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi.logs'));
+              options.platform.dapi.rsDapi.logs = lodash.cloneDeep(defaultConfig.getStored('platform.dapi.rsDapi.logs'));
             }
 
             if (typeof options.platform.dapi.rsDapi.logs.level === 'undefined') {
-              options.platform.dapi.rsDapi.logs.level = defaultConfig.get('platform.dapi.rsDapi.logs.level');
+              options.platform.dapi.rsDapi.logs.level = defaultConfig.getStored('platform.dapi.rsDapi.logs.level');
             }
 
             if (typeof options.platform.dapi.rsDapi.logs.jsonFormat === 'undefined') {
-              options.platform.dapi.rsDapi.logs.jsonFormat = defaultConfig.get('platform.dapi.rsDapi.logs.jsonFormat');
+              options.platform.dapi.rsDapi.logs.jsonFormat = defaultConfig.getStored('platform.dapi.rsDapi.logs.jsonFormat');
             }
 
             if (typeof options.platform.dapi.rsDapi.logs.accessLogPath === 'undefined') {
-              options.platform.dapi.rsDapi.logs.accessLogPath = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogPath');
+              options.platform.dapi.rsDapi.logs.accessLogPath = defaultConfig.getStored('platform.dapi.rsDapi.logs.accessLogPath');
             }
 
             if (typeof options.platform.dapi.rsDapi.logs.accessLogFormat === 'undefined') {
-              options.platform.dapi.rsDapi.logs.accessLogFormat = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogFormat');
+              options.platform.dapi.rsDapi.logs.accessLogFormat = defaultConfig.getStored('platform.dapi.rsDapi.logs.accessLogFormat');
             }
           });
 
@@ -1220,23 +1240,23 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
 
             if (options.platform?.dapi?.api && defaultConfig.has('platform.dapi.api.docker.image')) {
-              options.platform.dapi.api.docker.image = defaultConfig
-                .get('platform.dapi.api.docker.image');
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', defaultConfig
+                .getStored('platform.dapi.api.docker.image'));
             }
 
-            options.platform.drive.abci.docker.image = defaultConfig
-              .get('platform.drive.abci.docker.image');
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', defaultConfig
+              .getStored('platform.drive.abci.docker.image'));
 
             if (options.platform.dapi.rsDapi
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
-              options.platform.dapi.rsDapi.docker.image = defaultConfig
-                .get('platform.dapi.rsDapi.docker.image');
+              repinStockImage(options.platform?.dapi?.rsDapi?.docker, 'dashpay/rs-dapi', defaultConfig
+                .getStored('platform.dapi.rsDapi.docker.image'));
             }
 
             if (options.platform.drive.tenderdash
               && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
               options.platform.drive.tenderdash.docker.image = defaultConfig
-                .get('platform.drive.tenderdash.docker.image');
+                .getStored('platform.drive.tenderdash.docker.image');
             }
           });
 
@@ -1245,11 +1265,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '2.1.0-rc.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:2-rc');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:2-rc');
             }
-            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2-rc';
+            repinStockImage(options.platform?.dapi?.rsDapi?.docker, 'dashpay/rs-dapi', 'dashpay/rs-dapi:2-rc');
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.5';
           });
 
@@ -1258,11 +1278,11 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
       '2.1.0': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2';
+            repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', 'dashpay/drive:2');
             if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
+              repinStockImage(options.platform?.dapi?.api?.docker, 'dashpay/dapi', 'dashpay/dapi:2');
             }
-            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2';
+            repinStockImage(options.platform?.dapi?.rsDapi?.docker, 'dashpay/rs-dapi', 'dashpay/rs-dapi:2');
           });
 
         return configFile;
@@ -1276,13 +1296,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             // --- ZMQ configuration ---
             if (!options.core.zmq) {
-              options.core.zmq = lodash.cloneDeep(defaultConfig.get('core.zmq'));
+              options.core.zmq = lodash.cloneDeep(defaultConfig.getStored('core.zmq'));
             } else {
               options.core.zmq = lodash.cloneDeep(options.core.zmq);
             }
 
             if (typeof options.core.zmq.port === 'undefined') {
-              options.core.zmq.port = defaultConfig.get('core.zmq.port');
+              options.core.zmq.port = defaultConfig.getStored('core.zmq.port');
             }
 
             const configuredZmqPort = Number(options.core.zmq.port);
@@ -1297,10 +1317,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.getStored('platform.dapi.rsDapi'));
             }
 
-            const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
+            const defaultMetrics = defaultConfig.getStored('platform.dapi.rsDapi.metrics');
 
             if (!options.platform.dapi.rsDapi.metrics) {
               options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
@@ -1333,7 +1353,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             if (typeof options.platform.dapi.rsDapi.waitForStResultTimeout === 'undefined') {
-              options.platform.dapi.rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
+              options.platform.dapi.rsDapi.waitForStResultTimeout = defaultConfig.getStored('platform.dapi.rsDapi.waitForStResultTimeout');
             }
 
             if (options.platform?.dapi?.deprecated) {
@@ -1343,7 +1363,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // --- Gateway upstreams migration ---
             if (options.platform?.gateway?.upstreams) {
               const { upstreams } = options.platform.gateway;
-              const defaultUpstreams = defaultConfig.get('platform.gateway.upstreams');
+              const defaultUpstreams = defaultConfig.getStored('platform.gateway.upstreams');
 
               if (!upstreams.rsDapi) {
                 const { dapiApi, dapiCoreStreams } = upstreams;
@@ -1370,21 +1390,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (options.platform?.drive?.abci?.docker
               && defaultConfig.has('platform.drive.abci.docker.image')) {
-              options.platform.drive.abci.docker.image = defaultConfig.get('platform.drive.abci.docker.image');
+              repinStockImage(options.platform?.drive?.abci?.docker, 'dashpay/drive', defaultConfig.getStored('platform.drive.abci.docker.image'));
             }
 
             if (options.platform.dapi?.rsDapi?.docker
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
-              options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
+              repinStockImage(options.platform?.dapi?.rsDapi?.docker, 'dashpay/rs-dapi', defaultConfig.getStored('platform.dapi.rsDapi.docker.image'));
             }
 
             if (!options.platform.quorumList) {
-              options.platform.quorumList = lodash.cloneDeep(defaultConfig.get('platform.quorumList'));
+              options.platform.quorumList = lodash.cloneDeep(defaultConfig.getStored('platform.quorumList'));
             }
 
             if (!options.core.rpc.users.quorum_list) {
               options.core.rpc.users.quorum_list = lodash.cloneDeep(
-                defaultConfig.get('core.rpc.users.quorum_list'),
+                defaultConfig.getStored('core.rpc.users.quorum_list'),
               );
             }
 
@@ -1406,7 +1426,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // dashmate-shipped 1.30.x Envoy image are bumped to the patched base
         // default (Envoy 1.35.11); a deliberately customised image (private
         // fork, vendor-patched build, `:latest`, etc.) is left untouched.
-        const patchedImage = base.get('platform.gateway.docker.image');
+        const patchedImage = base.getStored('platform.gateway.docker.image');
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             const docker = options.platform?.gateway?.docker;
@@ -1449,7 +1469,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.platform?.drive?.tenderdash?.docker
               && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
               options.platform.drive.tenderdash.docker.image = defaultConfig
-                .get('platform.drive.tenderdash.docker.image');
+                .getStored('platform.drive.tenderdash.docker.image');
             }
 
             // Backfill the new `buildArgs: {}` field on each build block —
@@ -1469,12 +1489,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (options.platform?.drive?.tenderdash?.p2p
               && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
               options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig
-                .get('platform.drive.tenderdash.p2p.allowlistOnly');
+                .getStored('platform.drive.tenderdash.p2p.allowlistOnly');
             }
 
             // --- Differentiate ports between networks to avoid conflicts ---
             // when running multiple networks on the same machine (issue #3002)
-            // Note: earlier migrations may assign objects from base.get() without
+            // Note: earlier migrations may assign objects from base.getStored() without
             // cloning, causing shared references. We must clone before mutating.
 
             if (!isTestnet && !isLocal) {
@@ -1490,9 +1510,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             for (const parentPath of portPaths) {
               const obj = lodash.get(options, parentPath);
-              if (obj && Number(obj.port) === base.get(`${parentPath}.port`)) {
+              if (obj && Number(obj.port) === base.getStored(`${parentPath}.port`)) {
                 lodash.set(options, parentPath, lodash.cloneDeep(obj));
-                lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
+                lodash.get(options, parentPath).port = networkConfig.getStored(`${parentPath}.port`);
               }
             }
 
@@ -1512,9 +1532,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             for (const parentPath of platformPortPaths) {
               const obj = lodash.get(options, parentPath);
-              if (obj && Number(obj.port) === base.get(`${parentPath}.port`)) {
+              if (obj && Number(obj.port) === base.getStored(`${parentPath}.port`)) {
                 lodash.set(options, parentPath, lodash.cloneDeep(obj));
-                lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
+                lodash.get(options, parentPath).port = networkConfig.getStored(`${parentPath}.port`);
               }
             }
           });
@@ -1529,7 +1549,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // Keyed at the next release (4.0.0-rc.3), not the already-released
             // rc.2: the runner skips fromVersion===toVersion, so a key equal to
             // an operator's current version never fires.
-            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+            options.platform.drive.tenderdash.docker.image = base.getStored('platform.drive.tenderdash.docker.image');
 
             // Add responseHeaders toggle to rate limiter (default true so existing
             // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
@@ -1541,7 +1561,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // package bumps to rc.3 (mirrors the 3.1.0 migration added at 3.1.0-dev.1).
             if (options.platform?.gateway?.rateLimiter
               && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
-              options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
+              options.platform.gateway.rateLimiter.responseHeaders = base.getStored('platform.gateway.rateLimiter.responseHeaders');
             }
           });
 
@@ -1567,12 +1587,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             const driveDocker = options.platform?.drive?.abci?.docker;
             if (driveDocker && stockDriveImage.test(driveDocker.image)) {
-              driveDocker.image = base.get('platform.drive.abci.docker.image');
+              driveDocker.image = base.getStored('platform.drive.abci.docker.image');
             }
 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
-              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = base.getStored('platform.dapi.rsDapi.docker.image');
             }
           });
 
@@ -1591,7 +1611,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             const docker = options.platform?.gateway?.docker;
             if (docker && /^dashpay\/envoy:1\.35\./.test(docker.image)) {
-              docker.image = base.get('platform.gateway.docker.image');
+              docker.image = base.getStored('platform.gateway.docker.image');
             }
           });
 
@@ -1616,12 +1636,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             const driveDocker = options.platform?.drive?.abci?.docker;
             if (driveDocker && stockDriveImage.test(driveDocker.image)) {
-              driveDocker.image = base.get('platform.drive.abci.docker.image');
+              driveDocker.image = base.getStored('platform.drive.abci.docker.image');
             }
 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
-              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = base.getStored('platform.dapi.rsDapi.docker.image');
             }
           });
 
