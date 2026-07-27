@@ -2,6 +2,7 @@ import { Flags } from '@oclif/core';
 import chalk from 'chalk';
 import { inspect } from 'util';
 import { OUTPUT_FORMATS } from '../../constants.js';
+import annotateDerivedDefaults from '../../config/annotateDerivedDefaults.js';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 
 export default class ConfigCommand extends ConfigBaseCommand {
@@ -38,10 +39,11 @@ export default class ConfigCommand extends ConfigBaseCommand {
 
     let configOptions;
     if (format === OUTPUT_FORMATS.JSON) {
+      // Left unannotated on purpose: this output is parsed by other tools.
       configOptions = JSON.stringify(options, null, 2);
     } else {
       configOptions = inspect(
-        options,
+        raw ? options : annotateDerivedDefaults(config, options),
         { depth: Infinity, colors: chalk.supportsColor },
       );
     }

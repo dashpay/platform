@@ -25,6 +25,8 @@ const ALLOWED_RAW_READERS = {
   'configs/defaults/getMainnetConfigFactory.js': 1,
   // the commands that deliberately expose stored state behind --raw
   'src/commands/config/index.js': 1,
+  // marking which displayed values are still defaults needs to know what is set
+  'src/config/annotateDerivedDefaults.js': 1,
   'src/commands/config/get.js': 1,
 };
 
