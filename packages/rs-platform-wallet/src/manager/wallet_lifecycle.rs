@@ -694,6 +694,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // resurrecting private shielded history on disk after the
         // host believed the wallet was gone. Drops the registry +
         // persister entries and the per-subwallet store state.
+        //
+        // The handle is marked detached first: a caller that resolved
+        // this wallet before the removal can still be inside a bind
+        // (the seed-backed path resolves a mnemonic through the host,
+        // so it may take arbitrarily long), and its registration would
+        // otherwise land after the unregister below and resurrect
+        // exactly the state this call exists to drop. The flag is read
+        // inside the coordinator's install transaction, which the
+        // unregister also takes, so the two cannot interleave.
+        // Unconditional: a removal with no coordinator yet has nothing
+        // to unregister, but the handle must still be barred from
+        // binding onto one a later `configure_shielded` installs.
+        #[cfg(feature = "shielded")]
+        removed.mark_shielded_detached();
         #[cfg(feature = "shielded")]
         if let Some(coordinator) = self.shielded_coordinator().await {
             coordinator.unregister_wallet(*wallet_id).await;

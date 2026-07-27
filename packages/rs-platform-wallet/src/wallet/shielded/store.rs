@@ -430,6 +430,18 @@ pub trait ShieldedStore: Send + Sync {
     /// rather than resuming behind the stale watermark.
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
 
+    /// Drop the per-subwallet state (and any durable redrive rows)
+    /// for exactly ONE subwallet, leaving every other subwallet of
+    /// the same wallet — and the shared commitment tree — intact.
+    ///
+    /// The account-scoped sibling of [`Self::purge_wallet`]. Used by
+    /// the coordinator when a re-bind changes a wallet's account set:
+    /// only the accounts that were dropped (or whose viewing key
+    /// changed — their stored notes belong to the old key) are
+    /// purged, so the accounts that remain bound keep their fresh
+    /// in-memory notes and watermarks across the re-bind.
+    fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error>;
+
     /// Drop ALL in-memory per-subwallet state for every subwallet
     /// of every wallet. The shared commitment tree is left
     /// untouched. Used by `NetworkShieldedCoordinator::clear()`.
@@ -994,6 +1006,11 @@ impl ShieldedStore for InMemoryShieldedStore {
 
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
+        self.subwallets.remove(&id);
         Ok(())
     }
 

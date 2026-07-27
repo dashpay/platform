@@ -218,7 +218,10 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
             DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info,
             } => {
-                let contract = drive.cache.system_data_contracts.load_withdrawals();
+                let contract = drive
+                    .cache
+                    .system_data_contracts
+                    .load_withdrawals(platform_version)?;
 
                 let document_type = contract
                     .document_type_for_name(withdrawal::NAME)

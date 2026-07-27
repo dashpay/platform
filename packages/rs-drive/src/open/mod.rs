@@ -65,7 +65,7 @@ impl Drive {
                 ),
                 genesis_time_ms: parking_lot::RwLock::new(genesis_time_ms),
                 protocol_versions_counter: parking_lot::RwLock::new(ProtocolVersionsCache::new()),
-                system_data_contracts: SystemDataContracts::load_genesis_system_contracts()?,
+                system_data_contracts: SystemDataContracts::new(),
             },
             checkpoints,
         };

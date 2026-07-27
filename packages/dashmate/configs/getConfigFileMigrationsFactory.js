@@ -9,6 +9,7 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
+import { stockImagePattern } from '../src/config/stockImages.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1557,6 +1558,82 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // configs old enough to cross them; recent upgraders need it here.
             options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
             options.platform.dapi.rsDapi.docker.image = base.get('platform.dapi.rsDapi.docker.image');
+          });
+
+        return configFile;
+      },
+      '4.1.0-rc.2': (configFile) => {
+        // Move the Platform Gateway onto the Envoy 1.39 line. Only configs still
+        // carrying the previously shipped 1.35.x image are re-pinned; an image
+        // the operator chose themselves (private fork, vendor-patched build,
+        // floating tag) is left alone. Pulled from the base config so it tracks
+        // whatever is pinned there.
+        // Keyed at the next release, not the released 4.1.0-rc.1: the runner
+        // skips fromVersion===toVersion, so a key equal to an operator's current
+        // version never fires.
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const docker = options.platform?.gateway?.docker;
+            if (docker && /^dashpay\/envoy:1\.35\./.test(docker.image)) {
+              docker.image = base.get('platform.gateway.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.0-rc.3': (configFile) => {
+        // The drive and rs-dapi image tags are derived from the package version
+        // in configs/defaults/getBaseConfigFactory.js, so operators upgrading
+        // from an earlier release of this major keep pulling the images of the
+        // line they installed until the tags are re-pinned from the base config.
+        // Keyed one release ahead: the runner skips fromVersion === toVersion,
+        // so a migration keyed at an operator's current version never fires.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone. The major is
+        // the one being migrated away from and stays 4; a later major needs its
+        // own migration.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.0': (configFile) => {
+        // Counterpart of the release-candidate migration for the stable release.
+        // An operator who ran a 4.1 release candidate carries a `-rc` image tag,
+        // and the migration that set it no longer fires once they are on the rc
+        // line. Re-pin the drive and rs-dapi tags from the base config so a
+        // stable upgrade moves them off `4-rc` onto the stable `4` images.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
           });
 
         return configFile;
