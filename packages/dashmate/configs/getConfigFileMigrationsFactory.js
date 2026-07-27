@@ -9,6 +9,7 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
+import { stockImagePattern } from '../src/config/stockImages.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1575,6 +1576,36 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const docker = options.platform?.gateway?.docker;
             if (docker && /^dashpay\/envoy:1\.35\./.test(docker.image)) {
               docker.image = base.get('platform.gateway.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.0-rc.3': (configFile) => {
+        // The drive and rs-dapi image tags are derived from the package version
+        // in configs/defaults/getBaseConfigFactory.js, so operators upgrading
+        // from an earlier release of this major keep pulling the images of the
+        // line they installed until the tags are re-pinned from the base config.
+        // Keyed one release ahead: the runner skips fromVersion === toVersion,
+        // so a migration keyed at an operator's current version never fires.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone. The major is
+        // the one being migrated away from and stays 4; a later major needs its
+        // own migration.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
             }
           });
 
