@@ -295,6 +295,17 @@ impl NetworkShieldedCoordinator {
         account_views: BTreeMap<u32, AccountViewingKeys>,
         persister: WalletPersister,
     ) {
+        // Persister FIRST, accounts second. `sync()` snapshots
+        // `accounts` at pass start and looks the persister up only
+        // when it queues the pass's changeset — with the reverse
+        // order a pass starting between the two inserts would see
+        // the subwallets but find no persister and silently drop
+        // the whole changeset ("no persister registered", observed
+        // on device as a scan pass whose discovered notes never
+        // reached the host). Registering the persister before the
+        // accounts makes "accounts visible ⇒ persister visible"
+        // hold at every interleaving.
+        self.persisters.write().await.insert(wallet_id, persister);
         let mut accounts = self.accounts.write().await;
         // Drop any prior subwallets for this wallet_id before
         // installing the new set so a re-bind with a different
@@ -303,8 +314,40 @@ impl NetworkShieldedCoordinator {
         for (account_index, views) in account_views {
             accounts.insert(SubwalletId::new(wallet_id, account_index), views);
         }
-        drop(accounts);
-        self.persisters.write().await.insert(wallet_id, persister);
+    }
+
+    /// Whether `wallet_id` is currently registered with exactly
+    /// `account_views` — the same account indices, each bound to the
+    /// same full viewing key (compared by the canonical 96-byte FVK
+    /// encoding; IVK / OVK / default address are pure functions of
+    /// the FVK, so FVK equality covers the whole viewing set).
+    ///
+    /// Used by `PlatformWallet::install_shielded_views` to detect an
+    /// idempotent re-bind (same wallet, same accounts, same keys) and
+    /// skip the destructive unregister → purge → restore cycle. That
+    /// cycle is only safe when the registration actually changed:
+    /// against an in-flight sync pass its `purge_wallet` /
+    /// `restore_for_wallet` lock acquisitions queue BEHIND the pass's
+    /// store write guard and then wipe the pass's freshly-saved notes
+    /// and watermark, replacing them with a persister snapshot loaded
+    /// before the pass ran (observed on iOS as "note discovered by
+    /// sync is not spendable until app restart" plus a full rescan
+    /// on every subsequent pass).
+    pub async fn wallet_registration_matches(
+        &self,
+        wallet_id: WalletId,
+        account_views: &BTreeMap<u32, AccountViewingKeys>,
+    ) -> bool {
+        let accounts = self.accounts.read().await;
+        let registered: BTreeMap<u32, [u8; 96]> = accounts
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .map(|(id, views)| (id.account_index, views.to_fvk_bytes()))
+            .collect();
+        registered.len() == account_views.len()
+            && account_views
+                .iter()
+                .all(|(account, views)| registered.get(account) == Some(&views.to_fvk_bytes()))
     }
 
     /// Remove every account belonging to `wallet_id` from the
@@ -395,7 +438,27 @@ impl NetworkShieldedCoordinator {
             if id.wallet_id != wallet_id || !registered.contains(id) {
                 continue;
             }
+            // Nullifiers the store already tracks for this subwallet.
+            // The in-memory state is always at least as fresh as the
+            // host snapshot (the snapshot's rows were produced from
+            // it via the persister changesets), so a note the store
+            // already knows must NOT be overwritten from the
+            // snapshot: `save_note` is overwrite-by-nullifier, and a
+            // stale snapshot copy could flip a spent note back to
+            // unspent (re-offering it to selection = double-spend
+            // attempt) or roll back a fresher block height. Restore
+            // is additive-only: it fills in notes the store has never
+            // seen (the cold-start case, where this set is empty).
+            let known_nullifiers: std::collections::BTreeSet<[u8; 32]> = store
+                .get_all_notes(*id)
+                .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?
+                .into_iter()
+                .map(|n| n.nullifier)
+                .collect();
             for note in &sub.notes {
+                if known_nullifiers.contains(&note.nullifier) {
+                    continue;
+                }
                 store.save_note(*id, note).map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
@@ -423,11 +486,26 @@ impl NetworkShieldedCoordinator {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
             }
-            store
-                .set_last_synced_note_index(*id, sub.last_synced_index)
-                .map_err(|e| {
-                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-                })?;
+            // Watermark restore is advance-only. A snapshot loaded
+            // before an in-flight sync pass (a mid-session re-bind
+            // queues behind the pass's store write lock) carries the
+            // PRE-pass watermark; applying it unconditionally rewinds
+            // the store below what the pass just scanned and forces a
+            // full rescan on every subsequent pass until restart.
+            // The store's own value only ever comes from a completed
+            // scan or a prior restore, so taking the max is always
+            // safe; genuine rewinds (chain rollback handling, Clear)
+            // write the store directly rather than through restore.
+            let current = store.last_synced_note_index(*id).map_err(|e| {
+                crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+            })?;
+            if sub.last_synced_index > current {
+                store
+                    .set_last_synced_note_index(*id, sub.last_synced_index)
+                    .map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+            }
         }
         Ok(())
     }
@@ -1485,6 +1563,191 @@ mod tests {
         assert!(
             prefetched.is_none(),
             "nothing armed ⇒ no anchor fetch, no release pass"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Build a minimal unspent [`super::super::store::ShieldedNote`]
+    /// carrying `nullifier` at `position`.
+    fn test_note(
+        nullifier: [u8; 32],
+        position: u64,
+        is_spent: bool,
+    ) -> crate::wallet::shielded::ShieldedNote {
+        crate::wallet::shielded::ShieldedNote {
+            position,
+            cmx: [0x2A; 32],
+            nullifier,
+            block_height: 100,
+            is_spent,
+            value: 1_000,
+            note_data: vec![0u8; 115],
+        }
+    }
+
+    /// Regression guard for the mid-session re-bind stomp: a
+    /// `restore_for_wallet` call whose snapshot predates a completed
+    /// sync pass (the exact state a re-bind queued behind the pass's
+    /// store write lock applies) must not rewind the watermark and
+    /// must not overwrite notes the store already tracks.
+    ///
+    /// Observed on iOS (rc.2, testnet): pass discovers a note and
+    /// advances the watermark 0 → 2248; a second launch-time bind then
+    /// applies its pre-pass snapshot, wiping the note from selection
+    /// ("No unspent shielded notes available" until app restart) and
+    /// rewinding the watermark so every subsequent pass rescanned the
+    /// full tree.
+    #[tokio::test]
+    async fn restore_with_stale_snapshot_does_not_rewind_watermark_or_clobber_notes() {
+        use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+
+        let dir = temp_dir("stale_restore");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        // State a completed sync pass left behind: one fresh unspent
+        // note, watermark advanced to 2248.
+        let fresh_nf = [0xF1; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            store
+                .save_note(id, &test_note(fresh_nf, 2246, false))
+                .unwrap();
+            store.set_last_synced_note_index(id, 2248).unwrap();
+        }
+
+        // A stale snapshot loaded BEFORE that pass: no notes yet,
+        // watermark still at the pre-pass value.
+        let mut snapshot = ShieldedSyncStartState::default();
+        snapshot.per_subwallet.insert(
+            id,
+            ShieldedSubwalletStartState {
+                last_synced_index: 2046,
+                ..Default::default()
+            },
+        );
+
+        coordinator
+            .restore_for_wallet(wallet_id, &snapshot)
+            .await
+            .expect("restore should succeed");
+
+        let store = coordinator.store().read().await;
+        assert_eq!(
+            store.last_synced_note_index(id).unwrap(),
+            2248,
+            "a stale snapshot must not rewind the watermark below a completed pass"
+        );
+        let unspent = store.get_unspent_notes(id).unwrap();
+        assert_eq!(unspent.len(), 1, "the pass's note must survive the restore");
+        assert_eq!(unspent[0].nullifier, fresh_nf);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A snapshot may never resurrect a note the store already marked
+    /// spent: `save_note` is overwrite-by-nullifier, so an
+    /// unconditional restore of a stale `is_spent = false` row would
+    /// re-offer a spent note to selection (a double-spend attempt at
+    /// broadcast). Restore must be additive-only over nullifiers.
+    #[tokio::test]
+    async fn restore_does_not_resurrect_a_spent_note() {
+        use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+
+        let dir = temp_dir("no_resurrect");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+
+        let nf = [0xD0; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(id, &test_note(nf, 5, false)).unwrap();
+            assert!(store.mark_spent(id, &nf).unwrap());
+        }
+
+        // Stale snapshot still carries the note as unspent, plus one
+        // genuinely new note the store has never seen.
+        let new_nf = [0xD1; 32];
+        let mut snapshot = ShieldedSyncStartState::default();
+        snapshot.per_subwallet.insert(
+            id,
+            ShieldedSubwalletStartState {
+                notes: vec![test_note(nf, 5, false), test_note(new_nf, 6, false)],
+                ..Default::default()
+            },
+        );
+
+        coordinator
+            .restore_for_wallet(wallet_id, &snapshot)
+            .await
+            .expect("restore should succeed");
+
+        let store = coordinator.store().read().await;
+        let unspent = store.get_unspent_notes(id).unwrap();
+        assert_eq!(
+            unspent.len(),
+            1,
+            "only the genuinely new note is restored; the spent one stays spent"
+        );
+        assert_eq!(unspent[0].nullifier, new_nf);
+        assert_eq!(store.get_all_notes(id).unwrap().len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `wallet_registration_matches` — the idempotent-re-bind gate:
+    /// true only for the exact same wallet + account → FVK map; false
+    /// for an unknown wallet, a different account set, or a different
+    /// key on the same account index.
+    #[tokio::test]
+    async fn wallet_registration_matches_detects_identical_rebind() {
+        let dir = temp_dir("reg_match");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+
+        let same_views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut same = BTreeMap::new();
+        same.insert(0u32, same_views.clone());
+        assert!(
+            coordinator
+                .wallet_registration_matches(wallet_id, &same)
+                .await,
+            "identical wallet + account + FVK must match"
+        );
+
+        // Unknown wallet id.
+        assert!(
+            !coordinator
+                .wallet_registration_matches([0x99; 32], &same)
+                .await
+        );
+
+        // Extra account on the request side.
+        let extra_views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 1)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut extra = same.clone();
+        extra.insert(1u32, extra_views.clone());
+        assert!(
+            !coordinator
+                .wallet_registration_matches(wallet_id, &extra)
+                .await,
+            "a changed account set must not match"
+        );
+
+        // Same account index, different key material.
+        let mut different_key = BTreeMap::new();
+        different_key.insert(0u32, extra_views);
+        assert!(
+            !coordinator
+                .wallet_registration_matches(wallet_id, &different_key)
+                .await,
+            "a different FVK on the same account must not match"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

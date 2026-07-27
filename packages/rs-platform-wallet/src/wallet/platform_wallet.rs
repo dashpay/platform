@@ -638,6 +638,33 @@ impl PlatformWallet {
         *slot = Some(account_views.clone());
         drop(slot);
 
+        // Idempotent re-bind fast path: hosts re-run bind liberally
+        // (launch fires it twice — a direct call plus the wallet-set
+        // observer — and again on Sync Now / wallet navigation).
+        // When this wallet is already registered with the exact same
+        // account → FVK map, the coordinator's in-memory state is
+        // strictly fresher than any persister snapshot (the
+        // snapshot's rows were produced FROM it), so the
+        // unregister → purge → restore cycle below can only destroy
+        // information. Worse, against an in-flight sync pass those
+        // store-lock acquisitions queue behind the pass's write
+        // guard and then wipe the pass's freshly-discovered notes
+        // and watermark, restoring a snapshot loaded before the
+        // pass ran — the "note discovered by sync is unspendable
+        // until app restart" / "every pass rescans from 0" failure.
+        // Re-register (cheap, non-destructive — it never touches
+        // per-subwallet store state) to refresh the persister
+        // handle, and skip the purge + restore entirely.
+        if coordinator
+            .wallet_registration_matches(self.wallet_id, &account_views)
+            .await
+        {
+            coordinator
+                .register_wallet(self.wallet_id, account_views, self.persister.clone())
+                .await;
+            return Ok(());
+        }
+
         // Rebind is replace-not-merge (the doc contract above).
         // `register_wallet` replaces the coordinator's `accounts`
         // entries for this wallet, but it does NOT touch the
