@@ -366,18 +366,25 @@ impl Sdk {
 
     /// Eagerly teach this SDK the network's current protocol version and ratchet up to it.
     ///
-    /// Issues one ordinary **proven** `getEpochsInfo` query
+    /// Issues ordinary **proven** `getEpochsInfo` queries
     /// ([`ExtendedEpochInfo::fetch_current`]) and discards the epoch payload. The
-    /// protocol version that query carries in its verified response metadata is
+    /// protocol version those queries carry in their verified response metadata is
     /// ratcheted in by the *same* [`Self::maybe_update_protocol_version`] path
     /// every other query uses — only after proof + quorum-signature verification
     /// succeeds. Refresh therefore inherits the exact cryptographic trust of
     /// ordinary traffic; it adds no second, weaker source of truth.
     ///
     /// On a pinned SDK ([`SdkBuilder::with_version`], `version_pinned`
-    /// on) this issues no request and returns the pinned version. If the proven
-    /// query fails the failure is **non-fatal**: the stored version is left
-    /// untouched — we never fall back to an unverified one.
+    /// on) this issues no request and returns the pinned version.
+    ///
+    /// If the fetch fails the failure is **non-fatal**: whatever version was
+    /// already learned is kept — we never fall back to an unverified one. Note
+    /// that [`ExtendedEpochInfo::fetch_current`] makes more than one round trip,
+    /// and each verified response ratchets the version on its own. A refresh that
+    /// ends in an error may therefore still have raised the stored version, and
+    /// the value returned here reflects that. This is by construction: every
+    /// ratchet step is proof-verified and upward-only, so a partial refresh can
+    /// only ever leave the SDK closer to the network's real version.
     ///
     /// On a proofs-disabled SDK ([`SdkBuilder::with_proofs`]`(false)`) this is a
     /// no-op that returns the current version: refresh relies on a proven query,
@@ -395,8 +402,10 @@ impl Sdk {
                 tracing::warn!(
                     target: "dash_sdk::protocol_version",
                     %error,
-                    "proven protocol-version refresh failed; keeping current version \
-                     (never falling back to an unverified one)"
+                    version = self.protocol_version_number(),
+                    "proven protocol-version refresh failed; keeping the highest \
+                     proof-verified version learned so far (never falling back to \
+                     an unverified one)"
                 );
             }
         }
@@ -2103,18 +2112,21 @@ mod test {
         use crate::platform::types::epoch::EpochQuery;
         use crate::platform::LimitQuery;
         use dpp::block::extended_epoch_info::{v0::ExtendedEpochInfoV0, ExtendedEpochInfo};
+        use drive_proof_verifier::types::ExtendedEpochInfos;
 
-        // Must match the two queries `ExtendedEpochInfo::fetch_current` issues:
-        // a genesis probe, then a descending fetch from the hinted current epoch
-        // (mock expectation metadata reports epoch 0, so the hint is 0).
+        // Must match the two queries `ExtendedEpochInfo::fetch_current` issues: a
+        // genesis probe, then a two-epoch ascending confirmation from the hinted
+        // current epoch (mock expectation metadata reports epoch 0, so the hint is
+        // 0). The confirmation answers with epoch 0 alone, which is how a real
+        // proof says "no epoch above 0 has started".
         let probe_query = LimitQuery {
             query: EpochQuery::genesis(),
             limit: Some(1),
             start_info: None,
         };
-        let query = LimitQuery {
-            query: EpochQuery::newest_at_or_below(0),
-            limit: Some(1),
+        let confirmation_query = LimitQuery {
+            query: EpochQuery::ascending_from(0),
+            limit: Some(2),
             start_info: None,
         };
 
@@ -2132,7 +2144,10 @@ mod test {
             .await
             .expect("register epoch probe expectation");
         sdk.mock()
-            .expect_fetch::<ExtendedEpochInfo, _>(query, Some(epoch))
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                confirmation_query,
+                Some(ExtendedEpochInfos::from_iter([(0, Some(epoch))])),
+            )
             .await
             .expect("register epoch refresh expectation");
     }
