@@ -127,3 +127,34 @@ gh run rerun <release-run-id> --repo dashpay/platform --failed
 **Stopgap only (does not stop the recurrence):** publish the exact release version once with a token, then re-run the failed job (`--tolerate-republish` skips it). The dist-tag matches CI's — prerelease `<major>.<minor>-<suffix>` (e.g. `4.1-rc`), stable `latest` (`npm view @dashevo/dpns-contract dist-tags`). This unblocks the current release but the next one fails the same way until the trusted publisher is configured.
 
 **Prevention:** whenever you add a new publishable npm package, configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) **before** cutting the release that ships it. `release.sh` prints this reminder after opening the release PR.
+
+## Post-stable-release: graduate the dev branch
+
+After a **stable** `vX.Y.0` release PR merges into `vX.Y-dev`, promote the branches so `vX.Y-dev` becomes the `X.Y.x` patch line and the next dev line takes over. Only do this for a **stable** release, not prereleases. (Example below is the 4.1.0 run: current dev `v4.1-dev`, next dev `v4.2-dev`. If the next release is a **major** bump, the user says so — e.g. `v5.0-dev`.)
+
+**Read first — the ruleset, not classic protection, is what blocks direct pushes.** `master`, `main`, `develop`, and every `v*` branch are covered by a repo **ruleset** (`Block deletions, require PR`, `id 501248`) that requires a PR and is **separate** from classic branch protection — a repo admin does **not** automatically bypass it, and `gh api repos/.../branches/<b>/protection` does **not** show it. Only users in the ruleset's `bypass_actors` can push directly (currently shumkov `24296` and QuantumExplorer `11468583`, both `always`). To grant a user standing bypass, fetch the ruleset, append them, and PUT it back:
+
+```sh
+gh api repos/dashpay/platform/rulesets/501248 > r.json
+jq '{name,target,enforcement,bypass_actors:(.bypass_actors+[{actor_id:<userId>,actor_type:"User",bypass_mode:"always"}]),conditions,rules}' r.json > put.json
+gh api --method PUT repos/dashpay/platform/rulesets/501248 --input put.json   # find <userId>: gh api users/<login> --jq .id
+```
+
+Steps (skip whatever is already done — e.g. the next dev branch and default may have been set early):
+
+1. **Ensure the next dev branch exists** — `v(X.Y+1)-dev`. If it exists but is behind current dev, it just needs the sync in step 3.
+2. **Merge current dev → `master`** (master tracks the latest stable). master is usually far behind and its only unique commits are **auto-generated** (e.g. `.github/grpc-queries-cache.json`, committed by `tests-rs-sdk-grpc-coverage.yml` as `chore: update gRPC queries cache [skip ci]`) — disposable. **Merge, don't force-reset** (master sets `allow_force_pushes:false`, and `required_linear_history:false` so a merge commit is allowed); resolve the generated cache toward the dev branch:
+   ```sh
+   git checkout master && git reset --hard origin/master
+   git merge origin/vX.Y-dev                                    # conflicts only on generated caches
+   git checkout --theirs .github/grpc-queries-cache.json && git add -A
+   git commit --no-edit && git push origin master
+   ```
+3. **Fast-forward next dev to current dev** (carry the release commits into the next line). It is typically strictly behind → a clean fast-forward:
+   ```sh
+   git push origin origin/vX.Y-dev:v(X.Y+1)-dev
+   ```
+   The next dev branch **stays at version `X.Y.0`** until its first `v(X.Y+1).0-dev.1` release is cut — do **not** bump it now.
+4. **Make next dev the default branch** if it isn't already (repo Settings → Branches, or `gh api`).
+5. **Milestones** — ensure `vX.Y.x` (patches for the just-released line) and `v(X.Y+1).0` (next dev prereleases) exist. Create with `gh api repos/dashpay/platform/milestones -f title="vX.Y.x" -f state=open`. (Stable-release milestone convention is `vX.Y.x`; prerelease is `vX.Y.0`.)
+6. **Re-target open PRs** from current dev → next dev: `gh pr edit <n> --base v(X.Y+1)-dev`. Leave genuine `vX.Y.x` patch PRs on `vX.Y-dev`. Note the `milestone.yml` workflow auto-assigns a PR's milestone by its base branch.
