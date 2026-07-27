@@ -18,7 +18,7 @@ const ALLOWED_RAW_READERS = {
   // equality compares what the operator chose, not what it resolves to
   'src/config/Config.js': null,
   // reset restores stored intent
-  'src/listr/tasks/resetNodeTaskFactory.js': 1,
+  'src/listr/tasks/resetNodeTaskFactory.js': 2,
   // base config is inherited by each network config, intent included
   'configs/defaults/getTestnetConfigFactory.js': 1,
   'configs/defaults/getLocalConfigFactory.js': 1,

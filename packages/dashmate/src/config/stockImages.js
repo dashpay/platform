@@ -44,5 +44,9 @@ export function stockImagePattern(repository, major) {
 export function stockImagePatternAnyVersion(repository) {
   const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  return new RegExp(`^${escapedRepository}:\\d+(\\.\\d+)*${stockPrereleaseSuffix}$`);
+  // Published tags only ever took two shapes: the 0.x line used a major.minor
+  // tag (`0.25`), every line since uses the major alone. Anything more
+  // permissive matches an operator's own exact pin such as `dashpay/drive:3.1.5`,
+  // which was never a published default.
+  return new RegExp(`^${escapedRepository}:(0\\.\\d+|\\d+)${stockPrereleaseSuffix}$`);
 }

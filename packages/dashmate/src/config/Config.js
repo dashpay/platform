@@ -242,7 +242,13 @@ export default class Config {
    * @return {*}
    */
   getStored(path) {
-    return lodashCloneDeep(lodashGet(this.#storedOptions, path));
+    const value = lodashGet(this.#storedOptions, path);
+
+    if (value === undefined) {
+      throw new InvalidOptionPathError(path);
+    }
+
+    return lodashCloneDeep(value);
   }
 
   /**
@@ -265,7 +271,12 @@ export default class Config {
    * @return {Object}
    */
   toJSON() {
-    return this.#effectiveOptions;
+    // Shape matters: doctor archives serialize a config here and rebuild it with
+    // new Config(name, options) on the way back in.
+    return {
+      name: this.name,
+      options: this.#effectiveOptions,
+    };
   }
 
   /**

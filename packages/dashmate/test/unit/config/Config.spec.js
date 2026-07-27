@@ -191,7 +191,8 @@ describe('Config', () => {
       // the property templates and reindex render through
       expect(config.options.platform.drive.abci.docker.image).to.equal(expected);
       // serialization
-      expect(JSON.parse(JSON.stringify(config)).platform.drive.abci.docker.image)
+      // serialization - the shape doctor archives rebuild a config from
+      expect(JSON.parse(JSON.stringify(config)).options.platform.drive.abci.docker.image)
         .to.equal(expected);
     });
 

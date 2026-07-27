@@ -208,7 +208,7 @@ describe('migrateConfigFileFactory', () => {
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
-    for (const tag of ['3', '2', '1-dev', '0.25.16']) {
+    for (const tag of ['3', '2', '1-dev', '0.25']) {
       const configFileData = createConfigFile().toObject();
       configFileData.configFormatVersion = FROM_VERSION;
       for (const options of Object.values(configFileData.configs)) {

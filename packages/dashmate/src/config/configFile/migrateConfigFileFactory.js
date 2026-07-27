@@ -1,5 +1,7 @@
 import semver from 'semver';
 
+import getConfigFormatVersion from './getConfigFormatVersion.js';
+
 export default function migrateConfigFileFactory(getConfigFileMigrations) {
   /**
    * @typedef {function} migrateConfigFile
@@ -9,23 +11,24 @@ export default function migrateConfigFileFactory(getConfigFileMigrations) {
    * @returns {Object}
    */
   function migrateConfigFile(rawConfigFile, fromVersion, toVersion) {
-    if (fromVersion === toVersion) {
+    const configFileMigrations = getConfigFileMigrations();
+
+    // Migrate towards the format this build produces, which during a
+    // development cycle is ahead of the released version. Recording the result
+    // is what keeps it deterministic: stamping the older version would leave a
+    // config claiming a format whose migrations it has already run, and the next
+    // upgrade would skip them.
+    const targetVersion = getConfigFormatVersion(configFileMigrations, toVersion);
+
+    if (semver.gte(fromVersion, targetVersion)) {
       return rawConfigFile;
     }
-
-    const configFileMigrations = getConfigFileMigrations();
 
     /**
      * @type {Object}
      */
     const migratedConfigFile = Object.keys(configFileMigrations)
-      // Deliberately unbounded above: migrations are keyed at the release they
-      // will ship in, which is ahead of the version in package.json for the
-      // whole development cycle. The table comes from the installed binary, so
-      // a migration present in it belongs to that build whatever the package
-      // version says - bounding by toVersion would leave a config half migrated
-      // against defaults that already moved.
-      .filter((version) => semver.gt(version, fromVersion))
+      .filter((version) => semver.gt(version, fromVersion) && semver.lte(version, targetVersion))
       .sort(semver.compare)
       .reduce((migratedOptions, version) => {
         const migrationFunction = configFileMigrations[version];
@@ -36,7 +39,7 @@ export default function migrateConfigFileFactory(getConfigFileMigrations) {
         return migrationFunction(migratedOptions);
       }, rawConfigFile);
 
-    migratedConfigFile.configFormatVersion = toVersion;
+    migratedConfigFile.configFormatVersion = targetVersion;
 
     return migratedConfigFile;
   }
