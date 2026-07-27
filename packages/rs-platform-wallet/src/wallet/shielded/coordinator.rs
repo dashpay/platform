@@ -1047,6 +1047,20 @@ impl NetworkShieldedCoordinator {
                 }
             }
         }
+        // Hydration and snapshot validity go regardless of the outcome
+        // above, because the subwallet purge runs FIRST: a failure in a
+        // later step still leaves the per-subwallet notes and watermarks
+        // destroyed. Leaving the hydrated flag set there would let the
+        // next identical re-bind take the idempotent fast path over a
+        // store whose contents this call just deleted — the host keeps
+        // its rows on a failed Clear, and they would never be restored
+        // until a restart. Leaving the generation unbumped would
+        // likewise let an in-flight bind restore a pre-Clear snapshot
+        // into the half-emptied store.
+        self.hydrated.write().await.clear();
+        self.clear_generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+
         if let Some(e) = first_err {
             return Err(e);
         }
@@ -1054,17 +1068,12 @@ impl NetworkShieldedCoordinator {
         // Store reset succeeded — now it is safe to drop the in-memory
         // registries and reset the cooldown so the first post-clear
         // background pass runs immediately rather than honoring a stale
-        // "caught up" stamp. On the failure path above none of this runs,
-        // so a failed clear leaves coordinator state untouched.
+        // "caught up" stamp. The registries deliberately survive a failed
+        // clear: dropping them would make the coordinator forget every
+        // bound wallet (no syncs until the host rebinds) while the host,
+        // told the clear failed, keeps its own state.
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
-        self.hydrated.write().await.clear();
-        // Invalidate every host snapshot loaded before this point. Bumped
-        // under the lifecycle mutex and after the purge, so any install
-        // that observes the old value is still queued behind this Clear
-        // and will re-read the new one once it holds the mutex.
-        self.clear_generation
-            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
@@ -1969,6 +1978,44 @@ mod tests {
         assert!(
             !coordinator.persisters.read().await.is_empty(),
             "persisters must survive a failed clear"
+        );
+    }
+
+    /// A Clear that fails partway has still destroyed restorable state:
+    /// the subwallet purge runs before the tree reset, so the notes and
+    /// watermarks are gone even when a later step errors. Hydration must
+    /// therefore be invalidated on that path too — otherwise the next
+    /// identical re-bind takes the idempotent fast path over a store this
+    /// call emptied, and the host rows it deliberately kept (it was told
+    /// the Clear failed) are never restored until a restart.
+    ///
+    /// Unix-only for the same reason as `clear_failure_preserves_registries`:
+    /// the failure injection relies on POSIX unlink-while-open.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn clear_failure_still_invalidates_hydration_and_snapshots() {
+        let dir = temp_dir("clear_err_hydration");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+
+        coordinator.mark_hydrated(wallet_id, true).await;
+        let generation_before = coordinator.clear_generation();
+
+        // Break the tree reset's reopen, leaving the subwallet purge —
+        // which runs first — to succeed.
+        std::fs::remove_dir_all(&dir).expect("remove temp dir to break reopen");
+
+        let result = coordinator.clear().await;
+        assert!(result.is_err(), "the store-reset failure must surface");
+        assert!(
+            !coordinator.is_hydrated(wallet_id).await,
+            "a failed clear still purged the subwallet state, so hydration must not survive — \
+             the next re-bind would otherwise fast-path over an emptied store"
+        );
+        assert_ne!(
+            coordinator.clear_generation(),
+            generation_before,
+            "snapshots loaded before a partial clear must be invalidated too"
         );
     }
 

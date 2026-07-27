@@ -640,6 +640,66 @@ async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
     assert_eq!(registered, vec![0, 1], "the last bind to run wins");
 }
 
+/// `shielded_add_account` must not hold the key slot across its host
+/// persistence calls.
+///
+/// A host callback invoked under that write guard deadlocks against a
+/// concurrent bind: the bind holds the coordinator's lifecycle mutex and
+/// waits for this slot, while the callback re-enters the FFI and waits
+/// for that mutex. It also freezes every address and balance read for
+/// the duration of host I/O, which is unbounded.
+///
+/// Parks `add_account` inside the persister load and asserts a slot
+/// reader still completes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn add_account_does_not_hold_the_key_slot_across_host_persistence() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("add_account_slot"));
+    let seed = [0x42u8; 64];
+
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("bind succeeds");
+
+    let release = persister.gate_next_load();
+    let entries_before = persister.load_entries();
+    let adder = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move { wallet.shielded_add_account(&seed, 1).await })
+    };
+    for _ in 0..400 {
+        if persister.load_entries() > entries_before {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert!(
+        persister.load_entries() > entries_before,
+        "add_account never reached the persister load"
+    );
+
+    // The slot must still be readable while the host call is parked.
+    let read = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        wallet.shielded_account_indices(),
+    )
+    .await;
+    assert_eq!(
+        read.expect("reading the key slot must not block on host persistence"),
+        vec![0],
+        "the account is not installed until its key is persisted"
+    );
+
+    release.send(()).expect("release the parked load");
+    adder
+        .await
+        .expect("add task")
+        .expect("add_account succeeds");
+    assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
+}
+
 /// First-launch shape: no persisted rows → `Ok(false)`, no state
 /// change, so the caller knows to fall back to the seed path. Partial
 /// coverage (a requested account missing) behaves the same.

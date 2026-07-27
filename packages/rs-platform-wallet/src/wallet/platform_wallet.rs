@@ -851,10 +851,21 @@ impl PlatformWallet {
             )));
         }
         self.ensure_shielded_attached()?;
-        let mut slot = self.shielded_keys.write().await;
-        let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
-        if keys.contains_key(&account) {
-            return Ok(());
+        // Everything that calls into the host — the snapshot read below
+        // and the viewing-key write further down — stays OUTSIDE the key
+        // slot's lock. A host callback invoked while this write guard is
+        // held would deadlock against a concurrent bind, which takes the
+        // coordinator's lifecycle mutex and then this same slot: the
+        // callback re-enters the FFI, waits on the lifecycle mutex, and
+        // the bind holding it waits on the slot the callback's caller
+        // never released. It also keeps the slot free for the address /
+        // balance reads that run constantly while this does host I/O.
+        {
+            let slot = self.shielded_keys.read().await;
+            let keys = slot.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
+            if keys.contains_key(&account) {
+                return Ok(());
+            }
         }
         let views = OrchardKeySet::from_seed(seed, self.sdk.network, account)?.viewing_keys();
         // This is the other writer of a subwallet's viewing-key row, so
@@ -897,6 +908,15 @@ impl PlatformWallet {
                     "failed to persist shielded viewing key for account {account}: {e}"
                 ))
             })?;
+        // Re-check detachment before mutating the handle: the host I/O
+        // above can take arbitrarily long, and a removal completing in
+        // that window means this account must not be installed.
+        self.ensure_shielded_attached()?;
+        let mut slot = self.shielded_keys.write().await;
+        let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
+        // Idempotent against a bind that added this account while the
+        // host I/O above was in flight: same seed and index derive the
+        // same key, so re-inserting is a no-op either way.
         keys.insert(account, views);
         // NOTE: this only updates the per-wallet keys slot — the
         // coordinator's `accounts` registry isn't refreshed here.
