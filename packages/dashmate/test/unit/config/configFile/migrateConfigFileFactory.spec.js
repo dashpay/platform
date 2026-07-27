@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import semver from 'semver';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import createDIContainer from '../../../../src/createDIContainer.js';
@@ -83,6 +84,67 @@ describe('migrateConfigFileFactory', () => {
         expectedRsDapiImage,
         `rs-dapi image not refreshed for ${name}`,
       );
+    }
+  });
+
+  it('should refresh version-derived images for every release an operator can upgrade from', async () => {
+    // The drive and rs-dapi image tags are derived from the package version, so
+    // every release that changes the major or the prerelease identifier changes
+    // them. Config files store resolved values, so operators only pick the new
+    // tags up when a migration re-pins them; a release that forgets leaves them
+    // running the images of the line they installed.
+    //
+    // Rather than a test per migration, walk the migration table itself: every
+    // release an operator can be sitting on must end up on the images a fresh
+    // install produces today. New migrations are covered without touching this
+    // test.
+    //
+    // Migrations older than this key rewrite the config shape of their own era
+    // and cannot run against a config built from the current defaults. That
+    // range is covered by the v0.25.0 fixture test above, which carries a real
+    // historical config all the way to the current one.
+    const OLDEST_CURRENT_SHAPED_RELEASE = '1.3.0-dev.3';
+
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const getConfigFileMigrations = container.resolve('getConfigFileMigrations');
+
+    const defaultConfigFileData = createConfigFile().toObject();
+    const [firstConfigName] = Object.keys(defaultConfigFileData.configs);
+    const expectedDriveImage = defaultConfigFileData
+      .configs[firstConfigName].platform.drive.abci.docker.image;
+    const expectedRsDapiImage = defaultConfigFileData
+      .configs[firstConfigName].platform.dapi.rsDapi.docker.image;
+
+    const releases = Object.keys(getConfigFileMigrations())
+      .filter((migrationVersion) => semver.gte(migrationVersion, OLDEST_CURRENT_SHAPED_RELEASE));
+
+    expect(releases).to.have.lengthOf.at.least(1, 'no releases selected to check');
+
+    for (const release of releases) {
+      // The tag that release's base config produced, derived the same way
+      // getBaseConfigFactory derives it.
+      const prereleaseTag = semver.prerelease(release) === null ? '' : `-${semver.prerelease(release)[0]}`;
+      const releaseImageVersion = `${semver.major(release)}${prereleaseTag}`;
+
+      const configFileData = createConfigFile().toObject();
+      configFileData.configFormatVersion = release;
+      for (const options of Object.values(configFileData.configs)) {
+        options.platform.drive.abci.docker.image = `dashpay/drive:${releaseImageVersion}`;
+        options.platform.dapi.rsDapi.docker.image = `dashpay/rs-dapi:${releaseImageVersion}`;
+      }
+
+      const migratedConfigFileData = migrateConfigFile(configFileData, release, version);
+
+      for (const [name, options] of Object.entries(migratedConfigFileData.configs)) {
+        expect(options.platform.drive.abci.docker.image).to.equal(
+          expectedDriveImage,
+          `drive image not refreshed for ${name} upgrading from ${release}`,
+        );
+        expect(options.platform.dapi.rsDapi.docker.image).to.equal(
+          expectedRsDapiImage,
+          `rs-dapi image not refreshed for ${name} upgrading from ${release}`,
+        );
+      }
     }
   });
 });
