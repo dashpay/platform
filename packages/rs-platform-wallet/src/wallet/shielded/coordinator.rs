@@ -233,6 +233,24 @@ pub struct NetworkShieldedCoordinator {
     /// whenever a re-bind replaces the registration with a different
     /// account set.
     hydrated: RwLock<std::collections::BTreeSet<WalletId>>,
+
+    /// Counts completed [`clear`](Self::clear) calls, so a bind can tell
+    /// that the host snapshot it loaded predates a wipe.
+    ///
+    /// A bind reads the host's persisted snapshot BEFORE it opens its
+    /// install transaction — it has to, because the seedless path
+    /// reconstructs the viewing keys from that snapshot and the
+    /// seed-backed path checks its derived keys against it, and neither
+    /// may run a host callback under the lifecycle mutex. So the mutex
+    /// alone cannot stop a Clear from landing in between: the bind would
+    /// then restore pre-Clear notes and the pre-Clear watermark into the
+    /// store the Clear just purged, and the host — which wipes its own
+    /// rows only after `clear()` returns — would see its shielded
+    /// history come back, with a watermark that reports caught-up so the
+    /// promised cold rebuild from index 0 never runs. Sampling this
+    /// counter before the load and re-reading it inside the transaction
+    /// makes that snapshot detectably stale.
+    clear_generation: std::sync::atomic::AtomicU64,
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -249,7 +267,16 @@ pub struct NetworkShieldedCoordinator {
 ///
 /// Drop it as soon as the install commits: it blocks wallet removal and
 /// Clear for the whole scope.
-pub struct ShieldedInstall<'a> {
+///
+/// Crate-internal: holding one across a call to any other lifecycle
+/// entry point self-deadlocks on the non-reentrant mutex, and Rust's
+/// temporary scopes make that easy to write by accident (both operands
+/// of an `&&` share one scope, so a guard built in the left operand is
+/// still alive while the right one runs). Keeping the type and
+/// [`begin_install`](NetworkShieldedCoordinator::begin_install) inside
+/// the crate confines that hazard to code reviewed alongside the
+/// coordinator.
+pub(crate) struct ShieldedInstall<'a> {
     coordinator: &'a NetworkShieldedCoordinator,
     wallet_id: WalletId,
     _lifecycle: tokio::sync::MutexGuard<'a, ()>,
@@ -288,6 +315,17 @@ impl ShieldedInstall<'_> {
                 .filter(|registered| registered.to_fvk_bytes() != views.to_fvk_bytes())
                 .map(|_| *account)
         })
+    }
+
+    /// Whether a host snapshot taken at `generation` (from
+    /// [`clear_generation`](NetworkShieldedCoordinator::clear_generation),
+    /// sampled before the load) predates a completed Clear.
+    ///
+    /// Such a snapshot describes state the user asked to be wiped —
+    /// restoring it would put the notes and the watermark back while the
+    /// host's own rows are gone. See the `clear_generation` field doc.
+    pub fn snapshot_predates_clear(&self, generation: u64) -> bool {
+        self.coordinator.clear_generation() != generation
     }
 
     /// See [`register_wallet`](NetworkShieldedCoordinator::register_wallet).
@@ -350,7 +388,17 @@ impl NetworkShieldedCoordinator {
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
+            clear_generation: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// Snapshot of the clear counter, to be taken **before** reading the
+    /// host's persisted state and handed to
+    /// [`ShieldedInstall::snapshot_predates_clear`] inside the install
+    /// transaction. See the `clear_generation` field doc.
+    pub fn clear_generation(&self) -> u64 {
+        self.clear_generation
+            .load(std::sync::atomic::Ordering::Acquire)
     }
 
     /// Network this coordinator is pinned to. Used by hosts that
@@ -440,6 +488,12 @@ impl NetworkShieldedCoordinator {
     /// re-bind, so a registration replacement racing an in-flight
     /// sync pass can no longer wipe the pass's results.
     ///
+    /// The re-key half of that purge is a floor, not a supported
+    /// operation: the bind paths refuse a viewing-key change for a bound
+    /// account outright, because the durable rows behind it carry no
+    /// record of which key produced them. It covers state left by builds
+    /// that predated the refusal.
+    ///
     /// [`ShieldedWallet`]: super::ShieldedWallet
     /// [`PlatformWallet::bind_shielded`]: crate::wallet::PlatformWallet::bind_shielded
     pub async fn register_wallet(
@@ -461,12 +515,23 @@ impl NetworkShieldedCoordinator {
     /// restore the host snapshot, commit hydration — only compose into
     /// the intended "replace this wallet's shielded state" operation if
     /// nothing else mutates the registries in between; see the
-    /// `lifecycle` field doc for the interleavings this forbids. Every
-    /// single-step public method below opens (and immediately closes)
-    /// one of these transactions, so a caller holding a guard must go
-    /// through the guard rather than calling them — they would deadlock
-    /// on the same non-reentrant mutex.
-    pub async fn begin_install(&self, wallet_id: WalletId) -> ShieldedInstall<'_> {
+    /// `lifecycle` field doc for the interleavings this forbids.
+    ///
+    /// Every other lifecycle entry point — the single-step methods
+    /// ([`register_wallet`](Self::register_wallet),
+    /// [`is_hydrated`](Self::is_hydrated),
+    /// [`mark_hydrated`](Self::mark_hydrated),
+    /// [`wallet_registration_matches`](Self::wallet_registration_matches),
+    /// [`restore_for_wallet`](Self::restore_for_wallet)),
+    /// [`unregister_wallet`](Self::unregister_wallet) and
+    /// [`clear`](Self::clear) — takes this same non-reentrant mutex, so
+    /// a caller holding a guard must go through the guard instead of
+    /// calling any of them.
+    ///
+    /// Note that the single-step methods therefore cost a mutex
+    /// acquisition, not just the registry read they appear to be: an
+    /// install holds the mutex across a whole snapshot restore.
+    pub(crate) async fn begin_install(&self, wallet_id: WalletId) -> ShieldedInstall<'_> {
         ShieldedInstall {
             coordinator: self,
             wallet_id,
@@ -699,7 +764,7 @@ impl NetworkShieldedCoordinator {
     /// matches what the host already has on disk (notes, spent
     /// marks, sync watermarks, nullifier checkpoints).
     ///
-    /// Filters the supplied [`ShieldedSyncStartState`] in two
+    /// Filters the supplied [`ShieldedSyncStartState`] in three
     /// ways:
     /// - **By `wallet_id`**: only entries whose `SubwalletId`
     ///   belongs to `wallet_id` are restored. The startup
@@ -722,7 +787,10 @@ impl NetworkShieldedCoordinator {
     ///   watermark would make the pass that should find the current
     ///   key's history skip straight past it. Snapshots with no viewing
     ///   key for a subwallet (persistence predating those rows) are
-    ///   restored as before.
+    ///   restored as before. This guards state written by builds that
+    ///   predated the bind-time refusal of a key change — the bind paths
+    ///   themselves can no longer present a mismatched pair — so it is
+    ///   a floor, not the primary defense.
     ///
     /// No-op on empty snapshots.
     pub async fn restore_for_wallet(
@@ -909,9 +977,12 @@ impl NetworkShieldedCoordinator {
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that
         // already registered would otherwise restore its pre-Clear
-        // snapshot into the store this just purged, which is the
-        // "Clear did nothing" symptom seen from the other side. Taken
-        // before the store lock to keep the `lifecycle` → `store` order.
+        // snapshot into the store this just purged. A bind that has not
+        // yet opened its transaction is a separate problem — it may
+        // already hold a snapshot loaded before this Clear — and is
+        // handled by the generation bumped at the end of this function.
+        // Taken before the store lock to keep the `lifecycle` → `store`
+        // order.
         let _lifecycle = self.lifecycle.lock().await;
 
         // Reset the persistent store FIRST and bail before mutating any
@@ -988,6 +1059,12 @@ impl NetworkShieldedCoordinator {
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
         self.hydrated.write().await.clear();
+        // Invalidate every host snapshot loaded before this point. Bumped
+        // under the lifecycle mutex and after the purge, so any install
+        // that observes the old value is still queued behind this Clear
+        // and will re-read the new one once it holds the mutex.
+        self.clear_generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
