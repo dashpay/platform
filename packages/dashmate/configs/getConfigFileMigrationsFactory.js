@@ -9,6 +9,7 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
+import { stockImagePattern } from '../src/config/stockImages.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1588,12 +1589,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // Keyed one release ahead: the runner skips fromVersion === toVersion,
         // so a migration keyed at an operator's current version never fires.
         //
-        // The prerelease identifiers are listed rather than matched loosely, so
-        // a tag the operator chose in this namespace (dashpay/drive:4-local) is
-        // not swept up too. The major is the one being migrated away from and
-        // stays 4; a later major needs its own migration.
-        const stockDriveImage = /^dashpay\/drive:4(-(rc|dev|beta|alpha|pr|hotfix))?$/;
-        const stockRsDapiImage = /^dashpay\/rs-dapi:4(-(rc|dev|beta|alpha|pr|hotfix))?$/;
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone. The major is
+        // the one being migrated away from and stays 4; a later major needs its
+        // own migration.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {

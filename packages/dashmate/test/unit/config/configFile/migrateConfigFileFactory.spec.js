@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import semver from 'semver';
+import { STOCK_PRERELEASE_IDS } from '../../../../src/config/stockImages.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import createDIContainer from '../../../../src/createDIContainer.js';
@@ -216,8 +217,15 @@ describe('migrateConfigFileFactory', () => {
     // it the unconditional re-pin in the '4.0.0' migration overwrites every
     // image regardless, operator-chosen ones included.
     const FROM_VERSION = '4.0.0';
-    // Kept in step with the identifiers the migration itself lists.
-    const STOCK_PRERELEASE_IDS = ['alpha', 'beta', 'dev', 'hotfix', 'pr', 'rc'];
+
+    // Spelled out rather than only imported, so adding an identifier to the
+    // shared list without deciding it belongs here fails instead of silently
+    // widening what the migration moves.
+    const expectedPrereleaseIds = ['alpha', 'beta', 'dev', 'hotfix', 'pr', 'rc'];
+    expect([...STOCK_PRERELEASE_IDS].sort()).to.deep.equal(
+      expectedPrereleaseIds,
+      'the published prerelease identifiers changed; confirm the new one should move operators',
+    );
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
@@ -244,7 +252,7 @@ describe('migrateConfigFileFactory', () => {
       return migrated.configs[firstConfigName].platform;
     };
 
-    const stockTags = ['4', ...STOCK_PRERELEASE_IDS.map((id) => `4-${id}`)];
+    const stockTags = ['4', ...expectedPrereleaseIds.map((id) => `4-${id}`)];
 
     for (const tag of stockTags) {
       const platform = migrateImages(`dashpay/drive:${tag}`, `dashpay/rs-dapi:${tag}`);
