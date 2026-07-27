@@ -136,27 +136,34 @@ jobs:
         run: |
           bash packages/swift-sdk/build_ios.sh --target all --profile release
 
-      - name: Zip XCFramework and compute checksum
+      - name: Zip XCFramework, compute checksum, record build provenance
         id: zip
         env:
           VERSION: ${{ steps.release-ref.outputs.version }}
+          BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
         run: |
           cd packages/swift-sdk
           ditto -c -k --sequesterRsrc --keepParent DashSDKFFI.xcframework "DashSDKFFI-${VERSION}.xcframework.zip"
           swift package compute-checksum "DashSDKFFI-${VERSION}.xcframework.zip" > "DashSDKFFI-${VERSION}.checksum.txt"
+          printf '%s\n' "$BUILT_SHA" > "DashSDKFFI-${VERSION}.commit.txt"
           echo "checksum=$(cat "DashSDKFFI-${VERSION}.checksum.txt")" >> "$GITHUB_OUTPUT"
 
-      # Same two defenses as the Kotlin job: hard-fail if the tag was
-      # force-moved away from the commit this run built, and never overwrite
-      # an already-attached versioned zip — SwiftPM consumers pin the zip by
-      # checksum, so replacing attached bytes would break them. A deliberate
-      # re-release must delete the assets first.
+      # Same defenses as the Kotlin job: hard-fail if the tag was force-moved
+      # away from the commit this run built, and never overwrite an
+      # already-attached versioned zip — SwiftPM consumers pin the zip by
+      # checksum, so replacing attached bytes would break them. The zip
+      # attaches together with checksum + commit provenance; existing assets
+      # are reused only when their recorded commit equals the commit this run
+      # built, so a force-moved tag cannot leave a green run whose assets
+      # came from a different commit. A deliberate re-release must delete all
+      # three assets first.
       - name: Verify tag still resolves to the built commit
         id: tag-guard
         env:
           TAG: ${{ steps.release-ref.outputs.tag_name }}
           ZIP_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
           SUM_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
+          COMMIT_ASSET: DashSDKFFI-${{ steps.release-ref.outputs.version }}.commit.txt
           BUILT_SHA: ${{ steps.resolve-sha.outputs.sha }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
@@ -172,19 +179,26 @@ jobs:
             echo "::error::Tag ${TAG} now points at ${OBJ_SHA} but this run built ${BUILT_SHA} — the tag was force-moved. Refusing to attach."
             exit 1
           fi
-          # The zip and its checksum are a pair: skip only when BOTH are
-          # already attached. Exactly one attached means an earlier run died
-          # mid-attach — re-attaching a fresh (not byte-reproducible) build
-          # next to the survivor would let the checksum contradict the zip,
-          # so fail and ask for a deliberate cleanup instead.
+          # The three assets are attached as one unit: reuse them only when
+          # ALL are present AND the recorded provenance commit matches this
+          # run's built commit. A partial set means an earlier run died
+          # mid-attach (provenance unverifiable); a mismatched commit means
+          # the tag was force-moved after the original attach. Both hard-fail
+          # and require deliberate cleanup instead of a silently-green run.
           ASSETS=$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.assets[].name')
           HAVE_ZIP=$(echo "$ASSETS" | grep -Fxc "$ZIP_ASSET" || true)
           HAVE_SUM=$(echo "$ASSETS" | grep -Fxc "$SUM_ASSET" || true)
-          if [ "$HAVE_ZIP" = "1" ] && [ "$HAVE_SUM" = "1" ]; then
+          HAVE_COMMIT=$(echo "$ASSETS" | grep -Fxc "$COMMIT_ASSET" || true)
+          if [ "$HAVE_ZIP" = "1" ] && [ "$HAVE_SUM" = "1" ] && [ "$HAVE_COMMIT" = "1" ]; then
+            RECORDED_SHA=$(gh release download "$TAG" --repo "$REPO" --pattern "$COMMIT_ASSET" --output - | tr -d '[:space:]')
+            if [ "$RECORDED_SHA" != "$BUILT_SHA" ]; then
+              echo "::error::Release ${TAG} carries ${ZIP_ASSET} built from ${RECORDED_SHA}, but this run built ${BUILT_SHA} — the existing assets came from a different commit. Delete all three assets deliberately to re-release."
+              exit 1
+            fi
             echo "asset_exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Release ${TAG} already has ${ZIP_ASSET} + ${SUM_ASSET} from an earlier run — leaving them untouched. Delete both assets deliberately to re-release."
-          elif [ "$HAVE_ZIP" = "1" ] || [ "$HAVE_SUM" = "1" ]; then
-            echo "::error::Release ${TAG} has only one of ${ZIP_ASSET} / ${SUM_ASSET} — an earlier attach was interrupted. Delete the surviving asset and re-run."
+            echo "::notice::Release ${TAG} already has ${ZIP_ASSET} (+ checksum/commit) built from this same commit — leaving them untouched."
+          elif [ "$HAVE_ZIP" = "1" ] || [ "$HAVE_SUM" = "1" ] || [ "$HAVE_COMMIT" = "1" ]; then
+            echo "::error::Release ${TAG} has only some of ${ZIP_ASSET} / ${SUM_ASSET} / ${COMMIT_ASSET} — an earlier attach was interrupted, so the existing assets' provenance cannot be verified. Delete the surviving assets and re-run."
             exit 1
           else
             echo "asset_exists=false" >> "$GITHUB_OUTPUT"
@@ -204,6 +218,7 @@ jobs:
           files: |
             packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.xcframework.zip
             packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.checksum.txt
+            packages/swift-sdk/DashSDKFFI-${{ steps.release-ref.outputs.version }}.commit.txt
 
       # The durable home for the consumer checksum is the checksum.txt release
       # asset; this summary is a convenience copy. Skipped when the attach was
