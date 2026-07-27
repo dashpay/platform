@@ -542,16 +542,26 @@ async fn bind_does_not_restore_a_snapshot_that_predates_a_clear() {
     );
 }
 
-/// Two binds of one wallet must not interleave. Each publishes the
-/// viewing-grade map on the handle and then replaces the coordinator's
-/// registration; interleaved, the two commits can land in opposite
-/// orders, leaving sync trial-decrypting under one bind's keys while
-/// addresses, balances and spends use the other's.
+/// Two binds of one wallet must not interleave: neither may publish its
+/// registration while the other's transaction is open. That is what
+/// keeps the handle's key slot and the coordinator's registration from
+/// committing in opposite orders — which would leave sync
+/// trial-decrypting under one bind's keys while addresses, balances and
+/// spends use the other's. (This test drives both binds from one seed,
+/// so it pins the account-set half of that agreement; the key bytes are
+/// identical by construction.)
 ///
 /// The first bind is parked mid-transaction by holding the store lock its
-/// restore needs, then a second bind is started: it must not be able to
-/// publish its registration until the first one commits.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+/// restore needs, then a second bind is started.
+///
+/// The paused clock is load-bearing. `sleep` on a paused runtime only
+/// fires once nothing else is runnable, so the assertion below reads
+/// "the runtime had no work left and bind B still had not registered".
+/// With a real 200 ms sleep the same assertion passes whenever bind B is
+/// merely slow to be scheduled — it derives two Orchard keysets and
+/// round-trips the persister before it ever reaches the lock — which on
+/// a loaded CI box makes it silently green even with the lock removed.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_second_bind_cannot_commit_inside_another_binds_transaction() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;

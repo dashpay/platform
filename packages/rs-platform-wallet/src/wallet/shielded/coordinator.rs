@@ -2383,7 +2383,11 @@ mod tests {
     /// bind's registration check and its restore, and the restore would
     /// repopulate the state the removal just dropped — then mark the
     /// removed wallet hydrated.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    ///
+    /// Paused clock: `sleep` fires only once nothing is runnable, so the
+    /// assertion means "the runtime had no work left and the unregister
+    /// still had not landed" rather than "200 ms passed".
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn install_transaction_blocks_unregister_until_it_commits() {
         let dir = temp_dir("install_excludes_unregister");
         let coordinator = Arc::new(coordinator_with_one_wallet(&dir).await);
@@ -2408,6 +2412,71 @@ mod tests {
         assert!(
             coordinator.registered_subwallets().await.is_empty(),
             "the queued unregister runs as soon as the transaction commits"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Clear must wait for an in-flight install transaction, purge
+    /// included. The mutex is taken before the store reset precisely so
+    /// the purge cannot land between a bind's registration and its
+    /// restore — the bind would then put its snapshot back into the
+    /// store Clear had just emptied, which the host reads as "Clear did
+    /// nothing".
+    ///
+    /// Paused clock, same reasoning as the unregister test above.
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn clear_waits_for_an_in_flight_install_transaction() {
+        let dir = temp_dir("clear_vs_install");
+        let coordinator = Arc::new(coordinator_with_one_wallet(&dir).await);
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        {
+            let mut store = coordinator.store().write().await;
+            store
+                .save_note(id, &test_note([0xF0; 32], 3, false))
+                .unwrap();
+        }
+
+        let install = coordinator.begin_install(wallet_id).await;
+        let clearer = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { coordinator.clear().await })
+        };
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !coordinator.registered_subwallets().await.is_empty(),
+            "clear must wait for the in-flight install transaction"
+        );
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .get_all_notes(id)
+                .unwrap()
+                .len(),
+            1,
+            "the store purge must be inside the mutex too — a purge landing mid-install \
+             is what lets the bind restore its snapshot back over a completed Clear"
+        );
+
+        drop(install);
+        clearer.await.expect("clear task").expect("clear succeeds");
+        assert!(
+            coordinator.registered_subwallets().await.is_empty(),
+            "the queued clear runs as soon as the transaction commits"
+        );
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .get_all_notes(id)
+                .unwrap()
+                .is_empty(),
+            "and it purges the store once it does"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
