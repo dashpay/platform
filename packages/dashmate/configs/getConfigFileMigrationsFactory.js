@@ -9,7 +9,7 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
-import { stockImagePattern } from '../src/config/stockImages.js';
+import { stockImagePattern, stockImagePatternAnyVersion } from '../src/config/stockImages.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -1548,16 +1548,32 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       },
       '4.0.0': (configFile) => {
+        // The drive and rs-dapi image tags are derived from the package major
+        // version. Re-pin them from the base config so operators upgrading from
+        // a prerelease of this major, or from an older major, move off their
+        // stale tag. The legacy 0.25.x migrations already do this, but only fire
+        // for configs old enough to cross them; recent upgraders need it here.
+        //
+        // Only tags a release published are moved. This re-pin used to be
+        // unconditional, which destroyed an operator's own image before any
+        // later migration could tell it apart from a stale default - every
+        // config from before this key crosses here, so it has to be the place
+        // that distinction is first respected. Tags of every era are recognised
+        // because a config reaching this point may carry any of them.
+        const stockDriveImage = stockImagePatternAnyVersion('dashpay/drive');
+        const stockRsDapiImage = stockImagePatternAnyVersion('dashpay/rs-dapi');
+
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
-            // The drive and rs-dapi image tags are derived from the package
-            // major version. Re-pin them from the base config so operators
-            // upgrading from a prerelease of this major, or from an older
-            // major, move off their stale tag onto the current stable images.
-            // The legacy 0.25.x migrations already do this, but only fire for
-            // configs old enough to cross them; recent upgraders need it here.
-            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
-            options.platform.dapi.rsDapi.docker.image = base.get('platform.dapi.rsDapi.docker.image');
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
           });
 
         return configFile;
@@ -1606,6 +1622,33 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
               rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.0-rc.4': (configFile) => {
+        // Stop storing the version-derived image tags. A config now records
+        // whether the operator chose an image, not which image a past release
+        // happened to derive: null means "use the line this dashmate build
+        // ships", and a string is the operator's own and is never touched.
+        //
+        // This is the last time a stock tag has to be recognised by shape. From
+        // here on the distinction is recorded rather than inferred, so no future
+        // release needs a migration to re-pin these images.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = null;
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = null;
             }
           });
 

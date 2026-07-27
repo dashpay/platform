@@ -82,8 +82,12 @@ runs:
         docker pull ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG
         docker tag ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
-        # Replace Drive and RS-DAPI images with new org and tag in dashmate config
-        sed -i -E "s/dashpay\/(drive|rs-dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
+        # Point Drive and RS-DAPI at the images built for this commit. Set them
+        # through dashmate rather than editing config.json: these options are
+        # stored unset by default, meaning "use the line this dashmate build
+        # ships", so there is no image string in the file for a pattern to match.
+        yarn dashmate config set --config=local platform.drive.abci.docker.image "${{ inputs.image_org }}/drive:${SHA_TAG}"
+        yarn dashmate config set --config=local platform.dapi.rsDapi.docker.image "${{ inputs.image_org }}/rs-dapi:${SHA_TAG}"
 
 
     - name: Start local network

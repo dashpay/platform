@@ -28,3 +28,21 @@ export function stockImagePattern(repository, major) {
 
   return new RegExp(`^${escapedRepository}:${major}${stockPrereleaseSuffix}$`);
 }
+
+/**
+ * Match a tag published by a release of any version, for migrations that move
+ * images across majors.
+ *
+ * Historical tags took several shapes - `0.25.16`, `1-dev`, `3`, `4-rc` - so the
+ * numeric part is permissive, while the prerelease identifier stays restricted
+ * to the published list. Without that restriction an operator's own tag such as
+ * `dashpay/drive:4-local` would match and be overwritten.
+ *
+ * @param {string} repository - image repository, e.g. 'dashpay/drive'
+ * @return {RegExp}
+ */
+export function stockImagePatternAnyVersion(repository) {
+  const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return new RegExp(`^${escapedRepository}:\\d+(\\.\\d+)*${stockPrereleaseSuffix}$`);
+}

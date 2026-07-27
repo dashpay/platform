@@ -9,12 +9,27 @@ import OptionIsNotSetError from './errors/OptionIsNotSetError.js';
 import InvalidOptionError from './errors/InvalidOptionError.js';
 import InvalidOptionsError from './errors/InvalidOptionsError.js';
 import { assertSafeConfigName } from './resolve-config-directory.js';
+import { resolveDerivedDefaults } from './derivedDefaults.js';
 
 const {
   get: lodashGet, set: lodashSet, cloneDeep: lodashCloneDeep, isEqual: lodashIsEqual,
 } = lodash;
 
+function deepFreeze(value) {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+
+  Object.values(value).forEach(deepFreeze);
+
+  return Object.freeze(value);
+}
+
 export default class Config {
+  #storedOptions = {};
+
+  #effectiveOptions = {};
+
   /**
    * @param {string} name
    * @param {Object} options
@@ -27,6 +42,17 @@ export default class Config {
     this.changed = false;
 
     this.setOptions(options, skipValidation);
+  }
+
+  /**
+   * Options with version-derived defaults filled in.
+   *
+   * Kept as a property for callers that render or spread the whole config.
+   *
+   * @return {Object}
+   */
+  get options() {
+    return this.#effectiveOptions;
   }
 
   /**
@@ -45,7 +71,7 @@ export default class Config {
    * @return {boolean}
    */
   has(path) {
-    return lodashGet(this.options, path) !== undefined;
+    return lodashGet(this.#effectiveOptions, path) !== undefined;
   }
 
   /**
@@ -131,7 +157,11 @@ export default class Config {
    * @return {*}
    */
   get(path, isRequired = false) {
-    const value = lodashGet(this.options, path);
+    // Cloned, not handed out by reference: callers assign the result into other
+    // configs (migrations do this constantly), and sharing a reference with a
+    // default config would alias them together - and would spread the frozen
+    // snapshot into objects that later need mutating.
+    const value = lodashCloneDeep(lodashGet(this.#effectiveOptions, path));
 
     if (value === undefined) {
       throw new InvalidOptionPathError(path);
@@ -153,7 +183,7 @@ export default class Config {
    * @return {Config}
    */
   set(path, value) {
-    const clonedOptions = lodashCloneDeep(this.options);
+    const clonedOptions = lodashCloneDeep(this.#storedOptions);
 
     lodashSet(clonedOptions, path, lodashCloneDeep(value));
 
@@ -180,7 +210,7 @@ export default class Config {
       );
     }
 
-    this.options = clonedOptions;
+    this.#store(clonedOptions);
 
     this.changed = true;
 
@@ -188,12 +218,54 @@ export default class Config {
   }
 
   /**
-   * Get options
+   * Get options, with version-derived defaults filled in.
+   *
+   * This is the ordinary read: callers that render, display or serialize a
+   * config get effective values without having to know a default exists. Stored
+   * intent is reachable through getStoredOptions(), whose name makes the choice
+   * deliberate.
    *
    * @return {Object}
    */
   getOptions() {
-    return this.options;
+    return this.#effectiveOptions;
+  }
+
+  /**
+   * Get an option exactly as stored, without derived defaults.
+   *
+   * Only persistence, cloning, intent equality, base-to-network inheritance and
+   * reset may use this - everything else must read effective values, or an
+   * unset option leaks out as null.
+   *
+   * @param {string} path
+   * @return {*}
+   */
+  getStored(path) {
+    return lodashCloneDeep(lodashGet(this.#storedOptions, path));
+  }
+
+  /**
+   * Get options exactly as stored, without derived defaults.
+   *
+   * @return {Object}
+   */
+  getStoredOptions() {
+    return lodashCloneDeep(this.#storedOptions);
+  }
+
+  /**
+   * Serialize to effective values, so JSON.stringify(config) matches what the
+   * node actually runs.
+   *
+   * Whole-config reads are frozen: they back rendering and serialization, so a
+   * write through one is always a mistake. Single values from get() are cloned
+   * instead, because callers legitimately build new state from them.
+   *
+   * @return {Object}
+   */
+  toJSON() {
+    return this.#effectiveOptions;
   }
 
   /**
@@ -221,11 +293,24 @@ export default class Config {
       }
     }
 
-    this.options = clonedOptions;
+    this.#store(clonedOptions);
 
     this.changed = true;
 
     return this;
+  }
+
+  /**
+   * Replace stored state and rebuild the effective snapshot from it.
+   *
+   * The snapshot is frozen: code that mutates the object returned by get() would
+   * otherwise write into a copy and lose the change silently.
+   *
+   * @param {Object} options
+   */
+  #store(options) {
+    this.#storedOptions = options;
+    this.#effectiveOptions = deepFreeze(resolveDerivedDefaults(options));
   }
 
   /**
@@ -235,7 +320,7 @@ export default class Config {
    * @returns {boolean}
    */
   isEqual(config) {
-    return lodashIsEqual(this.getOptions(), config.getOptions());
+    return lodashIsEqual(this.getStoredOptions(), config.getStoredOptions());
   }
 
   /**

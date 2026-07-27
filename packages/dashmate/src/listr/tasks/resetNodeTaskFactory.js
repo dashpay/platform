@@ -190,7 +190,7 @@ export default function resetNodeTaskFactory(
               const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).get('platform');
               config.set('platform', defaultPlatformConfig);
             } else {
-              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getOptions();
+              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getStoredOptions();
 
               config.setOptions(defaultConfigOptions);
             }

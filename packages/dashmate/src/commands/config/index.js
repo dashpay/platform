@@ -8,6 +8,10 @@ export default class ConfigCommand extends ConfigBaseCommand {
   static description = 'Show default config';
 
   static flags = {
+    raw: Flags.boolean({
+      description: 'show stored values instead of effective ones',
+      default: false,
+    }),
     format: Flags.string({
       description: 'display output format',
       default: OUTPUT_FORMATS.PLAIN,
@@ -26,15 +30,18 @@ export default class ConfigCommand extends ConfigBaseCommand {
     args,
     {
       format,
+      raw,
     },
     config,
   ) {
+    const options = raw ? config.getStoredOptions() : config.getOptions();
+
     let configOptions;
     if (format === OUTPUT_FORMATS.JSON) {
-      configOptions = JSON.stringify(config.getOptions(), null, 2);
+      configOptions = JSON.stringify(options, null, 2);
     } else {
       configOptions = inspect(
-        config.getOptions(),
+        options,
         { depth: Infinity, colors: chalk.supportsColor },
       );
     }
@@ -44,6 +51,6 @@ export default class ConfigCommand extends ConfigBaseCommand {
     // eslint-disable-next-line no-console
     console.log(output);
 
-    return config.getOptions();
+    return options;
   }
 }

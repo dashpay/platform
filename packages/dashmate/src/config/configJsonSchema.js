@@ -54,7 +54,9 @@ export default {
       type: 'object',
       properties: {
         image: {
-          type: 'string',
+          // null means "use the image line this dashmate build ships"; an
+          // explicit string is an operator override. See config/derivedDefaults.js
+          type: ['string', 'null'],
           minLength: 1,
         },
         build: {
@@ -895,7 +897,7 @@ export default {
                   type: 'object',
                   properties: {
                     image: {
-                      type: 'string',
+                      type: ['string', 'null'],
                       minLength: 1,
                     },
                     deploy: {
