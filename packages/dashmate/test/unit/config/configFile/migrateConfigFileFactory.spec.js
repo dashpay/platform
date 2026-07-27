@@ -111,7 +111,6 @@ describe('migrateConfigFileFactory', () => {
     // latest one', which carries a real historical config all the way up.
     const OLDEST_MIGRATABLE_FROM_VERSION = '1.3.0-dev.3';
 
-    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
     const getConfigFileMigrations = container.resolve('getConfigFileMigrations');
 
     const defaultConfigFileData = createConfigFile().toObject();
@@ -121,46 +120,80 @@ describe('migrateConfigFileFactory', () => {
     const expectedRsDapiImage = defaultConfigFileData
       .configs[firstConfigName].platform.dapi.rsDapi.docker.image;
 
-    const migrationVersions = Object.keys(getConfigFileMigrations());
+    const migrationVersions = Object.keys(getConfigFileMigrations()).sort(semver.compare);
+
+    // Upgrade towards the release the newest migration is keyed at, not the
+    // version in package.json. Those are the same only in the release that
+    // ships that migration; every other time the package trails it, and a
+    // config already stamped at or above the package version either short
+    // circuits on fromVersion === toVersion or selects nothing at all, leaving
+    // the newest migration - the one most likely to be wrong - unexercised.
+    const upgradingTo = migrationVersions.at(-1);
+
     const releases = migrationVersions
-      .filter((migrationVersion) => semver.gte(migrationVersion, OLDEST_MIGRATABLE_FROM_VERSION))
-      .sort(semver.compare);
+      .filter((migrationVersion) => semver.gte(migrationVersion, OLDEST_MIGRATABLE_FROM_VERSION));
 
     // The newest migration is the one a release is most likely to forget, so
     // guard against a floor that silently drops it along with everything else.
-    expect(releases).to.include(
-      migrationVersions.sort(semver.compare).at(-1),
-      'the newest migration is not being checked',
-    );
+    expect(releases).to.include(upgradingTo, 'the newest migration is not being checked');
+
+    // The tag a release's base config produced, derived the way
+    // getBaseConfigFactory derives it.
+    const imageVersionOf = (release) => {
+      const prereleaseTag = semver.prerelease(release) === null ? '' : `-${semver.prerelease(release)[0]}`;
+
+      return `${semver.major(release)}${prereleaseTag}`;
+    };
 
     // Collect every mismatch instead of stopping at the first, so one stale
     // release does not hide the others.
     const stale = [];
 
     for (const release of releases) {
-      // The tag that release's base config produced, derived the same way
-      // getBaseConfigFactory derives it.
-      const prereleaseTag = semver.prerelease(release) === null ? '' : `-${semver.prerelease(release)[0]}`;
-      const releaseImageVersion = `${semver.major(release)}${prereleaseTag}`;
+      // A config stamped at a release does not necessarily carry that release's
+      // own tag: operators arrive by upgrading far more often than by
+      // installing fresh, so they keep whatever the last re-pin left them with.
+      // Seeding only the release's own tag makes exactly the interesting case
+      // unreachable - a config stamped at a prerelease while still carrying the
+      // stable tag it inherited. Every tag a release of the same major
+      // published at or before this one is reachable here; crossing a major
+      // means crossing an unconditional re-pin, which resets the tag.
+      //
+      // The newest release is the exception. Its own migration is the one that
+      // re-pins, and a config only reaches that stamp by running it, so it
+      // cannot still be carrying an older tag. Seeding one there would assert
+      // against a state no operator can be in.
+      const inheritedImageVersions = release === upgradingTo
+        ? [imageVersionOf(release)]
+        : [...new Set(
+          migrationVersions
+            .filter((candidate) => semver.major(candidate) === semver.major(release)
+              && semver.lte(candidate, release))
+            .map(imageVersionOf),
+        )];
 
-      const configFileData = createConfigFile().toObject();
-      configFileData.configFormatVersion = release;
-      for (const options of Object.values(configFileData.configs)) {
-        options.platform.drive.abci.docker.image = `dashpay/drive:${releaseImageVersion}`;
-        options.platform.dapi.rsDapi.docker.image = `dashpay/rs-dapi:${releaseImageVersion}`;
-      }
-
-      const migratedConfigFileData = migrateConfigFile(configFileData, release, version);
-
-      for (const [name, options] of Object.entries(migratedConfigFileData.configs)) {
-        const { image: driveImage } = options.platform.drive.abci.docker;
-        if (driveImage !== expectedDriveImage) {
-          stale.push(`${release} -> ${name}: drive ${driveImage}, expected ${expectedDriveImage}`);
+      for (const imageVersion of inheritedImageVersions) {
+        const configFileData = createConfigFile().toObject();
+        configFileData.configFormatVersion = release;
+        for (const options of Object.values(configFileData.configs)) {
+          options.platform.drive.abci.docker.image = `dashpay/drive:${imageVersion}`;
+          options.platform.dapi.rsDapi.docker.image = `dashpay/rs-dapi:${imageVersion}`;
         }
 
-        const { image: rsDapiImage } = options.platform.dapi.rsDapi.docker;
-        if (rsDapiImage !== expectedRsDapiImage) {
-          stale.push(`${release} -> ${name}: rs-dapi ${rsDapiImage}, expected ${expectedRsDapiImage}`);
+        const migratedConfigFileData = migrateConfigFile(configFileData, release, upgradingTo);
+
+        for (const [name, options] of Object.entries(migratedConfigFileData.configs)) {
+          const carried = `${release} carrying :${imageVersion} -> ${name}`;
+
+          const { image: driveImage } = options.platform.drive.abci.docker;
+          if (driveImage !== expectedDriveImage) {
+            stale.push(`${carried}: drive ${driveImage}, expected ${expectedDriveImage}`);
+          }
+
+          const { image: rsDapiImage } = options.platform.dapi.rsDapi.docker;
+          if (rsDapiImage !== expectedRsDapiImage) {
+            stale.push(`${carried}: rs-dapi ${rsDapiImage}, expected ${expectedRsDapiImage}`);
+          }
         }
       }
     }
