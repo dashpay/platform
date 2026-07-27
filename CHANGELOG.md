@@ -1,3 +1,404 @@
+## [4.1.0](https://github.com/dashpay/platform/compare/v4.0.0...v4.1.0) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** bump gateway Envoy to 1.39.0 (#4233)
+* **platform:** revise shielded identity-create denominations in protocol version 13
+* **platform:** document history system contract with per-doctype opt-in (#4171)
+* **kotlin-sdk:** provision DashPay registration keys (#4173)
+* **platform:** enable DPNS username transfers and sales in protocol version 13 (#4145)
+* managed identity top-up from asset lock (iOS + shared FFI) (#4093)
+
+### Features
+
+* **dashmate:** bump gateway Envoy to 1.39.0 ([#4233](https://github.com/dashpay/platform/issues/4233))
+* complete dashpay in platform wallet and swift example app ([#3841](https://github.com/dashpay/platform/issues/3841))
+* **contract:** qa-contract v5 tags redesign + publish testnet contract 9tshSfq5 ([#4031](https://github.com/dashpay/platform/issues/4031))
+* document replace/delete/transfer, data-contract update, and Kotlin QA fixes ([#4110](https://github.com/dashpay/platform/issues/4110))
+* **dpp:** unify JSON/Value conversion traits ([#3573](https://github.com/dashpay/platform/issues/3573))
+* **kotlin-app:** multi-recipient Core send (CORE-10)
+* **kotlin-sdk:** add Import Existing Wallet toggle to CreateWalletScreen (CORE-02)
+* **kotlin-sdk:** add Kotlin SDK and KotlinExampleApp (Android port of SwiftExampleApp)
+* **kotlin-sdk:** add maven-publish for the release AAR ([#4182](https://github.com/dashpay/platform/issues/4182))
+* **kotlin-sdk:** bind every wallet's shielded sub-wallet for multi-wallet flows ([#4046](https://github.com/dashpay/platform/issues/4046))
+* **kotlin-sdk:** bridge identity create-from-addresses (ID-08) and transfer-credits-to-addresses (ID-11)
+* **kotlin-sdk:** bridge the DIP-15 auto-accept QR pair (K3)
+* **kotlin-sdk:** DashPay detail, payment, profile and list screens + parity (K3 slice C)
+* **kotlin-sdk:** DashPay hub, contacts, requests and add-contact screens (K3 slice B)
+* **kotlin-sdk:** DashPay persistence completion + read bridges (K1), closes [#3841](https://github.com/dashpay/platform/issues/3841)
+* **kotlin-sdk:** DashPay sync service, seedless unlock and writes (K2)
+* **kotlin-sdk:** DashPay tab navigation + contact meta infra (K3 slice A)
+* **kotlin-sdk:** Platform receive tab + testnet faucet in the Receive sheet
+* **kotlin-sdk:** provision DashPay registration keys ([#4173](https://github.com/dashpay/platform/issues/4173))
+* **kotlin-sdk:** reach the shielded screens from the WalletDetail balance card
+* **kotlin-sdk:** show Platform balance in DASH with an actions menu
+* **kotlin-sdk:** surface DPNS contested/premium names in Register Name
+* **kotlin-sdk:** transaction decoder JNI binding over key-wallet-ffi transaction_decode ([#4187](https://github.com/dashpay/platform/issues/4187))
+* **kotlin:** create identity from shielded pool (SH-11, Type 20)
+* **kotlin:** Delete Wallet UI + removeWallet cascade (CORE-17)
+* **kotlin:** resume UI for pending address top-up asset locks (ADDR-03)
+* **kotlin:** shield from Platform balance (SH-03, Type 15)
+* managed identity top-up from asset lock (iOS + shared FFI) ([#4093](https://github.com/dashpay/platform/issues/4093))
+* **platform-wallet:** actively re-drive unconfirmed shielded spends ([#3988](https://github.com/dashpay/platform/issues/3988))
+* **platform-wallet:** anchor fresh wallets at a checkpoint, set birth height on import ([#4063](https://github.com/dashpay/platform/issues/4063))
+* **platform-wallet:** dip-13 dashpay invitations ([#4041](https://github.com/dashpay/platform/issues/4041))
+* **platform-wallet:** expose classified connected SPV peers ([#4050](https://github.com/dashpay/platform/issues/4050))
+* **platform-wallet:** expose SPV filter rescan via wallet synced-height rewind ([#4099](https://github.com/dashpay/platform/issues/4099))
+* **platform-wallet:** fixed provider key derivation via rust-dashcore bump + legacy BLS display ([#4120](https://github.com/dashpay/platform/issues/4120))
+* **platform-wallet:** persist Orchard viewing keys for seedless shielded bind ([#4126](https://github.com/dashpay/platform/issues/4126))
+* **platform-wallet:** persist typed BLS/EdDSA provider keys as core address rows ([#4127](https://github.com/dashpay/platform/issues/4127))
+* **platform-wallet:** return the exact network fee from send_payment ([#4095](https://github.com/dashpay/platform/issues/4095))
+* **platform-wallet:** skip startup mnemonic touches via seed-binding marker + gated contact-crypto drain ([#4125](https://github.com/dashpay/platform/issues/4125))
+* **platform-wallet:** surface ProRegTx masternode details in iOS via rust-dashcore bump ([#4112](https://github.com/dashpay/platform/issues/4112))
+* **platform-wallet:** surface provider operator/node keys and reveal address private keys ([#4072](https://github.com/dashpay/platform/issues/4072))
+* **platform-wallet:** wallet masternode list with DML-derived status in iOS ([#4116](https://github.com/dashpay/platform/issues/4116))
+* **platform:** document history system contract with per-doctype opt-in ([#4171](https://github.com/dashpay/platform/issues/4171))
+* **platform:** enable DPNS username transfers and sales in protocol version 13 ([#4145](https://github.com/dashpay/platform/issues/4145))
+* **platform:** introduce protocol version 13 ([#4143](https://github.com/dashpay/platform/issues/4143))
+* **platform:** revise shielded identity-create denominations in protocol version 13
+* **sdk:** adapt Android bridges to the completed DashPay surface ([#3841](https://github.com/dashpay/platform/issues/3841)) + address-balance height pin, closes [#3650](https://github.com/dashpay/platform/issues/3650)
+* **sdk:** add asset-lock identity top-up (Top Up from Core)
+* **sdk:** add DOC-02 create-document flow to KotlinExampleApp
+* **sdk:** close all remaining parity gaps (query catalog, identity keys, document pricing, voting, diagnostics)
+* **sdk:** DashPay migration follow-ups (seed hygiene, double-send guard, contract-ref cleaner)
+* **sdk:** gate the shielded denomination pickers on the network protocol version
+* **sdk:** port v4.1-dev deltas to Android (platform-address transfer/withdraw, error namespacing, sync clear), closes [#3923](https://github.com/dashpay/platform/issues/3923) [#3959](https://github.com/dashpay/platform/issues/3959)
+* **sdk:** start the Rust periodic sync loops and bind shielded wallets on Android
+* **sdk:** wire shielded outflow (transfer/unshield/withdraw) + Shielded receive tab to Android
+* **swift-example-app:** bind every wallet's shielded sub-wallet for multi-wallet flows ([#4038](https://github.com/dashpay/platform/issues/4038))
+* **swift-example-app:** wallet-signed Transfer & Withdraw for platform addresses (ADDR-02/04) ([#3923](https://github.com/dashpay/platform/issues/3923))
+* **swift-sdk:** auto-start Core SPV sync on app launch ([#4105](https://github.com/dashpay/platform/issues/4105))
+* **swift-sdk:** compact-filter rescan button in Core Sync Status ([#4103](https://github.com/dashpay/platform/issues/4103))
+* **swift-sdk:** in-app log export for beta diagnostics ([#4131](https://github.com/dashpay/platform/issues/4131))
+* **swift-sdk:** partial-amount platform address withdrawal wrapper ([#4139](https://github.com/dashpay/platform/issues/4139))
+* **swift-sdk:** public RawKeySigner one-shot raw-key signing ([#4097](https://github.com/dashpay/platform/issues/4097))
+* **swift-sdk:** surface payload-only special-tx involvement in account transaction lists ([#4108](https://github.com/dashpay/platform/issues/4108))
+* **swift-sdk:** transaction decoder over upstream key-wallet-ffi transaction_decode ([#3981](https://github.com/dashpay/platform/issues/3981))
+* **wasm-sdk:** support tiered direct-purchase prices in tokenSetPrice
+
+### Bug Fixes
+
+* **dashmate:** re-pin Drive and DAPI images to the stable tag when upgrading from a release candidate ([#4241](https://github.com/dashpay/platform/issues/4241))
+* **platform-wallet:** make shielded re-bind non-destructive so it cannot wipe an in-flight sync pass ([#4237](https://github.com/dashpay/platform/issues/4237))
+* **dashmate:** migrate Drive and DAPI images onto the prerelease line ([#4235](https://github.com/dashpay/platform/issues/4235))
+* **platform:** harden v12 to v13 protocol upgrades ([#4222](https://github.com/dashpay/platform/issues/4222))
+* **drive:** version the compacted address-balance proof wire format ([#4224](https://github.com/dashpay/platform/issues/4224))
+* **kotlin-sdk:** persist active DashPay identity ([#4211](https://github.com/dashpay/platform/issues/4211))
+* **build:** keep github token out of git error output
+* **build:** prevent secret tracing in dependency stages
+* bump rust-dashcore to c88264e7 for Android SPV file-lock fix ([#4014](https://github.com/dashpay/platform/issues/4014))
+* **ci:** block fork code on self-hosted Swift runner
+* **ci:** bound Swift SDK build disk usage
+* **contract:** restore KotlinExampleApp app-code entry lost in the v4.1-dev merge, closes [#4031](https://github.com/dashpay/platform/issues/4031)
+* **dapi-client:** require metadata on proved history responses
+* **dapi:** bound core request inputs
+* **dapi:** bound path element queries ([#4153](https://github.com/dashpay/platform/issues/4153))
+* **dapi:** bound request metric labels
+* **dapi:** bound streaming request work
+* **dapi:** deliver the header stream's terminal error on a full queue
+* **dapi:** preserve bounded stream delivery state
+* **dapi:** retain stream permits until replay workers stop and serve full history ranges
+* **dapi:** validate bounded request payloads
+* **dashmate:** abort over-budget archive extraction
+* **dashmate:** contain generated config paths
+* **dashmate:** isolate diagnostic archive extraction
+* **dashmate:** log helper API failures server-side
+* **dashmate:** restore label-less volumes on macOS stock bash
+* **dashmate:** restrict helper API capabilities
+* **dashmate:** stage state archive restores
+* **dpp:** bound document value validation depth ([#4115](https://github.com/dashpay/platform/issues/4115))
+* **drive-abci:** admit asset-lock proof checks
+* **drive-abci:** bound CheckTx verification work
+* **drive-abci:** bound contested value nesting depth ([#4104](https://github.com/dashpay/platform/issues/4104))
+* **drive-abci:** bound value decoding in contested-resource queries ([#4101](https://github.com/dashpay/platform/issues/4101))
+* **drive-abci:** enforce historical query bounds ([#4150](https://github.com/dashpay/platform/issues/4150))
+* **drive-abci:** record unshield and shield-surplus credits in recent address balance changes ([#4142](https://github.com/dashpay/platform/issues/4142))
+* **drive-abci:** report configured main control group authority when unauthorized ([#4209](https://github.com/dashpay/platform/issues/4209))
+* **drive-abci:** use testnet Core RPC port in env ([#3965](https://github.com/dashpay/platform/issues/3965))
+* **drive:** accept MMR-aligned shielded note proof ranges ([#4201](https://github.com/dashpay/platform/issues/4201))
+* **drive:** bind and bound proof decoding ([#4165](https://github.com/dashpay/platform/issues/4165))
+* **drive:** bind proof-verifier queries to trusted context ([#4166](https://github.com/dashpay/platform/issues/4166))
+* **drive:** bound shielded anchor query work ([#4169](https://github.com/dashpay/platform/issues/4169))
+* **drive:** enforce aggregate query limits ([#4149](https://github.com/dashpay/platform/issues/4149))
+* **drive:** order ascending cursor range bounds ([#4148](https://github.com/dashpay/platform/issues/4148))
+* **drive:** preserve typed proof query fields ([#4156](https://github.com/dashpay/platform/issues/4156))
+* **drive:** reject zero effective distinct count limit ([#4197](https://github.com/dashpay/platform/issues/4197))
+* **drive:** strengthen execution proof result validation (tagged-outcome variant) ([#4207](https://github.com/dashpay/platform/issues/4207))
+* **js-sdk:** fail closed without proof verification
+* **kotlin-app:** catch identity balance-refresh failures before they crash the screen
+* **kotlin-app:** gate Replace/Delete on DPP effective document capabilities, closes [#3999](https://github.com/dashpay/platform/issues/3999)
+* **kotlin-app:** only offer Platform shielding when Platform credits exist
+* **kotlin-app:** refresh contact payment history once manager + wallet are available
+* **kotlin-app:** show asset-lock burn amount instead of 0.00000000 DASH
+* **kotlin-app:** show identity keys under Base58 id + add identity balance refresh
+* **kotlin-sdk:** accept Base58 identity ids on the Load Identity screen ([#4017](https://github.com/dashpay/platform/issues/4017))
+* **kotlin-sdk:** address Android JNI review issues ([#4002](https://github.com/dashpay/platform/issues/4002))
+* **kotlin-sdk:** address multi-agent review findings on the wallet-lifecycle hardening commit
+* **kotlin-sdk:** bind stored identity-key blobs to the current KEYS_ALIAS keypair
+* **kotlin-sdk:** carry unrecoverable phrase in rollback error, durable privkey owner index
+* **kotlin-sdk:** clean phantom owner-index entries, exclude wallet secrets from Android backup
+* **kotlin-sdk:** clean up failed manager initialization
+* **kotlin-sdk:** close the tombstone TOCTOU on createWallet, make alias-rollback ownership check atomic with delete
+* **kotlin-sdk:** decode all-zero Base58 identifiers without a synthetic byte
+* **kotlin-sdk:** don't swallow CancellationException in ProvenBalances
+* **kotlin-sdk:** fold K1 code-review findings
+* **kotlin-sdk:** fold K2 code-review findings
+* **kotlin-sdk:** fold K3 code-review findings
+* **kotlin-sdk:** give the unlocked-device state time to propagate before running tests
+* **kotlin-sdk:** harden identity-key Keystore recovery and reconcile parity docs ([#4172](https://github.com/dashpay/platform/issues/4172))
+* **kotlin-sdk:** harden wallet-lifecycle init cleanup, cross-wallet key ownership, and mnemonic-loss-on-rotation, closes [#3999](https://github.com/dashpay/platform/issues/3999)
+* **kotlin-sdk:** include immature funds in the Empty Wallet guard
+* **kotlin-sdk:** make storeIfAbsentRejectsATombstonedWallet a valid JUnit @Test method
+* **kotlin-sdk:** only FK-link proven token balances to identities that exist locally
+* **kotlin-sdk:** persist proven token balance after mint
+* **kotlin-sdk:** propagate rollback failures, atomic alias deletion, caller-allocated create out-buffers
+* **kotlin-sdk:** re-arm deletion tombstone on createWallet rollback, close alias-rollback cross-wallet gap
+* **kotlin-sdk:** re-bind wallet-scoped services when the wallet set changes
+* **kotlin-sdk:** reject malformed contact/profile strings instead of clearing metadata, closes [#3999](https://github.com/dashpay/platform/issues/3999)
+* **kotlin-sdk:** restore the Empty Wallet placeholder in the Balances section
+* **kotlin-sdk:** retain rollback mnemonic, fence the identity-key derive/store lifecycle
+* **kotlin-sdk:** serialize wallet removal with key producers, track mnemonic persistence in rollback, checkout release tag
+* **kotlin-sdk:** track only round-created aliases, retain cleanup state until deletion succeeds
+* **kotlin-sdk:** wallet-scoped platform addresses, strict secret deletion, create-rollback Room cleanup
+* **kotlin:** allow pre-programmed distribution recipients to open the token Claim row
+* **kotlin:** allow the Direct Purchase action row now that the form computes the price, closes [#4043](https://github.com/dashpay/platform/issues/4043)
+* **kotlin:** complete TeardownGate coverage, cancellation-safe teardown, key-material zeroization
+* **kotlin:** compute direct-purchase price so token Buy can be submitted
+* **kotlin:** DashPay Add Contact no longer crashes on unmanaged recipient profile
+* **kotlin:** forward tx input outpoints through JNI for pending-input spend reconciliation
+* **kotlin:** gate the last resolver borrows + lease Sdk queries against close
+* **kotlin:** gate the new mutation bridges, lease castVote, harden Sdk close, and lint the fence, closes [#4110](https://github.com/dashpay/platform/issues/4110)
+* **kotlin:** init AccountSpecFFI node-keys fields null on the JNI load path
+* **kotlin:** key health flags undecryptable pre-RSA key blobs so Repair can re-derive them
+* **kotlin:** manager teardown joins in-flight JNI + owns the persistence executor + mnemonic error codes, closes [#4103](https://github.com/dashpay/platform/issues/4103) [#4099](https://github.com/dashpay/platform/issues/4099)
+* **kotlin:** preserve unconfirmed-create identity id, gate DashPay persisters, replace tri-state
+* **kotlin:** reject required-field clears in replace + carry the unconfirmed-create diagnostic
+* **kotlin:** suspend manager teardown (Main-thread ANR) + fence caller-owned handle borrows
+* make Kotlin shielded Clear button functional on-device
+* platform-address on-demand signing (ID-06) + shielded reset durability
+* **platform-value:** reject lossy CBOR integer conversions ([#4146](https://github.com/dashpay/platform/issues/4146))
+* **platform-wallet-ffi:** distinguish missing wallet handle from missing identity in get_dashpay_profile
+* **platform-wallet:** auto-release a stranded shielded-spend reservation on sync ([#3982](https://github.com/dashpay/platform/issues/3982))
+* **platform-wallet:** build shielded spends against a Platform-recorded anchor ([#3977](https://github.com/dashpay/platform/issues/3977))
+* **platform-wallet:** data-integrity follow-ups from the [#3990](https://github.com/dashpay/platform/issues/3990) sync review ([#4008](https://github.com/dashpay/platform/issues/4008))
+* **platform-wallet:** deliver typed AddressNonceMismatch error across wallet, FFI, and Swift host ([#4047](https://github.com/dashpay/platform/issues/4047))
+* **platform-wallet:** enforce FFI lifetime invariants ([#4160](https://github.com/dashpay/platform/issues/4160))
+* **platform-wallet:** freeze sync watermark on persistence fault — TXO loss/duplication ([#4069](https://github.com/dashpay/platform/issues/4069)) ([#4071](https://github.com/dashpay/platform/issues/4071))
+* **platform-wallet:** gate ADDR-09 watermark invalidation inside the reconcile seam ([#4005](https://github.com/dashpay/platform/issues/4005))
+* **platform-wallet:** height-pin address balances so delta replay cannot double-count (ADDR-09) ([#4019](https://github.com/dashpay/platform/issues/4019))
+* **platform-wallet:** idempotent load_from_persistor to stop double-register crash
+* **platform-wallet:** index-conflicting removal no longer orphans a restored address balance ([#4013](https://github.com/dashpay/platform/issues/4013))
+* **platform-wallet:** keep prederived typed keys for legacy key-less rows + land the [#893](https://github.com/dashpay/platform/issues/893) crash-fix pin ([#4132](https://github.com/dashpay/platform/issues/4132))
+* **platform-wallet:** make post-acceptance identity bookkeeping best-effort ([#4011](https://github.com/dashpay/platform/issues/4011))
+* **platform-wallet:** only key group mint balance with an explicit recipient, closes [#4044](https://github.com/dashpay/platform/issues/4044)
+* **platform-wallet:** persist address usage discovered during SPV block processing ([#4107](https://github.com/dashpay/platform/issues/4107))
+* **platform-wallet:** persist the DashPay send used-flip after releasing the wallet-manager lock ([#4176](https://github.com/dashpay/platform/issues/4176))
+* **platform-wallet:** persist top-up account + DashPay payment-address rotation across restart, closes [#3999](https://github.com/dashpay/platform/issues/3999)
+* **platform-wallet:** poll platform-address transfer FFI on the big-stack worker ([#3989](https://github.com/dashpay/platform/issues/3989))
+* **platform-wallet:** poll Sync Now FFI passes on big-stack threads to stop SIGBUS crash ([#4033](https://github.com/dashpay/platform/issues/4033))
+* **platform-wallet:** re-broadcast a Broadcast-status lock on resume ([#4009](https://github.com/dashpay/platform/issues/4009))
+* **platform-wallet:** reconcile platform-address balances after top-up-from-addresses ([#3969](https://github.com/dashpay/platform/issues/3969))
+* **platform-wallet:** reflect asset-lock top-up balance once, not doubled ([#4004](https://github.com/dashpay/platform/issues/4004))
+* **platform-wallet:** register data contract for returned-proof verification on writes ([#4035](https://github.com/dashpay/platform/issues/4035))
+* **platform-wallet:** register fetched token contract for post-broadcast proof verification
+* **platform-wallet:** release UTXO reservation when broadcast fails ([#3985](https://github.com/dashpay/platform/issues/3985))
+* **platform-wallet:** report the exact send_payment fee (inputs − outputs) ([#4049](https://github.com/dashpay/platform/issues/4049))
+* **platform-wallet:** satisfy cargo fmt import ordering in test_support.rs
+* **platform-wallet:** scope broadcaster test mocks to cfg(test), not the test-utils feature
+* **platform-wallet:** size withdrawal plan from on-chain balances ([#3994](https://github.com/dashpay/platform/issues/3994))
+* **platform-wallet:** source ADDR-02 transfer input balances on-chain
+* **platform-wallet:** spv client clear storage works after stopping the client ([#4042](https://github.com/dashpay/platform/issues/4042))
+* **platform-wallet:** union hydrated balance map into address input selection
+* **platform-wallet:** wait indefinitely for asset-lock ChainLock finality ([#4006](https://github.com/dashpay/platform/issues/4006))
+* **platform:** bind token group authorization
+* **platform:** identify the offending transition in group-action rebind error
+* provision identity top-up asset-lock account for external-signable wallets
+* **qa-contract:** align codes.mjs with v5 contract (System=10, no Group)
+* **qa-contract:** unblock default seed run — schema tags property, header-aware plan parser, Swift plan to v5 shape
+* **scripts:** validate operator restore inputs
+* **sdk:** adapt Android core-wallet send to the new TransactionBuilder FFI, closes [#3970](https://github.com/dashpay/platform/issues/3970)
+* **sdk:** address Android review round — JNI boundary guards, atomic handle refs, HASH160 add-key, TLS target gating, closes [#3999](https://github.com/dashpay/platform/issues/3999) [#4002](https://github.com/dashpay/platform/issues/4002)
+* **sdk:** address parity review findings
+* **sdk:** address-sync no longer silently discards balance changes for post-snapshot addresses (Found-025) ([#3650](https://github.com/dashpay/platform/issues/3650))
+* **sdk:** authenticate missing contract history
+* **sdk:** bound blob row count before allocating in JNI decoders
+* **sdk:** consolidate Kotlin and Swift parity paths
+* **sdk:** consume-once native handles for signer/resolver; commit network switch only on SDK success
+* **sdk:** correct two JNI descriptor mismatches; scrub previewed key scalars
+* **sdk:** default aggregate query limit to -1, not 0
+* **sdk:** defer the dead getGroupInfos query (shared FFI lacks contract_id)
+* **sdk:** enforce effective freshness floors
+* **sdk:** enforce response freshness anchors
+* **sdk:** fail load callbacks on malformed fixed-size IDs
+* **sdk:** feed platform-address balances back on Android wallet load (SH-06 credit), closes [#4019](https://github.com/dashpay/platform/issues/4019) [#4019](https://github.com/dashpay/platform/issues/4019)
+* **sdk:** gate API-30 keystore call on minSdk 29 + serialize KEYS_ALIAS first-use creation
+* **sdk:** install protoc v32.0 in Kotlin CI (apt's 3.21 breaks tenderdash-proto)
+* **sdk:** make build_android.sh exFAT detection macOS-only
+* **sdk:** make empty-as-absent opt-in for optional id fields only
+* **sdk:** make the split CoreTransactionBuilder API internal so the funding/signing race can't be reopened
+* **sdk:** NativeLoader marks loaded only after load+init succeed
+* **sdk:** pass the SDK through the wallet-manager cache mutex
+* **sdk:** pin emulator DNS in Kotlin CI
+* **sdk:** provision the full identity key set at creation, not just MASTER
+* **sdk:** rehydrate asset-lock resume state on cold restart
+* **sdk:** rehydrate Core UTXOs on Android wallet load (CORE-06 balance)
+* **sdk:** reject negative money/index/id values at every public SDK seam
+* **sdk:** replace java.lang.ref.Cleaner with an API-29-safe PhantomReference backstop
+* **sdk:** restore core address pools so out-of-window UTXOs stay signable
+* **sdk:** restore empty-array absent sentinel in fixed-size ID loads
+* **sdk:** restore executable bits, rustfmt new FFI module, add testnet nightly
+* **sdk:** restore identity public keys into IdentityManager on wallet load
+* **sdk:** retryable ShieldedBroadcastFailed mapping, BIP-350 case guard, balance-service rebind
+* **sdk:** roll back the manager registration on JNI-internal createWallet failures
+* **sdk:** scan from genesis when recovering an orphan mnemonic (birth-height override)
+* **sdk:** scan historical Core funds when importing a mnemonic (birth-height override)
+* **sdk:** scope known-contract preload to the SDK network; guard two more blob decoders
+* **sdk:** scope the wallet-list load to the manager's network
+* **sdk:** serialize per-wallet Core sends so split-builder funding+signing stay atomic, closes [#3970](https://github.com/dashpay/platform/issues/3970)
+* **sdk:** share the Core-send lock per wallet id across all wrappers
+* **sdk:** split live shielded scan counter from lifetime total; destroy unpublishable wallet handle
+* **sdk:** stage load-row buffers as owned Vecs; cooperative cancellation in the faucet PoW solver
+* **sdk:** store identity keys without auth (RSA public-key encrypt), keep signing auth-gated
+* **sdk:** tolerate untyped success() results in JNI unwrappers
+* **sdk:** unregister the wallet from the native manager on createWallet rollback
+* **sdk:** unwrap signer result as DashSDKSignature, not binary
+* **swift-example-app:** compute direct-purchase price so token Buy can be submitted ([#4043](https://github.com/dashpay/platform/issues/4043))
+* **swift-example-app:** fail closed on persistence recovery ([#4177](https://github.com/dashpay/platform/issues/4177))
+* **swift-example-app:** let pre-programmed distribution recipients open token Claim ([#4048](https://github.com/dashpay/platform/issues/4048))
+* **swift-example-app:** make Platform Sync "Clear" actually clear synced data ([#3959](https://github.com/dashpay/platform/issues/3959))
+* **swift-example-app:** persist proven token balance after mint ([#4044](https://github.com/dashpay/platform/issues/4044))
+* **swift-example-app:** resume orphaned Broadcast asset-lock top-ups ([#4007](https://github.com/dashpay/platform/issues/4007))
+* **swift-example-app:** resume orphaned Broadcast identity-registration locks ([#4010](https://github.com/dashpay/platform/issues/4010))
+* **swift-sdk:** cap the faucet captcha's aggregate proof-of-work ([#4100](https://github.com/dashpay/platform/issues/4100))
+* **swift-sdk:** decode DIP-0018 platform addresses in address queries ([#4021](https://github.com/dashpay/platform/issues/4021))
+* **swift-sdk:** detect later added wallet tx to a synced spv client ([#4062](https://github.com/dashpay/platform/issues/4062))
+* **swift-sdk:** drop legacy headers pre-processing in build_ios.sh ([#3853](https://github.com/dashpay/platform/issues/3853))
+* **swift-sdk:** label provider special txs instead of Self-Transfer ([#4109](https://github.com/dashpay/platform/issues/4109))
+* **swift-sdk:** remove EstablishedContact's clone-mutating setters ([#4140](https://github.com/dashpay/platform/issues/4140))
+* **swift-sdk:** remove the tmp todo in build_ios.sh ([#4040](https://github.com/dashpay/platform/issues/4040))
+* **swift-sdk:** run withdrawal preflight async off the main actor ([#3995](https://github.com/dashpay/platform/issues/3995))
+* **swift-sdk:** set CI keychain in user domain
+* **swift-sdk:** stored default on keyType so pre-column stores can migrate ([#4129](https://github.com/dashpay/platform/issues/4129))
+* **swift-sdk:** updated the swift integration tests to use the new tx broadcast flow ([#4037](https://github.com/dashpay/platform/issues/4037))
+* **wallet-lib:** validate remote transaction proofs ([#4157](https://github.com/dashpay/platform/issues/4157))
+* **wallet-lib:** validate SPV block header batches ([#4159](https://github.com/dashpay/platform/issues/4159))
+* **wallet:** authoritative L1 broadcast outcomes with SPV peer-echo fallback, closes [dashpay/rust-dashcore#913](https://github.com/dashpay/rust-dashcore/issues/913) [dashpay/rust-dashcore#913](https://github.com/dashpay/rust-dashcore/issues/913) [#4181](https://github.com/dashpay/platform/issues/4181)
+* **wallet:** release reservations when a broadcast provably never left the process
+* **wasm-sdk:** accept zero-credit tiers in tokenSetPrice priceTiers
+* **wasm-sdk:** protocol upgrade state misreported vote count as activation height ([#3979](https://github.com/dashpay/platform/issues/3979))
+* **wasm-sdk:** tighten tokenSetPrice priceTiers and pricing-mode validation
+* **wasm-sdk:** verify identity key searches ([#4158](https://github.com/dashpay/platform/issues/4158))
+
+### Documentation
+
+* document the new-npm-package publish gotcha ([#4219](https://github.com/dashpay/platform/issues/4219))
+* document offset-version fix and release publishing ([#4213](https://github.com/dashpay/platform/issues/4213))
+* add DashPay contact request encryption guide ([#3787](https://github.com/dashpay/platform/issues/3787))
+* add missing group-read rows (TOK-18/19/20) to Android test plan ([#4118](https://github.com/dashpay/platform/issues/4118))
+* **book:** fix drifted source links in the count group-by chapters ([#3974](https://github.com/dashpay/platform/issues/3974))
+* **dapi:** note latest-version bound is a pre-filter
+* **dashpay:** add Kotlin migration spec + PARITY interim correction, closes [#3841](https://github.com/dashpay/platform/issues/3841) [#3841](https://github.com/dashpay/platform/issues/3841)
+* **kotlin-sdk:** add KotlinExampleApp QA test plan and app code
+* point README badges + NIGHTLY_STATUS at v4.1-dev (new default) ([#3983](https://github.com/dashpay/platform/issues/3983))
+* **qa:** backfill multiwallet tag on CORE-14..23 in both test plans
+* **qa:** port ADDR-07/08/09 to Android test plan + reconcile ADDR-03 numbering
+* retire SYS-07 — redundant with cross-wallet receive tests ([#4114](https://github.com/dashpay/platform/issues/4114))
+* **sdk:** port DashPay test cases (DP-01..11) to the Kotlin TEST_PLAN + fix PARITY count
+* **sdk:** sync onWalletChangesetTransaction KDoc to the corrected descriptor
+* **swift-example-app:** drop ADDR-05 from the QA test plan ([#3998](https://github.com/dashpay/platform/issues/3998))
+* **swift-example-app:** fix ADDR-05 category reference ([#4001](https://github.com/dashpay/platform/issues/4001))
+* unify CLAUDE.md and AGENTS.md into one canonical agent-instructions file ([#4180](https://github.com/dashpay/platform/issues/4180))
+
+### Code Refactoring
+
+* **dapi:** make the last metrics label unbounded-proof
+* **dpp:** pin denomination tests to explicit protocol versions
+* **platform-wallet:** consolidate address-balance reconciliation into one guarded seam ([#3987](https://github.com/dashpay/platform/issues/3987))
+* **platform-wallet:** dedup the account-address-pool snapshot loop, closes [#4041](https://github.com/dashpay/platform/issues/4041)
+* **platform-wallet:** expose the new core TransactionBuilder API ([#3970](https://github.com/dashpay/platform/issues/3970))
+* **qa-contract:** dissolve MultiWallet into tags for Kotlin test plan
+* **sdk:** dedup shared wallet code + remove dead FFI/JNI chains ([#4106](https://github.com/dashpay/platform/issues/4106))
+* **swift-sdk:** drop vestigial cross-network gate in wallet-deletion purge ([#4122](https://github.com/dashpay/platform/issues/4122))
+* **swift-sdk:** promote the testnet faucet client into the SDK package ([#4098](https://github.com/dashpay/platform/issues/4098))
+* **wallet:** drop the unused DapiBroadcaster overhaul
+* **wallet:** follow dash-spv's removal of BIP61 reject handling, closes [rust-dashcore#913](https://github.com/dashpay/rust-dashcore/issues/913)
+* **wallet:** pure-SPV broadcast path — no DAPI in the SPV wallet's send, closes [rust-dashcore#913](https://github.com/dashpay/rust-dashcore/issues/913)
+
+### Tests
+
+* **dapi:** enforce the metrics allowlist against the served protos
+* **dapi:** make transactionsFilter bloom-filter test deterministic ([#4023](https://github.com/dashpay/platform/issues/4023))
+* **drive-abci:** add token supply edge-case coverage ([#3849](https://github.com/dashpay/platform/issues/3849))
+* **drive:** cover multi-range and paginated compacted balance proofs ([#4208](https://github.com/dashpay/platform/issues/4208))
+* **drive:** cover shared-prefix aggregate index insertion ([#3961](https://github.com/dashpay/platform/issues/3961))
+* **js-evo-sdk:** cover tiered token direct-purchase pricing in setPrice
+* **js-evo-sdk:** fix unit test loader invocation
+* **js-evo-sdk:** run unit tests with native type stripping instead of ts-node
+* **kotlin:** pin the shielded-create payload codec boundary
+* **platform-wallet:** fund wallet fixture with a chain-locked tx ([#4034](https://github.com/dashpay/platform/issues/4034))
+* **platform-wallet:** pin Orchard key derivation to official ZIP-32 vectors ([#4032](https://github.com/dashpay/platform/issues/4032))
+* **rs-sdk:** expect network floor in mock sdk seed test ([#3938](https://github.com/dashpay/platform/issues/3938))
+* **sdk:** pin the identity/public-key restore round-trip
+* **suite:** fail closed on cross-network verification and polish specs
+* **suite:** wire an EvoSDK-backed platform proof verifier into client factories
+* **swift-sdk:** first swift sdk integration tests with local network ([#3712](https://github.com/dashpay/platform/issues/3712))
+* **swift-sdk:** port SpvRestart integration test off the removed ManagedCoreWallet.sendToAddresses, closes [#3970](https://github.com/dashpay/platform/issues/3970)
+* **swift-sdk:** port the remaining two SpvRestart-sibling tests off ManagedCoreWallet.sendToAddresses, closes [#3970](https://github.com/dashpay/platform/issues/3970)
+* **swift-sdk:** update address vectors to DIP-0018 after [#4021](https://github.com/dashpay/platform/issues/4021) ([#4024](https://github.com/dashpay/platform/issues/4024))
+
+### Build System
+
+* **docker:** build evo-sdk + wasm-sdk in the test-suite image ([#4215](https://github.com/dashpay/platform/issues/4215))
+* bump grovedb to v5.0.1 ([#4119](https://github.com/dashpay/platform/issues/4119))
+
+### Continuous Integration
+
+* accept platform-wallet-storage as a conventional-commit scope ([#4061](https://github.com/dashpay/platform/issues/4061))
+* cover rs-unified-sdk-jni and missing contract crates in package filters
+* don't block PRs when CodeRabbit is rate limited ([#4175](https://github.com/dashpay/platform/issues/4175))
+* fix Swift warnings-as-errors build and harden coverage cleanup retry, closes [#4198](https://github.com/dashpay/platform/issues/4198)
+* **kotlin-sdk:** dismiss the keyguard after enrolling the emulator lock screen
+* **kotlin-sdk:** enroll a CI emulator lock screen so KEYS_ALIAS RSA key generation works
+* **kotlin:** retry emulator credential unlock
+* **kotlin:** submit emulator unlock credential
+* register rs-unified-sdk-jni in the wallet fast-path closure + fix clippy lints, closes [#4003](https://github.com/dashpay/platform/issues/4003)
+* **rust:** allow cold macOS workspace builds to finish
+* **rust:** cover shielded tests in macOS timeout
+* **rust:** tolerate transient coverage cleanup races
+* scoped Rust test fast path for wallet-only PRs ([#4003](https://github.com/dashpay/platform/issues/4003))
+* **swift-sdk:** drop internal ticket reference from guard comments
+* **swift-sdk:** trust thepastaclaw forks and harden runner policy checker
+* unblock full-pipeline runs broken by untested paths, closes [#4171](https://github.com/dashpay/platform/issues/4171) [#4203](https://github.com/dashpay/platform/issues/4203)
+
+### Styles
+
+* **jni:** format transaction decoder
+* **kotlin-sdk:** balance hero on WalletDetail + polished transaction rows
+* **kotlin-sdk:** brand-cohesive theme + polish key KotlinExampleApp screens
+* **kotlin-sdk:** consistent EntityRow rows in the state-transitions catalog
+* **kotlin-sdk:** consistent list rows across Wallets/Identities/Contracts homes
+* **kotlin-sdk:** replace leading-space icon spacing with Spacer on WalletDetail
+* **platform-wallet:** cargo fmt after [#4071](https://github.com/dashpay/platform/issues/4071) watermark-freeze merge
+* **sdk:** cargo fmt signer.rs (DashPay-migration merge left it unformatted)
+* **sdk:** rustfmt the queries.rs import block after the getGroupInfos removal
+
+### Miscellaneous Chores
+
+* add project-level release skill
+* bump rust-dashcore to 647fa98 ([#4022](https://github.com/dashpay/platform/issues/4022))
+* bump rust-dashcore to afcff156, export xpub via ExtendedPubKeySigner ([#3976](https://github.com/dashpay/platform/issues/3976))
+* **kotlin-example-app:** add emulator-control skill for KotlinExampleApp ([#4174](https://github.com/dashpay/platform/issues/4174))
+* **kotlin-sdk:** apply rustfmt to rs-unified-sdk-jni, closes [#4192](https://github.com/dashpay/platform/issues/4192)
+* **kotlin-sdk:** free more runner disk before the emulator to fix "no space left" flakes
+* **kotlin-sdk:** tx-decode follow-up — blob hardening, net_from_ord hoist, prevVout docs ([#4187](https://github.com/dashpay/platform/issues/4187) review) ([#4192](https://github.com/dashpay/platform/issues/4192))
+* pin rust-dashcore to the [rust-dashcore#913](https://github.com/dashpay/rust-dashcore/issues/913) merge commit
+* remove ignored cargo build config
+* **sdk:** drop the empty companion object left by the Cleaner migration
+* **swift-sdk:** reduce swift-sdk test time in CI ([#3869](https://github.com/dashpay/platform/issues/3869))
+* **swift-sdk:** script to get spv stortage from iOS sim ([#3950](https://github.com/dashpay/platform/issues/3950))
+* update rust-dashcore to 1ee1c94 ([#4094](https://github.com/dashpay/platform/issues/4094))
+
 ## [4.1.0-rc.3](https://github.com/dashpay/platform/compare/v4.1.0-rc.2...v4.1.0-rc.3) (2026-07-27)
 
 
