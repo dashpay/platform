@@ -6,8 +6,32 @@ Drive ABCI contains the application logic for Dash Platform. Its configuration i
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.drive.abci.docker.image` | Docker image for Drive ABCI | `dashpay/drive:${version}` | `dashpay/drive:latest` |
+| `platform.drive.abci.docker.image` | Docker image for Drive ABCI | _unset_ (see below) | `dashpay/drive:latest` |
 | `platform.drive.abci.docker.build` | Build settings for Drive ABCI | Object | See below |
+
+### Image versions
+
+`platform.drive.abci.docker.image` is unset by default, which means "use the Drive ABCI image published for
+this dashmate version". Nothing pins it into your config, so upgrading dashmate moves it
+automatically and no config change is needed.
+
+`dashmate config get` shows the image that will actually run, and `dashmate config`
+marks it `(default)`:
+
+```
+$ dashmate config get platform.drive.abci.docker.image
+dashpay/drive:4-rc
+$ dashmate config get --raw platform.drive.abci.docker.image
+null
+```
+
+Setting it pins it, and dashmate will never change it again — including across upgrades:
+
+```
+$ dashmate config set platform.drive.abci.docker.image registry.example.com/drive:patched
+```
+
+Set it back to `null` to return to tracking the published image.
 
 The `docker.build` object allows for custom build settings:
 ```json

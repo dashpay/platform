@@ -1,6 +1,7 @@
 # Derived image defaults for dashmate configs
 
-Status: spec v2. Spike completed, design reviewed, not yet implemented.
+Status: implemented on `feat/dashmate-derived-image-defaults`. Sections below marked
+*(corrected in build)* record where implementing this disproved the spec.
 
 v2 replaces the v1 approach of resolving inside `Config.get()` for one hard-coded
 leaf path. That version returned different answers to `config get <path>` and
@@ -105,6 +106,18 @@ unmistakably special one.
 The effective snapshot is cached and deeply read-only, rebuilt after `set()` and
 `setOptions()`.
 
+*(corrected in build)* **Whole-config reads and single-value reads are frozen
+differently.** `getOptions()`/`options`/`toJSON()` hand back the frozen snapshot itself.
+`get()` returns a **frozen deep clone** — detached so a caller assigning it into another
+config cannot alias the two together, frozen so a write through it fails loudly.
+
+Freezing was only possible after migrations stopped reading effective values. They copy
+a default's sub-object into the config being migrated, and a frozen object landing there
+made a later migration throw (`1.0.0-dev.16` on `chainLock.quorum`). Every default-config
+read inside `getConfigFileMigrationsFactory.js` now uses `getStored()`, which is what
+those call sites wanted regardless: a migration should copy what a default *records*, not
+what it *resolves to*, or it writes a resolved image into every config that crosses it.
+
 **Raw access allowlist** — everything else must use effective reads:
 
 | call site | why raw |
@@ -180,13 +193,20 @@ converted to tracking.
 
 ### Two release gates — both must land first
 
-1. **Guard the unconditional `'4.0.0'` migration**
-   (`configs/getConfigFileMigrationsFactory.js:1549`). It re-pins both images with no
-   guard, so a pre-4.x config carrying `registry.example.com/patched-drive:stable`
-   loses it *before* any classification can inspect it. Reproduced in review. The null
-   migration inherits that damage, so this cannot be deferred.
+1. **Guard the unconditional re-pins** *(corrected in build: it is not just `'4.0.0'`)*.
+   45 platform image re-pins across the table overwrite whatever is there, so a config
+   older than the first guarded one loses a custom image long before any guard could
+   inspect it. All of them now go through a `repinStockImage(docker, repository, image)`
+   helper that moves a tag only when a release published it.
 
-2. **Fix the migration runner** (`src/config/configFile/migrateConfigFileFactory.js:24`):
+   Scoped to `drive.abci`, `dapi.api` and `dapi.rsDapi` deliberately. Core, tenderdash,
+   the gateway, sentinel and the helper publish differently-shaped tags (`dashd:23`,
+   `tenderdash:1.6.0`, `envoy:1.39.0-impr.1`) which the published-tag pattern does not
+   match, so guarding them with it would silently stop those migrations firing. Each
+   would need its own pattern — separate work.
+
+2. **Fix the migration runner** *(corrected in build)*
+   (`src/config/configFile/migrateConfigFileFactory.js`):
 
    ```js
    .reduce((migratedOptions, version) => {

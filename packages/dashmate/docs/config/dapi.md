@@ -8,7 +8,7 @@ Dashmate runs the Rust implementation of DAPI (`rs-dapi`) to expose gRPC, gRPC-W
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.dapi.rsDapi.docker.image` | Docker image for rs-dapi | `dashpay/rs-dapi:${version}` | `dashpay/rs-dapi:latest` |
+| `platform.dapi.rsDapi.docker.image` | Docker image for rs-dapi | _unset_ (see below) | `dashpay/rs-dapi:latest` |
 | `platform.dapi.rsDapi.docker.build.enabled` | Enable custom build | `false` | `true` |
 | `platform.dapi.rsDapi.docker.build.context` | Build context directory | `path.join(PACKAGE_ROOT_DIR, '..', '..')` (Dash Platform repo root) | `"/path/to/context"` |
 | `platform.dapi.rsDapi.docker.build.dockerFile` | Path to Dockerfile | `path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile')` | `"/path/to/Dockerfile"` |
@@ -40,5 +40,30 @@ Dashmate offsets the default metrics port per preset (mainnet 9091, testnet 1909
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.dapi.rsDapi.waitForStResultTimeout` | Timeout for state transition results (ms) | `120000` | `240000` |
+
+### Image versions
+
+`platform.dapi.rsDapi.docker.image` is unset by default, which means "use the rs-dapi image published for
+this dashmate version". Nothing pins it into your config, so upgrading dashmate moves it
+automatically and no config change is needed.
+
+`dashmate config get` shows the image that will actually run, and `dashmate config`
+marks it `(default)`:
+
+```
+$ dashmate config get platform.dapi.rsDapi.docker.image
+dashpay/rs-dapi:4-rc
+$ dashmate config get --raw platform.dapi.rsDapi.docker.image
+null
+```
+
+Setting it pins it, and dashmate will never change it again — including across upgrades:
+
+```
+$ dashmate config set platform.dapi.rsDapi.docker.image registry.example.com/rs-dapi:patched
+```
+
+Set it back to `null` to return to tracking the published image.
+
 
 This timeout controls how long rs-dapi waits for Drive to report the outcome of a state transition before returning a timeout error to the client.
