@@ -5,13 +5,11 @@
 //! This crate provides C-compatible FFI bindings for both Dash Core (SPV) and Platform SDKs,
 //! enabling cross-platform applications to interact with the complete Dash ecosystem through C interfaces.
 
+mod address;
 mod address_sync;
-mod callback_bridge;
 mod contested_resource;
 mod context_callbacks;
 pub mod context_provider;
-#[cfg(test)]
-mod context_provider_stubs;
 mod crypto;
 mod data_contract;
 mod document;
@@ -20,22 +18,27 @@ mod error;
 mod evonode;
 mod group;
 mod identity;
+mod mnemonic_resolver;
+mod mnemonic_resolver_core_signer;
 mod protocol_version;
+mod runtime;
 mod sdk;
 mod signer;
 mod signer_simple;
+
+pub use mnemonic_resolver::*;
+pub use mnemonic_resolver_core_signer::*;
 mod system;
 mod token;
 mod types;
-mod unified;
 mod utils;
 mod voting;
 
 #[cfg(test)]
 mod test_utils;
 
+pub use address::*;
 pub use address_sync::*;
-pub use callback_bridge::*;
 pub use contested_resource::*;
 pub use context_callbacks::*;
 pub use context_provider::*;
@@ -54,13 +57,8 @@ pub use signer_simple::*;
 pub use system::*;
 pub use token::*;
 pub use types::*;
-pub use unified::*;
 pub use utils::*;
 pub use voting::*;
-
-// Re-export all Core SDK functions and types for unified access when linked
-#[cfg(feature = "dash_spv")]
-pub use dash_spv_ffi as core_ffi;
 
 /// Initialize the FFI library.
 /// This should be called once at app startup before using any other functions.
@@ -75,12 +73,25 @@ pub extern "C" fn dash_sdk_init() {
     // Initialize any other subsystems if needed
 }
 
-/// Enable logging with the specified level
+/// Enable logging with the specified level.
+///
+/// This function initializes a `tracing` subscriber with the given log level.
+/// If the `RUST_LOG` environment variable is set, its directives take
+/// precedence (useful for ad-hoc debugging); otherwise per-crate filter
+/// directives derived from `level` are used.  The env var is only *read*,
+/// never written, so the call is safe from any thread context (including
+/// after a Tokio runtime has started).
+///
+/// The subscriber's built-in `tracing-log` bridge captures output from
+/// crates that use the `log` facade, so a separate `env_logger::init()`
+/// is not required.
+///
+/// If a global subscriber has already been set (e.g., by a previous call),
+/// subsequent calls are a no-op and the original level is retained.
+///
 /// Level values: 0 = Error, 1 = Warn, 2 = Info, 3 = Debug, 4 = Trace
 #[no_mangle]
 pub extern "C" fn dash_sdk_enable_logging(level: u8) {
-    use std::env;
-
     let log_level = match level {
         0 => "error",
         1 => "warn",
@@ -90,19 +101,35 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
         _ => "info",
     };
 
-    // Set RUST_LOG environment variable for detailed logging
-    env::set_var(
-        "RUST_LOG",
-        format!(
-            "dash_sdk={},rs_sdk={},dapi_grpc={},h2={},tower={},hyper={},tonic={}",
-            log_level, log_level, log_level, log_level, log_level, log_level, log_level
-        ),
+    // Build the filter string with per-crate directives -- identical to what
+    // was previously stored in RUST_LOG, but constructed in-process so there
+    // is no data-race with concurrent `env::var` reads on other threads.
+    // Includes `platform_wallet` + `platform_wallet_ffi` so wallet-side
+    // traces (asset-lock catch-up, wait_for_proof, etc.) reach the
+    // configured level instead of falling through to the EnvFilter
+    // default (warn).
+    let filter_string = format!(
+        "dash_sdk={log_level},rs_sdk={log_level},rs_sdk_ffi={log_level},\
+         platform_wallet={log_level},platform_wallet_ffi={log_level},\
+         dapi_grpc={log_level},h2={log_level},tower={log_level},\
+         hyper={log_level},tonic={log_level}"
     );
 
-    // Note: env_logger initialization is done in SDK creation
-    // We just set the environment variable here
+    // Honour RUST_LOG when present (read-only, no data-race); fall back
+    // to the programmatic filter string otherwise.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(filter_string));
 
-    tracing::info!(level = log_level, "logging enabled");
+    // Initialize the global tracing subscriber.  `try_init` returns Err if a
+    // subscriber is already installed; we intentionally ignore that so that
+    // calling this function more than once is harmless.
+    if tracing_subscriber::fmt::fmt()
+        .with_env_filter(filter)
+        .try_init()
+        .is_ok()
+    {
+        tracing::info!(level = log_level, "logging enabled");
+    }
 }
 
 /// Get the version of the Dash SDK FFI library
@@ -110,4 +137,51 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
 pub extern "C" fn dash_sdk_version() -> *const std::os::raw::c_char {
     static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
     VERSION.as_ptr() as *const std::os::raw::c_char
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify that `dash_sdk_enable_logging` does NOT set the RUST_LOG
+    /// environment variable.  This is the core property that makes the
+    /// function safe to call from a multi-threaded context.
+    #[test]
+    fn enable_logging_does_not_set_env_var() {
+        // If RUST_LOG is already set by the test harness or environment,
+        // we cannot reliably detect whether our function sets it, so skip.
+        if std::env::var_os("RUST_LOG").is_some() {
+            return;
+        }
+
+        // Call the function under test with each supported level.
+        for level in 0..=4 {
+            dash_sdk_enable_logging(level);
+        }
+
+        // The function must NOT have set RUST_LOG.
+        assert!(
+            std::env::var("RUST_LOG").is_err(),
+            "RUST_LOG should not be set by dash_sdk_enable_logging; \
+             env::set_var must not be used because it is a data race \
+             in multi-threaded programs"
+        );
+    }
+
+    /// Verify that the function can be called from multiple threads
+    /// concurrently without panicking (i.e., no data race).
+    #[test]
+    fn enable_logging_is_thread_safe() {
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                std::thread::spawn(move || {
+                    dash_sdk_enable_logging(i % 5);
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread should not panic");
+        }
+    }
 }

@@ -109,6 +109,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 state: 0,
                 revision: 0,
                 transform_into_action: 0,
+                failed_per_transition_action: 0,
+                fetch_documents_for_transitions_knowing_contract_and_document_type: 0,
+                fetch_document_with_id: 0,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {
@@ -203,10 +206,61 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            shield_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            unshield_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion {
+                basic_structure: None,
+                advanced_structure: None,
+                identity_signatures: None,
+                nonce: None,
+                state: 0,
+                transform_into_action: 0,
+            },
+            identity_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1, // <---- changed this
         has_address_witness_validation: 0,
         validate_address_witnesses: 0,
+        validate_shielded_proof: 0,
+        validate_minimum_shielded_fee: 0,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {
@@ -215,9 +269,21 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
             validation_of_added_keys_structure_failure: 10000000,
             validation_of_added_keys_proof_of_possession_failure: 50000000,
             address_funds_insufficient_balance: 10000000,
+            shielded_proof_verification_failure: 50000000,
         },
         event_constants: DriveAbciValidationConstants {
             maximum_vote_polls_to_process: 2,
             maximum_contenders_to_consider: 100,
+            minimum_pool_notes_for_outgoing: 250,
+            shielded_anchor_retention_blocks: 1000,
+            shielded_anchor_pruning_interval: 100,
+            shielded_proof_verification_fee: 100_000_000,
+            // Uniform with v8 (#3800): the shielded family only activates at v12, so no
+            // earlier-version block ever priced a shielded action under the old placeholder.
+            // Pinning every version to the same per-action fee lets a client computing the
+            // fee under a stale protocol version still reserve the consensus-correct amount.
+            shielded_per_action_processing_fee: 22_000_000,
+            shielded_implicit_fee_cap: 20_000_000_000,
+            shielded_identity_create_denominations: &[],
         },
     };

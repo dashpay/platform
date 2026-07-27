@@ -10,7 +10,6 @@ The KeyWallet module provides:
 - Enhanced address pool management with ManagedAccount
 - Transaction building and signing
 - Provider key generation for masternodes (BLS and EdDSA)
-- BIP38 encryption/decryption
 - Multi-wallet management with managed account collections
 
 ## Architecture
@@ -31,8 +30,7 @@ The KeyWallet module provides:
 12. **Transaction** - Transaction building, signing, and checking
 13. **ProviderKeys** - Provider key generation for masternode operations
 14. **Address** - Address validation and type detection
-15. **BIP38** - BIP38 encryption/decryption for private keys
-16. **KeyDerivation** - Low-level key derivation utilities
+15. **KeyDerivation** - Low-level key derivation utilities
 
 ### FFI Integration
 
@@ -89,25 +87,24 @@ let addresses = try managed.getExternalAddressRange(
 ### Transaction Management
 
 ```swift
-// Build a transaction
+// Build and sign a transaction in one step
 let outputs = [
     Transaction.Output(address: "XqHiz8EXYbTAtBEYs4pWTHh7ipEDQcNQeT", amount: 100000000)
 ]
 
-let txData = try Transaction.build(
+let result = try Transaction.buildAndSign(
+    manager: walletManager,
     wallet: wallet,
     accountIndex: 0,
     outputs: outputs,
-    feePerKB: 1000
+    feeRate: .normal
 )
-
-// Sign the transaction
-let signedTx = try Transaction.sign(wallet: wallet, transactionData: txData)
+print("Fee paid: \(result.fee) duffs")
 
 // Check if a transaction belongs to the wallet
 let checkResult = try Transaction.check(
     wallet: wallet,
-    transactionData: signedTx,
+    transactionData: result.transactionData,
     context: .mempool
 )
 
@@ -165,19 +162,6 @@ let address = try manager.getReceiveAddress(
     walletId: walletId1,
     network: .mainnet,
     accountIndex: 0
-)
-
-// Process transaction across all wallets
-let isRelevant = try manager.processTransaction(
-    txData,
-    network: .mainnet,
-    contextDetails: TransactionContextDetails(
-        context: .inBlock,
-        height: 1000000,
-        blockHash: blockHashData,
-        timestamp: UInt32(Date().timeIntervalSince1970)
-    ),
-    updateStateIfFound: true
 )
 ```
 
@@ -265,23 +249,6 @@ if let summary = accountCollection.getSummary() {
     print("- Identity accounts: Registration=\(summary.hasIdentityRegistration)")
     print("- Provider accounts: Voting=\(summary.hasProviderVotingKeys)")
 }
-```
-
-### BIP38 Encryption
-
-```swift
-// Encrypt a private key
-let encrypted = try BIP38.encrypt(
-    privateKey: "cVRnH5vFxVxWFWEXLBXLcNYFKgLiC7kDiXjHEcRFQ8gfFfqH7eQA",
-    passphrase: "mypassword",
-    network: .mainnet
-)
-
-// Decrypt
-let decrypted = try BIP38.decrypt(
-    encryptedKey: encrypted,
-    passphrase: "mypassword"
-)
 ```
 
 ## Account Types

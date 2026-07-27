@@ -2,7 +2,7 @@
 
 ## About plugins
 
-In order to add features and logic to the Wallet-library and be able to share independant module and request them together. 
+In order to add features and logic to the Wallet-library and be able to share independent module and request them together. 
 Wallet-lib can be passed some plugins at his instantiation. 
 Plugins are particular shaped class that can perform action on your wallet.
 

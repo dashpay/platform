@@ -54,7 +54,7 @@ describe('DataContract', () => {
     schemaDefs = { something: { type: 'string' } };
 
     dataContract = new DataContract({
-      $format_version: '0',
+      $formatVersion: '0',
       id: contractId,
       version: 1,
       ownerId,
@@ -65,7 +65,7 @@ describe('DataContract', () => {
   describe('constructor', () => {
     it('should create new DataContract', async () => {
       dataContract = new DataContract({
-        $format_version: '0',
+        $formatVersion: '0',
         id: contractId,
         version: 1,
         ownerId,
@@ -218,9 +218,9 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        $format_version: '0',
+        $formatVersion: '1',
         config: {
-          $format_version: '0',
+          $formatVersion: '0',
           canBeDeleted: false,
           documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
@@ -235,6 +235,16 @@ describe('DataContract', () => {
         ownerId: bs58.encode(ownerId),
         schemaDefs: null,
         documentSchemas,
+        createdAt: null,
+        updatedAt: null,
+        createdAtBlockHeight: null,
+        updatedAtBlockHeight: null,
+        createdAtEpoch: null,
+        updatedAtEpoch: null,
+        description: null,
+        keywords: [],
+        groups: {},
+        tokens: {},
       });
     });
 
@@ -248,9 +258,9 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        $format_version: '0',
+        $formatVersion: '1',
         config: {
-          $format_version: '0',
+          $formatVersion: '0',
           canBeDeleted: false,
           documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
@@ -265,6 +275,16 @@ describe('DataContract', () => {
         ownerId: bs58.encode(ownerId),
         documentSchemas,
         schemaDefs: $defs,
+        createdAt: null,
+        updatedAt: null,
+        createdAtBlockHeight: null,
+        updatedAtBlockHeight: null,
+        createdAtEpoch: null,
+        updatedAtEpoch: null,
+        description: null,
+        keywords: [],
+        groups: {},
+        tokens: {},
       });
     });
   });

@@ -124,7 +124,7 @@ impl Drive {
             // Full nodes are stuck and proceeded after re-sync.
             // For the mainnet chain, we enable this fix at the block when we consider the state is consistent.
             let transaction =
-                if network == Network::Dash && chain_id == "evo1" && block_height < 33000 {
+                if network == Network::Mainnet && chain_id == "evo1" && block_height < 33000 {
                     // Old behaviour on mainnet
                     None
                 } else {
@@ -138,7 +138,8 @@ impl Drive {
                 deletion_batch,
                 &mut vec![],
                 &platform_version.drive,
-            )?;
+            )
+            .inspect_err(|err| tracing::error!(?err, "vote deletion batch failed"))?;
         }
 
         Ok(())

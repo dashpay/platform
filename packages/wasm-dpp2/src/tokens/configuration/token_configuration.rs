@@ -1,11 +1,14 @@
-use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
 use crate::tokens::configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::tokens::configuration::configuration_convention::TokenConfigurationConventionWasm;
 use crate::tokens::configuration::distribution_rules::TokenDistributionRulesWasm;
 use crate::tokens::configuration::keeps_history_rules::TokenKeepsHistoryRulesWasm;
 use crate::tokens::configuration::marketplace_rules::TokenMarketplaceRulesWasm;
+use crate::utils::{try_from_options, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
     TokenConfigurationV0Getters, TokenConfigurationV0Setters,
@@ -14,8 +17,57 @@ use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigur
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
 use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
+use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TokenConfigurationOptions {
+    base_supply: TokenAmount,
+    #[serde(default)]
+    max_supply: Option<TokenAmount>,
+    #[serde(default)]
+    is_started_as_paused: bool,
+    #[serde(default)]
+    is_allowed_transfer_to_frozen_balance: bool,
+    #[serde(default)]
+    main_control_group: Option<GroupContractPosition>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+export interface TokenConfigurationOptions {
+    conventions: TokenConfigurationConvention;
+    conventionsChangeRules: ChangeControlRules;
+    baseSupply: bigint;
+    maxSupply?: bigint;
+    keepsHistory: TokenKeepsHistoryRules;
+    isStartedAsPaused?: boolean;
+    isAllowedTransferToFrozenBalance?: boolean;
+    maxSupplyChangeRules: ChangeControlRules;
+    distributionRules: TokenDistributionRules;
+    marketplaceRules: TokenMarketplaceRules;
+    manualMintingRules: ChangeControlRules;
+    manualBurningRules: ChangeControlRules;
+    freezeRules: ChangeControlRules;
+    unfreezeRules: ChangeControlRules;
+    destroyFrozenFundsRules: ChangeControlRules;
+    emergencyActionRules: ChangeControlRules;
+    mainControlGroup?: number;
+    mainControlGroupCanBeModified: AuthorizedActionTakers;
+    description?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenConfigurationOptions")]
+    pub type TokenConfigurationOptionsJs;
+}
+
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "TokenConfiguration")]
 pub struct TokenConfigurationWasm(TokenConfiguration);
@@ -32,158 +84,162 @@ impl From<TokenConfigurationWasm> for TokenConfiguration {
     }
 }
 
+impl_try_from_js_value!(TokenConfigurationWasm, "TokenConfiguration");
+
 #[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenConfiguration".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenConfiguration".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        conventions: &TokenConfigurationConventionWasm,
-        conventions_change_rules: &ChangeControlRulesWasm,
-        base_supply: TokenAmount,
-        max_supply: Option<TokenAmount>,
-        keeps_history: &TokenKeepsHistoryRulesWasm,
-        start_as_paused: bool,
-        allow_transfer_to_frozen_balance: bool,
-        max_supply_change_rules: &ChangeControlRulesWasm,
-        distribution_rules: &TokenDistributionRulesWasm,
-        marketplace_rules: &TokenMarketplaceRulesWasm,
-        manual_minting_rules: &ChangeControlRulesWasm,
-        manual_burning_rules: &ChangeControlRulesWasm,
-        freeze_rules: &ChangeControlRulesWasm,
-        unfreeze_rules: &ChangeControlRulesWasm,
-        destroy_frozen_funds_rules: &ChangeControlRulesWasm,
-        emergency_action_rules: &ChangeControlRulesWasm,
-        main_control_group: Option<GroupContractPosition>,
-        main_control_group_can_be_modified: &AuthorizedActionTakersWasm,
-        description: Option<String>,
-    ) -> TokenConfigurationWasm {
-        TokenConfigurationWasm(TokenConfiguration::V0(TokenConfigurationV0 {
-            conventions: conventions.clone().into(),
-            conventions_change_rules: conventions_change_rules.clone().into(),
-            base_supply,
-            max_supply,
-            keeps_history: keeps_history.clone().into(),
-            start_as_paused,
-            allow_transfer_to_frozen_balance,
-            max_supply_change_rules: max_supply_change_rules.clone().into(),
-            distribution_rules: distribution_rules.clone().into(),
-            marketplace_rules: marketplace_rules.clone().into(),
-            manual_minting_rules: manual_minting_rules.clone().into(),
-            manual_burning_rules: manual_burning_rules.clone().into(),
-            freeze_rules: freeze_rules.clone().into(),
-            unfreeze_rules: unfreeze_rules.clone().into(),
-            destroy_frozen_funds_rules: destroy_frozen_funds_rules.clone().into(),
-            emergency_action_rules: emergency_action_rules.clone().into(),
-            main_control_group,
-            main_control_group_can_be_modified: main_control_group_can_be_modified.clone().into(),
-            description,
-        }))
+    pub fn constructor(
+        options: TokenConfigurationOptionsJs,
+    ) -> WasmDppResult<TokenConfigurationWasm> {
+        // Extract complex types first (borrows &options)
+        let conventions: TokenConfigurationConventionWasm =
+            try_from_options(&options, "conventions")?;
+        let conventions_change_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "conventionsChangeRules")?;
+        let keeps_history: TokenKeepsHistoryRulesWasm = try_from_options(&options, "keepsHistory")?;
+        let max_supply_change_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "maxSupplyChangeRules")?;
+        let distribution_rules: TokenDistributionRulesWasm =
+            try_from_options(&options, "distributionRules")?;
+        let marketplace_rules: TokenMarketplaceRulesWasm =
+            try_from_options(&options, "marketplaceRules")?;
+        let manual_minting_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "manualMintingRules")?;
+        let manual_burning_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "manualBurningRules")?;
+        let freeze_rules: ChangeControlRulesWasm = try_from_options(&options, "freezeRules")?;
+        let unfreeze_rules: ChangeControlRulesWasm = try_from_options(&options, "unfreezeRules")?;
+        let destroy_frozen_funds_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "destroyFrozenFundsRules")?;
+        let emergency_action_rules: ChangeControlRulesWasm =
+            try_from_options(&options, "emergencyActionRules")?;
+        let main_control_group_can_be_modified: AuthorizedActionTakersWasm =
+            try_from_options(&options, "mainControlGroupCanBeModified")?;
+
+        // Deserialize primitive fields via serde last (consumes options)
+        let opts: TokenConfigurationOptions = serde_wasm_bindgen::from_value(options.into())
+            .map_err(|e| WasmDppError::invalid_argument(e.to_string()))?;
+
+        Ok(TokenConfigurationWasm(TokenConfiguration::V0(
+            TokenConfigurationV0 {
+                conventions: conventions.into(),
+                conventions_change_rules: conventions_change_rules.into(),
+                base_supply: opts.base_supply,
+                max_supply: opts.max_supply,
+                keeps_history: keeps_history.into(),
+                start_as_paused: opts.is_started_as_paused,
+                allow_transfer_to_frozen_balance: opts.is_allowed_transfer_to_frozen_balance,
+                max_supply_change_rules: max_supply_change_rules.into(),
+                distribution_rules: distribution_rules.into(),
+                marketplace_rules: marketplace_rules.into(),
+                manual_minting_rules: manual_minting_rules.into(),
+                manual_burning_rules: manual_burning_rules.into(),
+                freeze_rules: freeze_rules.into(),
+                unfreeze_rules: unfreeze_rules.into(),
+                destroy_frozen_funds_rules: destroy_frozen_funds_rules.into(),
+                emergency_action_rules: emergency_action_rules.into(),
+                main_control_group: opts.main_control_group,
+                main_control_group_can_be_modified: main_control_group_can_be_modified.into(),
+                description: opts.description,
+            },
+        )))
     }
 
     #[wasm_bindgen(getter = "conventions")]
-    pub fn get_conventions(&self) -> TokenConfigurationConventionWasm {
+    pub fn conventions(&self) -> TokenConfigurationConventionWasm {
         self.0.conventions().clone().into()
     }
 
     #[wasm_bindgen(getter = "conventionsChangeRules")]
-    pub fn get_conventions_change_rules(&self) -> ChangeControlRulesWasm {
+    pub fn conventions_change_rules(&self) -> ChangeControlRulesWasm {
         self.0.conventions_change_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "baseSupply")]
-    pub fn get_base_supply(&self) -> TokenAmount {
+    pub fn base_supply(&self) -> TokenAmount {
         self.0.base_supply()
     }
 
     #[wasm_bindgen(getter = "keepsHistory")]
-    pub fn get_keeps_history(&self) -> TokenKeepsHistoryRulesWasm {
+    pub fn keeps_history(&self) -> TokenKeepsHistoryRulesWasm {
         (*self.0.keeps_history()).into()
     }
 
-    #[wasm_bindgen(getter = "startAsPaused")]
-    pub fn get_start_as_paused(&self) -> bool {
+    #[wasm_bindgen(getter = "isStartedAsPaused")]
+    pub fn is_started_as_paused(&self) -> bool {
         self.0.start_as_paused()
     }
 
     #[wasm_bindgen(getter = "isAllowedTransferToFrozenBalance")]
-    pub fn get_is_allowed_transfer_to_frozen_balance(&self) -> bool {
+    pub fn is_allowed_transfer_to_frozen_balance(&self) -> bool {
         self.0.is_allowed_transfer_to_frozen_balance()
     }
 
     #[wasm_bindgen(getter = "maxSupply")]
-    pub fn get_max_supply(&self) -> Option<TokenAmount> {
+    pub fn max_supply(&self) -> Option<TokenAmount> {
         self.0.max_supply()
     }
 
     #[wasm_bindgen(getter = "maxSupplyChangeRules")]
-    pub fn get_max_supply_change_rules(&self) -> ChangeControlRulesWasm {
+    pub fn max_supply_change_rules(&self) -> ChangeControlRulesWasm {
         self.0.max_supply_change_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "distributionRules")]
-    pub fn get_distribution_rules(&self) -> TokenDistributionRulesWasm {
+    pub fn distribution_rules(&self) -> TokenDistributionRulesWasm {
         self.0.distribution_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "marketplaceRules")]
-    pub fn get_marketplace_rules(&self) -> TokenMarketplaceRulesWasm {
+    pub fn marketplace_rules(&self) -> TokenMarketplaceRulesWasm {
         match self.0.clone() {
             TokenConfiguration::V0(v0) => v0.marketplace_rules.clone().into(),
         }
     }
 
     #[wasm_bindgen(getter = "manualMintingRules")]
-    pub fn get_manual_minting_rules(&self) -> ChangeControlRulesWasm {
+    pub fn manual_minting_rules(&self) -> ChangeControlRulesWasm {
         self.0.manual_minting_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "manualBurningRules")]
-    pub fn get_manual_burning_rules(&self) -> ChangeControlRulesWasm {
+    pub fn manual_burning_rules(&self) -> ChangeControlRulesWasm {
         self.0.manual_burning_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "freezeRules")]
-    pub fn get_freeze_rules(&self) -> ChangeControlRulesWasm {
+    pub fn freeze_rules(&self) -> ChangeControlRulesWasm {
         self.0.freeze_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "unfreezeRules")]
-    pub fn get_unfreeze_rules(&self) -> ChangeControlRulesWasm {
+    pub fn unfreeze_rules(&self) -> ChangeControlRulesWasm {
         self.0.unfreeze_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "destroyFrozenFundsRules")]
-    pub fn get_destroy_frozen_funds_rules(&self) -> ChangeControlRulesWasm {
+    pub fn destroy_frozen_funds_rules(&self) -> ChangeControlRulesWasm {
         self.0.destroy_frozen_funds_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "emergencyActionRules")]
-    pub fn get_emergency_action_rules(&self) -> ChangeControlRulesWasm {
+    pub fn emergency_action_rules(&self) -> ChangeControlRulesWasm {
         self.0.emergency_action_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "mainControlGroup")]
-    pub fn get_main_control_group(&self) -> Option<GroupContractPosition> {
+    pub fn main_control_group(&self) -> Option<GroupContractPosition> {
         self.0.main_control_group()
     }
 
     #[wasm_bindgen(getter = "mainControlGroupCanBeModified")]
-    pub fn get_main_control_group_can_be_modified(&self) -> AuthorizedActionTakersWasm {
+    pub fn main_control_group_can_be_modified(&self) -> AuthorizedActionTakersWasm {
         (*self.0.main_control_group_can_be_modified()).into()
     }
 
     #[wasm_bindgen(getter = "description")]
-    pub fn get_description(&self) -> Option<String> {
+    pub fn description(&self) -> Option<String> {
         self.0.description().clone()
     }
 
@@ -198,8 +254,10 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(setter = "baseSupply")]
-    pub fn set_base_supply(&mut self, base_supply: TokenAmount) {
-        self.0.set_base_supply(base_supply)
+    pub fn set_base_supply(&mut self, base_supply: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0
+            .set_base_supply(try_to_u64(base_supply, "baseSupply")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "keepsHistory")]
@@ -207,9 +265,9 @@ impl TokenConfigurationWasm {
         *self.0.keeps_history_mut() = keeps_history.clone().into();
     }
 
-    #[wasm_bindgen(setter = "startAsPaused")]
-    pub fn set_start_as_paused(&mut self, start_as_paused: bool) {
-        self.0.set_start_as_paused(start_as_paused)
+    #[wasm_bindgen(setter = "isStartedAsPaused")]
+    pub fn set_is_started_as_paused(&mut self, is_started_as_paused: bool) {
+        self.0.set_start_as_paused(is_started_as_paused)
     }
 
     #[wasm_bindgen(setter = "isAllowedTransferToFrozenBalance")]
@@ -222,8 +280,14 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(setter = "maxSupply")]
-    pub fn set_max_supply(&mut self, max_supply: Option<TokenAmount>) {
-        self.0.set_max_supply(max_supply)
+    pub fn set_max_supply(&mut self, max_supply: JsValue) -> WasmDppResult<()> {
+        let max_supply = if max_supply.is_undefined() || max_supply.is_null() {
+            None
+        } else {
+            Some(try_to_u64(&max_supply, "maxSupply")?)
+        };
+        self.0.set_max_supply(max_supply);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "maxSupplyChangeRules")]
@@ -298,11 +362,10 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(js_name = "calculateTokenId")]
     pub fn calculate_token_id(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
-        token_pos: TokenContractPosition,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenPos")] token_pos: TokenContractPosition,
     ) -> WasmDppResult<IdentifierWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(IdentifierWasm::from(calculate_token_id(
             contract_id.as_bytes(),
@@ -310,3 +373,5 @@ impl TokenConfigurationWasm {
         )))
     }
 }
+
+impl_wasm_type_info!(TokenConfigurationWasm, TokenConfiguration);

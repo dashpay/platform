@@ -6,8 +6,9 @@ struct DocumentWithPriceView: View {
     let contractId: String
     let documentType: String
     let currentIdentityId: String? // Pass from parent to check ownership
-    
-    @EnvironmentObject var appState: UnifiedAppState
+
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var transitionState: TransitionState
     @State private var isLoading = false
     @State private var documentPrice: UInt64?
     @State private var documentExists = false
@@ -15,7 +16,7 @@ struct DocumentWithPriceView: View {
     @State private var fetchedDocument: [String: Any]?
     @State private var debounceTimer: Timer?
     @State private var isOwnedByCurrentIdentity = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Document ID Input
@@ -25,13 +26,13 @@ struct DocumentWithPriceView: View {
                     .modifier(DocumentIdChangeHandler(documentId: $documentId) {
                         handleDocumentIdChange($0)
                     })
-                
+
                 if isLoading {
                     ProgressView()
                         .scaleEffect(0.8)
                 }
             }
-            
+
             // Status/Price Display
             if let error = errorMessage {
                 HStack {
@@ -54,7 +55,7 @@ struct DocumentWithPriceView: View {
                             .font(.caption)
                             .foregroundColor(.green)
                     }
-                    
+
                     if isOwnedByCurrentIdentity {
                         // Show ownership message
                         HStack {
@@ -92,7 +93,7 @@ struct DocumentWithPriceView: View {
                         .background(Color.orange.opacity(0.1))
                         .cornerRadius(8)
                     }
-                    
+
                     // Show document owner if available
                     if let doc = fetchedDocument,
                        let ownerId = (doc["$ownerId"] ?? doc["ownerId"]) as? String {
@@ -108,7 +109,7 @@ struct DocumentWithPriceView: View {
                     }
                 }
             }
-            
+
             // Help text
             if !documentExists && errorMessage == nil && !documentId.isEmpty && !isLoading {
                 Text("Enter a valid document ID to see its price")
@@ -116,24 +117,39 @@ struct DocumentWithPriceView: View {
                     .foregroundColor(.secondary)
             }
         }
+        .onAppear {
+            // `onChange(of: documentId)` does NOT fire when the id is
+            // established as the binding mounts — e.g. PurchaseDocumentView
+            // seeds `documentIdField` in its own `onAppear` and disables this
+            // view, so relying on onChange alone the price probe would never
+            // run and Purchase would stay gated off forever. Kick the fetch
+            // here so a pre-seeded id loads its price without a user edit.
+            // `.disabled(true)` only blocks hit-testing, not lifecycle events,
+            // so this still fires in the Purchase flow. When the field starts
+            // empty (the editable transition flow) this is a no-op and the
+            // existing onChange path continues to handle typing.
+            if !documentId.isEmpty {
+                handleDocumentIdChange(documentId)
+            }
+        }
     }
-    
+
     private func handleDocumentIdChange(_ newValue: String) {
         // Cancel previous timer
         debounceTimer?.invalidate()
-        
+
         // Reset state
         documentExists = false
         documentPrice = nil
         fetchedDocument = nil
         errorMessage = nil
         isOwnedByCurrentIdentity = false
-        
+
         // Also reset the app state
-        appState.transitionState.canPurchaseDocument = false
-        appState.transitionState.documentPrice = nil
-        appState.transitionState.documentPurchaseError = nil
-        
+        transitionState.canPurchaseDocument = false
+        transitionState.documentPrice = nil
+        transitionState.documentPurchaseError = nil
+
         // Only proceed if we have all required fields
         guard !newValue.isEmpty,
               !contractId.isEmpty,
@@ -143,16 +159,16 @@ struct DocumentWithPriceView: View {
             }
             return
         }
-        
+
         // Validate document ID format (should be base58 or hex)
         guard isValidDocumentId(newValue) else {
             errorMessage = "Invalid document ID format"
             // Make sure to reset purchase state for invalid IDs
-            appState.transitionState.canPurchaseDocument = false
-            appState.transitionState.documentPrice = nil
+            transitionState.canPurchaseDocument = false
+            transitionState.documentPrice = nil
             return
         }
-        
+
         // Set up debounce timer to fetch after user stops typing
         debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
             Task {
@@ -160,46 +176,46 @@ struct DocumentWithPriceView: View {
             }
         }
     }
-    
+
     private func isValidDocumentId(_ id: String) -> Bool {
         // Check if it's a valid base58 string (32 bytes when decoded)
         if let data = Data.identifier(fromBase58: id) {
             return data.count == 32
         }
-        
-        // Check if it's a valid hex string (64 characters)
-        if id.count == 64 {
-            return id.allSatisfy { $0.isHexDigit }
+
+        // Check if it's a valid hex string (64 characters = 32 bytes)
+        if AddressValidator.isHexIdentityId(id) {
+            return true
         }
-        
+
         return false
     }
-    
+
     @MainActor
     private func fetchDocument() async {
         isLoading = true
         defer { isLoading = false }
-        
+
         guard let sdk = appState.sdk else {
             errorMessage = "SDK not initialized"
             return
         }
-        
+
         do {
             // Normalize document ID to base58
             let normalizedId = normalizeDocumentId(documentId)
-            
+
             // Fetch the document
             let document = try await sdk.documentGet(
                 dataContractId: contractId,
                 documentType: documentType,
                 documentId: normalizedId
             )
-            
+
             // Document exists
             documentExists = true
             fetchedDocument = document
-            
+
             // Debug: Log the entire document to see what fields are available
             print("DEBUG: Document fetched successfully")
             print("DEBUG: Document keys: \(document.keys)")
@@ -213,7 +229,7 @@ struct DocumentWithPriceView: View {
                     }
                 }
             }
-            
+
             // Check ownership (try both with and without $ prefix)
             let ownerId = (document["$ownerId"] ?? document["ownerId"]) as? String
             if let ownerId = ownerId,
@@ -223,24 +239,24 @@ struct DocumentWithPriceView: View {
             } else {
                 isOwnedByCurrentIdentity = false
             }
-            
+
             // Check for price field - it might be in a 'data' subdictionary
             var priceValue: Any? = nil
-            
+
             // First try to get price from data field
             if let data = document["data"] as? [String: Any] {
                 priceValue = data["$price"]
                 print("DEBUG: Found data field, checking for $price: \(priceValue != nil)")
             }
-            
+
             // Fallback to checking root level (in case SDK structure varies)
             if priceValue == nil {
                 priceValue = document["$price"]
             }
-            
+
             if let priceValue = priceValue {
                 print("DEBUG: Found price value: \(priceValue) (type: \(type(of: priceValue)))")
-                
+
                 if let priceNum = priceValue as? NSNumber {
                     documentPrice = priceNum.uint64Value
                     print("DEBUG: Price as NSNumber: \(documentPrice!)")
@@ -262,31 +278,31 @@ struct DocumentWithPriceView: View {
                 print("DEBUG: No price field found in document")
                 documentPrice = nil
             }
-            
+
             // Update transition state on main thread
             await MainActor.run {
-                appState.transitionState.documentPrice = documentPrice
-                
+                transitionState.documentPrice = documentPrice
+
                 // Determine if document can be purchased
                 if isOwnedByCurrentIdentity {
-                    appState.transitionState.canPurchaseDocument = false
-                    appState.transitionState.documentPurchaseError = "You already own this document"
+                    transitionState.canPurchaseDocument = false
+                    transitionState.documentPurchaseError = "You already own this document"
                     print("DEBUG: Cannot purchase - already owned")
                 } else if documentPrice == nil || documentPrice == 0 {
-                    appState.transitionState.canPurchaseDocument = false
-                    appState.transitionState.documentPurchaseError = "This document is not for sale"
+                    transitionState.canPurchaseDocument = false
+                    transitionState.documentPurchaseError = "This document is not for sale"
                     print("DEBUG: Cannot purchase - no price or price is 0. Price: \(String(describing: documentPrice))")
                 } else {
-                    appState.transitionState.canPurchaseDocument = true
-                    appState.transitionState.documentPurchaseError = nil
-                    print("DEBUG: Can purchase! Price: \(documentPrice!), canPurchase: \(appState.transitionState.canPurchaseDocument)")
-                    
+                    transitionState.canPurchaseDocument = true
+                    transitionState.documentPurchaseError = nil
+                    print("DEBUG: Can purchase! Price: \(documentPrice!), canPurchase: \(transitionState.canPurchaseDocument)")
+
                     // Force the TransitionDetailView to update its button state
                     // by triggering an objectWillChange on the main app state
                     appState.objectWillChange.send()
                 }
             }
-            
+
         } catch {
             // Check if it's a not found error
             if error.localizedDescription.contains("not found") ||
@@ -297,31 +313,31 @@ struct DocumentWithPriceView: View {
             }
             documentExists = false
             documentPrice = nil
-            
+
             // Clear transition state when document fetch fails
-            appState.transitionState.documentPrice = nil
-            appState.transitionState.canPurchaseDocument = false
-            appState.transitionState.documentPurchaseError = nil
+            transitionState.documentPrice = nil
+            transitionState.canPurchaseDocument = false
+            transitionState.documentPurchaseError = nil
         }
     }
-    
+
     private func normalizeDocumentId(_ id: String) -> String {
         // If it's already base58, return as is
         if Data.identifier(fromBase58: id) != nil {
             return id
         }
-        
+
         // If it's hex, convert to base58
         if let data = Data(hexString: id), data.count == 32 {
             return data.toBase58String()
         }
-        
+
         return id
     }
-    
+
     private func formatPrice(_ credits: UInt64) -> String {
         let dashAmount = Double(credits) / 100_000_000_000 // 1 DASH = 100B credits
-        
+
         if dashAmount < 0.00001 {
             return "\(credits) credits"
         } else {

@@ -9,7 +9,6 @@ use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
-use std::str::FromStr;
 
 /// Configuration for Dash Core RPC client used in consensus logic
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -288,11 +287,14 @@ where
 {
     let network_name = String::deserialize(deserializer)?;
 
-    match network_name.as_str() {
-        "mainnet" => Ok(Network::Dash),
-        "local" => Ok(Network::Regtest),
-        _ => Network::from_str(network_name.as_str())
-            .map_err(|e| serde::de::Error::custom(format!("can't parse network name: {e}"))),
+    match network_name.to_lowercase().as_str() {
+        "dash" | "mainnet" | "main" => Ok(Network::Mainnet),
+        "local" | "regtest" => Ok(Network::Regtest),
+        "testnet" | "test" => Ok(Network::Testnet),
+        "devnet" | "dev" => Ok(Network::Devnet),
+        _ => Err(serde::de::Error::custom(format!(
+            "can't parse network name: unknown network '{network_name}'"
+        ))),
     }
 }
 
@@ -631,7 +633,7 @@ impl PlatformConfig {
     }
 
     fn default_network() -> Network {
-        Network::Dash
+        Network::Mainnet
     }
 
     fn default_tokio_console_address() -> String {
@@ -688,11 +690,10 @@ impl PlatformConfig {
     /// The default depending on the network
     pub fn default_for_network(network: Network) -> Self {
         match network {
-            Network::Dash => Self::default_mainnet(),
+            Network::Mainnet => Self::default_mainnet(),
             Network::Testnet => Self::default_testnet(),
             Network::Devnet => Self::default_devnet(),
             Network::Regtest => Self::default_local(),
-            _ => Self::default_testnet(),
         }
     }
 
@@ -825,7 +826,7 @@ impl PlatformConfig {
     /// The default mainnet config
     pub fn default_mainnet() -> Self {
         Self {
-            network: Network::Dash,
+            network: Network::Mainnet,
             validator_set: ValidatorSetConfig {
                 quorum_type: QuorumType::Llmq100_67,
                 quorum_size: 100,
@@ -915,6 +916,10 @@ impl Default for PlatformTestConfig {
 #[cfg(test)]
 mod tests {
     use super::FromEnv;
+    use crate::config::{
+        ChainLockConfig, ConsensusCoreRpcConfig, CoreConfig, InstantLockConfig, PlatformConfig,
+        QuorumLikeConfig, ValidatorSetConfig,
+    };
     use crate::logging::LogDestination;
     use dpp::dashcore::Network;
     use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
@@ -966,5 +971,266 @@ mod tests {
         assert_eq!(config.validator_set.quorum_type, QuorumType::Llmq25_67);
         assert_eq!(config.network, config.drive.network);
         assert_eq!(config.network, Network::Testnet);
+    }
+
+    // --- `from_str_to_network_with_aliases`: valid aliases and error path ---
+
+    /// Ensures every network alias accepted by the deserializer maps to the
+    /// expected `Network`, case-insensitively. This exercises each match arm in
+    /// `from_str_to_network_with_aliases`, which is otherwise only called at
+    /// most once per integration-test setup.
+    #[test]
+    fn network_aliases_deserialize_all_variants_case_insensitively() {
+        let cases = &[
+            ("\"dash\"", Network::Mainnet),
+            ("\"DASH\"", Network::Mainnet),
+            ("\"MainNet\"", Network::Mainnet),
+            ("\"main\"", Network::Mainnet),
+            ("\"local\"", Network::Regtest),
+            ("\"regtest\"", Network::Regtest),
+            ("\"testnet\"", Network::Testnet),
+            ("\"TEST\"", Network::Testnet),
+            ("\"devnet\"", Network::Devnet),
+            ("\"Dev\"", Network::Devnet),
+        ];
+
+        for (input, expected) in cases {
+            let mut de = serde_json::Deserializer::from_str(input);
+            let network = super::from_str_to_network_with_aliases(&mut de)
+                .expect("alias should parse successfully");
+            assert_eq!(
+                &network, expected,
+                "input {} should map to {:?}",
+                input, expected
+            );
+        }
+    }
+
+    /// Verifies that an unknown network alias produces a clear deserializer error.
+    /// This covers the final arm of `from_str_to_network_with_aliases`.
+    #[test]
+    fn network_alias_unknown_value_returns_custom_error() {
+        let mut de = serde_json::Deserializer::from_str("\"nonsense_network\"");
+        let err = super::from_str_to_network_with_aliases(&mut de)
+            .expect_err("unknown network should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown network") && msg.contains("nonsense_network"),
+            "error message should name the offending value, got: {}",
+            msg
+        );
+    }
+
+    // --- `deserialize_quorum_type`: numeric/string/UNKNOWN error path ---
+
+    /// Covers the string-name branch of `deserialize_quorum_type`.
+    #[test]
+    fn deserialize_quorum_type_accepts_string_names() {
+        // All numeric fields use `from_str_or_number`, which requires a JSON
+        // string (even for numbers).
+        let json = r#"{
+            "validator_set_quorum_type": "llmq_25_67",
+            "validator_set_quorum_size": "25",
+            "validator_set_quorum_window": "24",
+            "validator_set_quorum_active_signers": "24",
+            "validator_set_quorum_rotation": "false"
+        }"#;
+        let cfg: ValidatorSetConfig =
+            serde_json::from_str(json).expect("quorum type string should deserialize");
+        assert_eq!(cfg.quorum_type, QuorumType::Llmq25_67);
+    }
+
+    /// Covers the numeric (u32) branch of `deserialize_quorum_type` (a number
+    /// serialized as a JSON string still goes through the `parse::<u32>()` path).
+    #[test]
+    fn deserialize_quorum_type_accepts_numeric_string() {
+        let json = r#"{
+            "validator_set_quorum_type": "6",
+            "validator_set_quorum_size": "25",
+            "validator_set_quorum_window": "24",
+            "validator_set_quorum_active_signers": "24",
+            "validator_set_quorum_rotation": "false"
+        }"#;
+        let cfg: ValidatorSetConfig =
+            serde_json::from_str(json).expect("numeric quorum type should deserialize");
+        // QuorumType::from(6) should be a known variant; we only assert it is not UNKNOWN.
+        assert_ne!(cfg.quorum_type, QuorumType::UNKNOWN);
+    }
+
+    /// Covers the `UNKNOWN` rejection branch of `deserialize_quorum_type`.
+    #[test]
+    fn deserialize_quorum_type_rejects_unknown_names() {
+        let json = r#"{
+            "validator_set_quorum_type": "this_is_not_a_quorum",
+            "validator_set_quorum_size": "25",
+            "validator_set_quorum_window": "24",
+            "validator_set_quorum_active_signers": "24",
+            "validator_set_quorum_rotation": "false"
+        }"#;
+        let err = serde_json::from_str::<ValidatorSetConfig>(json)
+            .expect_err("unknown quorum type name should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unsupported") && msg.contains("QUORUM_TYPE"),
+            "expected unsupported QUORUM_TYPE error, got: {}",
+            msg
+        );
+    }
+
+    // --- Core RPC URL composition and defaults ---
+
+    /// Exercises `ConsensusCoreRpcConfig::url` formatting.
+    #[test]
+    fn consensus_core_rpc_url_composes_host_and_port() {
+        let cfg = ConsensusCoreRpcConfig {
+            host: "node.example".to_string(),
+            port: 9998,
+            username: "u".to_string(),
+            password: "p".to_string(),
+        };
+        assert_eq!(cfg.url(), "node.example:9998");
+    }
+
+    /// Exercises `CheckTxCoreRpcConfig::url` formatting.
+    #[test]
+    fn check_tx_core_rpc_url_composes_host_and_port() {
+        let cfg = super::CheckTxCoreRpcConfig {
+            host: "127.0.0.1".to_string(),
+            port: 1,
+            username: String::new(),
+            password: String::new(),
+        };
+        assert_eq!(cfg.url(), "127.0.0.1:1");
+    }
+
+    /// `CoreConfig::default()` should be empty strings and zero port (covers
+    /// the auto-derived `Default` with both flattened members).
+    #[test]
+    fn core_config_default_is_empty() {
+        let cfg = CoreConfig::default();
+        assert_eq!(cfg.consensus_rpc.host, "");
+        assert_eq!(cfg.consensus_rpc.port, 0);
+        assert_eq!(cfg.check_tx_rpc.host, "");
+        assert_eq!(cfg.check_tx_rpc.port, 0);
+    }
+
+    // --- `default_for_network` dispatch, including the catch-all ---
+
+    /// Exercises the `Network::Mainnet`, `Network::Testnet`, `Network::Devnet`,
+    /// `Network::Regtest` arms of `default_for_network`.
+    #[test]
+    fn default_for_network_dispatches_all_known_networks() {
+        let mainnet = PlatformConfig::default_for_network(Network::Mainnet);
+        assert_eq!(mainnet.network, Network::Mainnet);
+        assert_eq!(mainnet.validator_set.quorum_type, QuorumType::Llmq100_67);
+
+        let testnet = PlatformConfig::default_for_network(Network::Testnet);
+        assert_eq!(testnet.network, Network::Testnet);
+        assert_eq!(testnet.validator_set.quorum_type, QuorumType::Llmq25_67);
+
+        let devnet = PlatformConfig::default_for_network(Network::Devnet);
+        // default_devnet currently sets network to Regtest (see impl).
+        assert_eq!(devnet.network, Network::Regtest);
+
+        let regtest = PlatformConfig::default_for_network(Network::Regtest);
+        assert_eq!(regtest.network, Network::Regtest);
+    }
+
+    // --- `ValidatorSetConfig::default_100_67` and QuorumLikeConfig getters ---
+
+    /// Exercises `default_100_67` + every getter in `QuorumLikeConfig` for
+    /// `ValidatorSetConfig` - these getters are pure accessors that would
+    /// otherwise be uncovered outside the actual consensus path.
+    #[test]
+    fn validator_set_default_100_67_accessors() {
+        let cfg = ValidatorSetConfig::default_100_67();
+        assert_eq!(cfg.quorum_type(), QuorumType::Llmq100_67);
+        assert_eq!(cfg.quorum_size(), 100);
+        assert_eq!(cfg.quorum_window(), 24);
+        assert_eq!(cfg.quorum_active_signers(), 24);
+        assert!(!cfg.quorum_rotation());
+    }
+
+    /// Same but for `ChainLockConfig::default_100_67`.
+    #[test]
+    fn chain_lock_default_100_67_accessors() {
+        let cfg = ChainLockConfig::default_100_67();
+        assert_eq!(cfg.quorum_type(), QuorumType::Llmq100_67);
+        assert_eq!(cfg.quorum_size(), 100);
+        assert_eq!(cfg.quorum_window(), 24);
+        assert_eq!(cfg.quorum_active_signers(), 24);
+        assert!(!cfg.quorum_rotation());
+    }
+
+    /// `ChainLockConfig::default()` is Mainnet LLMQ400_60 - cover all getters.
+    #[test]
+    fn chain_lock_default_is_llmq_400_60() {
+        let cfg = ChainLockConfig::default();
+        assert_eq!(cfg.quorum_type(), QuorumType::Llmq400_60);
+        assert_eq!(cfg.quorum_size(), 400);
+        assert_eq!(cfg.quorum_window(), 24 * 12);
+        assert_eq!(cfg.quorum_active_signers(), 4);
+        assert!(!cfg.quorum_rotation());
+    }
+
+    /// `InstantLockConfig::default()` is DIP24 rotated LLMQ60_75.
+    #[test]
+    fn instant_lock_default_is_llmq_60_75_rotated() {
+        let cfg = InstantLockConfig::default();
+        assert_eq!(cfg.quorum_type(), QuorumType::Llmq60_75);
+        assert_eq!(cfg.quorum_size(), 60);
+        assert_eq!(cfg.quorum_window(), 24 * 12);
+        assert_eq!(cfg.quorum_active_signers(), 32);
+        assert!(cfg.quorum_rotation());
+    }
+
+    /// `InstantLockConfig::default_100_67` is the classic LLMQ variant.
+    #[test]
+    fn instant_lock_default_100_67_accessors() {
+        let cfg = InstantLockConfig::default_100_67();
+        assert_eq!(cfg.quorum_type(), QuorumType::Llmq100_67);
+        assert_eq!(cfg.quorum_size(), 100);
+        assert_eq!(cfg.quorum_window(), 24);
+        assert_eq!(cfg.quorum_active_signers(), 24);
+        assert!(!cfg.quorum_rotation());
+    }
+
+    /// Exercises `PlatformConfig::default()` which delegates to `default_mainnet`.
+    #[test]
+    fn platform_config_default_is_mainnet() {
+        let cfg = PlatformConfig::default();
+        assert_eq!(cfg.network, Network::Mainnet);
+        assert_eq!(cfg.validator_set.quorum_type, QuorumType::Llmq100_67);
+        assert_eq!(cfg.chain_lock.quorum_type, QuorumType::Llmq400_60);
+        assert_eq!(cfg.instant_lock.quorum_type, QuorumType::Llmq60_75);
+        assert_eq!(cfg.block_spacing_ms, 5000);
+    }
+
+    // --- `ExecutionConfig` default values ---
+
+    /// Exercises all four default-provider functions on `ExecutionConfig`.
+    #[test]
+    fn execution_config_defaults() {
+        let cfg = super::ExecutionConfig::default();
+        assert!(cfg.verify_sum_trees);
+        assert!(cfg.verify_token_sum_trees);
+        assert!(cfg.use_document_triggers);
+        assert_eq!(cfg.epoch_time_length_s, 788400);
+    }
+
+    // --- `serialize_quorum_type` round-trip via Serialize ---
+
+    /// Covers the `serialize_quorum_type` codepath (symmetric pair of the
+    /// deserialize tests above).
+    #[test]
+    fn validator_set_config_serializes_quorum_type_as_string() {
+        let cfg = ValidatorSetConfig::default_100_67();
+        let json = serde_json::to_string(&cfg).expect("valid serialize");
+        // The serialized representation must use the textual form.
+        assert!(
+            json.contains("llmq_100_67") || json.contains("Llmq100_67"),
+            "expected textual quorum type in JSON, got: {}",
+            json
+        );
     }
 }

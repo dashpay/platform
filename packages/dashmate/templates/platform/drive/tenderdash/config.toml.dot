@@ -194,7 +194,7 @@ experimental-disable-websocket = false
 # /events RPC method are disabled.
 event-log-window-size = "0s"
 
-# The maxiumum number of events that may be retained by the event log.  If
+# The maximum number of events that may be retained by the event log.  If
 # this value is 0, no upper limit is set. Otherwise, items in excess of
 # this number will be discarded from the event log.
 #
@@ -273,6 +273,10 @@ bootstrap-peers = "{{~it.platform.drive.tenderdash.p2p.seeds :seed:index}}{{? in
 
 # Comma separated list of nodes to keep persistent connections to
 persistent-peers = "{{~it.platform.drive.tenderdash.p2p.persistentPeers :peer:index}}{{? index }},{{?}}{{=peer.id}}@{{=peer.host}}:{{=peer.port}}{{~}}"
+
+# If true, only peers from persistent-peers and bootstrap-peers are allowed
+# to connect (inbound and outbound).
+allowlist-only = {{? it.platform.drive.tenderdash.p2p.allowlistOnly }}true{{??}}false{{?}}
 
 # UPNP port forwarding
 upnp = false

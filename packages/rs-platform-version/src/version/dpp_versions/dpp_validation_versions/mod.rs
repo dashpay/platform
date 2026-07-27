@@ -2,6 +2,8 @@ use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
@@ -9,6 +11,22 @@ pub struct DPPValidationVersions {
     pub data_contract: DataContractValidationVersions,
     pub document_type: DocumentTypeValidationVersions,
     pub voting: VotingValidationVersions,
+    pub validation_result: ValidationResultMethodVersions,
+}
+
+/// Versions of the aggregator methods on
+/// [`crate::validation::ValidationResult`] (`flatten`, `merge_many`).
+///
+/// Issue #2867: in v0 the aggregators returned `Some(empty_vec)` when no
+/// per-item input contributed any data, which caused
+/// `validating-state-transition-for-free` — empty-action batches were treated
+/// as paid (and stayed in the block) instead of unpaid (removed in
+/// prepare_proposal). v1 returns `None` in that case so the result correctly
+/// flows down the unpaid path.
+#[derive(Clone, Debug, Default)]
+pub struct ValidationResultMethodVersions {
+    pub flatten: FeatureVersion,
+    pub merge_many: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

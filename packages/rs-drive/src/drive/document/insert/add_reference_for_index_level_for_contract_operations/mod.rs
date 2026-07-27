@@ -22,7 +22,13 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        index_type: IndexLevelTypeInfo,
+        // Takes `&IndexLevelTypeInfo` (was `IndexLevelTypeInfo` by
+        // value back when the struct was `Copy`). The `summable:
+        // Option<String>` field added in v3 forced dropping `Copy`,
+        // and the call sites all hand us a borrow from
+        // `IndexLevel::has_index_with_type()` — pass it through
+        // without cloning.
+        index_type: &IndexLevelTypeInfo,
         any_fields_null: bool,
         all_fields_null: bool,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,

@@ -109,3 +109,222 @@ impl Drive {
         Ok((root_hash, result))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::prelude::DataContract;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_pre_programmed_distributions() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a platform identity");
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Default::default(),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        let token_id = contract.token_id(0).expect("expected token at position 0");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        // Create pre-programmed distributions
+        let recipient_id = identity.id();
+        let distributions = BTreeMap::from([
+            (1000u64, BTreeMap::from([(recipient_id, 500u64)])),
+            (2000u64, BTreeMap::from([(recipient_id, 1000u64)])),
+        ]);
+
+        let distribution = TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 {
+            distributions: distributions.clone(),
+        });
+
+        let mut batch_operations = vec![];
+        drive
+            .add_pre_programmed_distributions(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                &distribution,
+                &BlockInfo::default(),
+                &mut None,
+                &mut batch_operations,
+                None,
+                platform_version,
+            )
+            .expect("expected to add pre-programmed distributions");
+
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch_operations,
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .expect("expected to apply batch operations");
+
+        // Generate proof
+        let proof = drive
+            .prove_token_pre_programmed_distributions(
+                token_id.to_buffer(),
+                None,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to prove pre-programmed distributions");
+
+        // Verify proof
+        let (_, verified_distributions): (
+            _,
+            BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
+        ) = Drive::verify_token_pre_programmed_distributions(
+            proof.as_slice(),
+            token_id.to_buffer(),
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
+
+        assert_eq!(verified_distributions, distributions);
+    }
+
+    #[test]
+    fn should_prove_and_verify_empty_pre_programmed_distributions() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Default::default(),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        let token_id = contract.token_id(0).expect("expected token at position 0");
+
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        // No distributions added -- prove and verify empty
+        let proof = drive
+            .prove_token_pre_programmed_distributions(
+                token_id.to_buffer(),
+                None,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to prove pre-programmed distributions");
+
+        let (_, verified_distributions): (
+            _,
+            BTreeMap<TimestampMillis, BTreeMap<Identifier, TokenAmount>>,
+        ) = Drive::verify_token_pre_programmed_distributions(
+            proof.as_slice(),
+            token_id.to_buffer(),
+            None,
+            None,
+            false,
+            platform_version,
+        )
+        .expect("expected proof verification to succeed");
+
+        assert!(verified_distributions.is_empty());
+    }
+}

@@ -4,5 +4,6 @@ pub mod evonode;
 pub mod finalized_epoch;
 pub mod identity;
 pub mod proposed_blocks;
+pub mod shielded;
 mod total_credits_in_platform;
 pub mod version_votes;

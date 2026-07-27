@@ -1229,4 +1229,866 @@ mod tests {
 
         assert_eq!(public_keys.len(), 2);
     }
+
+    // --- IdentityKeysRequest constructor and path query tests ---
+
+    #[test]
+    fn test_new_all_keys_query_structure() {
+        let identity_id: [u8; 32] = [1u8; 32];
+        let request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+
+        assert_eq!(request.identity_id, identity_id);
+        assert!(matches!(request.request_type, AllKeys));
+        assert!(request.limit.is_none());
+        assert!(request.offset.is_none());
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.path.len(), 3);
+        assert_eq!(path_query.path[1], identity_id.to_vec());
+        assert!(path_query.query.limit.is_none());
+    }
+
+    #[test]
+    fn test_new_all_keys_query_with_limit() {
+        let identity_id: [u8; 32] = [2u8; 32];
+        let request = IdentityKeysRequest::new_all_keys_query(&identity_id, Some(10));
+
+        assert_eq!(request.limit, Some(10));
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(10));
+    }
+
+    #[test]
+    fn test_new_specific_keys_query_structure() {
+        let identity_id: [u8; 32] = [3u8; 32];
+        let key_ids: Vec<u32> = vec![0, 1, 2];
+        let request = IdentityKeysRequest::new_specific_keys_query(&identity_id, key_ids.clone());
+
+        assert_eq!(request.identity_id, identity_id);
+        assert!(matches!(request.request_type, SpecificKeys(_)));
+        assert_eq!(request.limit, Some(3));
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.path.len(), 3);
+        assert_eq!(path_query.query.limit, Some(3));
+    }
+
+    #[test]
+    fn test_new_specific_keys_query_single_key() {
+        let identity_id: [u8; 32] = [4u8; 32];
+        let request = IdentityKeysRequest::new_specific_key_query(&identity_id, 42);
+
+        assert_eq!(request.limit, Some(1));
+
+        if let SpecificKeys(ref ids) = request.request_type {
+            assert_eq!(ids.len(), 1);
+            assert_eq!(ids[0], 42);
+        } else {
+            panic!("expected SpecificKeys request type");
+        }
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_new_specific_keys_query_without_limit() {
+        let identity_id: [u8; 32] = [5u8; 32];
+        let request =
+            IdentityKeysRequest::new_specific_keys_query_without_limit(&identity_id, vec![0, 1]);
+
+        assert!(request.limit.is_none());
+
+        let path_query = request.into_path_query();
+        assert!(path_query.query.limit.is_none());
+    }
+
+    #[test]
+    fn test_new_specific_key_query_without_limit() {
+        let identity_id: [u8; 32] = [6u8; 32];
+        let request = IdentityKeysRequest::new_specific_key_query_without_limit(&identity_id, 99);
+
+        assert!(request.limit.is_none());
+
+        if let SpecificKeys(ref ids) = request.request_type {
+            assert_eq!(ids, &[99]);
+        } else {
+            panic!("expected SpecificKeys request type");
+        }
+    }
+
+    #[test]
+    fn test_new_all_current_keys_query_structure() {
+        let identity_id: [u8; 32] = [7u8; 32];
+        let request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
+
+        assert_eq!(request.identity_id, identity_id);
+        assert!(matches!(request.request_type, SearchKey(_)));
+        assert!(request.limit.is_none());
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.path.len(), 3);
+        assert_eq!(path_query.path[1], identity_id.to_vec());
+    }
+
+    #[test]
+    fn test_new_contract_encryption_keys_query_structure() {
+        let identity_id: [u8; 32] = [8u8; 32];
+        let contract_id: [u8; 32] = [9u8; 32];
+        let request =
+            IdentityKeysRequest::new_contract_encryption_keys_query(identity_id, contract_id);
+
+        assert_eq!(request.identity_id, identity_id);
+        assert!(request.limit.is_none());
+
+        if let ContractBoundKey(ref cid, ref purpose, _) = request.request_type {
+            assert_eq!(cid, &contract_id);
+            assert_eq!(*purpose, Purpose::ENCRYPTION);
+        } else {
+            panic!("expected ContractBoundKey request type");
+        }
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_new_contract_decryption_keys_query_structure() {
+        let identity_id: [u8; 32] = [10u8; 32];
+        let contract_id: [u8; 32] = [11u8; 32];
+        let request =
+            IdentityKeysRequest::new_contract_decryption_keys_query(identity_id, contract_id);
+
+        if let ContractBoundKey(ref cid, ref purpose, _) = request.request_type {
+            assert_eq!(cid, &contract_id);
+            assert_eq!(*purpose, Purpose::DECRYPTION);
+        } else {
+            panic!("expected ContractBoundKey request type");
+        }
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_new_document_type_encryption_keys_query_structure() {
+        let identity_id: [u8; 32] = [12u8; 32];
+        let contract_id: [u8; 32] = [13u8; 32];
+        let doc_type = "note".to_string();
+
+        let request = IdentityKeysRequest::new_document_type_encryption_keys_query(
+            identity_id,
+            contract_id,
+            doc_type.clone(),
+        );
+
+        if let ContractDocumentTypeBoundKey(ref cid, ref dt, ref purpose, _) = request.request_type
+        {
+            assert_eq!(cid, &contract_id);
+            assert_eq!(dt, &doc_type);
+            assert_eq!(*purpose, Purpose::ENCRYPTION);
+        } else {
+            panic!("expected ContractDocumentTypeBoundKey request type");
+        }
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_new_document_type_decryption_keys_query_structure() {
+        let identity_id: [u8; 32] = [14u8; 32];
+        let contract_id: [u8; 32] = [15u8; 32];
+        let doc_type = "message".to_string();
+
+        let request = IdentityKeysRequest::new_document_type_decryption_keys_query(
+            identity_id,
+            contract_id,
+            doc_type.clone(),
+        );
+
+        if let ContractDocumentTypeBoundKey(ref cid, ref dt, ref purpose, _) = request.request_type
+        {
+            assert_eq!(cid, &contract_id);
+            assert_eq!(dt, &doc_type);
+            assert_eq!(*purpose, Purpose::DECRYPTION);
+        } else {
+            panic!("expected ContractDocumentTypeBoundKey request type");
+        }
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_into_path_query_recent_withdrawal_keys() {
+        let identity_id: [u8; 32] = [16u8; 32];
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::RecentWithdrawalKeys,
+            limit: Some(5),
+            offset: None,
+        };
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.path.len(), 4);
+        assert_eq!(path_query.query.limit, Some(5));
+    }
+
+    #[test]
+    fn test_into_path_query_latest_authentication_master_key() {
+        let identity_id: [u8; 32] = [17u8; 32];
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::LatestAuthenticationMasterKey,
+            limit: None,
+            offset: None,
+        };
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.path.len(), 5);
+        assert_eq!(path_query.query.limit, Some(1));
+    }
+
+    #[test]
+    fn test_into_path_query_contract_bound_key_all_keys_of_kind() {
+        let identity_id: [u8; 32] = [18u8; 32];
+        let contract_id: [u8; 32] = [19u8; 32];
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: ContractBoundKey(contract_id, Purpose::ENCRYPTION, AllKeysOfKindRequest),
+            limit: None,
+            offset: None,
+        };
+
+        let path_query = request.into_path_query();
+        assert!(path_query.query.limit.is_none());
+    }
+
+    #[test]
+    fn test_into_path_query_contract_document_type_bound_key_all_keys() {
+        let identity_id: [u8; 32] = [20u8; 32];
+        let contract_id: [u8; 32] = [21u8; 32];
+        let doc_type = "profile".to_string();
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: ContractDocumentTypeBoundKey(
+                contract_id,
+                doc_type,
+                Purpose::DECRYPTION,
+                AllKeysOfKindRequest,
+            ),
+            limit: Some(50),
+            offset: None,
+        };
+
+        let path_query = request.into_path_query();
+        assert_eq!(path_query.query.limit, Some(50));
+    }
+
+    #[test]
+    fn test_processing_cost_specific_keys() {
+        let identity_id: [u8; 32] = [30u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest::new_specific_keys_query(&identity_id, vec![0, 1, 2]);
+        let cost = request
+            .processing_cost(platform_version)
+            .expect("expected cost for specific keys");
+
+        let expected = 3u64
+            * platform_version
+                .fee_version
+                .processing
+                .fetch_single_identity_key_processing_cost;
+        assert_eq!(cost, expected);
+    }
+
+    #[test]
+    fn test_processing_cost_all_keys_not_allowed() {
+        let identity_id: [u8; 32] = [31u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest::new_all_keys_query(&identity_id, None);
+        let result = request.processing_cost(platform_version);
+        assert!(result.is_err(), "AllKeys should not allow cost calculation");
+    }
+
+    #[test]
+    fn test_processing_cost_search_key_not_allowed() {
+        let identity_id: [u8; 32] = [32u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest::new_all_current_keys_query(identity_id);
+        let result = request.processing_cost(platform_version);
+        assert!(
+            result.is_err(),
+            "SearchKey should not allow cost calculation"
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_contract_bound_current_key() {
+        let identity_id: [u8; 32] = [33u8; 32];
+        let contract_id: [u8; 32] = [34u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request =
+            IdentityKeysRequest::new_contract_encryption_keys_query(identity_id, contract_id);
+        let cost = request
+            .processing_cost(platform_version)
+            .expect("expected cost for contract bound current key");
+
+        assert_eq!(
+            cost,
+            platform_version
+                .fee_version
+                .processing
+                .fetch_single_identity_key_processing_cost
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_contract_bound_all_keys_not_allowed() {
+        let identity_id: [u8; 32] = [35u8; 32];
+        let contract_id: [u8; 32] = [36u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: ContractBoundKey(contract_id, Purpose::ENCRYPTION, AllKeysOfKindRequest),
+            limit: None,
+            offset: None,
+        };
+        let result = request.processing_cost(platform_version);
+        assert!(
+            result.is_err(),
+            "AllKeysOfKindRequest should not allow cost calculation"
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_contract_doc_type_bound_current_key() {
+        let identity_id: [u8; 32] = [37u8; 32];
+        let contract_id: [u8; 32] = [38u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest::new_document_type_encryption_keys_query(
+            identity_id,
+            contract_id,
+            "doc".to_string(),
+        );
+        let cost = request
+            .processing_cost(platform_version)
+            .expect("expected cost for doc type bound key");
+
+        assert_eq!(
+            cost,
+            platform_version
+                .fee_version
+                .processing
+                .fetch_single_identity_key_processing_cost
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_contract_doc_type_bound_all_keys_not_allowed() {
+        let identity_id: [u8; 32] = [39u8; 32];
+        let contract_id: [u8; 32] = [40u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: ContractDocumentTypeBoundKey(
+                contract_id,
+                "doc".to_string(),
+                Purpose::ENCRYPTION,
+                AllKeysOfKindRequest,
+            ),
+            limit: None,
+            offset: None,
+        };
+        let result = request.processing_cost(platform_version);
+        assert!(
+            result.is_err(),
+            "AllKeysOfKindRequest on doc-type bound should not allow cost"
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_recent_withdrawal_keys() {
+        let identity_id: [u8; 32] = [41u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::RecentWithdrawalKeys,
+            limit: Some(3),
+            offset: None,
+        };
+        let cost = request
+            .processing_cost(platform_version)
+            .expect("expected cost for recent withdrawal keys");
+
+        assert_eq!(
+            cost,
+            3u64 * platform_version
+                .fee_version
+                .processing
+                .fetch_single_identity_key_processing_cost
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_recent_withdrawal_keys_default_limit() {
+        let identity_id: [u8; 32] = [42u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::RecentWithdrawalKeys,
+            limit: None,
+            offset: None,
+        };
+        let cost = request
+            .processing_cost(platform_version)
+            .expect("expected cost for recent withdrawal keys with default limit");
+
+        assert_eq!(
+            cost,
+            10u64
+                * platform_version
+                    .fee_version
+                    .processing
+                    .fetch_single_identity_key_processing_cost
+        );
+    }
+
+    #[test]
+    fn test_processing_cost_latest_authentication_master_key() {
+        let identity_id: [u8; 32] = [43u8; 32];
+        let platform_version = PlatformVersion::latest();
+
+        let request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::LatestAuthenticationMasterKey,
+            limit: None,
+            offset: None,
+        };
+        let cost = request
+            .processing_cost(platform_version)
+            .expect("expected cost for latest auth master key");
+
+        assert_eq!(
+            cost,
+            platform_version
+                .fee_version
+                .processing
+                .fetch_single_identity_key_processing_cost
+        );
+    }
+
+    // --- Helper function tests ---
+
+    #[test]
+    fn test_element_to_identity_public_key_with_valid_item() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::serialization::PlatformSerializable;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let (key, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            1,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key: dpp::identity::IdentityPublicKey = key.into();
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
+
+        let element = Item(serialized, None);
+        let result = element_to_identity_public_key(element);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), key);
+    }
+
+    #[test]
+    fn test_element_to_identity_public_key_with_non_item_element() {
+        let element = Element::empty_tree();
+        let result = element_to_identity_public_key(element);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_element_to_identity_public_key_id_with_valid_item() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::serialization::PlatformSerializable;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(99);
+        let (key, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            5,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key: dpp::identity::IdentityPublicKey = key.into();
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
+
+        let element = Item(serialized, None);
+        let result = element_to_identity_public_key_id(element);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 5u32);
+    }
+
+    #[test]
+    fn test_element_to_serialized_identity_public_key_valid() {
+        let data = vec![1, 2, 3, 4, 5];
+        let element = Item(data.clone(), None);
+        let result = element_to_serialized_identity_public_key(element);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), data);
+    }
+
+    #[test]
+    fn test_element_to_serialized_identity_public_key_non_item() {
+        let element = Element::empty_tree();
+        let result = element_to_serialized_identity_public_key(element);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_element_to_identity_public_key_id_and_object_pair() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::serialization::PlatformSerializable;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(123);
+        let (key, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            7,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key: dpp::identity::IdentityPublicKey = key.into();
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
+
+        let element = Item(serialized, None);
+        let result = element_to_identity_public_key_id_and_object_pair(element);
+        assert!(result.is_ok());
+        let (id, pk) = result.unwrap();
+        assert_eq!(id, 7u32);
+        assert_eq!(pk, key);
+    }
+
+    #[test]
+    fn test_element_to_identity_public_key_id_and_some_object_pair() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::serialization::PlatformSerializable;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(456);
+        let (key, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            3,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key: dpp::identity::IdentityPublicKey = key.into();
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
+
+        let element = Item(serialized, None);
+        let result = element_to_identity_public_key_id_and_some_object_pair(element);
+        assert!(result.is_ok());
+        let (id, maybe_pk) = result.unwrap();
+        assert_eq!(id, 3u32);
+        assert!(maybe_pk.is_some());
+        assert_eq!(maybe_pk.unwrap(), key);
+    }
+
+    #[test]
+    fn test_key_and_optional_element_to_pair_with_element() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::serialization::PlatformSerializable;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(789);
+        let (key, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            10,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key: dpp::identity::IdentityPublicKey = key.into();
+        let serialized = key.serialize_to_bytes().expect("expected to serialize key");
+
+        let element = Item(serialized, None);
+        let path: Vec<Vec<u8>> = vec![vec![1]];
+        let encoded_key = 10u32.encode_var_vec();
+        let trio = (path, encoded_key, Some(element));
+
+        let result = key_and_optional_element_to_identity_public_key_id_and_object_pair(trio);
+        assert!(result.is_ok());
+        let (id, maybe_pk) = result.unwrap();
+        assert_eq!(id, 10u32);
+        assert!(maybe_pk.is_some());
+    }
+
+    #[test]
+    fn test_key_and_optional_element_to_pair_without_element() {
+        use integer_encoding::VarInt;
+
+        let path: Vec<Vec<u8>> = vec![vec![1]];
+        let encoded_key = 42u32.encode_var_vec();
+        let trio = (path, encoded_key, None);
+
+        let result = key_and_optional_element_to_identity_public_key_id_and_object_pair(trio);
+        assert!(result.is_ok());
+        let (id, maybe_pk) = result.unwrap();
+        assert_eq!(id, 42u32);
+        assert!(maybe_pk.is_none());
+    }
+
+    // --- IdentityPublicKeyResult trait impls tests ---
+
+    #[test]
+    fn test_key_vec_try_from_path_key_optional_with_elements() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::serialization::PlatformSerializable;
+        use rand::SeedableRng;
+
+        let platform_version = PlatformVersion::latest();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(100);
+
+        let (key1, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            0,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key1: dpp::identity::IdentityPublicKey = key1.into();
+        let serialized1 = key1.serialize_to_bytes().expect("serialize");
+
+        let (key2, _) = IdentityPublicKeyV0::random_ecdsa_master_authentication_key_with_rng(
+            1,
+            &mut rng,
+            platform_version,
+        )
+        .expect("expected a random key");
+        let key2: dpp::identity::IdentityPublicKey = key2.into();
+        let serialized2 = key2.serialize_to_bytes().expect("serialize");
+
+        let trios: Vec<PathKeyOptionalElementTrio> = vec![
+            (vec![vec![1]], vec![0], Some(Item(serialized1, None))),
+            (vec![vec![1]], vec![1], Some(Item(serialized2, None))),
+            (vec![vec![1]], vec![2], None),
+        ];
+
+        let result = KeyVec::try_from_path_key_optional(trios, platform_version);
+        assert!(result.is_ok());
+        let keys = result.unwrap();
+        assert_eq!(keys.len(), 2);
+    }
+
+    #[test]
+    fn test_key_id_vec_try_from_path_key_optional_empty() {
+        let platform_version = PlatformVersion::latest();
+        let trios: Vec<PathKeyOptionalElementTrio> = vec![];
+
+        let result = KeyIDVec::try_from_path_key_optional(trios, platform_version);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_single_key_try_from_path_key_optional_empty_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        let trios: Vec<PathKeyOptionalElementTrio> = vec![];
+
+        let result =
+            SingleIdentityPublicKeyOutcome::try_from_path_key_optional(trios, platform_version);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_optional_single_key_try_from_path_key_optional_empty_returns_none() {
+        let platform_version = PlatformVersion::latest();
+        let trios: Vec<PathKeyOptionalElementTrio> = vec![];
+
+        let result = OptionalSingleIdentityPublicKeyOutcome::try_from_path_key_optional(
+            trios,
+            platform_version,
+        );
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn test_key_id_optional_pair_vec_try_from_query_results_not_supported() {
+        use grovedb::query_result_type::QueryResultElements;
+
+        let platform_version = PlatformVersion::latest();
+        let elements = QueryResultElements { elements: vec![] };
+
+        let result = KeyIDOptionalIdentityPublicKeyPairVec::try_from_query_results(
+            elements,
+            platform_version,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_query_path_trio_vec_try_from_query_results_not_supported() {
+        use grovedb::query_result_type::QueryResultElements;
+
+        let platform_version = PlatformVersion::latest();
+        let elements = QueryResultElements { elements: vec![] };
+
+        let result = QueryKeyPathOptionalIdentityPublicKeyTrioVec::try_from_query_results(
+            elements,
+            platform_version,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_query_path_trio_btree_map_try_from_query_results_not_supported() {
+        use grovedb::query_result_type::QueryResultElements;
+
+        let platform_version = PlatformVersion::latest();
+        let elements = QueryResultElements { elements: vec![] };
+
+        let result = QueryKeyPathOptionalIdentityPublicKeyTrioBTreeMap::try_from_query_results(
+            elements,
+            platform_version,
+        );
+        assert!(result.is_err());
+    }
+
+    // --- Integration tests that exercise fetch through drive ---
+
+    #[test]
+    fn test_fetch_identity_keys_as_key_id_hash_set() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction), platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(77777), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id: identity.id().to_buffer(),
+            request_type: SpecificKeys(vec![0, 1]),
+            limit: Some(2),
+            offset: None,
+        };
+
+        let key_ids: KeyIDHashSet = drive
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
+            .expect("expected to fetch key ids");
+
+        assert_eq!(key_ids.len(), 2);
+        assert!(key_ids.contains(&0));
+        assert!(key_ids.contains(&1));
+    }
+
+    #[test]
+    fn test_fetch_identity_keys_as_key_id_vec() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction), platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(88888), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id: identity.id().to_buffer(),
+            request_type: SpecificKeys(vec![0]),
+            limit: Some(1),
+            offset: None,
+        };
+
+        let key_ids: KeyIDVec = drive
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
+            .expect("expected to fetch key id vec");
+
+        assert_eq!(key_ids.len(), 1);
+    }
+
+    #[test]
+    fn test_fetch_identity_keys_as_serialized_key_vec() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        drive
+            .create_initial_state_structure(Some(&transaction), platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(99999), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id: identity.id().to_buffer(),
+            request_type: SpecificKeys(vec![0]),
+            limit: Some(1),
+            offset: None,
+        };
+
+        let serialized_keys: SerializedKeyVec = drive
+            .fetch_identity_keys(key_request, Some(&transaction), platform_version)
+            .expect("expected to fetch serialized keys");
+
+        assert_eq!(serialized_keys.len(), 1);
+        assert!(!serialized_keys[0].is_empty());
+    }
 }

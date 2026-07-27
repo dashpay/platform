@@ -92,7 +92,7 @@ fn get_contested_resource_identity_votes(
         return Err("Identity ID is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let identity_id_str = unsafe {
@@ -134,7 +134,7 @@ fn get_contested_resource_identity_votes(
                         vote_option.as_ref().map(|resource_vote| {
                             let vote_type = match &resource_vote.resource_vote_choice() {
                                     dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity(id) => {
-                                        format!(r#"{{"type":"towards_identity","identity_id":"{}"}}"#, 
+                                        format!(r#"{{"type":"towards_identity","identity_id":"{}"}}"#,
                                             bs58::encode(id.as_bytes()).into_string())
                                     }
                                     dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::Abstain => {

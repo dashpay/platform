@@ -1,8 +1,8 @@
 //! DPNS name registration operations
 
 use crate::{
-    signer::VTableSigner, utils, DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError,
-    SDKHandle, SDKWrapper,
+    signer::{VTableSigner, VTableSignerRef},
+    utils, DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, SDKHandle, SDKWrapper,
 };
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
 use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
@@ -95,18 +95,16 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
     // Don't drop the Arc, just forget it
     std::mem::forget(key_arc);
 
-    // Get signer from handle
-    let signer_arc = Arc::from_raw(signer as *const VTableSigner);
-    let signer_clone = *signer_arc;
-    // Don't drop the Arc, just forget it
-    std::mem::forget(signer_arc);
+    // Get signer from handle (non-owning reference — the handle remains
+    // owned by the caller and is freed via `dash_sdk_signer_destroy`).
+    let signer_ref = VTableSignerRef(&*(signer as *const VTableSigner));
 
     // Create registration input
     let input = RegisterDpnsNameInput {
         label: label_str.clone(),
         identity: identity_clone,
         identity_public_key: key_clone,
-        signer: signer_clone,
+        signer: signer_ref,
         preorder_callback: None,
     };
 

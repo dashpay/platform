@@ -13,11 +13,11 @@ members = [
     "packages/rs-platform-version",
     "packages/rs-platform-versioning",
     "packages/rs-platform-value-convertible",
+    "packages/rs-dpp-json-convertible-derive",
     "packages/rs-drive-abci",
     "packages/dashpay-contract",
     "packages/withdrawals-contract",
     "packages/masternode-reward-shares-contract",
-    "packages/feature-flags-contract",
     "packages/dpns-contract",
     "packages/data-contracts",
     "packages/rs-drive-proof-verifier",
@@ -26,6 +26,7 @@ members = [
     "packages/wasm-dpp",
     "packages/wasm-dpp2",
     "packages/rs-dapi-client",
+    "packages/rs-dash-async",
     "packages/rs-sdk",
     "packages/strategy-tests",
     "packages/simple-signer",
@@ -33,6 +34,7 @@ members = [
     "packages/check-features",
     "packages/wallet-utils-contract",
     "packages/token-history-contract",
+    "packages/document-history-contract",
     "packages/keyword-search-contract",
     "packages/rs-sdk-ffi",
     "packages/wasm-drive-verify",
@@ -40,10 +42,91 @@ members = [
     "packages/rs-dapi",
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
+    "packages/rs-platform-wallet-ffi",
+    "packages/rs-platform-wallet-storage",
+    "packages/rs-platform-encryption",
     "packages/wasm-sdk",
+    "packages/rs-unified-sdk-ffi",
+    "packages/rs-unified-sdk-jni",
+    "packages/rs-scripts",
 ]
+
+[workspace.dependencies]
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "70d4bf8e36057c58e02d56769a6e9760f701dd06" }
+
+tokio-metrics = "0.5"
+
+# Size-tuned profile for the iOS `rs-unified-sdk-ffi` staticlib, which
+# otherwise ships huge. Inherits `release` and is ONLY used by the iOS
+# build (`build_ios.sh --profile release`)
+[profile.release-ios]
+inherits = "release"
+panic = "abort"
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
+# Debug counterpart for smaller iOS dev builds. Inherits the standard `dev`
+# profile (and is ONLY used by the iOS build (`build_ios.sh --profile dev`)
+[profile.dev-ios]
+inherits = "dev"
+panic = "abort"
+debug = "line-tables-only"
+
+# Android counterparts for the `rs-unified-sdk-jni` cdylib, used ONLY by
+# `packages/kotlin-sdk/build_android.sh`. Unlike iOS, panic stays
+# `unwind`: a JNI library must never abort the app process — panics are
+# caught at the shim boundary and rethrown as Java exceptions.
+[profile.release-android]
+inherits = "release"
+strip = "debuginfo"
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+[profile.dev-android]
+inherits = "dev"
+strip = "debuginfo"
+lto = "thin"
+
+# Optimize heavy crypto crates even in dev/test builds so that
+# Halo 2 proof generation and verification run at near-release speed.
+# Without this, ZK operations are 10-100x slower (debug field arithmetic).
+[profile.dev.package.halo2_proofs]
+opt-level = 3
+[profile.dev.package.halo2_gadgets]
+opt-level = 3
+[profile.dev.package.halo2_poseidon]
+opt-level = 3
+[profile.dev.package.orchard]
+opt-level = 3
+[profile.dev.package.pasta_curves]
+opt-level = 3
+[profile.dev.package.grovedb-commitment-tree]
+opt-level = 3
+
+[profile.test.package.halo2_proofs]
+opt-level = 3
+[profile.test.package.halo2_gadgets]
+opt-level = 3
+[profile.test.package.halo2_poseidon]
+opt-level = 3
+[profile.test.package.orchard]
+opt-level = 3
+[profile.test.package.pasta_curves]
+opt-level = 3
+[profile.test.package.grovedb-commitment-tree]
+opt-level = 3
 
 [workspace.package]
 
-version = "3.0.1"
+version = "4.1.0"
 rust-version = "1.92"

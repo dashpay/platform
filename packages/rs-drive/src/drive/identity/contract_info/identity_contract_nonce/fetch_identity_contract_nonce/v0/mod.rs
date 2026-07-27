@@ -117,3 +117,166 @@ impl Drive {
         Ok((value, fees))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+
+    fn new_drive_with_identity() -> (crate::drive::Drive, Identity) {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::first();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("init");
+        let identity = Identity::random_identity(5, Some(42), platform_version).expect("rand id");
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("insert identity");
+        (drive, identity)
+    }
+
+    /// Fetching a contract nonce for an identity that has never interacted with
+    /// the contract returns None without erroring.
+    #[test]
+    fn fetch_nonce_for_identity_with_no_contract_returns_none() {
+        let (drive, identity) = new_drive_with_identity();
+        let platform_version = PlatformVersion::first();
+
+        let result = drive
+            .fetch_identity_contract_nonce_v0(
+                identity.id().to_buffer(),
+                [9u8; 32],
+                true,
+                None,
+                platform_version,
+            )
+            .expect("fetch should return Ok(None)");
+        assert_eq!(result, None);
+    }
+
+    /// Fetching a contract nonce for a non-existent identity returns None.
+    #[test]
+    fn fetch_nonce_for_nonexistent_identity_returns_none() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::first();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("init");
+
+        let result = drive
+            .fetch_identity_contract_nonce_v0([0u8; 32], [0u8; 32], true, None, platform_version)
+            .expect("fetch for missing identity");
+        assert_eq!(result, None);
+    }
+
+    /// After merging a nonce, the fetch returns Some(nonce). Exercises the
+    /// success round-trip through fetch_identity_contract_nonce_v0.
+    #[test]
+    fn fetch_after_merge_returns_the_stored_nonce() {
+        let (drive, identity) = new_drive_with_identity();
+        let platform_version = PlatformVersion::first();
+
+        let contract_id = [3u8; 32];
+        drive
+            .merge_identity_contract_nonce_v0(
+                identity.id().to_buffer(),
+                contract_id,
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("merge nonce");
+
+        let fetched = drive
+            .fetch_identity_contract_nonce_v0(
+                identity.id().to_buffer(),
+                contract_id,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("fetch after merge");
+        assert!(fetched.is_some());
+        // The stored nonce is 1 (the value_filter masks out missing revisions bits).
+        let raw = fetched.expect("some");
+        assert_eq!(
+            raw & dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER,
+            1
+        );
+    }
+
+    /// fetch_identity_contract_nonce_with_fees_v0 returns a FeeResult with
+    /// non-zero costs after a real merge happened.
+    #[test]
+    fn fetch_with_fees_returns_fee_result() {
+        let (drive, identity) = new_drive_with_identity();
+        let platform_version = PlatformVersion::first();
+
+        let contract_id = [4u8; 32];
+        drive
+            .merge_identity_contract_nonce_v0(
+                identity.id().to_buffer(),
+                contract_id,
+                1,
+                &BlockInfo::default(),
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("merge");
+
+        let (value, fees) = drive
+            .fetch_identity_contract_nonce_with_fees_v0(
+                identity.id().to_buffer(),
+                contract_id,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("fetch with fees");
+
+        assert!(value.is_some());
+        assert!(fees.processing_fee > 0 || fees.storage_fee > 0);
+    }
+
+    /// Stateless (apply=false) fetch for a non-existent identity returns None
+    /// — this path uses DirectQueryType::StatelessDirectQuery.
+    #[test]
+    fn stateless_fetch_missing_identity_returns_none() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::first();
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("init");
+
+        let mut ops = vec![];
+        let result = drive
+            .fetch_identity_contract_nonce_operations_v0(
+                [0u8; 32],
+                [0u8; 32],
+                false, // stateless
+                None,
+                &mut ops,
+                platform_version,
+            )
+            .expect("stateless fetch");
+        assert_eq!(result, None);
+    }
+}

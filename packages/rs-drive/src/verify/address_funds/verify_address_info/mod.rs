@@ -60,3 +60,34 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_address_info_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .address_funds
+            .verify_address_info = 255;
+
+        let address = PlatformAddress::P2pkh([0u8; 20]);
+
+        let result = Drive::verify_address_info(&[], &address, false, &platform_version);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

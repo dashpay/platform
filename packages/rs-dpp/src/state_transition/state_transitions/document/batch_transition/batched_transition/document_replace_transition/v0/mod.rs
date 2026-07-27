@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 
 use platform_value::{Identifier, Value};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::block::block_info::BlockInfo;
@@ -26,22 +26,75 @@ mod property_names {
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+// Auto-injects `json_safe_u64` on `revision: Revision` (= u64).
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
+// `Deserialize` is implemented manually below — see comments. Same
+// catchall-vs-base-flatten conflict as `DocumentCreateTransitionV0`.
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
+    feature = "serde-conversion",
+    derive(Serialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Data: {:?}", "base", "revision", "data")]
 pub struct DocumentReplaceTransitionV0 {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$revision")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$revision"))]
     pub revision: Revision,
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub data: BTreeMap<String, Value>,
+}
+
+// Manual `Deserialize` impl — see the equivalent on
+// `DocumentCreateTransitionV0` for rationale and the `BASE_FIELD_NAMES`
+// maintenance warning.
+#[cfg(feature = "serde-conversion")]
+impl<'de> Deserialize<'de> for DocumentReplaceTransitionV0 {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        const BASE_FIELD_NAMES: &[&str] = &[
+            "$baseFormatVersion",
+            "$id",
+            "$identityContractNonce",
+            "$type",
+            "$dataContractId",
+            "$tokenPaymentInfo",
+        ];
+
+        let mut map: BTreeMap<String, Value> = BTreeMap::deserialize(deserializer)?;
+
+        let mut base_pairs: Vec<(Value, Value)> = Vec::with_capacity(BASE_FIELD_NAMES.len());
+        for key in BASE_FIELD_NAMES {
+            if let Some(value) = map.remove(*key) {
+                base_pairs.push((Value::Text((*key).to_string()), value));
+            }
+        }
+        let base = platform_value::from_value::<DocumentBaseTransition>(Value::Map(base_pairs))
+            .map_err(D::Error::custom)?;
+
+        let revision_value = map
+            .remove("$revision")
+            .ok_or_else(|| D::Error::missing_field("$revision"))?;
+        // `json_safe_u64` stringifies u64 values above `MAX_SAFE_INTEGER` in
+        // JSON HR — accept both numeric and string forms here so the manual
+        // Deserialize doesn't reject large revisions.
+        let revision: Revision = match revision_value {
+            Value::Text(s) => s
+                .parse()
+                .map_err(|e| D::Error::custom(format!("invalid u64 string in $revision: {e}")))?,
+            other => platform_value::from_value(other).map_err(D::Error::custom)?,
+        };
+
+        Ok(DocumentReplaceTransitionV0 {
+            base,
+            revision,
+            data: map,
+        })
+    }
 }
 
 /// document from replace transition v0

@@ -3,8 +3,10 @@ pub mod builders;
 pub mod identity_token_balances;
 /// Token contract info query
 pub mod token_contract_info;
-/// Identity token balances queries
+/// Token info queries
 pub mod token_info;
+/// Token pre-programmed distributions query
+pub mod token_pre_programmed_distributions;
 /// Token status query
 pub mod token_status;
 /// Token total supply query

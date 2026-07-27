@@ -1,0 +1,218 @@
+[package]
+name = "platform-wallet-storage"
+version.workspace = true
+rust-version.workspace = true
+edition = "2021"
+authors = ["Dash Core Team"]
+license = "MIT"
+description = "Storage backends for platform-wallet: SQLite persistence and keyring_core secret backends (encrypted-file + OS keyring)."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "platform-wallet-storage"
+path = "src/bin/platform-wallet-storage.rs"
+required-features = ["cli"]
+
+[dependencies]
+# Truly cross-cutting deps (always on regardless of features).
+thiserror = "1"
+tracing = "0.1"
+hex = "0.4"
+
+# SQLite-backed persister deps (gated by the `sqlite` feature).
+# `platform-wallet` types are reachable through the `sqlite` submodule
+# only; without the feature the bare crate ships no items that mention
+# them, so the wallet/serde graph stays out of the build.
+# `dpp` types reach the persister via `IdentityPublicKey` (identity_keys
+# writer), `AssetLockProof` (asset_locks writer) and `Identifier`
+# (dashpay writer). `dash-sdk` is here for the `AddressFunds` re-export
+# in `schema/platform_addrs.rs`. Feature set mirrors sibling
+# `rs-platform-wallet` so the resolver picks identical hashes.
+platform-wallet = { path = "../rs-platform-wallet", features = [
+    "serde",
+], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+key-wallet = { workspace = true, optional = true }
+dashcore = { workspace = true, optional = true }
+dpp = { path = "../rs-dpp", optional = true }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = [
+    "dashpay-contract",
+    "dpns-contract",
+], optional = true }
+rusqlite = { version = "0.38", features = [
+    "bundled",
+    "backup",
+    "blob",
+    "hooks",
+    "trace",
+], optional = true }
+refinery = { version = "0.9", default-features = false, features = [
+    "rusqlite",
+], optional = true }
+# bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
+# (which derives bincode 2 `Encode`/`Decode`) and decode
+# `dpp::AssetLockProof` from the asset-lock blob column. Exact-pinned to
+# the lock-resolved version to match the crate's `=`-pin discipline.
+bincode = { version = "=2.0.1", optional = true }
+tempfile = { version = "3", optional = true }
+chrono = { version = "0.4", default-features = false, features = [
+    "clock",
+], optional = true }
+sha2 = { version = "0.10", optional = true }
+
+# Secret-storage deps (gated by the `secrets` feature). RustSec-clean
+# pins (Smythe §7); `aes-gcm` is deliberately omitted. `keyring`'s
+# library is `keyring-core` + per-platform store crates (the `keyring`
+# crate itself is sample/CLI). Verified to build under MSRV 1.92.
+argon2 = { version = "=0.5.3", optional = true }
+chacha20poly1305 = { version = "=0.10.1", optional = true }
+zeroize = { version = "=1.8.2", features = ["derive"], optional = true }
+subtle = { version = "=2.6.1", optional = true }
+# CSPRNG for AEAD nonces and the vault salt; exact-pinned like the rest
+# of the crypto stack so the random source is not the loose one.
+getrandom = { version = "=0.2.17", optional = true }
+region = { version = "=3.0.2", optional = true }
+keyring-core = { version = "=1.0.0", optional = true }
+# Cross-process advisory file lock for the vault read-modify-write.
+# `fd-lock` 4.x is pure-rustix and replaces the `fs2`/`fs4` family that
+# was removed from the sqlite arm — those tests grep for `fs2`/`fs4`
+# literals in this crate's source/manifest and would re-trigger on the
+# older crates. `fd-lock` has no such collision.
+fd-lock = { version = "4.0.4", optional = true }
+
+# CLI deps (gated by the `cli` feature)
+clap = { version = "4", features = ["derive"], optional = true }
+humantime = { version = "2", optional = true }
+serde_json = { version = "1", optional = true }
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+], optional = true }
+
+# Per-platform OS-keyring credential stores. `keyring-core 1.0.0` is
+# the API; these crates provide the platform backends (the `keyring`
+# 4.x crate is the sample CLI and is intentionally not depended on).
+# Gated by `secrets` via `dep:`. Target-specific tables MUST follow all
+# `[dependencies]` entries.
+[target.'cfg(unix)'.dependencies]
+# `O_NOFOLLOW` open flag for vault read TOCTOU defence.
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+dbus-secret-service-keyring-store = { version = "=1.0.0", features = [
+    "crypto-rust",
+    "vendored",
+], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS crate requires one of `keychain` / `protected` features or it
+# emits a compile_error! (latent — only fires on macOS targets; Linux CI
+# never tripped it). `keychain` = standard Keychain; `protected` is the
+# user-presence-gated variant. We want the standard one for the v1
+# SecretStore SPI; the protected variant can be opt-in later.
+apple-native-keyring-store = { version = "=1.0.0", features = ["keychain"], optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { version = "=1.0.0", optional = true }
+
+[dev-dependencies]
+proptest = "1"
+assert_cmd = "2"
+static_assertions = "1"
+filetime = "0.2"
+# Test-only: construct the `Zeroizing<[u8; 32]>` secret on an
+# `IdentityKeyEntry` to prove the on-disk wire shape drops it. The
+# production `zeroize` dep is gated behind the `secrets` feature, which
+# the off-state CI build disables, so the test surface needs its own.
+zeroize = { version = "=1.8.2", features = ["derive"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+serial_test = "3"
+# `default-features = false` so the off-state CI invocation
+# (`--no-default-features --features sqlite,cli`) actually exercises a
+# build with `secrets`/`kv` disabled — otherwise the dev-dep view would
+# silently re-enable the default feature set for every integration test.
+# Test surface is opted into explicitly: `secrets` and `kv` are listed
+# so the plain `cargo test -p platform-wallet-storage` invocation runs
+# both feature paths (the `kv`-gated `sqlite_object_metadata.rs`
+# integration test and the `secrets`-gated unit tests).
+platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers"] }
+tempfile = "3"
+# `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
+# `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
+# Mocks feature lets the consumer↔persister boundary tests stand up a
+# real SDK without network. (`round_trip_consumer.rs` was extracted into
+# the consumer-hardening PR; tokio is no longer needed here.)
+dash-sdk = { path = "../rs-sdk", default-features = false, features = [
+    "dashpay-contract",
+    "dpns-contract",
+    "wallet",
+    "mocks",
+] }
+
+[features]
+default = ["sqlite", "cli", "secrets", "kv"]
+# SQLite-backed persister (`platform_wallet_storage::sqlite`).
+sqlite = [
+    "dep:platform-wallet",
+    "dep:serde",
+    "dep:key-wallet",
+    "dep:dashcore",
+    "dep:dpp",
+    "dep:dash-sdk",
+    "dep:rusqlite",
+    "dep:refinery",
+    "dep:bincode",
+    "dep:tempfile",
+    "dep:chrono",
+    "dep:sha2",
+]
+# Maintenance CLI binary. Requires `sqlite` because the only subcommands
+# in scope today operate on the SQLite persister.
+cli = [
+    "sqlite",
+    "dep:clap",
+    "dep:humantime",
+    "dep:serde_json",
+    "dep:tracing-subscriber",
+]
+# `secrets` submodule (`platform_wallet_storage::secrets`): zeroizing
+# secret wrappers + EncryptedFile backend + OS-keyring construction
+# helper, all built on the upstream `keyring_core::api` SPI. Default-on
+# so `Cargo.lock` unconditionally pins the RustSec-clean crypto stack.
+# Disable explicitly via `--no-default-features` to build the storage
+# crate without the crypto graph.
+secrets = [
+    "dep:argon2",
+    "dep:chacha20poly1305",
+    # secrets uses serde directly (vault format + crypto envelope derive
+    # `Serialize`/`Deserialize`); declare the dep here so
+    # `--no-default-features --features secrets` builds without leaning
+    # on the `sqlite` feature also having `dep:serde`.
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tempfile",
+    "dep:zeroize",
+    "dep:subtle",
+    "dep:getrandom",
+    "dep:region",
+    "dep:keyring-core",
+    "dep:fd-lock",
+    "dep:libc",
+    "dep:dbus-secret-service-keyring-store",
+    "dep:apple-native-keyring-store",
+    "dep:windows-native-keyring-store",
+]
+# Per-object-type key/value metadata API
+# (`platform_wallet_storage::{KvStore, KvError, ObjectId}`) plus the
+# SQLite-backed impl. Requires `sqlite` because the only shipped backend
+# is on `SqlitePersister`. The six `meta_*` tables are always created by
+# V001 so DB files stay interoperable across feature combos; this gate
+# only controls the Rust API surface.
+kv = ["sqlite"]
+# Exposes `lock_conn_for_test` / `config_for_test` accessors on
+# `SqlitePersister` so this crate's own integration tests can probe
+# the write connection. The double-underscore prefix follows Cargo's
+# convention for "MUST NOT enable from downstream" features
+# (https://doc.rust-lang.org/cargo/reference/features.html#feature-resolver-version-2).
+__test-helpers = ["sqlite"]

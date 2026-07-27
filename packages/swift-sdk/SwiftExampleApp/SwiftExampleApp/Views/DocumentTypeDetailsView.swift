@@ -1,13 +1,18 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct DocumentTypeDetailsView: View {
     let documentType: PersistentDocumentType
+    @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.dismiss) var dismiss
     @State private var expandedIndices: Set<String> = []
-    
+    @State private var showingCreateDocument = false
+
     var body: some View {
         List {
+            newDocumentSection
             documentInfoSection
             documentSettingsSection
             documentIndexesSection
@@ -15,40 +20,67 @@ struct DocumentTypeDetailsView: View {
         }
         .navigationTitle(documentType.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingCreateDocument = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityIdentifier("documentType.newDocumentButton")
+            }
+        }
+        .sheet(isPresented: $showingCreateDocument) {
+            CreateDocumentView(presetDocumentType: documentType)
+                .environmentObject(appState)
+                .environmentObject(walletManager)
+        }
     }
-    
+
+    @ViewBuilder
+    private var newDocumentSection: some View {
+        Section {
+            Button {
+                showingCreateDocument = true
+            } label: {
+                Label("New Document", systemImage: "doc.badge.plus")
+            }
+            .accessibilityIdentifier("documentType.newDocumentRow")
+        }
+    }
+
     // MARK: - Section Views
-    
+
     @ViewBuilder
     private var documentInfoSection: some View {
         Section("Document Type Information") {
             VStack(alignment: .leading, spacing: 8) {
                 InfoRow(label: "Name:", value: documentType.name)
-                
+
                 if documentType.documentCount > 0 {
                     InfoRow(label: "Documents:", value: "\(documentType.documentCount)")
                 }
-                
+
                 if let persistentProperties = documentType.persistentProperties, !persistentProperties.isEmpty {
                     InfoRow(label: "Properties:", value: "\(persistentProperties.count)")
                 } else if let properties = documentType.properties, !properties.isEmpty {
                     InfoRow(label: "Properties:", value: "\(properties.count)")
                 }
-                
+
                 if let indices = documentType.indices {
                     InfoRow(label: "Indices:", value: "\(indices.count)")
                 }
-                
+
                 if let requiredFields = documentType.requiredFields, !requiredFields.isEmpty {
                     InfoRow(label: "Required Fields:", value: "\(requiredFields.count)")
                 }
-                
+
                 InfoRow(label: "Security Level:", value: "\(documentType.securityLevel)")
             }
             .padding(.vertical, 4)
         }
     }
-    
+
     @ViewBuilder
     private var documentSettingsSection: some View {
         Section("Document Settings") {
@@ -58,31 +90,31 @@ struct DocumentTypeDetailsView: View {
                         .foregroundColor(documentType.documentsKeepHistory ? .blue : .secondary)
                     Spacer()
                 }
-                
+
                 HStack {
                     Label("Mutable", systemImage: documentType.documentsMutable ? "pencil.circle.fill" : "pencil.circle")
                         .foregroundColor(documentType.documentsMutable ? .green : .secondary)
                     Spacer()
                 }
-                
+
                 HStack {
                     Label("Can Be Deleted", systemImage: documentType.documentsCanBeDeleted ? "trash.circle.fill" : "trash.circle")
                         .foregroundColor(documentType.documentsCanBeDeleted ? .red : .secondary)
                     Spacer()
                 }
-                
+
                 HStack {
                     Label("Transferable", systemImage: documentType.documentsTransferable ? "arrow.left.arrow.right.circle.fill" : "arrow.left.arrow.right.circle")
                         .foregroundColor(documentType.documentsTransferable ? .purple : .secondary)
                     Spacer()
                 }
-                
+
                 HStack {
                     Label("Trade Mode", systemImage: documentType.tradeMode > 0 ? "cart.fill" : "cart")
                         .foregroundColor(documentType.tradeMode > 0 ? .orange : .secondary)
                     Spacer()
                 }
-                
+
                 // Creation restrictions
                 if documentType.creationRestrictionMode > 0 {
                     HStack {
@@ -93,10 +125,10 @@ struct DocumentTypeDetailsView: View {
                         Spacer()
                     }
                 }
-                
+
                 if documentType.requiresIdentityEncryptionBoundedKey || documentType.requiresIdentityDecryptionBoundedKey {
                     Divider()
-                    
+
                     if documentType.requiresIdentityEncryptionBoundedKey {
                         HStack {
                             Label("Requires Encryption Key", systemImage: "lock.shield.fill")
@@ -104,7 +136,7 @@ struct DocumentTypeDetailsView: View {
                             Spacer()
                         }
                     }
-                    
+
                     if documentType.requiresIdentityDecryptionBoundedKey {
                         HStack {
                             Label("Requires Decryption Key", systemImage: "lock.open.fill")
@@ -118,7 +150,7 @@ struct DocumentTypeDetailsView: View {
             .padding(.vertical, 4)
         }
     }
-    
+
     @ViewBuilder
     private var documentIndexesSection: some View {
         if let indices = documentType.indices, !indices.isEmpty {
@@ -135,7 +167,7 @@ struct DocumentTypeDetailsView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var documentPropertiesSection: some View {
         if let properties = documentType.properties, !properties.isEmpty {
@@ -158,7 +190,7 @@ struct ExpandableIndexRowView: View {
     let index: PersistentIndex
     let isExpanded: Bool
     let onTap: () -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: onTap) {
@@ -166,9 +198,9 @@ struct ExpandableIndexRowView: View {
                     Text(index.name)
                         .font(.headline)
                         .foregroundColor(.primary)
-                    
+
                     Spacer()
-                    
+
                     if index.unique {
                         Text("UNIQUE")
                             .font(.caption2)
@@ -178,14 +210,14 @@ struct ExpandableIndexRowView: View {
                             .foregroundColor(.purple)
                             .cornerRadius(4)
                     }
-                    
+
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
             .buttonStyle(PlainButtonStyle())
-            
+
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
                     if let properties = index.properties, !properties.isEmpty {
@@ -206,21 +238,21 @@ struct ExpandableIndexRowView: View {
                             }
                         }
                     }
-                    
+
                     HStack(spacing: 12) {
                         if index.nullSearchable {
                             Label("Null Searchable", systemImage: "magnifyingglass")
                                 .font(.caption2)
                                 .foregroundColor(.blue)
                         }
-                        
+
                         if index.contested {
                             Label("Contested", systemImage: "exclamationmark.triangle.fill")
                                 .font(.caption2)
                                 .foregroundColor(.orange)
                         }
                     }
-                    
+
                     // Show contested details if available
                     if index.contested, let contestedDetails = index.contestedDetails {
                         VStack(alignment: .leading, spacing: 4) {
@@ -228,14 +260,14 @@ struct ExpandableIndexRowView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)
-                            
+
                             if let description = contestedDetails["description"] as? String {
                                 Text(description)
                                     .font(.caption2)
                                     .foregroundColor(.orange)
                                     .padding(.leading, 8)
                             }
-                            
+
                             if let fieldMatches = contestedDetails["fieldMatches"] as? [[String: Any]] {
                                 ForEach(fieldMatches.indices, id: \.self) { idx in
                                     if let field = fieldMatches[idx]["field"] as? String,
@@ -266,11 +298,11 @@ struct PropertyRowView: View {
     let propertyName: String
     let propertyData: Any
     let isRequired: Bool
-    
+
     var propertyDict: [String: Any]? {
         propertyData as? [String: Any]
     }
-    
+
     var propertyType: String {
         if let dict = propertyDict,
            let type = dict["type"] as? String {
@@ -278,7 +310,7 @@ struct PropertyRowView: View {
         }
         return "unknown"
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -293,15 +325,15 @@ struct PropertyRowView: View {
                     .foregroundColor(propertyTypeColor)
                     .cornerRadius(6)
             }
-            
+
             // Property attributes
             propertyAttributesView
-            
+
             // Sub-properties for objects
             if propertyType == "object", let dict = propertyDict {
                 subPropertiesView(dict: dict)
             }
-            
+
             // Description
             if let dict = propertyDict,
                let description = dict["description"] as? String {
@@ -314,7 +346,7 @@ struct PropertyRowView: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     @ViewBuilder
     private var propertyAttributesView: some View {
         if let dict = propertyDict {
@@ -324,33 +356,33 @@ struct PropertyRowView: View {
                         .font(.caption2)
                         .foregroundColor(.red)
                 }
-                
+
                 if let minLength = dict["minLength"] as? Int {
                     Text("Min: \(minLength)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                
+
                 if let maxLength = dict["maxLength"] as? Int {
                     Text("Max: \(maxLength)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                
+
                 if dict["pattern"] != nil {
                     Label("Pattern", systemImage: "textformat")
                         .font(.caption2)
                         .foregroundColor(.purple)
                 }
-                
+
                 if let byteArray = dict["byteArray"] as? Bool, byteArray {
                     Label("Byte Array", systemImage: "square.grid.3x3")
                         .font(.caption2)
                         .foregroundColor(.orange)
                 }
-                
+
                 if let contentMediaType = dict["contentMediaType"] as? String {
-                    Label(contentMediaType.components(separatedBy: ".").last ?? "Media", 
+                    Label(contentMediaType.components(separatedBy: ".").last ?? "Media",
                           systemImage: "doc.text")
                         .font(.caption2)
                         .foregroundColor(.indigo)
@@ -358,7 +390,7 @@ struct PropertyRowView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private func subPropertiesView(dict: [String: Any]) -> some View {
         if let subProperties = dict["properties"] as? [String: Any] {
@@ -367,18 +399,18 @@ struct PropertyRowView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.top, 4)
-                
+
                 ForEach(subProperties.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
                     if let subPropDict = value as? [String: Any] {
                         HStack {
                             Image(systemName: "arrow.right")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
-                            
+
                             Text(key)
                                 .font(.caption)
                                 .fontWeight(.medium)
-                            
+
                             if let type = subPropDict["type"] as? String {
                                 Text(type)
                                     .font(.caption2)
@@ -387,7 +419,7 @@ struct PropertyRowView: View {
                                     .background(Color.gray.opacity(0.2))
                                     .cornerRadius(3)
                             }
-                            
+
                             Spacer()
                         }
                         .padding(.leading, 8)
@@ -396,7 +428,7 @@ struct PropertyRowView: View {
             }
         }
     }
-    
+
     private var propertyTypeColor: Color {
         switch propertyType.lowercased() {
         case "string":

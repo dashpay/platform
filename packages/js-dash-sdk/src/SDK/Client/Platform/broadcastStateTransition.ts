@@ -1,10 +1,12 @@
 import crypto from 'crypto';
 import { Platform } from './Platform';
 import { StateTransitionBroadcastError } from '../../../errors/StateTransitionBroadcastError';
+import { PlatformProofVerificationUnavailableError } from '../../../errors/PlatformProofVerificationUnavailableError';
 import { IStateTransitionResult } from './IStateTransitionResult';
 
 const ResponseError = require('@dashevo/dapi-client/lib/transport/errors/response/ResponseError');
 const InvalidRequestDPPError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError');
+const InvalidResponseError = require('@dashevo/dapi-client/lib/methods/platform/response/errors/InvalidResponseError');
 
 const createGrpcTransportError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/createGrpcTransportError');
 
@@ -25,6 +27,14 @@ export default async function broadcastStateTransition(
     options: { skipValidation?: boolean; } = {},
 ): Promise<IStateTransitionResult> {
   const { client } = platform;
+  const proofVerifier = client.getPlatformProofVerifier();
+  if (!proofVerifier) {
+    // Fail before broadcasting: without a verifier, the selected DAPI node can
+    // make an unexecuted transition appear confirmed.
+    throw new PlatformProofVerificationUnavailableError('State transition broadcast');
+  }
+
+  await platform.initialize();
 
   // TODO(versioning): restore
   // @ts-ignore
@@ -58,7 +68,7 @@ export default async function broadcastStateTransition(
     await client.getDAPIClient().platform.broadcastStateTransition(serializedStateTransition);
   } catch (error) {
     if (error instanceof ResponseError) {
-      let cause = error;
+      let cause: any = error;
 
       // Pass DPP consensus error directly to avoid
       // additional wrappers
@@ -109,6 +119,19 @@ export default async function broadcastStateTransition(
       cause,
     );
   }
+
+  if (!stateTransitionResult.proof || !stateTransitionResult.metadata) {
+    throw new InvalidResponseError(
+      'Proved state transition confirmation is missing proof or metadata',
+    );
+  }
+
+  await proofVerifier.verifyStateTransitionResult({
+    serializedStateTransition,
+    response: stateTransitionResult,
+    network: client.network,
+    protocolVersion: platform.protocolVersion!,
+  });
 
   return stateTransitionResult;
 }

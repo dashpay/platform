@@ -2,46 +2,168 @@ import SwiftUI
 import SwiftDashSDK
 
 struct TransactionDetailView: View {
-    let transaction: WalletTransaction
+    let transaction: PersistentTransaction
+    /// Override amount for asset-lock txs. The wallet's `netAmount`
+    /// shows ~0 for these (credit output is structurally self-owned),
+    /// so the list view passes the linked
+    /// `PersistentAssetLock.amountDuffs`. `nil` for non-asset-lock
+    /// rows OR consumed asset locks whose tracking row was cleaned
+    /// up after successful identity registration.
+    var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
 
+    /// Amount label rendered prominently at the top of the sheet.
+    /// Same precedence rule as the row: asset-lock duffs when we
+    /// have them, else an explicit "amount unknown" label for the
+    /// historical-asset-lock case (rather than the misleading
+    /// `+0.00000000 DASH` from `transaction.formattedAmount`).
+    /// `nil` for a payload-only provider special tx — a ProRegTx
+    /// observed via the owner/voting keys moves no wallet balance,
+    /// and `+0.00000000 DASH` reads as a broken zero-value receive.
+    private var displayAmount: String? {
+        if transaction.isAssetLock {
+            if let duffs = assetLockAmountDuffs {
+                let dash = Double(duffs) / 100_000_000.0
+                return String(format: "-%.8f DASH", dash)
+            }
+            return "Asset Lock (amount unknown)"
+        }
+        if transaction.isProviderSpecial && transaction.netAmount == 0 {
+            return nil
+        }
+        return transaction.formattedAmount
+    }
+
     private var typeDescription: String {
-        switch transaction.type {
-        case "received":
+        // Special kinds (asset lock/unlock, provider txs) take their
+        // label from the model so it can't drift from the list rows.
+        if transaction.isAssetLock || transaction.isAssetUnlock
+            || transaction.isProviderSpecial {
+            return transaction.displayDirection
+        }
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "Received"
-        case "sent":
+        case let amount where amount < 0:
             return "Sent"
-        case "self":
-            return "Self-Transfer"
         default:
-            return "Unknown"
+            return "Self-Transfer"
         }
     }
 
     private var typeIcon: String {
-        switch transaction.type {
-        case "received":
+        if transaction.isAssetLock { return "lock.fill" }
+        if transaction.isAssetUnlock { return "lock.open.fill" }
+        if transaction.isProviderSpecial { return "server.rack" }
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "arrow.down.circle.fill"
-        case "sent":
+        case let amount where amount < 0:
             return "arrow.up.circle.fill"
-        case "self":
-            return "arrow.triangle.2.circlepath"
         default:
-            return "questionmark.circle"
+            return "arrow.triangle.2.circlepath"
         }
     }
 
     private var typeColor: Color {
-        switch transaction.type {
-        case "received":
+        if transaction.isAssetLock || transaction.isAssetUnlock {
+            return .purple
+        }
+        if transaction.isProviderSpecial {
+            return .orange
+        }
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return .green
-        case "sent":
+        case let amount where amount < 0:
             return .red
-        case "self":
-            return .blue
         default:
-            return .gray
+            return .blue
+        }
+    }
+
+    private var isConfirmed: Bool {
+        transaction.context >= 2
+    }
+
+    private var transactionDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(transaction.firstSeen))
+    }
+
+    private var blockHashHex: String? {
+        guard let bh = transaction.blockHash, !bh.isEmpty else { return nil }
+        return bh.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private var formattedFee: String? {
+        guard let fee = transaction.fee else { return nil }
+        let dash = Double(fee) / 100_000_000.0
+        return String(format: "%.8f DASH", dash)
+    }
+
+    /// Masternode registration / service-update details, shown only for
+    /// ProRegTx / ProUpServTx rows. All fields come pre-parsed from the
+    /// Rust FFI (`PersistentTransaction.provider*`); this view only
+    /// renders them. Broken out so `body`'s type-check stays cheap.
+    @ViewBuilder
+    private var masternodeSection: some View {
+        if transaction.isProviderRegistration || transaction.isProviderUpdateService {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(transaction.isProviderRegistration
+                    ? "Masternode Registration"
+                    : "Masternode Service Update")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let service = transaction.providerServiceAddress {
+                    TransactionDetailRow(label: "Service", value: service)
+                }
+                if let proTxHash = transaction.providerProTxHashHex {
+                    copyableHashRow(title: "Pro Tx Hash", value: proTxHash)
+                }
+                if let collateral = transaction.providerCollateralDisplay {
+                    copyableHashRow(title: "Collateral Outpoint", value: collateral)
+                }
+                if let ownerKeyHash = transaction.providerOwnerKeyHashHex {
+                    copyableHashRow(title: "Owner Key Hash", value: ownerKeyHash)
+                }
+                if let votingKeyHash = transaction.providerVotingKeyHashHex {
+                    copyableHashRow(title: "Voting Key Hash", value: votingKeyHash)
+                }
+            }
+        }
+    }
+
+    /// Caption + monospaced, tap-to-copy value block — same styling as
+    /// the Transaction ID / Block Hash rows.
+    @ViewBuilder
+    private func copyableHashRow(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Button {
+                copyToClipboard(value)
+            } label: {
+                HStack {
+                    Text(value)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundColor(.primary)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Spacer()
+
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(8)
+            }
         }
     }
 
@@ -59,9 +181,11 @@ struct TransactionDetailView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
 
-                        Text(transaction.formattedAmount)
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
-                            .foregroundColor(typeColor)
+                        if let displayAmount {
+                            Text(displayAmount)
+                                .font(.system(size: 32, weight: .bold, design: .rounded))
+                                .foregroundColor(typeColor)
+                        }
                     }
                     .padding(.top, 20)
 
@@ -69,86 +193,36 @@ struct TransactionDetailView: View {
                     VStack(spacing: 16) {
                         TransactionDetailRow(
                             label: "Status",
-                            value: transaction.confirmations == 0 ? "Pending" :
-                                   transaction.confirmations < 6 ? "\(transaction.confirmations) confirmations" :
-                                   "Confirmed"
+                            value: isConfirmed ? "Confirmed" : "Pending"
                         )
 
                         TransactionDetailRow(
                             label: "Date",
-                            value: formatDate(transaction.date)
+                            value: formatDate(transactionDate)
                         )
 
-                        if let height = transaction.height {
+                        if transaction.blockHeight != 0 {
                             TransactionDetailRow(
                                 label: "Block Height",
-                                value: "\(height)"
+                                value: "\(transaction.blockHeight)"
                             )
                         }
 
-                        if let fee = transaction.formattedFee, transaction.type == "sent" {
+                        if let fee = formattedFee, transaction.netAmount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee
                             )
                         }
 
+                        masternodeSection
+
                         // Transaction ID
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Transaction ID")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-
-                            Button {
-                                copyToClipboard(transaction.txid)
-                            } label: {
-                                HStack {
-                                    Text(transaction.txid)
-                                        .font(.system(.footnote, design: .monospaced))
-                                        .foregroundColor(.primary)
-                                        .lineLimit(nil)
-                                        .fixedSize(horizontal: false, vertical: true)
-
-                                    Spacer()
-
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.caption)
-                                        .foregroundColor(.blue)
-                                }
-                                .padding()
-                                .background(Color(UIColor.secondarySystemBackground))
-                                .cornerRadius(8)
-                            }
-                        }
+                        copyableHashRow(title: "Transaction ID", value: transaction.txidHex)
 
                         // Block Hash (if available)
-                        if let blockHash = transaction.blockHash {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Block Hash")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-
-                                Button {
-                                    copyToClipboard(blockHash)
-                                } label: {
-                                    HStack {
-                                        Text(blockHash)
-                                            .font(.system(.footnote, design: .monospaced))
-                                            .foregroundColor(.primary)
-                                            .lineLimit(nil)
-                                            .fixedSize(horizontal: false, vertical: true)
-
-                                        Spacer()
-
-                                        Image(systemName: "doc.on.doc")
-                                            .font(.caption)
-                                            .foregroundColor(.blue)
-                                    }
-                                    .padding()
-                                    .background(Color(UIColor.secondarySystemBackground))
-                                    .cornerRadius(8)
-                                }
-                            }
+                        if let blockHash = blockHashHex {
+                            copyableHashRow(title: "Block Hash", value: blockHash)
                         }
                     }
                     .padding(.horizontal)
@@ -183,7 +257,7 @@ struct TransactionDetailView: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
+        let formatter = DateFormatter.gregorian()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
@@ -226,22 +300,4 @@ struct TransactionDetailRow: View {
         }
         .padding(.horizontal)
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    TransactionDetailView(
-        transaction: WalletTransaction(
-            txid: "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
-            netAmount: 50000000,
-            height: 12345,
-            blockHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            timestamp: UInt64(Date().timeIntervalSince1970),
-            fee: 226,
-            confirmations: 6,
-            type: "received",
-            isOurs: false
-        )
-    )
 }

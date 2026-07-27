@@ -10,6 +10,8 @@ pub use crate::identity::SecurityLevel;
 
 use bincode::{Decode, Encode};
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +23,7 @@ use crate::identity::{KeyID, TimestampMillis};
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Default,
     Debug,
@@ -45,7 +48,14 @@ pub struct IdentityPublicKeyV0 {
     pub key_type: KeyType,
     pub read_only: bool,
     pub data: BinaryData,
-    #[serde(default)]
+    // Phase D step 4: skip emitting `disabledAt: null` for non-disabled keys.
+    // Bincode (consensus binary path) is independent of this attribute and
+    // always writes the Option discriminant + payload. Identity hashing /
+    // Drive storage / state-transition signing all go through bincode, so
+    // none of those are affected. JSON / platform_value wire path becomes
+    // `{ ...fields }` instead of `{ ..., disabledAt: null }` for the
+    // common non-disabled case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled_at: Option<TimestampMillis>,
 }
 

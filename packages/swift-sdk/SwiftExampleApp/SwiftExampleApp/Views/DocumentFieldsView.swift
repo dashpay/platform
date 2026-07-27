@@ -1,17 +1,22 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct DocumentFieldsView: View {
     let documentType: PersistentDocumentType
     @Binding var fieldValues: [String: Any]
-    
+
     @State private var textFields: [String: String] = [:]
     @State private var numberFields: [String: String] = [:]
     @State private var boolFields: [String: Bool] = [:]
     @State private var arrayFields: [String: String] = [:]
-    
+    /// Boolean fields the user has actually toggled. Untouched optional
+    /// booleans are omitted from the payload (absence ≠ `false` for some
+    /// schemas) rather than broadcast as the seeded `false` default.
+    @State private var touchedBoolFields: Set<String> = []
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {            
+        VStack(alignment: .leading, spacing: 16) {
             if let properties = documentType.propertiesList, !properties.isEmpty {
                 ForEach(properties.sorted(by: { $0.name < $1.name }), id: \.id) { property in
                     fieldView(for: property)
@@ -32,7 +37,7 @@ struct DocumentFieldsView: View {
             initializeFields()
         }
     }
-    
+
     @ViewBuilder
     private func fieldView(for property: PersistentProperty) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -45,16 +50,17 @@ struct DocumentFieldsView: View {
                         .foregroundColor(.red)
                 }
             }
-            
+
             // Check if this is an identifier field (contentMediaType contains identifier)
             let isIdentifier = property.contentMediaType?.contains("identifier") ?? false
-            
+
             if isIdentifier {
                 // Handle identifier fields - ask for base58 input
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("Base58 identifier", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .font(.system(.body, design: .monospaced))
+                        .accessibilityIdentifier("createDocument.field.\(property.name)")
                     Text("Enter a valid base58 identifier (e.g., 4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF)")
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -64,18 +70,22 @@ struct DocumentFieldsView: View {
             case "string":
                 TextField(placeholderText(for: property), text: binding(for: property.name, in: $textFields))
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
+
             case "number", "integer":
                 TextField(placeholderText(for: property), text: binding(for: property.name, in: $numberFields))
                     .keyboardType(.numberPad)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
+
             case "boolean":
-                Toggle(isOn: binding(for: property.name, in: $boolFields)) {
+                Toggle(isOn: boolBinding(for: property.name)) {
                     Text("")
                 }
                 .labelsHidden()
-                
+                .accessibilityLabel(property.name)
+                .accessibilityIdentifier("createDocument.field.\(property.name)")
+
             case "array":
                 if property.byteArray {
                     // Byte arrays should be entered as hex strings
@@ -85,12 +95,13 @@ struct DocumentFieldsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Enter comma-separated values", text: binding(for: property.name, in: $arrayFields))
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .accessibilityIdentifier("createDocument.field.\(property.name)")
                         Text("Separate multiple values with commas")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
                 }
-                
+
             case "object":
                 TextEditor(text: binding(for: property.name, in: $textFields))
                     .font(.system(.caption, design: .monospaced))
@@ -99,13 +110,15 @@ struct DocumentFieldsView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                     )
-                
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
+
                 default:
                     TextField("Enter \(property.name)", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .accessibilityIdentifier("createDocument.field.\(property.name)")
                 }
             }
-            
+
             if let description = property.fieldDescription {
                 Text(description)
                     .font(.caption2)
@@ -113,10 +126,10 @@ struct DocumentFieldsView: View {
             }
         }
     }
-    
+
     private func placeholderText(for property: PersistentProperty) -> String {
         var placeholder = "Enter \(property.name)"
-        
+
         if let min = property.minLength, let max = property.maxLength {
             placeholder += " (\(min)-\(max) chars)"
         } else if let min = property.minLength {
@@ -124,7 +137,7 @@ struct DocumentFieldsView: View {
         } else if let max = property.maxLength {
             placeholder += " (max \(max) chars)"
         }
-        
+
         if let min = property.minValue, let max = property.maxValue {
             placeholder = "Enter value between \(min) and \(max)"
         } else if let min = property.minValue {
@@ -132,20 +145,33 @@ struct DocumentFieldsView: View {
         } else if let max = property.maxValue {
             placeholder = "Enter value ≤ \(max)"
         }
-        
+
         return placeholder
     }
-    
+
+    /// Boolean binding that records a user toggle, so untouched optional
+    /// booleans can be omitted from the payload (see `touchedBoolFields`).
+    private func boolBinding(for key: String) -> Binding<Bool> {
+        Binding(
+            get: { boolFields[key] ?? false },
+            set: {
+                boolFields[key] = $0
+                touchedBoolFields.insert(key)
+                updateFieldValues()
+            }
+        )
+    }
+
     private func binding<T>(for key: String, in dictionary: Binding<[String: T]>) -> Binding<T> where T: DefaultInitializable {
         Binding(
             get: { dictionary.wrappedValue[key] ?? T() },
-            set: { 
+            set: {
                 dictionary.wrappedValue[key] = $0
                 updateFieldValues()
             }
         )
     }
-    
+
     private func initializeFields() {
         // Initialize with default values
         if let properties = documentType.propertiesList {
@@ -168,23 +194,23 @@ struct DocumentFieldsView: View {
                 }
             }
         }
-        
+
         updateFieldValues()
     }
-    
+
     private func updateFieldValues() {
         var values: [String: Any] = [:]
-        
+
         // Check for identifier fields and convert base58 to Data
         if let propertiesList = documentType.propertiesList {
             // Using PersistentProperty objects
             for (key, value) in textFields {
                 if !value.isEmpty {
                     if let property = propertiesList.first(where: { $0.name == key }) {
-                        let isIdentifier = (property.type == "array" && property.byteArray && 
+                        let isIdentifier = (property.type == "array" && property.byteArray &&
                                          property.minItems == 32 && property.maxItems == 32) ||
                                          property.contentMediaType?.contains("identifier") ?? false
-                        
+
                         if isIdentifier {
                             // Convert base58 string to Data for identifier fields
                             if let identifierData = Data.identifier(fromBase58: value) {
@@ -211,7 +237,7 @@ struct DocumentFieldsView: View {
                 }
             }
         }
-        
+
         // Add number fields
         for (key, value) in numberFields {
             if !value.isEmpty {
@@ -222,12 +248,21 @@ struct DocumentFieldsView: View {
                 }
             }
         }
-        
-        // Add boolean fields
+
+        // Add boolean fields. Unlike the other types (which skip empty
+        // input), a seeded boolean has no "empty" state — so only include
+        // it if it's required or the user actually toggled it. This keeps
+        // untouched optional booleans absent from the payload instead of
+        // broadcasting the seeded `false` (absence ≠ `false` for some
+        // schemas).
         for (key, value) in boolFields {
-            values[key] = value
+            let isRequired = documentType.propertiesList?
+                .first(where: { $0.name == key })?.isRequired ?? false
+            if isRequired || touchedBoolFields.contains(key) {
+                values[key] = value
+            }
         }
-        
+
         // Add array fields
         for (key, value) in arrayFields {
             if !value.isEmpty {
@@ -235,7 +270,7 @@ struct DocumentFieldsView: View {
                 values[key] = items
             }
         }
-        
+
         fieldValues = values
     }
 }
@@ -259,7 +294,7 @@ extension DocumentFieldsView {
         let expectedBytes = property.minItems ?? property.maxItems ?? 32 // Default to 32 if not specified
         let expectedHexLength = expectedBytes * 2
         let currentValue = textFields[property.name] ?? ""
-        
+
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 TextField("Hex Data", text: binding(for: property.name, in: $textFields))
@@ -267,35 +302,40 @@ extension DocumentFieldsView {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
+                    .accessibilityIdentifier("createDocument.field.\(property.name)")
                     .onChange(of: currentValue) { _, newValue in
                         // Remove any non-hex characters and convert to lowercase
                         let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
                         if cleaned != newValue {
                             textFields[property.name] = cleaned
+                            // Direct @State mutation bypasses the binding's
+                            // setter, so re-sync the cleaned value into the
+                            // submitted `fieldValues`.
+                            updateFieldValues()
                         }
                     }
-                
+
                 // Validation indicator
                 if !currentValue.isEmpty {
                     Image(systemName: isValidHex(currentValue, expectedLength: expectedHexLength) ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundColor(isValidHex(currentValue, expectedLength: expectedHexLength) ? .green : .red)
                 }
             }
-            
+
             // Help text
             Text("Enter a valid \(expectedBytes) byte array in hex format (\(expectedHexLength) characters)")
                 .font(.caption2)
                 .foregroundColor(.secondary)
-            
+
             // Current status
             if !currentValue.isEmpty {
                 HStack {
                     Text("\(currentValue.count)/\(expectedHexLength) characters")
                         .font(.caption2)
                         .foregroundColor(currentValue.count == expectedHexLength ? .green : .orange)
-                    
+
                     Spacer()
-                    
+
                     if currentValue.count == expectedHexLength {
                         Text("✓ Valid hex data")
                             .font(.caption2)
@@ -305,12 +345,12 @@ extension DocumentFieldsView {
             }
         }
     }
-    
+
     private func isValidHex(_ string: String, expectedLength: Int) -> Bool {
         // Check if string contains only hex characters
         let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
         let stringCharacterSet = CharacterSet(charactersIn: string)
-        
+
         return stringCharacterSet.isSubset(of: hexCharacterSet) && string.count == expectedLength
     }
 }

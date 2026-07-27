@@ -33,12 +33,11 @@ where
     if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
         // We are already in a block, or in init chain.
         // This only makes sense if we were the proposer unless we are at a future round
-        if block_execution_context.block_state_info().round() != (request.round as u32) {
+        let block_state_info = block_execution_context.block_state_info();
+        if block_state_info.round() != (request.round as u32) {
             // We were not the proposer, and we should process something new
             drop_block_execution_context = true;
-        } else if let Some(current_block_hash) =
-            block_execution_context.block_state_info().block_hash()
-        {
+        } else if let Some(current_block_hash) = block_state_info.block_hash() {
             // There is also the possibility that this block already came in, but tenderdash crashed
             // Now tenderdash is sending it again
             if let Some(proposal_info) = block_execution_context.proposer_results() {
@@ -69,6 +68,15 @@ where
             } else {
                 // We are getting a different block hash for a block of the same round
                 // This is a terrible issue
+                tracing::error!(
+                    method = "process_proposal",
+                    block_state_info = ?block_state_info,
+                    "received a process proposal request twice with different hash for height {}/round {}: existing hash {:?}, new hash {:?}",
+                    request.height,
+                    request.round,
+                    current_block_hash,
+                    request.hash,
+                );
                 Err(Error::Abci(AbciError::BadRequest(
                     "received a process proposal request twice with different hash".to_string(),
                 )))?;
@@ -180,7 +188,7 @@ where
 
     let platform_state = app.platform().state.load();
 
-    // Verify that Platform State corresponds to Drive commited state
+    // Verify that Platform State corresponds to Drive committed state
     let platform_state_app_hash = platform_state
         .last_committed_block_app_hash()
         .unwrap_or_default();
@@ -206,7 +214,7 @@ where
     let config = &app.platform().config;
 
     #[allow(clippy::collapsible_if)]
-    if !(app.platform().config.network == Network::Dash
+    if !(app.platform().config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
         && request.height < 33000)
     {

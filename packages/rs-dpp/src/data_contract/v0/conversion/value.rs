@@ -1,12 +1,10 @@
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::serialized_version::property_names;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
-use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::data_contract::v0::DataContractV0;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{ReplacementType, Value};
-use platform_version::TryFromPlatformVersioned;
 
 pub const DATA_CONTRACT_IDENTIFIER_FIELDS_V0: [&str; 2] =
     [property_names::ID, property_names::OWNER_ID];
@@ -21,7 +19,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
             DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
             ReplacementType::Identifier,
         )?;
-        let format_version = value.get_str("$format_version")?;
+        let format_version = value.get_str("$formatVersion")?;
         match format_version {
             "0" => {
                 let data_contract_data: DataContractInSerializationFormatV0 =
@@ -42,25 +40,5 @@ impl DataContractValueConversionMethodsV0 for DataContractV0 {
                     .map_err(|_| ProtocolError::Generic("Conversion error".to_string()))?,
             }),
         }
-    }
-
-    fn to_value(&self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
-        let data_contract_data =
-            DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
-
-        let value =
-            platform_value::to_value(data_contract_data).map_err(ProtocolError::ValueError)?;
-
-        Ok(value)
-    }
-
-    fn into_value(self, platform_version: &PlatformVersion) -> Result<Value, ProtocolError> {
-        let data_contract_data =
-            DataContractInSerializationFormat::try_from_platform_versioned(self, platform_version)?;
-
-        let value =
-            platform_value::to_value(data_contract_data).map_err(ProtocolError::ValueError)?;
-
-        Ok(value)
     }
 }

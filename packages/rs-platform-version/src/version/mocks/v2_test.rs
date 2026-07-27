@@ -17,11 +17,11 @@ use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
 use crate::version::drive_abci_versions::drive_abci_method_versions::v1::DRIVE_ABCI_METHOD_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
-    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQuerySystemVersions,
-    DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions, DriveAbciQueryVersions,
-    DriveAbciQueryVotingVersions,
+    DriveAbciDocumentQueryHelperVersions, DriveAbciQueryAddressFundsVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
+    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v1::DRIVE_ABCI_VALIDATION_VERSIONS_V1;
@@ -32,6 +32,7 @@ use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CO
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
@@ -141,7 +142,18 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
             },
             group: DRIVE_GROUP_METHOD_VERSIONS_V1,
             address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
-            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
+            shielded: DriveShieldedMethodVersions {
+                insert_note: 0,
+                insert_nullifiers: 0,
+                update_total_balance: 0,
+                record_anchor_if_changed: 0,
+                prune_anchors: 0,
+                has_anchor: 0,
+                has_nullifier: 0,
+                read_total_balance: 0,
+                notes_count: 0,
+            },
+            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, prove_compacted_address_balance_changes: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -159,6 +171,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 min_version: 0,
                 max_version: 0,
                 default_current_version: 0,
+            },
+            document_history: FeatureVersionBounds {
+                min_version: 0,
+                max_version: 0,
+                default_current_version: 0,
+            },
+            document_query_helpers: DriveAbciDocumentQueryHelperVersions {
+                compute_aggregate_mode_and_check_limit: 0,
             },
             prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions {
                 balance: FeatureVersionBounds {
@@ -391,6 +411,39 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     default_current_version: 0,
                 },
             },
+            shielded_queries: DriveAbciQueryShieldedVersions {
+                encrypted_notes: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                anchors: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                most_recent_anchor: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                pool_state: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                notes_count: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                nullifiers: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
+                max_query_chunks: 1,
+            },
             address_funds_queries: DriveAbciQueryAddressFundsVersions {
                 addresses_infos: FeatureVersionBounds {
                     min_version: 0,
@@ -447,13 +500,16 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_limits: SystemLimits {
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
+        max_document_value_depth: None,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
+        min_withdrawal_amount: 190_000,
         max_contract_group_size: 256,
         max_token_redemption_cycles: 128,
+        max_shielded_transition_actions: 16,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

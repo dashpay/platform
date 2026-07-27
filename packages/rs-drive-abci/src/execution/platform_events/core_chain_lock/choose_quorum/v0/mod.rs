@@ -104,6 +104,249 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
+    fn test_choose_quorum_v0_empty_quorums_returns_none() {
+        let quorums = BTreeMap::new();
+        let request_id = [0u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_choose_quorum_thread_safe_v0_empty_quorums_returns_none() {
+        let quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
+        let request_id = [0u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_choose_quorum_thread_safe_v0_single_quorum() {
+        let quorum_hash = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .expect("valid hex")
+                .as_slice(),
+        )
+        .expect("valid quorum hash");
+
+        let key = [42u8; 48];
+        let quorums = BTreeMap::from([(quorum_hash, key)]);
+        let request_id = [1u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        let (_, returned_key) = result.expect("expected quorum selection for single quorum");
+        assert_eq!(*returned_key, key);
+    }
+
+    #[test]
+    fn test_choose_quorum_thread_safe_v0_deterministic() {
+        let quorum_hash1 = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .expect("valid hex")
+                .as_slice(),
+        )
+        .expect("valid quorum hash");
+        let quorum_hash2 = QuorumHash::from_slice(
+            hex::decode("000000bd5639c21dd8abf60253c3fe0343d87a9762b5b8f57e2b4ea1523fd071")
+                .expect("valid hex")
+                .as_slice(),
+        )
+        .expect("valid quorum hash");
+
+        let key1 = [1u8; 48];
+        let key2 = [2u8; 48];
+        let quorums = BTreeMap::from([(quorum_hash1, key1), (quorum_hash2, key2)]);
+        let request_id = [42u8; 32];
+
+        // Call twice with same inputs - should be deterministic
+        let result1 = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        )
+        .expect("expected quorum selection on first call");
+        let result2 = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        )
+        .expect("expected quorum selection on second call");
+
+        assert_eq!(result1.0, result2.0);
+    }
+
+    #[test]
+    fn test_choose_quorum_v0_single_quorum() {
+        let quorum_hash = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .expect("valid hex")
+                .as_slice(),
+        )
+        .expect("valid quorum hash");
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let key = SecretKey::random(&mut rng).public_key();
+        let quorums = BTreeMap::from([(quorum_hash, key)]);
+        let request_id = [1u8; 32];
+
+        let result = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        );
+
+        assert!(
+            result.is_some(),
+            "expected quorum selection for single quorum"
+        );
+    }
+
+    /// `choose_quorum_v0` (BLS variant) must be deterministic across calls:
+    /// given the same quorums and request_id, it picks the same quorum.
+    /// The `choose_quorum_thread_safe_v0` variant is already covered, but
+    /// this test pins the contract for the BLS variant used in production.
+    #[test]
+    fn test_choose_quorum_v0_deterministic_with_multiple_quorums() {
+        let quorum_hash1 = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .expect("hex")
+                .as_slice(),
+        )
+        .expect("valid hash");
+        let quorum_hash2 = QuorumHash::from_slice(
+            hex::decode("000000bd5639c21dd8abf60253c3fe0343d87a9762b5b8f57e2b4ea1523fd071")
+                .expect("hex")
+                .as_slice(),
+        )
+        .expect("valid hash");
+        let quorum_hash3 = QuorumHash::from_slice(
+            hex::decode("0000006faac9003919a6d5456a0a46ae10db517f572221279f0540b79fd9cf1b")
+                .expect("hex")
+                .as_slice(),
+        )
+        .expect("valid hash");
+
+        let mut rng = StdRng::seed_from_u64(7);
+        let quorums = BTreeMap::from([
+            (quorum_hash1, SecretKey::random(&mut rng).public_key()),
+            (quorum_hash2, SecretKey::random(&mut rng).public_key()),
+            (quorum_hash3, SecretKey::random(&mut rng).public_key()),
+        ]);
+
+        let request_id = [13u8; 32];
+
+        let first = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        )
+        .expect("should pick a quorum");
+
+        let second = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &quorums,
+            &request_id,
+        )
+        .expect("should pick a quorum");
+
+        assert_eq!(
+            first.0, second.0,
+            "choose_quorum_v0 must be deterministic across calls with identical inputs"
+        );
+    }
+
+    /// The two `choose_quorum_*_v0` variants use different sort/pop orders
+    /// (BLS `sort_by_key` + `remove(0)` vs thread-safe `sort_by_key` +
+    /// `pop()`), so for the same inputs they MAY select different quorums.
+    /// What must be guaranteed is that both are individually deterministic
+    /// and that `thread_safe_v0` picks the MAX-scoring quorum while `_v0`
+    /// picks the MIN-scoring quorum. We verify this invariant here.
+    #[test]
+    fn test_choose_quorum_v0_vs_thread_safe_v0_pick_extreme_scores() {
+        // Build identical quorum maps for both variants using dummy 48-byte
+        // "keys" (good enough for thread-safe, which just takes [u8; T]).
+        let quorum_hash1 = QuorumHash::from_slice(
+            hex::decode("000000dc07d722238a994116c3395c334211d9864ff5b37c3be51d5fdda66223")
+                .expect("hex")
+                .as_slice(),
+        )
+        .expect("valid hash");
+        let quorum_hash2 = QuorumHash::from_slice(
+            hex::decode("000000bd5639c21dd8abf60253c3fe0343d87a9762b5b8f57e2b4ea1523fd071")
+                .expect("hex")
+                .as_slice(),
+        )
+        .expect("valid hash");
+        let quorum_hash3 = QuorumHash::from_slice(
+            hex::decode("0000006faac9003919a6d5456a0a46ae10db517f572221279f0540b79fd9cf1b")
+                .expect("hex")
+                .as_slice(),
+        )
+        .expect("valid hash");
+
+        let key1: [u8; 48] = [1u8; 48];
+        let key2: [u8; 48] = [2u8; 48];
+        let key3: [u8; 48] = [3u8; 48];
+
+        let thread_safe_quorums = BTreeMap::from([
+            (quorum_hash1, key1),
+            (quorum_hash2, key2),
+            (quorum_hash3, key3),
+        ]);
+
+        let request_id = [99u8; 32];
+
+        // Run the thread_safe_v0 variant to obtain the MAX-scoring quorum.
+        let max_pick = Platform::<MockCoreRPCLike>::choose_quorum_thread_safe_v0(
+            QuorumType::Llmq50_60,
+            &thread_safe_quorums,
+            &request_id,
+        )
+        .expect("pick");
+
+        // Build the equivalent BLS map.
+        let mut rng = StdRng::seed_from_u64(123);
+        let pk1 = SecretKey::random(&mut rng).public_key();
+        let pk2 = SecretKey::random(&mut rng).public_key();
+        let pk3 = SecretKey::random(&mut rng).public_key();
+        let bls_quorums = BTreeMap::from([
+            (quorum_hash1, pk1),
+            (quorum_hash2, pk2),
+            (quorum_hash3, pk3),
+        ]);
+
+        let min_pick = Platform::<MockCoreRPCLike>::choose_quorum_v0(
+            QuorumType::Llmq50_60,
+            &bls_quorums,
+            &request_id,
+        )
+        .expect("pick");
+
+        // With three entries and distinct hashes, the MIN-scoring and
+        // MAX-scoring reversed quorum hashes must differ.
+        assert_ne!(
+            max_pick.0, min_pick.0,
+            "with 3 distinct quorums, v0 and thread_safe_v0 must select different extremes"
+        );
+    }
+
+    #[test]
     fn test_choose_quorum() {
         // Active quorums:
         let quorum_hash1 = QuorumHash::from_slice(

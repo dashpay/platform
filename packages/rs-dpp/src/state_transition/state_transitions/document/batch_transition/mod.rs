@@ -5,7 +5,7 @@ use std::convert::TryInto;
 use derive_more::From;
 
 use platform_value::Value;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
@@ -39,8 +39,6 @@ pub mod accessors;
 pub mod batched_transition;
 pub mod fields;
 mod identity_signed;
-#[cfg(feature = "state-transition-json-conversion")]
-mod json_conversion;
 pub mod methods;
 pub mod resolvers;
 mod state_transition_estimated_fee_validation;
@@ -49,8 +47,6 @@ mod v0;
 mod v1;
 #[cfg(feature = "validation")]
 mod validation;
-#[cfg(feature = "state-transition-value-conversion")]
-mod value_conversion;
 mod version;
 
 use crate::state_transition::data_contract_update_transition::{
@@ -76,20 +72,26 @@ pub use v1::*;
     From,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.batch_state_transition"
 )]
 pub enum BatchTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(BatchTransitionV0),
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "1"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(BatchTransitionV1),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for BatchTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for BatchTransition {}
 
 impl StateTransitionFieldTypes for BatchTransition {
     fn binary_property_paths() -> Vec<&'static str> {
@@ -102,6 +104,78 @@ impl StateTransitionFieldTypes for BatchTransition {
 
     fn signature_property_paths() -> Vec<&'static str> {
         vec![SIGNATURE, SIGNATURE_PUBLIC_KEY_ID]
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use platform_value::{platform_value, BinaryData, Identifier};
+    use serde_json::json;
+
+    pub(crate) fn fixture() -> BatchTransition {
+        BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0xc0; 32]),
+            transitions: vec![], // empty transitions list — sub-types tested separately
+            user_fee_increase: 23,
+            signature_public_key_id: 4,
+            signature: BinaryData::new(vec![0xd0; 65]),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `BatchTransition` is internally tagged `$formatVersion`; V0 fields use
+        // camelCase. `userFeeIncrease` is `u16`, `signaturePublicKeyId` is `u32`
+        // — JSON has only one number type, so sized variants are erased on the
+        // wire (the value-path test below pins the typed variants). `Identifier`
+        // is base58 in JSON HR; `BinaryData` is base64.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "ownerId": "DyRkUpQxYG2VnP2SkMdQs5BTsVPeKCpSHLxzByc2Sxvj",
+                "transitions": [],
+                "userFeeIncrease": 23,
+                "signaturePublicKeyId": 4,
+                "signature": "0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NA=",
+            })
+        );
+        let recovered = BatchTransition::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::Value;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        let owner_id = Identifier::new([0xc0; 32]);
+        // `userFeeIncrease` is `u16` (UserFeeIncrease alias), `signaturePublicKeyId`
+        // is `u32` (KeyID alias) — explicit suffixes lock in the typed variants.
+        // `BinaryData` is `Value::Bytes` in non-HR.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "ownerId": owner_id,
+                "transitions": Value::Array(vec![]),
+                "userFeeIncrease": 23u16,
+                "signaturePublicKeyId": 4u32,
+                "signature": Value::Bytes(vec![0xd0; 65]),
+            })
+        );
+        let recovered = BatchTransition::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }
 
@@ -119,3 +193,6 @@ pub fn get_security_level_requirement(v: &Value, default: SecurityLevel) -> Secu
 }
 
 impl OptionallyAssetLockProved for BatchTransition {}
+
+#[cfg(test)]
+mod tests;

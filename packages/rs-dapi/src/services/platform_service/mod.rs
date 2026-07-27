@@ -6,22 +6,73 @@ mod error_mapping;
 mod get_status;
 mod wait_for_state_transition_result;
 
+use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetStatusRequest,
-    GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetStatusRequest, GetStatusResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use dpp::version::PlatformVersion;
 use futures::FutureExt;
 use std::any::type_name_of_val;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
+
+const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
+
+const MAX_PATH_COMPONENTS: usize = 256;
+const MAX_GROVEDB_KEY_BYTES: usize = 255;
+const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
+
+fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
+    let v0 = match request.version.as_ref() {
+        Some(get_path_elements_request::Version::V0(v0)) => v0,
+        None => return Err(Status::invalid_argument("missing request version")),
+    };
+
+    let max_keys = PlatformVersion::latest()
+        .drive_abci
+        .query
+        .max_returned_elements as usize;
+    if v0.path.len() > MAX_PATH_COMPONENTS || v0.keys.len() > max_keys {
+        return Err(Status::resource_exhausted(
+            "too many path or key components",
+        ));
+    }
+
+    let total_bytes = v0
+        .path
+        .iter()
+        .chain(&v0.keys)
+        .try_fold(0usize, |total, component| {
+            if component.len() > MAX_GROVEDB_KEY_BYTES {
+                return Err(Status::resource_exhausted(
+                    "path or key component is too large",
+                ));
+            }
+
+            total
+                .checked_add(component.len())
+                .ok_or_else(|| Status::resource_exhausted("path query size overflow"))
+        })?;
+
+    if total_bytes > MAX_PATH_QUERY_BYTES {
+        return Err(Status::resource_exhausted(
+            "aggregate path query bytes exceed limit",
+        ));
+    }
+
+    Ok(())
+}
 
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
@@ -99,6 +150,7 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
+    pub state_transition_wait_permits: Arc<Semaphore>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
     workers: Workers,
@@ -158,6 +210,9 @@ impl PlatformServiceImpl {
                 invalidation_subscription,
             ),
             subscriber_manager,
+            state_transition_wait_permits: Arc::new(Semaphore::new(
+                MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
             workers,
         }
     }
@@ -344,6 +399,12 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDocumentsResponse
     );
 
+    drive_method!(
+        get_document_history,
+        dapi_grpc::platform::v0::GetDocumentHistoryRequest,
+        dapi_grpc::platform::v0::GetDocumentHistoryResponse
+    );
+
     // System methods
     drive_method!(
         get_consensus_params,
@@ -375,11 +436,38 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetFinalizedEpochInfosResponse
     );
 
-    drive_method!(
-        get_path_elements,
-        dapi_grpc::platform::v0::GetPathElementsRequest,
-        dapi_grpc::platform::v0::GetPathElementsResponse
-    );
+    async fn get_path_elements(
+        &self,
+        request: Request<GetPathElementsRequest>,
+    ) -> Result<Response<GetPathElementsResponse>, Status> {
+        use crate::cache::make_cache_key;
+
+        let method = type_name_of_val(request.get_ref());
+        validate_path_elements_request(request.get_ref())?;
+
+        let mut client = self.drive_client.get_client();
+        let cache = self.platform_cache.clone();
+        let result_with_meta: Result<(Response<GetPathElementsResponse>, bool), Status> = async {
+            let key = make_cache_key(method, request.get_ref());
+            if let Some(decoded) = cache.get(&key) {
+                return Ok((Response::new(decoded), true));
+            }
+
+            trace!(method, "Calling Drive method");
+            let response = client.get_path_elements(request).await?;
+            trace!(method, "Caching response");
+            cache.put(key, response.get_ref());
+            Ok((response, false))
+        }
+        .await;
+
+        match &result_with_meta {
+            Ok((_, cache_hit)) => info!(method, cache_hit = *cache_hit, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result_with_meta.map(|(response, _)| response)
+    }
 
     drive_method!(
         get_total_credits_in_platform,
@@ -555,4 +643,90 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesRequest,
         dapi_grpc::platform::v0::GetRecentCompactedAddressBalanceChangesResponse
     );
+
+    // Shielded pool methods
+    drive_method!(
+        get_shielded_encrypted_notes,
+        dapi_grpc::platform::v0::GetShieldedEncryptedNotesRequest,
+        dapi_grpc::platform::v0::GetShieldedEncryptedNotesResponse
+    );
+
+    drive_method!(
+        get_shielded_anchors,
+        dapi_grpc::platform::v0::GetShieldedAnchorsRequest,
+        dapi_grpc::platform::v0::GetShieldedAnchorsResponse
+    );
+
+    drive_method!(
+        get_most_recent_shielded_anchor,
+        dapi_grpc::platform::v0::GetMostRecentShieldedAnchorRequest,
+        dapi_grpc::platform::v0::GetMostRecentShieldedAnchorResponse
+    );
+
+    drive_method!(
+        get_shielded_pool_state,
+        dapi_grpc::platform::v0::GetShieldedPoolStateRequest,
+        dapi_grpc::platform::v0::GetShieldedPoolStateResponse
+    );
+
+    drive_method!(
+        get_shielded_notes_count,
+        dapi_grpc::platform::v0::GetShieldedNotesCountRequest,
+        dapi_grpc::platform::v0::GetShieldedNotesCountResponse
+    );
+
+    drive_method!(
+        get_shielded_nullifiers,
+        dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
+        dapi_grpc::platform::v0::GetShieldedNullifiersResponse
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+
+    fn request(path: Vec<Vec<u8>>, keys: Vec<Vec<u8>>) -> GetPathElementsRequest {
+        GetPathElementsRequest {
+            version: Some(get_path_elements_request::Version::V0(
+                GetPathElementsRequestV0 {
+                    path,
+                    keys,
+                    prove: false,
+                },
+            )),
+        }
+    }
+
+    #[test]
+    fn path_elements_request_enforces_count_and_byte_budgets() {
+        let max_keys = PlatformVersion::latest()
+            .drive_abci
+            .query
+            .max_returned_elements as usize;
+
+        assert!(validate_path_elements_request(&request(vec![], vec![vec![0]; max_keys])).is_ok());
+        assert!(
+            validate_path_elements_request(&request(vec![], vec![vec![]; max_keys + 1])).is_err()
+        );
+        assert!(
+            validate_path_elements_request(&request(vec![vec![]; MAX_PATH_COMPONENTS + 1], vec![]))
+                .is_err()
+        );
+        assert!(
+            validate_path_elements_request(&request(
+                vec![vec![0; MAX_GROVEDB_KEY_BYTES + 1]],
+                vec![]
+            ))
+            .is_err()
+        );
+
+        let path = vec![vec![0; MAX_GROVEDB_KEY_BYTES]; MAX_PATH_COMPONENTS];
+        assert!(validate_path_elements_request(&request(path.clone(), vec![vec![0; 255]])).is_ok());
+        assert!(
+            validate_path_elements_request(&request(path, vec![vec![0; 255], vec![1; 255]]))
+                .is_err()
+        );
+    }
 }

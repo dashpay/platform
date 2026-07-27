@@ -1,9 +1,9 @@
 //! Tests of mocked Fetch trait implementations.
 
-use super::common::{mock_data_contract, mock_document_type};
+use super::common::{bootstrap_mock_sdk_to_latest, mock_data_contract, mock_document_type};
 use dash_sdk::{
     platform::{DocumentQuery, Fetch},
-    Sdk,
+    Sdk, SdkBuilder,
 };
 use dpp::{
     data_contract::{
@@ -90,7 +90,15 @@ async fn test_mock_fetch_identity_not_found() {
 /// Given some data contract, when I fetch it by ID, I get it.
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
-    let mut sdk = Sdk::new_mock();
+    // `mock_data_contract` builds V2 document types that only decode at the latest
+    // protocol version; the unpinned default floor would downgrade the type and
+    // mismatch. A proven `fetch_current` bootstrap ratchets the auto-detect SDK up
+    // to the network's latest version before the data contract round-trips, exactly
+    // as production converges.
+    let mut sdk = SdkBuilder::new_mock()
+        .build()
+        .expect("mock Sdk should be created");
+    bootstrap_mock_sdk_to_latest(&mut sdk).await;
 
     let document_type: DocumentType = mock_document_type();
     let expected = mock_data_contract(Some(&document_type));

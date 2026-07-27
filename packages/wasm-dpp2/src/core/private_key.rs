@@ -1,14 +1,16 @@
 use std::convert::TryInto;
 
-use super::network::NetworkWasm;
+use super::network::{NetworkLikeJs, NetworkWasm};
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
+use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::public_key::PublicKeyWasm;
-use crate::utils::IntoWasm;
+use crate::utils::try_vec_to_fixed_bytes;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::hashes::hex::FromHex;
 use dpp::dashcore::key::Secp256k1;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PrivateKey")]
@@ -36,16 +38,6 @@ impl PrivateKeyWasm {
 
 #[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PrivateKey".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PrivateKey".to_string()
-    }
-
     #[wasm_bindgen(js_name = "fromWIF")]
     pub fn from_wif(wif: &str) -> WasmDppResult<Self> {
         let pk = PrivateKey::from_wif(wif)
@@ -55,15 +47,10 @@ impl PrivateKeyWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(
-        bytes: Vec<u8>,
-        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: JsValue,
-    ) -> WasmDppResult<Self> {
-        let network_wasm = NetworkWasm::try_from(network)?;
+    pub fn from_bytes(bytes: Vec<u8>, network: NetworkLikeJs) -> WasmDppResult<Self> {
+        let network_wasm: NetworkWasm = network.try_into()?;
 
-        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
-            WasmDppError::invalid_argument("Private key bytes must be exactly 32 bytes".to_string())
-        })?;
+        let key_bytes: [u8; 32] = try_vec_to_fixed_bytes(bytes, "privateKey")?;
 
         let pk = PrivateKey::from_byte_array(&key_bytes, network_wasm.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -73,17 +60,15 @@ impl PrivateKeyWasm {
 
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(
-        hex_key: &str,
-        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: JsValue,
+        #[wasm_bindgen(js_name = "hexKey")] hex_key: &str,
+        network: NetworkLikeJs,
     ) -> WasmDppResult<Self> {
-        let network_wasm = NetworkWasm::try_from(network)?;
+        let network_wasm: NetworkWasm = network.try_into()?;
 
         let bytes = Vec::from_hex(hex_key)
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
-            WasmDppError::invalid_argument("Private key hex must decode to 32 bytes".to_string())
-        })?;
+        let key_bytes: [u8; 32] = try_vec_to_fixed_bytes(bytes, "privateKey")?;
 
         let pk = PrivateKey::from_byte_array(&key_bytes, network_wasm.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -103,8 +88,8 @@ impl PrivateKeyWasm {
 
 #[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWasm {
-    #[wasm_bindgen(js_name = "WIF")]
-    pub fn get_wif(&self) -> String {
+    #[wasm_bindgen(js_name = "toWIF")]
+    pub fn to_wif(&self) -> String {
         self.0.to_wif()
     }
 
@@ -126,26 +111,6 @@ impl PrivateKeyWasm {
     }
 }
 
-impl PrivateKeyWasm {
-    /// Try to extract a PrivateKey from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a PrivateKeyWasm.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let key_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if key_js.is_undefined() || key_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        key_js
-            .to_wasm::<PrivateKeyWasm>("PrivateKey")
-            .map(|boxed| (*boxed).clone())
-    }
-}
+impl_try_from_js_value!(PrivateKeyWasm, "PrivateKey");
+impl_try_from_options!(PrivateKeyWasm);
+impl_wasm_type_info!(PrivateKeyWasm, PrivateKey);

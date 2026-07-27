@@ -5,30 +5,23 @@ use crate::data_contract::TokenContractPosition;
 use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use crate::tokens::token_payment_info::v0::v0_accessors::TokenPaymentInfoAccessorsV0;
 use crate::ProtocolError;
-use bincode_derive::{Decode, Encode};
+use bincode::{Decode, Encode};
 use derive_more::Display;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
-#[cfg(any(
-    feature = "state-transition-serde-conversion",
-    all(
-        feature = "document-serde-conversion",
-        feature = "data-contract-serde-conversion"
-    ),
-))]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, Encode, Decode, Default, PartialEq, Display)]
+// `json_safe_fields` auto-injects `json_safe_option_u64` on
+// `Option<TokenAmount>` (= `Option<u64>`) fields so JSON encodes large
+// values as strings — same convention as the rest of the wire shape.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    any(
-        feature = "state-transition-serde-conversion",
-        all(
-            feature = "document-serde-conversion",
-            feature = "data-contract-serde-conversion"
-        ),
-    ),
-    derive(Serialize, Deserialize)
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
 )]
 #[display(
     "Contract ID: {:?}, Token Position: {:?}, Min Cost: {:?}, Max Cost: {:?}, Gas Fees Paid By: {}",

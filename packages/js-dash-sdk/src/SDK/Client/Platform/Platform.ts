@@ -15,7 +15,7 @@ import publishContract from './methods/contracts/publish';
 import updateContract from './methods/contracts/update';
 import createContract from './methods/contracts/create';
 import getContract from './methods/contracts/get';
-import getContractHistory from './methods/contracts/history';
+import getContractHistory, { historyUnproved as getContractHistoryUnproved } from './methods/contracts/history';
 
 import getIdentity from './methods/identities/get';
 import registerIdentity from './methods/identities/register';
@@ -96,6 +96,7 @@ interface DataContracts {
   create: Function,
   get: Function,
   history: Function,
+  historyUnproved: Function,
 }
 
 /**
@@ -148,10 +149,6 @@ export class Platform {
 
   client: Client;
 
-  private static readonly networkToProtocolVersion: Map<string, number> = new Map([
-    ['testnet', 1],
-  ]);
-
   protected fetcher: Fetcher;
 
   public nonceManager: NonceManager;
@@ -173,6 +170,7 @@ export class Platform {
       create: createContract.bind(this),
       get: getContract.bind(this),
       history: getContractHistory.bind(this),
+      historyUnproved: getContractHistoryUnproved.bind(this),
     };
     this.names = {
       register: registerName.bind(this),
@@ -214,15 +212,11 @@ export class Platform {
       await Platform.initializeDppModule();
 
       if (this.protocolVersion === undefined) {
-        // use mapped protocol version otherwise
-        // fallback to one that set in dpp as the last option
-
-        const mappedProtocolVersion = Platform.networkToProtocolVersion.get(
-          this.client.network,
-        );
-
-        this.protocolVersion = mappedProtocolVersion !== undefined
-          ? mappedProtocolVersion : getLatestProtocolVersion();
+        // Default to the latest protocol version supported by the bundled DPP.
+        // This version also drives how fetched contracts are deserialized; an
+        // older version would downgrade a V1 config (sized_integer_types) to V0
+        // and make contract updates fail network validation.
+        this.protocolVersion = getLatestProtocolVersion();
       }
 
       // eslint-disable-next-line

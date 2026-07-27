@@ -1,5 +1,10 @@
 mod fetch_contract;
+mod fetch_contract_ids;
 mod fetch_contract_with_history;
+mod fetch_contracts;
 mod get_cached_contract_with_fetch_info;
 mod get_contract_with_fetch_info;
 mod get_contracts_with_fetch_info;
+pub mod get_system_or_user_contract_with_fee;
+
+pub use get_system_or_user_contract_with_fee::ContractFetchOutcome;

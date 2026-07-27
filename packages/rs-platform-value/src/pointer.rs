@@ -119,3 +119,241 @@ impl Value {
         mem::replace(self, Value::Null)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{platform_value, Value};
+
+    // ---------------------------------------------------------------
+    // parse_index (module-private helper)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_index_valid_number() {
+        assert_eq!(super::parse_index("0"), Some(0));
+        assert_eq!(super::parse_index("1"), Some(1));
+        assert_eq!(super::parse_index("42"), Some(42));
+    }
+
+    #[test]
+    fn parse_index_leading_plus_returns_none() {
+        assert_eq!(super::parse_index("+1"), None);
+    }
+
+    #[test]
+    fn parse_index_leading_zero_returns_none() {
+        assert_eq!(super::parse_index("01"), None);
+        assert_eq!(super::parse_index("007"), None);
+    }
+
+    #[test]
+    fn parse_index_single_zero_is_valid() {
+        assert_eq!(super::parse_index("0"), Some(0));
+    }
+
+    #[test]
+    fn parse_index_non_numeric_returns_none() {
+        assert_eq!(super::parse_index("abc"), None);
+        assert_eq!(super::parse_index(""), None);
+    }
+
+    // ---------------------------------------------------------------
+    // pointer() — read-only access
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn pointer_empty_string_returns_self() {
+        let data = platform_value!({"a": 1});
+        assert_eq!(data.pointer(""), Some(&data));
+    }
+
+    #[test]
+    fn pointer_no_leading_slash_returns_none() {
+        let data = platform_value!({"a": 1});
+        assert_eq!(data.pointer("a"), None);
+        assert_eq!(data.pointer("a/b"), None);
+    }
+
+    #[test]
+    fn pointer_simple_key_lookup() {
+        let data = platform_value!({"a": 1, "b": 2});
+        assert_eq!(data.pointer("/a"), Some(&platform_value!(1)));
+        assert_eq!(data.pointer("/b"), Some(&platform_value!(2)));
+    }
+
+    #[test]
+    fn pointer_nested_key_lookup() {
+        let data = platform_value!({"x": {"y": {"z": 42}}});
+        assert_eq!(data.pointer("/x/y/z"), Some(&platform_value!(42)));
+    }
+
+    #[test]
+    fn pointer_missing_path_returns_none() {
+        let data = platform_value!({"a": 1});
+        assert_eq!(data.pointer("/b"), None);
+        assert_eq!(data.pointer("/a/b/c"), None);
+    }
+
+    #[test]
+    fn pointer_array_index() {
+        let data = platform_value!({"arr": [10, 20, 30]});
+        assert_eq!(data.pointer("/arr/0"), Some(&platform_value!(10)));
+        assert_eq!(data.pointer("/arr/1"), Some(&platform_value!(20)));
+        assert_eq!(data.pointer("/arr/2"), Some(&platform_value!(30)));
+    }
+
+    #[test]
+    fn pointer_array_out_of_bounds_returns_none() {
+        let data = platform_value!({"arr": [10]});
+        assert_eq!(data.pointer("/arr/5"), None);
+    }
+
+    #[test]
+    fn pointer_tilde_escape_tilde_zero_becomes_tilde() {
+        // Key contains a literal ~ character, encoded as ~0
+        let data = platform_value!({"a~b": 1});
+        assert_eq!(data.pointer("/a~0b"), Some(&platform_value!(1)));
+    }
+
+    #[test]
+    fn pointer_tilde_escape_tilde_one_becomes_slash() {
+        // Key contains a literal / character, encoded as ~1
+        let data = platform_value!({"a/b": 1});
+        assert_eq!(data.pointer("/a~1b"), Some(&platform_value!(1)));
+    }
+
+    #[test]
+    fn pointer_combined_tilde_escapes() {
+        let data = platform_value!({"~/key": 99});
+        // ~ is ~0, / is ~1, so "~/key" is encoded as "~0~1key"
+        assert_eq!(data.pointer("/~0~1key"), Some(&platform_value!(99)));
+    }
+
+    #[test]
+    fn pointer_scalar_value_returns_none_for_child() {
+        let data = platform_value!(42);
+        assert_eq!(data.pointer("/anything"), None);
+    }
+
+    #[test]
+    fn pointer_nested_array_in_map() {
+        let data = platform_value!({
+            "x": {
+                "y": ["z", "zz"]
+            }
+        });
+        assert_eq!(data.pointer("/x/y/0"), Some(&platform_value!("z")));
+        assert_eq!(data.pointer("/x/y/1"), Some(&platform_value!("zz")));
+    }
+
+    #[test]
+    fn pointer_root_is_array() {
+        let data = platform_value!(["a", "b", "c"]);
+        assert_eq!(data.pointer("/0"), Some(&platform_value!("a")));
+        assert_eq!(data.pointer("/2"), Some(&platform_value!("c")));
+    }
+
+    #[test]
+    fn pointer_leading_zero_index_rejected() {
+        let data = platform_value!({"arr": [10, 20, 30]});
+        // "01" has a leading zero (and len > 1), so parse_index returns None
+        assert_eq!(data.pointer("/arr/01"), None);
+    }
+
+    // ---------------------------------------------------------------
+    // pointer_mut() — mutable access
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn pointer_mut_empty_string_returns_self() {
+        let mut data = platform_value!({"a": 1});
+        let reference = data.pointer_mut("");
+        assert!(reference.is_some());
+    }
+
+    #[test]
+    fn pointer_mut_no_leading_slash_returns_none() {
+        let mut data = platform_value!({"a": 1});
+        assert!(data.pointer_mut("a").is_none());
+    }
+
+    #[test]
+    fn pointer_mut_modify_nested_value() {
+        let mut data = platform_value!({"x": {"y": 1}});
+        *data.pointer_mut("/x/y").unwrap() = platform_value!(99);
+        assert_eq!(data.pointer("/x/y"), Some(&platform_value!(99)));
+    }
+
+    #[test]
+    fn pointer_mut_modify_array_element() {
+        let mut data = platform_value!({"arr": [10, 20, 30]});
+        *data.pointer_mut("/arr/1").unwrap() = platform_value!(999);
+        assert_eq!(data.pointer("/arr/1"), Some(&platform_value!(999)));
+    }
+
+    #[test]
+    fn pointer_mut_missing_path_returns_none() {
+        let mut data = platform_value!({"a": 1});
+        assert!(data.pointer_mut("/nonexistent").is_none());
+        assert!(data.pointer_mut("/a/b/c").is_none());
+    }
+
+    #[test]
+    fn pointer_mut_tilde_escapes() {
+        let mut data = platform_value!({"a/b": 1, "c~d": 2});
+        *data.pointer_mut("/a~1b").unwrap() = platform_value!(10);
+        *data.pointer_mut("/c~0d").unwrap() = platform_value!(20);
+        assert_eq!(data.pointer("/a~1b"), Some(&platform_value!(10)));
+        assert_eq!(data.pointer("/c~0d"), Some(&platform_value!(20)));
+    }
+
+    #[test]
+    fn pointer_mut_scalar_returns_none() {
+        let mut data = platform_value!("hello");
+        assert!(data.pointer_mut("/anything").is_none());
+    }
+
+    // ---------------------------------------------------------------
+    // take() — replace with Null and return old value
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn take_replaces_with_null() {
+        let mut data = platform_value!({"x": "y"});
+        let taken = data.pointer_mut("/x").unwrap().take();
+        assert_eq!(taken, platform_value!("y"));
+        assert_eq!(data.pointer("/x"), Some(&Value::Null));
+    }
+
+    #[test]
+    fn take_on_integer() {
+        let mut val: Value = platform_value!(42);
+        let taken = val.take();
+        assert_eq!(taken, platform_value!(42));
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn take_on_null_returns_null() {
+        let mut val = Value::Null;
+        let taken = val.take();
+        assert_eq!(taken, Value::Null);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn take_on_array() {
+        let mut val = platform_value!([1, 2, 3]);
+        let taken = val.take();
+        assert_eq!(taken, platform_value!([1, 2, 3]));
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn take_nested_via_pointer_mut() {
+        let mut data = platform_value!({"a": {"b": "deep"}});
+        let taken = data.pointer_mut("/a/b").map(Value::take).unwrap();
+        assert_eq!(taken, platform_value!("deep"));
+        assert_eq!(data.pointer("/a/b"), Some(&Value::Null));
+    }
+}

@@ -52,3 +52,59 @@ impl IdentityCreditTransferTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::identity::identity_credit_transfer::v0::IdentityCreditTransferTransitionActionV0;
+
+    fn make_v0() -> IdentityCreditTransferTransitionActionV0 {
+        IdentityCreditTransferTransitionActionV0 {
+            transfer_amount: 5000,
+            recipient_id: Identifier::from([0xBB; 32]),
+            identity_id: Identifier::from([0xAA; 32]),
+            nonce: 42,
+            user_fee_increase: 3,
+        }
+    }
+
+    #[test]
+    fn test_from_v0() {
+        let v0 = make_v0();
+        let action: IdentityCreditTransferTransitionAction = v0.into();
+        assert!(matches!(
+            action,
+            IdentityCreditTransferTransitionAction::V0(_)
+        ));
+    }
+
+    #[test]
+    fn test_nonce() {
+        let action = IdentityCreditTransferTransitionAction::V0(make_v0());
+        assert_eq!(action.nonce(), 42);
+    }
+
+    #[test]
+    fn test_transfer_amount() {
+        let action = IdentityCreditTransferTransitionAction::V0(make_v0());
+        assert_eq!(action.transfer_amount(), 5000);
+    }
+
+    #[test]
+    fn test_identity_id() {
+        let action = IdentityCreditTransferTransitionAction::V0(make_v0());
+        assert_eq!(action.identity_id(), Identifier::from([0xAA; 32]));
+    }
+
+    #[test]
+    fn test_recipient_id() {
+        let action = IdentityCreditTransferTransitionAction::V0(make_v0());
+        assert_eq!(action.recipient_id(), Identifier::from([0xBB; 32]));
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let action = IdentityCreditTransferTransitionAction::V0(make_v0());
+        assert_eq!(action.user_fee_increase(), 3);
+    }
+}

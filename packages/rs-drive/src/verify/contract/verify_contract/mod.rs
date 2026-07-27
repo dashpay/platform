@@ -64,3 +64,28 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+
+    #[test]
+    fn test_verify_contract_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .contract
+            .verify_contract = 255;
+
+        let result = Drive::verify_contract(&[], None, false, false, [0u8; 32], &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_contract" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

@@ -268,7 +268,7 @@ impl DataContract {
         }
 
         if self.keywords() != new_data_contract.keywords() {
-            // Validate there are no more than 50 keywords
+            // Validate there are no more than 50 contract keywords
             if new_data_contract.keywords().len() > 50 {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     TooManyKeywordsError::new(self.id(), new_data_contract.keywords().len() as u8)
@@ -368,12 +368,16 @@ mod tests {
         fn should_return_invalid_result_if_owner_id_is_not_the_same() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let mut new_data_contract = old_data_contract.clone();
 
-            new_data_contract.as_v0_mut().unwrap().owner_id = Identifier::random();
+            new_data_contract.set_owner_id(Identifier::random());
 
             let result = old_data_contract
                 .validate_update(&new_data_contract, &BlockInfo::default(), platform_version)
@@ -391,8 +395,12 @@ mod tests {
         fn should_return_invalid_result_if_contract_version_is_not_greater_for_one() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let new_data_contract = old_data_contract.clone();
 
@@ -412,8 +420,12 @@ mod tests {
         fn should_return_invalid_result_if_config_was_updated() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let mut new_data_contract = old_data_contract.clone();
 
@@ -436,8 +448,12 @@ mod tests {
         fn should_return_invalid_result_when_document_type_is_removed() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let mut new_data_contract = old_data_contract.clone();
 
@@ -462,22 +478,27 @@ mod tests {
         fn should_return_invalid_result_when_document_type_has_incompatible_change() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let mut new_data_contract = old_data_contract.clone();
 
             new_data_contract.set_version(old_data_contract.version() + 1);
 
-            let DocumentTypeMutRef::V0(new_document_type) = new_data_contract
+            match new_data_contract
                 .document_types_mut()
                 .get_mut("niceDocument")
                 .unwrap()
                 .as_mut_ref()
-            else {
-                panic!("expected v0")
-            };
-            new_document_type.documents_mutable = false;
+            {
+                DocumentTypeMutRef::V0(dt) => dt.documents_mutable = false,
+                DocumentTypeMutRef::V1(dt) => dt.documents_mutable = false,
+                DocumentTypeMutRef::V2(dt) => dt.documents_mutable = false,
+            }
 
             let result = old_data_contract
                 .validate_update_v0(&new_data_contract, &BlockInfo::default(), platform_version)
@@ -495,8 +516,12 @@ mod tests {
         fn should_return_invalid_result_when_defs_is_removed() {
             let platform_version = PlatformVersion::latest();
 
-            let mut old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let mut old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             // Remove document that uses $defs, so we can safely remove it for testing
             old_data_contract
@@ -526,8 +551,12 @@ mod tests {
         fn should_return_invalid_result_when_updated_defs_is_incompatible() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let mut new_data_contract = old_data_contract.clone();
 
@@ -566,8 +595,12 @@ mod tests {
         fn should_pass_when_all_changes_are_compatible() {
             let platform_version = PlatformVersion::latest();
 
-            let old_data_contract =
-                get_data_contract_fixture(None, IdentityNonce::default(), 1).data_contract_owned();
+            let old_data_contract = get_data_contract_fixture(
+                None,
+                IdentityNonce::default(),
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
 
             let mut new_data_contract = old_data_contract.clone();
 

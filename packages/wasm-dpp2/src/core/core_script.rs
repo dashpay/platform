@@ -1,12 +1,14 @@
-use super::network::NetworkWasm;
+use super::network::{NetworkLikeJs, NetworkWasm};
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
+use crate::utils::try_vec_to_fixed_bytes;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::encode;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "CoreScript")]
@@ -27,37 +29,25 @@ impl From<CoreScript> for CoreScriptWasm {
 
 #[wasm_bindgen(js_class = CoreScript)]
 impl CoreScriptWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "CoreScript".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "CoreScript".to_string()
-    }
-
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         CoreScriptWasm(CoreScript::from_bytes(bytes))
     }
 
-    #[wasm_bindgen(js_name = "newP2PKH")]
-    pub fn new_p2pkh(key_hash: Vec<u8>) -> Self {
-        let mut key_hash_bytes = [0u8; 20];
-        let bytes = key_hash.as_slice();
-        let len = bytes.len().min(key_hash_bytes.len());
-        key_hash_bytes[..len].copy_from_slice(&bytes[..len]);
+    #[wasm_bindgen(js_name = "fromP2PKH")]
+    pub fn from_p2pkh(
+        #[wasm_bindgen(js_name = "keyHash")] key_hash: Vec<u8>,
+    ) -> WasmDppResult<CoreScriptWasm> {
+        let key_hash_bytes: [u8; 20] = try_vec_to_fixed_bytes(key_hash, "keyHash")?;
 
-        CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes))
+        Ok(CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes)))
     }
 
-    #[wasm_bindgen(js_name = "newP2SH")]
-    pub fn new_p2sh(script_hash: Vec<u8>) -> Self {
-        let mut script_hash_bytes = [0u8; 20];
-        let bytes = script_hash.as_slice();
-        let len = bytes.len().min(script_hash_bytes.len());
-        script_hash_bytes[..len].copy_from_slice(&bytes[..len]);
+    #[wasm_bindgen(js_name = "fromP2SH")]
+    pub fn from_p2sh(
+        #[wasm_bindgen(js_name = "scriptHash")] script_hash: Vec<u8>,
+    ) -> WasmDppResult<CoreScriptWasm> {
+        let script_hash_bytes: [u8; 20] = try_vec_to_fixed_bytes(script_hash, "scriptHash")?;
 
         let mut bytes = vec![
             opcodes::all::OP_HASH160.to_u8(),
@@ -65,15 +55,12 @@ impl CoreScriptWasm {
         ];
         bytes.extend_from_slice(&script_hash_bytes);
         bytes.push(opcodes::all::OP_EQUAL.to_u8());
-        Self::from_bytes(bytes)
+        Ok(Self::from_bytes(bytes))
     }
 
     #[wasm_bindgen(js_name = "toAddress")]
-    pub fn to_address(
-        &self,
-        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: &JsValue,
-    ) -> WasmDppResult<String> {
-        let network_wasm = NetworkWasm::try_from(network.clone())?;
+    pub fn to_address(&self, network: NetworkLikeJs) -> WasmDppResult<String> {
+        let network_wasm: NetworkWasm = network.try_into()?;
 
         let payload = Payload::from_script(self.0.as_script())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -109,4 +96,6 @@ impl CoreScriptWasm {
     }
 }
 
-impl_try_from_options!(CoreScriptWasm, "CoreScript");
+impl_try_from_js_value!(CoreScriptWasm, "CoreScript");
+impl_try_from_options!(CoreScriptWasm);
+impl_wasm_type_info!(CoreScriptWasm, CoreScript);

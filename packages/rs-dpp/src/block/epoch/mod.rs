@@ -81,6 +81,10 @@ impl Encode for Epoch {
     }
 }
 
+// Manual Deserialize (Serialize stays derived with `serde(skip)` on `key`):
+// the `key` field is derived from `index`, so deserialization must recompute
+// it via `Epoch::new` to preserve the invariant rather than trusting wire
+// input. Not a wire-shape customization — the shape matches the derive.
 impl<'de> Deserialize<'de> for Epoch {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -96,8 +100,8 @@ impl<'de> Deserialize<'de> for Epoch {
     }
 }
 
-impl Decode for Epoch {
-    fn decode<D: bincode::de::Decoder>(
+impl<C> Decode<C> for Epoch {
+    fn decode<D: bincode::de::Decoder<Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let index = EpochIndex::decode(decoder)?;
@@ -105,11 +109,58 @@ impl Decode for Epoch {
     }
 }
 
-impl<'de> BorrowDecode<'de> for Epoch {
-    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+impl<'de, C> BorrowDecode<'de, C> for Epoch {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = C>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
         let index = EpochIndex::borrow_decode(decoder)?;
         Epoch::new(index).map_err(|e| bincode::error::DecodeError::OtherString(e.to_string()))
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Epoch {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Epoch {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_epoch {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    fn fixture() -> Epoch {
+        Epoch::new(7).expect("epoch")
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `key` is `#[serde(skip)]` and reconstructed from `index` on deserialize.
+        // Only `index` appears on the wire. JSON erases the u16 distinction —
+        // the value-path assertion below uses `7u16` to lock in the typed variant.
+        assert_eq!(json, json!({"index": 7}));
+        let recovered = Epoch::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // `index` is `EpochIndex` (u16) → `Value::U16`.
+        assert_eq!(value, platform_value!({"index": 7u16}));
+        let recovered = Epoch::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

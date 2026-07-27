@@ -16,8 +16,8 @@ mod tests {
     use strategy_tests::operations::{Operation, OperationType};
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
-    #[test]
-    fn run_chain_transfer_between_identities() {
+    #[tokio::test]
+    async fn run_chain_transfer_between_identities() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -89,7 +89,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let _balances = &outcome
             .abci_app

@@ -7,6 +7,8 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
+pub mod v8;
+pub mod v9;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveAbciMethodVersions {
@@ -134,6 +136,8 @@ pub struct DriveAbciBlockEndMethodVersions {
     pub validator_set_update: FeatureVersion,
     pub should_checkpoint: OptionalFeatureVersion,
     pub update_checkpoints: OptionalFeatureVersion,
+    pub record_shielded_pool_anchor: OptionalFeatureVersion,
+    pub prune_shielded_pool_anchors: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -173,8 +177,23 @@ pub struct DriveAbciProtocolUpgradeMethodVersions {
 pub struct DriveAbciStateTransitionProcessingMethodVersions {
     pub execute_event: FeatureVersion,
     pub process_raw_state_transitions: FeatureVersion,
+    /// Version of `process_validation_result`, the helper that turns a validated execution event into
+    /// a `StateTransitionExecutionResult`. v0 records nothing for paid-invalid / unsuccessful-paid
+    /// transitions (pre-v13 parity); v1 records their balance effects (charged fees, adjusted outputs,
+    /// applied chargeable-failure credits) into the per-block address-balance updates. The outer
+    /// `process_raw_state_transitions` loop is unchanged across the bump, so only this helper is
+    /// versioned.
+    pub process_validation_result: FeatureVersion,
     pub decode_raw_state_transitions: FeatureVersion,
     pub validate_fees_of_event: FeatureVersion,
     pub store_address_balances_to_recent_block_storage: OptionalFeatureVersion,
     pub cleanup_recent_block_storage_address_balances: OptionalFeatureVersion,
+    /// Version of `record_added_balance_outputs`, the method that folds an applied event's
+    /// transparent-address credits into the per-block address-balance updates. v0 records only the
+    /// long-standing transparent credits (e.g. `IdentityCreditTransferToAddresses`); v1 additionally
+    /// records shielded-spend transparent credits (Unshield net output, ShieldFromAssetLock surplus,
+    /// IdentityCreateFromShieldedPool fallback). The storage method
+    /// (`store_address_balances_to_recent_block_storage`) is unchanged across the bump — only the
+    /// recorded set differs.
+    pub record_added_balance_outputs: FeatureVersion,
 }

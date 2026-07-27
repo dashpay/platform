@@ -155,6 +155,13 @@ export default function getBaseConfigFactory() {
           },
         },
         indexes: [],
+        // BIP158 cfilter index + NODE_COMPACT_FILTERS service bit.
+        // Default-on across every preset so dashmate-managed nodes
+        // are BIP157 SPV-friendly out of the box. Operators who
+        // can't spare the cfilter index disk overhead (~10% of
+        // chain size on mainnet) can flip this off via
+        // `dashmate config set core.compactFilters false`.
+        compactFilters: true,
       },
       platform: {
         quorumList: {
@@ -172,7 +179,7 @@ export default function getBaseConfigFactory() {
         },
         gateway: {
           docker: {
-            image: 'dashpay/envoy:1.35.11-impr.1',
+            image: 'dashpay/envoy:1.39.0-impr.1',
           },
           maxConnections: 1000,
           maxHeapSizeInBytes: 125000000, // 1 Gb
@@ -234,6 +241,9 @@ export default function getBaseConfigFactory() {
             blacklist: [],
             whitelist: [],
             enabled: true,
+            responseHeaders: {
+              enabled: true,
+            },
           },
           ssl: {
             enabled: false,
@@ -261,6 +271,7 @@ export default function getBaseConfigFactory() {
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'rs-dapi',
+                buildArgs: {},
               },
             },
             metrics: {
@@ -286,6 +297,9 @@ export default function getBaseConfigFactory() {
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'drive-abci',
+                // Extra Docker build args — see the `buildArgs` field on
+                // `dockerBuild` in the config schema.
+                buildArgs: {},
               },
             },
             logs: {
@@ -344,13 +358,14 @@ export default function getBaseConfigFactory() {
           tenderdash: {
             mode: 'full',
             docker: {
-              image: 'dashpay/tenderdash:1.5',
+              image: 'dashpay/tenderdash:1.6.0',
             },
             p2p: {
               host: '0.0.0.0',
               port: 26656,
               persistentPeers: [],
               seeds: [],
+              allowlistOnly: false,
               flushThrottleTimeout: '100ms',
               maxPacketMsgPayloadSize: 10240,
               sendRate: 5120000,

@@ -29,12 +29,16 @@ use std::{
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
 #[allow(deprecated)]
-pub fn platform_versioned_decode_from_std_read<D: Decode, C: Config, R: std::io::Read>(
+pub fn platform_versioned_decode_from_std_read<
+    D: Decode<crate::BincodeContext>,
+    C: Config,
+    R: std::io::Read,
+>(
     src: &mut R,
     config: C,
 ) -> Result<D, DecodeError> {
     let reader = IoReader::new(src);
-    let mut decoder = DecoderImpl::<_, C>::new(reader, config);
+    let mut decoder = DecoderImpl::<_, C, crate::BincodeContext>::new(reader, config, ());
     D::decode(&mut decoder)
 }
 
@@ -144,7 +148,7 @@ impl PlatformVersionEncode for CString {
 }
 
 impl PlatformVersionedDecode for CString {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -173,7 +177,7 @@ impl<T> PlatformVersionedDecode for Mutex<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -185,7 +189,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Mutex<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -214,7 +218,7 @@ impl<T> PlatformVersionedDecode for RwLock<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -226,7 +230,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for RwLock<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -246,7 +250,7 @@ impl PlatformVersionEncode for SystemTime {
 }
 
 impl PlatformVersionedDecode for SystemTime {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -266,7 +270,7 @@ impl PlatformVersionEncode for &'_ Path {
 }
 
 impl<'de> PlatformVersionedBorrowDecode<'de> for &'de Path {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -285,7 +289,7 @@ impl PlatformVersionEncode for PathBuf {
 }
 
 impl PlatformVersionedDecode for PathBuf {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -306,7 +310,7 @@ impl PlatformVersionEncode for IpAddr {
 }
 
 impl PlatformVersionedDecode for IpAddr {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -326,7 +330,7 @@ impl PlatformVersionEncode for Ipv4Addr {
 }
 
 impl PlatformVersionedDecode for Ipv4Addr {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -346,7 +350,7 @@ impl PlatformVersionEncode for Ipv6Addr {
 }
 
 impl PlatformVersionedDecode for Ipv6Addr {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -366,7 +370,7 @@ impl PlatformVersionEncode for SocketAddr {
 }
 
 impl PlatformVersionedDecode for SocketAddr {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -386,7 +390,7 @@ impl PlatformVersionEncode for SocketAddrV4 {
 }
 
 impl PlatformVersionedDecode for SocketAddrV4 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -406,7 +410,7 @@ impl PlatformVersionEncode for SocketAddrV6 {
 }
 
 impl PlatformVersionedDecode for SocketAddrV6 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -440,7 +444,7 @@ where
     V: PlatformVersionedDecode,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -466,7 +470,7 @@ where
     V: PlatformVersionedBorrowDecode<'de>,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -492,7 +496,7 @@ where
     T: PlatformVersionedDecode + Eq + Hash,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -517,7 +521,7 @@ where
     T: PlatformVersionedBorrowDecode<'de> + Eq + Hash,
     S: std::hash::BuildHasher + Default,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -550,5 +554,245 @@ where
             item.platform_encode(encoder, platform_version)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
+mod tests {
+    use super::*;
+    use bincode::config;
+
+    fn cfg() -> impl bincode::config::Config {
+        config::standard().with_big_endian().with_no_limit()
+    }
+
+    fn pv() -> &'static PlatformVersion {
+        PlatformVersion::first()
+    }
+
+    fn round_trip<T>(value: T) -> T
+    where
+        T: PlatformVersionEncode + crate::PlatformVersionedDecode,
+    {
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap()
+    }
+
+    // -----------------------------------------------------------------------
+    // HashMap
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_map_round_trip() {
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), 1u32);
+        map.insert("b".to_string(), 2);
+        let decoded = round_trip(map.clone());
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn hash_map_empty_round_trip() {
+        let map: HashMap<String, u32> = HashMap::new();
+        let decoded = round_trip(map.clone());
+        assert_eq!(decoded, map);
+    }
+
+    // -----------------------------------------------------------------------
+    // HashSet
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_set_round_trip() {
+        let mut set = HashSet::new();
+        set.insert(10u32);
+        set.insert(20);
+        set.insert(30);
+        let decoded = round_trip(set.clone());
+        assert_eq!(decoded, set);
+    }
+
+    // -----------------------------------------------------------------------
+    // Mutex
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mutex_round_trip() {
+        let value = Mutex::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Mutex<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.lock().unwrap(), 42);
+    }
+
+    // -----------------------------------------------------------------------
+    // RwLock
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rwlock_round_trip() {
+        let value = RwLock::new(99u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: RwLock<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.read().unwrap(), 99);
+    }
+
+    // -----------------------------------------------------------------------
+    // CString / &CStr
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cstring_round_trip() {
+        let value = CString::new("hello").unwrap();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: CString =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn cstr_encode() {
+        let cstr = CString::new("test").unwrap();
+        let cstr_ref: &CStr = cstr.as_c_str();
+        let encoded = crate::platform_encode_to_vec(&cstr_ref, cfg(), pv()).unwrap();
+        let decoded: CString =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded.as_c_str(), cstr_ref);
+    }
+
+    // -----------------------------------------------------------------------
+    // SystemTime
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn system_time_round_trip() {
+        let value = SystemTime::now();
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        let decoded: SystemTime =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    // -----------------------------------------------------------------------
+    // PathBuf / &Path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn pathbuf_encode() {
+        let value = PathBuf::from("/tmp/test");
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn path_ref_encode() {
+        let path = Path::new("/tmp/test");
+        let encoded = crate::platform_encode_to_vec(&path, cfg(), pv()).unwrap();
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn path_borrow_decode() {
+        let path = Path::new("/usr/local");
+        let encoded = crate::platform_encode_to_vec(&path, cfg(), pv()).unwrap();
+        let decoded: &Path =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, path);
+    }
+
+    // -----------------------------------------------------------------------
+    // IP addresses
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ipv4_round_trip() {
+        let value = Ipv4Addr::new(192, 168, 1, 1);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn ipv6_round_trip() {
+        let value = Ipv6Addr::LOCALHOST;
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn ip_addr_v4_round_trip() {
+        let value = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn ip_addr_v6_round_trip() {
+        let value = IpAddr::V6(Ipv6Addr::LOCALHOST);
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Socket addresses
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn socket_addr_v4_round_trip() {
+        let value = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn socket_addr_v6_round_trip() {
+        let value = SocketAddrV6::new(Ipv6Addr::LOCALHOST, 443, 0, 0);
+        assert_eq!(round_trip(value), value);
+    }
+
+    #[test]
+    fn socket_addr_round_trip() {
+        let value = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 3000));
+        assert_eq!(round_trip(value), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Borrow-decode paths for std types
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_map_borrow_decode() {
+        let mut map = HashMap::new();
+        map.insert(1u32, 10u32);
+        map.insert(2, 20);
+        let encoded = crate::platform_encode_to_vec(&map, cfg(), pv()).unwrap();
+        let decoded: HashMap<u32, u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn hash_set_borrow_decode() {
+        let mut set = HashSet::new();
+        set.insert(1u32);
+        set.insert(2);
+        let encoded = crate::platform_encode_to_vec(&set, cfg(), pv()).unwrap();
+        let decoded: HashSet<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, set);
+    }
+
+    #[test]
+    fn mutex_borrow_decode() {
+        let value = Mutex::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Mutex<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.lock().unwrap(), 42);
+    }
+
+    #[test]
+    fn rwlock_borrow_decode() {
+        let value = RwLock::new(99u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: RwLock<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded.read().unwrap(), 99);
     }
 }

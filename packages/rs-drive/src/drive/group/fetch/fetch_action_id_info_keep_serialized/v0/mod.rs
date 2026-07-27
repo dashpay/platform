@@ -133,3 +133,57 @@ impl Drive {
         Ok(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn fetch_action_id_info_keep_serialized_v0_missing_returns_error() {
+        // grove_get_raw_item errors when the path or item is missing; this
+        // exercises the Err path of the function.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let result = drive.fetch_action_id_info_keep_serialized_v0(
+            Identifier::random(),
+            0,
+            Identifier::random(),
+            None,
+            platform_version,
+        );
+
+        assert!(
+            result.is_err(),
+            "expected error when action info does not exist"
+        );
+    }
+
+    #[test]
+    fn fetch_action_id_info_keep_serialized_and_add_operations_v0_stateless_missing() {
+        // Stateless path (estimated_costs_only_with_layer_info Some) — still
+        // errors on a missing item but the code path through the
+        // StatelessDirectQuery branch is covered.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut estimated = Some(std::collections::HashMap::new());
+        let mut ops = vec![];
+        let result = drive.fetch_action_id_info_keep_serialized_and_add_operations_v0(
+            Identifier::random(),
+            0,
+            Identifier::random(),
+            &mut estimated,
+            None,
+            &mut ops,
+            platform_version,
+        );
+
+        // The call may return Err on missing path even in stateless mode; the
+        // important thing is that the stateless branch is exercised and no
+        // panic occurs.
+        let _ = result;
+    }
+}

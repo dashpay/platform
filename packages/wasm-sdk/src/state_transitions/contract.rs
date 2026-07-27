@@ -4,7 +4,7 @@
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
-use crate::settings::{extract_settings_from_options, get_user_fee_increase};
+use crate::settings::{get_user_fee_increase, PutSettingsInput};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::DataContractWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
+use wasm_dpp2::utils::try_from_options_optional;
 use wasm_dpp2::IdentitySignerWasm;
 
 // ============================================================================
@@ -82,23 +83,20 @@ impl WasmSdk {
         &self,
         options: ContractPublishOptionsJs,
     ) -> Result<DataContractWasm, WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract data contract from options
-        let data_contract_wasm =
-            DataContractWasm::try_from_options(&options_value, "dataContract")?;
+        let data_contract_wasm = DataContractWasm::try_from_options(&options, "dataContract")?;
         let data_contract: DataContract = data_contract_wasm.into();
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Create and broadcast the contract
         // Note: The SDK will set the actual contract ID based on the identity nonce
@@ -178,11 +176,8 @@ impl WasmSdk {
         &self,
         options: ContractUpdateOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract data contract from options
-        let data_contract_wasm =
-            DataContractWasm::try_from_options(&options_value, "dataContract")?;
+        let data_contract_wasm = DataContractWasm::try_from_options(&options, "dataContract")?;
         let updated_contract: DataContract = data_contract_wasm.into();
 
         // Get identifiers from the contract
@@ -190,15 +185,15 @@ impl WasmSdk {
         let owner_id: Identifier = updated_contract.owner_id();
 
         // Extract identity key from options
-        let identity_key_wasm =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "identityKey")?;
+        let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Get identity contract nonce
         let identity_contract_nonce = self
@@ -226,12 +221,18 @@ impl WasmSdk {
             self.inner_sdk().version(),
             None,
         )
+        .await
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
-        // Broadcast the transition
+        // Broadcast the transition. A contract update proof authenticates
+        // the current contract body — a height-pinned snapshot — and cannot
+        // bind this update's execution, so the snapshot wait is required.
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self.inner_sdk(), settings)
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
+                self.inner_sdk(),
+                settings,
+            )
             .await?;
 
         Ok(())

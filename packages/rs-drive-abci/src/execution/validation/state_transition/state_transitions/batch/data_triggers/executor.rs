@@ -14,7 +14,7 @@ pub trait DataTriggerExecutor {
     fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &[DataTriggerBinding],
-        context: &DataTriggerExecutionContext<'_>,
+        context: &mut DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error>;
 }
@@ -23,15 +23,18 @@ impl DataTriggerExecutor for DocumentTransitionAction {
     fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &[DataTriggerBinding],
-        context: &DataTriggerExecutionContext,
+        context: &mut DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name();
         let transition_action = self.action_type();
 
-        // Match data triggers by action type, contract ID and document type name
-        // and then execute matched triggers until one of them returns invalid result
+        // Match data triggers by action type, contract ID and document
+        // type name, then execute matched triggers until one returns
+        // invalid. `_v1` triggers bill their own drive reads directly
+        // via `context.state_transition_execution_context.add_operation`;
+        // `_v0` triggers don't bill (PROTOCOL_VERSION_11 chain replay).
         for data_trigger_binding in data_trigger_bindings {
             if !data_trigger_binding.is_matching(
                 &data_contract_id,

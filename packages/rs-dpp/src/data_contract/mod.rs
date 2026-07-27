@@ -27,10 +27,10 @@ pub mod factory;
 #[cfg(feature = "factories")]
 pub use factory::*;
 #[cfg(any(
-    feature = "data-contract-value-conversion",
+    feature = "value-conversion",
     feature = "data-contract-cbor-conversion",
-    feature = "data-contract-json-conversion",
-    feature = "data-contract-serde-conversion"
+    feature = "json-conversion",
+    feature = "serde-conversion"
 ))]
 pub mod conversion;
 #[cfg(feature = "client")]
@@ -108,6 +108,26 @@ pub enum DataContract {
     V0(DataContractV0),
     V1(DataContractV1),
 }
+
+// Note: DataContract intentionally does NOT implement JsonConvertible / ValueConvertible.
+// Round-tripping goes through the manual `Serialize` / `Deserialize` impls in
+// `data_contract/conversion/serde/mod.rs`, which thread `DataContractInSerializationFormat`
+// at the *currently active* `PlatformVersion` (see Critical-4 doc there).
+//
+// The two version-aware conversion traits are:
+//   * `DataContractJsonConversionMethodsV0::from_json(value, full_validation, pv)` —
+//     deserialize from JSON, running full schema validation when `full_validation` is
+//     `true` (use on trust boundaries). Pass `false` to reconstruct already-trusted data
+//     (e.g. storage reads) without re-validating. The canonical
+//     `serde_json::from_value::<DataContract>` path also validates (it routes through
+//     this with `full_validation = true`) — see the Critical-4 doc.
+//   * `DataContractValueConversionMethodsV0::from_value(value, full_validation, pv)` —
+//     same shape for `platform_value::Value`.
+//
+// For non-validating *serialization*, just use `serde_json::to_value(&dc)?` /
+// `platform_value::to_value(&dc)?` — the manual Serialize impl handles versioning.
+// `DataContractInSerializationFormat` (the underlying serialization shape) DOES implement the
+// canonical traits — see `data_contract/serialized_version/mod.rs`.
 
 impl PlatformSerializableWithPlatformVersion for DataContract {
     type Error = ProtocolError;

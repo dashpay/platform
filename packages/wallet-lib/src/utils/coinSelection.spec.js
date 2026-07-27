@@ -19,7 +19,7 @@ const outputs = {
     satoshis: 2500000000,
     address: new Address('ybefxSHaEbDATvq5gVCxjV375NWus3ttV7'),
   },
-  FOURTY_FIVE_DASH: {
+  FORTY_FIVE_DASH: {
     satoshis: 4500000000,
     address: new Address('ybefxSHaEbDATvq5gVCxjV375NWus3ttV7'),
   },
@@ -190,7 +190,7 @@ describe('Utils - coinSelection', function suite() {
     expect(result).to.deep.equal(expectedResult);
   });
   it('should handle a case when using more than 45 utxos', () => {
-    const result = coinSelection(utxosListAsUnspentOutput, [outputs.FOURTY_FIVE_DASH], false, 'normal', STRATEGIES.simpleDescendingAccumulator);
+    const result = coinSelection(utxosListAsUnspentOutput, [outputs.FORTY_FIVE_DASH], false, 'normal', STRATEGIES.simpleDescendingAccumulator);
     const expectedResult = {
       utxos: [
           new Transaction.UnspentOutput({
@@ -331,7 +331,7 @@ describe('Utils - coinSelection', function suite() {
 
       while(inputValue<outputValue){
         if(copiedUtxos.length === 0){
-          throw new Error('Not enought UTXOs');
+          throw new Error('Not enough UTXOs');
         }
         // Take a random item and add it to selection
         const utxo = copiedUtxos.splice(Math.floor(Math.random() * copiedUtxos.length),1)[0];
@@ -351,7 +351,7 @@ describe('Utils - coinSelection', function suite() {
     }
     const result = coinSelection(
         utxosListAsUnspentOutput,
-        [outputs.FOURTY_FIVE_DASH],
+        [outputs.FORTY_FIVE_DASH],
         false,
         'normal',
         externalStrategy);
@@ -359,7 +359,7 @@ describe('Utils - coinSelection', function suite() {
     expect(result).to.exist;
     expect(result.feeCategory).to.equal('normal');
     expect(result.utxosValue).to.gte(4500000000);
-    expect(result.outputs).to.deep.equal([outputs.FOURTY_FIVE_DASH]);
+    expect(result.outputs).to.deep.equal([outputs.FORTY_FIVE_DASH]);
     expect(result.utxos.length).to.gte(0);
   });
   // Note : Removed, kept in case of fallback needed
@@ -369,6 +369,6 @@ describe('Utils - coinSelection', function suite() {
   //   for (let i = 0; i <= 45; i++) {
   //     utxos.push(utxosList[15]);
   //   }
-  // expect(() => coinSelection(utxos, [outputs.FOURTY_FIVE_DASH])).to.throw('Did not found any utxo, missing implementation of this case');
+  // expect(() => coinSelection(utxos, [outputs.FORTY_FIVE_DASH])).to.throw('Did not found any utxo, missing implementation of this case');
   // });
 });

@@ -1,13 +1,45 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_conversions_inner;
+use crate::impl_wasm_type_info;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::prelude::Identifier;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * ContractBounds serialized as a plain object.
+ */
+export interface ContractBoundsObject {
+    identifier: Uint8Array;
+    documentTypeName?: string;
+    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
+}
+
+/**
+ * ContractBounds serialized as JSON.
+ */
+export interface ContractBoundsJSON {
+    identifier: string;
+    documentTypeName?: string;
+    contractBoundsType: "SingleContract" | "SingleContractDocumentType";
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContractBoundsObject")]
+    pub type ContractBoundsObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ContractBoundsJSON")]
+    pub type ContractBoundsJSONJs;
+}
+
 #[wasm_bindgen(js_name = "ContractBounds")]
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct ContractBoundsWasm(ContractBounds);
 
 impl From<ContractBounds> for ContractBoundsWasm {
@@ -24,23 +56,12 @@ impl From<ContractBoundsWasm> for ContractBounds {
 
 #[wasm_bindgen(js_class = ContractBounds)]
 impl ContractBoundsWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ContractBounds".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ContractBounds".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
-        document_type_name: Option<String>,
+    pub fn constructor(
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: Option<String>,
     ) -> WasmDppResult<ContractBoundsWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(match document_type_name {
             Some(document_type_name) => ContractBounds::SingleContractDocumentType {
@@ -53,10 +74,9 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "SingleContract")]
     pub fn single_contract(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<ContractBoundsWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(ContractBounds::SingleContract {
             id: contract_id,
@@ -65,11 +85,10 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(js_name = "SingleContractDocumentType")]
     pub fn single_contract_document_type_name(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
-        document_type_name: String,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
     ) -> WasmDppResult<ContractBoundsWasm> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         Ok(ContractBoundsWasm(
             ContractBounds::SingleContractDocumentType {
@@ -102,10 +121,9 @@ impl ContractBoundsWasm {
     #[wasm_bindgen(setter = "identifier")]
     pub fn set_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_contract_id: &JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
-        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
+        let contract_id: Identifier = contract_id.try_into()?;
 
         self.0 = match self.clone().0 {
             ContractBounds::SingleContract { .. } => {
@@ -123,7 +141,10 @@ impl ContractBoundsWasm {
     }
 
     #[wasm_bindgen(setter = "documentTypeName")]
-    pub fn set_document_type_name(&mut self, document_type_name: String) {
+    pub fn set_document_type_name(
+        &mut self,
+        #[wasm_bindgen(js_name = "documentTypeName")] document_type_name: String,
+    ) {
         self.0 = match self.clone().0 {
             ContractBounds::SingleContract { .. } => self.clone().0,
             ContractBounds::SingleContractDocumentType { id, .. } => {
@@ -136,4 +157,12 @@ impl ContractBoundsWasm {
     }
 }
 
-impl_wasm_conversions!(ContractBoundsWasm, ContractBounds);
+impl_wasm_conversions_inner!(
+    ContractBoundsWasm,
+    ContractBounds,
+    ContractBounds,
+    ContractBoundsObjectJs,
+    ContractBoundsJSONJs
+);
+impl_try_from_js_value!(ContractBoundsWasm, "ContractBounds");
+impl_wasm_type_info!(ContractBoundsWasm, ContractBounds);

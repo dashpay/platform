@@ -60,3 +60,110 @@ impl Drive {
         }
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identity::Purpose;
+    use dpp::version::PlatformVersion;
+
+    mod fetch_identities_contract_keys {
+        use super::*;
+
+        #[test]
+        fn should_return_empty_map_when_no_contract_keys_exist() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identity_ids = [[1u8; 32]];
+            let contract_id = [2u8; 32];
+            let purposes = vec![Purpose::ENCRYPTION];
+
+            // When there are no contract keys bound, the query returns an
+            // empty result (the identity subtree exists but has no contract info).
+            let result = drive.fetch_identities_contract_keys(
+                &identity_ids,
+                &contract_id,
+                None,
+                purposes,
+                None,
+                platform_version,
+            );
+
+            let map = result.expect("expected Ok result for non-existent identity");
+            assert!(
+                map.is_empty(),
+                "expected empty map for non-existent identity"
+            );
+        }
+
+        #[test]
+        fn should_return_empty_for_existing_identity_without_contract_keys() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            use dpp::block::block_info::BlockInfo;
+            use dpp::identity::accessors::IdentityGettersV0;
+            use dpp::identity::Identity;
+
+            let identity = Identity::random_identity(3, Some(42), platform_version)
+                .expect("expected a random identity");
+
+            drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add identity");
+
+            let identity_ids = [identity.id().to_buffer()];
+            let contract_id = [0xabu8; 32];
+            let purposes = vec![Purpose::ENCRYPTION];
+
+            // The identity exists but has no contract-bound keys, so the
+            // query should return an empty result or skip that identity.
+            let result = drive.fetch_identities_contract_keys(
+                &identity_ids,
+                &contract_id,
+                None,
+                purposes,
+                None,
+                platform_version,
+            );
+
+            let map = result.expect("expected Ok result for identity without contract keys");
+            assert!(
+                map.is_empty(),
+                "expected empty map when no contract keys exist"
+            );
+        }
+
+        #[test]
+        fn should_return_empty_for_empty_identity_ids() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identity_ids: [[u8; 32]; 0] = [];
+            let contract_id = [3u8; 32];
+            let purposes = vec![Purpose::ENCRYPTION];
+
+            let result = drive
+                .fetch_identities_contract_keys(
+                    &identity_ids,
+                    &contract_id,
+                    None,
+                    purposes,
+                    None,
+                    platform_version,
+                )
+                .expect("should not error for empty ids");
+
+            assert!(result.is_empty());
+        }
+    }
+}

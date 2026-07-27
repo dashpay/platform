@@ -13,7 +13,7 @@ use dashcore::secp256k1::Message;
 use dashcore::signer::CompactSignature;
 use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -35,11 +35,6 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
 #[platform_serialize(unversioned)]
 pub enum PlatformAddress {
     /// Pay to pubkey hash
@@ -50,6 +45,177 @@ pub enum PlatformAddress {
     /// - bech32m encoding type byte: 0x80
     /// - storage key type byte: 0x01
     P2sh([u8; 20]),
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for PlatformAddress {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for PlatformAddress {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::Value;
+    use serde_json::json;
+
+    // `PlatformAddress` has a manual `Serialize`/`Deserialize`: it serializes
+    // as a 21-byte payload (1 type byte + 20 hash bytes), shown as a hex
+    // string in HR formats and raw bytes in non-HR. Both variants share the
+    // same wire shape — only the leading type byte differs.
+
+    #[test]
+    fn json_round_trip_p2pkh() {
+        use crate::serialization::JsonConvertible;
+        let original = PlatformAddress::P2pkh([0xab; 20]);
+        let json = original.to_json().expect("to_json");
+        // Type byte 0x00 (storage variant index for P2pkh) || 20 × 0xab
+        assert_eq!(json, json!("00abababababababababababababababababababab"));
+        let recovered = PlatformAddress::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_p2sh() {
+        use crate::serialization::JsonConvertible;
+        let original = PlatformAddress::P2sh([0xcd; 20]);
+        let json = original.to_json().expect("to_json");
+        // Type byte 0x01 (storage variant index for P2sh) || 20 × 0xcd
+        assert_eq!(json, json!("01cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"));
+        let recovered = PlatformAddress::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_p2pkh() {
+        use crate::serialization::ValueConvertible;
+        let original = PlatformAddress::P2pkh([0xab; 20]);
+        let value = original.to_object().expect("to_object");
+        // `platform_value` is treated as non-HR by `is_human_readable()`, so
+        // the address serializes as raw bytes here.
+        let mut expected = vec![0x00];
+        expected.extend_from_slice(&[0xab; 20]);
+        assert_eq!(value, Value::Bytes(expected));
+        let recovered = PlatformAddress::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_p2sh() {
+        use crate::serialization::ValueConvertible;
+        let original = PlatformAddress::P2sh([0xcd; 20]);
+        let value = original.to_object().expect("to_object");
+        let mut expected = vec![0x01];
+        expected.extend_from_slice(&[0xcd; 20]);
+        assert_eq!(value, Value::Bytes(expected));
+        let recovered = PlatformAddress::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+}
+
+// Custom serde impls so JSON / `platform_value` output is the canonical 21-byte
+// address representation (hex string in human-readable formats, raw bytes in
+// binary formats) — matching the wasm wrapper's serde and what consumers expect.
+// The `Encode` / `Decode` derives above are the consensus binary format and are
+// untouched.
+#[cfg(feature = "serde-conversion")]
+impl Serialize for PlatformAddress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let bytes = self.to_bytes();
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&hex::encode(&bytes))
+        } else {
+            serializer.serialize_bytes(&bytes)
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl<'de> Deserialize<'de> for PlatformAddress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+        use std::fmt;
+
+        /// Maximum on-the-wire byte length for a `PlatformAddress`: 1 type byte + 20 hash bytes.
+        const PLATFORM_ADDRESS_BYTE_LEN: usize = 21;
+
+        struct PlatformAddressVisitor;
+
+        impl<'de> Visitor<'de> for PlatformAddressVisitor {
+            type Value = PlatformAddress;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("PlatformAddress as 21 bytes or hex string")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+                let bytes =
+                    hex::decode(value).map_err(|err| E::custom(format!("invalid hex: {}", err)))?;
+                if bytes.len() != PLATFORM_ADDRESS_BYTE_LEN {
+                    return Err(E::invalid_length(bytes.len(), &self));
+                }
+                PlatformAddress::from_bytes(&bytes).map_err(|err| E::custom(err.to_string()))
+            }
+
+            fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+                self.visit_str(&value)
+            }
+
+            fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
+                if value.len() != PLATFORM_ADDRESS_BYTE_LEN {
+                    return Err(E::invalid_length(value.len(), &self));
+                }
+                PlatformAddress::from_bytes(value).map_err(|err| E::custom(err.to_string()))
+            }
+
+            fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
+                self.visit_bytes(&value)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                // Cap at PLATFORM_ADDRESS_BYTE_LEN + 1 so we can detect over-long input
+                // without allocating arbitrary memory from a malicious peer.
+                let mut bytes = Vec::with_capacity(PLATFORM_ADDRESS_BYTE_LEN);
+                while let Some(byte) = seq.next_element::<u8>()? {
+                    if bytes.len() >= PLATFORM_ADDRESS_BYTE_LEN {
+                        return Err(de::Error::invalid_length(
+                            bytes.len() + 1,
+                            &"at most 21 bytes",
+                        ));
+                    }
+                    bytes.push(byte);
+                }
+                if bytes.len() != PLATFORM_ADDRESS_BYTE_LEN {
+                    return Err(de::Error::invalid_length(bytes.len(), &self));
+                }
+                PlatformAddress::from_bytes(&bytes)
+                    .map_err(|err| de::Error::custom(err.to_string()))
+            }
+        }
+
+        // Dispatch on the format's self-description: human-readable formats (JSON, TOML)
+        // get the hex-string path; binary formats get raw bytes. This avoids the
+        // `deserialize_any` pitfall on non-self-describing transports.
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_str(PlatformAddressVisitor)
+        } else {
+            deserializer.deserialize_bytes(PlatformAddressVisitor)
+        }
+    }
 }
 
 impl TryFrom<Address> for PlatformAddress {
@@ -90,6 +256,21 @@ pub const PLATFORM_HRP_MAINNET: &str = "dash";
 /// Human-readable part for Platform addresses on testnet/devnet/regtest (DIP-0018)
 pub const PLATFORM_HRP_TESTNET: &str = "tdash";
 
+/// Validates an already-lowercased HRP and returns whether it is mainnet.
+///
+/// `true` = mainnet (`dash`), `false` = non-mainnet (`tdash`).
+/// Returns an error for any other value.
+pub(crate) fn classify_platform_hrp(hrp: &str) -> Result<bool, ProtocolError> {
+    match hrp {
+        PLATFORM_HRP_MAINNET => Ok(true),
+        PLATFORM_HRP_TESTNET => Ok(false),
+        other => Err(ProtocolError::DecodingError(format!(
+            "not a platform address: HRP '{other}' is neither \
+             '{PLATFORM_HRP_MAINNET}' nor '{PLATFORM_HRP_TESTNET}'"
+        ))),
+    }
+}
+
 impl PlatformAddress {
     /// Type byte for P2PKH addresses in bech32m encoding (user-facing)
     pub const P2PKH_TYPE: u8 = 0xb0;
@@ -103,10 +284,8 @@ impl PlatformAddress {
     /// - Testnet/Devnet/Regtest: "tdash"
     pub fn hrp_for_network(network: Network) -> &'static str {
         match network {
-            Network::Dash => PLATFORM_HRP_MAINNET,
+            Network::Mainnet => PLATFORM_HRP_MAINNET,
             Network::Testnet | Network::Devnet | Network::Regtest => PLATFORM_HRP_TESTNET,
-            // For any other networks, default to testnet HRP
-            _ => PLATFORM_HRP_TESTNET,
         }
     }
 
@@ -123,7 +302,7 @@ impl PlatformAddress {
     /// # Example
     /// ```ignore
     /// let address = PlatformAddress::P2pkh([0xf7, 0xda, ...]);
-    /// let encoded = address.to_bech32m_string(Network::Dash);
+    /// let encoded = address.to_bech32m_string(Network::Mainnet);
     /// // Returns something like "dash1k..."
     /// ```
     pub fn to_bech32m_string(&self, network: Network) -> String {
@@ -150,29 +329,19 @@ impl PlatformAddress {
 
     /// Decodes a bech32m-encoded Platform address string per DIP-0018.
     ///
-    /// NOTE: This expects bech32m type bytes (0xb0/0x80) in the encoded string,
-    /// NOT the storage type bytes (0x00/0x01) used in GroveDB keys.
+    /// Accepts both `dash` (mainnet) and `tdash` (non-mainnet) HRPs.
+    /// The address is network-agnostic; callers that need a network guard should
+    /// use [`is_mainnet_bech32m`](Self::is_mainnet_bech32m) before decoding.
     ///
     /// # Returns
-    /// - `Ok((PlatformAddress, Network))` - The decoded address and its network
-    /// - `Err(ProtocolError)` - If the address is invalid
-    pub fn from_bech32m_string(s: &str) -> Result<(Self, Network), ProtocolError> {
-        // Decode the bech32m string
+    /// - `Ok(PlatformAddress)` - The decoded address
+    /// - `Err(ProtocolError)` - If the string is malformed or its HRP is not a
+    ///   recognized platform HRP
+    pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
         let (hrp, data) =
             bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
 
-        // Determine network from HRP (case-insensitive per DIP-0018)
-        let hrp_lower = hrp.as_str().to_ascii_lowercase();
-        let network = match hrp_lower.as_str() {
-            s if s == PLATFORM_HRP_MAINNET => Network::Dash,
-            s if s == PLATFORM_HRP_TESTNET => Network::Testnet,
-            _ => {
-                return Err(ProtocolError::DecodingError(format!(
-                    "invalid HRP '{}': expected '{}' or '{}'",
-                    hrp, PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET
-                )))
-            }
-        };
+        classify_platform_hrp(&hrp.as_str().to_ascii_lowercase())?;
 
         // Validate payload length: 1 type byte + 20 hash bytes = 21 bytes
         if data.len() != 1 + ADDRESS_HASH_SIZE {
@@ -198,7 +367,23 @@ impl PlatformAddress {
             ))),
         }?;
 
-        Ok((address, network))
+        Ok(address)
+    }
+
+    /// Classifies a bech32m platform-address string as mainnet or non-mainnet.
+    ///
+    /// Fully decodes `s` (validating checksum and data part) then classifies
+    /// the HRP: `dash` means mainnet, `tdash` means non-mainnet (Testnet /
+    /// Devnet / Regtest — these are indistinguishable by HRP alone per DIP-0018).
+    ///
+    /// # Returns
+    /// - `Ok(true)` - mainnet (`dash` HRP)
+    /// - `Ok(false)` - non-mainnet (`tdash` HRP: Testnet/Devnet/Regtest)
+    /// - `Err(ProtocolError)` - malformed address or non-platform HRP
+    pub fn is_mainnet_bech32m(s: &str) -> Result<bool, ProtocolError> {
+        let (hrp, _) =
+            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{e}")))?;
+        classify_platform_hrp(&hrp.to_lowercase())
     }
 
     /// Converts the PlatformAddress to a dashcore Address with the specified network.
@@ -307,7 +492,10 @@ impl PlatformAddress {
                     pubkey_hash,
                 )
                 .map_err(|e| {
-                    ProtocolError::Generic(format!("P2PKH signature verification failed: {}", e))
+                    ProtocolError::AddressWitnessError(format!(
+                        "P2PKH signature verification failed: {}",
+                        e
+                    ))
                 })?;
 
                 Ok(AddressWitnessVerificationOperations::for_p2pkh(
@@ -325,7 +513,7 @@ impl PlatformAddress {
                 let script = ScriptBuf::from_bytes(redeem_script.to_vec());
                 let computed_hash = script.script_hash();
                 if computed_hash.as_byte_array() != script_hash {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Script hash {} does not match address hash {}",
                         hex::encode(computed_hash.as_byte_array()),
                         hex::encode(script_hash)
@@ -343,7 +531,7 @@ impl PlatformAddress {
                     .collect();
 
                 if valid_signatures.len() < threshold {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Not enough signatures: got {}, need {}",
                         valid_signatures.len(),
                         threshold
@@ -368,11 +556,14 @@ impl PlatformAddress {
                         valid_signatures[sig_idx].as_slice(),
                     )
                     .map_err(|e| {
-                        ProtocolError::Generic(format!("Invalid signature format: {}", e))
+                        ProtocolError::AddressWitnessError(format!(
+                            "Invalid signature format: {}",
+                            e
+                        ))
                     })?;
 
                     let pub_key = PublicKey::from_slice(&pubkeys[pubkey_idx]).map_err(|e| {
-                        ProtocolError::Generic(format!("Invalid public key: {}", e))
+                        ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
                     if secp
@@ -391,20 +582,22 @@ impl PlatformAddress {
                         signable_bytes.len(),
                     ))
                 } else {
-                    Err(ProtocolError::Generic(format!(
+                    Err(ProtocolError::AddressWitnessError(format!(
                         "Not enough valid signatures: verified {}, need {}",
                         matched, threshold
                     )))
                 }
             }
             (PlatformAddress::P2pkh(_), AddressWitness::P2sh { .. }) => {
-                Err(ProtocolError::Generic(
+                Err(ProtocolError::AddressWitnessError(
                     "P2PKH address requires P2pkh witness, got P2sh".to_string(),
                 ))
             }
-            (PlatformAddress::P2sh(_), AddressWitness::P2pkh { .. }) => Err(
-                ProtocolError::Generic("P2SH address requires P2sh witness, got P2pkh".to_string()),
-            ),
+            (PlatformAddress::P2sh(_), AddressWitness::P2pkh { .. }) => {
+                Err(ProtocolError::AddressWitnessError(
+                    "P2SH address requires P2sh witness, got P2pkh".to_string(),
+                ))
+            }
         }
     }
 
@@ -435,7 +628,7 @@ impl PlatformAddress {
                 if byte >= OP_PUSHNUM_1.to_u8() && byte <= OP_PUSHNUM_16.to_u8() {
                     (byte - OP_PUSHNUM_1.to_u8() + 1) as usize
                 } else {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Unsupported P2SH script type: only standard multisig (OP_M ... OP_N OP_CHECKMULTISIG) is supported. \
                          First opcode was 0x{:02x}, expected OP_1 through OP_16",
                         byte
@@ -443,20 +636,20 @@ impl PlatformAddress {
                 }
             }
             Some(Ok(dashcore::blockdata::script::Instruction::PushBytes(_))) => {
-                return Err(ProtocolError::Generic(
+                return Err(ProtocolError::AddressWitnessError(
                     "Unsupported P2SH script type: only standard multisig is supported. \
                      Script starts with a data push instead of OP_M threshold."
                         .to_string(),
                 ))
             }
             Some(Err(e)) => {
-                return Err(ProtocolError::Generic(format!(
+                return Err(ProtocolError::AddressWitnessError(format!(
                     "Error parsing P2SH script: {:?}",
                     e
                 )))
             }
             None => {
-                return Err(ProtocolError::Generic(
+                return Err(ProtocolError::AddressWitnessError(
                     "Empty P2SH redeem script".to_string(),
                 ))
             }
@@ -483,7 +676,7 @@ impl PlatformAddress {
                         // This is OP_N, the total number of keys
                         let n = (byte - OP_PUSHNUM_1.to_u8() + 1) as usize;
                         if pubkeys.len() != n {
-                            return Err(ProtocolError::Generic(format!(
+                            return Err(ProtocolError::AddressWitnessError(format!(
                                 "Multisig script declares {} keys but contains {}",
                                 n,
                                 pubkeys.len()
@@ -492,24 +685,24 @@ impl PlatformAddress {
                         break;
                     } else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
                         // Hit CHECKMULTISIG without seeing OP_N - malformed
-                        return Err(ProtocolError::Generic(
+                        return Err(ProtocolError::AddressWitnessError(
                             "Malformed multisig script: OP_CHECKMULTISIG before OP_N".to_string(),
                         ));
                     } else {
-                        return Err(ProtocolError::Generic(format!(
+                        return Err(ProtocolError::AddressWitnessError(format!(
                             "Unsupported opcode 0x{:02x} in P2SH script. Only standard multisig is supported.",
                             byte
                         )));
                     }
                 }
                 Some(Err(e)) => {
-                    return Err(ProtocolError::Generic(format!(
+                    return Err(ProtocolError::AddressWitnessError(format!(
                         "Error parsing multisig script: {:?}",
                         e
                     )))
                 }
                 None => {
-                    return Err(ProtocolError::Generic(
+                    return Err(ProtocolError::AddressWitnessError(
                         "Incomplete multisig script: unexpected end before OP_N".to_string(),
                     ))
                 }
@@ -518,7 +711,7 @@ impl PlatformAddress {
 
         // Validate threshold
         if threshold > pubkeys.len() {
-            return Err(ProtocolError::Generic(format!(
+            return Err(ProtocolError::AddressWitnessError(format!(
                 "Invalid multisig: threshold {} exceeds number of keys {}",
                 threshold,
                 pubkeys.len()
@@ -531,24 +724,24 @@ impl PlatformAddress {
                 if op == OP_CHECKMULTISIG {
                     // Standard multisig - verify script is complete
                     if instructions.next().is_some() {
-                        return Err(ProtocolError::Generic(
+                        return Err(ProtocolError::AddressWitnessError(
                             "Multisig script has extra data after OP_CHECKMULTISIG".to_string(),
                         ));
                     }
                     Ok((threshold, pubkeys))
                 } else if op == OP_CHECKMULTISIGVERIFY {
-                    Err(ProtocolError::Generic(
+                    Err(ProtocolError::AddressWitnessError(
                         "OP_CHECKMULTISIGVERIFY is not supported, only OP_CHECKMULTISIG"
                             .to_string(),
                     ))
                 } else {
-                    Err(ProtocolError::Generic(format!(
+                    Err(ProtocolError::AddressWitnessError(format!(
                         "Expected OP_CHECKMULTISIG, got opcode 0x{:02x}",
                         op.to_u8()
                     )))
                 }
             }
-            _ => Err(ProtocolError::Generic(
+            _ => Err(ProtocolError::AddressWitnessError(
                 "Invalid multisig script: expected OP_CHECKMULTISIG after OP_N".to_string(),
             )),
         }
@@ -582,17 +775,13 @@ impl FromStr for PlatformAddress {
     /// Parses a bech32m-encoded Platform address string.
     ///
     /// This accepts addresses with either mainnet ("dash") or testnet ("tdash") HRP.
-    /// The network information is discarded; use `from_bech32m_string` if you need
-    /// to preserve the network.
     ///
     /// # Example
     /// ```ignore
     /// let address: PlatformAddress = "dash1k...".parse()?;
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_bech32m_string(s)
-            .map(|(addr, _network)| addr)
-            .map_err(|e| PlatformAddressParseError(e.to_string()))
+        Self::from_bech32m_string(s).map_err(|e| PlatformAddressParseError(e.to_string()))
     }
 }
 
@@ -604,6 +793,24 @@ mod tests {
     use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
     use dashcore::PublicKey;
     use platform_value::BinaryData;
+
+    /// All non-mainnet networks share the `tdash` HRP (DIP-0018), so an address parsed from a
+    /// bech32m string can only ever report Mainnet or Testnet — never Devnet/Regtest. Network
+    /// checks against a parsed address MUST therefore compare HRPs, not raw `Network` values
+    /// (`PlatformWallet::shielded_unshield_to` relies on this; comparing raw networks made every
+    /// unshield fail on devnet wallets).
+    #[test]
+    fn hrp_is_shared_across_all_non_mainnet_networks() {
+        let testnet = PlatformAddress::hrp_for_network(Network::Testnet);
+        assert_eq!(testnet, PLATFORM_HRP_TESTNET);
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Devnet), testnet);
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Regtest), testnet);
+        assert_ne!(
+            PlatformAddress::hrp_for_network(Network::Mainnet),
+            testnet,
+            "mainnet must use a distinct HRP"
+        );
+    }
 
     /// Helper to create a keypair from a 32-byte seed
     fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
@@ -1022,7 +1229,7 @@ mod tests {
         let address = PlatformAddress::P2pkh(hash);
 
         // Encode to bech32m
-        let encoded = address.to_bech32m_string(Network::Dash);
+        let encoded = address.to_bech32m_string(Network::Mainnet);
 
         // Verify exact encoding
         assert_eq!(
@@ -1031,10 +1238,9 @@ mod tests {
         );
 
         // Decode and verify roundtrip
-        let (decoded, network) =
+        let decoded =
             PlatformAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Dash);
     }
 
     #[test]
@@ -1056,10 +1262,9 @@ mod tests {
         );
 
         // Decode and verify roundtrip
-        let (decoded, network) =
+        let decoded =
             PlatformAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Testnet);
     }
 
     #[test]
@@ -1072,7 +1277,7 @@ mod tests {
         let address = PlatformAddress::P2sh(hash);
 
         // Encode to bech32m
-        let encoded = address.to_bech32m_string(Network::Dash);
+        let encoded = address.to_bech32m_string(Network::Mainnet);
 
         // Verify exact encoding
         assert_eq!(
@@ -1081,10 +1286,9 @@ mod tests {
         );
 
         // Decode and verify roundtrip
-        let (decoded, network) =
+        let decoded =
             PlatformAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Dash);
     }
 
     #[test]
@@ -1106,10 +1310,9 @@ mod tests {
         );
 
         // Decode and verify roundtrip
-        let (decoded, network) =
+        let decoded =
             PlatformAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Testnet);
     }
 
     #[test]
@@ -1142,7 +1345,6 @@ mod tests {
 
     #[test]
     fn test_bech32m_invalid_hrp_fails() {
-        // Create a valid bech32m address with wrong HRP using the bech32 crate directly
         let wrong_hrp = Hrp::parse("bitcoin").unwrap();
         let payload: [u8; 21] = [0x00; 21];
         let wrong_hrp_address = bech32::encode::<Bech32m>(wrong_hrp, &payload).unwrap();
@@ -1151,8 +1353,8 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            err.to_string().contains("invalid HRP"),
-            "Error should mention invalid HRP: {}",
+            err.to_string().contains("not a platform address"),
+            "Error should mention non-platform HRP: {}",
             err
         );
     }
@@ -1162,7 +1364,7 @@ mod tests {
         // Create a valid address, then corrupt the checksum
         let hash: [u8; 20] = [0xAB; 20];
         let address = PlatformAddress::P2pkh(hash);
-        let mut encoded = address.to_bech32m_string(Network::Dash);
+        let mut encoded = address.to_bech32m_string(Network::Mainnet);
 
         // Corrupt the last character (part of checksum)
         let last_char = encoded.pop().unwrap();
@@ -1231,12 +1433,12 @@ mod tests {
         let hash: [u8; 20] = [0xAB; 20];
         let address = PlatformAddress::P2pkh(hash);
 
-        let lowercase = address.to_bech32m_string(Network::Dash);
+        let lowercase = address.to_bech32m_string(Network::Mainnet);
         let uppercase = lowercase.to_uppercase();
 
         // Both should decode to the same address
-        let (decoded_lower, _) = PlatformAddress::from_bech32m_string(&lowercase).unwrap();
-        let (decoded_upper, _) = PlatformAddress::from_bech32m_string(&uppercase).unwrap();
+        let decoded_lower = PlatformAddress::from_bech32m_string(&lowercase).unwrap();
+        let decoded_upper = PlatformAddress::from_bech32m_string(&uppercase).unwrap();
 
         assert_eq!(decoded_lower, decoded_upper);
         assert_eq!(decoded_lower, address);
@@ -1246,8 +1448,8 @@ mod tests {
     fn test_bech32m_all_zeros_p2pkh() {
         // Edge case: all-zero hash
         let address = PlatformAddress::P2pkh([0u8; 20]);
-        let encoded = address.to_bech32m_string(Network::Dash);
-        let (decoded, _) = PlatformAddress::from_bech32m_string(&encoded).unwrap();
+        let encoded = address.to_bech32m_string(Network::Mainnet);
+        let decoded = PlatformAddress::from_bech32m_string(&encoded).unwrap();
         assert_eq!(decoded, address);
     }
 
@@ -1255,14 +1457,14 @@ mod tests {
     fn test_bech32m_all_ones_p2sh() {
         // Edge case: all-ones hash
         let address = PlatformAddress::P2sh([0xFF; 20]);
-        let encoded = address.to_bech32m_string(Network::Dash);
-        let (decoded, _) = PlatformAddress::from_bech32m_string(&encoded).unwrap();
+        let encoded = address.to_bech32m_string(Network::Mainnet);
+        let decoded = PlatformAddress::from_bech32m_string(&encoded).unwrap();
         assert_eq!(decoded, address);
     }
 
     #[test]
     fn test_hrp_for_network() {
-        assert_eq!(PlatformAddress::hrp_for_network(Network::Dash), "dash");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Mainnet), "dash");
         assert_eq!(PlatformAddress::hrp_for_network(Network::Testnet), "tdash");
         assert_eq!(PlatformAddress::hrp_for_network(Network::Devnet), "tdash");
         assert_eq!(PlatformAddress::hrp_for_network(Network::Regtest), "tdash");
@@ -1303,14 +1505,92 @@ mod tests {
         assert_eq!(p2pkh.to_bytes()[0], 0x00);
         assert_eq!(p2sh.to_bytes()[0], 0x01);
 
-        // Bech32m encoding uses 0xb0/0x80 (verified by successful roundtrip)
-        let p2pkh_encoded = p2pkh.to_bech32m_string(Network::Dash);
-        let p2sh_encoded = p2sh.to_bech32m_string(Network::Dash);
+        // Bech32m encoding uses 0xb0/0xb8 (verified by successful roundtrip)
+        let p2pkh_encoded = p2pkh.to_bech32m_string(Network::Mainnet);
+        let p2sh_encoded = p2sh.to_bech32m_string(Network::Mainnet);
 
-        let (p2pkh_decoded, _) = PlatformAddress::from_bech32m_string(&p2pkh_encoded).unwrap();
-        let (p2sh_decoded, _) = PlatformAddress::from_bech32m_string(&p2sh_encoded).unwrap();
+        let p2pkh_decoded = PlatformAddress::from_bech32m_string(&p2pkh_encoded).unwrap();
+        let p2sh_decoded = PlatformAddress::from_bech32m_string(&p2sh_encoded).unwrap();
 
         assert_eq!(p2pkh_decoded, p2pkh);
         assert_eq!(p2sh_decoded, p2sh);
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_mainnet_is_true() {
+        let encoded = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(Network::Mainnet);
+        assert!(encoded.starts_with("dash1"));
+        assert!(PlatformAddress::is_mainnet_bech32m(&encoded).unwrap());
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_all_non_mainnet_networks_are_false() {
+        // Testnet, Devnet, and Regtest all share the `tdash` HRP, so all three
+        // classify as non-mainnet (false) — the only truthful answer DIP-0018
+        // allows from the address string alone.
+        for network in [Network::Testnet, Network::Devnet, Network::Regtest] {
+            let encoded = PlatformAddress::P2pkh([0x22; 20]).to_bech32m_string(network);
+            assert!(encoded.starts_with("tdash1"), "network {network:?}");
+            assert!(
+                !PlatformAddress::is_mainnet_bech32m(&encoded).unwrap(),
+                "network {network:?} must classify as non-mainnet"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_is_case_insensitive() {
+        let mainnet = PlatformAddress::P2pkh([0x33; 20])
+            .to_bech32m_string(Network::Mainnet)
+            .to_uppercase();
+        assert!(mainnet.starts_with("DASH1"));
+        assert!(PlatformAddress::is_mainnet_bech32m(&mainnet).unwrap());
+
+        let testnet = PlatformAddress::P2pkh([0x44; 20])
+            .to_bech32m_string(Network::Testnet)
+            .to_uppercase();
+        assert!(testnet.starts_with("TDASH1"));
+        assert!(!PlatformAddress::is_mainnet_bech32m(&testnet).unwrap());
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_non_platform_hrp_errors() {
+        // Valid Bitcoin bech32 address: decode succeeds, HRP "bc" triggers error.
+        let err = PlatformAddress::is_mainnet_bech32m("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("not a platform address"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_malformed_data_part_errors() {
+        // `dash1!` has a valid HRP but `!` is not a bech32 character.
+        // Previously this returned Ok(true) (the HRP-only check); now it must
+        // return an error because bech32::decode validates the full string.
+        assert!(
+            PlatformAddress::is_mainnet_bech32m("dash1!").is_err(),
+            "dash1! must error, not return Ok(true)"
+        );
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_missing_separator_errors() {
+        let err = PlatformAddress::is_mainnet_bech32m("nodelimiterhere").unwrap_err();
+        // bech32::decode returns "parsing failed" for strings without separator
+        assert!(
+            err.to_string().contains("parsing failed") || err.to_string().contains("separator"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_empty_errors() {
+        let err = PlatformAddress::is_mainnet_bech32m("").unwrap_err();
+        assert!(
+            err.to_string().contains("parsing failed") || err.to_string().contains("separator"),
+            "unexpected error: {err}"
+        );
     }
 }

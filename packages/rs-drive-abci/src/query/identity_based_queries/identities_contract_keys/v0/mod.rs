@@ -30,6 +30,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetIdentitiesContractKeysResponseV0>, Error> {
+        if identities_ids.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} identities contract keys, maximum is {}",
+                    identities_ids.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let identities_ids = check_validation_result_with_data!(identities_ids
             .into_iter()
             .map(|identity_id| {
@@ -55,14 +64,19 @@ impl<C> Platform<C> {
 
         let purposes = check_validation_result_with_data!(purposes
             .into_iter()
-            .map(
-                |purpose| Purpose::try_from(purpose as u8).map_err(|_| QueryError::Query(
-                    QuerySyntaxError::InvalidKeyParameter(format!(
+            .map(|purpose| {
+                if purpose < 0 || purpose > u8::MAX as i32 {
+                    return Err(QueryError::Query(QuerySyntaxError::InvalidKeyParameter(
+                        "purpose out of bounds".to_string(),
+                    )));
+                }
+                Purpose::try_from(purpose as u8).map_err(|_| {
+                    QueryError::Query(QuerySyntaxError::InvalidKeyParameter(format!(
                         "purpose {} not recognized",
                         purpose
-                    ))
-                ))
-            )
+                    )))
+                })
+            })
             .collect::<Result<Vec<Purpose>, QueryError>>());
 
         let response = if prove {
@@ -151,12 +165,155 @@ mod tests {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use drive::drive::Drive;
 
+    use crate::error::query::QueryError;
+    use drive::error::query::QuerySyntaxError;
+
+    #[test]
+    fn test_invalid_identity_id() {
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 8]], // invalid: 8 bytes
+            contract_id: vec![1; 32],
+            document_type_name: None,
+            purposes: vec![Purpose::AUTHENTICATION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("id must be a valid identifier (32 bytes long)")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_contract_id() {
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 32]],
+            contract_id: vec![1; 8], // invalid: 8 bytes
+            document_type_name: None,
+            purposes: vec![Purpose::AUTHENTICATION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("contract_id must be a valid identifier (32 bytes long)")
+        ));
+    }
+
+    #[test]
+    fn test_invalid_purpose() {
+        let (platform, state, platform_version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: vec![vec![0; 32]],
+            contract_id: vec![1; 32],
+            document_type_name: None,
+            purposes: vec![200], // invalid purpose
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(QuerySyntaxError::InvalidKeyParameter(msg))] if msg.contains("purpose")
+        ));
+    }
+
+    #[test]
+    fn test_identities_ids_exceeding_max_limit_is_rejected() {
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
+        let max = platform_version.drive_abci.query.max_returned_elements as usize;
+
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query should not fail");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [crate::error::query::QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_identities_ids_at_max_limit_is_accepted() {
+        let (platform, state, platform_version) =
+            setup_platform(Some((1, 1)), Network::Testnet, None);
+        let max = platform_version.drive_abci.query.max_returned_elements as usize;
+
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
+
+        let request = GetIdentitiesContractKeysRequestV0 {
+            identities_ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
+            contract_id: dashpay.id().to_vec(),
+            document_type_name: Some("contactRequest".to_string()),
+            purposes: vec![Purpose::ENCRYPTION as i32],
+            prove: false,
+        };
+
+        let result = platform
+            .query_identities_contract_keys_v0(request, &state, platform_version)
+            .expect("query should not fail");
+
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                crate::error::query::QueryError::Query(
+                    drive::error::query::QuerySyntaxError::InvalidLimit(_)
+                )
+            )),
+            "should not be rejected at exactly the max limit"
+        );
+    }
+
     #[test]
     fn test_identities_contract_keys_missing_identity() {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let request = GetIdentitiesContractKeysRequestV0 {
             identities_ids: vec![vec![1; 32]],
@@ -187,7 +344,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let identity_ids = vec![vec![1; 32]];
 
@@ -417,7 +579,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -462,7 +629,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -526,7 +698,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         // Create alice and bob identities with encryption and decryption keys
         let (alice, bob) = {
@@ -685,7 +862,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -781,7 +963,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 
@@ -982,7 +1169,12 @@ mod tests {
         let (platform, state, platform_version) =
             setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let mut rng = StdRng::seed_from_u64(10);
 

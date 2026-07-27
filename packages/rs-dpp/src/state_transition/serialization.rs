@@ -17,6 +17,7 @@ mod tests {
     use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
     use platform_value::string_encoding::Encoding;
+    use platform_value::{Identifier, Value};
     use crate::bls::native_bls::NativeBlsModule;
     use crate::data_contract::accessors::v0::DataContractV0Getters;
     use crate::identity::state_transition::AssetLockProved;
@@ -32,10 +33,19 @@ mod tests {
     use crate::state_transition::data_contract_update_transition::{
         DataContractUpdateTransition, DataContractUpdateTransitionV0,
     };
+    use crate::state_transition::batch_transition::batched_transition::document_create_transition::{
+        DocumentCreateTransition, DocumentCreateTransitionV0,
+    };
+    use crate::state_transition::batch_transition::batched_transition::document_transition::{
+        DocumentTransition, DocumentTransitionV0Methods,
+    };
     use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
+    use crate::state_transition::batch_transition::batched_transition::BatchedTransition;
     use crate::state_transition::batch_transition::{
         BatchTransition, BatchTransitionV1,
     };
+    use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use crate::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
     use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
     use crate::state_transition::identity_create_transition::IdentityCreateTransition;
@@ -410,5 +420,322 @@ mod tests {
         let recovered_state_transition = StateTransition::deserialize_from_bytes(&bytes)
             .expect("expected to deserialize state transition");
         assert_eq!(state_transition, recovered_state_transition);
+    }
+
+    #[test]
+    fn document_batch_rejects_excessive_value_depth_during_decode() {
+        let nested = (0..300).fold(Value::Null, |value, _| Value::Array(vec![value]));
+        let document_transition =
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::default(),
+                    identity_contract_nonce: 1,
+                    document_type_name: "test".to_string(),
+                    data_contract_id: Identifier::default(),
+                }),
+                entropy: [0; 32],
+                data: BTreeMap::from([("nested".to_string(), nested)]),
+                prefunded_voting_balance: None,
+            }));
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(256),
+            Some(257)
+        );
+
+        let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            transitions: vec![BatchedTransition::Document(document_transition)],
+            ..Default::default()
+        }));
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("the state transition should encode below the byte limit");
+        assert!(
+            bytes.len() as u64
+                <= PlatformVersion::latest()
+                    .system_limits
+                    .max_state_transition_size
+        );
+
+        // The intentionally invalid transition is no longer needed after encoding. Avoid walking
+        // its recursive data during drop so this regression test only exercises decoder behavior.
+        std::mem::forget(state_transition);
+
+        let error =
+            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
+                .expect_err("excessive nesting must be rejected during decode");
+        assert!(error
+            .to_string()
+            .contains("value nesting depth 257 exceeds maximum 256"));
+    }
+
+    #[test]
+    fn document_batch_value_depth_limits_align_between_decode_and_validation() {
+        // Every decodable document value must also satisfy the consensus depth rule, so depth
+        // violations always fail the same way: as an undecodable transition. A value at the
+        // decoder ceiling must therefore round-trip and pass the validation-side depth check.
+        let max_depth = PlatformVersion::latest()
+            .system_limits
+            .max_document_value_depth
+            .expect("latest protocol should enforce document value depth")
+            as usize;
+        let nested = (1..max_depth).fold(Value::Array(vec![Value::Null]), |value, _| {
+            Value::Array(vec![value])
+        });
+        let document_transition =
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+                    id: Identifier::default(),
+                    identity_contract_nonce: 1,
+                    document_type_name: "test".to_string(),
+                    data_contract_id: Identifier::default(),
+                }),
+                entropy: [0; 32],
+                data: BTreeMap::from([("nested".to_string(), nested)]),
+                prefunded_voting_balance: None,
+            }));
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(max_depth),
+            None
+        );
+        assert_eq!(
+            document_transition.first_data_depth_exceeding(max_depth - 1),
+            Some(max_depth)
+        );
+
+        let state_transition = StateTransition::Batch(BatchTransition::V1(BatchTransitionV1 {
+            transitions: vec![BatchedTransition::Document(document_transition)],
+            ..Default::default()
+        }));
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("the state transition should encode below the byte limit");
+
+        let recovered =
+            StateTransition::deserialize_from_bytes_in_version(&bytes, PlatformVersion::latest())
+                .expect("a value at the decoder ceiling must decode");
+        assert_eq!(state_transition, recovered);
+    }
+
+    #[test]
+    fn deserialize_empty_bytes_should_fail() {
+        let result = StateTransition::deserialize_from_bytes(&[]);
+        assert!(
+            result.is_err(),
+            "deserialization of empty bytes should fail"
+        );
+    }
+
+    #[test]
+    fn deserialize_single_byte_should_fail() {
+        let result = StateTransition::deserialize_from_bytes(&[0xFF]);
+        assert!(
+            result.is_err(),
+            "deserialization of a single 0xFF byte should fail"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn deserialize_truncated_bytes_should_fail() {
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+        let transition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id: identity.id(),
+            amount: 5000000,
+            core_fee_per_byte: 34,
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: [1u8; 65].to_vec().into(),
+        };
+        let state_transition: StateTransition = transition.into();
+        let bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        // Truncate to half
+        let half = &bytes[..bytes.len() / 2];
+        assert!(
+            StateTransition::deserialize_from_bytes(half).is_err(),
+            "deserialization of truncated-to-half bytes should fail"
+        );
+
+        // Truncate by removing last byte
+        let minus_one = &bytes[..bytes.len() - 1];
+        assert!(
+            StateTransition::deserialize_from_bytes(minus_one).is_err(),
+            "deserialization of bytes missing last byte should fail"
+        );
+
+        // Keep only first byte
+        let first_only = &bytes[..1];
+        assert!(
+            StateTransition::deserialize_from_bytes(first_only).is_err(),
+            "deserialization of only the first byte should fail"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn deserialize_corrupted_bytes_should_not_panic() {
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+        let transition = IdentityCreditWithdrawalTransitionV0 {
+            identity_id: identity.id(),
+            amount: 5000000,
+            core_fee_per_byte: 34,
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: [1u8; 65].to_vec().into(),
+        };
+        let state_transition: StateTransition = transition.into();
+        let mut bytes = state_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        // Flip bits in the middle of the payload
+        let mid = bytes.len() / 2;
+        bytes[mid] ^= 0xFF;
+
+        // Should either fail or return a different value - must not panic
+        let result = StateTransition::deserialize_from_bytes(&bytes);
+        if let Ok(recovered) = result {
+            assert_ne!(
+                state_transition, recovered,
+                "corrupted bytes should not deserialize to the original value"
+            );
+        }
+    }
+
+    /// Crafts a minimal payload that looks like a StateTransition variant
+    /// (IdentityCreditWithdrawal = discriminant 5) followed by a version byte
+    /// and then a Vec<u8> field with a varint-encoded length that claims to
+    /// contain `fake_len` bytes. The total payload is small but the decoded
+    /// length would trigger a huge allocation without the limit guard.
+    fn craft_oversized_vec_payload(fake_len: u64) -> Vec<u8> {
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        // Build the payload: variant discriminant + version + bogus vec length + filler
+        let mut buf = Vec::new();
+        // StateTransition enum discriminant for IdentityCreditWithdrawal (index 5)
+        buf.extend_from_slice(&bincode::encode_to_vec(5u32, config).unwrap());
+        // Version byte (0 = V0)
+        buf.push(0);
+        // identity_id: 32 bytes (Identifier)
+        buf.extend_from_slice(&[0u8; 32]);
+        // amount: u64
+        buf.extend_from_slice(&bincode::encode_to_vec(1000u64, config).unwrap());
+        // core_fee_per_byte: u32
+        buf.extend_from_slice(&bincode::encode_to_vec(1u32, config).unwrap());
+        // pooling: enum variant 0
+        buf.extend_from_slice(&bincode::encode_to_vec(0u32, config).unwrap());
+        // output_script (CoreScript = BinaryData = Vec<u8>): encode the malicious length
+        buf.extend_from_slice(&bincode::encode_to_vec(fake_len, config).unwrap());
+        // Don't provide the actual bytes — the limit check should fire before allocation
+        buf
+    }
+
+    #[test]
+    fn deserialize_crafted_huge_vec_length_does_not_oom() {
+        // Craft a small payload (~80 bytes) with a Vec<u8> field claiming 8 GB.
+        // Without the limit fix this would attempt `vec![0u8; 8_000_000_000]` and abort.
+        let payload = craft_oversized_vec_payload(8_000_000_000);
+        let result = StateTransition::deserialize_from_bytes(&payload);
+        // Must return an error, not OOM-abort the process
+        assert!(
+            result.is_err(),
+            "crafted payload with 8GB vec length must be rejected, not cause OOM"
+        );
+    }
+
+    #[test]
+    fn deserialize_crafted_vec_exceeding_limit_is_rejected() {
+        // Craft a payload with a Vec<u8> claiming 200,000 bytes — exceeds the
+        // 100,000 byte budget configured on StateTransition.
+        // The limit causes bincode to reject the read (either as Io/LimitExceeded
+        // or UnexpectedEnd depending on the exact code path). Either way, the
+        // deserialization must fail safely without OOM.
+        let payload = craft_oversized_vec_payload(200_000);
+        let result = StateTransition::deserialize_from_bytes(&payload);
+        assert!(
+            result.is_err(),
+            "Vec length exceeding byte budget must be rejected"
+        );
+    }
+
+    #[test]
+    fn deserialize_no_limit_does_not_enforce_byte_budget() {
+        // Same crafted payload with 200,000-byte Vec — the no_limit variant
+        // should NOT reject it for byte budget reasons (it will still fail
+        // because the data doesn't actually contain 200,000 bytes).
+        let payload = craft_oversized_vec_payload(200_000);
+        let result = StateTransition::deserialize_from_bytes_no_limit(&payload);
+        assert!(result.is_err());
+        // any other error is fine — the data is garbage
+        if let ProtocolError::MaxEncodedBytesReachedError { .. } = result.unwrap_err() {
+            panic!("deserialize_from_bytes_no_limit should NOT enforce byte budget");
+        }
+    }
+
+    #[test]
+    fn deserialize_many_empty_list() {
+        let result = StateTransition::deserialize_many(&[]);
+        assert_eq!(result.unwrap(), vec![]);
+    }
+
+    #[test]
+    fn deserialize_many_with_invalid_entry() {
+        let result = StateTransition::deserialize_many(&[vec![0xFF]]);
+        assert!(
+            result.is_err(),
+            "deserialize_many with invalid entry should fail"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn deserialize_many_with_valid_entries() {
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+
+        let make_transition = |amount: u64, nonce: u64| -> StateTransition {
+            let t = IdentityCreditWithdrawalTransitionV0 {
+                identity_id: identity.id(),
+                amount,
+                core_fee_per_byte: 34,
+                pooling: Pooling::Standard,
+                output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                nonce,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: [1u8; 65].to_vec().into(),
+            };
+            t.into()
+        };
+
+        let st1 = make_transition(1000000, 1);
+        let st2 = make_transition(2000000, 2);
+        let st3 = make_transition(3000000, 3);
+
+        let raw: Vec<Vec<u8>> = vec![
+            st1.serialize_to_bytes().unwrap(),
+            st2.serialize_to_bytes().unwrap(),
+            st3.serialize_to_bytes().unwrap(),
+        ];
+
+        let recovered = StateTransition::deserialize_many(&raw).expect("should deserialize all");
+        assert_eq!(recovered.len(), 3);
+        assert_eq!(recovered[0], st1);
+        assert_eq!(recovered[1], st2);
+        assert_eq!(recovered[2], st3);
     }
 }

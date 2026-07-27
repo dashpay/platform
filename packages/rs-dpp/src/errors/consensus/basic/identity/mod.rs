@@ -8,6 +8,7 @@ pub use identity_asset_lock_transaction_is_not_found_error::*;
 pub use identity_asset_lock_transaction_out_point_already_consumed_error::*;
 pub use identity_asset_lock_transaction_out_point_not_enough_balance_error::*;
 pub use identity_asset_lock_transaction_output_not_found_error::*;
+pub use identity_asset_lock_transaction_too_many_inputs_error::*;
 pub use identity_credit_transfer_to_self_error::*;
 pub use invalid_asset_lock_proof_core_chain_height_error::*;
 pub use invalid_asset_lock_proof_transaction_height_error::*;
@@ -39,6 +40,7 @@ mod duplicated_identity_public_key_id_basic_error;
 mod identity_asset_lock_proof_locked_transaction_mismatch_error;
 mod identity_asset_lock_transaction_is_not_found_error;
 mod identity_asset_lock_transaction_out_point_already_consumed_error;
+mod identity_asset_lock_transaction_too_many_inputs_error;
 
 mod identity_asset_lock_state_transition_replay_error;
 mod identity_asset_lock_transaction_out_point_not_enough_balance_error;

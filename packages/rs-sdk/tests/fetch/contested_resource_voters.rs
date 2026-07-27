@@ -19,7 +19,14 @@ use crate::fetch::{
     config::Config,
 };
 
-/// When we request votes for a non-existing identity, we should get no votes.
+/// A contested vote poll must fully identify its resource: the number of index
+/// values has to match the index arity.
+///
+/// The `parentNameAndLabel` index has two properties, so a poll carrying only
+/// one value (here `["dash"]`) is under-specified. The old code silently zipped
+/// the shorter list and resolved a partial path, letting the query bind to an
+/// unintended tree location. The verifier now rejects the mismatch outright
+/// (security finding DS-CAND-314), so the fetch fails closed.
 #[cfg_attr(
     not(feature = "offline-testing"),
     ignore = "requires manual DPNS names setup for masternode voting tests; see docs of contested_resource_identity_votes_ok()"
@@ -51,11 +58,14 @@ async fn test_contested_resource_voters_for_identity_not_found() {
           contestant_id,
     };
 
-    let rss = Voter::fetch_many(&sdk, query)
+    let error = Voter::fetch_many(&sdk, query)
         .await
-        .expect("fetch contested resources");
+        .expect_err("under-specified contested poll must be rejected");
 
-    assert!(rss.0.is_empty());
+    assert!(
+        error.to_string().contains("contested index expects"),
+        "expected a contested-index arity rejection, got: {error}"
+    );
 }
 
 /// When we request votes for an existing contestant, we should get some votes.
@@ -66,7 +76,7 @@ async fn test_contested_resource_voters_for_identity_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn contested_resource_voters_for_existing_contestant() {
     setup_logs();
@@ -76,7 +86,7 @@ async fn contested_resource_voters_for_existing_contestant() {
         .setup_api("contested_resource_voters_for_existing_contestant")
         .await;
 
-    super::contested_resource::check_mn_voting_prerequisities(&cfg)
+    super::contested_resource::check_mn_voting_prerequisites(&cfg)
         .await
         .expect("prerequisites");
 

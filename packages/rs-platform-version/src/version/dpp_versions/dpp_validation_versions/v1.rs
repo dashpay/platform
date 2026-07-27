@@ -1,6 +1,6 @@
 use crate::version::dpp_versions::dpp_validation_versions::{
     DPPValidationVersions, DataContractValidationVersions, DocumentTypeValidationVersions,
-    JsonSchemaValidatorVersions, VotingValidationVersions,
+    JsonSchemaValidatorVersions, ValidationResultMethodVersions, VotingValidationVersions,
 };
 
 pub const DPP_VALIDATION_VERSIONS_V1: DPPValidationVersions = DPPValidationVersions {
@@ -30,5 +30,9 @@ pub const DPP_VALIDATION_VERSIONS_V1: DPPValidationVersions = DPPValidationVersi
         allow_other_contenders_time_mainnet_ms: 604_800_000, // 1 week in ms
         allow_other_contenders_time_testing_ms: 604_800_000, // 1 week in ms for v1 (changes in v2)
         votes_allowed_per_masternode: 5,
+    },
+    validation_result: ValidationResultMethodVersions {
+        flatten: 0,
+        merge_many: 0,
     },
 };

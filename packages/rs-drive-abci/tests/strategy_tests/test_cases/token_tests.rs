@@ -50,8 +50,8 @@ mod tests {
     use strategy_tests::{IdentityInsertInfo, StartIdentities, StartAddresses, Strategy};
     use crate::addresses_with_balance::AddressesWithBalance;
 
-    #[test]
-    fn run_chain_insert_one_token_mint_per_block() {
+    #[tokio::test]
+    async fn run_chain_insert_one_token_mint_per_block() {
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -86,6 +86,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -168,7 +169,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let drive = &outcome.abci_app.platform.drive;
         let identity_ids = vec![identity1.id().to_buffer(), identity2.id().to_buffer()];
@@ -206,8 +208,8 @@ mod tests {
         assert_eq!(identity_2_token_balance, Some(11000)); // 11 blocks of 1000
     }
 
-    #[test]
-    fn run_chain_insert_one_token_transfer_per_block() {
+    #[tokio::test]
+    async fn run_chain_insert_one_token_transfer_per_block() {
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -242,6 +244,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -324,7 +327,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let drive = &outcome.abci_app.platform.drive;
         let identity_ids = vec![identity1.id().to_buffer(), identity2.id().to_buffer()];
@@ -366,8 +370,8 @@ mod tests {
         assert_eq!(identity_2_token_balance, Some(11000)); // 11 blocks of 1000
     }
 
-    #[test]
-    fn run_chain_token_perpetual_distribution_to_evonodes_fixed_distribution() {
+    #[tokio::test]
+    async fn run_chain_token_perpetual_distribution_to_evonodes_fixed_distribution() {
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -396,6 +400,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -476,7 +481,8 @@ mod tests {
             13,
             &mut None,
             &mut transfer_key_signer,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -572,6 +578,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -631,8 +638,8 @@ mod tests {
         assert_eq!(token_balance, Some(222));
     }
 
-    #[test]
-    fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution() {
+    #[tokio::test]
+    async fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution() {
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -661,6 +668,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -760,7 +768,8 @@ mod tests {
             13,
             &mut None,
             &mut transfer_key_signer,
-        );
+        )
+        .await;
 
         for (block, tx_results_per_block) in state_transition_results_per_block.iter() {
             for (state_transition, result) in tx_results_per_block {
@@ -866,6 +875,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -993,7 +1003,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(23),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -1056,6 +1067,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1122,8 +1134,8 @@ mod tests {
         assert_eq!(token_balance, Some(303));
     }
 
-    #[test]
-    fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution_non_genesis() {
+    #[tokio::test]
+    async fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution_non_genesis() {
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/basic-token/basic-token.json",
@@ -1152,6 +1164,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1253,7 +1266,8 @@ mod tests {
             13,
             &mut None,
             &mut transfer_key_signer,
-        );
+        )
+        .await;
 
         for (block, tx_results_per_block) in state_transition_results_per_block.iter() {
             for (state_transition, result) in tx_results_per_block {
@@ -1369,7 +1383,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(23),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -1462,6 +1477,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1588,7 +1604,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(23),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -1651,6 +1668,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -1717,8 +1735,8 @@ mod tests {
         assert_eq!(token_balance, Some(344));
     }
 
-    #[test]
-    fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution_non_genesis_with_start_offset_in_past(
+    #[tokio::test]
+    async fn run_chain_token_perpetual_distribution_to_evonodes_linear_distribution_non_genesis_with_start_offset_in_past(
     ) {
         let platform_version = PlatformVersion::latest();
         let mut created_contract = json_document_to_created_contract(
@@ -1748,6 +1766,7 @@ mod tests {
                 &mut rng,
                 platform_version,
             )
+            .await
             .into_iter()
             .map(|(identity, transition)| (identity, Some(transition)))
             .collect();
@@ -1849,7 +1868,8 @@ mod tests {
             13,
             &mut None,
             &mut transfer_key_signer,
-        );
+        )
+        .await;
 
         for (block, tx_results_per_block) in state_transition_results_per_block.iter() {
             for (state_transition, result) in tx_results_per_block {
@@ -1965,7 +1985,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(23),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -2058,6 +2079,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -2184,7 +2206,8 @@ mod tests {
             },
             config.clone(),
             StrategyRandomness::SeedEntropy(23),
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -2247,6 +2270,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition

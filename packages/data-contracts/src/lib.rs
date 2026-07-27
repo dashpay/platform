@@ -10,9 +10,6 @@ pub use dashpay_contract;
 #[cfg(feature = "dpns")]
 pub use dpns_contract;
 
-#[cfg(feature = "feature-flags")]
-pub use feature_flags_contract;
-
 #[cfg(feature = "keyword-search")]
 pub use keyword_search_contract;
 
@@ -21,6 +18,9 @@ pub use masternode_reward_shares_contract;
 
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
+
+#[cfg(feature = "document-history")]
+pub use document_history_contract;
 
 #[cfg(feature = "token-history")]
 pub use token_history_contract;
@@ -36,12 +36,16 @@ pub use withdrawals_contract;
 pub enum SystemDataContract {
     Withdrawals = 0,
     MasternodeRewards = 1,
+    /// Reserved slot — the feature-flags contract was never deployed at genesis
+    /// and its implementation has been removed. The discriminant `2` is kept to
+    /// preserve the stable numbering of subsequent variants.
     FeatureFlags = 2,
     DPNS = 3,
     Dashpay = 4,
     WalletUtils = 5,
     TokenHistory = 6,
     KeywordSearch = 7,
+    DocumentHistory = 8,
 }
 
 pub struct DataContractSource {
@@ -53,6 +57,25 @@ pub struct DataContractSource {
 }
 
 impl SystemDataContract {
+    /// Every system data contract, including the reserved `FeatureFlags` slot.
+    ///
+    /// Deliberately kept beside the enum so that adding a variant and adding it here are the
+    /// same edit. `assert_every_variant_is_listed` below makes that mechanical rather than
+    /// remembered: a new variant makes its match non-exhaustive and the crate stops compiling.
+    pub const ALL: [SystemDataContract; 9] = [
+        SystemDataContract::Withdrawals,
+        SystemDataContract::MasternodeRewards,
+        SystemDataContract::FeatureFlags,
+        SystemDataContract::DPNS,
+        SystemDataContract::Dashpay,
+        SystemDataContract::WalletUtils,
+        SystemDataContract::TokenHistory,
+        SystemDataContract::KeywordSearch,
+        SystemDataContract::DocumentHistory,
+    ];
+
+    /// A new variant must also be added to [`SystemDataContract::ALL`]; this match is where the
+    /// compiler stops you, but it cannot check that list for you.
     pub fn id(&self) -> Identifier {
         let bytes = match self {
             #[cfg(feature = "withdrawals")]
@@ -71,9 +94,9 @@ impl SystemDataContract {
                 34, 71, 147, 68, 99, 238, 176, 31, 247, 33, 149, 144, 149, 140,
             ],
 
-            #[cfg(feature = "feature-flags")]
-            SystemDataContract::FeatureFlags => feature_flags_contract::ID_BYTES,
-            #[cfg(not(feature = "feature-flags"))]
+            // Reserved: feature-flags contract was removed but the ID is kept for
+            // discriminant stability and to prevent reuse of a potentially meaningful
+            // Identifier on-chain.
             SystemDataContract::FeatureFlags => [
                 245, 172, 216, 200, 193, 110, 185, 172, 40, 110, 7, 132, 190, 86, 127, 80, 9, 244,
                 86, 26, 243, 212, 255, 2, 91, 7, 90, 243, 68, 55, 152, 34,
@@ -118,6 +141,14 @@ impl SystemDataContract {
                 92, 20, 14, 101, 92, 2, 101, 187, 194, 168, 8, 113, 109, 225, 132, 121, 133, 19,
                 89, 24, 173, 81, 205, 253, 11, 118, 102, 75, 169, 91, 163, 124,
             ],
+
+            #[cfg(feature = "document-history")]
+            SystemDataContract::DocumentHistory => document_history_contract::ID_BYTES,
+            #[cfg(not(feature = "document-history"))]
+            SystemDataContract::DocumentHistory => [
+                88, 18, 140, 208, 179, 231, 242, 57, 225, 203, 4, 210, 245, 95, 136, 92, 160, 167,
+                112, 118, 173, 238, 83, 62, 234, 230, 222, 16, 231, 30, 99, 98,
+            ],
         };
         Identifier::new(bytes)
     }
@@ -152,16 +183,9 @@ impl SystemDataContract {
                 Err(Error::ContractNotIncluded("masternode-rewards"))
             }
 
-            #[cfg(feature = "feature-flags")]
-            SystemDataContract::FeatureFlags => Ok(DataContractSource {
-                id_bytes: feature_flags_contract::ID_BYTES,
-                owner_id_bytes: feature_flags_contract::OWNER_ID_BYTES,
-                version: platform_version.system_data_contracts.feature_flags as u32,
-                definitions: feature_flags_contract::load_definitions(platform_version)?,
-                document_schemas: feature_flags_contract::load_documents_schemas(platform_version)?,
-            }),
-            #[cfg(not(feature = "feature-flags"))]
-            SystemDataContract::FeatureFlags => Err(Error::ContractNotIncluded("feature-flags")),
+            // Reserved: feature-flags contract was removed. The variant exists only
+            // to preserve discriminant stability; loading it is not supported.
+            SystemDataContract::FeatureFlags => Err(Error::ContractReserved("feature-flags")),
 
             #[cfg(feature = "dpns")]
             SystemDataContract::DPNS => Ok(DataContractSource {
@@ -219,6 +243,21 @@ impl SystemDataContract {
             }),
             #[cfg(not(feature = "keyword-search"))]
             SystemDataContract::KeywordSearch => Err(Error::ContractNotIncluded("keyword-search")),
+
+            #[cfg(feature = "document-history")]
+            SystemDataContract::DocumentHistory => Ok(DataContractSource {
+                id_bytes: document_history_contract::ID_BYTES,
+                owner_id_bytes: document_history_contract::OWNER_ID_BYTES,
+                version: platform_version.system_data_contracts.document_history as u32,
+                definitions: document_history_contract::load_definitions(platform_version)?,
+                document_schemas: document_history_contract::load_documents_schemas(
+                    platform_version,
+                )?,
+            }),
+            #[cfg(not(feature = "document-history"))]
+            SystemDataContract::DocumentHistory => {
+                Err(Error::ContractNotIncluded("document-history"))
+            }
         }
     }
 }

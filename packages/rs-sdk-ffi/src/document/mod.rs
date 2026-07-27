@@ -19,8 +19,13 @@ pub use price::{
 };
 pub use purchase::{dash_sdk_document_purchase, dash_sdk_document_purchase_and_wait};
 pub use put::{dash_sdk_document_put_to_platform, dash_sdk_document_put_to_platform_and_wait};
+pub use queries::average::dash_sdk_document_average;
 pub use queries::info::dash_sdk_document_get_info;
-pub use queries::{dash_sdk_document_fetch, dash_sdk_document_search, DashSDKDocumentSearchParams};
+pub use queries::sum::dash_sdk_document_sum;
+pub use queries::{
+    dash_sdk_document_count, dash_sdk_document_fetch, dash_sdk_document_search,
+    DashSDKDocumentSearchParams,
+};
 pub use replace::{
     dash_sdk_document_replace_on_platform, dash_sdk_document_replace_on_platform_and_wait,
 };

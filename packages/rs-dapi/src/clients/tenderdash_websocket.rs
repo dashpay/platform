@@ -682,7 +682,7 @@ mod tests {
                         "type": "tx",
                         "attributes": [
                             {
-                                "key": "hash", 
+                                "key": "hash",
                                 "value": "HASH2",
                                 "index": false
                             }

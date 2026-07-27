@@ -1,4 +1,4 @@
-# syntax = docker/dockerfile:1.7-labs
+# syntax = docker/dockerfile:1.21
 
 # Docker image for rs-drive-abci
 #
@@ -18,8 +18,18 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
-# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
-#   purpose in local development environment
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis
+#   (base fixtures: addresses, group token queries, token direct prices).
+#   For local devnet workflows use `yarn dashmate config set
+#   platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA true` (the
+#   `yarn setup` script does this automatically for the `local` config) —
+#   do NOT pass it as a shell env. The value flows through dashmate ->
+#   docker-compose `build.args:` -> this ARG.
+# - SHIELDED_TEST_DATA - set to `true` to ALSO seed the shielded pool at
+#   genesis and bake a snapshot file into the runtime image (the
+#   1M-note stress-test path). Implies SDK_TEST_DATA. Off by default —
+#   most devnet setups only need the base SDK fixtures, not the shielded
+#   pool, and seeding shielded notes is expensive at image-build time.
 #
 # # sccache cache backends
 #
@@ -46,7 +56,7 @@
 # conflicts in case of parallel compilation.
 # 3. Configuration variables are shared between runs using /root/env file.
 
-ARG ALPINE_VERSION=3.21
+ARG ALPINE_VERSION=3.23
 
 # deps-${RUSTC_WRAPPER:-base}
 # If one of SCCACHE_GHA_ENABLED, SCCACHE_BUCKET, SCCACHE_MEMCACHED is set, then deps-sccache is used, otherwise deps-base
@@ -260,7 +270,7 @@ RUN --mount=type=secret,id=AWS <<EOS
     cat /root/env
 EOS
 
-# Image containing compolation dependencies; used to overcome lack of interpolation in COPY --from
+# Image containing compilation dependencies; used to overcome lack of interpolation in COPY --from
 FROM ${DEPS_IMAGE} AS deps-compilation
 # Stage intentionally left empty
 
@@ -347,7 +357,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.103 cargo-chef@0.1.72 \
+    cargo binstall wasm-bindgen-cli@0.2.108 cargo-chef@0.1.72 wasm-pack \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
@@ -369,23 +379,27 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -396,15 +410,19 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -417,12 +435,24 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
-# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
-# This is only for testing purpose and should be used only for
-# local development environment
+# SDK_TEST_DATA / SHIELDED_TEST_DATA are forwarded by dashmate from each
+# `local_N` config's `platform.drive.abci.docker.build.buildArgs.*` fields
+# (set by `scripts/setup_local_network.sh` after `dashmate setup local`, as
+# part of `yarn setup`). Do NOT set them via shell env — single source of
+# truth is the dashmate config.
+#
+# SHIELDED_TEST_DATA=true ⇒ implies SDK_TEST_DATA=true (the shielded seeder
+# runs inside `create_sdk_test_data`); installs the SDK-test-data cargo
+# profile (sets `--cfg create_sdk_test_data` for the outer SDK-fixture gate)
+# AND passes `--features=shielded_test_data` to cargo. The drive-abci
+# `shielded_test_data` feature compiles in the shielded seeder + bake/apply
+# code and forwards through `drive/shielded_test_data` →
+# `grovedb/unsafe-dump-load` to unlock the underlying grovedb primitives.
 ARG SDK_TEST_DATA
+ARG SHIELDED_TEST_DATA
+ARG ADDITIONAL_FEATURES=""
 
-SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-e", "-c"]
 
 WORKDIR /platform
 
@@ -434,18 +464,28 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    set -ex; \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
+    export FEATURES_FLAG=""; \
+    ADDITIONAL_FEATURES_TRIMMED="$(echo "${ADDITIONAL_FEATURES}" | tr -d '[:space:]')"; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
-    else \
-    export FEATURES_FLAG="--features=console,grovedbg"; \
     fi && \
-    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST=""; \
+    if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
+    FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ] || [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}shielded_test_data"; \
+    fi && \
+    if [[ -n "${FEATURES_LIST}" ]]; then \
+    export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
     fi && \
     cargo chef cook \
     --recipe-path recipe.json \
@@ -453,8 +493,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package drive-abci \
     ${FEATURES_FLAG} \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
     Cargo.lock \
@@ -464,23 +503,27 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -493,15 +536,19 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/wasm-dpp \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts
@@ -513,15 +560,26 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=secret,id=AWS \
     set -ex; \
     source /root/env && \
+    export FEATURES_FLAG=""; \
+    ADDITIONAL_FEATURES_TRIMMED="$(echo "${ADDITIONAL_FEATURES}" | tr -d '[:space:]')"; \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
     export OUT_DIRECTORY=release; \
     else \
-    export FEATURES_FLAG="--features=console,grovedbg"; \
     export OUT_DIRECTORY=debug; \
     fi && \
-    if [ "${SDK_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST=""; \
+    if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
+    FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ] || [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}shielded_test_data"; \
+    fi && \
+    if [[ -n "${FEATURES_LIST}" ]]; then \
+    export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
@@ -534,6 +592,41 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove /platform to reduce layer size
     rm -rf /platform
+
+
+#
+# STAGE: BAKE SHIELDED-POOL SNAPSHOT
+#
+# Self-contained bake step: runs `drive-abci snapshot-bake` against a fresh
+# in-container tempdir to produce /artifacts/shielded-pool.snap. The runtime
+# image COPYs that file in and sets `DRIVE_SHIELDED_SNAPSHOT` so the
+# InitChain hook applies it instead of running the runtime seeder.
+#
+# Skipped (file replaced with a sentinel) when SHIELDED_TEST_DATA != "true",
+# so SDK-only builds (and production) don't carry the shielded fixture.
+# The drive-abci binary itself only contains the `snapshot-bake` subcommand
+# when built with `--cfg create_shielded_test_data` (selected by the
+# SHIELDED_TEST_DATA build arg in the build stage), so invoking it on an
+# SDK-only binary would fail with "unknown subcommand" anyway.
+#
+FROM build-drive-abci AS bake-shielded-snapshot
+
+ARG SHIELDED_TEST_DATA
+
+# libgcc + libstdc++ for the dynamically-linked drive-abci binary (build
+# stage's alpine image normally has them; explicit `apk add` is a no-op if
+# already present).
+RUN apk add --no-cache libgcc libstdc++
+
+RUN set -ex; \
+    mkdir -p /artifacts; \
+    if [ "${SHIELDED_TEST_DATA}" = "true" ]; then \
+        /artifacts/drive-abci snapshot-bake --out /artifacts/shielded-pool.snap ; \
+        ls -la /artifacts/shielded-pool.snap ; \
+    else \
+        echo "SHIELDED_TEST_DATA != true; skipping shielded-pool snapshot bake" ; \
+        : > /artifacts/.no-shielded-snapshot ; \
+    fi
 
 
 #
@@ -552,8 +645,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
@@ -561,10 +655,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --recipe-path recipe.json \
     --profile "$CARGO_BUILD_PROFILE" \
     --package wasm-dpp \
+    --package wasm-sdk \
     --target wasm32-unknown-unknown \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 
 # Rust deps
@@ -573,26 +667,42 @@ COPY --parents \
     Cargo.toml \
     rust-toolchain.toml \
     .cargo \
+    packages/scripts \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
+    packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/rs-json-schema-compatibility-validator \
+    # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
+    packages/rs-context-provider \
+    packages/rs-dapi-client \
+    packages/rs-dash-platform-macros \
+    packages/rs-drive \
+    packages/rs-drive-proof-verifier \
+    packages/rs-sdk \
+    packages/rs-sdk-trusted-context-provider \
     # Common
     packages/wasm-dpp \
     packages/wasm-dpp2 \
+    packages/wasm-sdk \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/dapi-grpc \
@@ -607,6 +717,7 @@ COPY --parents \
     packages/wallet-lib \
     packages/js-dash-sdk \
     packages/dash-spv \
+    packages/js-evo-sdk \
     /platform/
 
 # We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
@@ -623,6 +734,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     export SKIP_GRPC_PROTO_BUILD=1 && \
     # Build JS Dash SDK and dependencies
     yarn run ultra -r --filter '+dash' --build && \
+    # Build Evo SDK (and wasm-sdk) — the platform test suite's proof verifier
+    yarn run ultra -r --filter '+@dashevo/evo-sdk' --build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove target directory and rust packages to save space
     rm -rf target packages/rs-*
@@ -645,7 +758,21 @@ RUN mkdir -p /var/log/dash \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
+COPY --from=bake-shielded-snapshot /artifacts/ /opt/dashmate/snapshots/
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
+
+# Only point InitChain's apply-side at the snapshot when the bake stage
+# actually produced one (SHIELDED_TEST_DATA=true). Otherwise the bake stage
+# leaves only a `.no-shielded-snapshot` sentinel, so exporting
+# DRIVE_SHIELDED_SNAPSHOT unconditionally would make
+# create_data_for_shielded_pool try to apply a missing file and fail instead
+# of falling back to the runtime seeder. We gate on the real file's existence
+# (writing the var into the binary's .env, which is loaded via dotenvy and
+# left unset otherwise so the seeder fallback runs).
+RUN if [ -f /opt/dashmate/snapshots/shielded-pool.snap ]; then \
+        echo "DRIVE_SHIELDED_SNAPSHOT=/opt/dashmate/snapshots/shielded-pool.snap" \
+            >> /var/lib/dash/rs-drive-abci/.env ; \
+    fi
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
@@ -715,10 +842,10 @@ COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grp
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
 COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
 COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
+COPY --from=build-dashmate-helper /platform/packages/document-history-contract packages/document-history-contract
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
-COPY --from=build-dashmate-helper /platform/packages/feature-flags-contract packages/feature-flags-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
 COPY --from=build-dashmate-helper /platform/packages/data-contracts packages/data-contracts
 COPY --from=build-dashmate-helper /platform/packages/wasm-dpp packages/wasm-dpp
@@ -766,7 +893,7 @@ USER node
 #
 FROM deps AS build-rs-dapi
 
-SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-e", "-c"]
 
 WORKDIR /platform
 
@@ -778,9 +905,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    set -ex; \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
@@ -791,8 +918,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --profile "$CARGO_BUILD_PROFILE" \
     --package rs-dapi \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
     Cargo.lock \
@@ -802,23 +928,27 @@ COPY --parents \
     packages/dapi-grpc \
     packages/rs-dash-platform-macros \
     packages/rs-dpp \
+    packages/rs-dpp-json-convertible-derive \
     packages/rs-drive \
     packages/rs-platform-value \
+    packages/rs-platform-encryption \
     packages/rs-platform-serialization \
     packages/rs-platform-serialization-derive \
     packages/rs-platform-version \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
+    packages/rs-platform-wallet-ffi \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-async \
     packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
-    packages/feature-flags-contract \
     packages/dpns-contract \
     packages/data-contracts \
     packages/strategy-tests \
@@ -834,10 +964,14 @@ COPY --parents \
     packages/rs-dapi-client \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
+    packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/rs-platform-wallet \
+    packages/rs-platform-wallet-storage \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
+    packages/rs-scripts \
     /platform/
 
 RUN mkdir /artifacts

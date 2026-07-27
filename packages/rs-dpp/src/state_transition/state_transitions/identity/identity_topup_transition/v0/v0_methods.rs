@@ -26,7 +26,7 @@ use crate::version::FeatureVersion;
 
 impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity(
+    fn try_from_identity_with_private_key(
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
@@ -47,6 +47,41 @@ impl IdentityTopUpTransitionMethodsV0 for IdentityTopUpTransitionV0 {
 
         let signature = signer::sign(&data, asset_lock_proof_private_key)?;
         state_transition.set_signature(signature.to_vec().into());
+
+        Ok(state_transition)
+    }
+
+    /// Signer-driven counterpart to [`Self::try_from_identity_with_private_key`].
+    /// The asset-lock-proof signature is produced by `asset_lock_signer` via
+    /// [`StateTransition::sign_with_signer`], which performs the same
+    /// double-SHA256 + recoverable-compact serialisation as the legacy
+    /// `dashcore::signer::sign` path — so the resulting state transition is
+    /// bit-identical on the wire.
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    async fn try_from_identity_with_signer<AS>(
+        identity: &Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        user_fee_increase: UserFeeIncrease,
+        _platform_version: &PlatformVersion,
+        _version: Option<FeatureVersion>,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        AS: ::key_wallet::signer::Signer,
+    {
+        let identity_top_up_transition = IdentityTopUpTransitionV0 {
+            asset_lock_proof,
+            identity_id: identity.id(),
+            user_fee_increase,
+            signature: Default::default(),
+        };
+
+        let mut state_transition: StateTransition = identity_top_up_transition.into();
+
+        state_transition
+            .sign_with_core_signer(asset_lock_proof_path, asset_lock_signer)
+            .await?;
 
         Ok(state_transition)
     }

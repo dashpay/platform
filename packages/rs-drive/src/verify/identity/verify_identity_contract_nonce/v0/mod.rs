@@ -93,3 +93,108 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_identity_contract_nonce() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::first();
+
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
+
+        let identity_id = identity.id().to_buffer();
+        let contract_id = [1u8; 32];
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        // Set a contract nonce value by merging
+        let nonce_value: u64 = 1;
+        let result = drive
+            .merge_identity_contract_nonce(
+                identity_id,
+                contract_id,
+                nonce_value,
+                &BlockInfo::default(),
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("expected to merge identity contract nonce");
+        assert!(result.error_message().is_none());
+
+        // Prove the contract nonce
+        let proof = drive
+            .prove_identity_contract_nonce(identity_id, contract_id, None, &platform_version.drive)
+            .expect("should not error when proving identity contract nonce");
+
+        // Verify the contract nonce
+        let (_root_hash, proved_nonce) = Drive::verify_identity_contract_nonce(
+            proof.as_slice(),
+            identity_id,
+            contract_id,
+            false,
+            platform_version,
+        )
+        .expect("expected to verify identity contract nonce");
+
+        assert_eq!(proved_nonce, Some(nonce_value));
+    }
+
+    #[test]
+    fn should_prove_and_verify_absent_identity_contract_nonce() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::first();
+
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
+
+        let identity_id = identity.id().to_buffer();
+        let contract_id = [2u8; 32];
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        // Prove without setting a contract nonce (should be absent)
+        let proof = drive
+            .prove_identity_contract_nonce(identity_id, contract_id, None, &platform_version.drive)
+            .expect("should not error when proving identity contract nonce");
+
+        let (_root_hash, proved_nonce) = Drive::verify_identity_contract_nonce(
+            proof.as_slice(),
+            identity_id,
+            contract_id,
+            false,
+            platform_version,
+        )
+        .expect("expected to verify identity contract nonce");
+
+        assert_eq!(proved_nonce, None);
+    }
+}

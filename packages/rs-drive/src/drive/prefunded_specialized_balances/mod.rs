@@ -3,8 +3,6 @@ mod add_prefunded_specialized_balance;
 #[cfg(feature = "server")]
 mod add_prefunded_specialized_balance_operations;
 #[cfg(feature = "server")]
-mod deduct_from_prefunded_specialized_balance;
-#[cfg(feature = "server")]
 mod deduct_from_prefunded_specialized_balance_operations;
 #[cfg(feature = "server")]
 mod empty_prefunded_specialized_balance;

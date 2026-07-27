@@ -10,7 +10,8 @@ export class GroupFacade {
     return w.getGroupInfo(contractId, groupContractPosition);
   }
 
-  async infoWithProof(contractId: wasm.IdentifierLike, groupContractPosition: number): Promise<wasm.ProofMetadataResponseTyped<wasm.Group | undefined>> {
+  async infoWithProof(contractId: wasm.IdentifierLike, groupContractPosition: number):
+    Promise<wasm.ProofMetadataResponseTyped<wasm.Group | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupInfoWithProofInfo(contractId, groupContractPosition);
   }
@@ -20,17 +21,23 @@ export class GroupFacade {
     return w.getGroupInfos(query);
   }
 
-  async infosWithProof(query: wasm.GroupInfosQuery): Promise<wasm.ProofMetadataResponseTyped<Map<number, wasm.Group | undefined>>> {
+  async infosWithProof(
+    query: wasm.GroupInfosQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<number, wasm.Group | undefined>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupInfosWithProofInfo(query);
   }
 
-  async members(query: wasm.GroupMembersQuery): Promise<Map<wasm.Identifier, bigint>> {
+  async members(query: wasm.GroupMembersQuery): Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupMembers(query);
   }
 
-  async membersWithProof(query: wasm.GroupMembersQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  async membersWithProof(
+    query: wasm.GroupMembersQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupMembersWithProofInfo(query);
   }
@@ -40,37 +47,51 @@ export class GroupFacade {
     return w.getIdentityGroups(query);
   }
 
-  async identityGroupsWithProof(query: wasm.IdentityGroupsQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityGroupInfo[]>> {
+  async identityGroupsWithProof(
+    query: wasm.IdentityGroupsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityGroupInfo[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityGroupsWithProofInfo(query);
   }
 
-  async actions(query: wasm.GroupActionsQuery): Promise<Map<wasm.Identifier, wasm.GroupAction | undefined>> {
+  async actions(query: wasm.GroupActionsQuery): Promise<Map<string, wasm.GroupAction | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupActions(query);
   }
 
-  async actionsWithProof(query: wasm.GroupActionsQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, wasm.GroupAction | undefined>>> {
+  async actionsWithProof(
+    query: wasm.GroupActionsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<string, wasm.GroupAction | undefined>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupActionsWithProofInfo(query);
   }
 
-  async actionSigners(query: wasm.GroupActionSignersQuery): Promise<Map<wasm.Identifier, bigint>> {
+  async actionSigners(query: wasm.GroupActionSignersQuery): Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupActionSigners(query);
   }
 
-  async actionSignersWithProof(query: wasm.GroupActionSignersQuery): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  async actionSignersWithProof(
+    query: wasm.GroupActionSignersQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupActionSignersWithProofInfo(query);
   }
 
-  async groupsDataContracts(dataContractIds: wasm.IdentifierLike[]): Promise<Map<wasm.Identifier, Map<number, wasm.Group | undefined>>> {
+  async groupsDataContracts(
+    dataContractIds: wasm.IdentifierLikeArray,
+  ): Promise<Map<string, Map<number, wasm.Group | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupsDataContracts(dataContractIds);
   }
 
-  async groupsDataContractsWithProof(dataContractIds: wasm.IdentifierLike[]): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, Map<number, wasm.Group | undefined>>>> {
+  async groupsDataContractsWithProof(
+    dataContractIds: wasm.IdentifierLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<
+    Map<string, Map<number, wasm.Group | undefined>>
+  >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getGroupsDataContractsWithProofInfo(dataContractIds);
   }
@@ -80,17 +101,23 @@ export class GroupFacade {
     return w.getContestedResources(query);
   }
 
-  async contestedResourcesWithProof(query: wasm.VotePollsByDocumentTypeQuery): Promise<wasm.ProofMetadataResponseTyped<Array<any>>> {
+  async contestedResourcesWithProof(
+    query: wasm.VotePollsByDocumentTypeQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Array<any>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourcesWithProofInfo(query);
   }
 
-  async contestedResourceVotersForIdentity(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<wasm.Identifier[]> {
+  async contestedResourceVotersForIdentity(
+    query: wasm.ContestedResourceVotersForIdentityQuery,
+  ): Promise<wasm.Identifier[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVotersForIdentity(query);
   }
 
-  async contestedResourceVotersForIdentityWithProof(query: wasm.ContestedResourceVotersForIdentityQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.Identifier[]>> {
+  async contestedResourceVotersForIdentityWithProof(
+    query: wasm.ContestedResourceVotersForIdentityQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.Identifier[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVotersForIdentityWithProofInfo(query);
   }

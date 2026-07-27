@@ -2,74 +2,287 @@ name: Tests
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+      - "v*-dev"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
       - "v*-dev"
-  push:
-    branches:
-      - master
-      - "v*-dev"
+      - "ci/*"
   schedule:
-    - cron: "30 4 * * *"
+    - cron: "0 23 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  changes:
-    name: Determine changed packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+  check-secrets:
+    name: Check secret availability
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     outputs:
-      js-packages: ${{ steps.filter-js.outputs.changes }}
-      js-packages-direct: ${{ steps.filter-js-direct.outputs.changes }}
-      rs-packages: ${{ steps.filter-rs.outputs.changes }}
-      rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
-      test-suite: ${{ steps.filter-test-suite.outputs.run }}
+      has_ecr: ${{ steps.check.outputs.has_ecr }}
+    steps:
+      - name: Check if ECR credentials are available
+        id: check
+        run: |
+          if [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" && -n "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+            echo "has_ecr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_ecr=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ECR credentials not available — Docker image builds and dependent tests will be skipped (expected for fork PRs)"
+          fi
+
+  changes:
+    name: Determine changed packages
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    outputs:
+      js-packages: ${{ steps.override.outputs.js-packages || steps.prune-pr-matrix.outputs.js-packages || steps.filter-js.outputs.changes }}
+      js-packages-direct: ${{ steps.override.outputs.js-packages-direct || steps.filter-js-direct.outputs.changes }}
+      rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
+      rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
+      rs-scope: ${{ steps.rs-scope.outputs.scope }}
+      doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
+      swift-sdk-changed: ${{ steps.override.outputs.swift-sdk-changed || steps.filter-swift-sdk.outputs.swift-sdk-changed }}
+      version-changed: ${{ steps.override.outputs.version-changed || steps.filter-version.outputs.version-changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v3
+      - name: Verify self-hosted Swift runner policy
+        run: python3 .github/scripts/check-swift-self-hosted-runner.py
+
+      - uses: dorny/paths-filter@v4
         id: filter-js
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter-js-direct
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/js-packages-direct.yml
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter-rs
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
           filters: .github/package-filters/rs-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v3
-        id: filter-rs-direct
+      - uses: dorny/paths-filter@v4
+        id: filter-rs-workflows
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         with:
-          filters: .github/package-filters/rs-packages-direct.yml
+          filters: |
+            rs-workflows:
+              - .github/workflows/tests-rs-workspace.yml
+              - .github/workflows/tests-rs-wallet.yml
+              - .github/workflows/tests-rs-doctests.yml
+              - .github/workflows/tests.yml
+              - .github/scripts/check-wallet-closure.py
 
-      - name: Check if Test Suite should run
-        id: filter-test-suite
-        uses: dorny/paths-filter@v3
+      - name: Check for platform version change
+        id: filter-version
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
+          if git diff "$BASE_SHA"...HEAD -- Cargo.toml 2>/dev/null | grep -qE '^\+version\s*='; then
+            echo "version-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Platform version changed — Docker builds and test suite will run"
+          else
+            echo "version-changed=false" >> "$GITHUB_OUTPUT"
+            echo "Platform version unchanged"
+          fi
+
+      - name: Check for doctest changes
+        id: filter-doctests
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}"
+          DIFF=$(git diff "$BASE_SHA"...HEAD -- '*.rs' 2>/dev/null || git diff HEAD~1 -- '*.rs')
+
+          # Look for added/removed lines in doc comments that contain code fences
+          if echo "$DIFF" | grep -qE '^[+-].*///.*```|^[+-].*//!.*```'; then
+            echo "doctests-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Doc comments with code examples changed — doctests will run"
+            exit 0
+          fi
+
+          echo "doctests-changed=false" >> "$GITHUB_OUTPUT"
+          echo "No doctest changes — skipping doctests"
+
+      - name: Determine Rust test scope (wallet-only fast path)
+        id: rs-scope
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          # The fast path applies only to same-repo pull requests. Fork PRs
+          # must take the full workspace path (whose Ubuntu backup jobs cover
+          # them when UBUNTU_BACKUP_ENABLED is set, while the wallet
+          # workflow's only job skips fork PRs). Push and schedule runs have
+          # no reliable base SHA — scope computed from the last commit alone
+          # could silently downgrade the nightly / post-merge full runs.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Not a pull request — using full Rust workspace tests"
+            exit 0
+          fi
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ] \
+            && [ "${{ github.event.pull_request.head.repo.owner.login }}" != "thepastaclaw" ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Fork pull request — using full Rust workspace tests"
+            exit 0
+          fi
+
+          # --no-renames: a file moved out of another crate into a wallet
+          # crate must still count as a change to the source crate.
+          if ! CHANGED=$(git diff --no-renames --name-only "${{ github.event.pull_request.base.sha }}"...HEAD); then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Could not diff against the PR base — using full Rust workspace tests"
+            exit 0
+          fi
+          if [ -z "$CHANGED" ]; then
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "No changed files detected — using full Rust workspace tests"
+            exit 0
+          fi
+
+          has_wallet=false
+          non_wallet=false
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              packages/rs-platform-wallet/*|packages/rs-platform-wallet-ffi/*|packages/rs-platform-wallet-storage/*)
+                has_wallet=true ;;
+              packages/swift-sdk/*)
+                # Swift sources are not part of the Rust workspace and cannot
+                # affect `cargo test`, so they don't force the full suite.
+                : ;;
+              *)
+                # Anything else — another Rust crate, Cargo.lock, root config,
+                # docs, workflows — conservatively forces the full workspace run.
+                non_wallet=true ;;
+            esac
+          done <<< "$CHANGED"
+
+          if [ "$has_wallet" = true ] && [ "$non_wallet" = false ]; then
+            echo "scope=wallet" >> "$GITHUB_OUTPUT"
+            echo "Only wallet crates changed — using scoped Rust wallet tests"
+          else
+            echo "scope=full" >> "$GITHUB_OUTPUT"
+            echo "Non-wallet Rust changes present — using full Rust workspace tests"
+          fi
+
+      - name: Check for Swift SDK changes
+        id: filter-swift-sdk
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
         with:
-          filters: .github/package-filters/test-suite-triggers.yml
+          filters: |
+            swift-sdk-changed:
+              - packages/swift-sdk/**
+              - packages/dapi-grpc/**
+              - packages/dashpay-contract/**
+              - packages/data-contracts/**
+              - packages/document-history-contract/**
+              - packages/dpns-contract/**
+              - packages/keyword-search-contract/**
+              - packages/masternode-reward-shares-contract/**
+              - packages/rs-context-provider/**
+              - packages/rs-dapi-client/**
+              - packages/rs-dash-async/**
+              - packages/rs-dash-platform-macros/**
+              - packages/rs-dpp/**
+              - packages/rs-dpp-json-convertible-derive/**
+              - packages/rs-drive/**
+              - packages/rs-drive-proof-verifier/**
+              - packages/rs-json-schema-compatibility-validator/**
+              - packages/rs-platform-encryption/**
+              - packages/rs-platform-serialization/**
+              - packages/rs-platform-serialization-derive/**
+              - packages/rs-platform-value/**
+              - packages/rs-platform-value-convertible/**
+              - packages/rs-platform-version/**
+              - packages/rs-platform-versioning/**
+              - packages/rs-platform-wallet/**
+              - packages/rs-platform-wallet-ffi/**
+              - packages/rs-platform-wallet-storage/**
+              - packages/rs-sdk/**
+              - packages/rs-sdk-ffi/**
+              - packages/rs-sdk-trusted-context-provider/**
+              - packages/rs-unified-sdk-ffi/**
+              - packages/simple-signer/**
+              - packages/token-history-contract/**
+              - packages/wallet-utils-contract/**
+              - packages/withdrawals-contract/**
+
+      # Drop @dashevo/wasm-dpp from the JS test matrix on
+      # `pull_request` events so the heaviest entry in the matrix
+      # only runs on the nightly schedule + manual
+      # `workflow_dispatch`. @dashevo/wasm-dpp2 stays on the PR
+      # path — it's a separate, lighter package that should be
+      # exercised on every PR. Cascading consumers
+      # (`dapi-client`, `wallet-lib`, `dash`, `dashmate`,
+      # `platform-test-suite`, `evo-sdk`) also keep running on PRs:
+      # their JS test code exercises behavior on top of wasm-dpp's
+      # already-built artifact, and `tests-build-js.yml` runs
+      # `yarn build` across the whole workspace so the wasm-dpp
+      # output is still compiled and linkable for them — just not
+      # test-driven on the PR critical path. To force wasm-dpp
+      # tests on a specific PR, use the `Run workflow`
+      # (workflow_dispatch) button on the Actions tab — that path
+      # goes through the `override` step below and runs every JS
+      # package.
+      - name: Skip wasm-dpp tests on pull_request (nightly-only)
+        id: prune-pr-matrix
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -eo pipefail
+          raw='${{ steps.filter-js.outputs.changes }}'
+          pruned=$(echo "$raw" | jq -c 'map(select(. != "@dashevo/wasm-dpp"))')
+          echo "js-packages=$pruned" >> "$GITHUB_OUTPUT"
+          echo "Pruned wasm-dpp from PR matrix:"
+          echo "  before: $raw"
+          echo "  after:  $pruned"
+
+      - name: Override all outputs for workflow_dispatch
+        id: override
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          set -eo pipefail
+          # Extract top-level keys from filter YAML files to build JSON arrays
+          to_json() { yq -o=json '[keys | .[] ]' "$1" | tr -d '\n'; }
+          echo "js-packages=$(to_json .github/package-filters/js-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
+          echo "js-packages-direct=$(to_json .github/package-filters/js-packages-direct.yml)" >> "$GITHUB_OUTPUT"
+          echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
+          echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'swift-sdk-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'version-changed=true' >> "$GITHUB_OUTPUT"
 
   build-js:
     name: Build JS packages
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
 
   build-images:
     name: Build Docker images
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    needs:
+      - check-secrets
+      - changes
+    # Build Docker images on version change, nightly schedule, or manual dispatch
+    if: >-
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     secrets: inherit
     strategy:
       fail-fast: false
@@ -93,48 +306,66 @@ jobs:
       target: ${{ matrix.target }}
       build_args: ${{ matrix.build_args }}
 
-  rs-packages:
-    name: Rust packages
+  rs-workspace-tests:
+    name: Rust workspace tests
     needs:
       - changes
+    if: ${{ (needs.changes.outputs.rs-packages != '[]' || needs.changes.outputs.rs-workflows-changed == 'true') && needs.changes.outputs.rs-scope != 'wallet' }}
     secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        rs-package: ${{ fromJson(needs.changes.outputs.rs-packages) }}
-    uses: ./.github/workflows/tests-rs-package.yml
+    uses: ./.github/workflows/tests-rs-workspace.yml
     with:
-      package: ${{ matrix.rs-package }}
-      check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","rs-dapi","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
-      direct-packages: ${{ needs.changes.outputs.rs-packages-direct }}
+      doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
 
-  rs-crates-security:
-    name: Rust crates security audit
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
+  # Fast path: only wallet crates changed, so run the scoped wallet suite
+  # instead of the full workspace job above (the two are mutually exclusive
+  # via `rs-scope`).
+  rs-wallet-tests:
+    name: Rust wallet tests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.rs-scope == 'wallet' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-wallet.yml
+    with:
+      doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
 
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
+  rs-doctests:
+    name: Rust doctests
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.doctests-changed == 'true' }}
+    secrets: inherit
+    uses: ./.github/workflows/tests-rs-doctests.yml
 
-      - name: Audit crates
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+  swift-sdk-build:
+    name: Swift SDK build
+    needs:
+      - changes
+      - rs-workspace-tests
+      - rs-wallet-tests
+    # At most one of the two Rust jobs runs (none for e.g. Swift-only PRs);
+    # skipped jobs report result 'skipped', not 'failure', so this only
+    # blocks on a Rust job that actually ran and failed.
+    # Untrusted fork PRs must not reach the self-hosted Swift runner — same
+    # trusted-fork policy as the callee guard in swift-sdk-build.yml.
+    if: >-
+      ${{ always()
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository
+          || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && needs.changes.outputs.swift-sdk-changed == 'true'
+      && needs.changes.result != 'failure'
+      && needs.rs-workspace-tests.result != 'failure'
+      && needs.rs-wallet-tests.result != 'failure' }}
+    secrets: inherit
+    uses: ./.github/workflows/swift-sdk-build.yml
 
   js-packages:
     name: JS packages
     needs:
       - changes
       - build-js
+    if: ${{ needs.changes.outputs.js-packages != '[]' }}
     secrets: inherit
     strategy:
       fail-fast: false
@@ -149,7 +380,7 @@ jobs:
 
   js-deps-versions:
     name: JS dependency versions check
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repo
@@ -158,33 +389,13 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Enable corepack
         run: corepack enable
 
       - name: Validate workspaces
         run: yarn constraints
-
-  js-npm-security:
-    name: JS NPM security audit
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive
-
-  js-codeql:
-    name: JS code security audit
-    needs: build-js
-    secrets: inherit
-    uses: ./.github/workflows/tests-codeql.yml
 
   dashmate-e2e-tests:
     name: Dashmate E2E tests
@@ -193,6 +404,7 @@ jobs:
       - changes
       - build-js
       - build-images
+      - check-secrets
     strategy:
       fail-fast: false
       matrix:
@@ -211,16 +423,26 @@ jobs:
       name: ${{ matrix.name }}
       test-pattern: ${{ matrix.test-pattern }}
       restore_local_network_data: ${{ matrix.restore_local_network_data }}
-    if: contains(needs.changes.outputs.js-packages, 'dashmate')
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
 
   test-suite:
     name: Test Suite
     needs:
+      - changes
       - build-js
       - build-images
-      - changes
+      - check-secrets
     secrets: inherit
-    if: needs.changes.outputs.test-suite == 'true'
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -247,9 +469,15 @@ jobs:
   test-functional:
     name: Packages functional tests
     needs:
+      - changes
       - build-js
       - build-images
-      - changes
+      - check-secrets
     secrets: inherit
-    if: needs.changes.outputs.test-suite == 'true'
+    if: >-
+      always() &&
+      needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
+      needs.build-images.result == 'success' &&
+      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/tests-packges-functional.yml

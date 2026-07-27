@@ -24,15 +24,19 @@ pub mod mock_bls;
 pub mod platform_address;
 pub mod public_key;
 pub mod serialization;
+pub mod shielded;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
+pub mod version;
 pub mod voting;
 
 pub use core::core_script::CoreScriptWasm;
-pub use core::network::NetworkWasm;
+pub use core::network::{NetworkLikeJs, NetworkWasm};
 pub use core::private_key::PrivateKeyWasm;
-pub use core::pro_tx_hash::ProTxHashWasm;
+pub use core::pro_tx_hash::{
+    ProTxHashLikeArrayJs, ProTxHashLikeJs, ProTxHashLikeNullableJs, ProTxHashWasm,
+};
 pub use identity::signer::IdentitySignerWasm;
 pub use identity::transitions::pooling::PoolingWasm;
 
@@ -42,19 +46,37 @@ pub use data_contract::{
 };
 pub use epoch::*;
 pub use group::*;
+pub use identifier::{
+    IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierLikeOrUndefinedJs, IdentifierWasm,
+};
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm, IdentityPublicKeyWasm,
-    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
-    MasternodeVoteTransitionWasm, PartialIdentityWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
+    IdentityPublicKeyOptionsJs, IdentityPublicKeyWasm, IdentityTopUpTransitionWasm,
+    IdentityUpdateTransitionWasm, IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
+    PublicKeyHashLikeJs, public_key_hash_from_js,
+};
+pub use platform_address::transitions::{
+    AddressCreditWithdrawalTransitionWasm, AddressFundingFromAssetLockTransitionWasm,
+    AddressFundsTransferTransitionWasm, IdentityCreateFromAddressesTransitionWasm,
+    IdentityCreditTransferToAddressesTransitionWasm, IdentityTopUpFromAddressesTransitionWasm,
 };
 pub use platform_address::{
-    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressOutputWasm,
-    PlatformAddressSignerWasm, PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
-    fee_strategy_from_steps_or_default, outputs_to_btree_map, outputs_to_optional_btree_map,
+    FeeStrategyStepWasm, PlatformAddressInputWasm, PlatformAddressLikeArrayJs,
+    PlatformAddressLikeJs, PlatformAddressOutputWasm, PlatformAddressSignerWasm,
+    PlatformAddressWasm, default_fee_strategy, fee_strategy_from_steps,
+    fee_strategy_from_steps_or_default, inputs_to_btree_map, outputs_to_btree_map,
+    outputs_to_optional_btree_map,
+};
+pub use shielded::{
+    AddressWitnessWasm, SerializedOrchardActionWasm, ShieldFromAssetLockTransitionWasm,
+    ShieldTransitionWasm, ShieldedTransferTransitionWasm, ShieldedWithdrawalTransitionWasm,
+    UnshieldTransitionWasm,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
+pub use state_transitions::proof_result::{StateTransitionProofResultTypeJs, convert_proof_result};
 pub use tokens::*;
+pub use version::{PlatformVersionLikeJs, PlatformVersionWasm};
 pub use voting::{
     ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
     ResourceVoteChoiceWasm, ResourceVoteWasm, VotePollWasm, VoteWasm,

@@ -66,3 +66,83 @@ impl Drive {
         Ok((root_hash, balance_info))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::batch::drive_op_batch::{AddressFundsOperationType, DriveOperation};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::fee::Credits;
+    use dpp::prelude::AddressNonce;
+
+    const ADDRESS_1: PlatformAddress = PlatformAddress::P2pkh([10; 20]);
+    const ADDRESS_1_NONCE: AddressNonce = 5;
+    const ADDRESS_1_BALANCE: Credits = 1_000_000;
+    const UNKNOWN_ADDRESS: PlatformAddress = PlatformAddress::P2pkh([200; 20]);
+
+    fn setup_address(drive: &Drive, platform_version: &PlatformVersion) {
+        let operations = vec![DriveOperation::AddressFundsOperation(
+            AddressFundsOperationType::SetBalanceToAddress {
+                address: ADDRESS_1,
+                nonce: ADDRESS_1_NONCE,
+                balance: ADDRESS_1_BALANCE,
+            },
+        )];
+
+        drive
+            .apply_drive_operations(
+                operations,
+                true,
+                &BlockInfo::default(),
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to apply operations");
+    }
+
+    #[test]
+    fn should_prove_and_verify_single_address_info() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        setup_address(&drive, platform_version);
+
+        // Prove single address
+        let proof = drive
+            .prove_balance_and_nonce(&ADDRESS_1, None, platform_version)
+            .expect("should prove address");
+
+        // Verify the proof
+        let (root_hash, result) =
+            Drive::verify_address_info(proof.as_slice(), &ADDRESS_1, false, platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        let (nonce, balance) = result.expect("should have value");
+        assert_eq!(nonce, ADDRESS_1_NONCE);
+        assert_eq!(balance, ADDRESS_1_BALANCE);
+    }
+
+    #[test]
+    fn should_prove_and_verify_absent_address_info() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        setup_address(&drive, platform_version);
+
+        // Prove unknown address
+        let proof = drive
+            .prove_balance_and_nonce(&UNKNOWN_ADDRESS, None, platform_version)
+            .expect("should prove unknown address");
+
+        // Verify the proof
+        let (root_hash, result) =
+            Drive::verify_address_info(proof.as_slice(), &UNKNOWN_ADDRESS, false, platform_version)
+                .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(result.is_none(), "unknown address should be absent");
+    }
+}

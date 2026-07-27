@@ -28,6 +28,17 @@ pub struct DashSDKAddressSyncConfig {
     ///
     /// Default: 50
     pub max_iterations: u32,
+
+    /// Maximum age in seconds before a full tree rescan is forced.
+    ///
+    /// When `last_sync_timestamp` is provided, elapsed time is compared against
+    /// this threshold. If exceeded, a full tree rescan is performed instead of
+    /// incremental-only catch-up.
+    ///
+    /// Set to 0 to always do a full tree scan.
+    ///
+    /// Default: 604800 (7 days)
+    pub full_rescan_after_time_s: u64,
 }
 
 impl Default for DashSDKAddressSyncConfig {
@@ -36,6 +47,7 @@ impl Default for DashSDKAddressSyncConfig {
             min_privacy_count: 32,
             max_concurrent_requests: 10,
             max_iterations: 50,
+            full_rescan_after_time_s: 7 * 24 * 60 * 60,
         }
     }
 }
@@ -44,7 +56,7 @@ impl Default for DashSDKAddressSyncConfig {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DashSDKAddressSyncMetrics {
-    /// Number of trunk queries (always 1 for a successful sync)
+    /// Number of trunk queries (0 for incremental-only, 1 for full scan)
     pub trunk_queries: u32,
 
     /// Number of branch queries
@@ -61,6 +73,18 @@ pub struct DashSDKAddressSyncMetrics {
 
     /// Number of iterations (0 = trunk only, 1+ = trunk plus branch rounds)
     pub iterations: u32,
+
+    /// Number of compacted incremental queries (historical aggregated changes)
+    pub compacted_queries: u32,
+
+    /// Number of recent incremental queries (per-block changes)
+    pub recent_queries: u32,
+
+    /// Total block entries returned by recent queries (all addresses, not just ours)
+    pub recent_entries_returned: u32,
+
+    /// Total block entries returned by compacted queries
+    pub compacted_entries_returned: u32,
 }
 
 /// A found address with its balance (FFI-compatible)
@@ -113,15 +137,36 @@ pub struct DashSDKAddressSyncResult {
     /// Number of absent addresses
     pub absent_count: usize,
 
-    /// Highest found index (for HD wallets)
-    /// Only valid if has_highest_found_index is true
-    pub highest_found_index: u32,
+    /// The checkpoint height from the trunk/branch tree scan.
+    /// Only meaningful when a full tree scan was performed (0 otherwise).
+    pub checkpoint_height: u64,
 
-    /// Whether highest_found_index is valid
-    pub has_highest_found_index: bool,
+    /// The new sync height to store for the next incremental sync.
+    ///
+    /// Return this value from the provider's `last_sync_height()` on the
+    /// next call.
+    pub new_sync_height: u64,
+
+    /// Platform block time (Unix seconds) at the point of the latest response.
+    ///
+    /// Pass this value as `last_sync_timestamp` on the next call to
+    /// `dash_sdk_sync_address_balances`.
+    pub new_sync_timestamp: u64,
+
+    /// The highest block height from the most recent per-block balance changes.
+    ///
+    /// Store this value and pass it as `last_known_recent_block` on the next
+    /// call to enable efficient compaction detection via boundary checks.
+    /// A value of 0 means no recent block was observed.
+    pub last_known_recent_block: u64,
 
     /// Metrics about the sync process
     pub metrics: DashSDKAddressSyncMetrics,
+
+    /// Pointer to the raw GroveDB proof bytes from the recent query (NULL if empty)
+    pub recent_proof: *mut u8,
+    /// Length of the recent proof bytes
+    pub recent_proof_len: usize,
 }
 
 /// A pending address entry for the provider callback

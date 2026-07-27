@@ -1,12 +1,46 @@
 use crate::error::WasmDppResult;
-use crate::identifier::IdentifierWasm;
-use crate::{impl_try_from_options, impl_wasm_conversions};
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
+use crate::{
+    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions_inner, impl_wasm_type_info,
+};
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone)]
-#[wasm_bindgen(js_name = ResourceVoteChoice)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * ResourceVoteChoice serialized as a plain object.
+ *
+ * Custom Serialize emits a flat `{type, identity?}` shape — `identity`
+ * (synthesized name) carries the inner Identifier for the TowardsIdentity
+ * variant.
+ */
+export type ResourceVoteChoiceObject =
+    | { $type: "towardsIdentity"; identity: Uint8Array }
+    | { $type: "abstain" }
+    | { $type: "lock" };
+
+/**
+ * ResourceVoteChoice serialized as JSON.
+ */
+export type ResourceVoteChoiceJSON =
+    | { $type: "towardsIdentity"; identity: string }
+    | { $type: "abstain" }
+    | { $type: "lock" };
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ResourceVoteChoiceObject")]
+    pub type ResourceVoteChoiceObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ResourceVoteChoiceJSON")]
+    pub type ResourceVoteChoiceJSONJs;
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[wasm_bindgen(js_name = "ResourceVoteChoice")]
 pub struct ResourceVoteChoiceWasm(ResourceVoteChoice);
 
 impl From<ResourceVoteChoice> for ResourceVoteChoiceWasm {
@@ -23,24 +57,10 @@ impl From<ResourceVoteChoiceWasm> for ResourceVoteChoice {
 
 #[wasm_bindgen(js_class = ResourceVoteChoice)]
 impl ResourceVoteChoiceWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "ResourceVoteChoice".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "ResourceVoteChoice".to_string()
-    }
-
     #[wasm_bindgen(js_name = "TowardsIdentity")]
-    pub fn towards_identity(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
-    ) -> WasmDppResult<Self> {
-        let id = IdentifierWasm::try_from(js_id)?.into();
-
+    pub fn towards_identity(id: IdentifierLikeJs) -> WasmDppResult<Self> {
         Ok(ResourceVoteChoiceWasm(ResourceVoteChoice::TowardsIdentity(
-            id,
+            id.try_into()?,
         )))
     }
 
@@ -54,17 +74,17 @@ impl ResourceVoteChoiceWasm {
         ResourceVoteChoiceWasm(ResourceVoteChoice::Lock)
     }
 
-    #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> JsValue {
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> Option<IdentifierWasm> {
         match self.0 {
-            ResourceVoteChoice::TowardsIdentity(id) => JsValue::from(IdentifierWasm::from(id)),
-            ResourceVoteChoice::Abstain => JsValue::undefined(),
-            ResourceVoteChoice::Lock => JsValue::undefined(),
+            ResourceVoteChoice::TowardsIdentity(id) => Some(IdentifierWasm::from(id)),
+            ResourceVoteChoice::Abstain => None,
+            ResourceVoteChoice::Lock => None,
         }
     }
 
-    #[wasm_bindgen(js_name = "getType")]
-    pub fn get_type(&self) -> String {
+    #[wasm_bindgen(getter = "voteType")]
+    pub fn vote_type(&self) -> String {
         match self.0 {
             ResourceVoteChoice::TowardsIdentity(_) => "TowardsIdentity".to_string(),
             ResourceVoteChoice::Abstain => "Abstain".to_string(),
@@ -73,5 +93,13 @@ impl ResourceVoteChoiceWasm {
     }
 }
 
-impl_try_from_options!(ResourceVoteChoiceWasm, "ResourceVoteChoice");
-impl_wasm_conversions!(ResourceVoteChoiceWasm, ResourceVoteChoice);
+impl_try_from_js_value!(ResourceVoteChoiceWasm, "ResourceVoteChoice");
+impl_try_from_options!(ResourceVoteChoiceWasm);
+impl_wasm_conversions_inner!(
+    ResourceVoteChoiceWasm,
+    ResourceVoteChoice,
+    ResourceVoteChoice,
+    ResourceVoteChoiceObjectJs,
+    ResourceVoteChoiceJSONJs
+);
+impl_wasm_type_info!(ResourceVoteChoiceWasm, ResourceVoteChoice);

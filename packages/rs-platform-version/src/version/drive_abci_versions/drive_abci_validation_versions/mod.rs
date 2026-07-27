@@ -5,6 +5,8 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
+pub mod v8;
+pub mod v9;
 
 use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
@@ -14,6 +16,8 @@ pub struct DriveAbciValidationVersions {
     pub has_nonce_validation: FeatureVersion,
     pub has_address_witness_validation: FeatureVersion,
     pub validate_address_witnesses: FeatureVersion,
+    pub validate_shielded_proof: FeatureVersion,
+    pub validate_minimum_shielded_fee: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
@@ -24,6 +28,64 @@ pub struct DriveAbciValidationVersions {
 pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,
+    /// Minimum number of encrypted notes in the shielded pool before outgoing
+    /// transitions (Unshield, ShieldedWithdrawal) are allowed. This ensures a
+    /// sufficient anonymity set before funds can leave the pool.
+    pub minimum_pool_notes_for_outgoing: u64,
+    /// Number of blocks of anchors to retain. Anchors older than this are
+    /// pruned at the end of each block. Clients must use an anchor no older
+    /// than this many blocks when building shielded transactions.
+    pub shielded_anchor_retention_blocks: u64,
+    /// Anchor pruning is only performed every N blocks to avoid unnecessary
+    /// GroveDB work on every block. Must evenly divide
+    /// `shielded_anchor_retention_blocks`.
+    pub shielded_anchor_pruning_interval: u64,
+    /// Per-bundle fee (in credits) for Halo 2 ZK proof verification.
+    /// Benchmarked at ~30x per-action signature verification cost.
+    pub shielded_proof_verification_fee: u64,
+    /// Per-action fee (in credits) for processing: RedPallas spend auth signature
+    /// verification, nullifier duplicate check, and tree insertion.
+    pub shielded_per_action_processing_fee: u64,
+    /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
+    /// donate to the fee pools when no `surplus_output` address is set. Above this
+    /// cap the transition is rejected so a client cannot accidentally forfeit a
+    /// large asset-lock remainder. 20,000,000,000 credits = 0.2 Dash.
+    pub shielded_implicit_fee_cap: u64,
+    /// Allowed exit denominations (in credits) for `IdentityCreateFromShieldedPool`.
+    /// 0.1, 0.3, 0.5, 1.0 DASH = {10, 30, 50, 100} × 10^9 credits. The exit amount is
+    /// restricted to this small fixed set so every identity-creation exit of a given size
+    /// is indistinguishable on-chain, maximizing the anonymity set (mirroring the exact-fee
+    /// uniformity already enforced for `ShieldedTransfer`). Empty pre-v12 so the transition
+    /// is gated off until the shielded family activates.
+    pub shielded_identity_create_denominations: &'static [u64],
+}
+
+impl DriveAbciValidationConstants {
+    /// Maximum number of shielded anchors the retention policy can keep on disk
+    /// at once.
+    ///
+    /// This is a corollary of the anchor recording and pruning algorithm, and
+    /// must stay in sync with it:
+    ///
+    /// * at most one anchor is recorded per block (`Drive::record_anchor_if_changed`
+    ///   only writes when the pool root changes), and
+    /// * pruning removes every anchor older than `shielded_anchor_retention_blocks`
+    ///   on each `shielded_anchor_pruning_interval` boundary
+    ///   (`Platform::prune_shielded_pool_anchors_v0`).
+    ///
+    /// Between two prune boundaries the retained set therefore spans at most
+    /// `shielded_anchor_retention_blocks + shielded_anchor_pruning_interval`
+    /// distinct heights, so that sum is the worst-case count.
+    ///
+    /// Callers that must bound work against the retained set (e.g. the
+    /// unpaginated V0 shielded-anchors query) should derive their limits from
+    /// this value rather than re-deriving the bound from the raw constants, so
+    /// they stay coupled to the pruning algorithm. Returns `None` only if the
+    /// configured policy overflows `u64`.
+    pub fn max_retained_shielded_anchors(&self) -> Option<u64> {
+        self.shielded_anchor_retention_blocks
+            .checked_add(self.shielded_anchor_pruning_interval)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -59,6 +121,14 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub address_credit_withdrawal: DriveAbciStateTransitionValidationVersion,
     pub address_funds_from_asset_lock: DriveAbciStateTransitionValidationVersion,
     pub address_funds_transfer: DriveAbciStateTransitionValidationVersion,
+
+    pub shield_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shielded_transfer_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub unshield_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_create_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -83,6 +153,8 @@ pub struct PenaltyAmounts {
     pub validation_of_added_keys_proof_of_possession_failure: u64,
     /// Penalty for address funding with insufficient funds for outputs
     pub address_funds_insufficient_balance: u64,
+    /// Penalty for submitting a shield transition with an invalid ZK proof
+    pub shielded_proof_verification_failure: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -98,6 +170,32 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub revision: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
+    /// Versions the action emitted when a per-transition validation fails
+    /// inside [`transform_document_transition`].
+    ///
+    /// - `0` (PROTOCOL_VERSION_11 and below): errors-only, no action data.
+    ///   The empty action flowed through the legacy
+    ///   `flatten` / `merge_many` aggregators as `Some(empty_vec)` and was
+    ///   accounted as `PaidConsensusError`, but no `BumpIdentityDataContractNonce`
+    ///   drive op was created — so the user only paid the bare-bump fee
+    ///   and the contract nonce never advanced.
+    /// - `1` (PROTOCOL_VERSION_12+): emit a `BumpIdentityDataContractNonce`
+    ///   action so the user pays for the validation work that already ran
+    ///   (fetch + ownership/revision check) and the contract nonce advances.
+    ///
+    /// [`transform_document_transition`]: crate
+    pub failed_per_transition_action: FeatureVersion,
+    /// Versions the
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
+    /// helper. v0 (PROTOCOL_VERSION_11 and below) passes `epoch=None`
+    /// to `query_documents` and doesn't bill the cost. v1
+    /// (PROTOCOL_VERSION_12+) passes `Some(epoch)` and bills via
+    /// `execution_context.add_operation`.
+    pub fetch_documents_for_transitions_knowing_contract_and_document_type: FeatureVersion,
+    /// Versions the `fetch_document_with_id` helper. Same v0 vs v1
+    /// semantics as
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
+    pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,

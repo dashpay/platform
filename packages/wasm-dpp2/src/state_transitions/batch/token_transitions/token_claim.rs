@@ -1,12 +1,30 @@
-use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::enums::token::distribution_type::TokenDistributionTypeWasm;
 use crate::error::WasmDppResult;
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
+use crate::state_transitions::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::utils::{try_from_options, try_from_options_optional, try_from_options_optional_with, try_to_string};
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
 use dpp::state_transition::batch_transition::TokenClaimTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TOKEN_CLAIM_OPTIONS_TS: &str = r#"
+export interface TokenClaimTransitionOptions {
+    base: TokenBaseTransition;
+    distributionType?: TokenDistributionTypeLike;
+    publicNote?: string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "TokenClaimTransitionOptions")]
+    pub type TokenClaimTransitionOptionsJs;
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenClaimTransition")]
@@ -26,30 +44,23 @@ impl From<TokenClaimTransitionWasm> for TokenClaimTransition {
 
 #[wasm_bindgen(js_class = TokenClaimTransition)]
 impl TokenClaimTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "TokenClaimTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "TokenClaimTransition".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        base: &TokenBaseTransitionWasm,
-        js_distribution_type: &JsValue,
-        public_note: Option<String>,
+    pub fn constructor(
+        options: TokenClaimTransitionOptionsJs,
     ) -> WasmDppResult<TokenClaimTransitionWasm> {
-        let distribution_type = match js_distribution_type.is_undefined() {
-            true => TokenDistributionTypeWasm::default(),
-            false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
-        };
+        let base: TokenBaseTransitionWasm = try_from_options(&options, "base")?;
+
+        let distribution_type: TokenDistributionTypeWasm =
+            try_from_options_optional(&options, "distributionType")?.unwrap_or_default();
+
+        let public_note: Option<String> =
+            try_from_options_optional_with(&options, "publicNote", |v| {
+                try_to_string(v, "publicNote")
+            })?;
 
         Ok(TokenClaimTransitionWasm(TokenClaimTransition::V0(
             TokenClaimTransitionV0 {
-                base: base.clone().into(),
+                base: base.into(),
                 distribution_type: distribution_type.into(),
                 public_note,
             },
@@ -57,17 +68,17 @@ impl TokenClaimTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWasm {
+    pub fn base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "publicNote")]
-    pub fn get_public_note(&self) -> Option<String> {
+    pub fn public_note(&self) -> Option<String> {
         self.clone().0.public_note_owned()
     }
 
     #[wasm_bindgen(getter = "distributionType")]
-    pub fn get_distribution_type(&self) -> String {
+    pub fn distribution_type(&self) -> String {
         TokenDistributionTypeWasm::from(self.0.distribution_type()).into()
     }
 
@@ -82,13 +93,21 @@ impl TokenClaimTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "distributionType")]
-    pub fn set_distribution_type(&mut self, js_distribution_type: &JsValue) -> WasmDppResult<()> {
-        let distribution_type = match js_distribution_type.is_undefined() {
-            true => TokenDistributionTypeWasm::default(),
-            false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
+    pub fn set_distribution_type(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "TokenDistributionTypeLike | undefined")]
+        distribution_type: &JsValue,
+    ) -> WasmDppResult<()> {
+        let distribution_type = if distribution_type.is_undefined() {
+            TokenDistributionTypeWasm::default()
+        } else {
+            TokenDistributionTypeWasm::try_from(distribution_type.clone())?
         };
 
         self.0.set_distribution_type(distribution_type.into());
         Ok(())
     }
 }
+
+impl_try_from_js_value!(TokenClaimTransitionWasm, "TokenClaimTransition");
+impl_wasm_type_info!(TokenClaimTransitionWasm, TokenClaimTransition);

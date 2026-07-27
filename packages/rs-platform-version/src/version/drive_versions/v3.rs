@@ -3,6 +3,7 @@ use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CO
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_group_method_versions::DriveShieldedMethodVersions;
 use crate::version::drive_versions::drive_grove_method_versions::v1::DRIVE_GROVE_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_identity_method_versions::v1::DRIVE_IDENTITY_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_state_transition_method_versions::v1::DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1;
@@ -103,9 +104,21 @@ pub const DRIVE_VERSION_V3: DriveVersion = DriveVersion {
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
+        shielded: DriveShieldedMethodVersions {
+            insert_note: 0,
+            insert_nullifiers: 0,
+            update_total_balance: 0,
+            record_anchor_if_changed: 0,
+            prune_anchors: 0,
+            has_anchor: 0,
+            has_nullifier: 0,
+            read_total_balance: 0,
+            notes_count: 0,
+        },
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
+            prove_compacted_address_balance_changes: 0,
             compact_address_balances: 0,
             cleanup_expired_address_balances: 0,
             max_blocks_before_compaction: 64,

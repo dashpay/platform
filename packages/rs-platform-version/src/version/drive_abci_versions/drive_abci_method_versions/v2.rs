@@ -104,10 +104,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V2: DriveAbciMethodVersions = DriveAbciMeth
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
         process_raw_state_transitions: 0,
+        process_validation_result: 0,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: None,
         cleanup_recent_block_storage_address_balances: None,
+        record_added_balance_outputs: 0,
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,
@@ -122,6 +124,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V2: DriveAbciMethodVersions = DriveAbciMeth
         validator_set_update: 0,
         should_checkpoint: None,
         update_checkpoints: None,
+        record_shielded_pool_anchor: None,
+        prune_shielded_pool_anchors: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

@@ -206,3 +206,117 @@ impl ContestedDocumentVotePollStoredInfoV0Getters for ContestedDocumentVotePollS
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serialization::{PlatformDeserializable, PlatformSerializable};
+
+    fn sb(time: u64, height: u64) -> BlockInfo {
+        BlockInfo {
+            time_ms: time,
+            height,
+            ..BlockInfo::default()
+        }
+    }
+
+    #[test]
+    fn new_uses_latest_supported_version() {
+        let pv = PlatformVersion::latest();
+        let info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv)
+            .expect("should construct for latest version");
+        // At present only V0 exists
+        match info {
+            ContestedDocumentVotePollStoredInfo::V0(v0) => {
+                assert!(matches!(
+                    v0.vote_poll_status,
+                    ContestedDocumentVotePollStatus::Started(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn update_to_latest_version_is_idempotent_for_v0() {
+        let pv = PlatformVersion::latest();
+        let info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv).unwrap();
+        let updated = info
+            .clone()
+            .update_to_latest_version(pv)
+            .expect("should be ok");
+        assert_eq!(info, updated);
+    }
+
+    #[test]
+    fn finalize_routes_through_wrapper() {
+        let pv = PlatformVersion::latest();
+        let mut info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv).unwrap();
+        info.finalize_vote_poll(
+            vec![],
+            sb(2, 2),
+            ContestedDocumentVotePollWinnerInfo::Locked,
+        )
+        .expect("should finalize");
+        // After locked winner, status should be Locked.
+        assert!(matches!(
+            info.vote_poll_status(),
+            ContestedDocumentVotePollStatus::Locked
+        ));
+    }
+
+    #[test]
+    fn display_contains_wrapper_name() {
+        let pv = PlatformVersion::latest();
+        let info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv).unwrap();
+        let rendered = info.to_string();
+        assert!(rendered.starts_with("V0("));
+    }
+
+    #[test]
+    fn serialization_roundtrip() {
+        let pv = PlatformVersion::latest();
+        let info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv).unwrap();
+        let bytes = info.serialize_to_bytes().expect("serialize");
+        let restored = ContestedDocumentVotePollStoredInfo::deserialize_from_bytes(&bytes)
+            .expect("deserialize");
+        assert_eq!(info, restored);
+    }
+
+    #[test]
+    fn getters_proxy_to_inner_v0() {
+        let pv = PlatformVersion::latest();
+        let mut info = ContestedDocumentVotePollStoredInfo::new(sb(1, 1), pv).unwrap();
+        // Before any finalize, many getters return None or defaults
+        assert!(info.last_resource_vote_choices().is_none());
+        assert!(info.awarded_block().is_none());
+        assert_eq!(info.current_start_block(), Some(sb(1, 1)));
+        assert!(info.last_finalization_block().is_none());
+        assert_eq!(info.winner(), ContestedDocumentVotePollWinnerInfo::NoWinner);
+        assert!(info.last_locked_votes().is_none());
+        assert!(info.last_locked_voters().is_none());
+        assert!(info.last_abstain_votes().is_none());
+        assert!(info.last_abstain_voters().is_none());
+        assert!(info
+            .contender_votes_in_vec_of_contender_with_serialized_document()
+            .is_none());
+        assert!(matches!(
+            info.vote_poll_status_ref(),
+            ContestedDocumentVotePollStatus::Started(_)
+        ));
+
+        // After an identity-winning finalize, awarded_block / winner populated.
+        let id = Identifier::new([7u8; 32]);
+        info.finalize_vote_poll(
+            vec![],
+            sb(2, 2),
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id),
+        )
+        .unwrap();
+        assert_eq!(info.awarded_block(), Some(sb(2, 2)));
+        assert_eq!(
+            info.winner(),
+            ContestedDocumentVotePollWinnerInfo::WonByIdentity(id)
+        );
+        assert_eq!(info.last_finalization_block(), Some(sb(2, 2)));
+    }
+}

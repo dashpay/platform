@@ -14,7 +14,7 @@ license = "MIT"
 resolver = "2"
 
 [dependencies]
-bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.1", features = ["serde"] }
 platform-version = { path = "../rs-platform-version" }
 # used to convert integers to bytes, needed in verifier
 integer-encoding = { version = "4.0.0" }
@@ -52,12 +52,12 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", tag = "v4.1.0", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", tag = "v4.1.0", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", tag = "v4.1.0" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", tag = "v4.1.0", optional = true }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", tag = "v4.1.0" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", tag = "v4.1.0" }
+grovedb = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -74,7 +74,7 @@ dpp = { path = "../rs-dpp", features = [
   "fixtures-and-mocks",
   "all-system_contracts",
   "factories",
-  "data-contract-json-conversion",
+  "json-conversion",
 ], default-features = false }
 once_cell = "1.7"
 serde_json = { version = "1.0", features = ["preserve_order"] }
@@ -82,6 +82,18 @@ assert_matches = "1.5.0"
 
 [[bench]]
 name = "benchmarks"
+harness = false
+
+[[bench]]
+name = "document_count_worst_case"
+harness = false
+
+[[bench]]
+name = "document_sum_worst_case"
+harness = false
+
+[[bench]]
+name = "document_average_worst_case"
 harness = false
 
 [features]
@@ -93,7 +105,7 @@ fixtures-and-mocks = [
   "full",
   "dpp/fixtures-and-mocks",
   "verify",
-  "dpp/data-contract-json-conversion",
+  "dpp/json-conversion",
   "dpp/random-public-keys",
 ]
 server = [
@@ -118,6 +130,12 @@ server = [
 full = ["server", "ciborium", "serde", "bs58", "tempfile", "base64", "chrono"]
 cbor_query = ["ciborium", "dpp/platform-value-cbor", "dpp/cbor"]
 grovedb_operations_logging = []
+# Pass-through to grovedb's `unsafe-dump-load` feature — unlocks the
+# snapshot-bootstrap escape hatches (`raw_storage`, `ingest_subtree_sst`,
+# `replace_subtree_root`). Named after the drive-abci consumer feature
+# (`shielded_test_data`) rather than the grovedb primitive because in this
+# tree the only use case for these APIs is shielded-pool test seeding.
+shielded_test_data = ["grovedb/unsafe-dump-load"]
 verify = [
   "grovedb/verify",
   "grovedb-costs",

@@ -9,6 +9,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
+use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::TransactionArg;
@@ -28,6 +30,33 @@ impl Drive {
             &mut drive_operations,
             platform_version,
         )
+    }
+
+    /// Fetch keys matching the request for a specific Identity, along with the fee charged
+    /// for the underlying grovedb operations.
+    pub(super) fn fetch_identity_keys_with_costs_v0<T: IdentityPublicKeyResult>(
+        &self,
+        key_request: IdentityKeysRequest,
+        epoch: &Epoch,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(T, FeeResult), Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let value = self.fetch_identity_keys_operations(
+            key_request,
+            transaction,
+            &mut drive_operations,
+            platform_version,
+        )?;
+        let fees = Drive::calculate_fee(
+            None,
+            Some(drive_operations),
+            epoch,
+            self.config.epochs_per_era,
+            platform_version,
+            None,
+        )?;
+        Ok((value, fees))
     }
 
     /// Operations for fetching keys matching the request for a specific Identity

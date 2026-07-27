@@ -1,5 +1,6 @@
 use crate::drive::contract::paths;
 
+use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::{contract_documents_path, votes, Drive, RootTree};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::storage_flags::StorageFlags;
@@ -9,6 +10,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::fee::fee_result::FeeResult;
 
@@ -21,7 +23,7 @@ use crate::drive::votes::paths::{
 use crate::error::contract::DataContractError;
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::{HashMap, HashSet};
 
 impl Drive {
@@ -283,29 +285,155 @@ impl Drive {
                 type_key.as_bytes(),
             ];
 
-            // primary key tree
+            // primary key tree — route through the centralized
+            // primary_key_tree_type() so contract creation, document inserts,
+            // deletes, and estimation paths all see the same tree-variant
+            // selection (under whichever drive method version is active).
             let key_info = Key(vec![0]);
-            self.batch_insert_empty_tree(
-                type_path,
-                key_info,
-                storage_flags.as_ref(),
-                &mut batch_operations,
-                &platform_version.drive,
-            )?;
+            match document_type
+                .as_ref()
+                .primary_key_tree_type(platform_version)?
+            {
+                TreeType::ProvableCountTree => self.batch_insert_empty_provable_count_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::CountTree => self.batch_insert_empty_count_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                // Sum-capable variants — route to the matching helper so the
+                // doctype's primary-key tree is created with the correct
+                // sum-bearing element variant at contract apply time. Without
+                // these arms the previous catch-all `_` arm would create a
+                // plain `NormalTree`, and subsequent sum-aware document
+                // inserts / range proofs would operate on the wrong element
+                // type.
+                TreeType::SumTree => self.batch_insert_empty_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::ProvableSumTree => self.batch_insert_empty_provable_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::ProvableCountSumTree => self.batch_insert_empty_provable_count_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                TreeType::ProvableCountProvableSumTree => self
+                    .batch_insert_empty_provable_count_provable_sum_tree(
+                        type_path,
+                        key_info,
+                        storage_flags.as_ref(),
+                        &mut batch_operations,
+                        &platform_version.drive,
+                    )?,
+                TreeType::CountSumTree => self.batch_insert_empty_count_sum_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+                _ => self.batch_insert_empty_tree(
+                    type_path,
+                    key_info,
+                    storage_flags.as_ref(),
+                    &mut batch_operations,
+                    &platform_version.drive,
+                )?,
+            }
 
             let mut index_cache: HashSet<&[u8]> = HashSet::new();
+            let document_type_ref = document_type.as_ref();
+            let index_structure = document_type_ref.index_structure();
             // for each type we should insert the indices that are top level
             for index in document_type.as_ref().top_level_indices() {
                 // toDo: change this to be a reference by index
                 let index_bytes = index.name.as_bytes();
                 if !index_cache.contains(index_bytes) {
-                    self.batch_insert_empty_tree(
-                        type_path,
-                        KeyRef(index_bytes),
-                        storage_flags.as_ref(),
-                        &mut batch_operations,
-                        &platform_version.drive,
-                    )?;
+                    // The property-name tree variant (the tree at
+                    // `@/contract/0x01/<doctype>/<prop>`) is selected from
+                    // the index's `(range_countable, range_summable)`
+                    // pair — the same 4-way dispatch table the compound-
+                    // index walker uses for nested levels (see
+                    // [`Drive::add_indices_for_index_level_for_contract_operations_v0`]
+                    // around line 195 of
+                    // `add_indices_for_index_level_for_contract_operations/v0/mod.rs`,
+                    // where `property_name_tree_type` is computed from the
+                    // same two axes for sub-levels). Keeping the two
+                    // dispatch tables in lock-step is what lets top-level
+                    // single-property indexes share the read-path with
+                    // their compound siblings.
+                    //
+                    // - `range_countable: true` → ProvableCountTree
+                    //   (existing): so `AggregateCountOnRange` walks land.
+                    // - `range_summable: true` → ProvableSumTree (NEW):
+                    //   so `AggregateSumOnRange` walks land. Before the
+                    //   fix this path silently fell through to NormalTree
+                    //   and any sum-on-range query against a top-level
+                    //   `rangeSummable` index errored with
+                    //   "AggregateSumOnRange is only valid against
+                    //   ProvableSumTree or ProvableCountProvableSumTree,
+                    //   got NormalTree".
+                    // - both → ProvableCountProvableSumTree (PCPS,
+                    //   grovedb PR 670 combined surface): one tree
+                    //   carries both metrics per-node.
+                    // - neither → NormalTree (default; matches v0).
+                    let index_info = index_structure
+                        .sub_levels()
+                        .get(index.name.as_str())
+                        .and_then(|level| level.has_index_with_type());
+                    let range_countable =
+                        index_info.map(|info| info.range_countable).unwrap_or(false);
+                    let range_summable =
+                        index_info.map(|info| info.range_summable).unwrap_or(false);
+                    match (range_countable, range_summable) {
+                        (true, true) => self.batch_insert_empty_provable_count_provable_sum_tree(
+                            type_path,
+                            KeyRef(index_bytes),
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                        (true, false) => self.batch_insert_empty_provable_count_tree(
+                            type_path,
+                            KeyRef(index_bytes),
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                        (false, true) => self.batch_insert_empty_provable_sum_tree(
+                            type_path,
+                            KeyRef(index_bytes),
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                        (false, false) => self.batch_insert_empty_tree(
+                            type_path,
+                            KeyRef(index_bytes),
+                            storage_flags.as_ref(),
+                            &mut batch_operations,
+                            &platform_version.drive,
+                        )?,
+                    }
                     index_cache.insert(index_bytes);
                 }
             }
@@ -322,3 +450,6 @@ impl Drive {
         Ok(batch_operations)
     }
 }
+
+#[cfg(test)]
+mod tests;

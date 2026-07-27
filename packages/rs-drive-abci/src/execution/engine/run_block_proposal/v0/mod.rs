@@ -119,9 +119,6 @@ where
             )).into()));
         }
 
-        // Cleanup block cache before we execute a new proposal
-        self.clear_drive_block_cache(platform_version)?;
-
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,
@@ -344,6 +341,18 @@ where
             platform_version,
         )?;
 
+        // Record shielded pool anchor if the commitment tree changed this block.
+        // This stores block_height → anchor_bytes so shielded transactions can
+        // reference a recent anchor for spend authorization.
+        self.record_shielded_pool_anchor_if_changed(
+            block_proposal.height,
+            transaction,
+            platform_version,
+        )?;
+
+        // Prune anchors older than the configured retention depth
+        self.prune_shielded_pool_anchors(block_proposal.height, transaction, platform_version)?;
+
         // Pool withdrawals into transactions queue
 
         // Takes queued withdrawals, creates untiled withdrawal transaction payload, saves them to queue
@@ -415,6 +424,7 @@ where
             tracing::trace!(
                 method = "run_block_proposal_v0",
                 app_hash = hex::encode(root_hash),
+                block_hash = hex::encode(block_proposal.block_hash.unwrap_or_default()),
                 platform_state_fingerprint = hex::encode(
                     block_execution_context
                         .block_platform_state()

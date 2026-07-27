@@ -134,6 +134,15 @@ describe('waitForStateTransitionResultFactory', () => {
     );
   });
 
+  it('should reject a proved success response without proof', async () => {
+    options.prove = true;
+
+    await expect(waitForStateTransitionResult(hash, options)).to.be.rejectedWith(
+      'missing proof or metadata',
+    );
+    expect(grpcTransportMock.request).to.have.been.calledThrice();
+  });
+
   it('should return response with error', async () => {
     const data = cbor.encode({ data: 'error data' });
 

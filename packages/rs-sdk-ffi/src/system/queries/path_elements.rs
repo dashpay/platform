@@ -79,7 +79,7 @@ fn get_path_elements(
         return Err("Keys JSON is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let path_str = unsafe {
@@ -134,49 +134,11 @@ fn get_path_elements(
                     .iter()
                     .filter_map(|(key, element_opt)| {
                         element_opt.as_ref().map(|element| {
-                            let element_data = match element {
-                                Element::Item(data, _) => hex::encode(data),
-                                Element::Reference(reference, _, _) => format!("{:?}", reference),
-                                Element::Tree(_, _) => "tree".to_string(),
-                                Element::SumTree(_, _, _) => "sum_tree".to_string(),
-                                Element::SumItem(value, _) => format!("sum_item:{}", value),
-                                Element::BigSumTree(_, value, _) => {
-                                    format!("big_sum_tree:{}", value)
-                                }
-                                Element::CountTree(_, count, _) => format!("count_tree:{}", count),
-                                Element::CountSumTree(_, count, sum, _) => {
-                                    format!("count_sum_tree:{}:{}", count, sum)
-                                }
-                                Element::ItemWithSumItem(data, sum, _) => {
-                                    format!("item_with_sum_item:{}:{}", hex::encode(data), sum)
-                                }
-                                Element::ProvableCountTree(_, count, _) => {
-                                    format!("provable_count_tree:{}", count)
-                                }
-                                Element::ProvableCountSumTree(_, count, sum, _) => {
-                                    format!("provable_count_sum_tree:{}:{}", count, sum)
-                                }
-                            };
-
                             format!(
                                 r#"{{"key":"{}","element":"{}","type":"{}"}}"#,
                                 hex::encode(key),
-                                element_data,
-                                match element {
-                                    Element::Item(_, _) => "item",
-                                    Element::Reference(_, _, _) => "reference",
-                                    Element::Tree(_, _) => "tree",
-                                    Element::SumTree(_, _, _) => "sum_tree",
-                                    Element::SumItem(_, _) => "sum_item",
-                                    Element::BigSumTree(_, _, _) => "big_sum_tree",
-                                    Element::CountTree(_, _, _) => "count_tree",
-                                    Element::CountSumTree(_, _, _, _) => "count_sum_tree",
-                                    Element::ItemWithSumItem(_, _, _) => "item_with_sum_item",
-                                    Element::ProvableCountTree(_, _, _) => "provable_count_tree",
-                                    Element::ProvableCountSumTree(_, _, _, _) => {
-                                        "provable_count_sum_tree"
-                                    }
-                                }
+                                format_element_data(element),
+                                format_element_type(element),
                             )
                         })
                     })
@@ -187,6 +149,84 @@ fn get_path_elements(
             Err(e) => Err(format!("Failed to fetch path elements: {}", e)),
         }
     })
+}
+
+/// Renders the data side of an `Element` for the JSON `element` field.
+///
+/// `NonCounted` and `NotSummed` are transparent wrappers around another
+/// element; we render them as `non_counted(<inner>)` / `not_summed(<inner>)`
+/// so that the wrapped element's value is still visible to the caller.
+fn format_element_data(element: &Element) -> String {
+    match element {
+        Element::Item(data, _) => hex::encode(data),
+        Element::Reference(reference, _, _) => format!("{:?}", reference),
+        Element::Tree(_, _) => "tree".to_string(),
+        Element::SumTree(_, _, _) => "sum_tree".to_string(),
+        Element::SumItem(value, _) => format!("sum_item:{}", value),
+        Element::BigSumTree(_, value, _) => format!("big_sum_tree:{}", value),
+        Element::CountTree(_, count, _) => format!("count_tree:{}", count),
+        Element::CountSumTree(_, count, sum, _) => {
+            format!("count_sum_tree:{}:{}", count, sum)
+        }
+        Element::ItemWithSumItem(data, sum, _) => {
+            format!("item_with_sum_item:{}:{}", hex::encode(data), sum)
+        }
+        Element::ReferenceWithSumItem(reference, _, sum, _) => {
+            format!("reference_with_sum_item:{:?}:{}", reference, sum)
+        }
+        Element::ProvableCountTree(_, count, _) => format!("provable_count_tree:{}", count),
+        Element::ProvableCountSumTree(_, count, sum, _) => {
+            format!("provable_count_sum_tree:{}:{}", count, sum)
+        }
+        Element::ProvableCountProvableSumTree(_, count, sum, _) => {
+            format!("provable_count_provable_sum_tree:{}:{}", count, sum)
+        }
+        Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
+        Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
+        Element::MmrTree(_, _) => "mmr_tree".to_string(),
+        Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
+        Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
+            "dense_append_only_fixed_size_tree".to_string()
+        }
+        Element::NonCounted(inner) => format!("non_counted({})", format_element_data(inner)),
+        Element::NotSummed(inner) => format!("not_summed({})", format_element_data(inner)),
+        Element::NotCountedOrSummed(inner) => {
+            format!("not_counted_or_summed({})", format_element_data(inner))
+        }
+    }
+}
+
+/// Renders the variant name of an `Element` for the JSON `type` field.
+fn format_element_type(element: &Element) -> String {
+    match element {
+        Element::Item(_, _) => "item".to_string(),
+        Element::Reference(_, _, _) => "reference".to_string(),
+        Element::Tree(_, _) => "tree".to_string(),
+        Element::SumTree(_, _, _) => "sum_tree".to_string(),
+        Element::SumItem(_, _) => "sum_item".to_string(),
+        Element::BigSumTree(_, _, _) => "big_sum_tree".to_string(),
+        Element::CountTree(_, _, _) => "count_tree".to_string(),
+        Element::CountSumTree(_, _, _, _) => "count_sum_tree".to_string(),
+        Element::ItemWithSumItem(_, _, _) => "item_with_sum_item".to_string(),
+        Element::ReferenceWithSumItem(_, _, _, _) => "reference_with_sum_item".to_string(),
+        Element::ProvableCountTree(_, _, _) => "provable_count_tree".to_string(),
+        Element::ProvableCountSumTree(_, _, _, _) => "provable_count_sum_tree".to_string(),
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "provable_count_provable_sum_tree".to_string()
+        }
+        Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
+        Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
+        Element::MmrTree(_, _) => "mmr_tree".to_string(),
+        Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
+        Element::DenseAppendOnlyFixedSizeTree(_, _, _) => {
+            "dense_append_only_fixed_size_tree".to_string()
+        }
+        Element::NonCounted(inner) => format!("non_counted({})", format_element_type(inner)),
+        Element::NotSummed(inner) => format!("not_summed({})", format_element_type(inner)),
+        Element::NotCountedOrSummed(inner) => {
+            format!("not_counted_or_summed({})", format_element_type(inner))
+        }
+    }
 }
 
 #[cfg(test)]

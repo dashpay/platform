@@ -154,3 +154,97 @@ impl Debug for InstantLockDebug<'_> {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::dashcore::InstantLock;
+
+    /// An all-zero compressed BLS signature is not a valid G2 point. The
+    /// `from_compressed` decoder returns `None`, which is converted into
+    /// `Ok(false)` — NOT an error. This pins the early-return "invalid format
+    /// means not verified" contract.
+    #[test]
+    fn v0_invalid_signature_format_returns_ok_false() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        let bad = InstantLock {
+            version: 1,
+            inputs: vec![],
+            txid: dpp::dashcore::Txid::from([7u8; 32]),
+            cyclehash: [0u8; 32].into(),
+            signature: [0u8; 96].into(),
+        };
+
+        let got = verify_recent_instant_lock_signature_locally_v0(&bad, &platform_state)
+            .expect("invalid sig format must NOT produce Err");
+        assert!(
+            !got,
+            "invalid signature format must be reported as not verified"
+        );
+    }
+
+    /// Different invalid signature bytes must all take the early-return path
+    /// (Ok(false)) without touching the quorum set — this protects against
+    /// refactors that accidentally probe quorums before validating the
+    /// signature format.
+    #[test]
+    fn v0_various_invalid_signature_bytes_return_ok_false() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        // These byte patterns are not valid compressed G2 points (the flag
+        // bits for compressed encoding are specific), so `from_compressed`
+        // returns None and the function short-circuits to Ok(false).
+        let bad_sigs: [[u8; 96]; 3] = [[0u8; 96], [0xffu8; 96], [0x0au8; 96]];
+
+        for (i, sig_bytes) in bad_sigs.iter().enumerate() {
+            let il = InstantLock {
+                version: 1,
+                inputs: vec![],
+                txid: dpp::dashcore::Txid::from([i as u8; 32]),
+                cyclehash: [0u8; 32].into(),
+                signature: (*sig_bytes).into(),
+            };
+            let got = verify_recent_instant_lock_signature_locally_v0(&il, &platform_state)
+                .expect("invalid sig must yield Ok, not Err");
+            assert!(!got, "invalid sig must be reported as not verified");
+        }
+    }
+
+    /// The version field of an InstantLock does not affect the signature
+    /// format check — an invalid signature must still return Ok(false) for
+    /// any version number.
+    #[test]
+    fn v0_version_does_not_affect_invalid_signature_handling() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        for version in [0u8, 1u8, 2u8, 255u8] {
+            let il = InstantLock {
+                version,
+                inputs: vec![],
+                txid: dpp::dashcore::Txid::from([7u8; 32]),
+                cyclehash: [0u8; 32].into(),
+                signature: [0u8; 96].into(),
+            };
+            let got = verify_recent_instant_lock_signature_locally_v0(&il, &platform_state)
+                .expect("must not Err on bad sig regardless of version");
+            assert!(!got);
+        }
+    }
+}

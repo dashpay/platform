@@ -3,21 +3,24 @@ pub mod v0_methods;
 /// The Identifier fields in [`TokenClaimTransition`]
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 use crate::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use bincode::{Decode, Encode};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub struct TokenClaimTransitionV0 {
     /// Document Base Transition
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
     /// The type of distribution we are targeting
     pub distribution_type: TokenDistributionType,

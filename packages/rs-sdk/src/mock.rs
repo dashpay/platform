@@ -17,7 +17,7 @@
 //! sdk.mock().expect_fetch(query, None as Option<dash_sdk::platform::Identity>);
 //! ```
 //!
-//! See tests/mock_*.rs for more detailed examples.
+//! See `tests/fetch/mock_fetch.rs` and `tests/fetch/mock_fetch_many.rs` for more detailed examples.
 
 #[cfg(not(feature = "mocks"))]
 mod noop;

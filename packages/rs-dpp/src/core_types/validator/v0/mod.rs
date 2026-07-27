@@ -2,7 +2,7 @@ use dashcore::{ProTxHash, PubkeyHash};
 use std::fmt::{Debug, Formatter};
 
 use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
-#[cfg(feature = "core-types-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "core-types-serialization")]
@@ -18,14 +18,18 @@ use dashcore::hashes::Hash;
 
 /// A validator in the context of a quorum
 #[derive(Clone, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "core-types-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum
+    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
+    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
+    // dependency; accepts hex string or byte sequence through any deserializer).
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::serialization::dashcore::bls_pubkey::option")
+    )]
     pub public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
     /// The node address
     pub node_ip: String,
@@ -81,8 +85,8 @@ impl Encode for ValidatorV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl Decode for ValidatorV0 {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+impl<C> Decode<C> for ValidatorV0 {
+    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
         // Decode each field in the same order as they were encoded
 
         // Decode ProTxHash

@@ -1,5 +1,11 @@
 use crate::block::epoch::{Epoch, EPOCH_0};
 use crate::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -15,7 +21,11 @@ pub const DEFAULT_BLOCK_INFO: BlockInfo = BlockInfo {
 // Extended block info however is not immutable
 // @immutable
 /// Block information
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
+#[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: TimestampMillis,
@@ -95,5 +105,142 @@ impl BlockInfo {
             epoch,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(all(test, feature = "json-conversion"))]
+mod tests {
+    use super::*;
+    use crate::block::epoch::Epoch;
+    use crate::serialization::JsonConvertible;
+
+    #[test]
+    fn block_info_json_round_trip() {
+        let block_info = BlockInfo {
+            time_ms: 1_700_000_000_000u64,
+            height: 12345678u64,
+            core_height: 900_000u32,
+            epoch: Epoch::new(42).unwrap(),
+        };
+
+        let json = block_info.to_json().expect("to_json should succeed");
+        assert!(json["timeMs"].is_number());
+        assert_eq!(json["timeMs"].as_u64().unwrap(), 1700000000000);
+        assert!(json["height"].is_number());
+        assert_eq!(json["height"].as_u64().unwrap(), 12345678);
+        assert!(json["coreHeight"].is_number());
+        assert_eq!(json["coreHeight"].as_u64().unwrap(), 900_000);
+
+        let restored = BlockInfo::from_json(json).expect("from_json should succeed");
+        assert_eq!(block_info, restored);
+    }
+
+    #[test]
+    fn block_info_value_round_trip() {
+        let block_info = BlockInfo {
+            time_ms: u64::MAX,
+            height: 999u64,
+            core_height: 100u32,
+            epoch: Epoch::new(0).unwrap(),
+        };
+
+        let obj = block_info.to_object().expect("to_object should succeed");
+        let time_val = obj
+            .get("timeMs")
+            .expect("get should not fail on map")
+            .expect("timeMs key must exist");
+        assert!(
+            time_val.is_integer(),
+            "Value timeMs should be an integer type, got: {:?}",
+            time_val
+        );
+
+        let restored = BlockInfo::from_object(obj).expect("from_object should succeed");
+        assert_eq!(block_info, restored);
+    }
+
+    #[test]
+    fn block_info_max_u64_json_round_trip() {
+        let block_info = BlockInfo {
+            time_ms: u64::MAX,
+            height: u64::MAX,
+            core_height: u32::MAX,
+            epoch: Epoch::new(100).unwrap(),
+        };
+
+        let json = block_info.to_json().expect("to_json should succeed");
+        // u64::MAX > JS MAX_SAFE_INTEGER, serialized as string
+        assert!(json["timeMs"].is_string());
+        assert_eq!(json["timeMs"].as_str().unwrap(), u64::MAX.to_string());
+        assert!(json["height"].is_string());
+        assert_eq!(json["height"].as_str().unwrap(), u64::MAX.to_string());
+
+        let restored = BlockInfo::from_json(json).expect("from_json should succeed");
+        assert_eq!(block_info, restored);
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests_blockinfo {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // Distinct per-field values (not `default()`'s all-zeros) so the fixture
+    // catches field-name renames, field swaps, and integer-size changes.
+    fn fixture() -> BlockInfo {
+        BlockInfo {
+            time_ms: 1_700_000_000_000,
+            height: 123,
+            core_height: 456,
+            epoch: Epoch::new(7).expect("epoch"),
+        }
+    }
+
+    #[test]
+    fn json_round_trip_blockinfo_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // `#[serde(rename_all = "camelCase")]` → `timeMs` / `coreHeight`.
+        // `#[json_safe_fields]` keeps `timeMs` / `height` (u64) as numbers
+        // below 2^53. Nested `Epoch` serializes as `{"index": <u16>}` (`key`
+        // is `#[serde(skip)]`, reconstructed from `index` on deserialize).
+        assert_eq!(
+            json,
+            json!({
+                "timeMs": 1_700_000_000_000u64,
+                "height": 123,
+                "coreHeight": 456,
+                "epoch": {"index": 7},
+            })
+        );
+        let recovered = BlockInfo::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_blockinfo_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Non-HR `Value` keeps integers typed: `timeMs` / `height` are u64,
+        // `coreHeight` is u32, and `Epoch::index` is u16.
+        assert_eq!(
+            value,
+            platform_value!({
+                "timeMs": 1_700_000_000_000u64,
+                "height": 123u64,
+                "coreHeight": 456u32,
+                "epoch": {"index": 7u16},
+            })
+        );
+        let recovered = BlockInfo::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

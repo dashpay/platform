@@ -1,3 +1,26 @@
+// The aggregator helpers `ConsensusValidationResult::flatten` /
+// `merge_many` are versioned via `dpp.validation.validation_result` on
+// `PlatformVersion`. v0 (PROTOCOL_VERSION_11 and below) preserves the
+// legacy `Some(empty_vec)`-on-no-data behavior for chain reproducibility;
+// v1 (PROTOCOL_VERSION_12+) returns `data: None` in that case so an
+// all-failed batch flows down the unpaid path. See issue #2867.
+//
+// Note on the `_v0` suffix retained on the transformer functions in this
+// file (`try_into_action_v0`, `transform_document_transition_v0`, etc.):
+// these are version-1 in their behavior but keep the `_v0` suffix on
+// purpose. Bumping the suffix would force duplicating the entire ~1100
+// line transformer body into a `v1/mod.rs` archive (the v0 file would
+// have to stay verbatim to keep v11 chain replay reproducible) — the
+// kind of copy-paste this PR was specifically refactored to avoid.
+// Instead, protocol-version-dependent behavior is gated at a finer
+// granularity by the version fields it consumes:
+//   * `dpp.validation.validation_result.flatten`
+//   * `dpp.validation.validation_result.merge_many`
+//   * `drive_abci...batch_state_transition.failed_per_transition_action`
+// A future protocol bump that needs different aggregator or
+// failure-action semantics should add another value to one of those
+// fields rather than rename this file.
+
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -5,6 +28,7 @@ use std::sync::Arc;
 use crate::error::Error;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
+use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
 
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -29,7 +53,7 @@ use dpp::state_transition::batch_transition::batched_transition::BatchedTransiti
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::v0_methods::DocumentPurchaseTransitionV0Methods;
-use dpp::state_transition::{StateTransitionLike, StateTransitionOwned};
+use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionOwned};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
@@ -166,6 +190,12 @@ trait BatchTransitionInternalTransformerV0 {
         document_id: Identifier,
         original_document: &Document,
     ) -> SimpleConsensusValidationResult;
+    fn failed_per_transition_action(
+        base_transition: &dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition,
+        owner_id: Identifier,
+        errors: Vec<ConsensusError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
 }
 
 impl BatchTransitionTransformerV0 for BatchTransition {
@@ -273,7 +303,8 @@ impl BatchTransitionTransformerV0 for BatchTransition {
 
         validation_results.append(&mut validation_result_tokens);
 
-        let validation_result = ConsensusValidationResult::flatten(validation_results);
+        let validation_result =
+            ConsensusValidationResult::flatten(validation_results, platform_version)?;
 
         if validation_result.has_data() {
             let (transitions, errors) = validation_result.into_data_and_errors()?;
@@ -296,6 +327,27 @@ impl BatchTransitionTransformerV0 for BatchTransition {
 }
 
 impl BatchTransitionInternalTransformerV0 for BatchTransition {
+    /// Roll up the per-token-transition results via the versioned
+    /// [`ConsensusValidationResult::merge_many`] facade.
+    ///
+    /// The aggregator's v0→v1 change at PROTOCOL_VERSION_12 (see issue
+    /// #2867) also affects this token path. **Tokens-always-pay
+    /// invariant**: every per-token sub-transformer
+    /// (`try_from_borrowed_token_*_transition_with_contract_lookup`)
+    /// emits a `BumpIdentityDataContractNonce` action on its
+    /// base-validation failure path, so each per-token result carries
+    /// `data: Some(...)` even when validation fails. The v1 aggregator
+    /// therefore never collapses an all-failed token batch to
+    /// `data: None`, and token failures continue to land as
+    /// `PaidConsensusError` (tx stays in the block, user pays for the
+    /// validation work) under both v11 and v12.
+    ///
+    /// A future change to a token sub-transformer that drops the bump
+    /// emission on a failure path would silently route that failure to
+    /// `UnpaidConsensusError` (tx removed from the block by
+    /// `prepare_proposal`). See
+    /// `tests/token/burn/mod.rs::test_token_burn_trying_to_burn_more_than_we_have`
+    /// and its `_protocol_version_11` sibling for the regression pin.
     fn transform_token_transitions_within_contract_v0(
         platform: &PlatformStateRef,
         data_contract_id: &Identifier,
@@ -345,7 +397,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 )
             })
             .collect::<Result<Vec<ConsensusValidationResult<BatchedTransitionAction>>, Error>>()?;
-        let validation_result = ConsensusValidationResult::merge_many(validation_result);
+        let validation_result =
+            ConsensusValidationResult::merge_many(validation_result, platform_version)?;
         Ok(validation_result)
     }
     fn transform_document_transitions_within_contract_v0(
@@ -399,7 +452,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             })
             .collect::<Result<Vec<ConsensusValidationResult<Vec<BatchedTransitionAction>>>, Error>>(
             )?;
-        Ok(ConsensusValidationResult::flatten(validation_result))
+        Ok(ConsensusValidationResult::flatten(
+            validation_result,
+            platform_version,
+        )?)
     }
 
     fn transform_document_transitions_within_document_type_v0(
@@ -449,16 +505,25 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             .collect::<Vec<_>>();
 
         // We fetch documents only for replace and transfer transitions
-        // since we need them to create transition actions
-        // Below we also perform state validation for replace and transfer transitions only
-        // other transitions are validated in their validate_state functions
+        // since we need them to create transition actions. Below we also
+        // perform state validation for replace and transfer transitions
+        // only; other transitions are validated in their validate_state
+        // functions.
         // TODO: Think more about this architecture
+        //
+        // PROTOCOL_VERSION_11 consensus-safety: the fetch fn now takes
+        // `&mut execution_context` and bills the query cost internally
+        // — but only when `transform_into_action: 1`. On v0 it forces
+        // `epoch=None` (zero cost) and skips `add_operation`, matching
+        // pre-PR exactly.
         let fetched_documents_validation_result =
             fetch_documents_for_transitions_knowing_contract_and_document_type(
                 platform.drive,
                 data_contract,
                 document_type,
                 replace_and_transfer_transitions.as_slice(),
+                &block_info.epoch,
+                execution_context,
                 transaction,
                 platform_version,
             )?;
@@ -495,7 +560,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
             let result = ConsensusValidationResult::merge_many(
                 document_transition_actions_validation_result,
-            );
+                platform_version,
+            )?;
 
             if !result.is_valid() {
                 return Ok(result);
@@ -637,7 +703,36 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         }
     }
 
-    /// The data contract can be of multiple difference versions
+    /// Per-transition handler for document arms.
+    ///
+    /// Each per-transition failure path (ownership mismatch, revision
+    /// mismatch, missing target document, etc.) routes through
+    /// [`Self::failed_per_transition_action`], whose behavior is gated
+    /// on the `failed_per_transition_action` version field:
+    ///
+    /// - **v0** (`PROTOCOL_VERSION_11` and below): returns errors-only
+    ///   with no action data. The legacy `flatten_v0` / `merge_many_v0`
+    ///   aggregators lift this to `Some(empty_vec)`, which downstream
+    ///   code records as `PaidConsensusError` with a bump-only fee but
+    ///   no actual `UpdateIdentityContractNonce` drive op — the
+    ///   "free advanced-structure validation" v11 footgun. Preserved
+    ///   here for chain reproducibility.
+    /// - **v1** (`PROTOCOL_VERSION_12`+): emits a
+    ///   `BumpIdentityDataContractNonce` action so the user pays for
+    ///   the validation work that already ran (fetch + ownership /
+    ///   revision check) and the contract nonce advances.
+    ///
+    /// The one exception is Replace's missing-target-document path,
+    /// which always emits a bump inline (regardless of version) — that
+    /// was the one legacy v0 bump site pre-PR, kept as-is to preserve
+    /// v11 chain replay bit-for-bit.
+    ///
+    /// The `user_fee_increase` argument passed into each
+    /// `BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition`
+    /// call is `0` deliberately: the value gets overridden by the outer
+    /// Documents Batch's `user_fee_increase` when the per-transition
+    /// action rolls up into the `BatchTransitionAction`, so any
+    /// per-site value would be discarded.
     fn transform_document_transition_v0<'a>(
         drive: &Drive,
         transaction: TransactionArg,
@@ -651,6 +746,21 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
+        if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
+            if let Some(actual_depth) = transition.first_data_depth_exceeding(max_depth as usize) {
+                return Self::failed_per_transition_action(
+                    transition.base(),
+                    owner_id,
+                    vec![ConsensusError::BasicError(BasicError::ValueError(
+                        ValueError::new_from_string(format!(
+                            "document value depth {actual_depth} exceeds system maximum {max_depth}"
+                        )),
+                    ))],
+                    platform_version,
+                );
+            }
+        }
+
         match transition {
             DocumentTransition::Create(document_create_transition) => {
                 let (document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
@@ -664,24 +774,21 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    // We can set the user fee increase to 0 here because it is decided by the Documents Batch instead
+                    // Keep this bump emission inline (not via Self::failed_per_transition_action):
+                    // it's the one legacy v0 bump site, and routing it through the helper would
+                    // drop the bump on PROTOCOL_VERSION_11 and diverge v11 chain replay (#2867).
                     let bump_action =
                         BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
                             document_replace_transition.base(),
                             owner_id,
                             0,
                         );
-                    let batched_action =
-                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action);
-
                     return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        batched_action,
+                        BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
                         validation_result.errors,
                     ));
                 }
@@ -695,8 +802,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_replace_transition.base(),
+                        owner_id,
+                        validation_result.errors,
+                        platform_version,
+                    );
                 }
 
                 if validate_against_state {
@@ -710,8 +821,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        return Self::failed_per_transition_action(
+                            document_replace_transition.base(),
+                            owner_id,
+                            validation_result.errors,
+                            platform_version,
+                        );
                     }
                 }
 
@@ -728,11 +843,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_replace_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_replace_action)
             }
             DocumentTransition::Delete(document_delete_transition) => {
                 let (batched_action, fee_result) = DocumentDeleteTransitionAction::try_from_document_borrowed_delete_transition_with_contract_lookup(document_delete_transition, owner_id, user_fee_increase, |_identifier| {
@@ -745,14 +856,16 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 Ok(batched_action)
             }
             DocumentTransition::Transfer(document_transfer_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_transfer_transition.base(),
+                        owner_id,
+                        validation_result.errors,
+                        platform_version,
+                    );
                 }
 
                 let original_document = validation_result.into_data()?;
@@ -764,8 +877,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_transfer_transition.base(),
+                        owner_id,
+                        validation_result.errors,
+                        platform_version,
+                    );
                 }
 
                 if validate_against_state {
@@ -779,8 +896,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        return Self::failed_per_transition_action(
+                            document_transfer_transition.base(),
+                            owner_id,
+                            validation_result.errors,
+                            platform_version,
+                        );
                     }
                 }
 
@@ -797,21 +918,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_transfer_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_transfer_action)
             }
             DocumentTransition::UpdatePrice(document_update_price_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_update_price_transition.base(),
+                        owner_id,
+                        validation_result.errors,
+                        platform_version,
+                    );
                 }
 
                 let original_document = validation_result.into_data()?;
@@ -823,8 +942,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 );
 
                 if !validation_result.is_valid() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_update_price_transition.base(),
+                        owner_id,
+                        validation_result.errors,
+                        platform_version,
+                    );
                 }
 
                 if validate_against_state {
@@ -838,8 +961,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        return Self::failed_per_transition_action(
+                            document_update_price_transition.base(),
+                            owner_id,
+                            validation_result.errors,
+                            platform_version,
+                        );
                     }
                 }
 
@@ -856,21 +983,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_update_price_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_update_price_action)
             }
             DocumentTransition::Purchase(document_purchase_transition) => {
-                let mut result = ConsensusValidationResult::<BatchedTransitionAction>::new();
-
                 let validation_result =
                     Self::find_replaced_document_v0(transition, replaced_documents);
 
                 if !validation_result.is_valid_with_data() {
-                    result.merge(validation_result);
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_purchase_transition.base(),
+                        owner_id,
+                        validation_result.errors,
+                        platform_version,
+                    );
                 }
 
                 let original_document = validation_result.into_data()?;
@@ -879,21 +1004,33 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     .properties()
                     .get_optional_integer::<Credits>(PRICE)?
                 else {
-                    result.add_error(StateError::DocumentNotForSaleError(
-                        DocumentNotForSaleError::new(original_document.id()),
-                    ));
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_purchase_transition.base(),
+                        owner_id,
+                        vec![
+                            StateError::DocumentNotForSaleError(DocumentNotForSaleError::new(
+                                original_document.id(),
+                            ))
+                            .into(),
+                        ],
+                        platform_version,
+                    );
                 };
 
                 if listed_price != document_purchase_transition.price() {
-                    result.add_error(StateError::DocumentIncorrectPurchasePriceError(
-                        DocumentIncorrectPurchasePriceError::new(
-                            original_document.id(),
-                            document_purchase_transition.price(),
-                            listed_price,
-                        ),
-                    ));
-                    return Ok(result);
+                    return Self::failed_per_transition_action(
+                        document_purchase_transition.base(),
+                        owner_id,
+                        vec![StateError::DocumentIncorrectPurchasePriceError(
+                            DocumentIncorrectPurchasePriceError::new(
+                                original_document.id(),
+                                document_purchase_transition.price(),
+                                listed_price,
+                            ),
+                        )
+                        .into()],
+                        platform_version,
+                    );
                 }
 
                 if validate_against_state {
@@ -907,8 +1044,12 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
 
                     if !validation_result.is_valid() {
-                        result.merge(validation_result);
-                        return Ok(result);
+                        return Self::failed_per_transition_action(
+                            document_purchase_transition.base(),
+                            owner_id,
+                            validation_result.errors,
+                            platform_version,
+                        );
                     }
                 }
 
@@ -926,11 +1067,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                if result.is_valid() {
-                    Ok(document_purchase_action)
-                } else {
-                    Ok(result)
-                }
+                Ok(document_purchase_action)
             }
         }
     }
@@ -1002,5 +1139,49 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             ))
         }
         result
+    }
+
+    fn failed_per_transition_action(
+        base_transition: &dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition,
+        owner_id: Identifier,
+        errors: Vec<ConsensusError>,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .failed_per_transition_action
+        {
+            // PROTOCOL_VERSION_11 and below: errors-only, no action data.
+            0 => Ok(ConsensusValidationResult::new_with_errors(errors)),
+            // PROTOCOL_VERSION_12+: emit a `BumpIdentityDataContractNonce` action
+            // so the user pays for the validation work that already ran.
+            1 => {
+                // The `0` user_fee_increase here is a placeholder. It will be
+                // overridden (reapplied) with the outer Documents Batch's
+                // `user_fee_increase` when this per-transition action rolls up
+                // into the `BatchTransitionAction`, so the per-site value is
+                // discarded — passing `0` is harmless.
+                let bump_action =
+                    BumpIdentityDataContractNonceAction::from_borrowed_document_base_transition(
+                        base_transition,
+                        owner_id,
+                        0,
+                    );
+                Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    BatchedTransitionAction::BumpIdentityDataContractNonce(bump_action),
+                    errors,
+                ))
+            }
+            version => Err(Error::Execution(
+                crate::error::execution::ExecutionError::UnknownVersionMismatch {
+                    method: "documents batch transition: failed_per_transition_action".to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                },
+            )),
+        }
     }
 }

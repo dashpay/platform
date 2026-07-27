@@ -122,7 +122,7 @@ pub struct DriveConfig {
     pub network: Network,
 }
 
-// TODO: some weird envy behavior requries this to exist
+// TODO: some weird envy behavior requires this to exist
 #[cfg(all(feature = "serde", feature = "grovedbg"))]
 fn from_str_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
@@ -203,7 +203,7 @@ impl Default for DriveConfig {
             grovedb_visualizer_address: default_grovedb_visualizer_address(),
             #[cfg(feature = "grovedbg")]
             grovedb_visualizer_enabled: false,
-            network: Network::Dash,
+            network: Network::Mainnet,
         }
     }
 }
@@ -211,7 +211,7 @@ impl Default for DriveConfig {
 impl DriveConfig {
     /// The default network type for mainnet
     pub fn default_network() -> Network {
-        Network::Dash
+        Network::Mainnet
     }
 
     /// The default testnet configuration

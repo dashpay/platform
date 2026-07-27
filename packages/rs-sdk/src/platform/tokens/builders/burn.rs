@@ -117,7 +117,7 @@ impl TokenBurnTransitionBuilder {
     ///
     /// # Arguments
     ///
-    /// * `state_transition_creation_options` - The signing options to add
+    /// * `state_transition_creation_options` - The state transition creation options to add
     ///
     /// # Returns
     ///
@@ -177,7 +177,8 @@ impl TokenBurnTransitionBuilder {
             signer,
             platform_version,
             self.state_transition_creation_options,
-        )?;
+        )
+        .await?;
 
         Ok(state_transition)
     }

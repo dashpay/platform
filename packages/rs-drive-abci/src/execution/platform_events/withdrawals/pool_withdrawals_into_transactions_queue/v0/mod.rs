@@ -186,4 +186,89 @@ mod tests {
             assert_eq!(tx_index, i as u64);
         }
     }
+
+    /// The `v0` wrapper returns early (no pooling, no error) when the current
+    /// quorum is not present in the platform's validator set by most recent.
+    /// A freshly-built test platform has no validator sets, so
+    /// `current_validator_set_position_in_list_by_most_recent` returns None,
+    /// which exercises the first `Ok(())` early-return in v0.
+    #[test]
+    fn v0_returns_ok_when_current_quorum_not_in_validator_set() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
+
+        // The withdrawals contract is not installed and there are no
+        // validator sets. The v0 guard must swallow the missing-quorum case
+        // and return Ok(()) without touching storage.
+        let platform_state = platform.state.load();
+
+        platform
+            .pool_withdrawals_into_transactions_queue_v0(
+                &block_info,
+                &platform_state,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("early return on missing quorum should be Ok");
+    }
+
+    /// With the withdrawals system data contract installed but NO queued
+    /// withdrawal documents, `pool_withdrawals_into_transactions_queue_v1`
+    /// (which v0 delegates to) must short-circuit to `Ok(())` without
+    /// attempting to build any transactions.
+    #[test]
+    fn v1_returns_ok_when_no_queued_documents() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load system data contract");
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        platform
+            .pool_withdrawals_into_transactions_queue_v1(
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("v1 must return Ok when there are no queued withdrawal documents");
+
+        // Confirm nothing has been moved to POOLED.
+        let pooled = platform
+            .drive
+            .fetch_oldest_withdrawal_documents_by_status(
+                withdrawals_contract::WithdrawalStatus::POOLED.into(),
+                DEFAULT_QUERY_LIMIT,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("fetch pooled");
+        assert!(
+            pooled.is_empty(),
+            "no documents should have been pooled when the queue is empty"
+        );
+    }
 }

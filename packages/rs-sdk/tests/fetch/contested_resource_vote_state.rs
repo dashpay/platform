@@ -2,7 +2,7 @@
 use crate::fetch::{
     common::{setup_logs, setup_sdk_for_test_case, TEST_DPNS_NAME},
     config::Config,
-    contested_resource::check_mn_voting_prerequisities,
+    contested_resource::check_mn_voting_prerequisites,
 };
 use dash_sdk::platform::{Fetch, FetchMany};
 use dpp::{
@@ -127,7 +127,7 @@ async fn contested_resource_vote_states_nx_contract() {
 ///
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn contested_resource_vote_states_ok() {
@@ -208,7 +208,7 @@ fn base_query(cfg: &Config) -> ContestedDocumentVotePollDriveQuery {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 #[allow(non_snake_case)]
 async fn contested_resource_vote_states_with_limit_PLAN_674() {
@@ -218,7 +218,7 @@ async fn contested_resource_vote_states_with_limit_PLAN_674() {
     let sdk = cfg
         .setup_api("contested_resource_vote_states_with_limit")
         .await;
-    check_mn_voting_prerequisities(&cfg)
+    check_mn_voting_prerequisites(&cfg)
         .await
         .expect("prerequisites not met");
 
@@ -315,7 +315,7 @@ type MutFn = fn(&mut ContestedDocumentVotePollDriveQuery);
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 #[cfg_attr(
     not(feature = "offline-testing"),
-    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisities()"
+    ignore = "requires manual DPNS names setup for masternode voting tests; see fn check_mn_voting_prerequisites()"
 )]
 async fn contested_rss_vote_state_fields(
     query_mut_fn: MutFn,
@@ -324,9 +324,9 @@ async fn contested_rss_vote_state_fields(
     setup_logs();
 
     let cfg = Config::new();
-    check_mn_voting_prerequisities(&cfg)
+    check_mn_voting_prerequisites(&cfg)
         .await
-        .expect("prerequisities");
+        .expect("prerequisites");
 
     let mut query = base_query(&cfg);
     query_mut_fn(&mut query);

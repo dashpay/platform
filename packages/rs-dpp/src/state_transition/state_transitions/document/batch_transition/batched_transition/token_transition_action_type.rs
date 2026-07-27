@@ -118,3 +118,52 @@ impl TryFrom<&str> for TokenTransitionActionType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The happy paths and basic error case are already covered in
+    // batch_transition/tests.rs. The tests below add coverage for
+    // edge cases NOT exercised there.
+
+    #[test]
+    fn try_from_str_returns_protocol_error_with_unknown_action_substring() {
+        // Verify the specific error message structure (only is_err() is
+        // checked elsewhere) — this exercises the format!() in the catch-all.
+        let err = TokenTransitionActionType::try_from("not_a_real_action").unwrap_err();
+        match err {
+            ProtocolError::Generic(msg) => {
+                assert!(msg.contains("unknown token transition action type"));
+                assert!(msg.contains("not_a_real_action"));
+            }
+            other => panic!("expected ProtocolError::Generic, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn try_from_str_errors_for_empty_string() {
+        assert!(TokenTransitionActionType::try_from("").is_err());
+    }
+
+    #[test]
+    fn try_from_str_does_not_accept_mint_keyword() {
+        // Known quirk: "issuance" maps to Mint, but "mint" itself is NOT valid.
+        // Locks in this surprising aliasing behavior.
+        assert!(TokenTransitionActionType::try_from("mint").is_err());
+    }
+
+    #[test]
+    fn try_from_str_is_case_sensitive_on_basic_variants() {
+        assert!(TokenTransitionActionType::try_from("Burn").is_err());
+        assert!(TokenTransitionActionType::try_from("BURN").is_err());
+        assert!(TokenTransitionActionType::try_from("Transfer").is_err());
+    }
+
+    #[test]
+    fn try_from_str_does_not_trim_whitespace() {
+        assert!(TokenTransitionActionType::try_from(" burn").is_err());
+        assert!(TokenTransitionActionType::try_from("burn ").is_err());
+        assert!(TokenTransitionActionType::try_from("\tburn").is_err());
+    }
+}

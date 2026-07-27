@@ -8,6 +8,7 @@ use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 use std::fmt::{Debug, Formatter};
 
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
@@ -41,6 +42,8 @@ pub struct Platform<C> {
     pub config: PlatformConfig,
     /// Core RPC Client
     pub core_rpc: C,
+    /// CheckTx-only proof-verification admission control
+    pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
 }
 
 // @append_only
@@ -144,15 +147,6 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
-        if let Some(initial_protocol_version) = initial_protocol_version {
-            if initial_protocol_version > 1 {
-                drive
-                    .cache
-                    .system_data_contracts
-                    .reload_system_contracts(PlatformVersion::get(initial_protocol_version)?)?;
-            }
-        }
-
         if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
@@ -161,12 +155,6 @@ impl<C> Platform<C> {
                     "execution state should be stored as well as protocol version".to_string(),
                 )));
             };
-            if platform_version.protocol_version > 1 {
-                drive
-                    .cache
-                    .system_data_contracts
-                    .reload_system_contracts(platform_version)?;
-            }
 
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
@@ -252,6 +240,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         };
 
         Ok(platform)
@@ -285,6 +274,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         })
     }
 }
@@ -297,5 +287,82 @@ impl<C> Drop for Platform<C> {
             tracing::error!(?error, "grovedb flush failed");
         }
         tracing::debug!("platform shutdown complete");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+
+    #[test]
+    fn debug_platform_state_ref_contains_state_and_config() {
+        let platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state = platform.state.load();
+        let psr = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+        };
+        let s = format!("{:?}", psr);
+        assert!(s.contains("state"));
+        assert!(s.contains("config"));
+    }
+
+    #[test]
+    fn debug_platform_is_minimal() {
+        let platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let s = format!("{:?}", platform.platform);
+        // The Debug impl intentionally outputs just "Platform"
+        assert_eq!(s, "Platform");
+    }
+
+    #[test]
+    fn platform_state_ref_from_platform_ref_forwards_fields() {
+        let platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state = platform.state.load();
+        let pref = PlatformRef {
+            drive: &platform.drive,
+            state: &state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+        let psr: PlatformStateRef = (&pref).into();
+        // Both references should point at the same config and state
+        assert!(std::ptr::eq(psr.config, pref.config));
+        assert!(std::ptr::eq(psr.state, pref.state));
+        assert!(std::ptr::eq(psr.drive, pref.drive));
+    }
+
+    #[test]
+    fn open_with_latest_protocol_version_succeeds() {
+        let tp = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+        // Protocol version set correctly
+        let state = tp.state.load();
+        assert_eq!(
+            state.current_protocol_version_in_consensus(),
+            PlatformVersion::latest().protocol_version
+        );
+        // No checkpoint states on fresh DB
+        assert!(tp.checkpoint_platform_states.load().is_empty());
+    }
+
+    #[test]
+    fn open_with_initial_protocol_version_first_succeeds() {
+        let first = PlatformVersion::first().protocol_version;
+        let tp = TestPlatformBuilder::new()
+            .with_initial_protocol_version(first)
+            .build_with_mock_rpc();
+        let state = tp.state.load();
+        assert_eq!(state.current_protocol_version_in_consensus(), first);
+    }
+
+    #[test]
+    fn committed_block_height_guard_initialized_to_zero_on_fresh_db() {
+        let tp = TestPlatformBuilder::new().build_with_mock_rpc();
+        use std::sync::atomic::Ordering;
+        assert_eq!(tp.committed_block_height_guard.load(Ordering::Relaxed), 0);
     }
 }

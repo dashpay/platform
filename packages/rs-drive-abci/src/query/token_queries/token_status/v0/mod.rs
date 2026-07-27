@@ -15,6 +15,7 @@ use dpp::check_validation_result_with_data;
 use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -24,6 +25,15 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetTokenStatusesResponseV0>, Error> {
+        if token_ids.len() > platform_version.drive_abci.query.max_returned_elements as usize {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::InvalidLimit(format!(
+                    "trying to get {} token statuses, maximum is {}",
+                    token_ids.len(),
+                    platform_version.drive_abci.query.max_returned_elements
+                )),
+            )));
+        }
         let token_ids: Vec<[u8; 32]> = check_validation_result_with_data!(token_ids
             .into_iter()
             .map(|token_id| {
@@ -72,5 +82,235 @@ impl<C> Platform<C> {
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use crate::query::tests::setup_platform_with_token_state;
+    use dapi_grpc::platform::v0::get_token_statuses_response::get_token_statuses_response_v0;
+    use dpp::dashcore::Network;
+
+    #[test]
+    fn test_invalid_token_id() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![vec![0; 8]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::InvalidArgument(msg)] if msg.contains("token_id")
+        ));
+    }
+
+    #[test]
+    fn test_token_ids_exceeding_max_limit_is_rejected() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: (0..=max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(matches!(
+            result.errors.as_slice(),
+            [QueryError::Query(
+                drive::error::query::QuerySyntaxError::InvalidLimit(_)
+            )]
+        ));
+    }
+
+    #[test]
+    fn test_token_ids_at_max_limit_is_accepted() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let max = version.drive_abci.query.max_returned_elements as usize;
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: (0..max).map(|i| vec![i as u8; 32]).collect(),
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(
+            !result.errors.iter().any(|e| matches!(
+                e,
+                QueryError::Query(drive::error::query::QuerySyntaxError::InvalidLimit(_))
+            )),
+            "should not be rejected at exactly the max limit"
+        );
+    }
+
+    #[test]
+    fn test_query_with_empty_state() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![vec![0; 32]],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_token_statuses_response_v0::Result::TokenStatuses(statuses)) => {
+                assert_eq!(statuses.token_statuses.len(), 1);
+                // Status should be None for nonexistent token
+                assert!(statuses.token_statuses[0].paused.is_none());
+            }
+            _ => panic!("expected TokenStatuses result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![vec![0; 32]],
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetTokenStatusesResponseV0 {
+                result: Some(get_token_statuses_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn test_query_token_not_paused() {
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        // Token 0 is NOT paused - status may be None or Some(false) depending on
+        // whether initial status was written
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![token_ids[0].to_vec()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_token_statuses_response_v0::Result::TokenStatuses(statuses)) => {
+                assert_eq!(statuses.token_statuses.len(), 1);
+                // Token 0 was not explicitly paused, so paused is either None or Some(false)
+                assert_ne!(statuses.token_statuses[0].paused, Some(true));
+            }
+            _ => panic!("expected TokenStatuses result"),
+        }
+    }
+
+    #[test]
+    fn test_query_token_paused() {
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        // Token 1 IS paused
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![token_ids[1].to_vec()],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_token_statuses_response_v0::Result::TokenStatuses(statuses)) => {
+                assert_eq!(statuses.token_statuses.len(), 1);
+                assert_eq!(statuses.token_statuses[0].paused, Some(true));
+            }
+            _ => panic!("expected TokenStatuses result"),
+        }
+    }
+
+    #[test]
+    fn test_query_multiple_tokens() {
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![
+                token_ids[0].to_vec(),
+                token_ids[1].to_vec(),
+                token_ids[2].to_vec(),
+            ],
+            prove: false,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        let data = result.data.unwrap();
+        match data.result {
+            Some(get_token_statuses_response_v0::Result::TokenStatuses(statuses)) => {
+                assert_eq!(statuses.token_statuses.len(), 3);
+                // Exactly one should be paused (token_1)
+                let paused_count = statuses
+                    .token_statuses
+                    .iter()
+                    .filter(|s| s.paused == Some(true))
+                    .count();
+                assert_eq!(paused_count, 1);
+            }
+            _ => panic!("expected TokenStatuses result"),
+        }
+    }
+
+    #[test]
+    fn test_query_with_data_proof() {
+        let (platform, state, version, _, token_ids, _) = setup_platform_with_token_state();
+
+        let request = GetTokenStatusesRequestV0 {
+            token_ids: vec![token_ids[0].to_vec(), token_ids[1].to_vec()],
+            prove: true,
+        };
+
+        let result = platform
+            .query_token_statuses_v0(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty());
+        assert!(matches!(
+            result.data,
+            Some(GetTokenStatusesResponseV0 {
+                result: Some(get_token_statuses_response_v0::Result::Proof(_)),
+                metadata: Some(_),
+            })
+        ));
     }
 }

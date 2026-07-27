@@ -1,0 +1,21 @@
+{
+  "name": "qa-contract",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "On-chain QA framework storage layer (data contract + scripts) for Dash Platform testnet.",
+  "engines": {
+    "node": ">=18.18"
+  },
+  "scripts": {
+    "register": "node src/register.mjs",
+    "seed": "node src/seed.mjs",
+    "submit-run": "node src/submit-run.mjs",
+    "query": "node src/query.mjs",
+    "parse": "node src/parse-test-plan.mjs",
+    "derive-key": "node src/derive-identity-key.mjs"
+  },
+  "dependencies": {
+    "@dashevo/evo-sdk": "^4.0.0-rc.2"
+  }
+}

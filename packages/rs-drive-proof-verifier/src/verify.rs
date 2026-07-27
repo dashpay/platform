@@ -62,7 +62,9 @@ pub(crate) fn verify_tenderdash_proof(
 
     let state_id_hash = state_id
         .calculate_msg_hash(&chain_id, mtd.height as i64, proof.round as i32)
-        .expect("failed to calculate state id hash");
+        .map_err(|e| Error::ResponseDecodeError {
+            error: format!("failed to calculate state id hash: {}", e),
+        })?;
 
     let commit = CanonicalVote {
         r#type: SignedMsgType::Precommit.into(),
@@ -77,7 +79,11 @@ pub(crate) fn verify_tenderdash_proof(
     let sign_digest = commit
         .calculate_sign_hash(
             &chain_id,
-            quorum_type.try_into().expect("quorum type out of range"),
+            quorum_type
+                .try_into()
+                .map_err(|_| Error::ResponseDecodeError {
+                    error: format!("quorum type out of range: {}", quorum_type),
+                })?,
             &quorum_hash,
             height as i64,
             round as i32,
@@ -138,4 +144,397 @@ pub fn verify_signature_digest(
     );
 
     Ok(signature.verify(public_key, sign_digest).is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProviderError;
+    use dpp::data_contract::TokenConfiguration;
+    use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
+    use dpp::version::PlatformVersion;
+    use std::sync::Arc;
+
+    /// Minimal ContextProvider stub that returns a dummy quorum public key.
+    /// This allows the test to reach the vulnerable `.expect()` on line 80
+    /// without failing earlier in the verification pipeline.
+    struct StubContextProvider;
+
+    impl ContextProvider for StubContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            // Return a dummy 48-byte public key; it does not need to be
+            // cryptographically valid because the panic occurs before the
+            // signature check.
+            Ok([0u8; 48])
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// Verify that an out-of-range `quorum_type` from a malicious node
+    /// returns an error instead of panicking.
+    ///
+    /// `verify_tenderdash_proof` receives `quorum_type` as a `u32` from an
+    /// untrusted gRPC response and converts it to `u8`. Any value > 255
+    /// must produce an `Err`, not a panic.
+    #[test]
+    fn test_malicious_quorum_type_returns_error() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32], // valid 32-byte hash so we pass the earlier check
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: u32::MAX, // out-of-range: cannot fit in u8
+        };
+
+        let metadata = ResponseMetadata {
+            height: 100,
+            core_chain_locked_height: 1,
+            epoch: 0,
+            time_ms: 1_000_000,
+            protocol_version: 1,
+            chain_id: "test-chain".to_string(),
+        };
+
+        let provider = StubContextProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected error for out-of-range quorum_type");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("quorum type out of range"),
+            "error message should mention quorum type out of range, got: {err_msg}"
+        );
+    }
+
+    /// Helper: create a deterministic BLS key pair for testing.
+    fn test_keypair() -> (
+        bls_signatures::SecretKey<Bls12381G2Impl>,
+        bls_signatures::PublicKey<Bls12381G2Impl>,
+    ) {
+        let sk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_hash(b"test-key-seed");
+        let pk = sk.public_key();
+        (sk, pk)
+    }
+
+    /// A ContextProvider that returns a cryptographically valid public key
+    /// so that tests can progress past the public-key parsing step and
+    /// reach deeper code paths (e.g. signature verification).
+    struct ValidKeyContextProvider {
+        pubkey_bytes: [u8; 48],
+    }
+
+    impl ValidKeyContextProvider {
+        fn new() -> Self {
+            let (_, pk) = test_keypair();
+            let pk_vec: Vec<u8> = (&pk).into();
+            let mut pubkey_bytes = [0u8; 48];
+            pubkey_bytes.copy_from_slice(&pk_vec);
+            Self { pubkey_bytes }
+        }
+    }
+
+    impl ContextProvider for ValidKeyContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok(self.pubkey_bytes)
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// Helper to build default test metadata.
+    fn test_metadata() -> ResponseMetadata {
+        ResponseMetadata {
+            height: 100,
+            core_chain_locked_height: 1,
+            epoch: 0,
+            time_ms: 1_000_000,
+            protocol_version: 1,
+            chain_id: "test-chain".to_string(),
+        }
+    }
+
+    /// An all-zeros 96-byte signature must be rejected early by
+    /// `verify_signature_digest` with a `SignatureVerificationError`
+    /// containing "empty signature".
+    #[test]
+    fn test_verify_signature_digest_all_zeros() {
+        let (_, pk) = test_keypair();
+        let sign_digest = b"some-digest-data";
+        let signature = [0u8; 96];
+
+        let result = verify_signature_digest(sign_digest, &signature, &pk);
+        let err = result.expect_err("expected error for all-zero signature");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("empty signature"),
+            "error should mention empty signature, got: {err_msg}"
+        );
+    }
+
+    /// Random non-zero 96 bytes that do not form a valid compressed BLS
+    /// signature must cause `verify_signature_digest` to return
+    /// `SignatureVerificationError`.
+    #[test]
+    fn test_verify_signature_digest_invalid_compressed() {
+        let (_, pk) = test_keypair();
+        let sign_digest = b"some-digest-data";
+
+        // Construct 96 non-zero bytes that are not a valid BLS signature.
+        // We use a simple pattern that is extremely unlikely to be a valid
+        // compressed G2 point.
+        let mut signature = [0xFFu8; 96];
+        signature[0] = 0x01; // ensure it is not all-0xFF either
+
+        let result = verify_signature_digest(sign_digest, &signature, &pk);
+        let err = result.expect_err("expected error for invalid compressed signature");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Could not verify signature digest"),
+            "error should mention failed verification, got: {err_msg}"
+        );
+    }
+
+    /// A `Proof` whose `quorum_hash` is not exactly 32 bytes must
+    /// produce a `ResponseDecodeError` mentioning "invalid quorum hash
+    /// size".
+    #[test]
+    fn test_verify_tenderdash_proof_invalid_quorum_hash_size() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 16], // too short — not 32 bytes
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+
+        let metadata = test_metadata();
+        let provider = StubContextProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected error for invalid quorum hash size");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("invalid quorum hash size"),
+            "error should mention invalid quorum hash size, got: {err_msg}"
+        );
+    }
+
+    /// A `Proof` with a valid 32-byte `quorum_hash` but a signature
+    /// that is not exactly 96 bytes must produce an
+    /// `InvalidSignatureFormat` error mentioning "invalid signature
+    /// size".
+    #[test]
+    fn test_verify_tenderdash_proof_invalid_signature_size() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32],
+            signature: vec![0u8; 50], // wrong size — not 96 bytes
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected error for invalid signature size");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("invalid signature size"),
+            "error should mention invalid signature size, got: {err_msg}"
+        );
+    }
+
+    /// ContextProvider that reports a failure from get_quorum_public_key.
+    struct ErroringProvider;
+
+    impl ContextProvider for ErroringProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _pv: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+        fn get_token_configuration(
+            &self,
+            _id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+        fn get_quorum_public_key(
+            &self,
+            _qt: u32,
+            _qh: [u8; 32],
+            _h: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::InvalidQuorum(
+                "simulated provider failure".to_string(),
+            ))
+        }
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// When the provider fails to return a quorum public key, the error must
+    /// propagate (wrapped into Error::ContextProviderError) rather than panic.
+    #[test]
+    fn test_verify_tenderdash_proof_provider_error_propagates() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32],
+            signature: vec![0u8; 96],
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+
+        let metadata = test_metadata();
+        let provider = ErroringProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected provider error to propagate");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("simulated provider failure"),
+            "error should contain provider message, got: {err_msg}"
+        );
+    }
+
+    /// A provider that returns 48 zero-bytes as the "public key" causes the
+    /// `PublicKey::try_from` step to fail, producing `InvalidPublicKey`.
+    #[test]
+    fn test_verify_tenderdash_proof_invalid_public_key() {
+        // Define a short-lived provider that returns an all-zeros 48-byte key
+        // (not a valid BLS point).
+        struct BadKeyProvider;
+        impl ContextProvider for BadKeyProvider {
+            fn get_data_contract(
+                &self,
+                _id: &Identifier,
+                _pv: &PlatformVersion,
+            ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_token_configuration(
+                &self,
+                _id: &Identifier,
+            ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+                Ok(None)
+            }
+            fn get_quorum_public_key(
+                &self,
+                _qt: u32,
+                _qh: [u8; 32],
+                _h: u32,
+            ) -> Result<[u8; 48], ContextProviderError> {
+                Ok([0u8; 48])
+            }
+            fn get_platform_activation_height(
+                &self,
+            ) -> Result<CoreBlockHeight, ContextProviderError> {
+                Ok(1)
+            }
+        }
+
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32],
+            signature: vec![1u8; 96], // non-zero to skip empty check
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+        let metadata = test_metadata();
+        let provider = BadKeyProvider;
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected InvalidPublicKey");
+        // `PublicKey::try_from([0u8; 48])` deterministically fails in the
+        // BLS12-381 library (the infinity/identity encoding is a `0xC0` prefix,
+        // not all-zeros), so this must map to `Error::InvalidPublicKey` and
+        // cannot fall through to signature verification. The signature here is
+        // `vec![1u8; 96]` (non-zero), so the "empty signature" branch is also
+        // unreachable.
+        assert!(
+            matches!(&err, Error::InvalidPublicKey { .. }),
+            "expected InvalidPublicKey, got: {err}"
+        );
+    }
+
+    /// A `Proof` with 96 zero-byte signature that reaches
+    /// `verify_signature_digest` through `verify_tenderdash_proof` must
+    /// trigger the "empty signature" early-return error.
+    #[test]
+    fn test_verify_tenderdash_proof_empty_signature() {
+        let proof = Proof {
+            grovedb_proof: vec![],
+            quorum_hash: vec![0u8; 32],
+            signature: vec![0u8; 96], // all zeros — "empty signature"
+            round: 1,
+            block_id_hash: vec![0u8; 32],
+            quorum_type: 1,
+        };
+
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
+        let err = result.expect_err("expected error for empty signature");
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("empty signature"),
+            "error should mention empty signature, got: {err_msg}"
+        );
+    }
 }

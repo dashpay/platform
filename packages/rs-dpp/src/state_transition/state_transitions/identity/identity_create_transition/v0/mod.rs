@@ -1,20 +1,18 @@
-#[cfg(feature = "state-transition-json-conversion")]
-mod json_conversion;
 mod proved;
 mod state_transition_like;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
-mod value_conversion;
 mod version;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use std::convert::TryFrom;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
 use platform_value::BinaryData;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
@@ -29,9 +27,10 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase"),
     serde(try_from = "IdentityCreateTransitionV0Inner")
@@ -49,13 +48,13 @@ pub struct IdentityCreateTransitionV0 {
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
+    #[cfg_attr(feature = "serde-conversion", serde(skip))]
     #[platform_signable(exclude_from_sig_hash)]
     pub identity_id: Identifier,
 }
 
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -125,5 +124,229 @@ impl IdentityCreateTransitionV0 {
                 received: version,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+    use crate::state_transition::{
+        StateTransitionHasUserFeeIncrease, StateTransitionLike, StateTransitionOwned,
+        StateTransitionSingleSigned, StateTransitionType,
+    };
+    use platform_value::BinaryData;
+
+    fn make_create_v0() -> IdentityCreateTransitionV0 {
+        IdentityCreateTransitionV0 {
+            public_keys: vec![],
+            asset_lock_proof: AssetLockProof::default(),
+            user_fee_increase: 0,
+            signature: [0u8; 65].to_vec().into(),
+            identity_id: Identifier::random(),
+        }
+    }
+
+    #[test]
+    fn test_default() {
+        let t = IdentityCreateTransitionV0::default();
+        assert_eq!(t.user_fee_increase, 0);
+        assert!(t.public_keys.is_empty());
+        assert!(t.signature.is_empty());
+    }
+
+    #[test]
+    fn test_state_transition_like() {
+        let t = make_create_v0();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityCreate
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        assert_eq!(t.modified_data_ids(), vec![t.identity_id]);
+    }
+
+    #[test]
+    fn test_unique_identifiers() {
+        let t = make_create_v0();
+        let ids = t.unique_identifiers();
+        assert_eq!(ids.len(), 1);
+        assert!(!ids[0].is_empty());
+    }
+
+    #[test]
+    fn test_owner_id() {
+        let t = make_create_v0();
+        assert_eq!(t.owner_id(), t.identity_id);
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_create_v0();
+        assert_eq!(t.user_fee_increase(), 0);
+        t.set_user_fee_increase(7);
+        assert_eq!(t.user_fee_increase(), 7);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_create_v0();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![1, 2, 3]));
+        assert_eq!(t.signature().as_slice(), &[1, 2, 3]);
+        t.set_signature_bytes(vec![4, 5]);
+        assert_eq!(t.signature().as_slice(), &[4, 5]);
+    }
+
+    #[test]
+    fn test_into_state_transition() {
+        use crate::state_transition::StateTransition;
+        let t = make_create_v0();
+        let st: StateTransition = t.into();
+        match st {
+            StateTransition::IdentityCreate(_) => {}
+            _ => panic!("expected IdentityCreate"),
+        }
+    }
+
+    #[test]
+    fn test_accessors() {
+        let mut t = make_create_v0();
+        assert!(t.public_keys().is_empty());
+        assert_eq!(t.identity_id(), t.identity_id);
+
+        // Test set_public_keys and add_public_keys
+        t.set_public_keys(vec![]);
+        assert!(t.public_keys().is_empty());
+    }
+
+    // Legacy `StateTransitionValueConvert` round-trip tests deleted in
+    // Phase D step 9. The canonical `JsonConvertible` / `ValueConvertible`
+    // round-trip is exercised via the outer enum derive — these tested
+    // methods that no longer exist.
+
+    fn chain_proof() -> AssetLockProof {
+        use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        AssetLockProof::Chain(ChainAssetLockProof::new(42, [3u8; 36]))
+    }
+
+    #[test]
+    fn try_from_inner_populates_identity_id_from_asset_lock_proof() {
+        let proof = chain_proof();
+        let inner = IdentityCreateTransitionV0Inner {
+            public_keys: vec![],
+            asset_lock_proof: proof.clone(),
+            user_fee_increase: 0,
+            signature: BinaryData::new(vec![]),
+        };
+        let t = IdentityCreateTransitionV0::try_from(inner).expect("try_from");
+        let expected = proof.create_identifier().expect("create_identifier");
+        assert_eq!(t.identity_id, expected);
+    }
+
+    #[test]
+    fn asset_lock_proved_sets_identity_id_and_proof() {
+        let mut t = IdentityCreateTransitionV0 {
+            public_keys: vec![],
+            asset_lock_proof: chain_proof(),
+            user_fee_increase: 0,
+            signature: [0u8; 65].to_vec().into(),
+            identity_id: Identifier::random(),
+        };
+        let original_identity_id = t.identity_id;
+        // Use a different chain proof (different outpoint) to produce a new identity_id.
+        use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        let proof = AssetLockProof::Chain(ChainAssetLockProof::new(99, [7u8; 36]));
+        t.set_asset_lock_proof(proof.clone())
+            .expect("set_asset_lock_proof");
+        let expected_id = proof.create_identifier().expect("create_identifier");
+        assert_eq!(t.identity_id, expected_id);
+        assert_ne!(original_identity_id, t.identity_id);
+        assert_eq!(t.asset_lock_proof(), &proof);
+    }
+
+    #[test]
+    fn accessors_manipulate_public_keys() {
+        use crate::identity::{KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+        let mut t = make_create_v0();
+        assert!(t.public_keys().is_empty());
+
+        let key = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        t.set_public_keys(vec![key.clone()]);
+        assert_eq!(t.public_keys().len(), 1);
+
+        // Access mutable
+        let key2 = IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            signature: BinaryData::new(vec![]),
+        });
+        let mut more = vec![key2.clone()];
+        t.add_public_keys(&mut more);
+        assert_eq!(t.public_keys().len(), 2);
+        assert!(more.is_empty(), "add_public_keys drains input Vec");
+    }
+
+    #[test]
+    fn try_from_identity_v0_constructs_from_identity() {
+        use crate::identity::accessors::IdentityGettersV0;
+        use crate::identity::{Identity, IdentityV0};
+        use std::collections::BTreeMap;
+
+        let identity_v0 = IdentityV0 {
+            id: Identifier::random(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let identity: Identity = identity_v0.into();
+        let proof = chain_proof();
+        let t = IdentityCreateTransitionV0::try_from_identity_v0(&identity, proof.clone())
+            .expect("try_from_identity_v0");
+        assert!(t.public_keys.is_empty());
+        assert_eq!(t.asset_lock_proof, proof);
+        // identity_id is from the proof, NOT the identity itself.
+        let expected = proof.create_identifier().expect("create_identifier");
+        assert_eq!(t.identity_id, expected);
+        // Demonstrate: the transition's identity_id may differ from identity.id()
+        let _ = identity.id();
+    }
+
+    #[test]
+    fn try_from_identity_dispatches_v0_version() {
+        use crate::identity::{Identity, IdentityV0};
+        use crate::version::LATEST_PLATFORM_VERSION;
+        use std::collections::BTreeMap;
+
+        let identity_v0 = IdentityV0 {
+            id: Identifier::random(),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        };
+        let identity: Identity = identity_v0.into();
+        let t = IdentityCreateTransitionV0::try_from_identity(
+            &identity,
+            chain_proof(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect("try_from_identity");
+        assert!(t.public_keys.is_empty());
     }
 }

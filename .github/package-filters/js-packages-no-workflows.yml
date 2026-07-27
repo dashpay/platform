@@ -4,6 +4,12 @@
 '@dashevo/token-history-contract': &token-history-contract
   - packages/token-history-contract/**
 
+'@dashevo/document-history-contract': &document-history-contract
+  - packages/document-history-contract/**
+
+'@dashevo/keyword-search-contract': &keyword-search-contract
+  - packages/keyword-search-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - packages/dashpay-contract/**
 
@@ -27,6 +33,8 @@
   - *withdrawals-contract
   - *wallet-utils-contract
   - *token-history-contract
+  - *document-history-contract
+  - *keyword-search-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**
@@ -34,6 +42,22 @@
   - packages/rs-platform-version/**
   - packages/rs-platform-versioning/**
   - packages/rs-dpp/**
+  # NOTE: do not add `!packages/rs-dpp/**/tests.rs` style negation
+  # patterns here. The dispatcher in `tests.yml` runs these filters
+  # via `dorny/paths-filter@v4` with the default
+  # `predicate-quantifier: some`, under which each pattern (including
+  # `!`-prefixed ones) is OR'd independently. A `!` pattern then
+  # "matches" every file that doesn't match the negated path — i.e.
+  # virtually every file in the repo — which trips this filter on
+  # Swift-only / Rust-only changes and cascades through every other
+  # filter that aliases `*wasm-dpp` (dapi, dapi-client, wallet-lib,
+  # dash, dashmate, platform-test-suite, …). Cheaper to over-trigger
+  # the WASM tests on rs-dpp test-only edits than to mis-trigger
+  # half the JS test matrix on every PR.
+
+'@dashevo/wasm-dpp2': &wasm-dpp2
+  - packages/wasm-dpp2/**
+  - *wasm-dpp
 
 '@dashevo/dapi-grpc': &dapi-grpc
   - packages/dapi-grpc/**
@@ -86,6 +110,10 @@ dashmate:
   - packages/rs-platform-version/**
   - packages/rs-dash-platform-macros/**
   - packages/dapi-grpc/**
+  # NOTE: do not add `!path` negation patterns here — see the long
+  # explanation on `@dashevo/wasm-dpp` above. Same `dorny/paths-filter@v4`
+  # + `predicate-quantifier: some` interaction trips this filter on
+  # unrelated changes and cascades into every consumer (`*wasm-sdk`).
 
 '@dashevo/evo-sdk': &evo-sdk
   - packages/js-evo-sdk/**

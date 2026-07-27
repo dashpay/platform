@@ -13,10 +13,10 @@ use dpp::state_transition::StateTransitionLike;
 use dpp::voting::votes::Vote;
 use dpp::ProtocolError;
 
-/// Waitable trait provides a wait to wait for a response of a state transition after it has been broadcast and
+/// Waitable trait provides a way to wait for a response of a state transition after it has been broadcast and
 /// receive altered objects.
 ///
-/// This is simple conveniance trait wrapping the [`BroadcastStateTransition::wait_for_response`] method.
+/// This is a simple convenience trait wrapping the [`BroadcastStateTransition::wait_for_response`] method.
 #[async_trait::async_trait]
 pub trait Waitable: Sized {
     async fn wait_for_response(
@@ -32,7 +32,17 @@ impl Waitable for DataContract {
         state_transition: StateTransition,
         settings: Option<PutSettings>,
     ) -> Result<DataContract, Error> {
-        state_transition.wait_for_response(sdk, settings).await
+        match &state_transition {
+            // A contract update proof authenticates the current contract
+            // body — a height-pinned snapshot — and cannot bind this
+            // update's execution, so the snapshot wait is required.
+            StateTransition::DataContractUpdate(_) => {
+                state_transition
+                    .wait_for_affected_state(sdk, settings)
+                    .await
+            }
+            _ => state_transition.wait_for_response(sdk, settings).await,
+        }
     }
 }
 

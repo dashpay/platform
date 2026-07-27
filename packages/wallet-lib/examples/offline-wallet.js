@@ -24,7 +24,7 @@ wallet.getAccount({ index: 0 }).then((account) => {
     const specific = account.getAddress(100);
     logger.info('Specific', specific);
 
-    // Generate a batch of all 200 first addreses
+    // Generate a batch of all 200 first addresses
     const poolAddresses = [];
     for (let i = 0; i <= 200; i += 1) {
       poolAddresses.push(account.getAddress(i).address);

@@ -38,6 +38,8 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_optional_sum_tree_total_value: FeatureVersion,
     pub grove_get_raw_optional_item: FeatureVersion,
     pub grove_get_big_sum_tree_total_value: FeatureVersion,
+    pub grove_get_proved_path_query_v1: FeatureVersion,
+    pub grove_commitment_tree_count: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,6 +60,25 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
     pub batch_insert_empty_sum_tree: FeatureVersion,
+    pub batch_insert_empty_count_tree: FeatureVersion,
+    pub batch_insert_empty_count_sum_tree: FeatureVersion,
+    pub batch_insert_empty_provable_count_tree: FeatureVersion,
+    /// Provable sum tree (range-summable). Mirrors
+    /// [`Self::batch_insert_empty_provable_count_tree`] for the sum
+    /// surface — added alongside the v3 sum-tree feature.
+    pub batch_insert_empty_provable_sum_tree: FeatureVersion,
+    /// Combined provable count + sum tree. Used when an index opts into
+    /// both `rangeCountable: true` and `rangeSummable: true`. Activates
+    /// when grovedb PR 670 lands the `Element::ProvableCountSumTree`
+    /// callable empty-tree variant.
+    pub batch_insert_empty_provable_count_sum_tree: FeatureVersion,
+    /// Fully-provable combined count + sum tree (PCPS). Used when an
+    /// index opts into BOTH `rangeCountable: true` AND `rangeSummable:
+    /// true`: per-node counts AND per-node sums are committed to every
+    /// internal merk node, so range queries can answer
+    /// `AggregateCountOnRange` / `AggregateSumOnRange` (and the
+    /// combined variant once grovedb PR 670 ships) over a single tree.
+    pub batch_insert_empty_provable_count_provable_sum_tree: FeatureVersion,
     pub batch_move: FeatureVersion,
     pub batch_insert_item_with_sum_item_if_not_exists: FeatureVersion,
 }

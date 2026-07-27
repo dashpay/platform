@@ -14,9 +14,9 @@ make_grpc_request() {
     local method=$1
     local data=$2
     local output_file=$3
-    
+
     echo "Fetching $method..."
-    
+
     # gRPC-web uses base64 encoded protobuf in the body
     # This is a simplified example - real implementation would need proper protobuf encoding
     curl -X POST \
@@ -27,7 +27,7 @@ make_grpc_request() {
         -o "$OUTPUT_DIR/${output_file}" \
         --insecure \
         2>/dev/null
-    
+
     if [ $? -eq 0 ]; then
         echo "✓ Saved to $OUTPUT_DIR/${output_file}"
     else

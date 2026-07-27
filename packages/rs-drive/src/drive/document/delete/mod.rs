@@ -61,6 +61,8 @@ mod tests {
     use crate::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::Drive;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -74,6 +76,7 @@ mod tests {
     use dpp::document::Document;
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
+    use dpp::identifier::Identifier;
     use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
 
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
@@ -182,6 +185,39 @@ mod tests {
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_nonexistent_document_returns_error() {
+        let (drive, contract) = setup_dashpay("delete-nonexistent", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_id = Identifier::random();
+
+        let err = drive
+            .delete_document_for_contract(
+                document_id,
+                &contract,
+                "profile",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected deleting a nonexistent document to fail");
+
+        assert!(
+            matches!(
+                err,
+                Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(_))
+            ) || matches!(
+                err,
+                Error::GroveDB(ref grovedb_error)
+                    if matches!(grovedb_error.as_ref(), grovedb::Error::PathKeyNotFound(_))
+            )
+        );
     }
 
     #[test]
@@ -984,5 +1020,437 @@ mod tests {
         assert!(fee_result.fee_refunds.0.is_empty());
         assert_eq!(fee_result.storage_fee, 0);
         assert_eq!(fee_result.processing_fee, 71994700);
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_id() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        // Verify the document exists
+        let sql_string =
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+        assert_eq!(results.len(), 1);
+
+        let document_id = bs58::decode("AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Delete using contract_id instead of contract reference
+        drive
+            .delete_document_for_contract_id(
+                document_id,
+                contract.id(),
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("expected to be able to delete the document by contract id");
+
+        // Verify the document was deleted
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_id_estimated_costs() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        let document_id = bs58::decode("AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Use apply=false to exercise the estimation costs path
+        let fee_result = drive
+            .delete_document_for_contract_id(
+                document_id,
+                contract.id(),
+                "person",
+                BlockInfo::default(),
+                false,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect("expected to estimate delete costs");
+
+        // Should have processing fee but no storage fee for estimation
+        assert_eq!(fee_result.storage_fee, 0);
+        assert!(fee_result.processing_fee > 0);
+
+        // Verify the document still exists after dry-run delete (apply=false)
+        let sql_string =
+            "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "document should still exist after dry-run delete"
+        );
+    }
+
+    #[test]
+    fn test_delete_document_keeps_history_returns_error() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        let document_id = bs58::decode("AYjYxDqLy2hvGQADqE6FAkBnQEpJSzNd3CRw1tpS6vZ7")
+            .into_vec()
+            .expect("should decode")
+            .as_slice()
+            .try_into()
+            .expect("this be 32 bytes");
+
+        // Attempting to delete a document that keeps history should return an error
+        let err = drive
+            .delete_document_for_contract(
+                document_id,
+                &contract,
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected deleting a history-keeping document to fail");
+
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::InvalidDeletionOfDocumentThatKeepsHistory(_))
+        ));
+    }
+
+    // ---------- Error-path tests (added for coverage) ----------
+
+    #[test]
+    fn test_delete_document_for_contract_id_nonexistent_contract_returns_error() {
+        // `delete_document_for_contract_id` resolves the contract by id. A random
+        // id that does not exist in the drive must surface as
+        // DocumentError::DataContractNotFound.
+        use crate::error::document::DocumentError;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let nonexistent_contract_id = Identifier::from(rand::thread_rng().gen::<[u8; 32]>());
+        let random_document_id = Identifier::random();
+
+        let err = drive
+            .delete_document_for_contract_id(
+                random_document_id,
+                nonexistent_contract_id,
+                "person",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected delete_document_for_contract_id with bad contract id to fail");
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_nonexistent_document_type_returns_error() {
+        // `delete_document_for_contract` must surface an error if the document
+        // type name is not present on the contract (hits
+        // DataContract::document_type_for_name `?` error branch).
+        let (drive, contract) = setup_dashpay("delete-bad-doc-type", true);
+        let platform_version = PlatformVersion::latest();
+
+        let random_document_id = Identifier::random();
+
+        let err = drive
+            .delete_document_for_contract(
+                random_document_id,
+                &contract,
+                "not_a_real_document_type",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+            )
+            .expect_err("expected delete_document_for_contract with bad type to fail");
+
+        // Should NOT be a "contract not found" error — the contract exists.
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a document-type error, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_delete_document_for_contract_id_with_named_type_operations_bad_contract() {
+        // Exercises the pub-facing
+        // `delete_document_for_contract_id_with_named_type_operations` variant
+        // which has its own DataContractNotFound error branch (via the
+        // `let Some(...) = ... else { return Err(...); }` pattern).
+        use crate::error::document::DocumentError;
+        use grovedb::batch::KeyInfoPath;
+        use grovedb::EstimatedLayerInformation;
+        use std::collections::HashMap;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).unwrap();
+
+        let nonexistent_contract_id = Identifier::from(rand::thread_rng().gen::<[u8; 32]>());
+        let random_document_id = Identifier::random();
+
+        let mut estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        > = None;
+
+        let err = drive
+            .delete_document_for_contract_id_with_named_type_operations(
+                random_document_id,
+                nonexistent_contract_id,
+                "profile",
+                &epoch,
+                None,
+                &mut estimated_costs_only_with_layer_info,
+                None,
+                platform_version,
+            )
+            .expect_err(
+                "expected delete_document_for_contract_id_with_named_type_operations to fail",
+            );
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_delete_nonexistent_document_without_apply_estimation_costs() {
+        // Delete a nonexistent document with apply=false to exercise the
+        // estimation-costs branch (different control flow than the apply=true
+        // branch already covered).
+        let (drive, contract) = setup_dashpay("delete-nonexist-estimate", true);
+        let platform_version = PlatformVersion::latest();
+
+        let document_id = Identifier::random();
+
+        // With apply=false the code takes the estimated_costs_only_with_layer_info
+        // = Some(HashMap::new()) branch. The document does not exist, so we
+        // expect an error, but a different one than the stateful path.
+        let result = drive.delete_document_for_contract(
+            document_id,
+            &contract,
+            "profile",
+            BlockInfo::default(),
+            false,
+            None,
+            platform_version,
+            Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
+        );
+
+        // The estimation-costs branch (apply=false) uses fake cost estimates
+        // instead of real grove operations, so it succeeds whether or not
+        // the document actually exists — what matters is that the branch is
+        // exercised end-to-end and produces a non-zero fee estimate.
+        let fees = result.expect("estimation path should succeed for nonexistent document");
+        assert!(
+            fees.processing_fee > 0 || fees.storage_fee > 0,
+            "expected non-zero fee estimate from estimation path, got {fees:?}"
+        );
     }
 }

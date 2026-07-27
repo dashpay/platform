@@ -6,7 +6,7 @@ use bincode::{Decode, Encode};
 use derive_more::Display;
 
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
@@ -19,8 +19,9 @@ mod property_names {
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -31,16 +32,10 @@ mod property_names {
     "recipient_owner_id"
 )]
 pub struct DocumentTransferTransitionV0 {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$revision")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$revision"))]
     pub revision: Revision,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "recipientOwnerId")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "recipientOwnerId"))]
     pub recipient_owner_id: Identifier,
 }

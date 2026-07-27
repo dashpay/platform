@@ -11,8 +11,8 @@ mod tests {
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
-    #[test]
-    fn run_chain_lock_update_quorums_not_changing() {
+    #[tokio::test]
+    async fn run_chain_lock_update_quorums_not_changing() {
         // The point of this test is to check that chain locks can be validated in the
         // simple case where quorums do not change
         let strategy = NetworkStrategy {
@@ -81,6 +81,7 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 }

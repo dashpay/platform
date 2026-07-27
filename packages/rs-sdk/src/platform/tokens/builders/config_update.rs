@@ -16,7 +16,7 @@ use dpp::tokens::calculate_token_id;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
 
-/// A builder to configure and broadcast token config_update transitions
+/// A builder to configure and broadcast token configuration update transitions
 pub struct TokenConfigUpdateTransitionBuilder {
     pub data_contract: Arc<DataContract>,
     pub token_position: TokenContractPosition,
@@ -30,7 +30,7 @@ pub struct TokenConfigUpdateTransitionBuilder {
 }
 
 impl TokenConfigUpdateTransitionBuilder {
-    /// Start building a config_update tokens transition for the provided DataContract.
+    /// Start building a token configuration update transition for the provided DataContract.
     ///
     /// # Arguments
     ///
@@ -38,7 +38,6 @@ impl TokenConfigUpdateTransitionBuilder {
     /// * `token_position` - The position of the token in the contract
     /// * `owner_id` - The identifier of the state transition owner
     /// * `update_token_configuration_item` - The token configuration change item
-    /// * `using_group_info` - Group transition info status
     ///
     /// # Returns
     ///
@@ -62,7 +61,7 @@ impl TokenConfigUpdateTransitionBuilder {
         }
     }
 
-    /// Adds a public note to the token config_update transition
+    /// Adds a public note to the token configuration update transition
     ///
     /// # Arguments
     ///
@@ -76,7 +75,7 @@ impl TokenConfigUpdateTransitionBuilder {
         self
     }
 
-    /// Adds a user fee increase to the token config_update transition
+    /// Adds a user fee increase to the token configuration update transition
     ///
     /// # Arguments
     ///
@@ -90,7 +89,7 @@ impl TokenConfigUpdateTransitionBuilder {
         self
     }
 
-    /// Adds group information to the token config update transition
+    /// Adds group information to the token configuration update transition
     ///
     /// # Arguments
     ///
@@ -107,7 +106,7 @@ impl TokenConfigUpdateTransitionBuilder {
         self
     }
 
-    /// Adds settings to the token config_update transition
+    /// Adds settings to the token configuration update transition
     ///
     /// # Arguments
     ///
@@ -121,7 +120,7 @@ impl TokenConfigUpdateTransitionBuilder {
         self
     }
 
-    /// Adds state transition creation options to the token config_update transition
+    /// Adds state transition creation options to the token configuration update transition
     ///
     /// # Arguments
     ///
@@ -138,7 +137,7 @@ impl TokenConfigUpdateTransitionBuilder {
         self
     }
 
-    /// Signs the token config_update transition
+    /// Signs the token configuration update transition
     ///
     /// # Arguments
     ///
@@ -185,7 +184,8 @@ impl TokenConfigUpdateTransitionBuilder {
             signer,
             platform_version,
             self.state_transition_creation_options,
-        )?;
+        )
+        .await?;
 
         Ok(state_transition)
     }

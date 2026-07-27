@@ -162,3 +162,45 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::{BlockHash, ChainLock};
+    use dpp::version::PlatformVersion;
+
+    /// Exercises the `Err(Error::BLSError(_))` branch of `verify_chain_lock_v0`:
+    /// when the inner `verify_chain_lock_locally` returns a BLS deserialization
+    /// error, `verify_chain_lock_v0` must swallow it and return a
+    /// `VerifyChainLockResult` with `chain_lock_signature_is_deserializable: false`
+    /// and all other fields `None`.
+    #[test]
+    fn verify_chain_lock_v0_invalid_signature_yields_not_deserializable_result() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.platform.state.load();
+        let platform_version = PlatformVersion::latest();
+
+        let bad_chain_lock = ChainLock {
+            block_height: 1,
+            block_hash: BlockHash::from_byte_array([9u8; 32]),
+            signature: [0u8; 96].into(),
+        };
+
+        // make_sure_core_is_synced=false avoids hitting core_rpc paths.
+        let result = platform
+            .platform
+            .verify_chain_lock_v0(0, &platform_state, &bad_chain_lock, false, platform_version)
+            .expect("BLS error must be wrapped into Ok(VerifyChainLockResult)");
+
+        assert!(!result.chain_lock_signature_is_deserializable);
+        assert!(result.found_valid_locally.is_none());
+        assert!(result.found_valid_by_core.is_none());
+        assert!(result.core_is_synced.is_none());
+    }
+}

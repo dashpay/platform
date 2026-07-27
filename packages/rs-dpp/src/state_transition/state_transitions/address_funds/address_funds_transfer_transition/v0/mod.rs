@@ -1,11 +1,7 @@
-#[cfg(feature = "state-transition-json-conversion")]
-mod json_conversion;
 mod state_transition_like;
 mod state_transition_validation;
 mod types;
 pub(super) mod v0_methods;
-#[cfg(feature = "state-transition-value-conversion")]
-mod value_conversion;
 mod version;
 
 use std::collections::BTreeMap;
@@ -13,12 +9,15 @@ use std::collections::BTreeMap;
 use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Debug,
     Clone,
@@ -30,14 +29,22 @@ use serde::{Deserialize, Serialize};
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[platform_serialize(unversioned)]
 #[derive(Default)]
 pub struct AddressFundsTransferTransitionV0 {
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_input_map")
+    )]
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::address_funds::serde_helpers::address_output_map_required_amount")
+    )]
     pub outputs: BTreeMap<PlatformAddress, Credits>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,

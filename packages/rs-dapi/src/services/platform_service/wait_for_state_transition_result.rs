@@ -14,6 +14,8 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
 
+const STATE_TRANSITION_HASH_SIZE: usize = 32;
+
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
     pub async fn wait_for_state_transition_result_impl(
@@ -32,14 +34,20 @@ impl PlatformServiceImpl {
 
         // Validate state transition hash
         let state_transition_hash = v0.state_transition_hash;
-        if state_transition_hash.is_empty() {
-            return Err(DapiError::InvalidArgument(
-                "state transition hash is not specified".to_string(),
-            ));
-        }
+        validate_state_transition_hash(&state_transition_hash)?;
+
+        let _wait_permit = self
+            .state_transition_wait_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                DapiError::ResourceExhausted(
+                    "too many pending state transition result waits".to_string(),
+                )
+            })?;
 
         // Convert hash to commonly used representations
-        let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
+        let hash_hex = hex::encode_upper(&state_transition_hash);
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
         let span = tracing::trace_span!("wait_for_state_transition_result", tx = %hash_hex);
@@ -285,6 +293,17 @@ impl PlatformServiceImpl {
     }
 }
 
+fn validate_state_transition_hash(hash: &[u8]) -> Result<(), DapiError> {
+    if hash.len() != STATE_TRANSITION_HASH_SIZE {
+        return Err(DapiError::InvalidArgument(format!(
+            "state transition hash must be {STATE_TRANSITION_HASH_SIZE} bytes, got {}",
+            hash.len()
+        )));
+    }
+
+    Ok(())
+}
+
 /// Convert a `DapiError` into the gRPC error response expected by waitForStateTransitionResult callers.
 pub(super) fn build_wait_for_state_transition_error_response(
     error: &DapiError,
@@ -309,4 +328,78 @@ pub(super) fn build_wait_for_state_transition_error_response(
         "Mapping DapiError to WaitForStateTransitionResultResponse"
     );
     tenderdash_status.into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+
+    #[test]
+    fn state_transition_hash_must_be_exact_width() {
+        assert!(validate_state_transition_hash(&[0; STATE_TRANSITION_HASH_SIZE]).is_ok());
+
+        for length in [0, 1, 31, 33, 20 * 1024] {
+            assert!(matches!(
+                validate_state_transition_hash(&vec![0; length]),
+                Err(DapiError::InvalidArgument(message)) if message.contains("must be 32 bytes")
+            ));
+        }
+    }
+
+    /// Extract the `StateTransitionBroadcastError` from a
+    /// `WaitForStateTransitionResultResponse`, unwrapping the V0 / Error layers.
+    fn extract_st_error(
+        response: Response<WaitForStateTransitionResultResponse>,
+    ) -> StateTransitionBroadcastError {
+        let inner = response.into_inner();
+        match inner.version {
+            Some(
+                dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version::V0(
+                    v0,
+                ),
+            ) => match v0.result {
+                Some(
+                    dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(
+                        st_err,
+                    ),
+                ) => st_err,
+                other => panic!("expected Error result, got {:?}", other),
+            },
+            other => panic!("expected V0, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn build_error_response_from_tenderdash_client_error() {
+        let tenderdash_status = TenderdashStatus::new(42, Some("td error".to_string()), None);
+        let error = DapiError::TenderdashClientError(tenderdash_status);
+        let response = build_wait_for_state_transition_error_response(&error);
+        let st_err = extract_st_error(response);
+        assert_eq!(st_err.code, 42);
+        assert_eq!(st_err.message, "td error");
+    }
+
+    #[test]
+    fn build_error_response_from_generic_dapi_error() {
+        let error = DapiError::Timeout("timed out".to_string());
+        let response = build_wait_for_state_transition_error_response(&error);
+        let st_err = extract_st_error(response);
+        // DapiError::Timeout -> to_status() -> Code::Internal (13)
+        assert_eq!(st_err.code, dapi_grpc::tonic::Code::Internal as u32);
+        assert!(
+            st_err.message.contains("timed out"),
+            "expected message to contain 'timed out', got: {}",
+            st_err.message
+        );
+    }
+
+    #[test]
+    fn build_error_response_from_error_with_empty_status_message() {
+        // Internal error with a message should produce non-empty message
+        let error = DapiError::Internal("internal failure".to_string());
+        let response = build_wait_for_state_transition_error_response(&error);
+        let st_err = extract_st_error(response);
+        assert!(st_err.message.contains("internal failure"));
+    }
 }

@@ -6,6 +6,8 @@ use crate::data_contract::config::{
     DEFAULT_CONTRACT_KEEPS_HISTORY, DEFAULT_CONTRACT_MUTABILITY, DEFAULT_SIZED_INTEGER_TYPES,
 };
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -13,6 +15,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DataContractConfigV1 {
@@ -73,10 +76,6 @@ impl Default for DataContractConfigV1 {
 }
 
 impl DataContractConfigV1 {
-    pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
-        platform_value::from_value(value).map_err(ProtocolError::ValueError)
-    }
-
     pub fn default_with_version() -> DataContractConfig {
         Self::default().into()
     }

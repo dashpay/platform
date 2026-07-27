@@ -1,0 +1,288 @@
+{
+  "app": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 1,
+    "indices": [
+      { "name": "byCode", "properties": [{ "code": "asc" }], "unique": true },
+      { "name": "byName", "properties": [{ "name": "asc" }], "unique": true }
+    ],
+    "properties": {
+      "code": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 0,
+        "description": "Stable small integer id referenced by testCase.app / testRun.app."
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 63,
+        "position": 1,
+        "description": "App name (e.g. SwiftExampleApp)."
+      },
+      "platform": {
+        "type": "string",
+        "maxLength": 32,
+        "position": 2,
+        "description": "Platform the app targets (e.g. iOS, Android)."
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 3,
+        "description": "Optional description of the app under test."
+      }
+    },
+    "required": ["code", "name"],
+    "additionalProperties": false,
+    "description": "An application under QA. testCases/testRuns reference it by the integer `code`. Lets the framework host plans for multiple apps."
+  },
+  "tier": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 1,
+    "indices": [
+      { "name": "byCode", "properties": [{ "code": "asc" }], "unique": true },
+      { "name": "byName", "properties": [{ "name": "asc" }], "unique": true }
+    ],
+    "properties": {
+      "code": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 0,
+        "description": "Stable small integer id referenced by testCase.tier."
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16,
+        "position": 1,
+        "description": "Frequency tier name: Essential, Common, Thorough, Uncommon, Manual, Unspecified."
+      }
+    },
+    "required": ["code", "name"],
+    "additionalProperties": false,
+    "description": "Lookup table of frequency tiers. testCase.tier holds the integer `code`."
+  },
+  "category": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 1,
+    "indices": [
+      { "name": "byCode", "properties": [{ "code": "asc" }], "unique": true },
+      { "name": "byName", "properties": [{ "name": "asc" }], "unique": true }
+    ],
+    "properties": {
+      "code": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 0,
+        "description": "Stable small integer id referenced by testCase.category."
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 1,
+        "description": "Feature-area / Domain name (Core, Identity, DPNS, Token, Shielded, DashPay, System, ...). Modalities like multi-wallet / group are tags, not categories."
+      }
+    },
+    "required": ["code", "name"],
+    "additionalProperties": false,
+    "description": "Lookup table of feature-area categories. testCase.category holds the integer `code`."
+  },
+  "testCase": {
+    "type": "object",
+    "documentsMutable": true,
+    "canBeDeleted": true,
+    "creationRestrictionMode": 1,
+    "indices": [
+      {
+        "name": "testIdApp",
+        "properties": [{ "testId": "asc" }, { "app": "asc" }],
+        "unique": true
+      },
+      {
+        "name": "appTier",
+        "properties": [{ "app": "asc" }, { "tier": "asc" }]
+      },
+      {
+        "name": "appCategory",
+        "properties": [{ "app": "asc" }, { "category": "asc" }]
+      }
+    ],
+    "properties": {
+      "testId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 0,
+        "description": "Test identifier from the test plan (e.g. CORE-05). Unique per app."
+      },
+      "app": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 1,
+        "description": "App this test belongs to (foreign key -> app.code)."
+      },
+      "tier": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 2,
+        "description": "Frequency tier (foreign key -> tier.code)."
+      },
+      "category": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 3,
+        "description": "Feature area / Domain (foreign key -> category.code)."
+      },
+      "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "position": 4,
+        "description": "Human-readable action being tested (the plan's Action column)."
+      },
+      "layer": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16,
+        "position": 5,
+        "description": "Stack layer: Core, Platform, Cross, Shielded."
+      },
+      "implStatus": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 6,
+        "description": "Implementation status glyph (✅ 🧪 ⚠️ 🔌 🚫)."
+      },
+      "description": {
+        "type": "string",
+        "maxLength": 2048,
+        "position": 7,
+        "description": "Entry point & test notes for the action."
+      },
+      "entryPoint": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 8,
+        "description": "Primary code entry point (view / FFI function)."
+      },
+      "prerequisites": {
+        "type": "string",
+        "maxLength": 1024,
+        "position": 9,
+        "description": "Fixtures/preconditions required before this test can run."
+      },
+      "planCommit": {
+        "type": "string",
+        "maxLength": 64,
+        "position": 10,
+        "description": "git commit of the source plan this testCase was seeded from."
+      },
+      "tags": {
+        "type": "string",
+        "maxLength": 200,
+        "position": 11,
+        "description": "Comma-separated cross-cutting labels orthogonal to category (e.g. \"multiwallet,contested\"). Drawn from the canonical TAGS vocabulary in src/codes.mjs; stored as a string because DPP document schemas only support byte arrays, not typed arrays. The dashboard splits on ',' and filters client-side."
+      }
+    },
+    "required": ["testId", "app", "tier", "category", "title", "layer", "implStatus"],
+    "additionalProperties": false,
+    "description": "A single test definition, mirroring one row of an app's test plan. Unique per (testId, app); tier/category/app are integer foreign keys into the lookup document types; tags are cross-cutting string labels. Mutable; owner-only creation (single QA-owner identity)."
+  },
+  "testRun": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "creationRestrictionMode": 1,
+    "indices": [
+      {
+        "name": "ownerAppTestNetworkCreated",
+        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "network": "asc" }, { "$createdAt": "asc" }]
+      },
+      {
+        "name": "ownerAppTestResultCreated",
+        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "result": "asc" }, { "$createdAt": "asc" }]
+      },
+      {
+        "name": "ownerAppTestCreated",
+        "properties": [{ "$ownerId": "asc" }, { "app": "asc" }, { "testId": "asc" }, { "$createdAt": "asc" }]
+      },
+      {
+        "name": "buildRefOwner",
+        "properties": [{ "buildRef": "asc" }, { "$ownerId": "asc" }]
+      }
+    ],
+    "properties": {
+      "testId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "position": 0,
+        "description": "Test identifier this run is a result for (matches testCase.testId within the same app)."
+      },
+      "app": {
+        "type": "integer",
+        "minimum": 0,
+        "position": 1,
+        "description": "App this run targets (foreign key -> app.code; pairs with testId)."
+      },
+      "result": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 16,
+        "enum": ["pass", "fail", "blocked", "skipped"],
+        "position": 2,
+        "description": "Outcome. One of: pass, fail, blocked, skipped."
+      },
+      "network": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 3,
+        "position": 3,
+        "description": "Network id the run executed against: 0=mainnet, 1=testnet, 2=devnet, 3=regtest."
+      },
+      "buildRef": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 63,
+        "position": 4,
+        "description": "Build under test (commit SHA, branch+sha, or app build number)."
+      },
+      "device": {
+        "type": "string",
+        "maxLength": 128,
+        "position": 5,
+        "description": "Device / simulator the run executed on."
+      },
+      "evidence": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 6,
+        "description": "Pointer to evidence (txid, on-chain id, screenshot path, or URL)."
+      },
+      "notes": {
+        "type": "string",
+        "maxLength": 2048,
+        "position": 7,
+        "description": "Free-form notes about the run."
+      },
+      "blockerReason": {
+        "type": "string",
+        "maxLength": 512,
+        "position": 8,
+        "description": "Why the run was blocked/skipped."
+      }
+    },
+    "required": ["testId", "app", "result", "network", "buildRef", "$createdAt"],
+    "additionalProperties": false,
+    "description": "An append-only record of one test execution for (app, testId). Immutable and non-deletable: an audit log. $createdAt is the run time. Owner-only creation in v1; relax creationRestrictionMode to 0 to let any identity submit runs."
+  }
+}

@@ -70,7 +70,7 @@ fn get_token_total_supply(
         return Err("Token ID is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let token_id_str = unsafe {

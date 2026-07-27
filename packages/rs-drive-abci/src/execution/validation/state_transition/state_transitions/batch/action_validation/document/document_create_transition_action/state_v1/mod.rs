@@ -75,16 +75,18 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state
-        let (already_existing_document, fee_result) = fetch_document_with_id(
+        // `fetch_document_with_id` bills the query cost internally via
+        // execution_context on transform_into_action: 1+.
+        let already_existing_document = fetch_document_with_id(
             platform.drive,
             contract,
             document_type,
             self.base().id(),
+            &block_info.epoch,
+            execution_context,
             transaction,
             platform_version,
         )?;
-
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
         if already_existing_document.is_some() {
             return Ok(ConsensusValidationResult::new_with_error(
@@ -177,7 +179,7 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                         // The week might be more or less, as it's a versioned parameter
                         let time_ms_since_start = block_info.time_ms.checked_sub(start_block.time_ms).ok_or(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("it makes no sense that the start block time {} is before our current block time {}", start_block.time_ms, block_info.time_ms)))))?;
                         let join_time_allowed = match platform.config.network {
-                            Network::Dash => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
+                            Network::Mainnet => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
                             _ => platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms
                         };
                         if time_ms_since_start > join_time_allowed {

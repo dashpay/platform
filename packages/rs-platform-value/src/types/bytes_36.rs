@@ -199,3 +199,376 @@ impl From<&Bytes36> for String {
         val.to_string(Encoding::Base64)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::approx_constant)]
+#[allow(clippy::clone_on_copy)]
+#[allow(clippy::needless_borrows_for_generic_args)]
+mod tests {
+    use super::*;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    fn compute_hash<T: Hash>(value: &T) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    // ---------------------------------------------------------------
+    // From<[u8; 36]> and Into<[u8; 36]> round-trip
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn from_array_round_trip() {
+        let arr = [0xABu8; 36];
+        let b = Bytes36::from(arr);
+        assert_eq!(b.0, arr);
+        let back: [u8; 36] = b.to_buffer();
+        assert_eq!(back, arr);
+    }
+
+    #[test]
+    fn from_ref_array() {
+        let arr = [7u8; 36];
+        let b = Bytes36::from(&arr);
+        assert_eq!(b.0, arr);
+    }
+
+    // ---------------------------------------------------------------
+    // from_vec — correct and wrong sizes
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn from_vec_correct_size() {
+        let v = vec![1u8; 36];
+        let b = Bytes36::from_vec(v).unwrap();
+        assert_eq!(b.0, [1u8; 36]);
+    }
+
+    #[test]
+    fn from_vec_too_short() {
+        let v = vec![1u8; 35];
+        let err = Bytes36::from_vec(v).unwrap_err();
+        match err {
+            Error::ByteLengthNot36BytesError(_) => {}
+            other => panic!("expected ByteLengthNot36BytesError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn from_vec_too_long() {
+        let v = vec![1u8; 37];
+        let err = Bytes36::from_vec(v).unwrap_err();
+        match err {
+            Error::ByteLengthNot36BytesError(_) => {}
+            other => panic!("expected ByteLengthNot36BytesError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn from_vec_empty() {
+        let v = vec![];
+        assert!(Bytes36::from_vec(v).is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // TryFrom<Value> for owned Value
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn try_from_value_bytes36() {
+        let arr = [9u8; 36];
+        let val = Value::Bytes36(arr);
+        let b = Bytes36::try_from(val).unwrap();
+        assert_eq!(b.0, arr);
+    }
+
+    #[test]
+    fn try_from_value_bytes_correct_len() {
+        let v = vec![3u8; 36];
+        let val = Value::Bytes(v);
+        let b = Bytes36::try_from(val).unwrap();
+        assert_eq!(b.0, [3u8; 36]);
+    }
+
+    #[test]
+    fn try_from_value_bytes_wrong_len() {
+        let val = Value::Bytes(vec![1, 2, 3]);
+        assert!(Bytes36::try_from(val).is_err());
+    }
+
+    #[test]
+    fn try_from_value_unsupported_variant() {
+        let val = Value::Bool(true);
+        assert!(Bytes36::try_from(val).is_err());
+    }
+
+    #[test]
+    fn try_from_value_null_errors() {
+        let val = Value::Null;
+        assert!(Bytes36::try_from(val).is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // TryFrom<&Value> for borrowed Value
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn try_from_ref_value_bytes36() {
+        let arr = [10u8; 36];
+        let val = Value::Bytes36(arr);
+        let b = Bytes36::try_from(&val).unwrap();
+        assert_eq!(b.0, arr);
+    }
+
+    #[test]
+    fn try_from_ref_value_bytes_correct_len() {
+        let val = Value::Bytes(vec![4u8; 36]);
+        let b = Bytes36::try_from(&val).unwrap();
+        assert_eq!(b.0, [4u8; 36]);
+    }
+
+    #[test]
+    fn try_from_ref_value_bytes_wrong_len() {
+        let val = Value::Bytes(vec![1, 2]);
+        assert!(Bytes36::try_from(&val).is_err());
+    }
+
+    #[test]
+    fn try_from_ref_value_unsupported() {
+        let val = Value::Float(3.14);
+        assert!(Bytes36::try_from(&val).is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // as_slice(), to_vec()
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn as_slice_returns_inner_bytes() {
+        let arr = [0xFFu8; 36];
+        let b = Bytes36::new(arr);
+        assert_eq!(b.as_slice(), &arr[..]);
+        assert_eq!(b.as_slice().len(), 36);
+    }
+
+    #[test]
+    fn to_vec_returns_copy() {
+        let arr = [5u8; 36];
+        let b = Bytes36::new(arr);
+        let v = b.to_vec();
+        assert_eq!(v.len(), 36);
+        assert_eq!(v, arr.to_vec());
+    }
+
+    // ---------------------------------------------------------------
+    // Hash impl: equal values hash equally, different values differ
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn hash_equal_values() {
+        let a = Bytes36::new([1u8; 36]);
+        let b = Bytes36::new([1u8; 36]);
+        assert_eq!(compute_hash(&a), compute_hash(&b));
+    }
+
+    #[test]
+    fn hash_different_values() {
+        let a = Bytes36::new([1u8; 36]);
+        let b = Bytes36::new([2u8; 36]);
+        // Highly unlikely to collide
+        assert_ne!(compute_hash(&a), compute_hash(&b));
+    }
+
+    // ---------------------------------------------------------------
+    // PartialOrd / Ord: ordering matches byte ordering
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn ordering_matches_byte_ordering() {
+        let mut low = [0u8; 36];
+        low[0] = 1;
+        let mut high = [0u8; 36];
+        high[0] = 2;
+        let a = Bytes36::new(low);
+        let b = Bytes36::new(high);
+        assert!(a < b);
+        assert!(b > a);
+    }
+
+    #[test]
+    fn ordering_equal() {
+        let a = Bytes36::new([5u8; 36]);
+        let b = Bytes36::new([5u8; 36]);
+        assert_eq!(a.cmp(&b), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn ordering_last_byte_differs() {
+        let mut low = [0u8; 36];
+        low[35] = 1;
+        let mut high = [0u8; 36];
+        high[35] = 2;
+        assert!(Bytes36::new(low) < Bytes36::new(high));
+    }
+
+    // ---------------------------------------------------------------
+    // Default is all zeros
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn default_is_all_zeros() {
+        let b = Bytes36::default();
+        assert_eq!(b.0, [0u8; 36]);
+    }
+
+    // ---------------------------------------------------------------
+    // Value round-trips
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn into_value_and_back() {
+        let arr = [42u8; 36];
+        let b = Bytes36::new(arr);
+        let val: Value = b.into();
+        assert_eq!(val, Value::Bytes36(arr));
+        let back = Bytes36::try_from(val).unwrap();
+        assert_eq!(back, b);
+    }
+
+    #[test]
+    fn ref_into_value() {
+        let b = Bytes36::new([7u8; 36]);
+        let val: Value = (&b).into();
+        assert_eq!(val, Value::Bytes36([7u8; 36]));
+    }
+
+    // ---------------------------------------------------------------
+    // String conversions (Base64 round-trip)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn try_from_string_base64_round_trip() {
+        let arr = [99u8; 36];
+        let b = Bytes36::new(arr);
+        let s: String = b.into();
+        let recovered = Bytes36::try_from(s).unwrap();
+        assert_eq!(recovered, Bytes36::new(arr));
+    }
+
+    #[test]
+    fn try_from_string_invalid_base64() {
+        let s = "not-valid-base64!!!".to_string();
+        assert!(Bytes36::try_from(s).is_err());
+    }
+
+    #[test]
+    fn ref_to_string() {
+        let b = Bytes36::new([0u8; 36]);
+        let s: String = (&b).into();
+        // Verify it's valid base64
+        let decoded = BASE64_STANDARD.decode(&s).unwrap();
+        assert_eq!(decoded.len(), 36);
+    }
+
+    // ---------------------------------------------------------------
+    // from_string with different encodings
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn from_string_base58_round_trip() {
+        let arr = [0xABu8; 36];
+        let b = Bytes36::new(arr);
+        let encoded = b.to_string(Encoding::Base58);
+        let recovered = Bytes36::from_string(&encoded, Encoding::Base58).unwrap();
+        assert_eq!(recovered, b);
+    }
+
+    #[test]
+    fn from_string_hex_round_trip() {
+        let arr = [0xCDu8; 36];
+        let b = Bytes36::new(arr);
+        let encoded = b.to_string(Encoding::Hex);
+        let recovered = Bytes36::from_string(&encoded, Encoding::Hex).unwrap();
+        assert_eq!(recovered, b);
+    }
+
+    #[test]
+    fn from_string_with_encoding_string_none_defaults_to_base58() {
+        let arr = [0x01u8; 36];
+        let b = Bytes36::new(arr);
+        let encoded = b.to_string_with_encoding_string(None);
+        let recovered = Bytes36::from_string_with_encoding_string(&encoded, None).unwrap();
+        assert_eq!(recovered, b);
+    }
+
+    // ---------------------------------------------------------------
+    // Serde round-trips
+    // ---------------------------------------------------------------
+
+    #[test]
+    #[cfg(feature = "json")]
+    fn serde_json_round_trip() {
+        let arr = [0x12u8; 36];
+        let b = Bytes36::new(arr);
+        let json = serde_json::to_string(&b).unwrap();
+        let recovered: Bytes36 = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered, b);
+    }
+
+    #[test]
+    fn serde_bincode_round_trip() {
+        let arr = [0x34u8; 36];
+        let b = Bytes36::new(arr);
+        let config = bincode::config::standard();
+        let encoded = bincode::encode_to_vec(&b, config).unwrap();
+        let (decoded, _): (Bytes36, _) = bincode::decode_from_slice(&encoded, config).unwrap();
+        assert_eq!(decoded, b);
+    }
+
+    // ---------------------------------------------------------------
+    // Clone and Copy semantics
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn clone_is_equal() {
+        let b = Bytes36::new([77u8; 36]);
+        let c = b.clone();
+        assert_eq!(b, c);
+    }
+
+    #[test]
+    fn copy_semantics() {
+        let b = Bytes36::new([88u8; 36]);
+        let c = b; // Copy
+        assert_eq!(b, c); // b is still valid because Bytes36 is Copy
+    }
+
+    // ---------------------------------------------------------------
+    // Equality
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn equality_same_bytes() {
+        let a = Bytes36::new([1u8; 36]);
+        let b = Bytes36::new([1u8; 36]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn inequality_different_bytes() {
+        let a = Bytes36::new([1u8; 36]);
+        let b = Bytes36::new([2u8; 36]);
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn inequality_single_byte_diff() {
+        let mut arr = [0u8; 36];
+        let a = Bytes36::new(arr);
+        arr[18] = 1;
+        let b = Bytes36::new(arr);
+        assert_ne!(a, b);
+    }
+}

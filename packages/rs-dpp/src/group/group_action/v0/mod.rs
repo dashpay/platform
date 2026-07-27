@@ -1,20 +1,20 @@
 use crate::data_contract::TokenContractPosition;
 use crate::group::action_event::GroupActionEvent;
 use crate::group::group_action::GroupActionAccessors;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub struct GroupActionV0 {
     pub contract_id: Identifier,

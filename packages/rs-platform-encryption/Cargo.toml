@@ -1,0 +1,24 @@
+[package]
+name = "platform-encryption"
+version.workspace = true
+edition = "2021"
+authors = ["Dash Core Team"]
+license = "MIT"
+description = "Cryptographic utilities for Dash Platform (DIP-15 DashPay encryption)"
+
+[dependencies]
+# Cryptography — direct deps only, so a consumer that needs just this crate
+# doesn't pull in/compile all of dashcore. `secp256k1` is pinned to the same
+# 0.30 dashcore re-exports, so the public `SecretKey`/`PublicKey` types unify
+# with dashcore-typed callers (platform-wallet, rs-sdk-ffi).
+secp256k1 = { version = "0.30.0", features = ["std"] }
+aes = "0.8"
+cbc = "0.1"
+hmac = "0.12"
+sha2 = "0.10"
+thiserror = "1.0"
+
+[dev-dependencies]
+# Tests generate keypairs via secp256k1's RNG helpers (`generate_keypair`,
+# `secp256k1::rand`), gated behind the `rand` feature.
+secp256k1 = { version = "0.30.0", features = ["std", "rand"] }

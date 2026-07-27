@@ -1,11 +1,11 @@
-use crate::error::{WasmDppError, WasmDppResult};
+use crate::error::WasmDppError;
 use dpp::dashcore::Network;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// TypeScript type alias for flexible network input
 #[wasm_bindgen(typescript_custom_section)]
-const NETWORK_LIKE_TS: &'static str = r#"
+const NETWORK_LIKE_TS: &str = r#"
 /**
  * Flexible network type that accepts Network enum, string names, or numeric values.
  *
@@ -14,6 +14,28 @@ const NETWORK_LIKE_TS: &'static str = r#"
  */
 export type NetworkLike = Network | "mainnet" | "testnet" | "devnet" | "regtest" | 0 | 1 | 2 | 3;
 "#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "NetworkLike")]
+    pub type NetworkLikeJs;
+}
+
+impl TryFrom<NetworkLikeJs> for NetworkWasm {
+    type Error = WasmDppError;
+    fn try_from(value: NetworkLikeJs) -> Result<Self, Self::Error> {
+        let js_value: JsValue = value.into();
+        NetworkWasm::try_from(js_value)
+    }
+}
+
+impl TryFrom<NetworkLikeJs> for Network {
+    type Error = WasmDppError;
+    fn try_from(value: NetworkLikeJs) -> Result<Self, Self::Error> {
+        let wasm: NetworkWasm = value.try_into()?;
+        Ok(Network::from(wasm))
+    }
+}
 
 #[wasm_bindgen(js_name = "Network")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +113,7 @@ impl TryFrom<&JsValue> for NetworkWasm {
 impl From<NetworkWasm> for Network {
     fn from(network: NetworkWasm) -> Self {
         match network {
-            NetworkWasm::Mainnet => Network::Dash,
+            NetworkWasm::Mainnet => Network::Mainnet,
             NetworkWasm::Testnet => Network::Testnet,
             NetworkWasm::Devnet => Network::Devnet,
             NetworkWasm::Regtest => Network::Regtest,
@@ -102,55 +124,15 @@ impl From<NetworkWasm> for Network {
 impl From<Network> for NetworkWasm {
     fn from(network: Network) -> Self {
         match network {
-            Network::Dash => NetworkWasm::Mainnet,
+            Network::Mainnet => NetworkWasm::Mainnet,
             Network::Testnet => NetworkWasm::Testnet,
             Network::Devnet => NetworkWasm::Devnet,
             Network::Regtest => NetworkWasm::Regtest,
-            _ => unreachable!("Unknown network variant"),
         }
     }
 }
 
 impl NetworkWasm {
-    /// Try to extract a Network from an options object field.
-    ///
-    /// This helper reads the specified field from an options object and converts it
-    /// to a NetworkWasm. Accepts Network enum or string names.
-    pub fn try_from_options(options: &JsValue, field_name: &str) -> WasmDppResult<Self> {
-        let network_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Missing '{}' field", field_name))
-            })?;
-
-        if network_js.is_undefined() || network_js.is_null() {
-            return Err(WasmDppError::invalid_argument(format!(
-                "'{}' is required",
-                field_name
-            )));
-        }
-
-        NetworkWasm::try_from(&network_js)
-    }
-
-    /// Try to extract an optional Network from an options object field.
-    ///
-    /// Returns None if the field is undefined or null, otherwise attempts conversion.
-    pub fn try_from_options_optional(
-        options: &JsValue,
-        field_name: &str,
-    ) -> WasmDppResult<Option<Self>> {
-        let network_js =
-            js_sys::Reflect::get(options, &JsValue::from_str(field_name)).map_err(|_| {
-                WasmDppError::invalid_argument(format!("Failed to get '{}'", field_name))
-            })?;
-
-        if network_js.is_undefined() || network_js.is_null() {
-            return Ok(None);
-        }
-
-        NetworkWasm::try_from(&network_js).map(Some)
-    }
-
     /// Get the network name as a lowercase string (for compatibility with existing code)
     pub fn as_str(&self) -> &'static str {
         match self {

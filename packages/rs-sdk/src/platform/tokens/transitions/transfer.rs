@@ -29,17 +29,17 @@ pub enum TransferResult {
 }
 
 impl Sdk {
-    /// Transfers tokens from one identity to one or more recipients.
+    /// Transfers tokens from one identity to another.
     ///
     /// This method broadcasts a transfer transition to move tokens between identities.
     /// The result varies based on token configuration:
-    /// - Standard tokens return updated balances for all affected identities
+    /// - Standard tokens return updated balances for the affected identities
     /// - Tokens with history tracking return documents
     /// - Group-managed tokens include group power information
     ///
     /// # Arguments
     ///
-    /// * `transfer_tokens_transition_builder` - Builder containing transfer parameters including recipients and amounts
+    /// * `transfer_tokens_transition_builder` - Builder containing transfer parameters including recipient and amount
     /// * `signing_key` - The identity public key for signing the transition
     /// * `signer` - Implementation of the Signer trait for cryptographic signing
     ///
@@ -68,7 +68,11 @@ impl Sdk {
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+            // Whether this operation's proof binds execution depends on the token's
+            // keeps-history configuration (and group usage), which the SDK cannot
+            // know statically: accept the affected-state tag and treat no-history
+            // results as height-pinned snapshots, not execution evidence.
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {

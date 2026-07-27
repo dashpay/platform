@@ -35,6 +35,27 @@ pub fn convert_to_homograph_safe_chars(input: &str) -> String {
         .collect()
 }
 
+fn extract_dpns_label(name: &str) -> &str {
+    if let Some(dot_pos) = name.rfind('.') {
+        let (label_part, suffix) = name.split_at(dot_pos);
+        if suffix.eq_ignore_ascii_case(".dash") {
+            return label_part;
+        }
+    }
+    name
+}
+
+/// Strip an optional case-insensitive `.dash` suffix and apply DPNS
+/// homograph-safe normalization, producing a value suitable for matching
+/// against the `normalizedLabel` field of `domain` documents.
+///
+/// Accepts either a bare label (e.g. `"alice"`) or a full DPNS name
+/// (e.g. `"alice.dash"`, `"Alice.DASH"`) and returns the normalized label
+/// (e.g. `"a11ce"`).
+fn normalize_dpns_label(input: &str) -> String {
+    convert_to_homograph_safe_chars(extract_dpns_label(input))
+}
+
 /// Check if a username is valid according to DPNS rules
 ///
 /// A username is valid if:
@@ -43,7 +64,7 @@ pub fn convert_to_homograph_safe_chars(input: &str) -> String {
 /// - It contains only alphanumeric characters and hyphens
 /// - It doesn't have consecutive hyphens (enforced by the pattern)
 ///
-/// Pattern: ^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$
+/// Pattern: `^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$`
 ///
 /// # Arguments
 ///
@@ -365,22 +386,35 @@ impl Sdk {
     ///
     /// # Arguments
     ///
-    /// * `label` - The username label to check (e.g., "alice")
+    /// * `name` - The username label (e.g., "alice") or full DPNS name
+    ///   (e.g., "alice.dash"). The `.dash` suffix is matched
+    ///   case-insensitively and stripped before normalization, mirroring
+    ///   [`Sdk::resolve_dpns_name`].
     ///
     /// # Returns
     ///
     /// Returns `true` if the name is available, `false` if it's taken
-    pub async fn is_dpns_name_available(&self, label: &str) -> Result<bool, Error> {
+    pub async fn is_dpns_name_available(&self, name: &str) -> Result<bool, Error> {
         use crate::platform::documents::document_query::DocumentQuery;
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        let dpns_contract = self.fetch_dpns_contract().await?;
+        let normalized_label = normalize_dpns_label(name);
 
-        let normalized_label = convert_to_homograph_safe_chars(label);
+        // An empty normalized label (e.g. `""`, `".dash"`, `".DASH"`) is not
+        // a registrable DPNS name, so report it as unavailable rather than
+        // doing a network round-trip that would query for
+        // `normalizedLabel == ""`. This mirrors the early-return guard in
+        // `resolve_dpns_name` so the two APIs agree on malformed input.
+        if normalized_label.is_empty() {
+            return Ok(false);
+        }
+
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Query for existing domain with this label
         let query = DocumentQuery {
+            select: drive::query::SelectProjection::documents(),
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
@@ -395,6 +429,8 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: 1,
             start: None,
@@ -402,8 +438,12 @@ impl Sdk {
 
         let documents = Document::fetch_many(self, query).await?;
 
-        // If no documents found, the name is available
-        Ok(documents.is_empty())
+        // `Document::fetch_many` returns `BTreeMap<Identifier, Option<Document>>`
+        // — a non-existence proof comes back as a non-empty map whose values are
+        // all `None`. Checking `documents.is_empty()` would treat a proven
+        // non-existence as "taken". The name is available iff no entry in the
+        // map carries an actual document.
+        Ok(documents.values().all(|d| d.is_none()))
     }
 
     /// Resolve a DPNS name to an identity ID
@@ -420,33 +460,19 @@ impl Sdk {
         use drive::query::WhereClause;
         use drive::query::WhereOperator;
 
-        let dpns_contract = self.fetch_dpns_contract().await?;
+        let normalized_label = normalize_dpns_label(name);
 
-        // Extract label from full name if needed
-        // Handle both "alice" and "alice.dash" formats
-        let label = if let Some(dot_pos) = name.rfind('.') {
-            let (label_part, suffix) = name.split_at(dot_pos);
-            // Only strip the suffix if it's exactly ".dash"
-            if suffix == ".dash" {
-                label_part
-            } else {
-                // If it's not ".dash", treat the whole thing as the label
-                name
-            }
-        } else {
-            // No dot found, use the whole name as the label
-            name
-        };
-
-        // Validate the label before proceeding
-        if label.is_empty() {
+        // Empty normalized label (e.g. `""`, `".dash"`) can't resolve to an
+        // identity; bail before the contract fetch. Mirrors `is_dpns_name_available`.
+        if normalized_label.is_empty() {
             return Ok(None);
         }
 
-        let normalized_label = convert_to_homograph_safe_chars(label);
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Query for domain with this label
         let query = DocumentQuery {
+            select: drive::query::SelectProjection::documents(),
             data_contract: dpns_contract,
             document_type_name: "domain".to_string(),
             where_clauses: vec![
@@ -461,6 +487,8 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: 1,
             start: None,
@@ -497,6 +525,40 @@ mod tests {
         assert_eq!(convert_to_homograph_safe_chars("bob"), "b0b");
         assert_eq!(convert_to_homograph_safe_chars("COOL"), "c001");
         assert_eq!(convert_to_homograph_safe_chars("test123"), "test123");
+    }
+
+    #[test]
+    fn test_normalize_dpns_label_strips_dash_suffix_case_insensitively() {
+        // Bare label and full name normalize to the same value, regardless
+        // of the case of the .dash suffix. This is the contract that
+        // `is_dpns_name_available` and `resolve_dpns_name` share so that
+        // queries against `normalizedLabel` agree.
+        let expected = "a11ce";
+        assert_eq!(normalize_dpns_label("alice"), expected);
+        assert_eq!(normalize_dpns_label("alice.dash"), expected);
+        assert_eq!(normalize_dpns_label("alice.DASH"), expected);
+        assert_eq!(normalize_dpns_label("Alice.DaSh"), expected);
+        assert_eq!(normalize_dpns_label("ALICE.DASH"), expected);
+
+        // Non-.dash suffixes are not stripped (they are treated as part of
+        // the label and normalized whole).
+        assert_eq!(normalize_dpns_label("alice.eth"), "a11ce.eth");
+
+        // Empty / suffix-only inputs normalize to an empty label.
+        assert_eq!(normalize_dpns_label(""), "");
+        assert_eq!(normalize_dpns_label(".dash"), "");
+        assert_eq!(normalize_dpns_label(".DASH"), "");
+    }
+
+    #[test]
+    fn test_extract_dpns_label() {
+        assert_eq!(extract_dpns_label("alice.dash"), "alice");
+        assert_eq!(extract_dpns_label("alice.DASH"), "alice");
+        assert_eq!(extract_dpns_label("alice.DaSh"), "alice");
+        assert_eq!(extract_dpns_label("Alice.DASH"), "Alice");
+        assert_eq!(extract_dpns_label("alice"), "alice");
+        assert_eq!(extract_dpns_label("alice.eth"), "alice.eth");
+        assert_eq!(extract_dpns_label(".dash"), "");
     }
 
     #[test]

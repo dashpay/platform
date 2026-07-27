@@ -1,7 +1,7 @@
 name: Assign Milestone
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, edited]
 
 jobs:
@@ -10,7 +10,7 @@ jobs:
     permissions:
       pull-requests: write
       # Following needed because PRs are technically under issues
-      issues: write 
+      issues: write
     steps:
       - name: Assign milestone based on target branch
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0

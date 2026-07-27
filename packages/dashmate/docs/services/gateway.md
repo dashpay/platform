@@ -258,7 +258,7 @@ Metrics include:
 **Config options**:
 - Enable/disable metrics: `platform.gateway.metrics.enabled` (default: false)
 - Host: `platform.gateway.metrics.host` (default: 127.0.0.1)
-- Port: `platform.gateway.metrics.port` (default: 9090)
+- Port: `platform.gateway.metrics.port` (default: 9090 mainnet, 19090 testnet, 29090 local)
 
 **Note:** Dashmate automatically enables the Envoy admin endpoint whenever metrics are turned on so the Prometheus listener can proxy `/stats/prometheus`. If the admin service remains disabled, this socket is not exposed outside Docker; once you explicitly enable admin, it uses the host you configure.
 
@@ -297,7 +297,7 @@ The admin interface offers:
 **Config options**:
 - Enable/disable admin: `platform.gateway.admin.enabled` (default: false)
 - Host: `platform.gateway.admin.host` (default: 127.0.0.1)
-- Port: `platform.gateway.admin.port` (default: 9901)
+- Port: `platform.gateway.admin.port` (default: 9901 mainnet, 19901 testnet, 29901 local)
 
 ### Security Considerations
 
@@ -312,14 +312,20 @@ The admin interface is a powerful tool but presents security risks:
 
 | Service                   | Port Purpose         | Default Value | Config Path                                      | Default Host Binding  | Host Config Path |
 |---------------------------|----------------------|---------------|--------------------------------------------------|-----------------------|-----------------|
-| **Gateway**               | DAPI and Drive API   | 443           | `platform.gateway.listeners.dapiAndDrive.port`   | 0.0.0.0 (all)         | `platform.gateway.listeners.dapiAndDrive.host` |
-|                           | Metrics              | 9090          | `platform.gateway.metrics.port`                  | 127.0.0.1 (local)     | `platform.gateway.metrics.host` |
-|                           | Admin                | 9901          | `platform.gateway.admin.port`                    | 127.0.0.1 (local)     | `platform.gateway.admin.host` |
+| **Gateway**               | DAPI and Drive API   | 443 (mainnet), 1443 (testnet), 2443 (local) | `platform.gateway.listeners.dapiAndDrive.port`   | 0.0.0.0 (all)         | `platform.gateway.listeners.dapiAndDrive.host` |
+|                           | Metrics              | 9090 (mainnet), 19090 (testnet), 29090 (local) | `platform.gateway.metrics.port`                  | 127.0.0.1 (local)     | `platform.gateway.metrics.host` |
+|                           | Admin                | 9901 (mainnet), 19901 (testnet), 29901 (local) | `platform.gateway.admin.port`                    | 127.0.0.1 (local)     | `platform.gateway.admin.host` |
 | **Gateway Rate Limiter**  | gRPC                 | 8081          | (fixed internal)                                 | (internal)            | -               |
 | **Rate Limiter Metrics**  | StatsD               | 9125          | (fixed internal)                                 | (internal)            | -               |
-|                           | Prometheus           | 9102          | `platform.gateway.rateLimiter.metrics.port`      | 127.0.0.1 (local)     | `platform.gateway.rateLimiter.metrics.host` |
+|                           | Prometheus           | 9102 (mainnet), 19102 (testnet), 29102 (local) | `platform.gateway.rateLimiter.metrics.port`      | 127.0.0.1 (local)     | `platform.gateway.rateLimiter.metrics.host` |
 | **Rate Limiter Redis**    | Redis                | 6379          | (fixed internal)                                 | (internal)            | -               |
 
+
+## Upgrading Envoy
+
+The Envoy image is pinned in `configs/defaults/getBaseConfigFactory.js`. Before changing that pin,
+validate the rendered configuration against the candidate release — see
+[Validating an Envoy version bump](./gateway-envoy-upgrade.md).
 
 ## Best Practices
 

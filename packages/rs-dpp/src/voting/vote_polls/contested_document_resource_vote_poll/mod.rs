@@ -1,19 +1,31 @@
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use crate::serialization::PlatformSerializable;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::util::hash::hash_double;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::{Identifier, Value};
-#[cfg(feature = "vote-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(Debug, Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize, PartialEq)]
 #[cfg_attr(
-    feature = "vote-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_serialize(limit = 100000)]
 pub struct ContestedDocumentResourceVotePoll {
@@ -62,5 +74,75 @@ impl ContestedDocumentResourceVotePoll {
 
     pub fn unique_id(&self) -> Result<Identifier, ProtocolError> {
         self.sha256_2_hash().map(Identifier::new)
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    /// Non-default values per field (real contract id, named type/index, two
+    /// index values) so the wire-shape assertion catches silent zero-out /
+    /// vec-truncate on round-trip.
+    fn fixture() -> ContestedDocumentResourceVotePoll {
+        ContestedDocumentResourceVotePoll {
+            contract_id: Identifier::new([0xc1; 32]),
+            document_type_name: "preorder".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text("dash".to_string()),
+                Value::Text("alice".to_string()),
+            ],
+        }
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // This is a plain struct (no `#[serde(tag)]`), so there is no
+        // `$formatVersion` on the wire. `Identifier` -> base58 string.
+        // `Value::Text` inside the array -> JSON string.
+        assert_eq!(
+            json,
+            json!({
+                "contractId": "E3M3d7sy8ZKivUGxBexL9wxE7ebqzGWFqkdeFMedCJFS",
+                "documentTypeName": "preorder",
+                "indexName": "parentNameAndLabel",
+                "indexValues": ["dash", "alice"],
+            })
+        );
+        let recovered = ContestedDocumentResourceVotePoll::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Interpolate the `Identifier` via `platform_value!` so Serialize emits
+        // `Value::Identifier` (NOT `Value::Bytes32`). `index_values` is a
+        // `Vec<Value>` round-tripped element-wise.
+        let id = Identifier::new([0xc1; 32]);
+        assert_eq!(
+            value,
+            platform_value!({
+                "contractId": id,
+                "documentTypeName": "preorder",
+                "indexName": "parentNameAndLabel",
+                "indexValues": ["dash", "alice"],
+            })
+        );
+        let recovered = ContestedDocumentResourceVotePoll::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

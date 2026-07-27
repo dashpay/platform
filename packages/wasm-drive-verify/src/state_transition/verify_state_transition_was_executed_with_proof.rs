@@ -1,5 +1,6 @@
 use crate::utils::getters::VecU8ToUint8Array;
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -19,6 +20,7 @@ use crate::identity::verify_identity_keys_by_identity_id::partial_identity_to_js
 #[wasm_bindgen]
 pub struct VerifyStateTransitionWasExecutedWithProofResult {
     root_hash: Vec<u8>,
+    execution_proved: bool,
     proof_result: JsValue,
 }
 
@@ -27,6 +29,17 @@ impl VerifyStateTransitionWasExecutedWithProofResult {
     #[wasm_bindgen(getter)]
     pub fn root_hash(&self) -> Uint8Array {
         self.root_hash.to_uint8array()
+    }
+
+    /// Whether the proof established that this specific transition executed.
+    /// When `false`, `proof_result` is a verified snapshot of the state the
+    /// transition affects at the proof's block (transition families whose
+    /// proofs cannot be bound to execution: balance top-ups, credit
+    /// transfers/withdrawals, address funds movements, shields, no-history
+    /// token operations) — NOT evidence that the transition executed.
+    #[wasm_bindgen(getter)]
+    pub fn execution_proved(&self) -> bool {
+        self.execution_proved
     }
 
     #[wasm_bindgen(getter)]
@@ -68,7 +81,7 @@ pub fn verify_state_transition_was_executed_with_proof(
     let platform_version = PlatformVersion::get(platform_version_number)
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
-    let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+    let (root_hash, outcome) = Drive::verify_state_transition_was_executed_with_proof(
         &state_transition,
         &block_info,
         &proof_vec,
@@ -77,11 +90,14 @@ pub fn verify_state_transition_was_executed_with_proof(
     )
     .map_err(|e| JsValue::from_str(&format!("Verification failed: {:?}", e)))?;
 
+    let execution_proved = outcome.is_execution_proved();
+
     // Convert proof result to JS value
-    let proof_result_js = convert_proof_result_to_js(&proof_result)?;
+    let proof_result_js = convert_proof_result_to_js(outcome.result())?;
 
     Ok(VerifyStateTransitionWasExecutedWithProofResult {
         root_hash: root_hash.to_vec(),
+        execution_proved,
         proof_result: proof_result_js,
     })
 }
@@ -126,10 +142,46 @@ fn parse_known_contracts(
         let contract: DataContract = from_value(contract_js)
             .map_err(|e| JsValue::from_str(&format!("Failed to parse contract: {:?}", e)))?;
 
-        contracts.insert(identifier, Arc::new(contract));
+        let (embedded_id, contract) =
+            bind_known_contract(identifier, contract).map_err(|error| JsValue::from_str(&error))?;
+        contracts.insert(embedded_id, contract);
     }
 
     Ok(contracts)
+}
+
+fn bind_known_contract(
+    identifier: Identifier,
+    contract: DataContract,
+) -> Result<(Identifier, Arc<DataContract>), String> {
+    let embedded_id = contract.id();
+    if identifier != embedded_id {
+        return Err(format!(
+            "Contract key {} does not match embedded contract ID {}",
+            identifier, embedded_id
+        ));
+    }
+
+    Ok((embedded_id, Arc::new(contract)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+
+    #[test]
+    fn rejects_known_contract_under_an_alias_identifier() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let alias = Identifier::new([0x5a; 32]);
+        assert_ne!(alias, contract.id());
+
+        let error = bind_known_contract(alias, contract).expect_err("alias must be rejected");
+
+        assert!(error.contains("does not match embedded contract ID"));
+    }
 }
 
 fn convert_proof_result_to_js(

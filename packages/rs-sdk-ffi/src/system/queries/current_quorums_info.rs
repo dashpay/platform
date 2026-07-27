@@ -66,7 +66,7 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
         return Err("SDK handle is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };

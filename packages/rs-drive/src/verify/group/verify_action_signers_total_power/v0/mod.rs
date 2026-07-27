@@ -131,3 +131,169 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::data_contract::config::v0::DataContractConfigV0;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::group::v0::GroupV0;
+    use dpp::data_contract::group::Group;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::DataContract;
+    use dpp::group::action_event::GroupActionEvent;
+    use dpp::group::group_action::v0::GroupActionV0;
+    use dpp::group::group_action::GroupAction;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::tokens::token_event::TokenEvent;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_prove_and_verify_action_signers_total_power() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let identity_1 = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a platform identity");
+        let identity_1_id = identity_1.id();
+
+        let identity_2 = Identity::random_identity(3, Some(506), platform_version)
+            .expect("expected a platform identity");
+        let identity_2_id = identity_2.id();
+
+        // Create a data contract with groups
+        let contract = DataContract::V1(DataContractV1 {
+            id: Default::default(),
+            version: 0,
+            owner_id: Default::default(),
+            document_types: Default::default(),
+            config: DataContractConfig::V0(DataContractConfigV0 {
+                can_be_deleted: false,
+                readonly: false,
+                keeps_history: false,
+                documents_keep_history_contract_default: false,
+                documents_mutable_contract_default: false,
+                documents_can_be_deleted_contract_default: false,
+                requires_identity_encryption_bounded_key: None,
+                requires_identity_decryption_bounded_key: None,
+            }),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::from([(
+                0,
+                Group::V0(GroupV0 {
+                    members: [(identity_1_id, 3), (identity_2_id, 5)].into(),
+                    required_power: 6,
+                }),
+            )]),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]),
+            keywords: Vec::new(),
+            description: None,
+        });
+
+        drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert contract");
+
+        let contract_id = contract.id();
+        let group_contract_position = 0;
+        let action_id = Identifier::random();
+
+        let action = GroupAction::V0(GroupActionV0 {
+            contract_id,
+            proposer_id: identity_1_id,
+            token_contract_position: 0,
+            event: GroupActionEvent::TokenEvent(TokenEvent::Mint(100, identity_1_id, None)),
+        });
+
+        // Add action with identity_1 signing (power 3)
+        drive
+            .add_group_action(
+                contract_id,
+                group_contract_position,
+                Some(action.clone()),
+                false,
+                action_id,
+                identity_1_id,
+                3,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add action with identity_1");
+
+        // Add identity_2 signing the same action (power 5)
+        drive
+            .add_group_action(
+                contract_id,
+                group_contract_position,
+                Some(action.clone()),
+                false,
+                action_id,
+                identity_2_id,
+                5,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add action with identity_2");
+
+        // Produce a proof by querying the single signer path
+        let path_query = Drive::group_active_or_closed_action_single_signer_query(
+            contract_id.to_buffer(),
+            group_contract_position,
+            action_id.to_buffer(),
+            GroupActionStatus::ActionActive,
+            identity_1_id.to_buffer(),
+        );
+
+        let proof = drive
+            .grove_get_proved_path_query(&path_query, None, &mut vec![], &platform_version.drive)
+            .expect("should produce proof for single signer");
+
+        // Verify the proof
+        let (root_hash, action_status, total_power) = Drive::verify_action_signer_and_total_power(
+            proof.as_slice(),
+            contract_id,
+            group_contract_position,
+            Some(GroupActionStatus::ActionActive),
+            action_id,
+            identity_1_id,
+            false,
+            platform_version,
+        )
+        .expect("should verify action signers total power proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert_eq!(
+            action_status,
+            GroupActionStatus::ActionActive,
+            "action should be active"
+        );
+        // Total power = 3 + 5 = 8
+        assert_eq!(total_power, 8, "total power should be 8 (3 + 5)");
+    }
+}

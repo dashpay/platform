@@ -1,11 +1,12 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct TokenSearchView: View {
     @Query private var allTokens: [PersistentToken]
     @State private var selectedFilter: TokenFilter = .all
     @State private var searchText = ""
-    
+
     enum TokenFilter: String, CaseIterable {
         case all = "All Tokens"
         case mintable = "Can Mint"
@@ -13,7 +14,7 @@ struct TokenSearchView: View {
         case freezable = "Can Freeze"
         case hasDistribution = "Has Distribution"
         case paused = "Paused"
-        
+
         var predicate: Predicate<PersistentToken>? {
             switch self {
             case .all:
@@ -31,10 +32,10 @@ struct TokenSearchView: View {
             }
         }
     }
-    
+
     var filteredTokens: [PersistentToken] {
         var tokens = allTokens
-        
+
         // Apply control rule filter
         switch selectedFilter {
         case .mintable:
@@ -50,7 +51,7 @@ struct TokenSearchView: View {
         case .all:
             break
         }
-        
+
         // Apply text search
         if !searchText.isEmpty {
             tokens = tokens.filter { token in
@@ -59,10 +60,10 @@ struct TokenSearchView: View {
                 (token.tokenDescription ?? "").localizedCaseInsensitiveContains(searchText)
             }
         }
-        
+
         return tokens
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Search and Filter
@@ -74,7 +75,7 @@ struct TokenSearchView: View {
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                 }
                 .padding(.horizontal)
-                
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(TokenFilter.allCases, id: \.self) { filter in
@@ -90,18 +91,18 @@ struct TokenSearchView: View {
             }
             .padding(.vertical)
             .background(Color(UIColor.systemBackground))
-            
+
             // Results
             if filteredTokens.isEmpty {
                 VStack(spacing: 20) {
                     Image(systemName: "magnifyingglass.circle")
                         .font(.system(size: 60))
                         .foregroundColor(.secondary)
-                    
+
                     Text("No tokens found")
                         .font(.title2)
                         .fontWeight(.semibold)
-                    
+
                     Text("Try adjusting your search or filters")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -126,7 +127,7 @@ struct FilterChip: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -143,23 +144,23 @@ struct FilterChip: View {
 
 struct TokenSearchRow: View {
     let token: PersistentToken
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 VStack(alignment: .leading) {
                     Text(token.getPluralForm() ?? token.displayName)
                         .font(.headline)
-                    
+
                     if let contract = token.dataContract {
                         Text(contract.name)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Show capabilities
                 HStack(spacing: 4) {
                     if token.canManuallyMint {
@@ -179,15 +180,15 @@ struct TokenSearchRow: View {
                     }
                 }
             }
-            
+
             // Token info
             HStack {
                 Text("Supply: \(token.formattedBaseSupply)")
                     .font(.caption)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 if let maxSupply = token.maxSupply, maxSupply != "0" {
                     Text("Max: \(formatTokenAmount(maxSupply, decimals: token.decimals))")
                         .font(.caption)
@@ -197,23 +198,16 @@ struct TokenSearchRow: View {
         }
         .padding(.vertical, 4)
     }
-    
+
     private func formatTokenAmount(_ amount: String, decimals: Int) -> String {
-        guard let value = Double(amount) else { return amount }
-        let divisor = pow(10.0, Double(decimals))
-        let actualAmount = value / divisor
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = decimals
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: actualAmount)) ?? amount
+        PersistentToken.formatSupply(amount, decimals: decimals)
     }
 }
 
 struct CapabilityBadge: View {
     let icon: String
     let color: Color
-    
+
     var body: some View {
         Image(systemName: icon)
             .font(.caption)
@@ -225,7 +219,7 @@ struct CapabilityBadge: View {
 struct MintableTokensView: View {
     @Query(filter: PersistentToken.mintableTokensPredicate())
     private var mintableTokens: [PersistentToken]
-    
+
     var body: some View {
         List(mintableTokens) { token in
             VStack(alignment: .leading) {

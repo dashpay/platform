@@ -28,7 +28,7 @@ use {
 
 impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
@@ -53,10 +53,11 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
 
         let signable_bytes = state_transition.signable_bytes()?;
 
-        identity_top_up_from_addresses_transition.input_witnesses = inputs
-            .keys()
-            .map(|address| signer.sign_create_witness(address, &signable_bytes))
-            .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
+        let mut input_witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+        for address in inputs.keys() {
+            input_witnesses.push(signer.sign_create_witness(address, &signable_bytes).await?);
+        }
+        identity_top_up_from_addresses_transition.input_witnesses = input_witnesses;
 
         Ok(identity_top_up_from_addresses_transition.into())
     }

@@ -67,3 +67,36 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::type_complexity)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_verify_token_direct_selling_prices_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .token
+            .verify_token_direct_selling_prices = 255;
+
+        let result: Result<
+            (
+                crate::verify::RootHash,
+                BTreeMap<[u8; 32], Option<TokenPricingSchedule>>,
+            ),
+            Error,
+        > = Drive::verify_token_direct_selling_prices(&[], &[], false, &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_token_direct_selling_prices" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

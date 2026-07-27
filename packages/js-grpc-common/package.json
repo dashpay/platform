@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/grpc-common",
-  "version": "3.0.1",
+  "version": "4.1.0",
   "description": "Common GRPC library",
   "main": "index.js",
   "scripts": {
@@ -16,18 +16,16 @@
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
-    "eslint": "^8.53.0",
-    "eslint-config-airbnb-base": "^15.0.0",
-    "eslint-plugin-import": "^2.29.0",
+    "eslint": "^9.18.0",
     "mocha": "^11.1.0",
     "mocha-sinon": "^2.1.2",
     "nyc": "^15.1.0",
-    "sinon": "^17.0.1",
+    "sinon": "^18.0.1",
     "sinon-chai": "^3.7.0"
   },
   "dependencies": {
     "@dashevo/protobufjs": "6.10.5",
-    "@grpc/grpc-js": "1.4.4",
+    "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.5.2",
     "cbor": "^8.0.0",
     "lodash": "^4.17.23",

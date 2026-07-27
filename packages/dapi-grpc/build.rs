@@ -1,7 +1,8 @@
 use std::{
     collections::HashSet,
+    env,
     fs::{create_dir_all, remove_dir_all},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use tonic_prost_build::Builder;
@@ -13,23 +14,32 @@ const SERDE_WITH_STRING: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
 
 fn main() {
+    let output_base = resolve_output_base().unwrap_or_else(|e| {
+        eprintln!("[error] => resolve output base failed: {e}");
+        std::process::exit(1);
+    });
+    println!(
+        "cargo:rustc-env=DAPI_GRPC_OUT_DIR={}",
+        output_base.display()
+    );
+
     #[cfg(feature = "server")]
-    generate_code(ImplType::Server);
+    generate_code(ImplType::Server, &output_base);
     #[cfg(feature = "client")]
-    generate_code(ImplType::Client);
+    generate_code(ImplType::Client, &output_base);
 
     if std::env::var("CARGO_CFG_TARGET_ARCH")
         .unwrap_or_default()
         .eq("wasm32")
     {
-        generate_code(ImplType::Wasm);
+        generate_code(ImplType::Wasm, &output_base);
     }
 }
 
-fn generate_code(typ: ImplType) {
+fn generate_code(typ: ImplType, output_base: &Path) {
     let core = MappingConfig::new(
         PathBuf::from("protos/core/v0/core.proto"),
-        PathBuf::from("src/core"),
+        output_base.join("core"),
         &typ,
     );
 
@@ -39,7 +49,7 @@ fn generate_code(typ: ImplType) {
 
     let platform = MappingConfig::new(
         PathBuf::from("protos/platform/v0/platform.proto"),
-        PathBuf::from("src/platform"),
+        output_base.join("platform"),
         &typ,
     );
 
@@ -49,7 +59,7 @@ fn generate_code(typ: ImplType) {
 
     let drive = MappingConfig::new(
         PathBuf::from("protos/drive/v0/drive.proto"),
-        PathBuf::from("src/drive"),
+        output_base.join("drive"),
         &typ,
     );
 
@@ -60,6 +70,7 @@ fn generate_code(typ: ImplType) {
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
+    println!("cargo:rerun-if-env-changed=DAPI_GRPC_OUT_DIR");
 }
 
 struct MappingConfig {
@@ -73,10 +84,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 48] = [
+    const VERSIONED_REQUESTS: [&str; 56] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
+        "GetDocumentHistoryRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
@@ -112,6 +124,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTokenDirectPurchasePricesRequest",
         "GetTokenContractInfoRequest",
         "GetTokenStatusesRequest",
+        "GetTokenPreProgrammedDistributionsRequest",
         "GetTokenTotalSupplyRequest",
         "GetGroupInfoRequest",
         "GetGroupInfosRequest",
@@ -122,6 +135,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosRequest",
         "GetRecentAddressBalanceChangesRequest",
         "GetRecentCompactedAddressBalanceChangesRequest",
+        "GetShieldedEncryptedNotesRequest",
+        "GetShieldedAnchorsRequest",
+        "GetMostRecentShieldedAnchorRequest",
+        "GetShieldedPoolStateRequest",
+        "GetShieldedNotesCountRequest",
+        "GetShieldedNullifiersRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -136,10 +155,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 46] = [
+    const VERSIONED_RESPONSES: [&str; 54] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
+        "GetDocumentHistoryResponse",
         "GetDocumentsResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
@@ -173,6 +193,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetTokenDirectPurchasePricesResponse",
         "GetTokenContractInfoResponse",
         "GetTokenStatusesResponse",
+        "GetTokenPreProgrammedDistributionsResponse",
         "GetTokenTotalSupplyResponse",
         "GetGroupInfoResponse",
         "GetGroupInfosResponse",
@@ -183,6 +204,12 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetAddressesInfosResponse",
         "GetRecentAddressBalanceChangesResponse",
         "GetRecentCompactedAddressBalanceChangesResponse",
+        "GetShieldedEncryptedNotesResponse",
+        "GetShieldedAnchorsResponse",
+        "GetMostRecentShieldedAnchorResponse",
+        "GetShieldedPoolStateResponse",
+        "GetShieldedNotesCountResponse",
+        "GetShieldedNullifiersResponse",
     ];
 
     const PROOF_ONLY_VERSIONED_RESPONSES: [&str; 1] = ["GetAddressesTrunkStateResponse"];
@@ -196,14 +223,38 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     check_unique(&MERK_PROOF_VERSIONED_REQUESTS).expect("MERK_PROOF_VERSIONED_REQUESTS");
     check_unique(&MERK_PROOF_VERSIONED_RESPONSES).expect("MERK_PROOF_VERSIONED_RESPONSES");
 
+    // Messages whose latest version is v1 — the macro needs to know
+    // to generate match arms for both V0 and V1. Listed separately
+    // so the default `grpc_versions(0)` loop below skips them.
+    //
+    // Adding a message here is the proto-side companion of:
+    //   - Adding a `GetXxxRequestV1` / `GetXxxResponseV1` to the
+    //     oneof in `platform.proto`.
+    //   - Bumping the matching `FeatureVersionBounds.max_version`
+    //     to 1 in `rs-platform-version`.
+    //   - Implementing the v1 dispatch arm in `drive-abci`.
+    const VERSIONED_AT_V1_REQUESTS: [&str; 1] = ["GetDocumentsRequest"];
+    const VERSIONED_AT_V1_RESPONSES: [&str; 1] = ["GetDocumentsResponse"];
+
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
+        if VERSIONED_AT_V1_REQUESTS.contains(&msg) {
+            continue;
+        }
         platform = platform
             .message_attribute(
                 msg,
                 r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+    for msg in VERSIONED_AT_V1_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(1)]"#);
     }
 
     // Derive ProofOnlyVersionedGrpcMessage on requests
@@ -218,12 +269,23 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
     // Derive VersionedGrpcMessage and VersionedGrpcResponse on responses
     for msg in VERSIONED_RESPONSES {
+        if VERSIONED_AT_V1_RESPONSES.contains(&msg) {
+            continue;
+        }
         platform = platform
             .message_attribute(
                 msg,
                 r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+    for msg in VERSIONED_AT_V1_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(1)]"#);
     }
 
     // Derive VersionedGrpcMessage and ProofOnlyVersionedGrpcResponse on responses
@@ -277,10 +339,14 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
         .field_attribute("public_key_hash", SERDE_WITH_BYTES)
         .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
+        .field_attribute("nullifiers", SERDE_WITH_BASE64)
         // Get documents fields
         .field_attribute("data_contract_id", SERDE_WITH_BYTES)
-        .field_attribute("where", SERDE_WITH_BYTES)
-        .field_attribute("order_by", SERDE_WITH_BYTES)
+        // V0 still ships CBOR for `where` / `order_by`; V1 ships
+        // typed `repeated WhereClause` / `repeated OrderClause`
+        // and doesn't need the `bytes`-shaped serde shim.
+        .field_attribute("GetDocumentsRequestV0.where", SERDE_WITH_BYTES)
+        .field_attribute("GetDocumentsRequestV0.order_by", SERDE_WITH_BYTES)
         // Proof fields
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)
@@ -400,6 +466,10 @@ impl MappingConfig {
         let builder = typ
             .configure(tonic_prost_build::configure())
             .out_dir(out_dir.clone())
+            // Emit the FileDescriptorSet alongside the generated code so
+            // consumers can enumerate the served rpcs at test time (e.g.
+            // rs-dapi asserts its metrics allowlist covers every method).
+            .file_descriptor_set_path(out_dir.join("descriptor.bin"))
             .protoc_arg("--experimental_allow_proto3_optional");
 
         Self {
@@ -461,4 +531,14 @@ fn abs_path(path: &PathBuf) -> PathBuf {
     }
 
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path)
+}
+
+/// Resolve output base directory for generated files.
+fn resolve_output_base() -> Result<PathBuf, String> {
+    env::var("DAPI_GRPC_OUT_DIR")
+        .map(PathBuf::from)
+        .or_else(|_| env::var("OUT_DIR").map(|out_dir| PathBuf::from(out_dir).join("dapi_grpc")))
+        .map_err(|_| {
+            "OUT_DIR should be provided by Cargo; set DAPI_GRPC_OUT_DIR to override it".to_string()
+        })
 }

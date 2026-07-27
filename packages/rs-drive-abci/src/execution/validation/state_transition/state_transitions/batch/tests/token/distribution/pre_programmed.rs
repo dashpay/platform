@@ -11,8 +11,8 @@ mod pre_programmed_distribution {
     use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use super::*;
-    #[test]
-    fn test_token_pre_programmed_distribution_two_claims() {
+    #[tokio::test]
+    async fn test_token_pre_programmed_distribution_two_claims() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -67,6 +67,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -132,6 +133,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -182,8 +184,8 @@ mod pre_programmed_distribution {
         assert_eq!(token_balance, Some(1045));
     }
 
-    #[test]
-    fn test_token_pre_programmed_distribution_claim_again_when_none_left() {
+    #[tokio::test]
+    async fn test_token_pre_programmed_distribution_claim_again_when_none_left() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -234,6 +236,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -299,6 +302,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -352,8 +356,8 @@ mod pre_programmed_distribution {
         assert_eq!(token_balance, Some(445));
     }
 
-    #[test]
-    fn test_token_pre_programmed_distribution_claim_again_when_none_ready() {
+    #[tokio::test]
+    async fn test_token_pre_programmed_distribution_claim_again_when_none_ready() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -404,6 +408,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -457,8 +462,8 @@ mod pre_programmed_distribution {
         assert_eq!(token_balance, None);
     }
 
-    #[test]
-    fn test_token_pre_programmed_distribution_claim_again_when_none_ready_after_a_claim() {
+    #[tokio::test]
+    async fn test_token_pre_programmed_distribution_claim_again_when_none_ready_after_a_claim() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -513,6 +518,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -578,6 +584,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -631,8 +638,8 @@ mod pre_programmed_distribution {
         assert_eq!(token_balance, Some(445));
     }
 
-    #[test]
-    fn test_token_pre_programmed_distribution_claim_no_rewards_for_recipient() {
+    #[tokio::test]
+    async fn test_token_pre_programmed_distribution_claim_no_rewards_for_recipient() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -683,6 +690,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition
@@ -736,8 +744,8 @@ mod pre_programmed_distribution {
         assert_eq!(token_balance, None);
     }
 
-    #[test]
-    fn test_token_pre_programmed_distribution_claim_no_pre_programmed_rewards_for_recipient_when_they_have_perpetual(
+    #[tokio::test]
+    async fn test_token_pre_programmed_distribution_claim_no_pre_programmed_rewards_for_recipient_when_they_have_perpetual(
     ) {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -803,6 +811,7 @@ mod pre_programmed_distribution {
             platform_version,
             None,
         )
+        .await
         .expect("expect to create documents batch transition");
 
         let claim_serialized_transition = claim_transition

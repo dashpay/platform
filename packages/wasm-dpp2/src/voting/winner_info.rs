@@ -1,10 +1,44 @@
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
+use crate::impl_wasm_type_info;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone, Copy)]
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * ContestedDocumentVotePollWinnerInfo serialized as a plain object.
+ *
+ * Custom Serialize emits a flat `{type, identity?}` shape — `identity`
+ * (synthesized name) carries the inner Identifier for the WonByIdentity
+ * variant.
+ */
+export type ContestedDocumentVotePollWinnerInfoObject =
+    | { $type: "noWinner" }
+    | { $type: "locked" }
+    | { $type: "wonByIdentity"; identity: Uint8Array };
+
+/**
+ * ContestedDocumentVotePollWinnerInfo serialized as JSON.
+ */
+export type ContestedDocumentVotePollWinnerInfoJSON =
+    | { $type: "noWinner" }
+    | { $type: "locked" }
+    | { $type: "wonByIdentity"; identity: string };
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContestedDocumentVotePollWinnerInfoObject")]
+    pub type ContestedDocumentVotePollWinnerInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "ContestedDocumentVotePollWinnerInfoJSON")]
+    pub type ContestedDocumentVotePollWinnerInfoJSONJs;
+}
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "ContestedDocumentVotePollWinnerInfo")]
 pub struct ContestedDocumentVotePollWinnerInfoWasm(ContestedDocumentVotePollWinnerInfo);
 
@@ -23,9 +57,9 @@ impl From<ContestedDocumentVotePollWinnerInfoWasm> for ContestedDocumentVotePoll
 #[wasm_bindgen(js_class = ContestedDocumentVotePollWinnerInfo)]
 impl ContestedDocumentVotePollWinnerInfoWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub fn constructor(
         kind: &str,
-        identity_id: Option<IdentifierWasm>,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: Option<IdentifierWasm>,
     ) -> Result<ContestedDocumentVotePollWinnerInfoWasm, JsValue> {
         match kind {
             "NoWinner" | "noWinner" | "no_winner" | "none" | "NO_WINNER" => {
@@ -68,12 +102,12 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "isLocked")]
+    #[wasm_bindgen(getter = "isLocked")]
     pub fn is_locked(&self) -> bool {
         matches!(self.0, ContestedDocumentVotePollWinnerInfo::Locked)
     }
 
-    #[wasm_bindgen(js_name = "isWonByIdentity")]
+    #[wasm_bindgen(getter = "isWonByIdentity")]
     pub fn is_won_by_identity(&self) -> bool {
         matches!(
             self.0,
@@ -81,13 +115,21 @@ impl ContestedDocumentVotePollWinnerInfoWasm {
         )
     }
 
-    #[wasm_bindgen(js_name = "isNoWinner")]
+    #[wasm_bindgen(getter = "isNoWinner")]
     pub fn is_no_winner(&self) -> bool {
         matches!(self.0, ContestedDocumentVotePollWinnerInfo::NoWinner)
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
+    ContestedDocumentVotePollWinnerInfoWasm,
+    ContestedDocumentVotePollWinnerInfo,
+    ContestedDocumentVotePollWinnerInfo,
+    ContestedDocumentVotePollWinnerInfoObjectJs,
+    ContestedDocumentVotePollWinnerInfoJSONJs
+);
+
+impl_wasm_type_info!(
     ContestedDocumentVotePollWinnerInfoWasm,
     ContestedDocumentVotePollWinnerInfo
 );

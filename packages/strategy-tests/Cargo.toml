@@ -12,7 +12,7 @@ license = "MIT"
 
 [dependencies]
 tracing = "0.1.41"
-bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+bincode = { version = "=2.0.1", features = ["serde"] }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
@@ -29,8 +29,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "random-public-keys",
   "random-document-types",
   "fixtures-and-mocks",
-  "identity-value-conversion",
-  "data-contract-json-conversion",
+  "json-conversion",
   "data-contract-cbor-conversion",
 ] }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
@@ -40,3 +39,4 @@ platform-version = { path = "../rs-platform-version" }
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
+tokio = { version = "1.45", features = ["macros", "rt"] }

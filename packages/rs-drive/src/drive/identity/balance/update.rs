@@ -61,8 +61,19 @@ mod tests {
         #[test]
         fn should_add_to_balance_latest_version_estimated() {
             let platform_version = PlatformVersion::latest();
+            // v12 processing fee shifted up from 4_278_840 to 4_378_100
+            // when grovedb #674 landed the sum-aware
+            // `AllItemsWithSumItem` / `AllReferencesWithSumItem`
+            // variants + the four new `provable_*_weight` fields on
+            // `EstimatedSumTrees::SomeSumTrees`. The address-funds
+            // estimation now uses `AllItemsWithSumItem` (v1 dispatch at
+            // v12+) and the contract-insertion loop now tallies the
+            // finer-grained tree types — both bumped the layer-level
+            // cost. v0/v1 grovedb formulas are byte-stable so
+            // `should_add_to_balance_first_version_estimated` keeps the
+            // 4_278_840 pin.
             let expected_fee_result = FeeResult {
-                processing_fee: 4278840,
+                processing_fee: 4378100,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };
@@ -929,6 +940,76 @@ mod tests {
                 Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
                     _
                 )))
+            ));
+        }
+    }
+
+    mod remove_from_identity_balance_errors {
+        use super::*;
+        use crate::error::identity::IdentityError;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::version::PlatformVersion;
+
+        #[test]
+        fn should_fail_to_remove_more_than_balance() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let identity = create_test_identity(&drive, [0; 32], Some(15), None, platform_version)
+                .expect("expected to create an identity");
+
+            // Identity starts with balance from create_test_identity (which is 0 after creation
+            // since create_test_identity sets balance to 0). Let's add some balance first.
+            let added_balance = 100;
+
+            drive
+                .add_to_identity_balance(
+                    identity.id().to_buffer(),
+                    added_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add balance");
+
+            // Now try to remove more than available
+            let result = drive.remove_from_identity_balance(
+                identity.id().to_buffer(),
+                added_balance + 1,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            );
+
+            assert!(matches!(
+                result,
+                Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
+                    _
+                )))
+            ));
+        }
+
+        #[test]
+        fn should_fail_to_remove_from_non_existent_identity() {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let platform_version = PlatformVersion::latest();
+
+            let result = drive.remove_from_identity_balance(
+                [0; 32],
+                100,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            );
+
+            assert!(matches!(
+                result,
+                Err(Error::Drive(DriveError::CorruptedCodeExecution(_)))
             ));
         }
     }

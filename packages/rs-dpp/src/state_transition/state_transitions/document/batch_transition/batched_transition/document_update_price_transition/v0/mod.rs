@@ -5,7 +5,7 @@ use crate::prelude::Revision;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 use crate::fee::Credits;
@@ -18,24 +18,19 @@ mod property_names {
 }
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {}, Revision: {}, Price: {}", "base", "revision", "price")]
 pub struct DocumentUpdatePriceTransitionV0 {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: DocumentBaseTransition,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$revision")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$revision"))]
     pub revision: Revision,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$price")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$price"))]
     pub price: Credits,
 }
 //

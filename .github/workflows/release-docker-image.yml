@@ -25,6 +25,10 @@ on:
         type: string
         description: Cargo profile. i.e. release, dev
         default: release
+      additional_features:
+        type: string
+        description: Extra Cargo features to enable for Drive builds (comma-separated)
+        default: ""
 env:
   DIGEST_NAME: digests-${{ inputs.image_org }}-${{ inputs.image_name }}-${{ inputs.tag }}-${{ inputs.cargo_profile }}-${{ github.sha }}
   DIGEST_DIR_PATH: /tmp/digests
@@ -66,6 +70,7 @@ jobs:
           cache_secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
           # On release, we generate a new "base" image, so we need to save cache to name manifest, like '.../drive'
           cache_to_name: ${{ github.event_name == 'release' && 'true' || 'false' }}
+          additional_features: ${{ inputs.additional_features }}
 
       - name: Export digest
         run: |
@@ -119,8 +124,31 @@ jobs:
               return '';
             }
 
+      # metadata-action fetches repo data from the GitHub API without retries, so a
+      # transient API failure kills the whole job ("Unexpected end of JSON input").
+      # Retry once before giving up.
       - name: Set Docker tags and labels from image
         id: docker_meta
+        uses: docker/metadata-action@v5
+        continue-on-error: true
+        with:
+          images: ${{ inputs.image_org }}/${{ inputs.image_name }}
+          tags: |
+            type=match,pattern=v(.*),group=1,value=${{ inputs.tag }},priority=910,suffix=
+            type=match,pattern=v(\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{ inputs.tag }}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{ inputs.tag }}
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
+      - name: Wait before retrying Docker meta
+        if: ${{ steps.docker_meta.outcome == 'failure' }}
+        run: sleep 10
+
+      - name: Set Docker tags and labels from image (retry)
+        id: docker_meta_retry
+        if: ${{ steps.docker_meta.outcome == 'failure' }}
         uses: docker/metadata-action@v5
         with:
           images: ${{ inputs.image_org }}/${{ inputs.image_name }}
@@ -148,4 +176,4 @@ jobs:
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}:${{ steps.docker_meta.outputs.version }}
+          docker buildx imagetools inspect ${{ inputs.image_org }}/${{ inputs.image_name }}:${{ steps.docker_meta.outcome == 'success' && steps.docker_meta.outputs.version || steps.docker_meta_retry.outputs.version }}

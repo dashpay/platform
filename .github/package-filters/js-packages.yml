@@ -6,6 +6,14 @@
   - .github/workflows/tests*
   - packages/token-history-contract/**
 
+'@dashevo/document-history-contract': &document-history-contract
+  - .github/workflows/tests*
+  - packages/document-history-contract/**
+
+'@dashevo/keyword-search-contract': &keyword-search-contract
+  - .github/workflows/tests*
+  - packages/keyword-search-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -35,6 +43,8 @@
   - *withdrawals-contract
   - *wallet-utils-contract
   - *token-history-contract
+  - *document-history-contract
+  - *keyword-search-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**
@@ -42,6 +52,12 @@
   - packages/rs-platform-version/**
   - packages/rs-platform-versioning/**
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
+
+'@dashevo/wasm-dpp2': &wasm-dpp2
+  - .github/workflows/tests*
+  - packages/wasm-dpp2/**
+  - *wasm-dpp
 
 '@dashevo/dapi-grpc': &dapi-grpc
   - .github/workflows/tests*
@@ -108,5 +124,3 @@ dashmate:
   - .github/workflows/tests*
   - packages/js-evo-sdk/**
   - *wasm-sdk
-
-

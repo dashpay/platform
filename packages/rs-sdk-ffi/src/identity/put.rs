@@ -74,7 +74,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
 
         // Use PutIdentity trait to put identity to platform
         let state_transition = identity
-            .put_to_platform(
+            .put_to_platform_with_private_key(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
 
         // Use PutIdentity trait to put identity to platform and wait for response
         let confirmed_identity = identity
-            .put_to_platform_and_wait_for_response(
+            .put_to_platform_and_wait_for_response_with_private_key(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
@@ -246,7 +246,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
 
         // Use PutIdentity trait to put identity to platform
         let state_transition = identity
-            .put_to_platform(
+            .put_to_platform_with_private_key(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
@@ -325,7 +325,7 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock_and_w
 
         // Use PutIdentity trait to put identity to platform and wait for response
         let confirmed_identity = identity
-            .put_to_platform_and_wait_for_response(
+            .put_to_platform_and_wait_for_response_with_private_key(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,

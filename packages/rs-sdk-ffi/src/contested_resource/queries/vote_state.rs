@@ -16,7 +16,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `contract_id` - Base58-encoded contract identifier
 /// * `document_type_name` - Name of the document type
 /// * `index_name` - Name of the index
-/// * `index_values_json` - JSON array of hex-encoded index values
+/// * `index_values_json` - JSON array of index values. A `"0x"`-prefixed
+///   element is hex-decoded to bytes; any other element is taken verbatim as
+///   text (matches the cast-vote write path).
 /// * `result_type` - Result type (0=DOCUMENTS, 1=VOTE_TALLY, 2=DOCUMENTS_AND_VOTE_TALLY)
 /// * `allow_include_locked_and_abstaining_vote_tally` - Whether to include locked and abstaining votes
 /// * `count` - Maximum number of results to return
@@ -121,7 +123,7 @@ fn get_contested_resource_vote_state(
         return Err("Index values JSON is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let contract_id_str = unsafe {
@@ -162,24 +164,12 @@ fn get_contested_resource_vote_state(
         let index_values_array: Vec<String> = serde_json::from_str(index_values_str)
             .map_err(|e| format!("Failed to parse index values JSON: {}", e))?;
 
+        // Explicit type tag: a `"0x"`-prefixed value is hex-decoded to
+        // `Value::Bytes`, anything else is verbatim `Value::Text`. Shared with
+        // the cast-vote write path so read and write stay in lockstep.
         let index_values: Vec<Value> = index_values_array
             .into_iter()
-            .map(|value_str| {
-                // Check if the value is hex-encoded (all characters are valid hex)
-                if value_str.chars().all(|c| c.is_ascii_hexdigit()) && value_str.len() % 2 == 0 {
-                    // Try to decode as hex
-                    match hex::decode(&value_str) {
-                        Ok(bytes) => Ok(Value::Bytes(bytes)),
-                        Err(_) => {
-                            // If hex decode fails, treat as text
-                            Ok(Value::Text(value_str))
-                        }
-                    }
-                } else {
-                    // Not hex, treat as text string
-                    Ok(Value::Text(value_str))
-                }
-            })
+            .map(crate::contested_resource::parse_index_value)
             .collect::<Result<Vec<Value>, String>>()?;
 
         let result_type = match result_type {
@@ -249,7 +239,7 @@ fn get_contested_resource_vote_state(
                         .iter()
                         .map(|(id, contender)| {
                             let document_json = if let Some(ref document) = contender.serialized_document() {
-                                format!(r#""document":"{}""#, 
+                                format!(r#""document":"{}""#,
                                     hex::encode(document))
                             } else {
                                 r#""document":null"#.to_string()

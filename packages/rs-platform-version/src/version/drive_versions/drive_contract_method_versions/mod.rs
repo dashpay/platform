@@ -2,6 +2,7 @@ use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractMethodVersions {
@@ -44,10 +45,13 @@ pub struct DriveContractUpdateMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractGetMethodVersions {
     pub fetch_contract: FeatureVersion,
+    pub fetch_contract_ids: FeatureVersion,
+    pub fetch_contracts: FeatureVersion,
     pub fetch_contract_with_history: FeatureVersion,
     pub get_cached_contract_with_fetch_info: FeatureVersion,
     pub get_contract_with_fetch_info: FeatureVersion,
     pub get_contracts_with_fetch_info: FeatureVersion,
+    pub get_system_or_user_contract_with_fee: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

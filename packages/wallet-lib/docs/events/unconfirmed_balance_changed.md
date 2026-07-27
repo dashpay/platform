@@ -10,4 +10,3 @@ const onUnconfirmedBalanceChange = ()=>{
 }
 account.events.on(EVENTS.UNCONFIRMED_BALANCE_CHANGED, onUnconfirmedBalanceChange);
 ```
-

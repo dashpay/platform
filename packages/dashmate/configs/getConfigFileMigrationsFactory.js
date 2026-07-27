@@ -9,6 +9,7 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
+import { stockImagePattern } from '../src/config/stockImages.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -89,7 +90,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // Add pprof config
             options.platform.drive.tenderdash.pprof = base.get('platform.drive.tenderdash.pprof');
 
-            // Set different ports for local netwrok if exists
+            // Set different ports for local network if exists
             if (options.group === 'local') {
               options.platform.drive.tenderdash.pprof.port += i * 100;
 
@@ -1421,6 +1422,220 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             options.core.docker.image = 'dashpay/dashd:23';
           });
+
+        return configFile;
+      },
+      '3.1.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
+            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
+
+            // Flip `core.compactFilters` to true for every config —
+            // pre-3.1.0 configs predate the field entirely (template
+            // emitted nothing, dashcore left the cfilter index off),
+            // so a missing-or-false value here always means
+            // "inherited the old implicit-off default" rather than
+            // "user explicitly opted out". The base config now
+            // ships with this flag on; this backfill brings every
+            // already-set-up cluster up to that line so the iOS
+            // BIP157 SPV flow against `local_seed` (and any other
+            // dashmate node) works without manual editing.
+            if (options.core) {
+              options.core.compactFilters = true;
+            }
+
+            if (options.platform?.drive?.tenderdash?.docker
+              && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
+              options.platform.drive.tenderdash.docker.image = defaultConfig
+                .get('platform.drive.tenderdash.docker.image');
+            }
+
+            // Backfill the new `buildArgs: {}` field on each build block —
+            // forwarded into `dynamic-compose.yml` as `build.args` entries.
+            // Pre-3.1.0 configs predate the field; default it to an empty
+            // object when missing (idempotent: existing values are preserved).
+            if (options.platform?.drive?.abci?.docker?.build
+              && typeof options.platform.drive.abci.docker.build.buildArgs === 'undefined') {
+              options.platform.drive.abci.docker.build.buildArgs = {};
+            }
+
+            if (options.platform?.dapi?.rsDapi?.docker?.build
+              && typeof options.platform.dapi.rsDapi.docker.build.buildArgs === 'undefined') {
+              options.platform.dapi.rsDapi.docker.build.buildArgs = {};
+            }
+
+            if (options.platform?.drive?.tenderdash?.p2p
+              && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
+              options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig
+                .get('platform.drive.tenderdash.p2p.allowlistOnly');
+            }
+
+            // --- Differentiate ports between networks to avoid conflicts ---
+            // when running multiple networks on the same machine (issue #3002)
+            // Note: earlier migrations may assign objects from base.get() without
+            // cloning, causing shared references. We must clone before mutating.
+
+            if (!isTestnet && !isLocal) {
+              return;
+            }
+
+            const networkConfig = getDefaultConfigByNetwork(options.network);
+
+            const portPaths = [
+              'dashmate.helper.api',
+              'core.insight',
+            ];
+
+            for (const parentPath of portPaths) {
+              const obj = lodash.get(options, parentPath);
+              if (obj && Number(obj.port) === base.get(`${parentPath}.port`)) {
+                lodash.set(options, parentPath, lodash.cloneDeep(obj));
+                lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
+              }
+            }
+
+            if (!options.platform) {
+              return;
+            }
+
+            const platformPortPaths = [
+              'platform.gateway.metrics',
+              'platform.gateway.admin',
+              'platform.gateway.rateLimiter.metrics',
+              'platform.quorumList.api',
+              'platform.drive.abci.tokioConsole',
+              'platform.drive.abci.metrics',
+              'platform.drive.abci.grovedbVisualizer',
+            ];
+
+            for (const parentPath of platformPortPaths) {
+              const obj = lodash.get(options, parentPath);
+              if (obj && Number(obj.port) === base.get(`${parentPath}.port`)) {
+                lodash.set(options, parentPath, lodash.cloneDeep(obj));
+                lodash.get(options, parentPath).port = networkConfig.get(`${parentPath}.port`);
+              }
+            }
+          });
+
+        return configFile;
+      },
+      '4.0.0-rc.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Bump the default Tenderdash image to the 1.6.0 line. Pulled DRY from
+            // the base config so it tracks whatever the base config pins.
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires.
+            options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
+
+            // Add responseHeaders toggle to rate limiter (default true so existing
+            // deployments keep emitting RateLimit-* headers; rs-dapi-client depends
+            // on RateLimit-Reset to apply precise ban windows instead of the
+            // exponential health-ban ladder).
+            // Keyed at the next release (4.0.0-rc.3), not the already-released
+            // rc.2: the runner skips fromVersion===toVersion, so a key equal to
+            // an operator's current version never fires. Backfill runs once the
+            // package bumps to rc.3 (mirrors the 3.1.0 migration added at 3.1.0-dev.1).
+            if (options.platform?.gateway?.rateLimiter
+              && typeof options.platform.gateway.rateLimiter.responseHeaders === 'undefined') {
+              options.platform.gateway.rateLimiter.responseHeaders = base.get('platform.gateway.rateLimiter.responseHeaders');
+            }
+          });
+
+        return configFile;
+      },
+      '4.0.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // The drive and rs-dapi image tags are derived from the package
+            // major version. Re-pin them from the base config so operators
+            // upgrading from a prerelease of this major, or from an older
+            // major, move off their stale tag onto the current stable images.
+            // The legacy 0.25.x migrations already do this, but only fire for
+            // configs old enough to cross them; recent upgraders need it here.
+            options.platform.drive.abci.docker.image = base.get('platform.drive.abci.docker.image');
+            options.platform.dapi.rsDapi.docker.image = base.get('platform.dapi.rsDapi.docker.image');
+          });
+
+        return configFile;
+      },
+      '4.1.0-rc.2': (configFile) => {
+        // Move the Platform Gateway onto the Envoy 1.39 line. Only configs still
+        // carrying the previously shipped 1.35.x image are re-pinned; an image
+        // the operator chose themselves (private fork, vendor-patched build,
+        // floating tag) is left alone. Pulled from the base config so it tracks
+        // whatever is pinned there.
+        // Keyed at the next release, not the released 4.1.0-rc.1: the runner
+        // skips fromVersion===toVersion, so a key equal to an operator's current
+        // version never fires.
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const docker = options.platform?.gateway?.docker;
+            if (docker && /^dashpay\/envoy:1\.35\./.test(docker.image)) {
+              docker.image = base.get('platform.gateway.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.0-rc.3': (configFile) => {
+        // The drive and rs-dapi image tags are derived from the package version
+        // in configs/defaults/getBaseConfigFactory.js, so operators upgrading
+        // from an earlier release of this major keep pulling the images of the
+        // line they installed until the tags are re-pinned from the base config.
+        // Keyed one release ahead: the runner skips fromVersion === toVersion,
+        // so a migration keyed at an operator's current version never fires.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone. The major is
+        // the one being migrated away from and stays 4; a later major needs its
+        // own migration.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '4.1.0': (configFile) => {
+        // Counterpart of the release-candidate migration for the stable release.
+        // An operator who ran a 4.1 release candidate carries a `-rc` image tag,
+        // and the migration that set it no longer fires once they are on the rc
+        // line. Re-pin the drive and rs-dapi tags from the base config so a
+        // stable upgrade moves them off `4-rc` onto the stable `4` images.
+        //
+        // Only tags a release published are moved, so a tag the operator chose
+        // in this namespace (dashpay/drive:4-local) is left alone.
+        const stockDriveImage = stockImagePattern('dashpay/drive', 4);
+        const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && stockDriveImage.test(driveDocker.image)) {
+              driveDocker.image = base.get('platform.drive.abci.docker.image');
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
+              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+            }
+          });
+
         return configFile;
       },
     };

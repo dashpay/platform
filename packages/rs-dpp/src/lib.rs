@@ -3,7 +3,13 @@
 #![forbid(unsafe_code)]
 //#![deny(missing_docs)]
 #![allow(dead_code)]
+// `ProtocolError` is the Err type of hundreds of fns here; boxing it
+// would add indirection to every return. Removing the allow needs a
+// crate-wide error refactor.
 #![allow(clippy::result_large_err)]
+// Covers static-dispatch async trait methods; dyn-safe traits like
+// `Signer` still use `#[async_trait]` at their own declaration.
+#![allow(async_fn_in_trait)]
 
 extern crate core;
 
@@ -73,6 +79,7 @@ pub mod core_types;
 
 pub mod address_funds;
 pub mod group;
+pub mod shielded;
 pub mod withdrawal;
 
 pub use async_trait;
@@ -131,6 +138,7 @@ pub mod prelude {
 }
 
 pub use bincode;
+pub use bincode::enc::Encode;
 #[cfg(feature = "bls-signatures")]
 pub use dashcore::blsful as bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
@@ -140,4 +148,5 @@ pub use data_contracts;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;
 pub use platform_serialization;
+pub use platform_serialization::de::{BorrowDecode, Decode, DefaultBorrowDecode, DefaultDecode};
 pub use platform_value;

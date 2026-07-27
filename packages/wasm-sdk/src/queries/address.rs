@@ -10,9 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::PlatformAddressWasm;
+use wasm_dpp2::utils::try_to_vec;
+use wasm_dpp2::{PlatformAddressLikeArrayJs, PlatformAddressLikeJs, PlatformAddressWasm};
 
 /// Information about a Platform address including its nonce and balance.
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "PlatformAddressInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,13 +66,11 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getAddressInfo")]
     pub async fn get_address_info(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: JsValue,
+        address: PlatformAddressLikeJs,
     ) -> Result<Option<PlatformAddressInfoWasm>, WasmSdkError> {
-        let platform_address: PlatformAddress = PlatformAddressWasm::try_from(&address)
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
-            })?
-            .into();
+        let platform_address: PlatformAddress = address.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
+        })?;
 
         let address_info = AddressInfo::fetch(self.as_ref(), platform_address).await?;
 
@@ -87,13 +87,11 @@ impl WasmSdk {
     )]
     pub async fn get_address_info_with_proof_info(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: JsValue,
+        address: PlatformAddressLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let platform_address: PlatformAddress = PlatformAddressWasm::try_from(&address)
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
-            })?
-            .into();
+        let platform_address: PlatformAddress = address.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
+        })?;
 
         let (address_info, metadata, proof) =
             AddressInfo::fetch_with_metadata_and_proof(self.as_ref(), platform_address, None)
@@ -118,24 +116,16 @@ impl WasmSdk {
     /// @returns Map of PlatformAddress to PlatformAddressInfo (or undefined for unfunded addresses)
     #[wasm_bindgen(
         js_name = "getAddressesInfos",
-        unchecked_return_type = "Map<PlatformAddress, PlatformAddressInfo | undefined>"
+        unchecked_return_type = "Map<string, PlatformAddressInfo | undefined>"
     )]
     pub async fn get_addresses_infos(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Array<PlatformAddressLike>")] addresses: Vec<
-            JsValue,
-        >,
+        addresses: PlatformAddressLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
-        let platform_addresses: BTreeSet<PlatformAddress> = addresses
-            .into_iter()
-            .map(|value| {
-                PlatformAddressWasm::try_from(&value)
-                    .map(PlatformAddress::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
-                    })
-            })
-            .collect::<Result<BTreeSet<_>, _>>()?;
+        let platform_addresses: BTreeSet<PlatformAddress> =
+            try_to_vec::<PlatformAddressWasm, _, _>(addresses, "addresses", "address")?
+                .into_iter()
+                .collect();
 
         let address_infos: AddressInfos =
             AddressInfo::fetch_many(self.as_ref(), platform_addresses.clone()).await?;
@@ -143,7 +133,7 @@ impl WasmSdk {
         let results_map = Map::new();
 
         for address in platform_addresses {
-            let key = JsValue::from(PlatformAddressWasm::from(address));
+            let key: JsValue = PlatformAddressWasm::from(address).to_hex().into();
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());
@@ -163,24 +153,16 @@ impl WasmSdk {
     /// @returns ProofMetadataResponse containing Map of PlatformAddress to PlatformAddressInfo
     #[wasm_bindgen(
         js_name = "getAddressesInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<PlatformAddress, PlatformAddressInfo | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, PlatformAddressInfo | undefined>>"
     )]
     pub async fn get_addresses_infos_with_proof_info(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Array<PlatformAddressLike>")] addresses: Vec<
-            JsValue,
-        >,
+        addresses: PlatformAddressLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let platform_addresses: BTreeSet<PlatformAddress> = addresses
-            .into_iter()
-            .map(|value| {
-                PlatformAddressWasm::try_from(&value)
-                    .map(PlatformAddress::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid platform address: {}", err))
-                    })
-            })
-            .collect::<Result<BTreeSet<_>, _>>()?;
+        let platform_addresses: BTreeSet<PlatformAddress> =
+            try_to_vec::<PlatformAddressWasm, _, _>(addresses, "addresses", "address")?
+                .into_iter()
+                .collect();
 
         let (address_infos, metadata, proof): (AddressInfos, _, _) =
             AddressInfo::fetch_many_with_metadata_and_proof(
@@ -193,7 +175,7 @@ impl WasmSdk {
         let results_map = Map::new();
 
         for address in platform_addresses {
-            let key = JsValue::from(PlatformAddressWasm::from(address));
+            let key: JsValue = PlatformAddressWasm::from(address).to_hex().into();
             let value = match address_infos.get(&address).and_then(|opt| opt.as_ref()) {
                 Some(info) => {
                     let wrapper = PlatformAddressInfoWasm::from(info.clone());

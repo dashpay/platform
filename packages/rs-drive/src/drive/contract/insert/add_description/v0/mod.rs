@@ -108,7 +108,10 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = self.cache.system_data_contracts.load_keyword_search();
+        let contract = self
+            .cache
+            .system_data_contracts
+            .load_keyword_search(platform_version)?;
         let short_description_document_type =
             contract.document_type_for_name("shortDescription")?;
 
@@ -217,5 +220,110 @@ impl Drive {
         .into();
 
         Ok(document)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dpp::version::PlatformVersion;
+
+    /// Exercises the `short_only=true` branch of `add_new_contract_description_v0`.
+    /// PR #3516 covers `short_only=false` via `insert_contract_v1` and the re-use
+    /// of the short-only branch via `update_contract_description_operations_v0`
+    /// going through the "missing prior description -> add_new_contract_description(short_only=true)"
+    /// path. However, no test exercises direct invocation of the public
+    /// `add_new_contract_description` API with `short_only=true` and apply=true,
+    /// which skips the fullDescription document creation entirely.
+    #[test]
+    fn test_add_new_contract_description_v0_short_only_direct_call() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Grove must have the keyword_search contract trees before we can add
+        // documents to that contract.
+        let keyword_search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("keyword_search contract");
+        drive
+            .apply_contract(
+                &keyword_search_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search contract");
+
+        let contract_id = Identifier::random();
+        let owner_id = Identifier::random();
+
+        let fee = drive
+            .add_new_contract_description(
+                contract_id,
+                owner_id,
+                &"direct short-only description".to_string(),
+                true, // short_only = skips the fullDescription branch
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("short-only add should succeed");
+
+        assert!(
+            fee.processing_fee > 0,
+            "short-only description insert should produce non-zero fee"
+        );
+    }
+
+    /// Exercises `add_new_contract_description_v0` with apply=false: the
+    /// estimated-costs branch which populates
+    /// `estimated_costs_only_with_layer_info = Some(HashMap::new())`. This
+    /// drives the code through `apply_batch_low_level_drive_operations` with
+    /// layer info instead of actually writing to grove.
+    #[test]
+    fn test_add_new_contract_description_v0_estimate_only() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let keyword_search_contract =
+            load_system_data_contract(SystemDataContract::KeywordSearch, platform_version)
+                .expect("keyword_search contract");
+        drive
+            .apply_contract(
+                &keyword_search_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("apply keyword_search contract");
+
+        let contract_id = Identifier::random();
+        let owner_id = Identifier::random();
+
+        let fee = drive
+            .add_new_contract_description(
+                contract_id,
+                owner_id,
+                &"estimate-only description".to_string(),
+                false, // short_only=false exercises full+short branches for estimation
+                &BlockInfo::default(),
+                false, // apply=false -> estimation
+                None,
+                platform_version,
+            )
+            .expect("estimate-only add should succeed");
+
+        assert!(
+            fee.processing_fee > 0 || fee.storage_fee > 0,
+            "estimate-only description should still produce fees"
+        );
     }
 }

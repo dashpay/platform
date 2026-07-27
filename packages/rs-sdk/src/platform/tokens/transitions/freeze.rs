@@ -63,12 +63,18 @@ impl Sdk {
     ) -> Result<FreezeResult, Error> {
         let platform_version = self.version();
 
+        let put_settings = freeze_tokens_transition_builder.settings;
+
         let state_transition = freeze_tokens_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, None)
+            // Whether this operation's proof binds execution depends on the token's
+            // keeps-history configuration (and group usage), which the SDK cannot
+            // know statically: accept the affected-state tag and treat no-history
+            // results as height-pinned snapshots, not execution evidence.
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {

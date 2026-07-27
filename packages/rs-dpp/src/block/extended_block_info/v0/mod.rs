@@ -1,10 +1,14 @@
 use crate::block::block_info::BlockInfo;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// Extended Block information
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtendedBlockInfoV0 {
     /// Basic block info
     pub basic_info: BlockInfo,
@@ -17,7 +21,12 @@ pub struct ExtendedBlockInfoV0 {
     /// The proposer pro_tx_hash
     pub proposer_pro_tx_hash: [u8; 32],
     /// Signature
-    #[serde(with = "signature_serializer")]
+    // serde has no built-in `Serialize`/`Deserialize` for `[u8; N]` when N > 32,
+    // so this 96-byte field needs an explicit byte serializer. `json_safe_fields`
+    // injects one for byte fields, but only under `json-conversion`; this struct
+    // derives serde unconditionally (no feature gate), so the annotation is written
+    // out here to keep it compiling whenever `json-conversion` is off.
+    #[serde(with = "crate::serialization::serde_bytes")]
     pub signature: [u8; 96],
     /// Round
     pub round: u32,
@@ -126,31 +135,5 @@ impl ExtendedBlockInfoV0Setters for ExtendedBlockInfoV0 {
 
     fn set_round(&mut self, round: u32) {
         self.round = round;
-    }
-}
-
-mod signature_serializer {
-    use super::*;
-    use serde::de::Error;
-    use serde::{Deserializer, Serializer};
-
-    pub fn serialize<S>(signature: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_bytes(signature)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 96], D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let buf: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        if buf.len() != 96 {
-            return Err(Error::invalid_length(buf.len(), &"array of length 96"));
-        }
-        let mut arr = [0u8; 96];
-        arr.copy_from_slice(&buf);
-        Ok(arr)
     }
 }

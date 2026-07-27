@@ -130,8 +130,9 @@ impl TestAddressSigner {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<PlatformAddress> for TestAddressSigner {
-    fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         match key {
             PlatformAddress::P2pkh(hash) => {
                 let entry = self.p2pkh_keys.get(hash).ok_or_else(|| {
@@ -160,7 +161,7 @@ impl Signer<PlatformAddress> for TestAddressSigner {
         }
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &PlatformAddress,
         data: &[u8],
@@ -255,8 +256,8 @@ fn verify_transition_signatures(
 // P2PKH Tests
 // ============================================================================
 
-#[test]
-fn test_single_p2pkh_input_signing() {
+#[tokio::test]
+async fn test_single_p2pkh_input_signing() {
     let mut signer = TestAddressSigner::new();
 
     // Create input address
@@ -267,7 +268,7 @@ fn test_single_p2pkh_input_signing() {
 
     // Build inputs and outputs
     let mut inputs = BTreeMap::new();
-    inputs.insert(input_address.clone(), (1u32, 1000u64)); // nonce: 1, credits: 1000
+    inputs.insert(input_address, (1u32, 1000u64)); // nonce: 1, credits: 1000
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output_address, 900u64);
@@ -281,6 +282,7 @@ fn test_single_p2pkh_input_signing() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     // Extract the V0 transition
@@ -301,8 +303,8 @@ fn test_single_p2pkh_input_signing() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_multiple_p2pkh_inputs_signing() {
+#[tokio::test]
+async fn test_multiple_p2pkh_inputs_signing() {
     let mut signer = TestAddressSigner::new();
 
     // Create multiple input addresses
@@ -315,9 +317,9 @@ fn test_multiple_p2pkh_inputs_signing() {
 
     // Build inputs (multiple inputs)
     let mut inputs = BTreeMap::new();
-    inputs.insert(input1.clone(), (1u32, 500u64));
-    inputs.insert(input2.clone(), (1u32, 300u64));
-    inputs.insert(input3.clone(), (1u32, 200u64));
+    inputs.insert(input1, (1u32, 500u64));
+    inputs.insert(input2, (1u32, 300u64));
+    inputs.insert(input3, (1u32, 200u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -331,6 +333,7 @@ fn test_multiple_p2pkh_inputs_signing() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -356,8 +359,8 @@ fn test_multiple_p2pkh_inputs_signing() {
 // P2SH Multisig Tests
 // ============================================================================
 
-#[test]
-fn test_single_p2sh_2_of_3_multisig_input_signing() {
+#[tokio::test]
+async fn test_single_p2sh_2_of_3_multisig_input_signing() {
     let mut signer = TestAddressSigner::new();
 
     // Create 2-of-3 multisig input
@@ -367,7 +370,7 @@ fn test_single_p2sh_2_of_3_multisig_input_signing() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input_address.clone(), (1u32, 1000u64));
+    inputs.insert(input_address, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -381,6 +384,7 @@ fn test_single_p2sh_2_of_3_multisig_input_signing() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -407,8 +411,8 @@ fn test_single_p2sh_2_of_3_multisig_input_signing() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_p2sh_3_of_5_multisig_input_signing() {
+#[tokio::test]
+async fn test_p2sh_3_of_5_multisig_input_signing() {
     let mut signer = TestAddressSigner::new();
 
     // Create 3-of-5 multisig input
@@ -420,7 +424,7 @@ fn test_p2sh_3_of_5_multisig_input_signing() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input_address.clone(), (1u32, 5000u64));
+    inputs.insert(input_address, (1u32, 5000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 4500u64);
@@ -433,6 +437,7 @@ fn test_p2sh_3_of_5_multisig_input_signing() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -452,8 +457,8 @@ fn test_p2sh_3_of_5_multisig_input_signing() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_multiple_p2sh_inputs_signing() {
+#[tokio::test]
+async fn test_multiple_p2sh_inputs_signing() {
     let mut signer = TestAddressSigner::new();
 
     // Create two different multisig addresses
@@ -463,8 +468,8 @@ fn test_multiple_p2sh_inputs_signing() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input1.clone(), (1u32, 1000u64));
-    inputs.insert(input2.clone(), (1u32, 500u64));
+    inputs.insert(input1, (1u32, 1000u64));
+    inputs.insert(input2, (1u32, 500u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 1400u64);
@@ -477,6 +482,7 @@ fn test_multiple_p2sh_inputs_signing() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -499,8 +505,8 @@ fn test_multiple_p2sh_inputs_signing() {
 // Mixed P2PKH and P2SH Tests
 // ============================================================================
 
-#[test]
-fn test_mixed_p2pkh_and_p2sh_inputs() {
+#[tokio::test]
+async fn test_mixed_p2pkh_and_p2sh_inputs() {
     let mut signer = TestAddressSigner::new();
 
     // Create mixed inputs
@@ -510,8 +516,8 @@ fn test_mixed_p2pkh_and_p2sh_inputs() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(p2pkh_input.clone(), (1u32, 1000u64));
-    inputs.insert(p2sh_input.clone(), (1u32, 2000u64));
+    inputs.insert(p2pkh_input, (1u32, 1000u64));
+    inputs.insert(p2sh_input, (1u32, 2000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 2800u64);
@@ -524,6 +530,7 @@ fn test_mixed_p2pkh_and_p2sh_inputs() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -553,8 +560,8 @@ fn test_mixed_p2pkh_and_p2sh_inputs() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_complex_mixed_inputs_multiple_outputs() {
+#[tokio::test]
+async fn test_complex_mixed_inputs_multiple_outputs() {
     let mut signer = TestAddressSigner::new();
 
     // Create various inputs
@@ -568,10 +575,10 @@ fn test_complex_mixed_inputs_multiple_outputs() {
     let output2 = PlatformAddress::P2sh([101u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(p2pkh1.clone(), (1u32, 1000u64));
-    inputs.insert(p2pkh2.clone(), (1u32, 2000u64));
-    inputs.insert(p2sh1.clone(), (1u32, 3000u64));
-    inputs.insert(p2sh2.clone(), (1u32, 4000u64));
+    inputs.insert(p2pkh1, (1u32, 1000u64));
+    inputs.insert(p2pkh2, (1u32, 2000u64));
+    inputs.insert(p2sh1, (1u32, 3000u64));
+    inputs.insert(p2sh2, (1u32, 4000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output1, 5000u64);
@@ -585,6 +592,7 @@ fn test_complex_mixed_inputs_multiple_outputs() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -618,15 +626,15 @@ fn test_complex_mixed_inputs_multiple_outputs() {
 // Serialization Tests
 // ============================================================================
 
-#[test]
-fn test_signed_transition_serialization_roundtrip() {
+#[tokio::test]
+async fn test_signed_transition_serialization_roundtrip() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2pkh([1u8; 32]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -639,6 +647,7 @@ fn test_signed_transition_serialization_roundtrip() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -663,15 +672,15 @@ fn test_signed_transition_serialization_roundtrip() {
     verify_transition_signatures(&deserialized).expect("signatures should still be valid");
 }
 
-#[test]
-fn test_multisig_transition_serialization_roundtrip() {
+#[tokio::test]
+async fn test_multisig_transition_serialization_roundtrip() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2sh_multisig(2, &[[10u8; 32], [11u8; 32], [12u8; 32]]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -684,6 +693,7 @@ fn test_multisig_transition_serialization_roundtrip() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -703,8 +713,8 @@ fn test_multisig_transition_serialization_roundtrip() {
     verify_transition_signatures(&deserialized).expect("signatures should still be valid");
 }
 
-#[test]
-fn test_mixed_transition_serialization_roundtrip() {
+#[tokio::test]
+async fn test_mixed_transition_serialization_roundtrip() {
     let mut signer = TestAddressSigner::new();
 
     let p2pkh = signer.add_p2pkh([50u8; 32]);
@@ -712,8 +722,8 @@ fn test_mixed_transition_serialization_roundtrip() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(p2pkh.clone(), (1u32, 1000u64));
-    inputs.insert(p2sh.clone(), (1u32, 2000u64));
+    inputs.insert(p2pkh, (1u32, 1000u64));
+    inputs.insert(p2sh, (1u32, 2000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 2800u64);
@@ -726,6 +736,7 @@ fn test_mixed_transition_serialization_roundtrip() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -749,18 +760,18 @@ fn test_mixed_transition_serialization_roundtrip() {
 // Verification Failure Tests
 // ============================================================================
 
-#[test]
-fn test_tampered_inputs_verification_fails() {
+#[tokio::test]
+async fn test_tampered_inputs_verification_fails() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2pkh([1u8; 32]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
-    outputs.insert(output.clone(), 900u64);
+    outputs.insert(output, 900u64);
 
     let state_transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
         inputs.clone(),
@@ -770,6 +781,7 @@ fn test_tampered_inputs_verification_fails() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let mut transition = match state_transition {
@@ -781,7 +793,7 @@ fn test_tampered_inputs_verification_fails() {
 
     // Tamper with the transition by modifying credits
     let original_witnesses = transition.input_witnesses.clone();
-    transition.inputs.insert(input.clone(), (1u32, 2000u64)); // Changed credits
+    transition.inputs.insert(input, (1u32, 2000u64)); // Changed credits
 
     // Re-add original witnesses (they were signed for different data)
     transition.input_witnesses = original_witnesses;
@@ -794,18 +806,18 @@ fn test_tampered_inputs_verification_fails() {
     );
 }
 
-#[test]
-fn test_tampered_outputs_verification_fails() {
+#[tokio::test]
+async fn test_tampered_outputs_verification_fails() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2pkh([1u8; 32]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
-    outputs.insert(output.clone(), 900u64);
+    outputs.insert(output, 900u64);
 
     let state_transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
         inputs,
@@ -815,6 +827,7 @@ fn test_tampered_outputs_verification_fails() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let mut transition = match state_transition {
@@ -825,7 +838,7 @@ fn test_tampered_outputs_verification_fails() {
     };
 
     // Tamper with outputs
-    transition.outputs.insert(output.clone(), 950u64); // Changed output amount
+    transition.outputs.insert(output, 950u64); // Changed output amount
 
     // Verification should fail
     let result = verify_transition_signatures(&transition);
@@ -835,8 +848,8 @@ fn test_tampered_outputs_verification_fails() {
     );
 }
 
-#[test]
-fn test_wrong_witness_for_address_fails() {
+#[tokio::test]
+async fn test_wrong_witness_for_address_fails() {
     let mut signer = TestAddressSigner::new();
 
     let input1 = signer.add_p2pkh([1u8; 32]);
@@ -844,7 +857,7 @@ fn test_wrong_witness_for_address_fails() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input1.clone(), (1u32, 1000u64));
+    inputs.insert(input1, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -857,6 +870,7 @@ fn test_wrong_witness_for_address_fails() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let mut transition = match state_transition {
@@ -868,7 +882,7 @@ fn test_wrong_witness_for_address_fails() {
 
     // Replace input with a different address but keep the same witness
     transition.inputs.clear();
-    transition.inputs.insert(input2.clone(), (1u32, 1000u64));
+    transition.inputs.insert(input2, (1u32, 1000u64));
 
     // Verification should fail (witness public key doesn't match new address)
     let result = verify_transition_signatures(&transition);
@@ -878,15 +892,15 @@ fn test_wrong_witness_for_address_fails() {
     );
 }
 
-#[test]
-fn test_missing_witness_fails() {
+#[tokio::test]
+async fn test_missing_witness_fails() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2pkh([1u8; 32]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -899,6 +913,7 @@ fn test_missing_witness_fails() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let mut transition = match state_transition {
@@ -919,15 +934,15 @@ fn test_missing_witness_fails() {
     );
 }
 
-#[test]
-fn test_p2sh_insufficient_signatures_fails() {
+#[tokio::test]
+async fn test_p2sh_insufficient_signatures_fails() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2sh_multisig(2, &[[10u8; 32], [11u8; 32], [12u8; 32]]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -940,6 +955,7 @@ fn test_p2sh_insufficient_signatures_fails() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let mut transition = match state_transition {
@@ -974,8 +990,8 @@ fn test_p2sh_insufficient_signatures_fails() {
 // Edge Cases
 // ============================================================================
 
-#[test]
-fn test_1_of_1_multisig() {
+#[tokio::test]
+async fn test_1_of_1_multisig() {
     let mut signer = TestAddressSigner::new();
 
     // 1-of-1 multisig is essentially a P2SH wrapped P2PK
@@ -983,7 +999,7 @@ fn test_1_of_1_multisig() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -996,6 +1012,7 @@ fn test_1_of_1_multisig() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -1012,8 +1029,8 @@ fn test_1_of_1_multisig() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_high_threshold_multisig() {
+#[tokio::test]
+async fn test_high_threshold_multisig() {
     let mut signer = TestAddressSigner::new();
 
     // 5-of-5 requires all signers
@@ -1022,7 +1039,7 @@ fn test_high_threshold_multisig() {
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 10000u64));
+    inputs.insert(input, (1u32, 10000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 9500u64);
@@ -1035,6 +1052,7 @@ fn test_high_threshold_multisig() {
         0,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -1051,15 +1069,15 @@ fn test_high_threshold_multisig() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_signer_cannot_sign_unknown_address() {
+#[tokio::test]
+async fn test_signer_cannot_sign_unknown_address() {
     let signer = TestAddressSigner::new(); // Empty signer
 
     let unknown_address = PlatformAddress::P2pkh([1u8; 20]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(unknown_address.clone(), (1u32, 1000u64));
+    inputs.insert(unknown_address, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -1072,7 +1090,8 @@ fn test_signer_cannot_sign_unknown_address() {
         &signer,
         0,
         get_platform_version(),
-    );
+    )
+    .await;
 
     assert!(
         result.is_err(),
@@ -1080,8 +1099,8 @@ fn test_signer_cannot_sign_unknown_address() {
     );
 }
 
-#[test]
-fn test_can_sign_with_check() {
+#[tokio::test]
+async fn test_can_sign_with_check() {
     let mut signer = TestAddressSigner::new();
 
     let known_address = signer.add_p2pkh([1u8; 32]);
@@ -1091,15 +1110,15 @@ fn test_can_sign_with_check() {
     assert!(!signer.can_sign_with(&unknown_address));
 }
 
-#[test]
-fn test_user_fee_increase_preserved() {
+#[tokio::test]
+async fn test_user_fee_increase_preserved() {
     let mut signer = TestAddressSigner::new();
 
     let input = signer.add_p2pkh([1u8; 32]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     let mut inputs = BTreeMap::new();
-    inputs.insert(input.clone(), (1u32, 1000u64));
+    inputs.insert(input, (1u32, 1000u64));
 
     let mut outputs = BTreeMap::new();
     outputs.insert(output, 900u64);
@@ -1114,6 +1133,7 @@ fn test_user_fee_increase_preserved() {
         user_fee_increase,
         get_platform_version(),
     )
+    .await
     .expect("should create signed transition");
 
     let transition = match state_transition {
@@ -1127,17 +1147,17 @@ fn test_user_fee_increase_preserved() {
     verify_transition_signatures(&transition).expect("signatures should be valid");
 }
 
-#[test]
-fn test_different_nonces_produce_different_signable_bytes() {
+#[tokio::test]
+async fn test_different_nonces_produce_different_signable_bytes() {
     let mut signer = TestAddressSigner::new();
     let input = signer.add_p2pkh([1u8; 32]);
     let output = PlatformAddress::P2pkh([99u8; 20]);
 
     // First transition with nonce 1
     let mut inputs1 = BTreeMap::new();
-    inputs1.insert(input.clone(), (1u32, 1000u64));
+    inputs1.insert(input, (1u32, 1000u64));
     let mut outputs1 = BTreeMap::new();
-    outputs1.insert(output.clone(), 900u64);
+    outputs1.insert(output, 900u64);
 
     let transition1 = AddressFundsTransferTransitionV0 {
         inputs: inputs1,
@@ -1149,9 +1169,9 @@ fn test_different_nonces_produce_different_signable_bytes() {
 
     // Second transition with nonce 2
     let mut inputs2 = BTreeMap::new();
-    inputs2.insert(input.clone(), (2u32, 1000u64)); // Different nonce
+    inputs2.insert(input, (2u32, 1000u64)); // Different nonce
     let mut outputs2 = BTreeMap::new();
-    outputs2.insert(output.clone(), 900u64);
+    outputs2.insert(output, 900u64);
 
     let transition2 = AddressFundsTransferTransitionV0 {
         inputs: inputs2,

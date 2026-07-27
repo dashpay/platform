@@ -1,4 +1,5 @@
 pub mod v1;
+pub mod v2;
 
 use crate::version::FeatureVersion;
 
@@ -8,8 +9,8 @@ pub struct SystemDataContractVersions {
     pub dpns: FeatureVersion,
     pub dashpay: FeatureVersion,
     pub masternode_reward_shares: FeatureVersion,
-    pub feature_flags: FeatureVersion,
     pub wallet: FeatureVersion,
     pub token_history: FeatureVersion,
     pub keyword_search: FeatureVersion,
+    pub document_history: FeatureVersion,
 }

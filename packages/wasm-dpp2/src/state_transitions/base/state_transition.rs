@@ -3,8 +3,9 @@ use crate::enums::keys::key_type::KeyTypeWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::impl_wasm_type_info;
 use crate::mock_bls::MockBLS;
 use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
 use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
@@ -67,21 +68,11 @@ impl From<&StateTransitionWasm> for StateTransition {
 
 #[wasm_bindgen(js_class = StateTransition)]
 impl StateTransitionWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "StateTransition".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "StateTransition".to_string()
-    }
-
     #[wasm_bindgen(js_name = "sign")]
     pub fn sign(
         &mut self,
-        private_key: &PrivateKeyWasm,
-        public_key: &IdentityPublicKeyWasm,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
     ) -> WasmDppResult<Vec<u8>> {
         self.0.sign(
             &public_key.clone().into(),
@@ -110,14 +101,14 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "signByPrivateKey")]
     pub fn sign_by_private_key(
         &mut self,
-        private_key: &PrivateKeyWasm,
-        key_id: Option<KeyID>,
-        js_key_type: JsValue,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<KeyID>,
+        #[wasm_bindgen(js_name = "keyType")] key_type: JsValue,
     ) -> WasmDppResult<Vec<u8>> {
-        let key_type = if js_key_type.is_undefined() {
+        let key_type = if key_type.is_undefined() {
             KeyTypeWasm::ECDSA_SECP256K1
         } else {
-            KeyTypeWasm::try_from(js_key_type)?
+            KeyTypeWasm::try_from(key_type)?
         };
 
         self.0.sign_by_private_key(
@@ -136,13 +127,15 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "verifyPublicKey")]
     pub fn verify_public_key(
         &self,
-        public_key: &IdentityPublicKeyWasm,
-        js_allow_signing_with_any_security_level: Option<bool>,
-        js_allow_signing_with_any_purpose: Option<bool>,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
+        #[wasm_bindgen(js_name = "allowSigningWithAnySecurityLevel")]
+        allow_signing_with_any_security_level: Option<bool>,
+        #[wasm_bindgen(js_name = "allowSigningWithAnyPurpose")]
+        allow_signing_with_any_purpose: Option<bool>,
     ) -> WasmDppResult<()> {
         let allow_signing_with_any_security_level =
-            js_allow_signing_with_any_security_level.unwrap_or(false);
-        let allow_signing_with_any_purpose = js_allow_signing_with_any_purpose.unwrap_or(false);
+            allow_signing_with_any_security_level.unwrap_or(false);
+        let allow_signing_with_any_purpose = allow_signing_with_any_purpose.unwrap_or(false);
 
         match &self.0 {
             DataContractCreate(st) => {
@@ -229,24 +222,20 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> WasmDppResult<JsValue> {
-        let bytes = self.0.serialize_to_bytes()?;
-
-        Ok(JsValue::from(bytes.clone()))
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> WasmDppResult<JsValue> {
+    pub fn to_hex(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
-
-        Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Hex)))
+        Ok(encode(bytes.as_slice(), Encoding::Hex))
     }
 
     #[wasm_bindgen(js_name = "toBase64")]
-    pub fn to_base64(&self) -> WasmDppResult<JsValue> {
+    pub fn to_base64(&self) -> WasmDppResult<String> {
         let bytes = self.0.serialize_to_bytes()?;
-
-        Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Base64)))
+        Ok(encode(bytes.as_slice(), Encoding::Base64))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
@@ -276,8 +265,16 @@ impl StateTransitionWasm {
         Ok(st.into())
     }
 
+    #[wasm_bindgen(js_name = "getSignableBytes")]
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.signable_bytes()?)
+    }
+
     #[wasm_bindgen(js_name = "hash")]
-    pub fn get_hash(&self, skip_signature: bool) -> WasmDppResult<String> {
+    pub fn get_hash(
+        &self,
+        #[wasm_bindgen(js_name = "skipSignature")] skip_signature: bool,
+    ) -> WasmDppResult<String> {
         let payload = if skip_signature {
             self.0.signable_bytes()?
         } else {
@@ -287,13 +284,13 @@ impl StateTransitionWasm {
         Ok(Sha256::digest(payload).to_hex_string(Lower))
     }
 
-    #[wasm_bindgen(js_name = "getActionType")]
-    pub fn get_action_type(&self) -> String {
+    #[wasm_bindgen(getter = "actionType")]
+    pub fn action_type(&self) -> String {
         self.0.name()
     }
 
-    #[wasm_bindgen(js_name = "getActionTypeNumber")]
-    pub fn get_action_type_number(&self) -> u8 {
+    #[wasm_bindgen(getter = "actionTypeNumber")]
+    pub fn action_type_number(&self) -> u8 {
         use StateTransition::*;
         match self.0 {
             DataContractCreate(_) => 0,
@@ -311,31 +308,37 @@ impl StateTransitionWasm {
             AddressFundsTransfer(_) => 12,
             AddressFundingFromAssetLock(_) => 13,
             AddressCreditWithdrawal(_) => 14,
+            Shield(_) => 15,
+            ShieldedTransfer(_) => 16,
+            Unshield(_) => 17,
+            ShieldFromAssetLock(_) => 18,
+            ShieldedWithdrawal(_) => 19,
+            IdentityCreateFromShieldedPool(_) => 20,
         }
     }
 
-    #[wasm_bindgen(js_name = "getOwnerId")]
-    pub fn get_owner_id(&self) -> Option<IdentifierWasm> {
+    #[wasm_bindgen(getter = "ownerId")]
+    pub fn owner_id(&self) -> Option<IdentifierWasm> {
         self.0.owner_id().map(Into::into)
     }
 
     #[wasm_bindgen(getter = "signature")]
-    pub fn get_signature(&self) -> Option<Vec<u8>> {
+    pub fn signature(&self) -> Option<Vec<u8>> {
         self.0.signature().map(BinaryData::to_vec)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
-    pub fn get_signature_public_key_id(&self) -> Option<KeyID> {
+    pub fn signature_public_key_id(&self) -> Option<KeyID> {
         self.0.signature_public_key_id()
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
-    pub fn get_user_fee_increase(&self) -> UserFeeIncrease {
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
         self.0.user_fee_increase()
     }
 
-    #[wasm_bindgen(js_name = "getPurposeRequirement")]
-    pub fn get_purpose_requirement(&self) -> Option<Vec<String>> {
+    #[wasm_bindgen(getter = "purposeRequirement")]
+    pub fn purpose_requirement(&self) -> Option<Vec<String>> {
         let requirements = self.0.purpose_requirement();
 
         requirements.map(|req| {
@@ -349,9 +352,9 @@ impl StateTransitionWasm {
     #[wasm_bindgen(js_name = "getKeyLevelRequirement")]
     pub fn get_key_level_requirement(
         &self,
-        js_purpose: &JsValue,
+        purpose: &JsValue,
     ) -> WasmDppResult<Option<Vec<String>>> {
-        let purpose = PurposeWasm::try_from(js_purpose.clone())?;
+        let purpose = PurposeWasm::try_from(purpose.clone())?;
 
         let requirements = self.0.security_level_requirement(purpose.into());
 
@@ -366,8 +369,8 @@ impl StateTransitionWasm {
         }
     }
 
-    #[wasm_bindgen(js_name = "getIdentityContractNonce")]
-    pub fn get_identity_contract_nonce(&self) -> Option<IdentityNonce> {
+    #[wasm_bindgen(getter = "identityContractNonce")]
+    pub fn identity_contract_nonce(&self) -> Option<IdentityNonce> {
         use StateTransition::*;
         match &self.0 {
             DataContractCreate(_) => None,
@@ -395,11 +398,17 @@ impl StateTransitionWasm {
             | AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
             | AddressCreditWithdrawal(_) => None,
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => None,
         }
     }
 
-    #[wasm_bindgen(js_name = "getIdentityNonce")]
-    pub fn get_identity_nonce(&self) -> Option<IdentityNonce> {
+    #[wasm_bindgen(getter = "identityNonce")]
+    pub fn identity_nonce(&self) -> Option<IdentityNonce> {
         use StateTransition::*;
         match &self.0 {
             DataContractCreate(contract_create) => Some(contract_create.identity_nonce()),
@@ -417,6 +426,12 @@ impl StateTransitionWasm {
             AddressFundsTransfer(_)
             | AddressFundingFromAssetLock(_)
             | AddressCreditWithdrawal(_) => None,
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => None,
         }
     }
 
@@ -426,23 +441,28 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "signaturePublicKeyId")]
-    pub fn set_signature_public_key_id(&mut self, key_id: KeyID) {
+    pub fn set_signature_public_key_id(
+        &mut self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: KeyID,
+    ) {
         self.0.set_signature_public_key_id(key_id)
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
+    pub fn set_user_fee_increase(
+        &mut self,
+        #[wasm_bindgen(js_name = "userFeeIncrease")] user_fee_increase: UserFeeIncrease,
+    ) {
         self.0.set_user_fee_increase(user_fee_increase)
     }
 
     #[wasm_bindgen(js_name = "setOwnerId")]
     pub fn set_owner_id(
         &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_owner_id: &JsValue,
+        #[wasm_bindgen(js_name = "ownerId")] owner_id: IdentifierLikeJs,
     ) -> WasmDppResult<()> {
         use dpp::state_transition::StateTransition::*;
-        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
+        let owner_id: Identifier = owner_id.try_into()?;
 
         match self.0.clone() {
             DataContractCreate(mut contract_create) => {
@@ -549,13 +569,25 @@ impl StateTransitionWasm {
                     "Cannot set owner for address funds transfer transition",
                 ));
             }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set owner for shielded transition",
+                ));
+            }
         };
 
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) -> WasmDppResult<()> {
+    pub fn set_identity_contract_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        let nonce: IdentityNonce = try_to_u64(nonce, "identityContractNonce")?;
         use StateTransition::*;
         self.0 = match self.0.clone() {
             DataContractCreate(_) => {
@@ -615,13 +647,25 @@ impl StateTransitionWasm {
                     "Cannot set identity contract nonce for address-related transition types",
                 ));
             }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for shielded transition",
+                ));
+            }
         };
 
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "setIdentityNonce")]
-    pub fn set_identity_nonce(&mut self, nonce: IdentityNonce) -> WasmDppResult<()> {
+    pub fn set_identity_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        use crate::utils::try_to_u64;
+        let nonce: IdentityNonce = try_to_u64(nonce, "identityNonce")?;
         use StateTransition::*;
         self.0 = match self.0.clone() {
             DataContractCreate(mut contract_create) => {
@@ -701,8 +745,20 @@ impl StateTransitionWasm {
                     "Cannot set identity nonce for address-related transition types",
                 ));
             }
+            Shield(_)
+            | ShieldedTransfer(_)
+            | Unshield(_)
+            | ShieldFromAssetLock(_)
+            | ShieldedWithdrawal(_)
+            | IdentityCreateFromShieldedPool(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for shielded transition",
+                ));
+            }
         };
 
         Ok(())
     }
 }
+
+impl_wasm_type_info!(StateTransitionWasm, StateTransition);

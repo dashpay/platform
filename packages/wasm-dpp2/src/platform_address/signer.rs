@@ -1,8 +1,9 @@
-use super::PlatformAddressWasm;
+use super::{PlatformAddressLikeJs, PlatformAddressWasm};
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
-use crate::utils::IntoWasm;
+use crate::impl_wasm_type_info;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::signer;
@@ -35,7 +36,7 @@ impl fmt::Debug for PlatformAddressSignerWasm {
 impl PlatformAddressSignerWasm {
     /// Creates a new empty PlatformAddressSigner.
     #[wasm_bindgen(constructor)]
-    pub fn new() -> PlatformAddressSignerWasm {
+    pub fn constructor() -> PlatformAddressSignerWasm {
         PlatformAddressSignerWasm {
             private_keys: BTreeMap::new(),
         }
@@ -48,23 +49,15 @@ impl PlatformAddressSignerWasm {
     /// @param privateKey - The PrivateKey object
     /// @returns The derived Platform address
     #[wasm_bindgen(js_name = "addKey")]
-    pub fn add_key(&mut self, private_key: &PrivateKeyWasm) -> WasmDppResult<PlatformAddressWasm> {
+    pub fn add_key(
+        &mut self,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+    ) -> WasmDppResult<PlatformAddressWasm> {
         let platform_address =
             PlatformAddressWasm::from(PlatformAddress::from(private_key.inner()));
         self.private_keys
             .insert(platform_address, private_key.clone());
         Ok(platform_address)
-    }
-
-    /// Returns the type name for WASM object identification (instance getter).
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "PlatformAddressSigner".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "PlatformAddressSigner".to_string()
     }
 
     /// Returns the number of keys in this signer.
@@ -75,11 +68,8 @@ impl PlatformAddressSignerWasm {
 
     /// Returns true if this signer has a key for the given address.
     #[wasm_bindgen(js_name = "hasKey")]
-    pub fn has_key(
-        &self,
-        #[wasm_bindgen(unchecked_param_type = "PlatformAddressLike")] address: &JsValue,
-    ) -> WasmDppResult<bool> {
-        let platform_address = PlatformAddressWasm::try_from(address)?;
+    pub fn has_key(&self, address: PlatformAddressLikeJs) -> WasmDppResult<bool> {
+        let platform_address: PlatformAddressWasm = address.try_into()?;
         Ok(self.private_keys.contains_key(&platform_address))
     }
 
@@ -104,8 +94,13 @@ impl PlatformAddressSignerWasm {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<PlatformAddress> for PlatformAddressSignerWasm {
-    fn sign(&self, address: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(
+        &self,
+        address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
         let wasm_address = PlatformAddressWasm::from(*address);
 
         let private_key = self.private_keys.get(&wasm_address).ok_or_else(|| {
@@ -120,12 +115,12 @@ impl Signer<PlatformAddress> for PlatformAddressSignerWasm {
         Ok(signature.to_vec().into())
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         address: &PlatformAddress,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        let signature = self.sign(address, data)?;
+        let signature = self.sign(address, data).await?;
 
         match address {
             PlatformAddress::P2pkh(_) => Ok(AddressWitness::P2pkh { signature }),
@@ -153,15 +148,6 @@ impl PlatformAddressSignerWasm {
     }
 }
 
-impl_try_from_options!(PlatformAddressSignerWasm, "PlatformAddressSigner", "signer");
-
-impl TryFrom<&JsValue> for PlatformAddressSignerWasm {
-    type Error = WasmDppError;
-
-    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        value
-            .to_wasm::<PlatformAddressSignerWasm>("PlatformAddressSigner")
-            .map(|boxed| (*boxed).clone())
-            .map_err(|_| WasmDppError::invalid_argument("Expected a PlatformAddressSigner object"))
-    }
-}
+impl_try_from_js_value!(PlatformAddressSignerWasm, "PlatformAddressSigner");
+impl_try_from_options!(PlatformAddressSignerWasm);
+impl_wasm_type_info!(PlatformAddressSignerWasm, PlatformAddressSigner);

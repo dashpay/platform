@@ -25,7 +25,9 @@ export class AddressesFacade {
    * @param address - The platform address to query (PlatformAddress, Uint8Array, or bech32m string)
    * @returns ProofMetadataResponse containing PlatformAddressInfo with proof information
    */
-  async getWithProof(address: wasm.PlatformAddressLike): Promise<wasm.ProofMetadataResponseTyped<wasm.PlatformAddressInfo>> {
+  async getWithProof(
+    address: wasm.PlatformAddressLike,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.PlatformAddressInfo | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressInfoWithProofInfo(address);
   }
@@ -37,8 +39,8 @@ export class AddressesFacade {
    * @returns Map of PlatformAddress to PlatformAddressInfo (or undefined for unfunded addresses)
    */
   async getMany(
-    addresses: wasm.PlatformAddressLike[],
-  ): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo | undefined>> {
+    addresses: wasm.PlatformAddressLikeArray,
+  ): Promise<Map<string, wasm.PlatformAddressInfo | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressesInfos(addresses);
   }
@@ -50,8 +52,8 @@ export class AddressesFacade {
    * @returns ProofMetadataResponse containing Map of PlatformAddress to PlatformAddressInfo
    */
   async getManyWithProof(
-    addresses: wasm.PlatformAddressLike[],
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo | undefined>>> {
+    addresses: wasm.PlatformAddressLikeArray,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, wasm.PlatformAddressInfo | undefined>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getAddressesInfosWithProofInfo(addresses);
   }
@@ -64,7 +66,7 @@ export class AddressesFacade {
    *
    * @example
    * ```typescript
-   * const recipientAddr = PlatformAddress.fromBech32m("tevo1...");
+   * const recipientAddr = PlatformAddress.fromBech32m("tdash1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif...");
    *
    * const signer = new PlatformAddressSigner();
@@ -80,7 +82,9 @@ export class AddressesFacade {
    * });
    * ```
    */
-  async transfer(options: wasm.AddressFundsTransferOptions): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo>> {
+  async transfer(
+    options: wasm.AddressFundsTransferOptions,
+  ): Promise<Map<string, wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.addressFundsTransfer(options);
   }
@@ -142,7 +146,9 @@ export class AddressesFacade {
    * });
    * ```
    */
-  async withdraw(options: wasm.AddressFundsWithdrawOptions): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo>> {
+  async withdraw(
+    options: wasm.AddressFundsWithdrawOptions,
+  ): Promise<Map<string, wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.addressFundsWithdraw(options);
   }
@@ -156,7 +162,7 @@ export class AddressesFacade {
    * @example
    * ```typescript
    * const identityId = Identifier.from("...");
-   * const recipientAddr = PlatformAddress.fromBech32m("tevo1...");
+   * const recipientAddr = PlatformAddress.fromBech32m("tdash1...");
    * const privateKey = PrivateKey.fromWIF("cPrivateKeyWif..."); // Identity transfer key
    *
    * const output = new PlatformAddressOutput(recipientAddr, 100000n);
@@ -175,7 +181,9 @@ export class AddressesFacade {
    * console.log(`Updated addresses:`, result.addressInfos);
    * ```
    */
-  async transferFromIdentity(options: wasm.IdentityTransferToAddressesOptions): Promise<wasm.IdentityTransferToAddressesResult> {
+  async transferFromIdentity(
+    options: wasm.IdentityTransferToAddressesOptions,
+  ): Promise<wasm.IdentityTransferToAddressesResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.identityTransferToAddresses(options);
   }
@@ -211,7 +219,9 @@ export class AddressesFacade {
    * });
    * ```
    */
-  async fundFromAssetLock(options: wasm.AddressFundingFromAssetLockOptions): Promise<Map<wasm.PlatformAddress, wasm.PlatformAddressInfo>> {
+  async fundFromAssetLock(
+    options: wasm.AddressFundingFromAssetLockOptions,
+  ): Promise<Map<string, wasm.PlatformAddressInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.addressFundingFromAssetLock(options);
   }
@@ -251,7 +261,9 @@ export class AddressesFacade {
    * console.log('Updated addresses:', result.addressInfos);
    * ```
    */
-  async createIdentity(options: wasm.IdentityCreateFromAddressesOptions): Promise<wasm.IdentityCreateFromAddressesResult> {
+  async createIdentity(
+    options: wasm.IdentityCreateFromAddressesOptions,
+  ): Promise<wasm.IdentityCreateFromAddressesResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.identityCreateFromAddresses(options);
   }

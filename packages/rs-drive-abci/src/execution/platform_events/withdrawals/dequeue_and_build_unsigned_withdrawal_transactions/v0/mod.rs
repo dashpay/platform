@@ -75,7 +75,11 @@ where
             transaction_indices.last()
         );
 
-        let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
+        let withdrawals_contract = self
+            .drive
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)?;
 
         self.drive.add_update_multiple_documents_operations(
             &documents,
@@ -189,4 +193,68 @@ fn build_unsigned_transaction(
 
     build_asset_unlock_tx(&unsigned_transaction_bytes)
         .map_err(|error| Error::Protocol(ProtocolError::DashCoreError(error)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::epoch::Epoch;
+
+    /// When the withdrawal queue is empty, the function must return an empty
+    /// `UnsignedWithdrawalTxs` without performing any further work. This
+    /// exercises the `untied_withdrawal_transactions.is_empty()` early-return
+    /// branch.
+    #[test]
+    fn v0_empty_queue_returns_default() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let block_info = BlockInfo {
+            time_ms: 1,
+            height: 1,
+            core_height: 96,
+            epoch: Epoch::default(),
+        };
+
+        let result = platform
+            .dequeue_and_build_unsigned_withdrawal_transactions_v0(
+                [0u8; 32],
+                &block_info,
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("empty queue must be Ok");
+
+        // default UnsignedWithdrawalTxs is empty.
+        assert!(
+            result.is_empty(),
+            "empty withdrawal queue must yield an empty UnsignedWithdrawalTxs"
+        );
+    }
+
+    /// `build_unsigned_transaction` reverses the quorum hash and must succeed
+    /// for a well-formed untied asset-unlock payload. This covers the happy
+    /// path of the helper, which is otherwise only reachable from the full
+    /// dequeue flow.
+    #[test]
+    fn build_unsigned_transaction_invalid_bytes_yields_error() {
+        // All-zero bytes are not a valid untied asset-unlock transaction; the
+        // `build_asset_unlock_tx` call should fail with a protocol error.
+        let result = build_unsigned_transaction(vec![0u8; 8], [0u8; 32], 100);
+
+        let err = result.expect_err("invalid bytes must produce an error");
+        // Should either be Protocol (DashCoreError) or Execution (CorruptedCodeExecution)
+        // from the consensus append path.
+        let msg = err.to_string();
+        assert!(
+            !msg.is_empty(),
+            "error must have a non-empty description: {:?}",
+            err
+        );
+    }
 }

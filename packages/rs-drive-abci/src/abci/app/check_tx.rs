@@ -95,5 +95,73 @@ where
 }
 
 pub fn error_into_status(error: Error) -> tonic::Status {
-    tonic::Status::internal(error.to_string())
+    match error {
+        Error::Execution(crate::error::execution::ExecutionError::CheckTxProofVerificationBusy) => {
+            tonic::Status::resource_exhausted(
+                "check tx verification capacity is temporarily unavailable",
+            )
+        }
+        error => tonic::Status::internal(error.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::execution::ExecutionError;
+    use crate::rpc::core::MockCoreRPCLike;
+
+    #[test]
+    fn error_into_status_produces_internal_status() {
+        let error = Error::Execution(ExecutionError::CorruptedCodeExecution("test error message"));
+        let status = error_into_status(error);
+
+        assert_eq!(status.code(), tonic::Code::Internal);
+        assert!(status.message().contains("test error message"));
+    }
+
+    #[test]
+    fn error_into_status_preserves_error_message() {
+        let error = Error::Execution(ExecutionError::NotInTransaction("no active transaction"));
+        let status = error_into_status(error);
+
+        assert!(status.message().contains("no active transaction"));
+    }
+
+    #[test]
+    fn error_into_status_marks_proof_capacity_as_retryable() {
+        let status = error_into_status(Error::Execution(
+            ExecutionError::CheckTxProofVerificationBusy,
+        ));
+
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        assert!(!status.message().contains("proof"));
+    }
+
+    #[test]
+    fn check_tx_abci_application_debug_format() {
+        // Verify the Debug implementation for CheckTxAbciApplication produces expected output
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let core_rpc = MockCoreRPCLike::new();
+
+        let app = CheckTxAbciApplication::new(Arc::new(platform.platform), Arc::new(core_rpc));
+
+        let debug_str = format!("{:?}", app);
+        assert_eq!(debug_str, "<CheckTxAbciApplication>");
+    }
+
+    #[test]
+    fn check_tx_abci_application_platform_returns_platform() {
+        let platform =
+            crate::test::helpers::setup::TestPlatformBuilder::new().build_with_mock_rpc();
+
+        let core_rpc = MockCoreRPCLike::new();
+
+        let app = CheckTxAbciApplication::new(Arc::new(platform.platform), Arc::new(core_rpc));
+
+        // Just verify we can call platform() without panicking
+        let _platform_ref = app.platform();
+    }
 }

@@ -13,7 +13,6 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::config::DataContractConfig;
-use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::created_data_contract::CreatedDataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -102,13 +101,11 @@ impl DataContractWasm {
 
         let platform_version = PlatformVersion::first();
 
-        DataContract::from_value(
-            raw_parameters.with_serde_to_platform_value()?,
-            !skip_validation,
-            platform_version,
-        )
-        .with_js_error()
-        .map(Into::into)
+        let value = raw_parameters.with_serde_to_platform_value()?;
+        let full_validation = !skip_validation;
+        DataContract::from_value(value, full_validation, platform_version)
+            .with_js_error()
+            .map(Into::into)
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -326,9 +323,9 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let platform_version = PlatformVersion::first();
-
-        let value = self.inner.to_value(platform_version).with_js_error()?;
+        let value = dpp::platform_value::to_value(&self.inner)
+            .map_err(ProtocolError::ValueError)
+            .with_js_error()?;
 
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
@@ -358,7 +355,7 @@ impl DataContractWasm {
     pub fn set_config(&mut self, config: JsValue) -> Result<(), JsValue> {
         let value = config.with_serde_to_platform_value()?;
 
-        let platform_version = &PlatformVersion::first();
+        let platform_version = PlatformVersion::latest();
 
         let data_contract_config =
             DataContractConfig::from_value(value, platform_version).with_js_error()?;
@@ -370,9 +367,9 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let platform_version = PlatformVersion::first();
-
-        let json = self.inner.to_json(platform_version).with_js_error()?;
+        let json = serde_json::to_value(&self.inner)
+            .map_err(|e| ProtocolError::EncodingError(e.to_string()))
+            .with_js_error()?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         with_js_error!(json.serialize(&serializer))
     }

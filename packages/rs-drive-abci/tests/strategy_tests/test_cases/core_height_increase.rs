@@ -22,8 +22,8 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use strategy_tests::frequency::Frequency;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
-    #[test]
-    fn run_chain_core_height_randomly_increasing() {
+    #[tokio::test]
+    async fn run_chain_core_height_randomly_increasing() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -76,11 +76,12 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
     }
 
-    #[test]
-    fn run_chain_core_height_randomly_increasing_with_epoch_change() {
+    #[tokio::test]
+    async fn run_chain_core_height_randomly_increasing_with_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -135,7 +136,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -144,9 +146,9 @@ mod tests {
         assert!(all_have_balances, "all masternodes should have a balance");
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
+    #[test]
+    async fn run_chain_core_height_randomly_increasing_with_quick_epoch_change() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -203,7 +205,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
             .masternode_identity_balances
@@ -214,8 +217,8 @@ mod tests {
         assert_eq!(outcome.end_epoch_index, 49);
     }
 
-    #[test]
-    fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
+    #[tokio::test]
+    async fn run_chain_core_height_randomly_increasing_with_quorum_updates() {
         let platform_version = PlatformVersion::latest();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -284,7 +287,8 @@ mod tests {
             40,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
@@ -318,8 +322,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
+    #[tokio::test]
+    async fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -394,7 +398,8 @@ mod tests {
             43,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
@@ -405,8 +410,8 @@ mod tests {
         assert!(platform_state.hpmn_masternode_list().len() > 100);
     }
 
-    #[test]
-    fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
+    #[tokio::test]
+    async fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -485,7 +490,8 @@ mod tests {
             43,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // With these params if we add new mns the hpmn masternode list would be randomly different from 100.
 
@@ -495,8 +501,8 @@ mod tests {
         assert_ne!(platform_state.hpmn_masternode_list().len(), 100);
     }
 
-    #[test]
-    fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
+    #[tokio::test]
+    async fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -575,7 +581,8 @@ mod tests {
             43,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         // With these params if we add new mns the hpmn masternode list would be randomly different from 100.
 
@@ -612,8 +619,8 @@ mod tests {
         assert!(has_disabled_keys);
     }
 
-    #[test]
-    fn run_chain_rotation_is_deterministic_1_block() {
+    #[tokio::test]
+    async fn run_chain_rotation_is_deterministic_1_block() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -709,7 +716,8 @@ mod tests {
                 7,
                 &mut None,
                 &mut None,
-            );
+            )
+            .await;
             outcomes.push(outcome);
         }
 
@@ -807,9 +815,9 @@ mod tests {
         }));
     }
 
-    #[test]
     #[stack_size(4*1024*1024)]
-    fn run_chain_heavy_rotation_deterministic_before_payout() {
+    #[test]
+    async fn run_chain_heavy_rotation_deterministic_before_payout() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -910,7 +918,8 @@ mod tests {
             7,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         let outcome_b = run_chain_for_strategy(
             &mut platform_b,
             18,
@@ -919,7 +928,8 @@ mod tests {
             7,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
@@ -980,9 +990,9 @@ mod tests {
         assert_eq!(balance_count, 0);
     }
 
-    #[test]
     #[stack_size(4*1024*1024)]
-    fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list_deterministic(
+    #[test]
+    async fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list_deterministic(
     ) {
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -1083,7 +1093,8 @@ mod tests {
             7,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         let outcome_b = run_chain_for_strategy(
             &mut platform_b,
             100,
@@ -1092,7 +1103,8 @@ mod tests {
             7,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
         assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
         assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes

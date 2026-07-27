@@ -1,7 +1,34 @@
 use crate::group::token_event::TokenEventWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
+use crate::impl_wasm_type_info;
 use dpp::group::action_event::GroupActionEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen(typescript_custom_section)]
+const TS_TYPES: &str = r#"
+/**
+ * GroupActionEvent serialized as a plain object.
+ *
+ * Internally tagged with `$kind` (chosen over `$type` to avoid colliding with
+ * the inner TokenEvent's own `$type` discriminator). The inner TokenEvent
+ * fields flatten at the same level — both keys coexist.
+ */
+export type GroupActionEventObject = { $kind: "tokenEvent" } & TokenEventObject;
+
+/**
+ * GroupActionEvent serialized as JSON.
+ */
+export type GroupActionEventJSON = { $kind: "tokenEvent" } & TokenEventJSON;
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionEventObject")]
+    pub type GroupActionEventObjectJs;
+
+    #[wasm_bindgen(typescript_type = "GroupActionEventJSON")]
+    pub type GroupActionEventJSONJs;
+}
 
 /// TypeScript enum for GroupActionEvent variants
 #[wasm_bindgen]
@@ -10,7 +37,8 @@ pub enum GroupActionEventVariant {
     TokenEvent = 0,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "GroupActionEvent")]
 pub struct GroupActionEventWasm(GroupActionEvent);
 
@@ -28,16 +56,6 @@ impl From<GroupActionEventWasm> for GroupActionEvent {
 
 #[wasm_bindgen(js_class = GroupActionEvent)]
 impl GroupActionEventWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "GroupActionEvent".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name(&self) -> String {
-        "GroupActionEvent".to_string()
-    }
-
     #[wasm_bindgen(getter = "variant")]
     pub fn variant(&self) -> GroupActionEventVariant {
         match &self.0 {
@@ -63,4 +81,11 @@ impl GroupActionEventWasm {
     }
 }
 
-impl_wasm_conversions!(GroupActionEventWasm, GroupActionEvent);
+impl_wasm_conversions_inner!(
+    GroupActionEventWasm,
+    GroupActionEvent,
+    GroupActionEvent,
+    GroupActionEventObjectJs,
+    GroupActionEventJSONJs
+);
+impl_wasm_type_info!(GroupActionEventWasm, GroupActionEvent);

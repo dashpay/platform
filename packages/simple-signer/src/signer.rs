@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
@@ -27,7 +28,7 @@ pub struct SimpleSigner {
 
     /// Maps address hash (20 bytes) to private key (32 bytes)
     pub address_private_keys: BTreeMap<[u8; 20], [u8; 32]>,
-    /// Addres private keys to be added at the end of a block
+    /// Address private keys to be added at the end of a block
     pub address_private_keys_in_creation: BTreeMap<[u8; 20], [u8; 32]>,
 }
 
@@ -115,8 +116,9 @@ impl SimpleSigner {
     }
 }
 
+#[async_trait]
 impl Signer<IdentityPublicKey> for SimpleSigner {
-    fn sign(
+    async fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
@@ -163,13 +165,13 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
         }
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
         // First, sign the data to get the signature
-        let signature = self.sign(key, data)?;
+        let signature = self.sign(key, data).await?;
 
         // Create the appropriate AddressWitness based on the key type
         match key.key_type() {
@@ -207,8 +209,13 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
     }
 }
 
+#[async_trait]
 impl Signer<PlatformAddress> for SimpleSigner {
-    fn sign(&self, address: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+    async fn sign(
+        &self,
+        address: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
         let hash = match address {
             PlatformAddress::P2pkh(hash) => hash,
             PlatformAddress::P2sh(_) => {
@@ -227,13 +234,13 @@ impl Signer<PlatformAddress> for SimpleSigner {
         Ok(signature.to_vec().into())
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &PlatformAddress,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
         // First, sign the data to get the signature
-        let signature = self.sign(key, data)?;
+        let signature = self.sign(key, data).await?;
         match key {
             PlatformAddress::P2pkh(_) => Ok(AddressWitness::P2pkh { signature }),
             PlatformAddress::P2sh(_) => Err(ProtocolError::Generic(

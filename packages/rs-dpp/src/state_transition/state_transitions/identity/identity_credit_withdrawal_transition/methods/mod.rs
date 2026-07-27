@@ -29,7 +29,7 @@ use crate::ProtocolError;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         output_script: Option<CoreScript>,
         amount: u64,
@@ -62,7 +62,8 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
                 nonce,
                 platform_version,
                 version,
-            )?),
+            )
+            .await?),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "IdentityCreditWithdrawalTransition::try_from_identity".to_string(),
                 known_versions: vec![1],

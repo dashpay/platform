@@ -1,0 +1,199 @@
+codecov:
+  require_ci_to_pass: true
+
+flags:
+  rust:
+    carryforward: true
+
+ignore:
+  - "**/test_utils.rs"
+  - "**/test_utils/**"
+  - "**/tests.rs"
+  - "**/tests/**"
+  - "**/test/**"
+  - "packages/strategy-tests/**"
+  - "packages/rs-sdk-ffi/**"
+  - "packages/rs-platform-wallet-ffi/**"
+  - "packages/wasm-dpp/**"
+  - "packages/wasm-dpp2/**"
+  - "packages/wasm-sdk/**"
+  - "**/block_end/validator_set_update/v0/**"
+  - "**/block_end/validator_set_update/v1/**"
+  # Error type definitions — enum/struct declarations with Display/thiserror
+  # derives, not logic that needs test coverage
+  - "packages/rs-drive/src/error/**"
+  - "packages/rs-drive-abci/src/error/**"
+  - "packages/rs-dpp/src/errors/**"
+  - "packages/rs-dpp/src/state_transition/errors/**"
+  # State transition boilerplate — trait interfaces, accessors, field constants,
+  # type metadata, version dispatch, and factory patterns
+  - "packages/rs-dpp/src/state_transition/traits/**"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/accessors/**"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/fields.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/common_fields.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/types.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/version.rs"
+  - "packages/rs-dpp/src/state_transition/state_transition_types.rs"
+  - "packages/rs-dpp/src/state_transition/state_transition_factory.rs"
+  # Generated gRPC bindings — no hand-written logic to test
+  - "packages/dapi-grpc/**"
+  # Data contract crates — these are JSON schema definitions with only
+  # auto-generated load_* boilerplate, not testable application logic
+  - "packages/dashpay-contract/src/**"
+  - "packages/data-contracts/src/**"
+  - "packages/dpns-contract/src/**"
+  - "packages/keyword-search-contract/src/**"
+  - "packages/masternode-reward-shares-contract/src/**"
+  - "packages/token-history-contract/src/**"
+  - "packages/wallet-utils-contract/src/**"
+  - "packages/withdrawals-contract/src/**"
+  # Version tables — large const structs, not logic
+  - "packages/rs-platform-version/**"
+  # Simple signer — thin test-only wrapper
+  - "packages/simple-signer/src/**"
+  # SDK — requires a running platform node for integration, not unit-testable
+  - "packages/rs-sdk/src/**"
+  # DAPI server — requires running Core + Tenderdash nodes
+  - "packages/rs-dapi/src/**"
+  # DAPI client — network transport requiring live gRPC endpoints
+  - "packages/rs-dapi-client/**"
+  # WASM bindings — cannot run in Rust unit test harness
+  - "packages/wasm-drive-verify/**"
+  # Proc-macro crates — tested indirectly through usage
+  - "packages/rs-platform-serialization-derive/**"
+  - "packages/rs-dpp-json-convertible-derive/**"
+  - "packages/rs-dash-platform-macros/**"
+  - "packages/rs-platform-value-convertible/**"
+  - "packages/rs-platform-versioning/**"
+  # CLI tools — not unit-testable
+  - "packages/dash-platform-balance-checker/**"
+  - "packages/check-features/**"
+  - "packages/rs-scripts/**"
+  # Context provider interface — tested through consumers
+  - "packages/rs-context-provider/**"
+  # Unified SDK FFI — placeholder crate
+  - "packages/rs-unified-sdk-ffi/**"
+  # Proof verifier boilerplate — response type definitions, not logic
+  - "packages/rs-drive-proof-verifier/src/types/evonode_status.rs"
+  # Drive internals — internal size estimation helpers
+  - "packages/rs-drive/src/util/object_size_info/path_key_info.rs"
+  # (wallet, dapi, sdk, and proof-verifier types covered by broader patterns above)
+  # Accessor boilerplate — pure getter/setter trait implementations across all crates
+  - "packages/rs-dpp/src/**/accessors/**"
+  - "packages/rs-dpp/src/**/accessors.rs"
+  - "packages/rs-drive/src/**/accessors/**"
+  - "packages/rs-drive-abci/src/**/accessors/**"
+  - "packages/rs-drive-abci/src/**/accessors.rs"
+  # Enum type definitions — TryFrom/Display/conversion boilerplate
+  - "packages/rs-dpp/src/identity/identity_public_key/security_level.rs"
+  - "packages/rs-dpp/src/identity/identity_public_key/purpose.rs"
+  - "packages/rs-dpp/src/identity/identity_public_key/key_type.rs"
+  - "packages/rs-dpp/src/tokens/gas_fees_paid_by.rs"
+  # Value Display and string encoding — trivial formatting, not logic
+  - "packages/rs-platform-value/src/display.rs"
+  - "packages/rs-platform-value/src/string_encoding.rs"
+  # Batch transition signing factories — repetitive struct construction + signing
+  - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/methods/mod.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/methods/v1/**"
+  - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/**/v0_methods.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/**/v1_methods.rs"
+  # Platform wallet — requires Core wallet integration, not unit-testable
+  - "packages/rs-platform-wallet/src/**"
+  # Proof-verifier response types and unproved handling
+  - "packages/rs-drive-proof-verifier/src/types.rs"
+  - "packages/rs-drive-proof-verifier/src/unproved.rs"
+  - "packages/rs-drive-proof-verifier/src/error.rs"
+  # JSON schema compatibility validator — static rule definitions
+  - "packages/rs-json-schema-compatibility-validator/**"
+  # Core chain type wrappers — masternode entry structs, deserialization
+  # boilerplate, thin type aliases
+  - "packages/rs-dpp/src/core_types/**"
+  # Random data generators — test-only helpers, not production logic
+  - "packages/rs-dpp/src/**/random.rs"
+  - "packages/rs-dpp/src/**/random_*.rs"
+  # Batch transition resolvers — From/TryFrom conversion boilerplate
+  - "packages/rs-dpp/src/state_transition/state_transitions/document/batch_transition/batched_transition/resolvers.rs"
+  # State transition mechanical trait implementations — StateTransitionLike dispatch,
+  # value/JSON conversion, identity_signed delegation, fee strategy constants
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/state_transition_like.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/value_conversion.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/json_conversion.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/identity_signed.rs"
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/state_transition_fee_strategy.rs"
+  # State transition estimated fee validation — mechanical fee calculation dispatch
+  - "packages/rs-dpp/src/state_transition/state_transitions/**/state_transition_estimated_fee_validation.rs"
+  # Drive-ABCI infrastructure — binary entrypoints, query service dispatch,
+  # RPC wrappers, metrics, logging, runtime context providers, replay tooling
+  - "packages/rs-drive-abci/src/main.rs"
+  - "packages/rs-drive-abci/src/query/service.rs"
+  - "packages/rs-drive-abci/src/rpc/**"
+  - "packages/rs-drive-abci/src/metrics.rs"
+  - "packages/rs-drive-abci/src/logging/**"
+  - "packages/rs-drive-abci/src/mimic/**"
+  - "packages/rs-sdk-trusted-context-provider/**"
+  - "packages/rs-drive-abci/src/replay/**"
+  # Shielded-pool snapshot bake/apply tooling — only reachable via the
+  # `snapshot-bake` CLI subcommand (build-time) and the InitChain
+  # `DRIVE_SHIELDED_SNAPSHOT` env fast-path; both require full GroveDB genesis
+  # seeding and are exercised by create_genesis_state integration tests
+  - "packages/rs-drive-abci/src/shielded_snapshot/**"
+  # DPP signing test module — integration tests, not unit-testable
+  - "packages/rs-dpp/src/state_transition/state_transitions/address_funds/**/signing_tests.rs"
+  # Drive extra tests — integration tests in production code tree
+  - "packages/rs-dpp/src/data_contract/extra/drive_api_tests.rs"
+  # Versioned dispatch methods — pure version routing with no logic
+  - "packages/rs-dpp/src/data_contract/document_type/methods/versioned_methods.rs"
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        target: 50%
+
+comment:
+  layout: "condensed_header, diff, components, condensed_files"
+  behavior: default
+  require_changes: true
+
+component_management:
+  individual_components:
+    - component_id: dpp
+      name: dpp
+      paths:
+        - packages/rs-dpp/
+    - component_id: drive
+      name: drive
+      paths:
+        - packages/rs-drive/
+    - component_id: drive-abci
+      name: drive-abci
+      paths:
+        - packages/rs-drive-abci/
+    - component_id: sdk
+      name: sdk
+      paths:
+        - packages/rs-sdk/
+    - component_id: dapi-client
+      name: dapi-client
+      paths:
+        - packages/rs-dapi-client/
+    - component_id: platform-version
+      name: platform-version
+      paths:
+        - packages/rs-platform-version/
+    - component_id: platform-value
+      name: platform-value
+      paths:
+        - packages/rs-platform-value/
+    - component_id: platform-wallet
+      name: platform-wallet
+      paths:
+        - packages/rs-platform-wallet/
+    - component_id: drive-proof-verifier
+      name: drive-proof-verifier
+      paths:
+        - packages/rs-drive-proof-verifier/

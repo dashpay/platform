@@ -30,10 +30,10 @@ impl From<TokenEmergencyAction> for TokenEmergencyActionWasm {
     }
 }
 
-impl TryFrom<JsValue> for TokenEmergencyActionWasm {
+impl TryFrom<&JsValue> for TokenEmergencyActionWasm {
     type Error = WasmDppError;
 
-    fn try_from(value: JsValue) -> Result<TokenEmergencyActionWasm, Self::Error> {
+    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         if let Some(enum_val) = value.as_string() {
             return match enum_val.to_lowercase().as_str() {
                 "pause" => Ok(TokenEmergencyActionWasm::Pause),
@@ -57,6 +57,14 @@ impl TryFrom<JsValue> for TokenEmergencyActionWasm {
         Err(WasmDppError::invalid_argument(
             "cannot read value from emergency action enum",
         ))
+    }
+}
+
+impl TryFrom<JsValue> for TokenEmergencyActionWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: JsValue) -> Result<Self, Self::Error> {
+        Self::try_from(&value)
     }
 }
 

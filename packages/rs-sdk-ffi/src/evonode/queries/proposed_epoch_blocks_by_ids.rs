@@ -76,7 +76,7 @@ fn get_evonodes_proposed_epoch_blocks_by_ids(
         return Err("IDs JSON is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let ids_str = unsafe {
@@ -153,8 +153,8 @@ impl
     > for EvonodesProposedEpochBlocksByIdsQuery
 {
     fn query(
-        self,
-        prove: bool,
+        &self,
+        settings: &dash_sdk::platform::QuerySettings<'_>,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest,
         dash_sdk::Error,
@@ -171,10 +171,10 @@ impl
                     epoch: self.epoch,
                     ids: self
                         .pro_tx_hashes
-                        .into_iter()
-                        .map(|hash| AsRef::<[u8]>::as_ref(&hash).to_vec())
+                        .iter()
+                        .map(|hash| AsRef::<[u8]>::as_ref(hash).to_vec())
                         .collect(),
-                    prove,
+                    prove: settings.prove,
                 })),
             };
 

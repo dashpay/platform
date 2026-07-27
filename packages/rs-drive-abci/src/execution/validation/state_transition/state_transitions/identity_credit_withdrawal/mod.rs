@@ -127,8 +127,8 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::{Rng, SeedableRng};
 
-    #[test]
-    fn test_identity_credit_withdrawal_is_disabled_on_release() {
+    #[tokio::test]
+    async fn test_identity_credit_withdrawal_is_disabled_on_release() {
         let platform_version = PlatformVersion::first();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -174,6 +174,7 @@ mod tests {
             platform_version,
             Some(1),
         )
+        .await
         .expect("expected a credit withdrawal transition");
 
         let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
@@ -203,8 +204,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_withdrawal_with_withdrawal_address_creates_withdrawal_document() {
+    #[tokio::test]
+    async fn test_identity_credit_withdrawal_with_withdrawal_address_creates_withdrawal_document() {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
@@ -250,11 +251,21 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected a credit withdrawal transition");
 
         let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
             .serialize_to_bytes()
             .expect("expected documents batch serialized state transition");
+
+        // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+        // cfg(test) that it never mutates committed grovedb state, so running the canonical
+        // valid fixture through it pins the invariant for this transition type.
+        crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+            &platform,
+            &credit_withdrawal_transition_serialized_transition,
+            "identity credit withdrawal",
+        );
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -277,8 +288,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_withdrawal_key(
+    #[tokio::test]
+    async fn test_identity_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_withdrawal_key(
     ) {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
@@ -325,6 +336,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected a credit withdrawal transition");
 
         let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
@@ -352,8 +364,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_masternode_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_withdrawal_key(
+    #[tokio::test]
+    async fn test_masternode_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_withdrawal_key(
     ) {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
@@ -399,6 +411,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected a credit withdrawal transition");
 
         let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
@@ -426,8 +439,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_masternode_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_owner_key(
+    #[tokio::test]
+    async fn test_masternode_credit_withdrawal_without_withdrawal_address_creates_withdrawal_document_when_signing_with_owner_key(
     ) {
         let platform_version = PlatformVersion::latest();
         let platform_config = PlatformConfig {
@@ -473,6 +486,7 @@ mod tests {
             platform_version,
             None,
         )
+        .await
         .expect("expected a credit withdrawal transition");
 
         let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
@@ -503,8 +517,9 @@ mod tests {
     mod errors {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
-        #[test]
-        fn test_credit_withdrawal_without_withdrawal_address_with_a_non_payable_transfer_key() {
+        #[tokio::test]
+        async fn test_credit_withdrawal_without_withdrawal_address_with_a_non_payable_transfer_key()
+        {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -551,6 +566,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expected a credit withdrawal transition");
 
             let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition
@@ -581,8 +597,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_masternode_credit_withdrawal_with_withdrawal_address_creates_when_signing_with_owner_key_should_fail(
+        #[tokio::test]
+        async fn test_masternode_credit_withdrawal_with_withdrawal_address_creates_when_signing_with_owner_key_should_fail(
         ) {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -629,6 +645,7 @@ mod tests {
                     platform_version,
                     None,
                 )
+                .await
                 .expect("expected a credit withdrawal transition");
 
             let credit_withdrawal_transition_serialized_transition = credit_withdrawal_transition

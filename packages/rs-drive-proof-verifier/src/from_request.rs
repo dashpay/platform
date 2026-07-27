@@ -31,7 +31,7 @@ use crate::Error;
 
 const BINCODE_CONFIG: dpp::bincode::config::Configuration = dpp::bincode::config::standard();
 
-/// Conver a gRPC request into a query object.
+/// Convert a gRPC request into a query object.
 ///
 /// This trait is implemented on Drive queries that can be created from gRPC requests.
 ///
@@ -188,6 +188,22 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                     .map(|id| (id, v.start_poll_identifier_included))
             })
             .transpose()?;
+        let offset =
+            value
+                .offset
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|_| Error::RequestError {
+                    error: "offset out of bounds".to_string(),
+                })?;
+        let limit =
+            value
+                .limit
+                .map(u16::try_from)
+                .transpose()
+                .map_err(|_| Error::RequestError {
+                    error: "limit out of bounds".to_string(),
+                })?;
 
         Ok(Self {
             identity_id: Identifier::from_vec(value.identity_id.to_vec()).map_err(|e| {
@@ -195,8 +211,8 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
                     error: e.to_string(),
                 }
             })?,
-            offset: None,
-            limit: value.limit.map(|x| x as u16),
+            offset,
+            limit,
             start_at,
             order_ascending: value.order_ascending,
         })
@@ -204,9 +220,6 @@ impl TryFromRequest<GetContestedResourceIdentityVotesRequest>
 
     fn try_to_request(&self) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         use proto::get_contested_resource_identity_votes_request::get_contested_resource_identity_votes_request_v0 as request_v0;
-        if self.offset.is_some() {
-            return Err(Error::RequestError{error:"ContestedResourceVotesGivenByIdentityQuery.offset field is internal and must be set to None".into()});
-        }
 
         Ok(proto::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0 {
                     prove: true,
@@ -464,4 +477,713 @@ fn bincode_encode_values<'a, T: IntoIterator<Item = &'a Value>>(
             })
         })
         .collect::<Result<Vec<_>, _>>()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::Value;
+
+    // ---------------------------------------------------------------
+    // Helper: to_bytes32
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_to_bytes32_valid() {
+        let input = [0xABu8; 32];
+        let result = to_bytes32(&input).expect("should convert 32-byte slice");
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_to_bytes32_invalid_length() {
+        // Too short
+        let short = [0u8; 16];
+        assert!(to_bytes32(&short).is_err());
+
+        // Too long
+        let long = [0u8; 33];
+        assert!(to_bytes32(&long).is_err());
+
+        // Empty
+        assert!(to_bytes32(&[]).is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // Helper: bincode encode/decode roundtrip
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_bincode_encode_decode_roundtrip() {
+        let values = vec![
+            Value::Text("hello".to_string()),
+            Value::U64(42),
+            Value::Bool(true),
+        ];
+        let encoded = bincode_encode_values(&values).expect("encoding should succeed");
+        assert_eq!(encoded.len(), 3);
+
+        let decoded = bincode_decode_values(encoded.iter()).expect("decoding should succeed");
+        assert_eq!(decoded, values);
+    }
+
+    #[test]
+    fn test_bincode_decode_empty() {
+        let empty: Vec<Vec<u8>> = vec![];
+        let result = bincode_decode_values(empty.iter()).expect("empty input should succeed");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_bincode_decode_invalid() {
+        let garbage = [vec![0xFF, 0xFE, 0xFD, 0xFC, 0xFB]];
+        let result = bincode_decode_values(garbage.iter());
+        assert!(
+            result.is_err(),
+            "invalid bincode bytes should produce an error"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // TryFromRequest roundtrip: ContestedDocumentVotePollDriveQueryResultType
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_result_type_roundtrip() {
+        use get_contested_resource_vote_state_request_v0::ResultType as GrpcResultType;
+
+        let cases = vec![
+            (
+                GrpcResultType::Documents,
+                ContestedDocumentVotePollDriveQueryResultType::Documents,
+            ),
+            (
+                GrpcResultType::VoteTally,
+                ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            ),
+            (
+                GrpcResultType::DocumentsAndVoteTally,
+                ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            ),
+        ];
+
+        for (grpc_val, expected_drive) in cases {
+            // grpc -> drive
+            let drive_val =
+                ContestedDocumentVotePollDriveQueryResultType::try_from_request(grpc_val)
+                    .expect("try_from_request should succeed");
+            assert_eq!(drive_val, expected_drive);
+
+            // drive -> grpc
+            let back = drive_val
+                .try_to_request()
+                .expect("try_to_request should succeed");
+            assert_eq!(back, grpc_val);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // TryFromRequest roundtrip: ContestedDocumentVotePollDriveQuery
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_query_roundtrip() {
+        let contract_id = Identifier::from_bytes(&[1u8; 32]).unwrap();
+        let index_values = vec![Value::Text("dash".to_string())];
+
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id,
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: index_values.clone(),
+            },
+            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            offset: None,
+            limit: Some(10),
+            start_at: None,
+            allow_include_locked_and_abstaining_vote_tally: true,
+        };
+
+        let grpc_request = query
+            .try_to_request()
+            .expect("try_to_request should succeed");
+
+        let roundtripped = ContestedDocumentVotePollDriveQuery::try_from_request(grpc_request)
+            .expect("try_from_request should succeed");
+
+        assert_eq!(
+            roundtripped.vote_poll.contract_id,
+            query.vote_poll.contract_id
+        );
+        assert_eq!(
+            roundtripped.vote_poll.document_type_name,
+            query.vote_poll.document_type_name
+        );
+        assert_eq!(
+            roundtripped.vote_poll.index_name,
+            query.vote_poll.index_name
+        );
+        assert_eq!(
+            roundtripped.vote_poll.index_values,
+            query.vote_poll.index_values
+        );
+        assert_eq!(roundtripped.result_type, query.result_type);
+        assert_eq!(roundtripped.limit, query.limit);
+        assert_eq!(roundtripped.start_at, query.start_at);
+        assert_eq!(
+            roundtripped.allow_include_locked_and_abstaining_vote_tally,
+            query.allow_include_locked_and_abstaining_vote_tally
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // TryFromRequest roundtrip: Identifier <-> GetPrefundedSpecializedBalanceRequest
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_identifier_prefunded_balance_roundtrip() {
+        let id = Identifier::from_bytes(&[7u8; 32]).unwrap();
+
+        let grpc_request: GetPrefundedSpecializedBalanceRequest =
+            id.try_to_request().expect("try_to_request should succeed");
+
+        let roundtripped =
+            Identifier::try_from_request(grpc_request).expect("try_from_request should succeed");
+
+        assert_eq!(roundtripped, id);
+    }
+
+    // ---------------------------------------------------------------
+    // Error path: SingleDocumentByContender is rejected in try_to_request
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_result_type_rejects_single_document_by_contender() {
+        let contender_id = Identifier::from_bytes(&[0xCC; 32]).unwrap();
+        let result_type =
+            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(contender_id);
+
+        let result = result_type.try_to_request();
+        assert!(
+            result.is_err(),
+            "SingleDocumentByContender should not be convertible to a gRPC request"
+        );
+
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("single document by contender"),
+            "error message should mention 'single document by contender', got: {}",
+            err_msg
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // Error path: VotePollsByEndDateDriveQuery rejects offset in try_to_request
+    // ---------------------------------------------------------------
+
+    // ---------------------------------------------------------------
+    // Error path: ContestedDocumentVotePollDriveQuery try_to_request
+    // rejects offset != None
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_query_rejects_offset() {
+        let contract_id = Identifier::from_bytes(&[2u8; 32]).unwrap();
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id,
+                document_type_name: "d".to_string(),
+                index_name: "idx".to_string(),
+                index_values: vec![],
+            },
+            result_type: ContestedDocumentVotePollDriveQueryResultType::Documents,
+            offset: Some(5), // should trigger rejection
+            limit: None,
+            start_at: None,
+            allow_include_locked_and_abstaining_vote_tally: false,
+        };
+
+        let err = query.try_to_request().unwrap_err();
+        let err_msg = format!("{}", err);
+        assert!(
+            err_msg.contains("offset"),
+            "error should mention offset, got: {err_msg}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // ContestedResourceVotesGivenByIdentityQuery preserves proof-critical
+    // pagination fields in both conversion directions.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_preserves_offset() {
+        let id = Identifier::from_bytes(&[3u8; 32]).unwrap();
+        let query = ContestedResourceVotesGivenByIdentityQuery {
+            identity_id: id,
+            offset: Some(10),
+            limit: Some(20),
+            start_at: None,
+            order_ascending: true,
+        };
+        let request = query.try_to_request().expect("request conversion");
+        let converted = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)
+            .expect("query conversion");
+        assert_eq!(converted, query);
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_rejects_wide_pagination_values() {
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+            GetContestedResourceIdentityVotesRequestV0, Version as ReqVersion,
+        };
+
+        for (limit, offset, expected_field) in [
+            (Some(u16::MAX as u32 + 1), None, "limit"),
+            (None, Some(u16::MAX as u32 + 1), "offset"),
+        ] {
+            let request = GetContestedResourceIdentityVotesRequest {
+                version: Some(ReqVersion::V0(GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![0u8; 32],
+                    start_at_vote_poll_id_info: None,
+                    limit,
+                    offset,
+                    order_ascending: true,
+                    prove: true,
+                })),
+            };
+            let err =
+                ContestedResourceVotesGivenByIdentityQuery::try_from_request(request).unwrap_err();
+            assert!(
+                format!("{err}").contains(expected_field),
+                "unexpected error: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_accepts_u16_pagination_boundaries() {
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+            GetContestedResourceIdentityVotesRequestV0, Version as ReqVersion,
+        };
+
+        for value in [0, 1, u16::MAX as u32] {
+            let request = GetContestedResourceIdentityVotesRequest {
+                version: Some(ReqVersion::V0(GetContestedResourceIdentityVotesRequestV0 {
+                    identity_id: vec![0u8; 32],
+                    start_at_vote_poll_id_info: None,
+                    limit: Some(value),
+                    offset: Some(value),
+                    order_ascending: true,
+                    prove: true,
+                })),
+            };
+            let query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)
+                .expect("pagination value should fit");
+            assert_eq!(query.limit, Some(value as u16));
+            assert_eq!(query.offset, Some(value as u16));
+        }
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_from_request_bad_identity() {
+        // identity_id must be exactly 32 bytes; 10 bytes must fail.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+            GetContestedResourceIdentityVotesRequestV0, Version as ReqVersion,
+        };
+        let request = GetContestedResourceIdentityVotesRequest {
+            version: Some(ReqVersion::V0(GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![0u8; 10],
+                start_at_vote_poll_id_info: None,
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                prove: true,
+            })),
+        };
+        let err =
+            ContestedResourceVotesGivenByIdentityQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_from_request_bad_start_at() {
+        // start_at_poll_identifier must be 32 bytes.
+        use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::{
+            get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo,
+            GetContestedResourceIdentityVotesRequestV0, Version as ReqVersion,
+        };
+        let request = GetContestedResourceIdentityVotesRequest {
+            version: Some(ReqVersion::V0(GetContestedResourceIdentityVotesRequestV0 {
+                identity_id: vec![0u8; 32],
+                start_at_vote_poll_id_info: Some(StartAtVotePollIdInfo {
+                    start_at_poll_identifier: vec![1u8; 9], // bad length
+                    start_poll_identifier_included: true,
+                }),
+                limit: None,
+                offset: None,
+                order_ascending: true,
+                prove: true,
+            })),
+        };
+        let err =
+            ContestedResourceVotesGivenByIdentityQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn test_contested_resource_votes_given_by_identity_missing_version() {
+        let request = GetContestedResourceIdentityVotesRequest { version: None };
+        let err =
+            ContestedResourceVotesGivenByIdentityQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    // ---------------------------------------------------------------
+    // ContestedDocumentVotePollVotesDriveQuery tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_votes_missing_version() {
+        let request = GetContestedResourceVotersForIdentityRequest { version: None };
+        let err = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn test_contested_document_vote_poll_votes_from_request_bad_contract_id() {
+        use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::{
+            GetContestedResourceVotersForIdentityRequestV0, Version as ReqVersion,
+        };
+        let request = GetContestedResourceVotersForIdentityRequest {
+            version: Some(ReqVersion::V0(
+                GetContestedResourceVotersForIdentityRequestV0 {
+                    contract_id: vec![0u8; 7], // bad
+                    document_type_name: "d".to_string(),
+                    index_name: "i".to_string(),
+                    index_values: vec![],
+                    contestant_id: vec![0u8; 32],
+                    start_at_identifier_info: None,
+                    order_ascending: true,
+                    count: None,
+                    prove: true,
+                },
+            )),
+        };
+        let err = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => assert!(error.contains("contract id"), "got: {error}"),
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_contested_document_vote_poll_votes_from_request_bad_contestant_id() {
+        use dapi_grpc::platform::v0::get_contested_resource_voters_for_identity_request::{
+            GetContestedResourceVotersForIdentityRequestV0, Version as ReqVersion,
+        };
+        let request = GetContestedResourceVotersForIdentityRequest {
+            version: Some(ReqVersion::V0(
+                GetContestedResourceVotersForIdentityRequestV0 {
+                    contract_id: vec![0u8; 32],
+                    document_type_name: "d".to_string(),
+                    index_name: "i".to_string(),
+                    index_values: vec![],
+                    contestant_id: vec![0u8; 5], // bad
+                    start_at_identifier_info: None,
+                    order_ascending: true,
+                    count: None,
+                    prove: true,
+                },
+            )),
+        };
+        let err = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("contestant_id"), "got: {error}")
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_contested_document_vote_poll_votes_rejects_offset() {
+        let contract_id = Identifier::from_bytes(&[0u8; 32]).unwrap();
+        let contestant_id = Identifier::from_bytes(&[1u8; 32]).unwrap();
+        let q = ContestedDocumentVotePollVotesDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id,
+                document_type_name: "d".to_string(),
+                index_name: "i".to_string(),
+                index_values: vec![],
+            },
+            contestant_id,
+            limit: None,
+            offset: Some(7),
+            start_at: None,
+            order_ascending: true,
+        };
+        let err = q.try_to_request().unwrap_err();
+        assert!(format!("{err}").contains("offset"));
+    }
+
+    // ---------------------------------------------------------------
+    // VotePollsByDocumentTypeQuery tests
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_polls_by_document_type_missing_version() {
+        let request = GetContestedResourcesRequest { version: None };
+        let err = VotePollsByDocumentTypeQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn test_vote_polls_by_document_type_from_request_bad_contract_id() {
+        let request = GetContestedResourcesRequest {
+            version: Some(get_contested_resources_request::Version::V0(
+                GetContestedResourcesRequestV0 {
+                    contract_id: vec![0u8; 6],
+                    document_type_name: "d".to_string(),
+                    index_name: "i".to_string(),
+                    start_at_value_info: None,
+                    start_index_values: vec![],
+                    end_index_values: vec![],
+                    count: None,
+                    order_ascending: true,
+                    prove: true,
+                },
+            )),
+        };
+        let err = VotePollsByDocumentTypeQuery::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => assert!(error.contains("contract id"), "got: {error}"),
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_vote_polls_by_document_type_from_request_bad_start_value() {
+        let request = GetContestedResourcesRequest {
+            version: Some(get_contested_resources_request::Version::V0(
+                GetContestedResourcesRequestV0 {
+                    contract_id: vec![0u8; 32],
+                    document_type_name: "d".to_string(),
+                    index_name: "i".to_string(),
+                    start_at_value_info: Some(
+                        get_contested_resources_request_v0::StartAtValueInfo {
+                            start_value: vec![0xFFu8, 0xFE, 0xFD], // not valid bincode
+                            start_value_included: true,
+                        },
+                    ),
+                    start_index_values: vec![],
+                    end_index_values: vec![],
+                    count: None,
+                    order_ascending: true,
+                    prove: true,
+                },
+            )),
+        };
+        let err = VotePollsByDocumentTypeQuery::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => {
+                assert!(error.contains("decode start value"), "got: {error}")
+            }
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_vote_polls_by_document_type_roundtrip_with_start_at_value() {
+        let contract_id = Identifier::from_bytes(&[9u8; 32]).unwrap();
+        let query = VotePollsByDocumentTypeQuery {
+            contract_id,
+            document_type_name: "domain".to_string(),
+            index_name: "parent".to_string(),
+            start_at_value: Some((Value::Text("dash".to_string()), true)),
+            start_index_values: vec![Value::Text("a".to_string())],
+            end_index_values: vec![Value::Text("z".to_string())],
+            limit: Some(20),
+            order_ascending: false,
+        };
+
+        let grpc = query.try_to_request().expect("try_to_request succeeds");
+        let back = VotePollsByDocumentTypeQuery::try_from_request(grpc)
+            .expect("try_from_request succeeds");
+
+        assert_eq!(back.contract_id, query.contract_id);
+        assert_eq!(back.document_type_name, query.document_type_name);
+        assert_eq!(back.index_name, query.index_name);
+        assert_eq!(back.start_at_value, query.start_at_value);
+        assert_eq!(back.start_index_values, query.start_index_values);
+        assert_eq!(back.end_index_values, query.end_index_values);
+        assert_eq!(back.limit, query.limit);
+        assert_eq!(back.order_ascending, query.order_ascending);
+    }
+
+    // ---------------------------------------------------------------
+    // VotePollsByEndDateDriveQuery happy-path roundtrip
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_polls_by_end_date_roundtrip() {
+        let q = VotePollsByEndDateDriveQuery {
+            start_time: Some((1, false)),
+            end_time: Some((10_000, true)),
+            limit: Some(10),
+            offset: None,
+            order_ascending: false,
+        };
+        let grpc = q.try_to_request().expect("try_to_request ok");
+        let back =
+            VotePollsByEndDateDriveQuery::try_from_request(grpc).expect("try_from_request ok");
+        assert_eq!(back.start_time, q.start_time);
+        assert_eq!(back.end_time, q.end_time);
+        assert_eq!(back.limit, q.limit);
+        assert_eq!(back.order_ascending, q.order_ascending);
+    }
+
+    #[test]
+    fn test_vote_polls_by_end_date_missing_version() {
+        let request = GetVotePollsByEndDateRequest { version: None };
+        let err = VotePollsByEndDateDriveQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    // ---------------------------------------------------------------
+    // Identifier / GetPrefundedSpecializedBalanceRequest error paths
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_identifier_prefunded_balance_missing_version() {
+        let request = GetPrefundedSpecializedBalanceRequest { version: None };
+        let err = Identifier::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn test_identifier_prefunded_balance_bad_id_length() {
+        let request = GetPrefundedSpecializedBalanceRequest {
+            version: Some(
+                proto::get_prefunded_specialized_balance_request::Version::V0(
+                    proto::get_prefunded_specialized_balance_request::GetPrefundedSpecializedBalanceRequestV0 {
+                        id: vec![0u8; 10], // bad
+                        prove: true,
+                    },
+                ),
+            ),
+        };
+        let err = Identifier::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => assert!(error.contains("decode id"), "got: {error}"),
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // ContestedDocumentVotePollDriveQuery error paths
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_contested_document_vote_poll_query_missing_version() {
+        let request = GetContestedResourceVoteStateRequest { version: None };
+        let err = ContestedDocumentVotePollDriveQuery::try_from_request(request).unwrap_err();
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn test_contested_document_vote_poll_query_from_request_bad_contract_id() {
+        let request = GetContestedResourceVoteStateRequest {
+            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
+                    contract_id: vec![0u8; 9], // bad
+                    document_type_name: "d".to_string(),
+                    index_name: "i".to_string(),
+                    index_values: vec![],
+                    result_type: 0,
+                    start_at_identifier_info: None,
+                    allow_include_locked_and_abstaining_vote_tally: true,
+                    count: None,
+                    prove: true,
+                },
+            )),
+        };
+        let err = ContestedDocumentVotePollDriveQuery::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => assert!(error.contains("contract id"), "got: {error}"),
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_contested_document_vote_poll_query_from_request_bad_start_at_identifier() {
+        let request = GetContestedResourceVoteStateRequest {
+            version: Some(get_contested_resource_vote_state_request::Version::V0(
+                proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
+                    contract_id: vec![0u8; 32],
+                    document_type_name: "d".to_string(),
+                    index_name: "i".to_string(),
+                    index_values: vec![],
+                    result_type: 0,
+                    start_at_identifier_info: Some(
+                        get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo {
+                            start_identifier: vec![0u8; 10], // bad
+                            start_identifier_included: true,
+                        },
+                    ),
+                    allow_include_locked_and_abstaining_vote_tally: true,
+                    count: None,
+                    prove: true,
+                },
+            )),
+        };
+        let err = ContestedDocumentVotePollDriveQuery::try_from_request(request).unwrap_err();
+        match err {
+            Error::RequestError { error } => assert!(error.contains("start_at"), "got: {error}"),
+            other => panic!("expected RequestError, got: {other:?}"),
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // bincode_encode_values: error path
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_bincode_decode_mixed_valid_and_invalid() {
+        let mut encoded_valid = bincode_encode_values(&[Value::Text("x".to_string())]).unwrap();
+        // Put a corrupted record after a valid one.
+        encoded_valid.push(vec![0xFF, 0xFE, 0xFD]);
+        let result = bincode_decode_values(encoded_valid.iter());
+        assert!(result.is_err(), "mixed input must fail");
+    }
+
+    // ---------------------------------------------------------------
+    // Original test below (kept for completeness)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn test_vote_polls_by_end_date_rejects_offset() {
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: Some((1000, true)),
+            end_time: Some((2000, false)),
+            limit: Some(5),
+            offset: Some(10), // This should cause an error
+            order_ascending: true,
+        };
+
+        let result = query.try_to_request();
+        assert!(
+            result.is_err(),
+            "offset must be None for try_to_request to succeed"
+        );
+
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("offset"),
+            "error message should mention 'offset', got: {}",
+            err_msg
+        );
+    }
 }

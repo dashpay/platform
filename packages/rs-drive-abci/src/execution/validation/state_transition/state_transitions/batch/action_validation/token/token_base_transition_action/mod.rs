@@ -13,10 +13,12 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::state_v0::TokenBaseTransitionActionStateValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::state_v1::TokenBaseTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_base_transition_action::structure_v0::TokenBaseTransitionActionStructureValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod state_v0;
+mod state_v1;
 mod structure_v0;
 
 pub trait TokenBaseTransitionActionValidation {
@@ -94,9 +96,17 @@ impl TokenBaseTransitionActionValidation for TokenBaseTransitionAction {
                 transaction,
                 platform_version,
             ),
+            1 => self.validate_state_v1(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "TokenBaseTransitionAction::validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -129,9 +139,18 @@ impl TokenBaseTransitionActionValidation for TokenBaseTransitionAction {
                 action_type_string,
                 token_configuration,
             ),
+            1 => self.validate_group_action_v1(
+                rules,
+                owner_id,
+                contract_owner_id,
+                main_control_group,
+                groups,
+                action_type_string,
+                token_configuration,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "TokenBaseTransitionAction::validate_group_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -1,11 +1,10 @@
 use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
-use crate::queries::utils::{identifier_from_js, identifiers_from_js};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
-use dash_sdk::dpp::tokens::calculate_token_id;
 use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+use dash_sdk::dpp::tokens::calculate_token_id;
 use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
 use dash_sdk::dpp::tokens::status::TokenStatus;
 use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -15,43 +14,29 @@ use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::tokens::{IdentityTokenInfoWasm, TokenContractInfoWasm, TokenStatusWasm};
 
 #[wasm_bindgen(js_name = "TokenPriceInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenPriceInfoWasm {
-    token_id: IdentifierWasm,
-    current_price: String,
-    base_price: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "tokenId")]
+    pub token_id: IdentifierWasm,
+    #[wasm_bindgen(getter_with_clone, js_name = "currentPrice")]
+    pub current_price: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "basePrice")]
+    pub base_price: String,
 }
 
 impl TokenPriceInfoWasm {
-    fn new(token_id: IdentifierWasm, current_price: String, base_price: String) -> Self {
+    pub(crate) fn new(token_id: IdentifierWasm, current_price: String, base_price: String) -> Self {
         Self {
             token_id,
             current_price,
             base_price,
         }
-    }
-}
-
-#[wasm_bindgen(js_class = TokenPriceInfo)]
-impl TokenPriceInfoWasm {
-    #[wasm_bindgen(getter = "tokenId")]
-    pub fn token_id(&self) -> IdentifierWasm {
-        self.token_id
-    }
-
-    #[wasm_bindgen(getter = "currentPrice")]
-    pub fn current_price(&self) -> String {
-        self.current_price.clone()
-    }
-
-    #[wasm_bindgen(getter = "basePrice")]
-    pub fn base_price(&self) -> String {
-        self.base_price.clone()
     }
 }
 
@@ -104,6 +89,7 @@ impl From<RewardDistributionMoment> for RewardDistributionMomentWasm {
     }
 }
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "TokenTotalSupply")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -148,13 +134,13 @@ impl WasmSdk {
     /// ```
     #[wasm_bindgen(js_name = "calculateTokenIdFromContract")]
     pub fn calculate_token_id_from_contract(
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<String, WasmSdkError> {
         // Parse contract ID
-        let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
+        let contract_identifier: Identifier = contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Calculate token ID
         let token_id = Identifier::from(calculate_token_id(
@@ -194,13 +180,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPriceByContract")]
     pub async fn get_token_price_by_contract(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<TokenPriceInfoWasm, WasmSdkError> {
         // Parse contract ID
-        let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
+        let contract_identifier: Identifier = contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Calculate token ID
         let token_identifier = Identifier::from(calculate_token_id(
@@ -259,25 +245,24 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenBalances",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_identities_token_balances(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identity_ids: Vec<JsValue>,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
         use drive_proof_verifier::types::identity_token_balance::IdentitiesTokenBalances;
 
         // Parse token ID
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js(identity_ids, "identity ID")?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenBalancesQuery {
@@ -292,7 +277,7 @@ impl WasmSdk {
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
-                let key = JsValue::from(IdentifierWasm::from(*identifier));
+                let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
                 let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
@@ -303,25 +288,24 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityTokenInfos",
-        unchecked_return_type = "Map<Identifier, IdentityTokenInfo>"
+        unchecked_return_type = "Map<string, IdentityTokenInfo>"
     )]
     pub async fn get_identity_token_infos(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentityTokenInfos;
 
         // Parse identity ID
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Parse token IDs
-        let tokens = identifiers_from_js(token_ids, "token ID")?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Create query
         let query = IdentityTokenInfosQuery {
@@ -337,7 +321,7 @@ impl WasmSdk {
         for token in tokens {
             if let Some(Some(info)) = infos_result.get(&token) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -348,25 +332,24 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenInfos",
-        unchecked_return_type = "Map<Identifier, IdentityTokenInfo>"
+        unchecked_return_type = "Map<string, IdentityTokenInfo>"
     )]
     pub async fn get_identities_token_infos(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identity_ids: Vec<JsValue>,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
 
         // Parse token ID
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js(identity_ids, "identity ID")?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenInfosQuery {
@@ -382,7 +365,7 @@ impl WasmSdk {
         for identity in identities {
             if let Some(Some(info)) = infos_result.get(&identity) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(identity));
+                let key: JsValue = IdentifierWasm::from(identity).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -393,18 +376,17 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenStatuses",
-        unchecked_return_type = "Map<Identifier, TokenStatus>"
+        unchecked_return_type = "Map<string, TokenStatus>"
     )]
     pub async fn get_token_statuses(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
         // Parse token IDs
-        let tokens = identifiers_from_js(token_ids, "token ID")?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token statuses
         let statuses_result: TokenStatuses =
@@ -413,7 +395,7 @@ impl WasmSdk {
         let statuses_map = Map::new();
         for token in tokens {
             if let Some(Some(status)) = statuses_result.get(&token) {
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(TokenStatusWasm::from(status.clone()));
                 statuses_map.set(&key, &value);
             }
@@ -424,18 +406,17 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenDirectPurchasePrices",
-        unchecked_return_type = "Map<Identifier, TokenPriceInfo>"
+        unchecked_return_type = "Map<string, TokenPriceInfo>"
     )]
     pub async fn get_token_direct_purchase_prices(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
 
         // Parse token IDs
-        let tokens = identifiers_from_js(token_ids, "token ID")?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token prices - use slice reference
         let prices_result: TokenDirectPurchasePrices =
@@ -467,7 +448,7 @@ impl WasmSdk {
 
                 let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
 
-                let key = JsValue::from(token_id_wasm);
+                let key: JsValue = token_id_wasm.to_base58().into();
                 let value = JsValue::from(price_info);
                 prices_map.set(&key, &value);
             }
@@ -476,21 +457,40 @@ impl WasmSdk {
         Ok(prices_map)
     }
 
+    /// Fetches the contract info for a token (the data contract that defines it
+    /// and the token's position within that contract).
+    ///
+    /// This query is keyed by **token ID**, not by data contract ID. A token ID
+    /// is derived from a data contract ID and the token's position via
+    /// `calculateTokenIdFromContract`. Passing a data contract ID here will not
+    /// match any record and resolves to `undefined`.
+    ///
+    /// # Arguments
+    /// * `token_id` - The token ID in base58 format
+    ///
+    /// # Returns
+    /// The token's contract info, or `undefined` if no token with that ID exists.
+    ///
+    /// # Example
+    /// ```javascript
+    /// const tokenId = WasmSdk.calculateTokenIdFromContract("Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", 0);
+    /// const info = await sdk.getTokenContractInfo(tokenId);
+    /// ```
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
     pub async fn get_token_contract_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Option<TokenContractInfoWasm>, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
 
-        // Parse contract ID
-        let contract_id = identifier_from_js(&data_contract_id, "contract ID")?;
+        // Parse token ID
+        let token_id: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch token contract info
-        let info_result = TokenContractInfo::fetch(self.as_ref(), contract_id).await?;
+        let info_result = TokenContractInfo::fetch(self.as_ref(), token_id).await?;
 
         Ok(info_result.map(TokenContractInfoWasm::from))
     }
@@ -498,16 +498,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaim")]
     pub async fn get_token_perpetual_distribution_last_claim(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Option<RewardDistributionMomentWasm>, WasmSdkError> {
         // Parse IDs
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Prefetch token configuration and add to context provider cache
         // This is required for proof verification to work
@@ -527,15 +527,15 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
     pub async fn get_token_total_supply(
         &self,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<Option<TokenTotalSupplyWasm>, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
 
         // Parse token ID
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch total supply
         let supply_result = TotalSingleTokenBalance::fetch(self.as_ref(), token_identifier).await?;
@@ -547,24 +547,23 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenBalancesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identity_ids: Vec<JsValue>,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
 
         // Parse token ID
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js(identity_ids, "identity ID")?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenBalancesQuery {
@@ -582,7 +581,7 @@ impl WasmSdk {
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
-                let key = JsValue::from(IdentifierWasm::from(*identifier));
+                let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
                 let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
@@ -597,16 +596,15 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenStatusesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, TokenStatus>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, TokenStatus>>"
     )]
     pub async fn get_token_statuses_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse token IDs
-        let tokens = identifiers_from_js(token_ids, "token ID")?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token statuses with proof
         let (statuses_result, metadata, proof) =
@@ -616,7 +614,7 @@ impl WasmSdk {
         let statuses_map = Map::new();
         for token in tokens {
             if let Some(Some(status)) = statuses_result.get(&token) {
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(TokenStatusWasm::from(status.clone()));
                 statuses_map.set(&key, &value);
             }
@@ -631,19 +629,19 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenTotalSupplyWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<TokenTotalSupply | null>"
+        unchecked_return_type = "ProofMetadataResponseTyped<TokenTotalSupply | undefined>"
     )]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
 
         // Parse token ID
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch total supply with proof
         let (supply_result, metadata, proof) =
@@ -667,25 +665,24 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityTokenInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, IdentityTokenInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, IdentityTokenInfo>>"
     )]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentityTokenInfos;
 
         // Parse identity ID
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Parse token IDs
-        let tokens = identifiers_from_js(token_ids, "token ID")?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Create query
         let query = IdentityTokenInfosQuery {
@@ -702,7 +699,7 @@ impl WasmSdk {
         for token in tokens {
             if let Some(Some(info)) = infos_result.get(&token) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -715,25 +712,24 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, IdentityTokenInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, IdentityTokenInfo>>"
     )]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identity_ids: Vec<JsValue>,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "identityIds")] identity_ids: IdentifierLikeArrayJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
 
         // Parse token ID
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Parse identity IDs
-        let identities = identifiers_from_js(identity_ids, "identity ID")?;
+        let identities: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(identity_ids, "identityIds", "identifier")?;
 
         // Create query
         let query = IdentitiesTokenInfosQuery {
@@ -750,7 +746,7 @@ impl WasmSdk {
         for identity in identities {
             if let Some(Some(info)) = infos_result.get(&identity) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(identity));
+                let key: JsValue = IdentifierWasm::from(identity).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -763,18 +759,17 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenDirectPurchasePricesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, TokenPriceInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, TokenPriceInfo>>"
     )]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "tokenIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenIds")] token_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
 
         // Parse token IDs
-        let tokens = identifiers_from_js(token_ids, "token ID")?;
+        let tokens: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(token_ids, "tokenIds", "identifier")?;
 
         // Fetch token prices with proof - use slice reference
         let (prices_result, metadata, proof): (TokenDirectPurchasePrices, _, _) =
@@ -810,7 +805,7 @@ impl WasmSdk {
 
                 let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
 
-                let key = JsValue::from(token_id_wasm);
+                let key: JsValue = token_id_wasm.to_base58().into();
                 let value = JsValue::from(price_info);
                 prices_map.set(&key, &value);
             }
@@ -821,26 +816,37 @@ impl WasmSdk {
         ))
     }
 
+    /// Fetches the contract info for a token, with cryptographic proof.
+    ///
+    /// This query is keyed by **token ID**, not by data contract ID. A token ID
+    /// is derived from a data contract ID and the token's position via
+    /// `calculateTokenIdFromContract`. Passing a data contract ID here will not
+    /// match any record and resolves to `undefined`.
+    ///
+    /// # Arguments
+    /// * `token_id` - The token ID in base58 format
+    ///
+    /// # Returns
+    /// The token's contract info (or `undefined`) along with proof metadata.
     #[wasm_bindgen(
         js_name = "getTokenContractInfoWithProofInfo",
         unchecked_return_type = "ProofMetadataResponseTyped<TokenContractInfo | undefined>"
     )]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
 
-        // Parse contract ID
-        let contract_id = identifier_from_js(&data_contract_id, "contract ID")?;
+        // Parse token ID
+        let token_id: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Fetch token contract info with proof
         let (info_result, metadata, proof) =
-            TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), contract_id, None)
-                .await?;
+            TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), token_id, None).await?;
 
         let data = info_result
             .map(|info| JsValue::from(TokenContractInfoWasm::from(info)))
@@ -853,24 +859,24 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<TokenLastClaim | undefined>"
+        unchecked_return_type = "ProofMetadataResponseTyped<RewardDistributionMoment | undefined>"
     )]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        #[wasm_bindgen(js_name = "tokenId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        token_id: JsValue,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "tokenId")] token_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        use dash_sdk::platform::query::TokenLastClaimQuery;
         use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
+        use dash_sdk::platform::query::TokenLastClaimQuery;
         use dash_sdk::platform::Fetch;
 
         // Parse IDs
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
-        let token_identifier = identifier_from_js(&token_id, "token ID")?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
+        let token_identifier: Identifier = token_id
+            .try_into()
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", err)))?;
 
         // Prefetch token configuration and add to context provider cache
         // This is required for proof verification to work
@@ -906,27 +912,16 @@ impl WasmSdk {
         &self,
         token_id: Identifier,
     ) -> Result<(), WasmSdkError> {
-        use crate::sdk::{LOCAL_TRUSTED_CONTEXT, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
-        use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::dpp::data_contract::accessors::v1::DataContractV1Getters;
         use dash_sdk::dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
 
-        // Step 1: Check trusted context is initialized before doing any network fetches
-        let network = self.network();
-        let context_initialized = match network {
-            Network::Dash => MAINNET_TRUSTED_CONTEXT.lock().unwrap().is_some(),
-            Network::Testnet => TESTNET_TRUSTED_CONTEXT.lock().unwrap().is_some(),
-            Network::Regtest => LOCAL_TRUSTED_CONTEXT.lock().unwrap().is_some(),
-            _ => false,
-        };
-
-        if !context_initialized {
-            return Err(WasmSdkError::generic(format!(
-                "Trusted context not initialized for network {:?}. Call prefetch methods first.",
-                network
-            )));
-        }
+        // Step 1: Verify trusted context is available
+        let trusted_context = self.trusted_context().ok_or_else(|| {
+            WasmSdkError::generic(
+                "Trusted context not initialized. Use a trusted builder with a prefetched cache.",
+            )
+        })?;
 
         // Step 2: Fetch TokenContractInfo to get contract_id and position
         let token_contract_info = TokenContractInfo::fetch(self.as_ref(), token_id)
@@ -956,31 +951,7 @@ impl WasmSdk {
             .clone();
 
         // Step 5: Add the token configuration to the trusted context cache
-        // We already verified the context is initialized above, so unwrap is safe
-        match network {
-            Network::Dash => {
-                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .add_known_token_configuration(token_id, token_configuration);
-            }
-            Network::Testnet => {
-                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .add_known_token_configuration(token_id, token_configuration);
-            }
-            Network::Regtest => {
-                let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .add_known_token_configuration(token_id, token_configuration);
-            }
-            _ => unreachable!(), // Already checked above
-        }
+        trusted_context.add_known_token_configuration(token_id, token_configuration);
 
         Ok(())
     }

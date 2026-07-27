@@ -12,7 +12,8 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionIsNotFoundErrorWasm,
     IdentityAssetLockTransactionOutPointAlreadyExistsErrorWasm,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceErrorWasm,
-    IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityCreditTransferToSelfErrorWasm,
+    IdentityAssetLockTransactionOutputNotFoundErrorWasm,
+    IdentityAssetLockTransactionTooManyInputsErrorWasm, IdentityCreditTransferToSelfErrorWasm,
     IdentityInsufficientBalanceErrorWasm, InvalidAssetLockProofCoreChainHeightErrorWasm,
     InvalidAssetLockProofTransactionHeightErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
@@ -38,7 +39,8 @@ use dpp::consensus::basic::BasicError::{
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
-    IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+    IdentityAssetLockTransactionTooManyInputsError, IncompatibleProtocolVersionError,
     IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
@@ -65,7 +67,7 @@ use dpp::consensus::basic::document::{ContestedDocumentsTemporarilyNotAllowedErr
 use dpp::consensus::basic::group::GroupActionNotAllowedOnTransitionError;
 use dpp::consensus::basic::identity::{DataContractBoundsNotPresentError, DisablingKeyIdAlsoBeingAddedInSameTransitionError, InvalidIdentityCreditWithdrawalTransitionAmountError, InvalidIdentityUpdateTransitionDisableKeysError, InvalidIdentityUpdateTransitionEmptyError, InvalidKeyPurposeForContractBoundsError, TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError};
 use dpp::consensus::basic::overflow_error::OverflowError;
-use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError};
+use dpp::consensus::basic::token::{ChoosingTokenMintRecipientNotAllowedError, ContractHasNoTokensError, DestinationIdentityForTokenMintingNotSetError, InvalidActionIdError, InvalidTokenAmountError, InvalidTokenConfigUpdateNoChangeError, InvalidTokenIdError, InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError, TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError, TokenTransferToOurselfError, InvalidTokenDistributionTimeIntervalNotMinuteAlignedError, InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenDistributionBlockIntervalTooShortError};
 use dpp::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
 use dpp::consensus::state::data_contract::data_contract_update_action_not_allowed_error::DataContractUpdateActionNotAllowedError;
 use dpp::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
@@ -88,7 +90,12 @@ use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
-use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError};
+use dpp::consensus::state::shielded::insufficient_pool_notes_error::InsufficientPoolNotesError;
+use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
+use dpp::consensus::state::shielded::invalid_anchor_error::InvalidAnchorError;
+use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
+use dpp::consensus::state::shielded::nullifier_already_spent_error::NullifierAlreadySpentError;
+use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError, InvalidRemainderOutputCountError, WithdrawalBelowMinAmountError, ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedEmptyProofError, ShieldedZeroAnchorError, ShieldedInvalidValueBalanceError, ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError, ShieldedInvalidDenominationError};
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -443,6 +450,19 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::AddressInvalidNonceError(e) => {
             generic_consensus_error!(AddressInvalidNonceError, e).into()
         }
+        StateError::InvalidAnchorError(e) => generic_consensus_error!(InvalidAnchorError, e).into(),
+        StateError::NullifierAlreadySpentError(e) => {
+            generic_consensus_error!(NullifierAlreadySpentError, e).into()
+        }
+        StateError::InvalidShieldedProofError(e) => {
+            generic_consensus_error!(InvalidShieldedProofError, e).into()
+        }
+        StateError::InsufficientPoolNotesError(e) => {
+            generic_consensus_error!(InsufficientPoolNotesError, e).into()
+        }
+        StateError::InsufficientShieldedFeeError(e) => {
+            generic_consensus_error!(InsufficientShieldedFeeError, e).into()
+        }
     }
 }
 
@@ -595,6 +615,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         InvalidIdentityAssetLockTransactionError(e) => {
             InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
+        }
+        IdentityAssetLockTransactionTooManyInputsError(e) => {
+            IdentityAssetLockTransactionTooManyInputsErrorWasm::from(e).into()
         }
         InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()
@@ -922,6 +945,33 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::WithdrawalBelowMinAmountError(e) => {
             generic_consensus_error!(WithdrawalBelowMinAmountError, e).into()
+        }
+        BasicError::ShieldedNoActionsError(e) => {
+            generic_consensus_error!(ShieldedNoActionsError, e).into()
+        }
+        BasicError::ShieldedTooManyActionsError(e) => {
+            generic_consensus_error!(ShieldedTooManyActionsError, e).into()
+        }
+        BasicError::ShieldedEmptyProofError(e) => {
+            generic_consensus_error!(ShieldedEmptyProofError, e).into()
+        }
+        BasicError::ShieldedZeroAnchorError(e) => {
+            generic_consensus_error!(ShieldedZeroAnchorError, e).into()
+        }
+        BasicError::ShieldedInvalidValueBalanceError(e) => {
+            generic_consensus_error!(ShieldedInvalidValueBalanceError, e).into()
+        }
+        BasicError::ShieldedEncryptedNoteSizeMismatchError(e) => {
+            generic_consensus_error!(ShieldedEncryptedNoteSizeMismatchError, e).into()
+        }
+        BasicError::ShieldedImplicitFeeCapExceededError(e) => {
+            generic_consensus_error!(ShieldedImplicitFeeCapExceededError, e).into()
+        }
+        BasicError::ShieldedInvalidDenominationError(e) => {
+            generic_consensus_error!(ShieldedInvalidDenominationError, e).into()
+        }
+        BasicError::TokenPricingScheduleEmptyError(e) => {
+            generic_consensus_error!(TokenPricingScheduleEmptyError, e).into()
         }
     }
 }

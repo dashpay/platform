@@ -667,7 +667,7 @@ impl Strategy {
     /// on the Dash Platform. It encapsulates the complexity of transaction generation, identity management,
     /// and contract dynamics within a block's context.
     #[allow(clippy::too_many_arguments)]
-    pub fn state_transitions_for_block(
+    pub async fn state_transitions_for_block<'c>(
         &mut self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(
@@ -682,7 +682,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: &MempoolDocumentCounter,
+        mempool_document_counter: &MempoolDocumentCounter<'c>,
         rng: &mut StdRng,
         config: &StrategyConfig,
         platform_version: &PlatformVersion,
@@ -695,15 +695,18 @@ impl Strategy {
 
         // Get identity state transitions
         // Start identities are done on the 1st block, identity inserts are done on 3rd+ blocks
-        let identity_state_transitions = match self.identity_state_transitions_for_block(
-            block_info,
-            self.start_identities.starting_balances,
-            signer,
-            rng,
-            asset_lock_proofs,
-            config,
-            platform_version,
-        ) {
+        let identity_state_transitions = match self
+            .identity_state_transitions_for_block(
+                block_info,
+                self.start_identities.starting_balances,
+                signer,
+                rng,
+                asset_lock_proofs,
+                config,
+                platform_version,
+            )
+            .await
+        {
             Ok(transitions) => transitions,
             Err(e) => {
                 tracing::error!("identity_state_transitions_for_block error: {}", e);
@@ -756,7 +759,7 @@ impl Strategy {
                 outputs.insert(address, None);
 
                 let funding_transition =
-                    AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                    AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                         asset_lock_proof,
                         private_key.inner.secret_bytes().as_slice(),
                         BTreeMap::new(), // no additional inputs
@@ -765,7 +768,8 @@ impl Strategy {
                         signer,
                         0,
                         platform_version,
-                    );
+                    )
+                    .await;
 
                 match funding_transition {
                     Ok(transition) => state_transitions.push(transition),
@@ -790,13 +794,15 @@ impl Strategy {
         // Add initial contracts for contracts_with_updates on 2nd block of strategy
         #[allow(clippy::comparison_chain)]
         if block_info.height == config.start_block_height + 1 {
-            let mut contract_state_transitions = self.initial_contract_state_transitions(
-                current_identities,
-                identity_nonce_counter,
-                signer,
-                rng,
-                platform_version,
-            );
+            let mut contract_state_transitions = self
+                .initial_contract_state_transitions(
+                    current_identities,
+                    identity_nonce_counter,
+                    signer,
+                    rng,
+                    platform_version,
+                )
+                .await;
             state_transitions.append(&mut contract_state_transitions);
         } else if block_info.height > config.start_block_height + 1 {
             let (mut operations_state_transitions, mut add_to_finalize_block_operations) = self
@@ -814,7 +820,8 @@ impl Strategy {
                     mempool_document_counter,
                     rng,
                     platform_version,
-                );
+                )
+                .await;
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut operations_state_transitions);
 
@@ -827,7 +834,8 @@ impl Strategy {
                     signer,
                     contract_nonce_counter,
                     platform_version,
-                );
+                )
+                .await;
             state_transitions.append(&mut initial_contract_update_state_transitions);
         }
 
@@ -891,7 +899,7 @@ impl Strategy {
     /// This function plays a pivotal role in simulating realistic blockchain operations, allowing for the
     /// detailed and nuanced execution of a wide range of actions on the Dash Platform as defined by the strategy.
     #[allow(clippy::too_many_arguments)]
-    pub fn operations_based_transitions(
+    pub async fn operations_based_transitions<'c>(
         &self,
         document_query_callback: &mut impl FnMut(LocalDocumentQuery) -> Vec<Document>,
         identity_fetch_callback: &mut impl FnMut(
@@ -906,7 +914,7 @@ impl Strategy {
         signer: &mut SimpleSigner,
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
         contract_nonce_counter: &mut BTreeMap<(Identifier, Identifier), u64>,
-        mempool_document_counter: &MempoolDocumentCounter,
+        mempool_document_counter: &MempoolDocumentCounter<'c>,
         rng: &mut StdRng,
         platform_version: &PlatformVersion,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -961,78 +969,74 @@ impl Strategy {
                             Err(e) => tracing::warn!("Failed to create random documents: {}", e),
                         }
 
-                        documents_with_identity_and_entropy.into_iter().for_each(
-                            |(document, identity, entropy)| {
-                                let identity_contract_nonce =
-                                    if contract.owner_id() == identity.id() {
-                                        contract_nonce_counter
-                                            .entry((identity.id(), contract.id()))
-                                            .or_insert(1)
-                                    } else {
-                                        contract_nonce_counter
-                                            .entry((identity.id(), contract.id()))
-                                            .or_default()
-                                    };
+                        for (document, identity, entropy) in
+                            documents_with_identity_and_entropy.into_iter()
+                        {
+                            let identity_contract_nonce = if contract.owner_id() == identity.id() {
+                                contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_insert(1)
+                            } else {
+                                contract_nonce_counter
+                                    .entry((identity.id(), contract.id()))
+                                    .or_default()
+                            };
 
-                                let gap = self
-                                    .identity_contract_nonce_gaps
-                                    .as_ref()
-                                    .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
-                                    as u64;
-                                *identity_contract_nonce += 1 + gap;
+                            let gap = self
+                                .identity_contract_nonce_gaps
+                                .as_ref()
+                                .map_or(0, |gap_amount| gap_amount.events_if_hit(rng))
+                                as u64;
+                            *identity_contract_nonce += 1 + gap;
 
-                                let document_create_transition: DocumentCreateTransition =
-                                    DocumentCreateTransitionV0 {
-                                        base: DocumentBaseTransitionV0 {
-                                            id: document.id(),
-                                            identity_contract_nonce: *identity_contract_nonce,
-                                            document_type_name: document_type.name().clone(),
-                                            data_contract_id: contract.id(),
-                                        }
-                                        .into(),
-                                        entropy: entropy.to_buffer(),
-                                        data: document.properties_consumed(),
-                                        prefunded_voting_balance: Default::default(),
+                            let document_create_transition: DocumentCreateTransition =
+                                DocumentCreateTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
                                     }
-                                    .into();
+                                    .into(),
+                                    entropy: entropy.to_buffer(),
+                                    data: document.properties_consumed(),
+                                    prefunded_voting_balance: Default::default(),
+                                }
+                                .into();
 
-                                let document_batch_transition: BatchTransition =
-                                    BatchTransitionV0 {
-                                        owner_id: identity.id(),
-                                        transitions: vec![document_create_transition.into()],
-                                        user_fee_increase: 0,
-                                        signature_public_key_id: 2,
-                                        signature: BinaryData::default(),
-                                    }
-                                    .into();
-                                let mut document_batch_transition: StateTransition =
-                                    document_batch_transition.into();
+                            let document_batch_transition: BatchTransition = BatchTransitionV0 {
+                                owner_id: identity.id(),
+                                transitions: vec![document_create_transition.into()],
+                                user_fee_increase: 0,
+                                signature_public_key_id: 2,
+                                signature: BinaryData::default(),
+                            }
+                            .into();
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
 
-                                let identity_public_key = identity
-                                    .get_first_public_key_matching(
-                                        Purpose::AUTHENTICATION,
-                                        HashSet::from([SecurityLevel::CRITICAL]),
-                                        HashSet::from([
-                                            KeyType::ECDSA_SECP256K1,
-                                            KeyType::BLS12_381,
-                                        ]),
-                                        false,
-                                    )
-                                    .expect("expected to get a signing key");
+                            let identity_public_key = identity
+                                .get_first_public_key_matching(
+                                    Purpose::AUTHENTICATION,
+                                    HashSet::from([SecurityLevel::CRITICAL]),
+                                    HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                    false,
+                                )
+                                .expect("expected to get a signing key");
 
-                                document_batch_transition
-                                    .sign_external(
-                                        identity_public_key,
-                                        signer,
-                                        Some(|_data_contract_id, _document_type_name| {
-                                            Ok(SecurityLevel::CRITICAL)
-                                        }),
-                                    )
-                                    .expect("expected to sign");
+                            document_batch_transition
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|_data_contract_id, _document_type_name| {
+                                        Ok(SecurityLevel::CRITICAL)
+                                    }),
+                                )
+                                .await
+                                .expect("expected to sign");
 
-                                operations.push(document_batch_transition);
-                            },
-                        );
+                            operations.push(document_batch_transition);
+                        }
                     }
 
                     // Generate state transition for specific document insert operation
@@ -1095,72 +1099,64 @@ impl Strategy {
                                 .expect("expected random_documents_with_params")
                         };
 
-                        documents
-                            .into_iter()
-                            .for_each(|(mut document, identity, entropy)| {
-                                document
-                                    .properties_mut()
-                                    .append(&mut specific_document_key_value_pairs.clone());
+                        for (mut document, identity, entropy) in documents.into_iter() {
+                            document
+                                .properties_mut()
+                                .append(&mut specific_document_key_value_pairs.clone());
 
-                                let identity_contract_nonce = contract_nonce_counter
-                                    .entry((identity.id(), contract.id()))
-                                    .or_default();
-                                *identity_contract_nonce += 1;
+                            let identity_contract_nonce = contract_nonce_counter
+                                .entry((identity.id(), contract.id()))
+                                .or_default();
+                            *identity_contract_nonce += 1;
 
-                                let document_create_transition: DocumentCreateTransition =
-                                    DocumentCreateTransitionV0 {
-                                        base: DocumentBaseTransitionV0 {
-                                            id: document.id(),
-                                            identity_contract_nonce: *identity_contract_nonce,
-                                            document_type_name: document_type.name().clone(),
-                                            data_contract_id: contract.id(),
-                                        }
-                                        .into(),
-                                        entropy: entropy.to_buffer(),
-                                        data: document.properties_consumed(),
-                                        prefunded_voting_balance: Default::default(),
+                            let document_create_transition: DocumentCreateTransition =
+                                DocumentCreateTransitionV0 {
+                                    base: DocumentBaseTransitionV0 {
+                                        id: document.id(),
+                                        identity_contract_nonce: *identity_contract_nonce,
+                                        document_type_name: document_type.name().clone(),
+                                        data_contract_id: contract.id(),
                                     }
-                                    .into();
+                                    .into(),
+                                    entropy: entropy.to_buffer(),
+                                    data: document.properties_consumed(),
+                                    prefunded_voting_balance: Default::default(),
+                                }
+                                .into();
 
-                                let document_batch_transition: BatchTransition =
-                                    BatchTransitionV0 {
-                                        owner_id: identity.id(),
-                                        transitions: vec![document_create_transition.into()],
-                                        user_fee_increase: 0,
-                                        signature_public_key_id: 1,
-                                        signature: BinaryData::default(),
-                                    }
-                                    .into();
-                                let mut document_batch_transition: StateTransition =
-                                    document_batch_transition.into();
+                            let document_batch_transition: BatchTransition = BatchTransitionV0 {
+                                owner_id: identity.id(),
+                                transitions: vec![document_create_transition.into()],
+                                user_fee_increase: 0,
+                                signature_public_key_id: 1,
+                                signature: BinaryData::default(),
+                            }
+                            .into();
+                            let mut document_batch_transition: StateTransition =
+                                document_batch_transition.into();
 
-                                let identity_public_key = identity
-                                    .get_first_public_key_matching(
-                                        Purpose::AUTHENTICATION,
-                                        HashSet::from([
-                                            SecurityLevel::HIGH,
-                                            SecurityLevel::CRITICAL,
-                                        ]),
-                                        HashSet::from([
-                                            KeyType::ECDSA_SECP256K1,
-                                            KeyType::BLS12_381,
-                                        ]),
-                                        false,
-                                    )
-                                    .expect("expected to get a signing key");
+                            let identity_public_key = identity
+                                .get_first_public_key_matching(
+                                    Purpose::AUTHENTICATION,
+                                    HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+                                    HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                    false,
+                                )
+                                .expect("expected to get a signing key");
 
-                                document_batch_transition
-                                    .sign_external(
-                                        identity_public_key,
-                                        signer,
-                                        Some(|_data_contract_id, _document_type_name| {
-                                            Ok(SecurityLevel::HIGH)
-                                        }),
-                                    )
-                                    .expect("expected to sign");
+                            document_batch_transition
+                                .sign_external(
+                                    identity_public_key,
+                                    signer,
+                                    Some(|_data_contract_id, _document_type_name| {
+                                        Ok(SecurityLevel::HIGH)
+                                    }),
+                                )
+                                .await
+                                .expect("expected to sign");
 
-                                operations.push(document_batch_transition);
-                            });
+                            operations.push(document_batch_transition);
+                        }
                     }
 
                     // Generate state transition for document delete operation
@@ -1241,6 +1237,7 @@ impl Strategy {
                                         Ok(SecurityLevel::HIGH)
                                     }),
                                 )
+                                .await
                                 .expect("expected to sign");
 
                             operations.push(document_batch_transition);
@@ -1335,6 +1332,7 @@ impl Strategy {
                                         Ok(SecurityLevel::HIGH)
                                     }),
                                 )
+                                .await
                                 .expect("expected to sign");
 
                             operations.push(document_batch_transition);
@@ -1438,6 +1436,7 @@ impl Strategy {
                                         Ok(SecurityLevel::HIGH)
                                     }),
                                 )
+                                .await
                                 .expect("expected to sign");
 
                             operations.push(document_batch_transition);
@@ -1494,6 +1493,7 @@ impl Strategy {
                                 platform_version,
                                 None,
                             )
+                            .await
                             .expect("expected to create top up from addresses transition");
                             operations.push(state_transition);
                         }
@@ -1533,7 +1533,7 @@ impl Strategy {
                                             signer,
                                             rng,
                                             platform_version,
-                                        );
+                                        ).await;
 
                                     // Push to operations vectors
                                     operations.push(state_transition);
@@ -1550,9 +1550,13 @@ impl Strategy {
                                 }
                             }
                             IdentityUpdateOp::IdentityUpdateDisableKey(keys_count) => {
-                                (0..count).for_each(|_| {
-                                    current_identities.iter_mut().enumerate().for_each(|(i, random_identity)| {
-                                        if i >= count.into() { return; }
+                                for _ in 0..count {
+                                    for (i, random_identity) in
+                                        current_identities.iter_mut().enumerate()
+                                    {
+                                        if i >= count.into() {
+                                            break;
+                                        }
 
                                         if let Some(state_transition) =
                                             crate::transitions::create_identity_update_transition_disable_keys(
@@ -1563,11 +1567,12 @@ impl Strategy {
                                                 signer,
                                                 rng,
                                                 platform_version,
-                                            ) {
-                                                operations.push(state_transition);
+                                            ).await
+                                        {
+                                            operations.push(state_transition);
                                         }
-                                    });
-                                });
+                                    }
+                                }
                             }
                         }
                     }
@@ -1586,7 +1591,8 @@ impl Strategy {
                                     identity_nonce_counter,
                                     signer,
                                     rng,
-                                );
+                                )
+                                .await;
                             operations.push(state_transition);
                         }
                     }
@@ -1615,7 +1621,8 @@ impl Strategy {
                                     identity_nonce_counter,
                                     signer, // This means in the TUI, the loaded identity must always be the sender since we're always signing with it for now
                                     transfer_info.amount,
-                                );
+                                )
+                                .await;
                                 operations.push(state_transition);
                             } else if current_identities.len() > 1 {
                                 // Handle the case where no sender, recipient, and amount are provided
@@ -1647,7 +1654,8 @@ impl Strategy {
                                     identity_nonce_counter,
                                     signer,
                                     300000,
-                                );
+                                )
+                                .await;
                                 operations.push(state_transition);
                             }
                         }
@@ -1750,13 +1758,20 @@ impl Strategy {
                                 .expect("Expected to get identity public key in ContractCreate");
                             let mut state_transition =
                                 StateTransition::DataContractCreate(transition);
-                            if let Err(e) = state_transition.sign_external(
-                                public_key,
-                                signer,
-                                None::<
-                                    fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>,
-                                >,
-                            ) {
+                            if let Err(e) = state_transition
+                                .sign_external(
+                                    public_key,
+                                    signer,
+                                    None::<
+                                        fn(
+                                            Identifier,
+                                            String,
+                                        )
+                                            -> Result<SecurityLevel, ProtocolError>,
+                                    >,
+                                )
+                                .await
+                            {
                                 tracing::error!("Error signing state transition: {:?}", e);
                             }
 
@@ -1823,6 +1838,7 @@ impl Strategy {
                                                         Ok(SecurityLevel::CRITICAL)
                                                     }),
                                                 )
+                                                .await
                                                 .expect("expected to sign the contract update transition with a CRITICAL level key");
 
                                                 operations.push(state_transition);
@@ -1869,7 +1885,7 @@ impl Strategy {
                                         transfer_info.outputs.len(),
                                         rng,
                                         platform_version,
-                                    );
+                                    ).await;
                                 operations.push(state_transition);
                             } else {
                                 // Handle the case where no specific sender is provided
@@ -1948,7 +1964,7 @@ impl Strategy {
                                         signer,
                                         recipient_addresses,
                                         platform_version,
-                                    );
+                                    ).await;
                                 operations.push(state_transition);
                             }
                         }
@@ -2103,6 +2119,7 @@ impl Strategy {
                                 0,      // user_fee_increase
                                 platform_version,
                             )
+                            .await
                             .expect("expected to create identity from addresses transition");
 
                             operations.push(state_transition);
@@ -2166,7 +2183,7 @@ impl Strategy {
                             outputs.insert(address, None);
 
                             let funding_transition =
-                                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                                     asset_lock_proof,
                                     private_key.inner.secret_bytes().as_slice(),
                                     BTreeMap::new(), // no additional inputs
@@ -2175,7 +2192,7 @@ impl Strategy {
                                     signer,
                                     0,
                                     platform_version,
-                                );
+                                ).await;
 
                             match funding_transition {
                                 Ok(state_transition) => operations.push(state_transition),
@@ -2309,7 +2326,6 @@ impl Strategy {
                             let amount_per_output = total_input / output_count as Credits;
                             let remainder = total_input % output_count as Credits;
                             let mut outputs = BTreeMap::new();
-                            let mut outputs_created = 0usize;
 
                             // Collect existing addresses that are not used as inputs (for potential reuse as outputs)
                             let input_addresses: HashSet<_> = inputs.keys().cloned().collect();
@@ -2327,14 +2343,13 @@ impl Strategy {
                             let mut existing_output_addresses: HashSet<PlatformAddress> =
                                 HashSet::new();
 
-                            for _ in 0..output_count {
+                            for (outputs_created, _) in (0..output_count).enumerate() {
                                 // First output gets the remainder to ensure exact balance
                                 let this_output_amount = if outputs_created == 0 {
                                     amount_per_output + remainder
                                 } else {
                                     amount_per_output
                                 };
-                                outputs_created += 1;
 
                                 // Check if we should use an existing address as output
                                 let use_existing = use_existing_outputs_chance
@@ -2485,6 +2500,7 @@ impl Strategy {
                                     0,
                                     platform_version,
                                 )
+                                .await
                                 .expect("expected to create address funds transfer transition");
 
                             operations.push(transfer_transition);
@@ -2611,6 +2627,7 @@ impl Strategy {
                                     0,
                                     platform_version,
                                 )
+                                .await
                                 .expect("expected to create address credit withdrawal transition");
 
                             operations.push(withdrawal_transition);
@@ -2664,7 +2681,7 @@ impl Strategy {
     /// This function plays a crucial role in simulating the dynamic nature of identity management on the Dash Platform,
     /// allowing for a nuanced and detailed representation of identity-related activities within a blockchain simulation environment.
     #[allow(clippy::too_many_arguments)]
-    pub fn identity_state_transitions_for_block(
+    pub async fn identity_state_transitions_for_block(
         &self,
         block_info: &BlockInfo,
         amount: u64,
@@ -2689,7 +2706,8 @@ impl Strategy {
                 rng,
                 asset_lock_proofs,
                 platform_version,
-            )?;
+            )
+            .await?;
             state_transitions.append(&mut new_transitions);
         }
 
@@ -2709,7 +2727,8 @@ impl Strategy {
                     rng,
                     asset_lock_proofs,
                     platform_version,
-                )?;
+                )
+                .await?;
                 state_transitions.append(&mut new_transitions);
             }
         }
@@ -2752,7 +2771,7 @@ impl Strategy {
     ///
     /// This function is pivotal for setting up the simulated environment's initial state, providing a foundation for
     /// subsequent operations and updates within the strategy.
-    pub fn initial_contract_state_transitions(
+    pub async fn initial_contract_state_transitions(
         &mut self,
         current_identities: &[Identity],
         identity_nonce_counter: &mut BTreeMap<Identifier, u64>,
@@ -2762,41 +2781,54 @@ impl Strategy {
     ) -> Vec<StateTransition> {
         let mut id_mapping = HashMap::new(); // Maps old IDs to new IDs
 
-        self.start_contracts
-            .iter_mut()
-            .map(|(created_contract, contract_updates)| {
-                // Select a random identity from current_identities to be the contract owner
-                let identity_num = rng.gen_range(0..current_identities.len());
+        let mut results: Vec<StateTransition> = Vec::new();
+        // Collect the indices and do sequential processing to allow .await
+        let contract_count = self.start_contracts.len();
+        for contract_idx in 0..contract_count {
+            // Select a random identity from current_identities to be the contract owner
+            let identity_num = rng.gen_range(0..current_identities.len());
 
-                let identity = current_identities
-                    .get(identity_num)
-                    .expect("Expected to find the identity in the current_identities");
+            let identity = current_identities
+                .get(identity_num)
+                .expect("Expected to find the identity in the current_identities");
 
-                let identity_public_key = identity.get_first_public_key_matching(
+            let identity_public_key = identity
+                .get_first_public_key_matching(
                     Purpose::AUTHENTICATION,
                     HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
                     HashSet::from([KeyType::ECDSA_SECP256K1]),
-                    false
+                    false,
                 )
-                .expect("Expected to get identity public key in initial_contract_state_transitions");
-                let key_id = identity_public_key.id();
+                .expect(
+                    "Expected to get identity public key in initial_contract_state_transitions",
+                );
+            let key_id = identity_public_key.id();
 
-                let partial_identity = identity.clone().into_partial_identity_info();
-                let partial_identity_public_key = partial_identity.loaded_public_keys.values()
-                    .find(|&public_key| public_key.id() == key_id)
-                    .expect("No public key with matching id found");
+            let partial_identity = identity.clone().into_partial_identity_info();
+            let partial_identity_public_key_id = partial_identity
+                .loaded_public_keys
+                .values()
+                .find(|&public_key| public_key.id() == key_id)
+                .expect("No public key with matching id found")
+                .id();
 
+            let (contract_clone, identity_nonce_value, old_id, new_id) = {
+                let (created_contract, contract_updates) = &mut self.start_contracts[contract_idx];
                 let contract = created_contract.data_contract_mut();
 
                 // Get and bump the identity nonce
-                let identity_nonce = identity_nonce_counter.entry(partial_identity.id).or_default();
+                let identity_nonce = identity_nonce_counter
+                    .entry(partial_identity.id)
+                    .or_default();
                 *identity_nonce += 1;
 
                 // Set the contract ID and owner ID with the random identity
                 contract.set_owner_id(partial_identity.id);
                 let old_id = contract.id();
-                let new_id =
-                    DataContract::generate_data_contract_id_v0(partial_identity.id, *identity_nonce);
+                let new_id = DataContract::generate_data_contract_id_v0(
+                    partial_identity.id,
+                    *identity_nonce,
+                );
                 contract.set_id(new_id);
 
                 id_mapping.insert(old_id, new_id); // Store the mapping
@@ -2805,7 +2837,6 @@ impl Strategy {
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
                         let updated_contract_data = updated_contract.data_contract_mut();
-                        // Use the new ID from the mapping
                         if let Some(new_updated_id) = id_mapping.get(&updated_contract_data.id()) {
                             updated_contract_data.set_id(*new_updated_id);
                         }
@@ -2813,35 +2844,42 @@ impl Strategy {
                     }
                 }
 
-                // Update any document transitions that registered to the old contract id
-                for op in self.operations.iter_mut() {
-                    if let OperationType::Document(document_op) = &mut op.op_type {
-                        if document_op.contract.id() == old_id {
-                            document_op.contract = contract.clone();
-                            let document_type = contract.document_type_cloned_for_name(document_op.document_type.name())
-                                .expect("Expected to get a document type for name while creating initial strategy contracts");
-                            document_op.document_type = document_type;
-                        }
-                    }
-                }
+                (contract.clone(), *identity_nonce, old_id, new_id)
+            };
+            let _ = new_id;
 
-                match DataContractCreateTransition::new_from_data_contract(
-                    contract.clone(),
-                    *identity_nonce,
-                    &partial_identity,
-                    partial_identity_public_key.id(),
-                    signer,
-                    platform_version,
-                    None,
-                ) {
-                    Ok(transition) => transition,
-                    Err(e) => {
-                        tracing::error!("Error creating DataContractCreateTransition: {e}");
-                        panic!();
+            // Update any document transitions that registered to the old contract id
+            for op in self.operations.iter_mut() {
+                if let OperationType::Document(document_op) = &mut op.op_type {
+                    if document_op.contract.id() == old_id {
+                        document_op.contract = contract_clone.clone();
+                        let document_type = contract_clone
+                            .document_type_cloned_for_name(document_op.document_type.name())
+                            .expect("Expected to get a document type for name while creating initial strategy contracts");
+                        document_op.document_type = document_type;
                     }
                 }
-            })
-            .collect()
+            }
+
+            match DataContractCreateTransition::new_from_data_contract(
+                contract_clone,
+                identity_nonce_value,
+                &partial_identity,
+                partial_identity_public_key_id,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            {
+                Ok(transition) => results.push(transition),
+                Err(e) => {
+                    tracing::error!("Error creating DataContractCreateTransition: {e}");
+                    panic!();
+                }
+            }
+        }
+        results
     }
 
     /// Generates state transitions for updating contracts based on the current set of identities and the block height.
@@ -2879,7 +2917,7 @@ impl Strategy {
     ///
     /// Through these updates, the simulation accurately mirrors the lifecycle of contracts on the Dash Platform, incorporating
     /// changes that may occur over time.
-    pub fn initial_contract_update_state_transitions(
+    pub async fn initial_contract_update_state_transitions(
         &mut self,
         current_identities: &[Identity],
         block_height: u64,
@@ -2920,35 +2958,36 @@ impl Strategy {
             .collect();
 
         // Increment nonce counter, update data contract version, and create state transitions
-        updates
-            .into_iter()
-            .map(|(identity, update_height, contract_update)| {
-                let identity_info = identity.into_partial_identity_info();
-                let contract_id = contract_update.data_contract().id();
-                let nonce = contract_nonce_counter
-                    .entry((identity_info.id, contract_id))
-                    .and_modify(|e| *e += 1)
-                    .or_insert(1);
+        let mut results: Vec<StateTransition> = Vec::with_capacity(updates.len());
+        for (identity, update_height, contract_update) in updates.into_iter() {
+            let identity_info = identity.into_partial_identity_info();
+            let contract_id = contract_update.data_contract().id();
+            let nonce = contract_nonce_counter
+                .entry((identity_info.id, contract_id))
+                .and_modify(|e| *e += 1)
+                .or_insert(1);
 
-                // Set the version number on the data contract
-                let mut contract_update_clone = contract_update.clone();
-                let data_contract = contract_update_clone.data_contract_mut();
-                data_contract.set_version(update_height as u32);
+            // Set the version number on the data contract
+            let mut contract_update_clone = contract_update.clone();
+            let data_contract = contract_update_clone.data_contract_mut();
+            data_contract.set_version(update_height as u32);
 
-                // Create the state transition
-                DataContractUpdateTransition::new_from_data_contract(
-                    data_contract.clone(),
-                    &identity_info,
-                    2, // Assuming key id 2 is a high or critical auth key
-                    *nonce,
-                    0,
-                    signer,
-                    platform_version,
-                    None,
-                )
-                .expect("expected to create a state transition from a data contract")
-            })
-            .collect()
+            // Create the state transition
+            let transition = DataContractUpdateTransition::new_from_data_contract(
+                data_contract.clone(),
+                &identity_info,
+                2, // Assuming key id 2 is a high or critical auth key
+                *nonce,
+                0,
+                signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expected to create a state transition from a data contract");
+            results.push(transition);
+        }
+        results
     }
 
     /// Returns all contract IDs referenced by operations in this strategy.
@@ -2994,8 +3033,8 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
     use std::collections::BTreeMap;
 
-    #[test]
-    fn serialize_deserialize_strategy() {
+    #[tokio::test]
+    async fn serialize_deserialize_strategy() {
         let platform_version = PlatformVersion::latest();
 
         let mut rng = StdRng::seed_from_u64(567);
@@ -3019,10 +3058,11 @@ mod tests {
         let start_identities = create_state_transitions_for_identities(
             vec![&mut identity1, &mut identity2],
             &(dash_to_duffs!(1)..=dash_to_duffs!(1)),
-            &mut simple_signer,
+            &simple_signer,
             &mut rng,
             platform_version,
-        );
+        )
+        .await;
 
         let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("data contract");

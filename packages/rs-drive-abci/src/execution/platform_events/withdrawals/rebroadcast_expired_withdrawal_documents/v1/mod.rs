@@ -94,7 +94,11 @@ where
                 platform_version,
             )?;
 
-        let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
+        let withdrawals_contract = self
+            .drive
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)?;
 
         self.drive.add_update_multiple_documents_operations(
             &documents_to_update,
@@ -120,5 +124,48 @@ where
         )?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::epoch::Epoch;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use drive::util::test_helpers::setup::setup_system_data_contract;
+
+    /// With the withdrawals system data contract installed but no EXPIRED
+    /// documents, the function must return `Ok(())` on the `is_empty()`
+    /// guard without attempting any drive operations.
+    #[test]
+    fn v1_returns_ok_when_no_expired_documents() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let data_contract =
+            load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                .expect("to load withdrawals system contract");
+        setup_system_data_contract(&platform.drive, &data_contract, Some(&transaction));
+
+        let block_info = BlockInfo {
+            time_ms: 42,
+            height: 10,
+            core_height: 100,
+            epoch: Epoch::default(),
+        };
+
+        platform
+            .rebroadcast_expired_withdrawal_documents_v1(
+                &block_info,
+                &transaction,
+                platform_version,
+            )
+            .expect("v1 must return Ok when there are no expired documents");
     }
 }

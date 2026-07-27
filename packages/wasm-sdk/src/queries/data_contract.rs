@@ -9,7 +9,8 @@ use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::utils::try_to_vec;
 use wasm_dpp2::DataContractWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -95,15 +96,11 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContract")]
     pub async fn get_data_contract(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> Result<Option<DataContractWasm>, WasmSdkError> {
-        let id: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
-            })?
-            .into();
+        let id: Identifier = contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+        })?;
 
         let data_contract = DataContract::fetch_by_identifier(self.as_ref(), id)
             .await?
@@ -118,15 +115,11 @@ impl WasmSdk {
     )]
     pub async fn get_data_contract_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
+        #[wasm_bindgen(js_name = "contractId")] contract_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let id: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| {
-                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
-            })?
-            .into();
+        let id: Identifier = contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+        })?;
 
         let (contract, metadata, proof) =
             DataContract::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
@@ -171,26 +164,15 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDataContracts",
-        unchecked_return_type = "Map<Identifier, DataContract | undefined>"
+        unchecked_return_type = "Map<string, DataContract | undefined>"
     )]
     pub async fn get_data_contracts(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")] ids: Vec<
-            JsValue,
-        >,
+        ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
         // Parse all contract IDs
-        let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
-            .into_iter()
-            .map(|id| {
-                IdentifierWasm::try_from(&id)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
-                    })
-            })
-            .collect();
-        let identifiers = identifiers?;
+        let identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(ids, "ids", "identifier")?;
 
         // Fetch all contracts
         let contracts_result: DataContracts =
@@ -199,7 +181,7 @@ impl WasmSdk {
         let contracts_map = Map::new();
 
         for (id, contract) in contracts_result {
-            let key = JsValue::from(IdentifierWasm::from(id));
+            let key: JsValue = IdentifierWasm::from(id).to_base58().into();
             let value = contract.map(DataContractWasm::from);
             contracts_map.set(&key, &JsValue::from(value));
         }
@@ -244,26 +226,15 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getDataContractsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, DataContract | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, DataContract | undefined>>"
     )]
     pub async fn get_data_contracts_with_proof_info(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")] ids: Vec<
-            JsValue,
-        >,
+        ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse all contract IDs
-        let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
-            .into_iter()
-            .map(|id| {
-                IdentifierWasm::try_from(&id)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
-                    })
-            })
-            .collect();
-        let identifiers = identifiers?;
+        let identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(ids, "ids", "identifier")?;
 
         // Fetch all contracts with proof
         let (contracts_result, metadata, proof) =
@@ -273,7 +244,7 @@ impl WasmSdk {
         let contracts_map = Map::new();
 
         for (id, contract_opt) in contracts_result {
-            let key = JsValue::from(IdentifierWasm::from(id));
+            let key: JsValue = IdentifierWasm::from(id).to_base58().into();
             let value = contract_opt.map(DataContractWasm::from);
 
             contracts_map.set(&key, &JsValue::from(value));

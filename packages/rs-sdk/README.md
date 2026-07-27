@@ -83,15 +83,33 @@ Core RPC on the remote host.
 
 Refer to rich comments / help in the forementioned scripts for more details.
 
+### SDK test data
+
+When starting the local devnet with `yarn start` (the `local` dashmate config has `buildArgs.SDK_TEST_DATA = "true"` set by `yarn setup` — see `scripts/configure_dashmate.sh`), the `create_sdk_test_data` cfg flag
+activates creation of deterministic test data in genesis state. This data is defined in
+`packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/test/`.
+
+Current test data includes 3 identities, a data contract with 3 tokens, and address balances.
+Token configuration:
+
+| Token | Config |
+|-------|--------|
+| `TOKEN_ID_0` | base_supply=100000, frozen for IDENTITY_ID_2, no pricing, no pre-programmed distributions |
+| `TOKEN_ID_1` | base_supply=100000, paused, single price=25, no pre-programmed distributions |
+| `TOKEN_ID_2` | base_supply=100000, pricing schedule (10 levels), pre-programmed distributions at timestamps 1000, 5000, 10000 |
+
+When adding a new query type, add corresponding test data to the files in `create_genesis_state/test/`
+and reference it in `packages/rs-sdk/tests/fetch/generated_data.rs`.
+
 ### Generating test vectors
 
-To generate test vectors for offline testing, you need to have access acredentials to Dash Platform instance, either by
-specifying configuration manually in `packages/rs-sdk/tests/.env`. or starting a local devnet.
+To generate test vectors for offline testing, you need to have access to a Dash Platform instance, either by
+specifying configuration manually in `packages/rs-sdk/tests/.env` or starting a local devnet.
 The `.env` file is automatically generated during `yarn setup` or `yarn reset`, using `platform/scripts/configure_dotenv.sh` script. See [Dash Platform documentation](../../README.md) for more details about starting and using local devnet.
 
 To generate test vectors:
 
-1. Start local dev environment of Dash Platform using `SDK_TEST_DATA=true yarn start`.
+1. Start local dev environment of Dash Platform using `yarn start` (the `local` dashmate config has `buildArgs.SDK_TEST_DATA = "true"` set by `yarn setup` — see `scripts/configure_dashmate.sh`).
 2. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
 3. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
 4. (Optional) commit generated files with `git commit packages/rs-sdk/tests/vectors/`.
@@ -132,14 +150,27 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
    If you intend to implement `FetchMany`, you should define type returned by `fetch_many()` using `RetrievedObjects`
    that will store collection of  returned objects, indexed by some key.
 5. [ ] Implement `FromProof` trait for the `Object` (or type defined in `types.rs`) in `packages/rs-drive-proof-verifier/src/proof.rs`.
-6. [ ] Implement `Query` trait for the `Request` in `packages/rs-sdk/src/platform/query.rs`.
+6. [ ] Implement `Query` trait for the `Request` and `Fetch` (or `FetchMany`) trait for the `Object`.
+   Create a dedicated module under the appropriate subdirectory
+   (e.g., `packages/rs-sdk/src/platform/tokens/my_query.rs`) and add `Query` + `Fetch`/`FetchMany` impls there.
+   **Deprecated:** older code placed these in central files (`query.rs`, `fetch.rs`, `fetch_many.rs`) — do not follow that pattern for new queries.
 7. [ ] Implement `MockResponse` for `Object` in `packages/rs-sdk/src/mock/requests.rs`.
-8. [ ] Implement `Fetch` trait for the `Object` (or type defined in `types.rs`), with inner type Request = `Request`,
-   in `packages/rs-sdk/src/platform/fetch.rs`.
-9. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
-   with inner type Request = `Request`, in `packages/rs-sdk/src/platform/fetch_many.rs`.
-10. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
-11. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`
-12. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
-13. [ ] Start local devnet with `yarn reset && SDK_TEST_DATA=true yarn start`
-14. [ ] Generate test vectors with script `packages/rs-sdk/scripts/generate_test_vectors.sh`
+8. [ ] Implement `FetchMany\<Key\>` trait for the `Object` (or type defined in `types.rs`),
+   with inner type Request = `Request`, if the query returns a collection of objects.
+   Skip if the query returns a single result and only `Fetch` is needed.
+9. [ ] Add `mod ...;` clause to `packages/rs-sdk/tests/fetch/main.rs`
+10. [ ] Implement unit tests in `packages/rs-sdk/tests/fetch/*object*.rs`.
+    Tests must compile but will **fail** at this point due to missing test vectors — that is expected.
+    The vector generation script (step 13) runs these tests with `--features generate-test-vectors`
+    against a live devnet to record responses as test vectors. After vectors are generated,
+    re-run `cargo test -p dash-sdk` to verify they pass in offline mode.
+11. [ ] Add name of request type to match clause in `packages/rs-sdk/src/mock/sdk.rs` : `load_expectations()`
+12. [ ] (Optional) If not already configured, run `yarn setup` (fresh checkout) or `yarn reset` (reconfigure existing environment).
+    **Warning:** both commands rebuild everything and reset data — do not run if your environment is already working.
+    This configures the `.env` file in `packages/rs-sdk/tests/` needed by the tests.
+13. [ ] Start local devnet with `yarn start` (the `local` dashmate config has `buildArgs.SDK_TEST_DATA = "true"` set by `yarn setup` — see `scripts/configure_dashmate.sh`).
+14. [ ] Generate test vectors by running `packages/rs-sdk/scripts/generate_test_vectors.sh test_name`
+    where `test_name` matches only the new tests (e.g., `test_token_pre_programmed_distributions`).
+    Running without arguments regenerates **all** vectors — avoid this unless intentional.
+    The script executes matching tests with `--features generate-test-vectors` against the running devnet,
+    saving responses as test vectors in `packages/rs-sdk/tests/vectors/`.

@@ -29,7 +29,7 @@ pub struct TokenUnfreezeTransitionBuilder {
 }
 
 impl TokenUnfreezeTransitionBuilder {
-    /// Start building a mint tokens request for the provided DataContract.
+    /// Start building an unfreeze tokens transition for the provided DataContract.
     ///
     /// # Arguments
     ///
@@ -183,7 +183,8 @@ impl TokenUnfreezeTransitionBuilder {
             signer,
             platform_version,
             self.state_transition_creation_options,
-        )?;
+        )
+        .await?;
 
         Ok(state_transition)
     }

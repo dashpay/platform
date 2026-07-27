@@ -19,12 +19,16 @@ pub struct IdentityTokenInfosQuery {
 }
 
 impl Query<GetIdentityTokenInfosRequest> for IdentityTokenInfosQuery {
-    fn query(self, prove: bool) -> Result<GetIdentityTokenInfosRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetIdentityTokenInfosRequest, Error> {
+        let prove = settings.prove;
         let request = GetIdentityTokenInfosRequest {
             version: Some(get_identity_token_infos_request::Version::V0(
                 GetIdentityTokenInfosRequestV0 {
                     identity_id: self.identity_id.to_vec(),
-                    token_ids: self.token_ids.into_iter().map(|id| id.to_vec()).collect(),
+                    token_ids: self.token_ids.iter().map(|id| id.to_vec()).collect(),
                     prove,
                 },
             )),
@@ -35,6 +39,7 @@ impl Query<GetIdentityTokenInfosRequest> for IdentityTokenInfosQuery {
 }
 
 impl FetchMany<Identifier, IdentityTokenInfos> for IdentityTokenInfo {
+    type Query = GetIdentityTokenInfosRequest;
     type Request = GetIdentityTokenInfosRequest;
 }
 
@@ -48,15 +53,15 @@ pub struct IdentitiesTokenInfosQuery {
 }
 
 impl Query<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfosQuery {
-    fn query(self, prove: bool) -> Result<GetIdentitiesTokenInfosRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetIdentitiesTokenInfosRequest, Error> {
+        let prove = settings.prove;
         let request = GetIdentitiesTokenInfosRequest {
             version: Some(get_identities_token_infos_request::Version::V0(
                 GetIdentitiesTokenInfosRequestV0 {
-                    identity_ids: self
-                        .identity_ids
-                        .into_iter()
-                        .map(|id| id.to_vec())
-                        .collect(),
+                    identity_ids: self.identity_ids.iter().map(|id| id.to_vec()).collect(),
                     token_id: self.token_id.to_vec(),
                     prove,
                 },
@@ -70,5 +75,6 @@ impl Query<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfosQuery {
 // TODO: Implement Fetch (and for others)
 
 impl FetchMany<Identifier, IdentitiesTokenInfos> for IdentityTokenInfo {
+    type Query = GetIdentitiesTokenInfosRequest;
     type Request = GetIdentitiesTokenInfosRequest;
 }

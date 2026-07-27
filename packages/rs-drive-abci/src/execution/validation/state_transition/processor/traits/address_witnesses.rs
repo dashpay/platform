@@ -68,6 +68,7 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     StateTransition::AddressFundingFromAssetLock(st) => {
                         st.validate_witnesses(&signable_bytes)
                     }
+                    StateTransition::Shield(st) => st.validate_witnesses(&signable_bytes),
                     // These state transitions don't have address witness validation
                     StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
@@ -78,7 +79,12 @@ impl StateTransitionAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::MasternodeVote(_)
-                    | StateTransition::IdentityCreditTransferToAddresses(_) => {
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_)
+                    | StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::ShieldedWithdrawal(_)
+                    | StateTransition::IdentityCreateFromShieldedPool(_) => {
                         return Ok(SimpleConsensusValidationResult::new());
                     }
                 };
@@ -180,7 +186,8 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityCreateFromAddresses(_)
                     | StateTransition::IdentityTopUpFromAddresses(_)
                     | StateTransition::AddressCreditWithdrawal(_)
-                    | StateTransition::AddressFundingFromAssetLock(_) => true,
+                    | StateTransition::AddressFundingFromAssetLock(_)
+                    | StateTransition::Shield(_) => true,
                     StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
                     | StateTransition::Batch(_)
@@ -190,7 +197,12 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::MasternodeVote(_)
-                    | StateTransition::IdentityCreditTransferToAddresses(_) => false,
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
+                    | StateTransition::ShieldedTransfer(_)
+                    | StateTransition::Unshield(_)
+                    | StateTransition::ShieldFromAssetLock(_)
+                    | StateTransition::ShieldedWithdrawal(_)
+                    | StateTransition::IdentityCreateFromShieldedPool(_) => false,
                 };
 
                 Ok(has_address_witness_validation)
@@ -200,6 +212,169 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                 known_versions: vec![0],
                 received: version,
             })),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn make_data_contract_create_st() -> StateTransition {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let transition: dpp::state_transition::data_contract_create_transition::DataContractCreateTransition =
+            created_data_contract.try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    use dpp::version::DefaultForPlatformVersion;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+    use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+    use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+    use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
+    use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
+    use dpp::state_transition::shield_transition::ShieldTransition;
+    use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
+
+    mod has_address_witness_validation {
+        use super::*;
+
+        #[test]
+        fn should_return_true_for_address_based_transitions() {
+            let platform_version = &platform_version::version::v8::PLATFORM_V8;
+            let transitions: Vec<(&str, StateTransition)> = vec![
+                (
+                    "AddressFundsTransfer",
+                    StateTransition::AddressFundsTransfer(AddressFundsTransferTransition::V0(
+                        AddressFundsTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreateFromAddresses",
+                    StateTransition::IdentityCreateFromAddresses(
+                        IdentityCreateFromAddressesTransition::V0(
+                            IdentityCreateFromAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "IdentityTopUpFromAddresses",
+                    StateTransition::IdentityTopUpFromAddresses(
+                        IdentityTopUpFromAddressesTransition::V0(
+                            IdentityTopUpFromAddressesTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "AddressCreditWithdrawal",
+                    StateTransition::AddressCreditWithdrawal(
+                        AddressCreditWithdrawalTransition::V0(
+                            AddressCreditWithdrawalTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "AddressFundingFromAssetLock",
+                    StateTransition::AddressFundingFromAssetLock(
+                        AddressFundingFromAssetLockTransition::V0(
+                            AddressFundingFromAssetLockTransitionV0::default(),
+                        ),
+                    ),
+                ),
+                (
+                    "Shield",
+                    StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                        inputs: Default::default(),
+                        actions: vec![],
+                        amount: 0,
+                        anchor: [0u8; 32],
+                        proof: vec![],
+                        binding_signature: [0u8; 64],
+                        fee_strategy: vec![],
+                        user_fee_increase: 0,
+                        input_witnesses: vec![],
+                    })),
+                ),
+            ];
+            for (name, st) in transitions {
+                assert!(
+                    st.has_address_witness_validation(platform_version).unwrap(),
+                    "expected true for {}",
+                    name
+                );
+            }
+        }
+
+        #[test]
+        fn should_return_false_for_identity_based_transitions() {
+            let platform_version = &platform_version::version::v8::PLATFORM_V8;
+            let transitions: Vec<(&str, StateTransition)> = vec![
+                ("DataContractCreate", make_data_contract_create_st()),
+                (
+                    "Batch",
+                    StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
+                ),
+                (
+                    "IdentityCreate",
+                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                        IdentityCreateTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "IdentityCreditTransfer",
+                    StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+                        IdentityCreditTransferTransitionV0::default(),
+                    )),
+                ),
+                (
+                    "MasternodeVote",
+                    StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                        MasternodeVoteTransitionV0::default(),
+                    )),
+                ),
+            ];
+            for (name, st) in transitions {
+                assert!(
+                    !st.has_address_witness_validation(platform_version).unwrap(),
+                    "expected false for {}",
+                    name
+                );
+            }
+        }
+    }
+
+    mod validate_address_witnesses {
+        use super::*;
+
+        #[test]
+        fn should_return_valid_for_non_address_transition() {
+            let platform_version = &platform_version::version::v8::PLATFORM_V8;
+            let st = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
+            let mut exec_ctx = StateTransitionExecutionContext::default_for_platform_version(
+                platform_version::version::PlatformVersion::latest(),
+            )
+            .unwrap();
+            let result = st
+                .validate_address_witnesses(&mut exec_ctx, platform_version)
+                .expect("should not error");
+            assert!(result.is_valid());
         }
     }
 }

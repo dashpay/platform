@@ -1,23 +1,9 @@
 import Foundation
 import SwiftDashSDK
 
-// MARK: - Network Helper  
-// C enums are imported as structs with RawValue in Swift
-// We'll use the raw values directly
-
-extension SDK {
-    var network: SwiftDashSDK.Network {
-        // In a real implementation, we would track the network during initialization
-        // For now, return testnet as default
-        return DashSDKNetwork(rawValue: 1) // Testnet
-    }
-}
-
-// MARK: - Signer Protocol
-protocol Signer {
-    func sign(identityPublicKey: Data, data: Data) -> Data?
-    func canSign(identityPublicKey: Data) -> Bool
-}
-
-// MARK: - SDK Extensions for the example app
-// No global signer storage is kept; signers are created and used at call sites.
+// Re-export SDK types for backward compatibility.
+//
+// The `Signer` protocol now lives in SwiftDashSDK. Production
+// signing is performed by `KeychainSigner` from SwiftDashSDK; the
+// legacy `TestSigner` mock has been removed.
+public typealias Signer = SwiftDashSDK.Signer

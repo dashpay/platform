@@ -141,7 +141,7 @@ impl DataContractCreateStateTransitionBasicStructureValidationV0 for DataContrac
             }
         }
 
-        // Validate there are no more than 50 keywords
+        // Validate there are no more than 50 contract keywords
         if self.data_contract().keywords().len() > 50 {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 ConsensusError::BasicError(BasicError::TooManyKeywordsError(

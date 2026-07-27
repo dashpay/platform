@@ -1,34 +1,33 @@
 pub mod from_document;
 pub mod v1_methods;
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use std::collections::BTreeMap;
 
 use bincode::{Decode, Encode};
 use derive_more::Display;
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::identifier::Identifier;
 use crate::prelude::IdentityNonce;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::state_transition::batch_transition::document_base_transition::property_names;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
-#[cfg(any(
-    feature = "state-transition-json-conversion",
-    feature = "state-transition-value-conversion"
-))]
+#[cfg(any(feature = "json-conversion", feature = "value-conversion"))]
 use crate::{data_contract::DataContract, errors::ProtocolError};
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::Value;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Display)]
+// See `DocumentBaseTransitionV0` for json_safe_fields rationale.
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -40,31 +39,25 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct DocumentBaseTransitionV1 {
     /// The document ID
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$id"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$id"))]
     pub id: Identifier,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$identityContractNonce")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$identityContractNonce"))]
     pub identity_contract_nonce: IdentityNonce,
     /// Name of document type found int the data contract associated with the `data_contract_id`
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "$type"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$type"))]
     pub document_type_name: String,
     /// Data contract ID generated from the data contract's `owner_id` and `entropy`
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "$dataContractId")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "$dataContractId"))]
     pub data_contract_id: Identifier,
     /// An optional Token Payment Info
     #[cfg_attr(
-        feature = "state-transition-serde-conversion",
+        feature = "serde-conversion",
         serde(default, rename = "$tokenPaymentInfo")
     )]
     pub token_payment_info: Option<TokenPaymentInfo>,
 }
 
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 impl DocumentBaseTransitionV1 {
     pub fn from_value_map_consume(
         map: &mut BTreeMap<String, Value>,

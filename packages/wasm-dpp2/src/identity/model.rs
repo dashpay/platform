@@ -1,20 +1,61 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::identifier::IdentifierWasm;
+use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
+use crate::impl_wasm_type_info;
 use crate::serialization;
+use crate::utils::try_to_u64;
+use crate::version::PlatformVersionLikeJs;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::Identifier;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
+use dpp::serialization::{
+    JsonConvertible, PlatformDeserializable, PlatformSerializable, ValueConvertible,
+};
 use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
-use std::convert::TryFrom;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[derive(Clone)]
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTITY_TYPES_TS: &str = r#"
+/**
+ * Identity serialized as a plain object.
+ */
+export interface IdentityObject {
+    $formatVersion: string;
+    id: Identifier;
+    publicKeys: IdentityPublicKeyObject[];
+    balance: bigint;
+    revision: bigint;
+}
+
+/**
+ * Identity serialized as JSON (with string identifiers).
+ * Note: u64 fields are numbers when within JS safe integer range (< 2^53),
+ * or strings when exceeding it.
+ */
+export interface IdentityJSON {
+    $formatVersion: string;
+    id: string;
+    publicKeys: IdentityPublicKeyJSON[];
+    balance: number | string;
+    revision: number | string;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentityObject")]
+    pub type IdentityObjectJs;
+
+    #[wasm_bindgen(typescript_type = "IdentityJSON")]
+    pub type IdentityJSONJs;
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "Identity")]
 pub struct IdentityWasm(Identity);
 
@@ -32,80 +73,68 @@ impl From<IdentityWasm> for Identity {
 
 #[wasm_bindgen(js_class = Identity)]
 impl IdentityWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "Identity".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "Identity".to_string()
-    }
-
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
-    ) -> WasmDppResult<IdentityWasm> {
-        let identifier: Identifier = IdentifierWasm::try_from(js_identifier)?.into();
-
+    pub fn constructor(id: IdentifierLikeJs) -> WasmDppResult<IdentityWasm> {
+        let identifier: Identifier = id.try_into()?;
         let identity = Identity::create_basic_identity(identifier, PlatformVersion::first())?;
-
         Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(
-        &mut self,
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
-    ) -> WasmDppResult<()> {
-        let identifier: Identifier = IdentifierWasm::try_from(js_identifier)?.into();
-        self.0.set_id(identifier);
+    pub fn set_id(&mut self, id: IdentifierLikeJs) -> WasmDppResult<()> {
+        self.0.set_id(id.try_into()?);
         Ok(())
     }
 
     #[wasm_bindgen(setter = "balance")]
-    pub fn set_balance(&mut self, balance: u64) {
-        self.0.set_balance(balance);
+    pub fn set_balance(&mut self, balance: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_balance(try_to_u64(balance, "balance")?);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "revision")]
-    pub fn set_revision(&mut self, revision: u64) {
-        self.0.set_revision(revision);
+    pub fn set_revision(&mut self, revision: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_revision(try_to_u64(revision, "revision")?);
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "addPublicKey")]
-    pub fn add_public_key(&mut self, public_key: &IdentityPublicKeyWasm) {
+    pub fn add_public_key(
+        &mut self,
+        #[wasm_bindgen(js_name = "publicKey")] public_key: &IdentityPublicKeyWasm,
+    ) {
         self.0.add_public_key(public_key.clone().into());
     }
 
     // GETTERS
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWasm {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.id().into()
     }
 
     #[wasm_bindgen(getter = "balance")]
-    pub fn get_balance(&self) -> u64 {
+    pub fn balance(&self) -> u64 {
         self.0.balance()
     }
 
     #[wasm_bindgen(getter = "revision")]
-    pub fn get_revision(&self) -> u64 {
+    pub fn revision(&self) -> u64 {
         self.0.revision()
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyById")]
-    pub fn get_public_key_by_id(&self, key_id: KeyID) -> Option<IdentityPublicKeyWasm> {
+    pub fn get_public_key_by_id(
+        &self,
+        #[wasm_bindgen(js_name = "keyId")] key_id: KeyID,
+    ) -> Option<IdentityPublicKeyWasm> {
         self.0
             .get_public_key_by_id(key_id)
             .map(|key| IdentityPublicKeyWasm::from(key.clone()))
     }
 
-    #[wasm_bindgen(js_name = "getPublicKeys")]
-    pub fn get_public_keys(&self) -> Vec<IdentityPublicKeyWasm> {
+    #[wasm_bindgen(getter = "publicKeys")]
+    pub fn public_keys(&self) -> Vec<IdentityPublicKeyWasm> {
         self.0
             .public_keys()
             .values()
@@ -147,27 +176,46 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        // Use platform_value conversion which handles BigInt for balance/revision
-        // and outputs id as Uint8Array, publicKeys as plain objects
-        let value = self.0.to_object()?;
-        serialization::platform_value_to_object(&value)
+    pub fn to_object(&self) -> WasmDppResult<IdentityObjectJs> {
+        let value = self
+            .0
+            .to_object()
+            .map_err(|e| WasmDppError::serialization(format!("toObject: {}", e)))?;
+        let js_value = serialization::platform_value_to_object(&value)?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        serialization::to_json(&self.0)
+    pub fn to_json(&self) -> WasmDppResult<IdentityJSONJs> {
+        let json = self
+            .0
+            .to_json()
+            .map_err(|e| WasmDppError::serialization(format!("toJSON: {}", e)))?;
+        let js_value = serialization::json_to_js_value(&json)?;
+        Ok(js_value.into())
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        serialization::from_json(js_value).map(IdentityWasm)
+    pub fn from_json(value: IdentityJSONJs) -> WasmDppResult<IdentityWasm> {
+        let json = serialization::js_value_to_json(&value.into())?;
+        let identity = Identity::from_json(json)
+            .map_err(|e| WasmDppError::serialization(format!("fromJSON: {}", e)))?;
+        Ok(IdentityWasm(identity))
     }
 
+    /// `fromObject` keeps the manual path because the wasm API dispatches on
+    /// the `platform_version` arg (via `try_from_platform_versioned`) rather
+    /// than the value's embedded `$formatVersion` tag — explicit version
+    /// coupling is the wasm SDK convention. The canonical
+    /// `ValueConvertible::from_object` would dispatch on the tag.
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        let value = serialization::js_value_to_platform_value(&js_value)?;
-        let identity = Identity::try_from_platform_versioned(value, PlatformVersion::latest())?;
+    pub fn from_object(
+        value: IdentityObjectJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<IdentityWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
+        let platform_value = serialization::js_value_to_platform_value(&value.into())?;
+        let identity = Identity::try_from_platform_versioned(platform_value, &platform_version)?;
         Ok(IdentityWasm(identity))
     }
 
@@ -178,4 +226,6 @@ impl IdentityWasm {
     }
 }
 
-impl_try_from_options!(IdentityWasm, "Identity");
+impl_try_from_js_value!(IdentityWasm, "Identity");
+impl_try_from_options!(IdentityWasm);
+impl_wasm_type_info!(IdentityWasm, Identity);

@@ -1,7 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::queries::utils::{
-    convert_optional_limit, deserialize_required_query, identifiers_from_js,
-};
+use crate::queries::utils::{convert_optional_limit, deserialize_required_query};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
@@ -19,21 +17,25 @@ use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::group::GroupActionWasm;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeArrayJs, IdentifierLikeJs, IdentifierWasm};
 use wasm_dpp2::tokens::GroupWasm;
+use wasm_dpp2::utils::JsMapExt;
 
 // Proof info functions are now included below
 
 #[wasm_bindgen(js_name = "IdentityGroupInfo")]
 pub struct IdentityGroupInfoWasm {
-    data_contract_id: String,
-    group_contract_position: u32,
-    role: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "dataContractId")]
+    pub data_contract_id: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "groupContractPosition")]
+    pub group_contract_position: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub role: String,
     power: Option<GroupMemberPower>,
 }
 
 impl IdentityGroupInfoWasm {
-    fn new(
+    pub(crate) fn new(
         data_contract_id: String,
         group_contract_position: u32,
         role: String,
@@ -50,22 +52,7 @@ impl IdentityGroupInfoWasm {
 
 #[wasm_bindgen(js_class = IdentityGroupInfo)]
 impl IdentityGroupInfoWasm {
-    #[wasm_bindgen(getter = "dataContractId")]
-    pub fn data_contract_id(&self) -> String {
-        self.data_contract_id.clone()
-    }
-
-    #[wasm_bindgen(getter = "groupContractPosition")]
-    pub fn group_contract_position(&self) -> u32 {
-        self.group_contract_position
-    }
-
-    #[wasm_bindgen(getter = "role")]
-    pub fn role(&self) -> String {
-        self.role.clone()
-    }
-
-    #[wasm_bindgen(getter = "power")]
+    #[wasm_bindgen(getter)]
     pub fn power(&self) -> Option<BigInt> {
         self.power.map(|value| BigInt::from(value as u64))
     }
@@ -592,15 +579,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupInfo")]
     pub async fn get_group_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
     ) -> Result<Option<GroupWasm>, WasmSdkError> {
         // Parse data contract ID
-        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Create group query
         let query = GroupQuery {
@@ -616,7 +601,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getGroupMembers",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_group_members(&self, query: GroupMembersQueryJs) -> Result<Map, WasmSdkError> {
         let params = parse_group_members_query(query)?;
@@ -722,20 +707,18 @@ impl WasmSdk {
         // Fetch groups
         let groups_result = Group::fetch_many(self.as_ref(), query).await?;
 
-        // Convert result to response format
-        let infos_map = Map::new();
-        for (position, group_opt) in groups_result {
-            let key = Number::from(position as u32);
-            let value = JsValue::from(group_opt.map(GroupWasm::from));
-            infos_map.set(&key.into(), &value);
-        }
-
-        Ok(infos_map)
+        Ok(Map::from_entries(groups_result.into_iter().map(
+            |(position, group_opt)| {
+                let key: JsValue = Number::from(position as u32).into();
+                let value = JsValue::from(group_opt.map(GroupWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
         js_name = "getGroupActions",
-        unchecked_return_type = "Map<Identifier, GroupAction | undefined>"
+        unchecked_return_type = "Map<string, GroupAction | undefined>"
     )]
     pub async fn get_group_actions(&self, query: GroupActionsQueryJs) -> Result<Map, WasmSdkError> {
         let params = parse_group_actions_query(query)?;
@@ -752,19 +735,18 @@ impl WasmSdk {
         // Fetch actions
         let actions_result = GroupAction::fetch_many(self.as_ref(), query).await?;
 
-        let actions_map = Map::new();
-        for (action_id, action_opt) in actions_result {
-            let key = JsValue::from(IdentifierWasm::from(action_id));
-            let value = JsValue::from(action_opt.map(GroupActionWasm::from));
-            actions_map.set(&key, &value);
-        }
-
-        Ok(actions_map)
+        Ok(Map::from_entries(actions_result.into_iter().map(
+            |(action_id, action_opt)| {
+                let key: JsValue = IdentifierWasm::from(action_id).to_base58().into();
+                let value = JsValue::from(action_opt.map(GroupActionWasm::from));
+                (key, value)
+            },
+        )))
     }
 
     #[wasm_bindgen(
         js_name = "getGroupActionSigners",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_group_action_signers(
         &self,
@@ -783,38 +765,34 @@ impl WasmSdk {
         // Fetch signers
         let signers_result = GroupMemberPower::fetch_many(self.as_ref(), query).await?;
 
-        let signers_map = Map::new();
-        for (signer_id, power_opt) in signers_result {
-            if let Some(power) = power_opt {
-                let key = JsValue::from(IdentifierWasm::from(signer_id));
-                let value = JsValue::from(BigInt::from(power as u64));
-                signers_map.set(&key, &value);
-            }
-        }
-
-        Ok(signers_map)
+        Ok(Map::from_entries(signers_result.into_iter().filter_map(
+            |(signer_id, power_opt)| {
+                power_opt.map(|power| {
+                    let key: JsValue = IdentifierWasm::from(signer_id).to_base58().into();
+                    let value = JsValue::from(BigInt::from(power as u64));
+                    (key, value)
+                })
+            },
+        )))
     }
 
     #[wasm_bindgen(
         js_name = "getGroupsDataContracts",
-        unchecked_return_type = "Map<Identifier, Map<number, Group | undefined>>"
+        unchecked_return_type = "Map<string, Map<number, Group | undefined>>"
     )]
     pub async fn get_groups_data_contracts(
         &self,
-        #[wasm_bindgen(js_name = "dataContractIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        data_contract_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "dataContractIds")] data_contract_ids: IdentifierLikeArrayJs,
     ) -> Result<Map, WasmSdkError> {
+        use wasm_dpp2::utils::try_to_vec;
+
+        let contract_identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(data_contract_ids, "dataContractIds", "identifier")?;
+
         let contracts_map = Map::new();
 
-        for contract_js in data_contract_ids {
-            let contract_id: Identifier = IdentifierWasm::try_from(&contract_js)
-                .map_err(|err| {
-                    WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
-                })?
-                .into();
-
-            let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
+        for contract_id in contract_identifiers {
+            let contract_key: JsValue = IdentifierWasm::from(contract_id).to_base58().into();
 
             // Fetch all groups for this contract
             let query = GroupInfosQuery {
@@ -825,13 +803,12 @@ impl WasmSdk {
 
             let groups_result = Group::fetch_many(self.as_ref(), query).await?;
 
-            let groups_map = Map::new();
-
-            for (position, group_opt) in groups_result {
-                let key = Number::from(position as u32);
-                let value = JsValue::from(group_opt.map(GroupWasm::from));
-                groups_map.set(&key.into(), &value);
-            }
+            let groups_map =
+                Map::from_entries(groups_result.into_iter().map(|(position, group_opt)| {
+                    let key: JsValue = Number::from(position as u32).into();
+                    let value = JsValue::from(group_opt.map(GroupWasm::from));
+                    (key, value)
+                }));
 
             contracts_map.set(&contract_key, &JsValue::from(groups_map));
         }
@@ -847,15 +824,13 @@ impl WasmSdk {
     )]
     pub async fn get_group_info_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        data_contract_id: JsValue,
+        #[wasm_bindgen(js_name = "dataContractId")] data_contract_id: IdentifierLikeJs,
         #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse data contract ID
-        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
+        let contract_id: Identifier = data_contract_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+        })?;
 
         // Create group query
         let query = GroupQuery {
@@ -897,23 +872,23 @@ impl WasmSdk {
         let (groups_result, metadata, proof) =
             Group::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        let infos_map = Map::new();
-        for (position, group_opt) in groups_result {
-            let key = Number::from(position as u32);
-            let value = JsValue::from(group_opt.map(GroupWasm::from));
-            infos_map.set(&key.into(), &value);
-        }
+        let infos_map =
+            Map::from_entries(groups_result.into_iter().map(|(position, group_opt)| {
+                let key: JsValue = Number::from(position as u32).into();
+                let value = JsValue::from(group_opt.map(GroupWasm::from));
+                (key, value)
+            }));
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(infos_map, metadata, proof);
-
-        Ok(response)
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            infos_map, metadata, proof,
+        ))
     }
 
     // Additional proof info versions for remaining group queries
 
     #[wasm_bindgen(
         js_name = "getGroupMembersWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_group_members_with_proof_info(
         &self,
@@ -1024,7 +999,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getGroupActionsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, GroupAction | undefined>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, GroupAction | undefined>>"
     )]
     pub async fn get_group_actions_with_proof_info(
         &self,
@@ -1045,21 +1020,23 @@ impl WasmSdk {
         let (actions_result, metadata, proof) =
             GroupAction::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        let actions_map = Map::new();
-        for (action_id, action_opt) in actions_result {
-            let key = JsValue::from(IdentifierWasm::from(action_id));
-            let value = JsValue::from(action_opt.map(GroupActionWasm::from));
-            actions_map.set(&key, &value);
-        }
+        let actions_map =
+            Map::from_entries(actions_result.into_iter().map(|(action_id, action_opt)| {
+                let key: JsValue = IdentifierWasm::from(action_id).to_base58().into();
+                let value = JsValue::from(action_opt.map(GroupActionWasm::from));
+                (key, value)
+            }));
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(actions_map, metadata, proof);
-
-        Ok(response)
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            actions_map,
+            metadata,
+            proof,
+        ))
     }
 
     #[wasm_bindgen(
         js_name = "getGroupActionSignersWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_group_action_signers_with_proof_info(
         &self,
@@ -1078,38 +1055,42 @@ impl WasmSdk {
             GroupMemberPower::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        let signers_map = Map::new();
-        for (signer_id, power_opt) in signers_result {
-            if let Some(power) = power_opt {
-                let key = JsValue::from(IdentifierWasm::from(signer_id));
-                let value = JsValue::from(BigInt::from(power as u64));
-                signers_map.set(&key, &value);
-            }
-        }
+        let signers_map = Map::from_entries(signers_result.into_iter().filter_map(
+            |(signer_id, power_opt)| {
+                power_opt.map(|power| {
+                    let key: JsValue = IdentifierWasm::from(signer_id).to_base58().into();
+                    let value = JsValue::from(BigInt::from(power as u64));
+                    (key, value)
+                })
+            },
+        ));
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(signers_map, metadata, proof);
-
-        Ok(response)
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            signers_map,
+            metadata,
+            proof,
+        ))
     }
 
     #[wasm_bindgen(
         js_name = "getGroupsDataContractsWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, Map<number, Group | undefined>>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, Map<number, Group | undefined>>>"
     )]
     pub async fn get_groups_data_contracts_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "dataContractIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        data_contract_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "dataContractIds")] data_contract_ids: IdentifierLikeArrayJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        use wasm_dpp2::utils::try_to_vec;
+
         let contracts_map = Map::new();
         let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
         let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
-        let contract_identifiers = identifiers_from_js(data_contract_ids, "contract ID")?;
+        let contract_identifiers: Vec<Identifier> =
+            try_to_vec::<IdentifierWasm, _, _>(data_contract_ids, "dataContractIds", "identifier")?;
 
         for contract_id in contract_identifiers {
-            let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
+            let contract_key: JsValue = IdentifierWasm::from(contract_id).to_base58().into();
 
             // Fetch all groups for this contract with proof
             let query = GroupInfosQuery {
@@ -1126,12 +1107,12 @@ impl WasmSdk {
                 combined_proof = Some(proof.clone());
             }
 
-            let groups_map = Map::new();
-            for (position, group_opt) in groups_result {
-                let key = Number::from(position as u32);
-                let value = JsValue::from(group_opt.map(GroupWasm::from));
-                groups_map.set(&key.into(), &value);
-            }
+            let groups_map =
+                Map::from_entries(groups_result.into_iter().map(|(position, group_opt)| {
+                    let key: JsValue = Number::from(position as u32).into();
+                    let value = JsValue::from(group_opt.map(GroupWasm::from));
+                    (key, value)
+                }));
 
             contracts_map.set(&contract_key, &JsValue::from(groups_map));
         }
@@ -1149,7 +1130,7 @@ fn insert_member(
     identifier: Identifier,
     power: GroupMemberPower,
 ) -> Result<(), WasmSdkError> {
-    let key = JsValue::from(IdentifierWasm::from(identifier));
+    let key: JsValue = IdentifierWasm::from(identifier).to_base58().into();
     let value = JsValue::from(BigInt::from(power as u64));
     map.set(&key, &value);
     Ok(())

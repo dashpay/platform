@@ -1,3 +1,5 @@
+pub mod allowed_top_level_properties;
+
 mod enrich_with_base_schema;
 
 mod find_identifier_and_binary_paths;

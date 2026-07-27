@@ -11,8 +11,8 @@ mod token_config_update_tests {
         use drive::drive::Drive;
 
         use super::*;
-        #[test]
-        fn test_token_config_update_by_owner_changing_total_max_supply() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_total_max_supply() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -61,6 +61,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -115,8 +116,8 @@ mod token_config_update_tests {
 
         /// Added this test to verify that adding "note" property to token history contract document types
         /// Makes the proof verification work
-        #[test]
-        fn test_token_config_update_by_owner_changing_total_max_supply_with_public_note() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_total_max_supply_with_public_note() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -165,6 +166,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -229,6 +231,7 @@ mod token_config_update_tests {
                         },
                         platform_version,
                     )
+                    .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
                     .map_err(|e| e.to_string())
                     .expect("expected to verify state transition");
 
@@ -261,9 +264,9 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), Some(1000000));
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_changing_total_max_supply_to_less_than_current_supply()
-        {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_total_max_supply_to_less_than_current_supply(
+        ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -312,6 +315,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -369,8 +373,365 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), None);
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_another_identity() {
+        #[tokio::test]
+        async fn test_token_config_update_set_max_supply_equal_to_current_supply_succeeds() {
+            // The max-supply check rejects only max_supply < current_supply (a strict `>`
+            // comparison in the token config-update state validation). Setting max_supply
+            // to EXACTLY the current supply must therefore be allowed. The existing
+            // coverage only checks the rejected (max < current) side.
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            // base_supply 100_000 (so current supply is 100_000), owner may change max.
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_max_supply_change_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            // Prove the precondition rather than relying on the fixture default: the
+            // current supply must be exactly 100_000 before we set max_supply to it.
+            let current_supply = platform
+                .drive
+                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch total supply");
+            assert_eq!(current_supply, Some(100000));
+
+            // Set max_supply to exactly the current supply (100_000).
+            let config_update_transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MaxSupply(Some(100000)),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create config update transition");
+
+            let serialized = config_update_transition
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            let updated_token_config = contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            assert_eq!(updated_token_config.max_supply(), Some(100000));
+        }
+
+        #[tokio::test]
+        async fn test_token_config_update_raise_max_supply_then_mint_into_headroom() {
+            // A valid token sitting at its cap (base_supply == max_supply == 100_000)
+            // cannot mint until max_supply is raised. This pins the intended expansion
+            // path: a mint at the cap is rejected, the owner raises max_supply, and a
+            // subsequent mint into the new headroom succeeds.
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            // Valid token: base_supply == max_supply, so it starts exactly at the cap.
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_max_supply(Some(100000));
+                    token_configuration.set_max_supply_change_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::ContractOwner,
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                None,
+                None,
+                platform_version,
+            );
+
+            // Prove the precondition: the token starts exactly at its cap (100_000).
+            let current_supply = platform
+                .drive
+                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch total supply");
+            assert_eq!(current_supply, Some(100000));
+
+            // A mint of 1 at the cap is rejected.
+            let mint_blocked = BatchTransition::new_token_mint_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                1,
+                Some(identity.id()),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create mint transition");
+
+            let serialized = mint_blocked
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Assert the full payload: minting 1 when current_supply == max_supply == 100_000.
+            let results = processing_result.execution_results();
+            assert_matches!(
+                results.as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(_)),
+                    ..
+                }]
+            );
+            let PaidConsensusError {
+                error: ConsensusError::StateError(StateError::TokenMintPastMaxSupplyError(err)),
+                ..
+            } = &results[0]
+            else {
+                unreachable!("asserted TokenMintPastMaxSupplyError above");
+            };
+            assert_eq!(err.amount(), 1);
+            assert_eq!(err.current_supply(), 100000);
+            assert_eq!(err.max_supply(), 100000);
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Raise max_supply to 200_000.
+            let raise_max = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MaxSupply(Some(200000)),
+                None,
+                None,
+                &key,
+                3,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create config update transition");
+
+            let serialized = raise_max
+                .serialize_to_bytes()
+                .expect("expected to serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // Directly confirm the config was raised (the mint below also proves it, but
+            // this test advertises the raise, so assert it explicitly).
+            let updated_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            let updated_token_config = updated_contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            assert_eq!(updated_token_config.max_supply(), Some(200000));
+
+            // A mint into the new headroom now succeeds.
+            let mint_ok = BatchTransition::new_token_mint_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                10000,
+                Some(identity.id()),
+                None,
+                None,
+                &key,
+                4,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create mint transition");
+
+            let serialized = mint_ok.serialize_to_bytes().expect("expected to serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let total_supply = platform
+                .drive
+                .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+                .expect("expected to fetch total supply");
+            assert_eq!(total_supply, Some(110000));
+        }
+
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_another_identity() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -424,6 +785,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -472,6 +834,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -524,8 +887,8 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), Some(1000000));
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_a_non_existent_identity_error() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_a_non_existent_identity_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -578,6 +941,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -617,8 +981,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_a_non_existent_group_error() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_a_non_existent_group_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -669,6 +1033,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -708,8 +1073,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_change_admin_to_main_group_not_set_error() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_change_admin_to_main_group_not_set_error() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -760,6 +1125,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -799,8 +1165,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_by_owner_changing_main_control_group() {
+        #[tokio::test]
+        async fn test_token_config_update_by_owner_changing_main_control_group() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -855,6 +1221,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -906,6 +1273,116 @@ mod token_config_update_tests {
                 .expect("expected token configuration");
             assert_eq!(updated_token_config.main_control_group(), Some(0));
         }
+
+        #[tokio::test]
+        async fn test_token_config_update_preserves_required_main_group() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(91827);
+            let platform_state = platform.state.load();
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_main_control_group(Some(0));
+                    token_configuration.set_main_control_group_can_be_modified(
+                        AuthorizedActionTakers::ContractOwner,
+                    );
+                    token_configuration.set_freeze_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::MainGroup,
+                            admin_action_takers: AuthorizedActionTakers::ContractOwner,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1)].into(),
+                            required_power: 1,
+                        }),
+                    )]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MainControlGroup(None),
+                None,
+                None,
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create token config update transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected serialized state transition")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::MainGroupIsNotDefinedError(_)),
+                    ..
+                }]
+            );
+
+            let stored_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            assert_eq!(
+                stored_contract
+                    .contract
+                    .expected_token_configuration(0)
+                    .expect("expected token configuration")
+                    .main_control_group(),
+                Some(0)
+            );
+        }
     }
 
     mod with_group {
@@ -913,8 +1390,8 @@ mod token_config_update_tests {
         use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
         use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_total_max_supply_not_using_group_gives_error(
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_total_max_supply_not_using_group_gives_error(
         ) {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -976,6 +1453,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1031,8 +1509,8 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), None);
         }
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_total_max_supply() {
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_total_max_supply() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1082,8 +1560,10 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MaxSupply(Some(1000000)).u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::MaxSupply(Some(1000000)),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1100,6 +1580,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1174,6 +1655,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1226,8 +1708,319 @@ mod token_config_update_tests {
             assert_eq!(updated_token_config.max_supply(), Some(1000000));
         }
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_minting_destination_group() {
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_main_control_group() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, signer_2, key_2) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration
+                        .set_main_control_group_can_be_modified(AuthorizedActionTakers::Group(0));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+                token_id.as_bytes(),
+                identity.id().as_bytes(),
+                2,
+                &TokenConfigurationChangeItem::MainControlGroup(Some(0)),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
+
+            let config_update_transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MainControlGroup(Some(0)),
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+            let config_update_transition_serialized_transition = config_update_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[config_update_transition_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let new_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            let updated_token_config = new_contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            // only proposed so far, group power 1 of required 2
+            assert_eq!(updated_token_config.main_control_group(), None);
+
+            let config_update_transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity_2.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MainControlGroup(Some(0)),
+                None,
+                Some(
+                    GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                        GroupStateTransitionInfo {
+                            group_contract_position: 0,
+                            action_id,
+                            action_is_proposer: false,
+                        },
+                    ),
+                ),
+                &key_2,
+                2,
+                0,
+                &signer_2,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+            let config_update_transition_serialized_transition = config_update_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[config_update_transition_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let new_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            let updated_token_config = new_contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            assert_eq!(updated_token_config.main_control_group(), Some(0));
+        }
+
+        #[tokio::test]
+        async fn test_token_config_update_main_control_group_unauthorized_reports_configured_rule()
+        {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, _, _) = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, _, _) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_3, signer_3, key_3) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration
+                        .set_main_control_group_can_be_modified(AuthorizedActionTakers::Group(0));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            // identity_3 is neither the owner nor a member of group 0
+            let config_update_transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity_3.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MainControlGroup(Some(0)),
+                None,
+                None,
+                &key_3,
+                2,
+                0,
+                &signer_3,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+            let config_update_transition_serialized_transition = config_update_transition
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[config_update_transition_serialized_transition.clone()],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // The error must report the configured rule (Group(0)), not NoOne
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(
+                        error
+                    )),
+                    ..
+                }] if *error.authorized_action_takers() == AuthorizedActionTakers::Group(0)
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let new_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            let updated_token_config = new_contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            assert_eq!(updated_token_config.main_control_group(), None);
+        }
+
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_minting_destination_group() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1297,11 +2090,12 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                     AuthorizedActionTakers::Group(0),
-                )
-                .u8_item_index(),
-            );
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1320,6 +2114,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1402,6 +2197,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1465,8 +2261,10 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 3,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestination(true).u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestination(true),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1483,6 +2281,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1559,6 +2358,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1613,8 +2413,8 @@ mod token_config_update_tests {
                 .minting_allow_choosing_destination());
         }
 
-        #[test]
-        fn test_token_config_update_by_group_member_changing_minting_admin_group() {
+        #[tokio::test]
+        async fn test_token_config_update_by_group_member_changing_minting_admin_group() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -1688,11 +2488,12 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
                     AuthorizedActionTakers::Group(1),
-                )
-                .u8_item_index(),
-            );
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1711,6 +2512,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1793,6 +2595,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1869,6 +2672,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -1913,11 +2717,12 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity_3.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                &TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                     AuthorizedActionTakers::Group(2),
-                )
-                .u8_item_index(),
-            );
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -1936,6 +2741,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2018,6 +2824,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2076,8 +2883,9 @@ mod token_config_update_tests {
             );
         }
 
-        #[test]
-        fn test_token_config_change_own_admin_group_give_control_power_and_change_admin_back() {
+        #[tokio::test]
+        async fn test_token_config_change_own_admin_group_give_control_power_and_change_admin_back()
+        {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -2150,11 +2958,12 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity_3.id().as_bytes(),
                 2,
-                TokenConfigurationChangeItem::ConventionsAdminGroup(AuthorizedActionTakers::Group(
-                    0,
-                ))
-                .u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::ConventionsAdminGroup(
+                    AuthorizedActionTakers::Group(0),
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -2173,6 +2982,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2254,6 +3064,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2337,6 +3148,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2394,6 +3206,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2437,11 +3250,12 @@ mod token_config_update_tests {
                     token_id.as_bytes(),
                     identity.id().as_bytes(),
                     2,
-                    TokenConfigurationChangeItem::ConventionsControlGroup(
+                    &TokenConfigurationChangeItem::ConventionsControlGroup(
                         AuthorizedActionTakers::Identity(identity_2.id()),
-                    )
-                    .u8_item_index(),
-                );
+                    ),
+                    platform_version,
+                )
+                .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -2460,6 +3274,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2518,6 +3333,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2581,11 +3397,12 @@ mod token_config_update_tests {
                 token_id.as_bytes(),
                 identity.id().as_bytes(),
                 3,
-                TokenConfigurationChangeItem::ConventionsAdminGroup(AuthorizedActionTakers::Group(
-                    1,
-                ))
-                .u8_item_index(),
-            );
+                &TokenConfigurationChangeItem::ConventionsAdminGroup(
+                    AuthorizedActionTakers::Group(1),
+                ),
+                platform_version,
+            )
+            .expect("expected to calculate action id");
 
             let config_update_transition = BatchTransition::new_token_config_update_transition(
                 token_id,
@@ -2604,6 +3421,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2662,6 +3480,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2750,6 +3569,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2817,6 +3637,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2851,8 +3672,8 @@ mod token_config_update_tests {
                 .expect("expected to commit transaction");
         }
 
-        #[test]
-        fn test_token_config_update_as_group_member_but_group_not_needed() {
+        #[tokio::test]
+        async fn test_token_config_update_as_group_member_but_group_not_needed() {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
                 .with_latest_protocol_version()
@@ -2913,6 +3734,7 @@ mod token_config_update_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
             let config_update_transition_serialized_transition = config_update_transition
@@ -2966,6 +3788,126 @@ mod token_config_update_tests {
                 .expected_token_configuration(0)
                 .expect("expected token configuration");
             assert_eq!(updated_token_config.max_supply(), None);
+        }
+
+        #[tokio::test]
+        async fn test_token_config_update_rejects_substitute_group_quorum() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(73119);
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let (identity_2, _, _) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_max_supply_change_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [
+                        (
+                            0,
+                            Group::V0(GroupV0 {
+                                members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                                required_power: 2,
+                            }),
+                        ),
+                        (
+                            1,
+                            Group::V0(GroupV0 {
+                                members: [(identity.id(), 1)].into(),
+                                required_power: 1,
+                            }),
+                        ),
+                    ]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let transition = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                TokenConfigurationChangeItem::MaxSupply(Some(1_000_000)),
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(1)),
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create token config update transition");
+
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected serialized state transition");
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::UnauthorizedTokenActionError(_)),
+                    ..
+                }]
+            );
+
+            let stored_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            assert_eq!(
+                stored_contract
+                    .contract
+                    .expected_token_configuration(0)
+                    .expect("expected token configuration")
+                    .max_supply(),
+                None
+            );
         }
     }
 }

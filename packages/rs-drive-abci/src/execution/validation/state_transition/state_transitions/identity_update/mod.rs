@@ -151,8 +151,8 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::SeedableRng;
 
-    #[test]
-    fn test_identity_update_that_disables_an_authentication_key() {
+    #[tokio::test]
+    async fn test_identity_update_that_disables_an_authentication_key() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -193,6 +193,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -233,8 +234,8 @@ mod tests {
         assert_eq!(issues.len(), 0);
     }
 
-    #[test]
-    fn test_identity_update_that_adds_an_authentication_key() {
+    #[tokio::test]
+    async fn test_identity_update_that_adds_an_authentication_key() {
         let platform_version = PlatformVersion::latest();
 
         let mut platform = TestPlatformBuilder::new()
@@ -304,6 +305,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -361,6 +363,7 @@ mod tests {
             &|_id: &Identifier| Ok(None),
             platform_version,
         )
+        .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
         .map_err(|e| e.to_string())
         .expect("expected to verify state transition");
 
@@ -373,8 +376,8 @@ mod tests {
         };
     }
 
-    #[test]
-    fn test_identity_update_that_disables_an_encryption_key() {
+    #[tokio::test]
+    async fn test_identity_update_that_disables_an_encryption_key() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -393,7 +396,12 @@ mod tests {
         let (mut identity, mut signer, _, master_key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let key = setup_add_key_to_identity(
             &mut platform,
@@ -449,6 +457,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&master_key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -498,8 +507,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_adding_owner_key_not_allowed() {
+    #[tokio::test]
+    async fn test_identity_update_adding_owner_key_not_allowed() {
         let platform_config = PlatformConfig {
             testing_configs: PlatformTestConfig {
                 disable_instant_lock_signature_verification: true,
@@ -557,6 +566,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -603,8 +613,8 @@ mod tests {
         assert_eq!(issues.len(), 0);
     }
 
-    #[test]
-    fn test_identity_update_adding_contract_bound_key() {
+    #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key() {
         use crate::execution::validation::state_transition::tests::{
             register_contract_from_bytes, IdentityTestInfo,
         };
@@ -625,10 +635,10 @@ mod tests {
             .set_genesis_state();
 
         // {
-        //   "$format_version": "1",
+        //   "$formatVersion": "1",
         //   "id": "5pkMhyeaFjJfVMkFhLtJdDp2ofx6iqt7i9k6ckkHBwbs",
         //   "config": {
-        //     "$format_version": "1",
+        //     "$formatVersion": "1",
         //     "canBeDeleted": false,
         //     "readonly": false,
         //     "keepsHistory": false,
@@ -705,7 +715,8 @@ mod tests {
                 identity_nonce: 1,
             },
             platform_version,
-        );
+        )
+        .await;
 
         let secp = Secp256k1::new();
 
@@ -770,6 +781,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&master_key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -836,8 +848,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_identity_update_adding_contract_bound_key_on_document_level() {
+    #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key_on_document_level() {
         use crate::execution::validation::state_transition::tests::{
             register_contract_from_bytes, IdentityTestInfo,
         };
@@ -858,10 +870,10 @@ mod tests {
             .set_genesis_state();
 
         // {
-        //   "$format_version": "1",
+        //   "$formatVersion": "1",
         //   "id": "8m7H1EScryPTeJzck2qbSckTbEjCg2vu7PRth2LCwsHo",
         //   "config": {
-        //     "$format_version": "1",
+        //     "$formatVersion": "1",
         //     "canBeDeleted": false,
         //     "readonly": false,
         //     "keepsHistory": false,
@@ -1132,7 +1144,8 @@ mod tests {
                 identity_nonce: 1,
             },
             platform_version,
-        );
+        )
+        .await;
 
         let secp = Secp256k1::new();
 
@@ -1198,6 +1211,7 @@ mod tests {
         update_transition.set_signature(
             signer
                 .sign(&master_key, signable_bytes.as_slice())
+                .await
                 .expect("expected to sign"),
         );
 
@@ -1262,6 +1276,573 @@ mod tests {
                 id: data_contract.id(),
                 document_type_name: "liquidityPool".to_string(),
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_empty_transition_rejected() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        // Create transition with neither keys to add nor keys to disable
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Empty update should be rejected with BasicError
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(_)
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_too_many_keys_to_disable() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        // Try to disable more than MAX_KEYS_TO_DISABLE (10) keys
+        let disable_keys: Vec<u32> = (1..=11).collect();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: disable_keys,
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Should be rejected for exceeding max keys to disable
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::StateError(_)
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_duplicate_key_ids_to_disable() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        // Duplicate key ID 1 in the disable list
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: vec![1, 1],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Duplicate key IDs should be rejected
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(_)
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_disabling_key_id_also_being_added() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+
+        // Add a key with id 2 and also disable key id 2 in the same transition
+        let new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: None,
+        };
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![2], // same id as the key being added
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Should reject because disabling a key id that's also being added
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(_)
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_wrong_revision() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        // Use wrong revision (5 instead of 1)
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 5, // wrong -- should be 1 (current is 0)
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: vec![1],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Wrong revision should be a paid consensus error (state error)
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_disabling_nonexistent_key() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        // Try to disable key id 99 which doesn't exist
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![],
+            disable_public_keys: vec![99],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        let data = update_transition
+            .signable_bytes()
+            .expect("expected signable bytes");
+        update_transition.set_signature(
+            signer
+                .sign(&key, data.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Disabling nonexistent key should result in a paid consensus error
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identity_update_adding_key_with_existing_id() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+
+        let platform_state = platform.state.load();
+
+        let secp = Secp256k1::new();
+        let mut rng = StdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&secp, &mut rng);
+
+        let signable_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(
+                IdentityPublicKeyInCreationV0 {
+                    id: 1, // key id 1 already exists on the identity
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    key_type: ECDSA_SECP256K1,
+                    read_only: false,
+                    data: new_key_pair.public_key().serialize().to_vec().into(),
+                    signature: Default::default(),
+                    contract_bounds: None,
+                },
+            )],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let signable_st: StateTransition = signable_transition.into();
+        let signable_bytes = signable_st
+            .signable_bytes()
+            .expect("expected signable bytes");
+
+        // Sign the new key
+        let secret = new_key_pair.secret_key();
+        let key_sig =
+            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+
+        let mut new_key = IdentityPublicKeyInCreationV0 {
+            id: 1, // existing key ID
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: None,
+        };
+        new_key.signature = key_sig.to_vec().into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+        update_transition.set_signature(
+            signer
+                .sign(&key, signable_bytes.as_slice())
+                .await
+                .expect("expected to sign"),
+        );
+
+        let transition_bytes = update_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![transition_bytes],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        // Adding key with an existing ID should result in a paid consensus error
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
     }
 }

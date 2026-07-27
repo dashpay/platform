@@ -6,6 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+CARGO_OUT_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
 
 echo "=== Quick Module Size Check ==="
 echo
@@ -29,7 +31,7 @@ format_bytes() {
     local bytes=$1
     local kb=$((bytes / 1024))
     local mb=$((kb / 1024))
-    
+
     if [ $mb -gt 0 ]; then
         echo "${mb}MB"
     else
@@ -46,27 +48,27 @@ FULL_SIZE=0
 
 for name in "${!COMBOS[@]}"; do
     features="${COMBOS[$name]}"
-    
+
     # Build
     if cargo build --target wasm32-unknown-unknown --release --no-default-features --features "$features" >/dev/null 2>&1; then
         # Run wasm-bindgen
         OUT_DIR="$TEMP_DIR/$name"
         mkdir -p "$OUT_DIR"
-        
-        if wasm-bindgen ../../target/wasm32-unknown-unknown/release/wasm_drive_verify.wasm \
+
+        if wasm-bindgen "$CARGO_OUT_DIR/wasm32-unknown-unknown/release/wasm_drive_verify.wasm" \
             --out-dir "$OUT_DIR" \
             --target web \
             --out-name bundle >/dev/null 2>&1; then
-            
+
             # Get size
             SIZE=$(stat -f%z "$OUT_DIR/bundle_bg.wasm" 2>/dev/null || stat -c%s "$OUT_DIR/bundle_bg.wasm" 2>/dev/null || echo "0")
-            
+
             if [ "$name" = "full" ]; then
                 FULL_SIZE=$SIZE
             fi
-            
+
             RESULTS+=("$name|$SIZE")
-            
+
             echo "✓ $name: $(format_bytes $SIZE)"
         else
             echo "✗ $name: wasm-bindgen failed"
@@ -89,13 +91,13 @@ IFS=$'\n' SORTED=($(sort -t'|' -k2 -n <<<"${RESULTS[*]}"))
 for result in "${SORTED[@]}"; do
     name=$(echo "$result" | cut -d'|' -f1)
     size=$(echo "$result" | cut -d'|' -f2)
-    
+
     if [ "$FULL_SIZE" -gt 0 ] && [ "$name" != "full" ]; then
         reduction=$(awk "BEGIN {printf \"%.1f%%\", (1 - $size / $FULL_SIZE) * 100}")
     else
         reduction="baseline"
     fi
-    
+
     printf "%-15s %-10s %s\n" "$name" "$(format_bytes $size)" "$reduction"
 done
 

@@ -6,12 +6,12 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 
 use crate::data_contract::config::DataContractConfig;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::created_data_contract::CreatedDataContract;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::{DataContract, INITIAL_DATA_CONTRACT_VERSION};
 use crate::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -20,7 +20,7 @@ use crate::state_transition::data_contract_create_transition::DataContractCreate
 #[cfg(feature = "state-transitions")]
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::data_contract::v1::DataContractV1;
 use crate::prelude::IdentityNonce;
 use crate::version::PlatformVersion;
@@ -100,7 +100,7 @@ impl DataContractFactoryV0 {
         )
     }
 
-    #[cfg(feature = "data-contract-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     /// Create Data Contract from plain object
     pub fn create_from_object(
         &self,
@@ -113,18 +113,24 @@ impl DataContractFactoryV0 {
             .contract_versions
             .contract_structure_version
         {
-            0 => Ok(DataContractV0::from_value(
-                data_contract_object,
-                full_validation,
-                platform_version,
-            )?
-            .into()),
-            1 => Ok(DataContractV1::from_value(
-                data_contract_object,
-                full_validation,
-                platform_version,
-            )?
-            .into()),
+            0 => {
+                let v0 = if full_validation {
+                    DataContractV0::from_value(data_contract_object, true, platform_version)?
+                } else {
+                    platform_value::from_value::<DataContractV0>(data_contract_object)
+                        .map_err(ProtocolError::ValueError)?
+                };
+                Ok(v0.into())
+            }
+            1 => {
+                let v1 = if full_validation {
+                    DataContractV1::from_value(data_contract_object, true, platform_version)?
+                } else {
+                    platform_value::from_value::<DataContractV1>(data_contract_object)
+                        .map_err(ProtocolError::ValueError)?
+                };
+                Ok(v1.into())
+            }
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DataContractFactoryV0::create_from_object".to_string(),
                 known_versions: vec![0, 1],
@@ -229,10 +235,8 @@ mod tests {
         let created_data_contract =
             get_data_contract_fixture(None, 0, platform_version.protocol_version);
 
-        let raw_data_contract = created_data_contract
-            .data_contract()
-            .to_value(platform_version)
-            .unwrap();
+        let raw_data_contract =
+            platform_value::to_value(created_data_contract.data_contract()).unwrap();
 
         let factory = DataContractFactoryV0::new(platform_version.protocol_version);
         TestData {
@@ -349,14 +353,15 @@ mod tests {
             result.identity_nonce()
         );
 
-        let contract_value = DataContract::try_from_platform_versioned(
-            result.data_contract().to_owned(),
-            false,
-            &mut vec![],
-            platform_version,
+        let contract_value = platform_value::to_value(
+            &DataContract::try_from_platform_versioned(
+                result.data_contract().to_owned(),
+                false,
+                &mut vec![],
+                platform_version,
+            )
+            .unwrap(),
         )
-        .unwrap()
-        .to_value(platform_version)
         .unwrap();
 
         assert_eq!(raw_data_contract, contract_value);

@@ -12,20 +12,26 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 ] }
 dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
+dash-network-seeds = { workspace = true }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-platform-wallet = { path = "../rs-platform-wallet", optional = true }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", features = [
+  "client",
+  "sqlite",
+], optional = true }
+dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
+platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
+ciborium = { version = "0.2.2" }
 thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
-ciborium = { version = "0.2.2" }
 serde = { version = "1.0.219", default-features = false, features = [
   "rc",
 ], optional = true }
@@ -36,7 +42,7 @@ dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
 derive_more = { version = "1.0", features = ["from"] }
-lru = { version = "0.16.3", optional = true }
+lru = { version = "0.16.3" }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
 
@@ -52,7 +58,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 base64 = { version = "0.22.1" }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "registry"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "client",
   "validation",
@@ -92,7 +98,7 @@ mocks = [
   "drive-proof-verifier/mocks",
   "dep:dotenvy",
   "dep:envy",
-  "dep:lru",
+
   "zeroize/serde",
 ]
 
@@ -134,6 +140,7 @@ dashpay-contract = ["dpp/dashpay-contract"]
 wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
+document-history-contract = ["dpp/document-history-contract"]
 
 token_reward_explanations = ["dpp/token-reward-explanations"]
 
@@ -149,7 +156,10 @@ core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
-platform_wallet_manager = ["platform-wallet/manager"]
+shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-client"]
+
+# Platform wallet support
+wallet = ["core_key_wallet_manager", "core_key_wallet"]
 
 [[example]]
 

@@ -5,8 +5,9 @@
 
 use crate::core::private_key::PrivateKeyWasm;
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
 use crate::impl_try_from_options;
-use crate::utils::IntoWasm;
+use crate::impl_wasm_type_info;
 use dpp::ProtocolError;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::hashes::Hash;
@@ -45,19 +46,9 @@ fn hash160(pubkey: &[u8]) -> [u8; 20] {
 
 #[wasm_bindgen(js_class = IdentitySigner)]
 impl IdentitySignerWasm {
-    #[wasm_bindgen(getter = __type)]
-    pub fn type_name(&self) -> String {
-        "IdentitySigner".to_string()
-    }
-
-    #[wasm_bindgen(getter = __struct)]
-    pub fn struct_name() -> String {
-        "IdentitySigner".to_string()
-    }
-
     /// Creates a new empty IdentitySigner.
     #[wasm_bindgen(constructor)]
-    pub fn new() -> IdentitySignerWasm {
+    pub fn constructor() -> IdentitySignerWasm {
         IdentitySignerWasm {
             private_keys: BTreeMap::new(),
         }
@@ -69,7 +60,10 @@ impl IdentitySignerWasm {
     ///
     /// @param privateKey - The PrivateKey object
     #[wasm_bindgen(js_name = "addKey")]
-    pub fn add_key(&mut self, private_key: &PrivateKeyWasm) -> WasmDppResult<()> {
+    pub fn add_key(
+        &mut self,
+        #[wasm_bindgen(js_name = "privateKey")] private_key: &PrivateKeyWasm,
+    ) -> WasmDppResult<()> {
         let private_key_bytes: [u8; 32] = private_key
             .to_bytes()
             .try_into()
@@ -137,8 +131,9 @@ impl IdentitySignerWasm {
     }
 }
 
+#[async_trait::async_trait]
 impl Signer<IdentityPublicKey> for IdentitySignerWasm {
-    fn sign(
+    async fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
@@ -156,12 +151,12 @@ impl Signer<IdentityPublicKey> for IdentitySignerWasm {
         Ok(signature.to_vec().into())
     }
 
-    fn sign_create_witness(
+    async fn sign_create_witness(
         &self,
         key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<AddressWitness, ProtocolError> {
-        let signature = self.sign(key, data)?;
+        let signature = self.sign(key, data).await?;
 
         match key.key_type() {
             KeyType::ECDSA_HASH160 | KeyType::ECDSA_SECP256K1 => {
@@ -188,15 +183,6 @@ impl IdentitySignerWasm {
     }
 }
 
-impl_try_from_options!(IdentitySignerWasm, "IdentitySigner", "signer");
-
-impl TryFrom<&JsValue> for IdentitySignerWasm {
-    type Error = WasmDppError;
-
-    fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        value
-            .to_wasm::<IdentitySignerWasm>("IdentitySigner")
-            .map(|boxed| (*boxed).clone())
-            .map_err(|_| WasmDppError::invalid_argument("Expected an IdentitySigner object"))
-    }
-}
+impl_try_from_js_value!(IdentitySignerWasm, "IdentitySigner");
+impl_try_from_options!(IdentitySignerWasm);
+impl_wasm_type_info!(IdentitySignerWasm, IdentitySigner);

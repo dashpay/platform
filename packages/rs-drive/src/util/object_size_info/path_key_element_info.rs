@@ -115,3 +115,183 @@ impl<'a, const N: usize> PathKeyElementInfo<'a, N> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use grovedb::batch::key_info::KeyInfo::MaxKeySize;
+
+    fn item_element() -> Element {
+        Element::new_item(vec![1, 2, 3])
+    }
+
+    #[test]
+    fn from_path_info_vec_with_key_element_produces_ref_element() {
+        let path = PathInfo::<0>::PathAsVec(vec![vec![1u8]]);
+        let key: &[u8] = &[9u8];
+        let res = PathKeyElementInfo::from_path_info_and_key_element(
+            path,
+            KeyElementInfo::KeyElement((key, item_element())),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathKeyRefElement(_)));
+    }
+
+    #[test]
+    fn from_path_info_vec_with_unknown_element_size_errors() {
+        let path = PathInfo::<0>::PathAsVec(vec![vec![1u8]]);
+        let err = PathKeyElementInfo::from_path_info_and_key_element(
+            path,
+            KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![9]), 16)),
+        )
+        .expect_err("should err");
+        match err {
+            Error::Drive(DriveError::NotSupportedPrivate(msg)) => {
+                assert!(msg.contains("key element size"));
+            }
+            _ => panic!("expected NotSupportedPrivate"),
+        }
+    }
+
+    #[test]
+    fn from_path_info_fixed_size_with_unknown_element_size_errors() {
+        let path: [&[u8]; 1] = [&[1u8]];
+        let res = PathKeyElementInfo::<1>::from_path_info_and_key_element(
+            PathInfo::PathFixedSizeArray(path),
+            KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![9]), 10)),
+        );
+        match res {
+            Err(Error::Drive(DriveError::NotSupportedPrivate(_))) => {}
+            _ => panic!("expected error for unknown element size on fixed-size path"),
+        }
+    }
+
+    #[test]
+    fn from_path_info_fixed_size_with_key_element_produces_ref_element() {
+        let path: [&[u8]; 1] = [&[1u8]];
+        let key: &[u8] = &[9u8];
+        let res = PathKeyElementInfo::<1>::from_path_info_and_key_element(
+            PathInfo::PathFixedSizeArray(path),
+            KeyElementInfo::KeyElement((key, item_element())),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathFixedSizeKeyRefElement(_)));
+    }
+
+    #[test]
+    fn from_path_info_with_sizes_supports_unknown_element_size() {
+        let path = PathInfo::<0>::PathWithSizes(KeyInfoPath::from_known_owned_path(vec![vec![1]]));
+        let res = PathKeyElementInfo::from_path_info_and_key_element(
+            path,
+            KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![9]), 100)),
+        )
+        .expect("path-with-sizes supports unknown element size");
+        assert!(matches!(res, PathKeyUnknownElementSize(_)));
+    }
+
+    #[test]
+    fn from_path_info_with_sizes_key_element_wraps_with_known_key() {
+        let path = PathInfo::<0>::PathWithSizes(KeyInfoPath::from_known_owned_path(vec![vec![1]]));
+        let key: &[u8] = &[9u8];
+        let res = PathKeyElementInfo::from_path_info_and_key_element(
+            path,
+            KeyElementInfo::KeyElement((key, item_element())),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathKeyElementSize(_)));
+    }
+
+    #[test]
+    fn from_path_info_with_sizes_element_size_roundtrips() {
+        let path = PathInfo::<0>::PathWithSizes(KeyInfoPath::from_known_owned_path(vec![vec![1]]));
+        let res = PathKeyElementInfo::from_path_info_and_key_element(
+            path,
+            KeyElementInfo::KeyElementSize((
+                MaxKeySize {
+                    unique_id: vec![0xA],
+                    max_size: 4,
+                },
+                item_element(),
+            )),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathKeyElementSize(_)));
+    }
+
+    #[test]
+    fn from_fixed_size_path_and_key_element_happy_path() {
+        let path: [&[u8]; 2] = [&[1u8], &[2u8]];
+        let key: &[u8] = &[9u8];
+        let res = PathKeyElementInfo::<2>::from_fixed_size_path_and_key_element(
+            path,
+            KeyElementInfo::KeyElement((key, item_element())),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathFixedSizeKeyRefElement(_)));
+    }
+
+    #[test]
+    fn from_fixed_size_path_and_key_unknown_size_errors() {
+        let path: [&[u8]; 1] = [&[1u8]];
+        let res = PathKeyElementInfo::<1>::from_fixed_size_path_and_key_element(
+            path,
+            KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![]), 16)),
+        );
+        match res {
+            Err(Error::Drive(DriveError::NotSupportedPrivate(_))) => {}
+            _ => panic!("expected NotSupportedPrivate"),
+        }
+    }
+
+    #[test]
+    fn from_fixed_size_path_and_key_element_size_ok() {
+        let path: [&[u8]; 1] = [&[1u8]];
+        let res = PathKeyElementInfo::<1>::from_fixed_size_path_and_key_element(
+            path,
+            KeyElementInfo::KeyElementSize((
+                MaxKeySize {
+                    unique_id: vec![0xA],
+                    max_size: 8,
+                },
+                item_element(),
+            )),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathKeyElementSize(_)));
+    }
+
+    #[test]
+    fn from_path_and_key_element_variants() {
+        let path = vec![vec![1u8]];
+        let key: &[u8] = &[9u8];
+        let res = PathKeyElementInfo::<0>::from_path_and_key_element(
+            path.clone(),
+            KeyElementInfo::KeyElement((key, item_element())),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathKeyRefElement(_)));
+
+        let res = PathKeyElementInfo::<0>::from_path_and_key_element(
+            path.clone(),
+            KeyElementInfo::KeyElementSize((
+                MaxKeySize {
+                    unique_id: vec![],
+                    max_size: 8,
+                },
+                item_element(),
+            )),
+        )
+        .expect("ok");
+        assert!(matches!(res, PathKeyElementSize(_)));
+
+        let err = PathKeyElementInfo::<0>::from_path_and_key_element(
+            path,
+            KeyElementInfo::KeyUnknownElementSize((KnownKey(vec![]), 8)),
+        )
+        .expect_err("err");
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::NotSupportedPrivate(_))
+        ));
+    }
+}

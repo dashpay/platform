@@ -67,3 +67,46 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use dpp::tests::json_document::json_document_to_contract;
+
+    #[test]
+    fn test_verify_masternode_vote_unknown_version() {
+        let platform_version = PlatformVersion::latest();
+        let data_contract = json_document_to_contract(
+            "tests/supporting_files/contract/dpns/dpns-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to create a data contract");
+
+        let mut platform_version = platform_version.clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .voting
+            .verify_masternode_vote = 255;
+
+        let vote = Vote::default();
+
+        let result = Drive::verify_masternode_vote(
+            &[],
+            [0u8; 32],
+            &vote,
+            &data_contract,
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_masternode_vote" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

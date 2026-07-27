@@ -18,6 +18,7 @@ pub mod schema;
 mod token_costs;
 pub mod v0;
 pub mod v1;
+pub mod v2;
 #[cfg(feature = "validation")]
 pub(crate) mod validator;
 
@@ -26,6 +27,7 @@ use crate::data_contract::document_type::methods::{
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
+use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::document::Document;
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
@@ -40,6 +42,9 @@ pub const STORAGE_FLAGS_SIZE: usize = 2;
 
 pub(crate) mod property_names {
     pub const DOCUMENTS_KEEP_HISTORY: &str = "documentsKeepHistory";
+    pub const KEEPS_TRANSFER_HISTORY: &str = "keepsTransferHistory";
+    pub const KEEPS_PURCHASE_HISTORY: &str = "keepsPurchaseHistory";
+    pub const KEEPS_PRICING_HISTORY: &str = "keepsPricingHistory";
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
@@ -74,18 +79,48 @@ pub(crate) mod property_names {
     pub const CONTENT_MEDIA_TYPE: &str = "contentMediaType";
     pub const ENCRYPTION_KEY_REQUIREMENTS: &str = "encryptionKeyReqs";
     pub const DECRYPTION_KEY_REQUIREMENTS: &str = "decryptionKeyReqs";
+    pub const DOCUMENTS_COUNTABLE: &str = "documentsCountable";
+    pub const RANGE_COUNTABLE: &str = "rangeCountable";
+    /// Doctype-level flag naming the property whose values are summed into
+    /// the primary-key tree's running aggregate. When set, the primary-key
+    /// tree is a `SumTree` (or `ProvableSumTree` if [`RANGE_SUMMABLE`] is
+    /// also set), enabling O(1) `sum(named_property)` for the whole
+    /// document type. See `book/src/drive/document-sum-trees.md`.
+    pub const DOCUMENTS_SUMMABLE: &str = "documentsSummable";
+    /// Doctype-level flag upgrading the primary-key sum tree to its
+    /// provable variant (per-node aggregated sums committed to each
+    /// merk-internal node's hash), so range queries on the primary key
+    /// can be answered with an `AggregateSumOnRange` O(log n) proof.
+    /// Requires [`DOCUMENTS_SUMMABLE`] to be set.
+    pub const RANGE_SUMMABLE: &str = "rangeSummable";
+    /// Doctype-level syntactic sugar for the combination of
+    /// `documentsCountable: true` + [`DOCUMENTS_SUMMABLE`]`: "<prop>"`.
+    /// Average queries return `(count, sum)` pairs the client divides
+    /// — same on-disk layout as setting both flags directly. Authors
+    /// who think in terms of averages get a single flag; the parser
+    /// in `try_from_schema/v2` desugars it into the underlying
+    /// count + sum flags so all downstream code paths (insert, query,
+    /// estimation) stay unchanged.
+    pub const DOCUMENTS_AVERAGEABLE: &str = "documentsAverageable";
+    /// Doctype-level syntactic sugar for [`RANGE_COUNTABLE`]`: true` +
+    /// [`RANGE_SUMMABLE`]`: true`. Requires [`DOCUMENTS_AVERAGEABLE`]
+    /// to be set (parallels the count/sum-individually rules: range
+    /// axes require the corresponding base flag).
+    pub const RANGE_AVERAGEABLE: &str = "rangeAverageable";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DocumentTypeRef<'a> {
     V0(&'a DocumentTypeV0),
     V1(&'a DocumentTypeV1),
+    V2(&'a DocumentTypeV2),
 }
 
 #[derive(Debug)]
 pub enum DocumentTypeMutRef<'a> {
     V0(&'a mut DocumentTypeV0),
     V1(&'a mut DocumentTypeV1),
+    V2(&'a mut DocumentTypeV2),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -93,6 +128,7 @@ pub enum DocumentTypeMutRef<'a> {
 pub enum DocumentType {
     V0(DocumentTypeV0),
     V1(DocumentTypeV1),
+    V2(DocumentTypeV2),
 }
 
 impl DocumentType {
@@ -100,6 +136,7 @@ impl DocumentType {
         match self {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeRef::V1(v1),
+            DocumentType::V2(v2) => DocumentTypeRef::V2(v2),
         }
     }
 
@@ -107,6 +144,7 @@ impl DocumentType {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeMutRef::V1(v1),
+            DocumentType::V2(v2) => DocumentTypeMutRef::V2(v2),
         }
     }
 
@@ -122,6 +160,9 @@ impl DocumentType {
             DocumentType::V1(v1) => {
                 v1.prefunded_voting_balance_for_document(document, platform_version)
             }
+            DocumentType::V2(v2) => {
+                v2.prefunded_voting_balance_for_document(document, platform_version)
+            }
         }
     }
 }
@@ -131,6 +172,7 @@ impl DocumentTypeRef<'_> {
         match self {
             DocumentTypeRef::V0(v0) => DocumentType::V0((*v0).to_owned()),
             DocumentTypeRef::V1(v1) => DocumentType::V1((*v1).to_owned()),
+            DocumentTypeRef::V2(v2) => DocumentType::V2((*v2).to_owned()),
         }
     }
 }

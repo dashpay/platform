@@ -3,22 +3,33 @@ pub mod v0;
 use crate::data_contract::TokenContractPosition;
 use crate::group::action_event::GroupActionEvent;
 use crate::group::group_action::v0::GroupActionV0;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug, PartialEq, PartialOrd, Clone, Eq, Encode, Decode, PlatformDeserialize, PlatformSerialize,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 pub enum GroupAction {
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(GroupActionV0),
 }
 
@@ -54,3 +65,7 @@ impl GroupActionAccessors for GroupAction {
         }
     }
 }
+
+// TODO(unification pass 2): add round-trip tests for GroupAction once we have an
+// explicit fixture (GroupActionV0 has no Default — its `event: GroupActionEvent`
+// field is itself a versioned enum without Default).

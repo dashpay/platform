@@ -5,6 +5,7 @@ use platform_value::Value;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(into = "ArrayItemTypeRepr", from = "ArrayItemTypeRepr")]
 pub enum ArrayItemType {
     Integer,
     Number,
@@ -13,6 +14,70 @@ pub enum ArrayItemType {
     Identifier,
     Boolean,
     Date,
+}
+
+// Internal-`$type` serde shape. Mixed unit + 2-tuple variants, so a
+// struct-variant Repr (serde can't auto-internal-tag tuple variants). Unit
+// variants -> `{"$type":"integer"}`; the tuple variants get named size bounds
+// (`#[serde(default)]` so an omitted bound deserializes as `None`). Serde-only
+// type (no bincode); its on-wire form is exercised solely by these tests —
+// document-schema parsing goes through `TryFrom<&Value>`, not serde.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "$type", rename_all = "camelCase")]
+enum ArrayItemTypeRepr {
+    Integer,
+    Number,
+    String {
+        #[serde(default, rename = "minLength")]
+        min_length: Option<usize>,
+        #[serde(default, rename = "maxLength")]
+        max_length: Option<usize>,
+    },
+    ByteArray {
+        #[serde(default, rename = "minSize")]
+        min_size: Option<usize>,
+        #[serde(default, rename = "maxSize")]
+        max_size: Option<usize>,
+    },
+    Identifier,
+    Boolean,
+    Date,
+}
+
+impl From<ArrayItemType> for ArrayItemTypeRepr {
+    fn from(t: ArrayItemType) -> Self {
+        match t {
+            ArrayItemType::Integer => Self::Integer,
+            ArrayItemType::Number => Self::Number,
+            ArrayItemType::String(min_length, max_length) => Self::String {
+                min_length,
+                max_length,
+            },
+            ArrayItemType::ByteArray(min_size, max_size) => Self::ByteArray { min_size, max_size },
+            ArrayItemType::Identifier => Self::Identifier,
+            ArrayItemType::Boolean => Self::Boolean,
+            ArrayItemType::Date => Self::Date,
+        }
+    }
+}
+
+impl From<ArrayItemTypeRepr> for ArrayItemType {
+    fn from(r: ArrayItemTypeRepr) -> Self {
+        match r {
+            ArrayItemTypeRepr::Integer => Self::Integer,
+            ArrayItemTypeRepr::Number => Self::Number,
+            ArrayItemTypeRepr::String {
+                min_length,
+                max_length,
+            } => Self::String(min_length, max_length),
+            ArrayItemTypeRepr::ByteArray { min_size, max_size } => {
+                Self::ByteArray(min_size, max_size)
+            }
+            ArrayItemTypeRepr::Identifier => Self::Identifier,
+            ArrayItemTypeRepr::Boolean => Self::Boolean,
+            ArrayItemTypeRepr::Date => Self::Date,
+        }
+    }
 }
 
 impl ArrayItemType {
@@ -257,4 +322,545 @@ fn get_field_type_matching_error() -> ProtocolError {
     ProtocolError::DataContractError(DataContractError::ValueWrongType(
         "document field type doesn't match document value for array".to_string(),
     ))
+}
+
+#[cfg(test)]
+#[allow(clippy::approx_constant)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // encode_value_with_size() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_encode_value_with_size_string() {
+        let item = ArrayItemType::String(None, None);
+        let result = item
+            .encode_value_with_size(Value::Text("abc".to_string()))
+            .unwrap();
+        // varint(3) + b"abc"
+        assert_eq!(result.len(), 4);
+        assert_eq!(&result[1..], b"abc");
+    }
+
+    #[test]
+    fn test_encode_value_with_size_string_type_mismatch() {
+        let item = ArrayItemType::String(None, None);
+        let result = item.encode_value_with_size(Value::U64(42));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_with_size_integer() {
+        let item = ArrayItemType::Integer;
+        let result = item.encode_value_with_size(Value::I64(42)).unwrap();
+        assert_eq!(result.len(), 8);
+        assert_eq!(result, 42i64.to_be_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_encode_value_with_size_number() {
+        let item = ArrayItemType::Number;
+        let result = item.encode_value_with_size(Value::Float(3.14)).unwrap();
+        assert_eq!(result.len(), 8);
+    }
+
+    #[test]
+    fn test_encode_value_with_size_date() {
+        let item = ArrayItemType::Date;
+        let result = item
+            .encode_value_with_size(Value::Float(1648910575.0))
+            .unwrap();
+        assert_eq!(result.len(), 8);
+    }
+
+    #[test]
+    fn test_encode_value_with_size_byte_array() {
+        let item = ArrayItemType::ByteArray(None, None);
+        let bytes = vec![1u8, 2, 3, 4];
+        let result = item.encode_value_with_size(Value::Bytes(bytes)).unwrap();
+        // varint(4) + [1,2,3,4]
+        assert_eq!(result.len(), 5);
+    }
+
+    #[test]
+    fn test_encode_value_with_size_identifier() {
+        let item = ArrayItemType::Identifier;
+        let id_bytes = [5u8; 32];
+        let result = item
+            .encode_value_with_size(Value::Identifier(id_bytes))
+            .unwrap();
+        // varint(32) + 32 bytes
+        assert_eq!(result.len(), 33);
+    }
+
+    #[test]
+    fn test_encode_value_with_size_boolean_true() {
+        let item = ArrayItemType::Boolean;
+        let result = item.encode_value_with_size(Value::Bool(true)).unwrap();
+        assert_eq!(result, vec![1]);
+    }
+
+    #[test]
+    fn test_encode_value_with_size_boolean_false() {
+        let item = ArrayItemType::Boolean;
+        let result = item.encode_value_with_size(Value::Bool(false)).unwrap();
+        assert_eq!(result, vec![0]);
+    }
+
+    #[test]
+    fn test_encode_value_with_size_boolean_type_mismatch() {
+        let item = ArrayItemType::Boolean;
+        let result = item.encode_value_with_size(Value::U64(42));
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // encode_value_ref_with_size() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_encode_value_ref_with_size_string() {
+        let item = ArrayItemType::String(None, None);
+        let val = Value::Text("test".to_string());
+        let result = item.encode_value_ref_with_size(&val).unwrap();
+        assert_eq!(result.len(), 5); // varint(4) + "test"
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_string_type_mismatch() {
+        let item = ArrayItemType::String(None, None);
+        let val = Value::U64(42);
+        let result = item.encode_value_ref_with_size(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_integer() {
+        let item = ArrayItemType::Integer;
+        let val = Value::I64(-100);
+        let result = item.encode_value_ref_with_size(&val).unwrap();
+        assert_eq!(result.len(), 8);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_number() {
+        let item = ArrayItemType::Number;
+        let val = Value::Float(2.718);
+        let result = item.encode_value_ref_with_size(&val).unwrap();
+        assert_eq!(result.len(), 8);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_date() {
+        let item = ArrayItemType::Date;
+        let val = Value::Float(1648910575.0);
+        let result = item.encode_value_ref_with_size(&val).unwrap();
+        assert_eq!(result.len(), 8);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_byte_array() {
+        let item = ArrayItemType::ByteArray(None, None);
+        let val = Value::Bytes(vec![10, 20, 30]);
+        let result = item.encode_value_ref_with_size(&val).unwrap();
+        // varint(3) + [10,20,30]
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_identifier() {
+        let item = ArrayItemType::Identifier;
+        let val = Value::Identifier([7u8; 32]);
+        let result = item.encode_value_ref_with_size(&val).unwrap();
+        // varint(32) + 32 bytes
+        assert_eq!(result.len(), 33);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_boolean_true() {
+        let item = ArrayItemType::Boolean;
+        let result = item.encode_value_ref_with_size(&Value::Bool(true)).unwrap();
+        assert_eq!(result, vec![1]);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_boolean_false() {
+        let item = ArrayItemType::Boolean;
+        let result = item
+            .encode_value_ref_with_size(&Value::Bool(false))
+            .unwrap();
+        assert_eq!(result, vec![0]);
+    }
+
+    #[test]
+    fn test_encode_value_ref_with_size_boolean_type_mismatch() {
+        let item = ArrayItemType::Boolean;
+        let result = item.encode_value_ref_with_size(&Value::U64(42));
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // sanitize_value_mut() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_sanitize_byte_array_from_hex_string() {
+        let item = ArrayItemType::ByteArray(None, None);
+        let mut val = Value::Text("deadbeef".to_string());
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF]));
+    }
+
+    #[test]
+    fn test_sanitize_byte_array_from_hex_string_exact_20() {
+        let item = ArrayItemType::ByteArray(Some(20), Some(20));
+        let hex_str = "aa".repeat(20); // 40 hex chars = 20 bytes
+        let mut val = Value::Text(hex_str);
+        item.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Bytes20(_)));
+    }
+
+    #[test]
+    fn test_sanitize_byte_array_from_hex_string_exact_32() {
+        let item = ArrayItemType::ByteArray(Some(32), Some(32));
+        let hex_str = "bb".repeat(32);
+        let mut val = Value::Text(hex_str);
+        item.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Bytes32(_)));
+    }
+
+    #[test]
+    fn test_sanitize_byte_array_from_hex_string_exact_36() {
+        let item = ArrayItemType::ByteArray(Some(36), Some(36));
+        let hex_str = "cc".repeat(36);
+        let mut val = Value::Text(hex_str);
+        item.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Bytes36(_)));
+    }
+
+    #[test]
+    fn test_sanitize_byte_array_size_constraint_too_small() {
+        let item = ArrayItemType::ByteArray(Some(10), None);
+        let mut val = Value::Text("aabb".to_string()); // 2 bytes, min is 10
+        item.sanitize_value_mut(&mut val);
+        // Should remain unchanged because size constraint is violated
+        assert!(matches!(val, Value::Text(_)));
+    }
+
+    #[test]
+    fn test_sanitize_byte_array_size_constraint_too_big() {
+        let item = ArrayItemType::ByteArray(None, Some(2));
+        let mut val = Value::Text("aabbccddee".to_string()); // 5 bytes, max is 2
+        item.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Text(_)));
+    }
+
+    #[test]
+    fn test_sanitize_identifier_from_hex_string() {
+        let item = ArrayItemType::Identifier;
+        let hex_str = "aa".repeat(32);
+        let mut val = Value::Text(hex_str);
+        item.sanitize_value_mut(&mut val);
+        assert!(matches!(val, Value::Identifier(_)));
+    }
+
+    #[test]
+    fn test_sanitize_date_from_positive_i64() {
+        let item = ArrayItemType::Date;
+        let mut val = Value::I64(1648910575000);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::U64(1648910575000));
+    }
+
+    #[test]
+    fn test_sanitize_date_from_negative_i64_unchanged() {
+        let item = ArrayItemType::Date;
+        let mut val = Value::I64(-1);
+        item.sanitize_value_mut(&mut val);
+        // Negative timestamps should not be converted
+        assert_eq!(val, Value::I64(-1));
+    }
+
+    #[test]
+    fn test_sanitize_integer_from_u64() {
+        let item = ArrayItemType::Integer;
+        let mut val = Value::U64(42);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::I64(42));
+    }
+
+    #[test]
+    fn test_sanitize_integer_from_u32() {
+        let item = ArrayItemType::Integer;
+        let mut val = Value::U32(100);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::I64(100));
+    }
+
+    #[test]
+    fn test_sanitize_integer_from_u16() {
+        let item = ArrayItemType::Integer;
+        let mut val = Value::U16(300);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::I64(300));
+    }
+
+    #[test]
+    fn test_sanitize_integer_from_u8() {
+        let item = ArrayItemType::Integer;
+        let mut val = Value::U8(255);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::I64(255));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_i64() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::I64(42);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(42.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_u64() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::U64(100);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(100.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_i32() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::I32(-50);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(-50.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_u32() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::U32(200);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(200.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_i16() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::I16(-10);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(-10.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_u16() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::U16(500);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(500.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_i8() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::I8(-5);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(-5.0));
+    }
+
+    #[test]
+    fn test_sanitize_number_from_u8() {
+        let item = ArrayItemType::Number;
+        let mut val = Value::U8(7);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Float(7.0));
+    }
+
+    #[test]
+    fn test_sanitize_leaves_matching_type_unchanged() {
+        let item = ArrayItemType::Boolean;
+        let mut val = Value::Bool(true);
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Bool(true));
+    }
+
+    #[test]
+    fn test_sanitize_leaves_unrelated_type_unchanged() {
+        let item = ArrayItemType::Integer;
+        let mut val = Value::Text("not a number".to_string());
+        item.sanitize_value_mut(&mut val);
+        assert_eq!(val, Value::Text("not a number".to_string()));
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ArrayItemType {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ArrayItemType {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    #[test]
+    fn json_round_trip_integer_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `Integer` is a unit variant — internally tagged it serializes as
+        // `{"$type":"integer"}` (camelCase variant name).
+        let original = ArrayItemType::Integer;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "integer"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_number_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = ArrayItemType::Number;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "number"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_string_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `String(Option<usize>, Option<usize>)` — tuple variant, internally
+        // tagged with named size bounds: `{"$type":"string","minLength":min,
+        // "maxLength":max}`. JSON erases the `usize` size.
+        let original = ArrayItemType::String(Some(3), Some(50));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({"$type": "string", "minLength": 3, "maxLength": 50})
+        );
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_byte_array_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = ArrayItemType::ByteArray(Some(0), Some(64));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            json!({"$type": "byteArray", "minSize": 0, "maxSize": 64})
+        );
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_identifier_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        let original = ArrayItemType::Identifier;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "identifier"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_boolean_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `Boolean` is a unit variant → `{"$type":"boolean"}` (camelCase name).
+        let original = ArrayItemType::Boolean;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "boolean"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_date_variant() {
+        use crate::serialization::JsonConvertible;
+        use serde_json::json;
+        // `Date` is a unit variant → `{"$type":"date"}` (camelCase name).
+        let original = ArrayItemType::Date;
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({"$type": "date"}));
+        let recovered = ArrayItemType::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_integer_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::Integer;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!({"$type": "integer"}));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_number_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::Number;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!({"$type": "number"}));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_string_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        // `usize` serializes through serde as `u64`-like → `Value::U64` in non-HR.
+        let original = ArrayItemType::String(Some(3), Some(50));
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"$type": "string", "minLength": 3u64, "maxLength": 50u64})
+        );
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_byte_array_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::ByteArray(Some(0), Some(64));
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"$type": "byteArray", "minSize": 0u64, "maxSize": 64u64})
+        );
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_identifier_variant() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = ArrayItemType::Identifier;
+        let value = original.to_object().expect("to_object");
+        assert_eq!(value, platform_value!({"$type": "identifier"}));
+        let recovered = ArrayItemType::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
 }

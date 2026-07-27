@@ -1,0 +1,107 @@
+{
+  "$formatVersion": "0",
+  "id": "8gradesS5w7Y9R4nDqJk2vHpL3uM6tF1xE8cA2bN7zXq",
+  "ownerId": "7m6mTfWqkrCnvLLPK3eqxQM2x2RDpYV6dsAyhVKsAEAQ",
+  "version": 1,
+  "documentSchemas": {
+    "grade": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "documentsCountable": true,
+      "documentsSummable": "score",
+      "indices": [
+        {
+          "name": "byClass",
+          "properties": [
+            { "class": "asc" }
+          ],
+          "countable": "countable",
+          "summable": "score"
+        },
+        {
+          "name": "byStudent",
+          "properties": [
+            { "student": "asc" }
+          ],
+          "countable": "countable",
+          "summable": "score"
+        },
+        {
+          "name": "bySemester",
+          "properties": [
+            { "semester": "asc" }
+          ],
+          "countable": "countable",
+          "summable": "score"
+        },
+        {
+          "name": "byClassSemester",
+          "properties": [
+            { "class": "asc" },
+            { "semester": "asc" }
+          ],
+          "countable": "countableAllowingOffset",
+          "summable": "score",
+          "rangeCountable": true,
+          "rangeSummable": true
+        },
+        {
+          "name": "byStudentSemester",
+          "properties": [
+            { "student": "asc" },
+            { "semester": "asc" }
+          ],
+          "countable": "countableAllowingOffset",
+          "summable": "score",
+          "rangeCountable": true,
+          "rangeSummable": true
+        }
+      ],
+      "properties": {
+        "student": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 0,
+          "contentMediaType": "application/x.dash.dpp.identifier"
+        },
+        "class": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 1
+        },
+        "semester": {
+          "type": "integer",
+          "minimum": 20000,
+          "maximum": 99999,
+          "position": 2
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 3
+        },
+        "instructor": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "position": 4,
+          "contentMediaType": "application/x.dash.dpp.identifier"
+        }
+      },
+      "required": [
+        "student",
+        "class",
+        "semester",
+        "score",
+        "instructor"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

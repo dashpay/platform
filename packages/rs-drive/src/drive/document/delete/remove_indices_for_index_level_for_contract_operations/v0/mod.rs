@@ -26,6 +26,13 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Removes indices for an index level and recurses.
+    ///
+    /// `parent_value_tree_is_range_countable` mirrors the insert walker —
+    /// it tells us whether the value tree at `index_path_info` was stored
+    /// as a `CountTree` (because the IndexLevel that produced it terminates
+    /// a `range_countable` index). Cost estimation uses this to report the
+    /// correct tree variant for the layer being walked, so storage-cost
+    /// math matches what's actually on disk.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v0(
@@ -35,6 +42,7 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         mut all_fields_null: bool,
+        parent_value_tree_is_range_countable: bool,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -47,12 +55,18 @@ impl Drive {
     ) -> Result<(), Error> {
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
+        let current_layer_tree_type = if parent_value_tree_is_range_countable {
+            TreeType::CountTree
+        } else {
+            TreeType::NormalTree
+        };
+
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
+                    tree_type: current_layer_tree_type,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -84,6 +98,16 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
+                .map(|info| info.range_countable)
+                .unwrap_or(false);
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
+
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 
@@ -117,7 +141,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     sub_level_index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: property_name_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -144,6 +168,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 all_fields_null,
+                sub_level_range_countable,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

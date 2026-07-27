@@ -249,3 +249,275 @@ impl Drive {
         Ok(batch_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::prelude::Identifier;
+    use dpp::tokens::status::v0::TokenStatusV0Accessors;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_create_token_trees_and_initialize_supply_to_zero() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [51u8; 32];
+        let contract_id = Identifier::from([52u8; 32]);
+
+        drive
+            .create_token_trees_v0(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to create token trees");
+
+        // Supply is initialized as SumItem(0)
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(0));
+
+        // Aggregated balances tree exists and sums to 0
+        let balances = drive
+            .fetch_token_total_aggregated_identity_balances(token_id, None, platform_version)
+            .expect("expected to fetch balances");
+        assert_eq!(balances, Some(0));
+    }
+
+    #[test]
+    fn should_error_on_double_creation_without_allow_already_exists() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [53u8; 32];
+        let contract_id = Identifier::from([54u8; 32]);
+
+        drive
+            .create_token_trees_v0(
+                contract_id,
+                0,
+                token_id,
+                false,
+                false, // allow_already_exists
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("first creation should succeed");
+
+        let result = drive.create_token_trees_v0(
+            contract_id,
+            0,
+            token_id,
+            false,
+            false, // allow_already_exists
+            &block_info,
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            result.is_err(),
+            "expected CorruptedDriveState on duplicate creation"
+        );
+    }
+
+    #[test]
+    fn should_succeed_on_double_creation_with_allow_already_exists() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id = [55u8; 32];
+        let contract_id = Identifier::from([56u8; 32]);
+
+        drive
+            .create_token_trees_v0(
+                contract_id,
+                0,
+                token_id,
+                false,
+                true, // allow_already_exists (idempotent)
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("first creation should succeed");
+
+        // Seed some supply so we can confirm it is not reset to 0 by a second call
+        drive
+            .add_to_token_total_supply(
+                token_id,
+                999,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to seed supply");
+
+        drive
+            .create_token_trees_v0(
+                contract_id,
+                0,
+                token_id,
+                false,
+                true, // allow_already_exists -> idempotent no-op
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("second idempotent creation should succeed");
+
+        // The supply should remain what we had (not re-initialized to 0)
+        let supply = drive
+            .fetch_token_total_supply(token_id, None, platform_version)
+            .expect("expected to fetch supply");
+        assert_eq!(supply, Some(999));
+    }
+
+    #[test]
+    fn should_create_independent_trees_for_different_token_ids() {
+        // Multi-token creation under different positions / ids coexists.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let contract_id = Identifier::from([200u8; 32]);
+
+        for (i, tid) in [[201u8; 32], [202u8; 32], [203u8; 32]].iter().enumerate() {
+            drive
+                .create_token_trees_v0(
+                    contract_id,
+                    i as u16,
+                    *tid,
+                    false,
+                    false,
+                    &block_info,
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to create token trees");
+        }
+
+        // Each token has independent supply counters initialized to 0
+        for tid in [[201u8; 32], [202u8; 32], [203u8; 32]] {
+            let supply = drive
+                .fetch_token_total_supply(tid, None, platform_version)
+                .expect("expected to fetch supply");
+            assert_eq!(supply, Some(0));
+        }
+
+        // Mutating one token's supply must not affect the others
+        drive
+            .add_to_token_total_supply(
+                [201u8; 32],
+                500,
+                false,
+                false,
+                true,
+                &block_info,
+                None,
+                platform_version,
+            )
+            .expect("expected to seed supply for first token");
+
+        assert_eq!(
+            drive
+                .fetch_token_total_supply([201u8; 32], None, platform_version)
+                .unwrap(),
+            Some(500)
+        );
+        assert_eq!(
+            drive
+                .fetch_token_total_supply([202u8; 32], None, platform_version)
+                .unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            drive
+                .fetch_token_total_supply([203u8; 32], None, platform_version)
+                .unwrap(),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn should_respect_start_as_paused_flag() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let block_info = BlockInfo::default();
+        let token_id_active = [60u8; 32];
+        let token_id_paused = [61u8; 32];
+        let contract_id = Identifier::from([62u8; 32]);
+
+        drive
+            .create_token_trees_v0(
+                contract_id,
+                0,
+                token_id_active,
+                false, // start_as_paused
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("active creation should succeed");
+
+        drive
+            .create_token_trees_v0(
+                contract_id,
+                1,
+                token_id_paused,
+                true, // start_as_paused
+                false,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("paused creation should succeed");
+
+        // Both tokens should have supply initialized to 0
+        for tid in [token_id_active, token_id_paused] {
+            let supply = drive
+                .fetch_token_total_supply(tid, None, platform_version)
+                .expect("expected to fetch supply");
+            assert_eq!(supply, Some(0));
+        }
+
+        // And critically: the paused flag must actually be persisted distinctly.
+        let active_status = drive
+            .fetch_token_status(token_id_active, None, platform_version)
+            .expect("expected to fetch active token status")
+            .expect("active token status must exist");
+        assert!(
+            !active_status.paused(),
+            "token created with start_as_paused=false should not be paused"
+        );
+
+        let paused_status = drive
+            .fetch_token_status(token_id_paused, None, platform_version)
+            .expect("expected to fetch paused token status")
+            .expect("paused token status must exist");
+        assert!(
+            paused_status.paused(),
+            "token created with start_as_paused=true should be paused"
+        );
+    }
+}

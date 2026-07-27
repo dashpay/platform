@@ -23,7 +23,14 @@ pub trait TransferToAddresses: Waitable {
     /// Returns tuple of:
     /// * Proof-backed address infos for provided recipients
     /// * Updated identity balance
-    /// * Proof-backed address infos for provided recipients
+    /// * The proof's committed block height (`metadata.height`) — the
+    ///   height the returned absolutes are current **as of**. Callers
+    ///   that persist them must record it as the balance height pin
+    ///   ([`AddressFunds::as_of_height`]) so balance-change deltas at or
+    ///   below it are not re-applied on top.
+    ///
+    /// [`AddressFunds::as_of_height`]:
+    /// crate::platform::address_sync::AddressFunds::as_of_height
     #[allow(clippy::too_many_arguments)]
     async fn transfer_credits_to_addresses<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -32,7 +39,7 @@ pub trait TransferToAddresses: Waitable {
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error>;
+    ) -> Result<(AddressInfos, Credits, u64), Error>;
 }
 
 #[async_trait::async_trait]
@@ -44,7 +51,7 @@ impl TransferToAddresses for Identity {
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<(AddressInfos, Credits), Error> {
+    ) -> Result<(AddressInfos, Credits, u64), Error> {
         if recipient_addresses.is_empty() {
             return Err(Error::Generic(
                 "recipient_addresses must contain at least one address".to_string(),
@@ -66,16 +73,21 @@ impl TransferToAddresses for Identity {
             new_identity_nonce,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         let expected_addresses: BTreeSet<PlatformAddress> =
             recipient_addresses.keys().copied().collect();
 
-        match state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
-            .await?
-        {
+        // `metadata.height` is the proof's committed block — the height
+        // pin for these absolutes (`AddressFunds::as_of_height`).
+        let (st_result, metadata) = state_transition
+            .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+                sdk, settings,
+            )
+            .await?;
+        match st_result {
             StateTransitionProofResult::VerifiedIdentityWithAddressInfos(
                 identity,
                 address_infos_map,
@@ -97,7 +109,7 @@ impl TransferToAddresses for Identity {
                     )
                 })?;
 
-                Ok((address_infos, balance))
+                Ok((address_infos, balance, metadata.height))
             }
             other => Err(Error::InvalidProvedResponse(format!(
                 "identity proof was expected for {:?}, but received {:?}",

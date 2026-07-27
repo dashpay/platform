@@ -11,7 +11,8 @@ use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
-use wasm_dpp2::NetworkWasm;
+use wasm_dpp2::serialization::conversions::to_object;
+use wasm_dpp2::{NetworkLikeJs, NetworkWasm};
 
 /// Key pair information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,14 +81,10 @@ impl WasmSdk {
         })
     }
 
-    /// Generate a new random key pair
-    #[wasm_bindgen(js_name = "generateKeyPair")]
-    pub fn generate_key_pair(
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+    fn generate_key_pair_internal(
+        net: Network,
+        network_wasm: &NetworkWasm,
     ) -> Result<KeyPairWasm, WasmSdkError> {
-        let network_wasm = NetworkWasm::try_from(&network)?;
-        let net: Network = network_wasm.into();
-
         // Generate random 32 bytes
         let mut key_bytes = [0u8; 32];
         getrandom::getrandom(&mut key_bytes).map_err(|e| {
@@ -106,10 +103,18 @@ impl WasmSdk {
         Ok(KeyPairWasm::from(key_pair))
     }
 
+    /// Generate a new random key pair
+    #[wasm_bindgen(js_name = "generateKeyPair")]
+    pub fn generate_key_pair(network: NetworkLikeJs) -> Result<KeyPairWasm, WasmSdkError> {
+        let network_wasm: NetworkWasm = network.try_into()?;
+        let net: Network = network_wasm.into();
+        Self::generate_key_pair_internal(net, &network_wasm)
+    }
+
     /// Generate multiple key pairs
     #[wasm_bindgen(js_name = "generateKeyPairs")]
     pub fn generate_key_pairs(
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+        network: NetworkLikeJs,
         count: u32,
     ) -> Result<Vec<KeyPairWasm>, WasmSdkError> {
         if count == 0 || count > 100 {
@@ -118,9 +123,12 @@ impl WasmSdk {
             ));
         }
 
+        let network_wasm: NetworkWasm = network.try_into()?;
+        let net: Network = network_wasm.into();
+
         let mut pairs = Vec::new();
         for _ in 0..count {
-            pairs.push(Self::generate_key_pair(network.clone())?);
+            pairs.push(Self::generate_key_pair_internal(net, &network_wasm)?);
         }
         Ok(pairs)
     }
@@ -143,7 +151,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "keyPairFromHex")]
     pub fn key_pair_from_hex(
         #[wasm_bindgen(js_name = "privateKeyHex")] private_key_hex: &str,
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+        network: NetworkLikeJs,
     ) -> Result<KeyPairWasm, WasmSdkError> {
         if private_key_hex.len() != 64 {
             return Err(WasmSdkError::invalid_argument(
@@ -151,7 +159,7 @@ impl WasmSdk {
             ));
         }
 
-        let network_wasm = NetworkWasm::try_from(&network)?;
+        let network_wasm: NetworkWasm = network.try_into()?;
         let net: Network = network_wasm.into();
 
         let key_bytes = hex::decode(private_key_hex)
@@ -171,9 +179,9 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "pubkeyToAddress")]
     pub fn pubkey_to_address(
         #[wasm_bindgen(js_name = "pubkeyHex")] pubkey_hex: &str,
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
+        network: NetworkLikeJs,
     ) -> Result<String, WasmSdkError> {
-        let network_wasm = NetworkWasm::try_from(&network)?;
+        let network_wasm: NetworkWasm = network.try_into()?;
         let net: Network = network_wasm.into();
 
         let pubkey_bytes = hex::decode(pubkey_hex)
@@ -188,17 +196,14 @@ impl WasmSdk {
 
     /// Validate a Dash address
     #[wasm_bindgen(js_name = "validateAddress")]
-    pub fn validate_address(
-        address: &str,
-        #[wasm_bindgen(unchecked_param_type = "NetworkLike")] network: JsValue,
-    ) -> bool {
-        let Ok(network_wasm) = NetworkWasm::try_from(&network) else {
+    pub fn validate_address(address: &str, network: NetworkLikeJs) -> bool {
+        let Ok(network_wasm): Result<NetworkWasm, _> = network.try_into() else {
             return false;
         };
         let net: Network = network_wasm.into();
 
         Address::from_str(address)
-            .map(|addr| *addr.network() == net)
+            .map(|addr| addr.is_valid_for_network(net))
             .unwrap_or(false)
     }
 
@@ -289,7 +294,6 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&result)
-            .map_err(|e| WasmSdkError::generic(format!("Serialization error: {}", e)))
+        Ok(to_object(&result)?)
     }
 }

@@ -5,8 +5,8 @@ use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
+use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
@@ -31,7 +31,11 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        index_type: IndexLevelTypeInfo,
+        // Borrow rather than owned — see the parallel change on the
+        // insert path (`add_reference_for_index_level_for_contract_operations`)
+        // for the rationale (`IndexLevelTypeInfo` dropped `Copy` when
+        // `summable: Option<String>` was added in v3).
+        index_type: &IndexLevelTypeInfo,
         any_fields_null: bool,
         all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
@@ -59,13 +63,57 @@ impl Drive {
         {
             key_info_path.push(KnownKey(vec![0]));
 
+            // Mirror the insert path: tree variant is driven by the
+            // composition of the index's countability AND summability.
+            // See the matching dispatch table in
+            // `add_reference_for_index_level_for_contract_operations_v0`
+            // — eight cases over the v3 sum-tree-expanded TreeType
+            // set (NormalTree / CountTree / ProvableCountTree /
+            // SumTree / ProvableSumTree / CountSumTree /
+            // ProvableCountSumTree / ProvableCountProvableSumTree).
+            let count_provable = matches!(
+                index_type.countable,
+                IndexCountability::CountableAllowingOffset
+            );
+            let count_root_only =
+                matches!(index_type.countable, IndexCountability::Countable) && !count_provable;
+            let sum_provable = index_type.range_summable;
+            let sum_root_only = index_type.summable.is_some() && !sum_provable;
+            let want_count = count_provable || count_root_only;
+            let want_sum = sum_provable || sum_root_only;
+            let reference_tree_type =
+                match (count_provable, count_root_only, sum_provable, sum_root_only) {
+                    (false, false, false, false) => TreeType::NormalTree,
+                    (false, true, false, false) => TreeType::CountTree,
+                    (true, _, false, false) => TreeType::ProvableCountTree,
+                    (false, false, false, true) => TreeType::SumTree,
+                    (false, false, true, _) => TreeType::ProvableSumTree,
+                    (false, true, false, true) => TreeType::CountSumTree,
+                    (true, _, false, true) => TreeType::ProvableCountSumTree,
+                    (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+                    (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+                };
+            let _ = (want_count, want_sum); // narrative parity with the dispatch table.
+
+            // Delete-side sum-decrement is implicit: when `want_sum`,
+            // the existing reference at `[..., 0, doc_id]` is an
+            // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
+            // (written by the insert path). The contribution is
+            // recovered from the reference element itself — Drive
+            // never re-reads the source document at delete time
+            // (the field's value may have drifted or the document
+            // may not be deserializable anymore). grovedb's normal
+            // delete propagation subtracts that `i64` from every
+            // ancestor sum tree, so no sum-specific delete logic is
+            // needed here.
+
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             DEFAULT_HASH_SIZE_U8,

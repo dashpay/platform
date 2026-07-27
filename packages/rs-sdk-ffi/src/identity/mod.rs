@@ -1,6 +1,7 @@
 //! Identity operations
 
 mod create;
+mod create_from_addresses;
 mod create_from_components;
 mod get_public_key;
 mod helpers;
@@ -11,12 +12,17 @@ mod parse;
 mod put;
 mod queries;
 mod test_transfer;
-mod topup;
+mod top_up_from_addresses;
 mod transfer;
+mod transfer_to_addresses;
 mod withdraw;
 
 // Re-export all public functions for convenient access
 pub use create::dash_sdk_identity_create;
+pub use create_from_addresses::{
+    dash_sdk_identity_create_from_addresses, dash_sdk_identity_create_from_addresses_result_free,
+    DashSDKIdentityCreateFromAddressesResult,
+};
 pub use create_from_components::{dash_sdk_identity_create_from_components, DashSDKPublicKeyData};
 pub use get_public_key::dash_sdk_identity_get_public_key_by_id;
 pub use info::{dash_sdk_identity_destroy, dash_sdk_identity_get_info};
@@ -33,16 +39,24 @@ pub use put::{
     dash_sdk_identity_put_to_platform_with_instant_lock_and_wait,
 };
 pub use test_transfer::dash_sdk_test_identity_transfer_crash;
-pub use topup::{
-    dash_sdk_identity_topup_with_instant_lock, dash_sdk_identity_topup_with_instant_lock_and_wait,
+pub use top_up_from_addresses::{
+    dash_sdk_identity_top_up_from_addresses, dash_sdk_identity_top_up_from_addresses_result_free,
+    DashSDKIdentityTopUpFromAddressesResult,
 };
 pub use transfer::{
     dash_sdk_identity_transfer_credits, dash_sdk_transfer_credits_result_free,
     DashSDKTransferCreditsResult,
 };
+pub use transfer_to_addresses::{
+    dash_sdk_identity_transfer_credits_to_addresses,
+    dash_sdk_identity_transfer_to_addresses_result_free, DashSDKIdentityTransferToAddressesResult,
+};
 pub use withdraw::dash_sdk_identity_withdraw;
 
 // Re-export query functions
+pub use queries::contract_nonce::dash_sdk_identity_fetch_contract_nonce;
+pub use queries::identities_contract_keys::dash_sdk_identities_fetch_contract_keys;
+pub use queries::nonce::dash_sdk_identity_fetch_nonce;
 pub use queries::{
     dash_sdk_identities_fetch_balances, dash_sdk_identity_fetch, dash_sdk_identity_fetch_balance,
     dash_sdk_identity_fetch_balance_and_revision,

@@ -1,4 +1,6 @@
 use crate::balances::credits::TokenAmount;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -41,7 +43,9 @@ pub const MAX_EXP_N_PARAM: u64 = 32;
 pub const MIN_POL_A_PARAM: i64 = -255;
 pub const MAX_POL_A_PARAM: i64 = 256;
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[serde(tag = "$type", rename_all = "camelCase")]
 pub enum DistributionFunction {
     /// Emits a constant (fixed) number of tokens for every period.
     ///
@@ -160,7 +164,11 @@ pub enum DistributionFunction {
     /// # Example
     /// - Emit 100 tokens per block for the first 1,000 blocks, then 50 tokens per block thereafter.
     Stepwise(
-        #[serde(deserialize_with = "deserialize_u64_token_amount_map")] BTreeMap<u64, TokenAmount>,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json::safe_integer_map::json_safe_u64_u64_map")
+        )]
+        BTreeMap<u64, TokenAmount>,
     ),
 
     /// Emits tokens following a linear function that can increase or decrease over time
@@ -560,45 +568,6 @@ pub enum DistributionFunction {
     },
 }
 
-// Custom deserializer helper that accepts both key shapes for JSON and other serde formats:
-// - BTreeMap<u64, TokenAmount>                // numeric timestamp/step keys
-// - BTreeMap<String, TokenAmount>             // numeric-looking strings as keys
-// The function normalizes both into `BTreeMap<u64, TokenAmount>`. If a string key
-// cannot be parsed as `u64`, deserialization fails with a serde error.
-use serde::de::Deserializer;
-fn deserialize_u64_token_amount_map<'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<u64, TokenAmount>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    // Untagged enum tries variants in order: attempt numeric keys first,
-    // then fallback to string keys.
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum U64OrStrMap<V> {
-        // JSON: { 0: 100, 10: 50 }
-        U64(BTreeMap<u64, V>),
-        // JSON: { "0": 100, "10": 50 }
-        Str(BTreeMap<String, V>),
-    }
-
-    let helper: U64OrStrMap<TokenAmount> = U64OrStrMap::deserialize(deserializer)?;
-    match helper {
-        // Already numeric keys; return as-is
-        U64OrStrMap::U64(m) => Ok(m),
-        // Parse numeric-looking string keys into u64, preserving values
-        U64OrStrMap::Str(sm) => sm
-            .into_iter()
-            .map(|(k, v)| {
-                k.parse::<u64>()
-                    .map_err(serde::de::Error::custom)
-                    .map(|kk| (kk, v))
-            })
-            .collect(),
-    }
-}
-
 impl fmt::Display for DistributionFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -788,5 +757,646 @@ impl fmt::Display for DistributionFunction {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    mod construction {
+        use super::*;
+
+        #[test]
+        fn fixed_amount_construction() {
+            let dist = DistributionFunction::FixedAmount { amount: 42 };
+            match dist {
+                DistributionFunction::FixedAmount { amount } => assert_eq!(amount, 42),
+                _ => panic!("Expected FixedAmount variant"),
+            }
+        }
+
+        #[test]
+        fn random_construction() {
+            let dist = DistributionFunction::Random { min: 10, max: 100 };
+            match dist {
+                DistributionFunction::Random { min, max } => {
+                    assert_eq!(min, 10);
+                    assert_eq!(max, 100);
+                }
+                _ => panic!("Expected Random variant"),
+            }
+        }
+
+        #[test]
+        fn step_decreasing_amount_construction() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(5),
+                max_interval_count: Some(128),
+                distribution_start_amount: 1000,
+                trailing_distribution_interval_amount: 50,
+                min_value: Some(10),
+            };
+            match dist {
+                DistributionFunction::StepDecreasingAmount {
+                    step_count,
+                    decrease_per_interval_numerator,
+                    decrease_per_interval_denominator,
+                    start_decreasing_offset,
+                    max_interval_count,
+                    distribution_start_amount,
+                    trailing_distribution_interval_amount,
+                    min_value,
+                } => {
+                    assert_eq!(step_count, 10);
+                    assert_eq!(decrease_per_interval_numerator, 1);
+                    assert_eq!(decrease_per_interval_denominator, 2);
+                    assert_eq!(start_decreasing_offset, Some(5));
+                    assert_eq!(max_interval_count, Some(128));
+                    assert_eq!(distribution_start_amount, 1000);
+                    assert_eq!(trailing_distribution_interval_amount, 50);
+                    assert_eq!(min_value, Some(10));
+                }
+                _ => panic!("Expected StepDecreasingAmount variant"),
+            }
+        }
+
+        #[test]
+        fn stepwise_construction() {
+            let mut steps = BTreeMap::new();
+            steps.insert(0, 100);
+            steps.insert(10, 50);
+            steps.insert(20, 25);
+            let dist = DistributionFunction::Stepwise(steps.clone());
+            match dist {
+                DistributionFunction::Stepwise(s) => {
+                    assert_eq!(s.len(), 3);
+                    assert_eq!(s[&0], 100);
+                    assert_eq!(s[&10], 50);
+                    assert_eq!(s[&20], 25);
+                }
+                _ => panic!("Expected Stepwise variant"),
+            }
+        }
+
+        #[test]
+        fn linear_construction() {
+            let dist = DistributionFunction::Linear {
+                a: -5,
+                d: 2,
+                start_step: Some(100),
+                starting_amount: 500,
+                min_value: Some(10),
+                max_value: Some(1000),
+            };
+            match dist {
+                DistributionFunction::Linear {
+                    a,
+                    d,
+                    start_step,
+                    starting_amount,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, -5);
+                    assert_eq!(d, 2);
+                    assert_eq!(start_step, Some(100));
+                    assert_eq!(starting_amount, 500);
+                    assert_eq!(min_value, Some(10));
+                    assert_eq!(max_value, Some(1000));
+                }
+                _ => panic!("Expected Linear variant"),
+            }
+        }
+
+        #[test]
+        fn polynomial_construction() {
+            let dist = DistributionFunction::Polynomial {
+                a: 3,
+                d: 1,
+                m: 2,
+                n: 1,
+                o: 0,
+                start_moment: Some(0),
+                b: 10,
+                min_value: None,
+                max_value: None,
+            };
+            match dist {
+                DistributionFunction::Polynomial {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 3);
+                    assert_eq!(d, 1);
+                    assert_eq!(m, 2);
+                    assert_eq!(n, 1);
+                    assert_eq!(o, 0);
+                    assert_eq!(start_moment, Some(0));
+                    assert_eq!(b, 10);
+                    assert!(min_value.is_none());
+                    assert!(max_value.is_none());
+                }
+                _ => panic!("Expected Polynomial variant"),
+            }
+        }
+
+        #[test]
+        fn exponential_construction() {
+            let dist = DistributionFunction::Exponential {
+                a: 100,
+                d: 10,
+                m: 2,
+                n: 50,
+                o: 0,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(100000),
+            };
+            match dist {
+                DistributionFunction::Exponential {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 100);
+                    assert_eq!(d, 10);
+                    assert_eq!(m, 2);
+                    assert_eq!(n, 50);
+                    assert_eq!(o, 0);
+                    assert_eq!(start_moment, Some(0));
+                    assert_eq!(b, 5);
+                    assert_eq!(min_value, Some(1));
+                    assert_eq!(max_value, Some(100000));
+                }
+                _ => panic!("Expected Exponential variant"),
+            }
+        }
+
+        #[test]
+        fn logarithmic_construction() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: Some(0),
+                b: 50,
+                min_value: None,
+                max_value: Some(200),
+            };
+            match dist {
+                DistributionFunction::Logarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 10);
+                    assert_eq!(d, 1);
+                    assert_eq!(m, 1);
+                    assert_eq!(n, 1);
+                    assert_eq!(o, 1);
+                    assert_eq!(start_moment, Some(0));
+                    assert_eq!(b, 50);
+                    assert!(min_value.is_none());
+                    assert_eq!(max_value, Some(200));
+                }
+                _ => panic!("Expected Logarithmic variant"),
+            }
+        }
+
+        #[test]
+        fn inverted_logarithmic_construction() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 10000,
+                d: 1,
+                m: 1,
+                n: 5000,
+                o: 0,
+                start_moment: None,
+                b: 0,
+                min_value: Some(0),
+                max_value: None,
+            };
+            match dist {
+                DistributionFunction::InvertedLogarithmic {
+                    a,
+                    d,
+                    m,
+                    n,
+                    o,
+                    start_moment,
+                    b,
+                    min_value,
+                    max_value,
+                } => {
+                    assert_eq!(a, 10000);
+                    assert_eq!(d, 1);
+                    assert_eq!(m, 1);
+                    assert_eq!(n, 5000);
+                    assert_eq!(o, 0);
+                    assert!(start_moment.is_none());
+                    assert_eq!(b, 0);
+                    assert_eq!(min_value, Some(0));
+                    assert!(max_value.is_none());
+                }
+                _ => panic!("Expected InvertedLogarithmic variant"),
+            }
+        }
+    }
+
+    mod display {
+        use super::*;
+
+        #[test]
+        fn fixed_amount_display() {
+            let dist = DistributionFunction::FixedAmount { amount: 42 };
+            let s = format!("{}", dist);
+            assert!(s.contains("FixedAmount"));
+            assert!(s.contains("42"));
+        }
+
+        #[test]
+        fn random_display() {
+            let dist = DistributionFunction::Random { min: 10, max: 100 };
+            let s = format!("{}", dist);
+            assert!(s.contains("Random"));
+            assert!(s.contains("10"));
+            assert!(s.contains("100"));
+        }
+
+        #[test]
+        fn step_decreasing_display_with_all_options() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: Some(5),
+                max_interval_count: Some(64),
+                distribution_start_amount: 1000,
+                trailing_distribution_interval_amount: 50,
+                min_value: Some(10),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("StepDecreasingAmount"));
+            assert!(s.contains("1000"));
+            assert!(s.contains("period 5"));
+            assert!(s.contains("64 intervals"));
+            assert!(s.contains("50 tokens"));
+            assert!(s.contains("minimum emission 10"));
+        }
+
+        #[test]
+        fn step_decreasing_display_defaults() {
+            let dist = DistributionFunction::StepDecreasingAmount {
+                step_count: 10,
+                decrease_per_interval_numerator: 1,
+                decrease_per_interval_denominator: 2,
+                start_decreasing_offset: None,
+                max_interval_count: None,
+                distribution_start_amount: 1000,
+                trailing_distribution_interval_amount: 50,
+                min_value: None,
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("128 intervals (default)"));
+        }
+
+        #[test]
+        fn stepwise_display() {
+            let mut steps = BTreeMap::new();
+            steps.insert(0, 100);
+            steps.insert(10, 50);
+            let dist = DistributionFunction::Stepwise(steps);
+            let s = format!("{}", dist);
+            assert!(s.contains("Stepwise"));
+            assert!(s.contains("Step 0"));
+            assert!(s.contains("100 tokens"));
+            assert!(s.contains("Step 10"));
+            assert!(s.contains("50 tokens"));
+        }
+
+        #[test]
+        fn linear_display_with_start() {
+            let dist = DistributionFunction::Linear {
+                a: 5,
+                d: 2,
+                start_step: Some(10),
+                starting_amount: 100,
+                min_value: Some(1),
+                max_value: Some(200),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Linear"));
+            assert!(s.contains("min: 1"));
+            assert!(s.contains("max: 200"));
+        }
+
+        #[test]
+        fn linear_display_without_start() {
+            let dist = DistributionFunction::Linear {
+                a: 5,
+                d: 2,
+                start_step: None,
+                starting_amount: 100,
+                min_value: None,
+                max_value: None,
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Linear"));
+            assert!(!s.contains("min:"));
+            assert!(!s.contains("max:"));
+        }
+
+        #[test]
+        fn polynomial_display() {
+            let dist = DistributionFunction::Polynomial {
+                a: 2,
+                d: 1,
+                m: 3,
+                n: 2,
+                o: 1,
+                start_moment: Some(5),
+                b: 10,
+                min_value: None,
+                max_value: Some(100),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Polynomial"));
+            assert!(s.contains("max: 100"));
+        }
+
+        #[test]
+        fn exponential_display() {
+            let dist = DistributionFunction::Exponential {
+                a: 100,
+                d: 10,
+                m: 2,
+                n: 50,
+                o: 3,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(1000),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Exponential"));
+            assert!(s.contains("min: 1"));
+            assert!(s.contains("max: 1000"));
+        }
+
+        #[test]
+        fn logarithmic_display() {
+            let dist = DistributionFunction::Logarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 1,
+                o: 1,
+                start_moment: None,
+                b: 50,
+                min_value: None,
+                max_value: None,
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("Logarithmic"));
+        }
+
+        #[test]
+        fn inverted_logarithmic_display() {
+            let dist = DistributionFunction::InvertedLogarithmic {
+                a: 10,
+                d: 1,
+                m: 1,
+                n: 100,
+                o: 1,
+                start_moment: Some(0),
+                b: 5,
+                min_value: Some(1),
+                max_value: Some(50),
+            };
+            let s = format!("{}", dist);
+            assert!(s.contains("InvertedLogarithmic"));
+            assert!(s.contains("min: 1"));
+            assert!(s.contains("max: 50"));
+        }
+    }
+
+    mod equality_and_clone {
+        use super::*;
+
+        #[test]
+        fn fixed_amount_equality() {
+            let a = DistributionFunction::FixedAmount { amount: 100 };
+            let b = DistributionFunction::FixedAmount { amount: 100 };
+            let c = DistributionFunction::FixedAmount { amount: 200 };
+            assert_eq!(a, b);
+            assert_ne!(a, c);
+        }
+
+        #[test]
+        fn clone_preserves_all_fields() {
+            let dist = DistributionFunction::Polynomial {
+                a: 3,
+                d: 2,
+                m: 4,
+                n: 5,
+                o: -1,
+                start_moment: Some(100),
+                b: 50,
+                min_value: Some(5),
+                max_value: Some(500),
+            };
+            let cloned = dist.clone();
+            assert_eq!(dist, cloned);
+        }
+
+        #[test]
+        fn partial_ord_between_variants() {
+            let fixed = DistributionFunction::FixedAmount { amount: 100 };
+            let random = DistributionFunction::Random { min: 10, max: 100 };
+            assert!(fixed < random);
+        }
+    }
+
+    mod constants {
+        use super::*;
+
+        #[test]
+        fn max_distribution_param_is_u48_max() {
+            assert_eq!(MAX_DISTRIBUTION_PARAM, (1u64 << 48) - 1);
+        }
+
+        #[test]
+        fn max_distribution_cycles_param_is_u15_max() {
+            assert_eq!(MAX_DISTRIBUTION_CYCLES_PARAM, (1u64 << 15) - 1);
+        }
+
+        #[test]
+        fn default_step_decreasing_max_cycles() {
+            assert_eq!(
+                DEFAULT_STEP_DECREASING_AMOUNT_MAX_CYCLES_BEFORE_TRAILING_DISTRIBUTION,
+                128
+            );
+        }
+
+        #[test]
+        fn linear_slope_bounds() {
+            assert_eq!(MAX_LINEAR_SLOPE_A_PARAM, 256);
+            assert_eq!(MIN_LINEAR_SLOPE_A_PARAM, -255);
+        }
+
+        #[test]
+        #[allow(clippy::assertions_on_constants)]
+        fn polynomial_bounds() {
+            assert_eq!(MIN_POL_M_PARAM, -8);
+            assert_eq!(MAX_POL_M_PARAM, 8);
+            assert_eq!(MAX_POL_N_PARAM, 32);
+            assert!(MIN_POL_A_PARAM < 0);
+            assert!(MAX_POL_A_PARAM > 0);
+        }
+
+        #[test]
+        fn exponential_bounds() {
+            assert_eq!(MAX_EXP_A_PARAM, 256);
+            assert_eq!(MAX_EXP_M_PARAM, 8);
+            assert_eq!(MIN_EXP_M_PARAM, -8);
+            assert_eq!(MAX_EXP_N_PARAM, 32);
+        }
+
+        #[test]
+        fn log_bounds() {
+            assert_eq!(MIN_LOG_A_PARAM, -32_766);
+            assert_eq!(MAX_LOG_A_PARAM, 32_767);
+        }
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for DistributionFunction {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for DistributionFunction {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+    use platform_value::platform_value;
+    use serde_json::json;
+
+    // `DistributionFunction` is internally tagged (`#[serde(tag = "$type",
+    // rename_all = "camelCase")]`). Round-trip tests cover one variant per
+    // shape:
+    //   - struct variant with named fields (`FixedAmount` → `fixedAmount`)
+    //   - struct variant with multiple named fields (`Random` → `random`)
+    //   - newtype-of-map variant (`Stepwise` → `stepwise`, flattened)
+    // The other struct variants share the `FixedAmount`/`Random` shape.
+
+    #[test]
+    fn json_round_trip_fixed_amount() {
+        use crate::serialization::JsonConvertible;
+        let original = DistributionFunction::FixedAmount { amount: 1_000 };
+        let json = original.to_json().expect("to_json");
+        // Internally-tagged struct variant → `{"$type":"fixedAmount", <fields>}`.
+        // `TokenAmount` is `u64`; JSON erases the size.
+        assert_eq!(json, json!({ "$type": "fixedAmount", "amount": 1_000 }));
+        let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_random() {
+        use crate::serialization::JsonConvertible;
+        let original = DistributionFunction::Random { min: 10, max: 100 };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({ "$type": "random", "min": 10, "max": 100 }));
+        let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_stepwise() {
+        use crate::serialization::JsonConvertible;
+        // `Stepwise(BTreeMap<u64, TokenAmount>)` is a newtype-of-map variant.
+        // Internal tagging flattens it: the `"type"` discriminator sits
+        // alongside the map's numeric-string keys (u64 keys can never collide
+        // with `"type"`). Matches the convention's "no data wrapper" rule.
+        let original =
+            DistributionFunction::Stepwise(std::collections::BTreeMap::from([(0, 100), (100, 50)]));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json, json!({ "$type": "stepwise", "0": 100, "100": 50 }));
+        let recovered = DistributionFunction::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_stepwise() {
+        use crate::serialization::ValueConvertible;
+        let original =
+            DistributionFunction::Stepwise(std::collections::BTreeMap::from([(0, 100), (100, 50)]));
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({ "$type": "stepwise", "0": 100u64, "100": 50u64 })
+        );
+        let recovered = DistributionFunction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_fixed_amount() {
+        use crate::serialization::ValueConvertible;
+        let original = DistributionFunction::FixedAmount { amount: 1_000 };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({ "$type": "fixedAmount", "amount": 1_000u64 })
+        );
+        let recovered = DistributionFunction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_random() {
+        use crate::serialization::ValueConvertible;
+        let original = DistributionFunction::Random { min: 10, max: 100 };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({ "$type": "random", "min": 10u64, "max": 100u64 })
+        );
+        let recovered = DistributionFunction::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

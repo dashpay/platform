@@ -824,3 +824,614 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identifier::Identifier;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+    use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
+
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed;
+    use crate::util::object_size_info::DataContractResolvedInfo;
+
+    /// Helper: build a `ResolvedContestedDocumentVotePollDriveQuery` using
+    /// the DPNS "domain" document type's contested index (`parentNameAndLabel`).
+    fn build_resolved_query(
+        contract: &dpp::data_contract::DataContract,
+        result_type: ContestedDocumentVotePollDriveQueryResultType,
+        offset: Option<u16>,
+        limit: Option<u16>,
+        start_at: Option<([u8; 32], bool)>,
+        allow_include_locked_and_abstaining: bool,
+    ) -> ResolvedContestedDocumentVotePollDriveQuery<'_> {
+        // The DPNS "domain" document type has a contested index "parentNameAndLabel"
+        // with properties: normalizedParentDomainName, normalizedLabel
+        let document_type_name = "domain".to_string();
+        let index_name = "parentNameAndLabel".to_string();
+
+        let parent_domain_value = dpp::platform_value::Value::Text("dash".to_string());
+        let label_value = dpp::platform_value::Value::Text("test-name".to_string());
+
+        let index_values = vec![parent_domain_value, label_value];
+
+        let vote_poll = ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed {
+            contract: DataContractResolvedInfo::BorrowedDataContract(contract),
+            document_type_name,
+            index_name,
+            index_values,
+        };
+
+        ResolvedContestedDocumentVotePollDriveQuery {
+            vote_poll,
+            result_type,
+            offset,
+            limit,
+            start_at,
+            allow_include_locked_and_abstaining_vote_tally: allow_include_locked_and_abstaining,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedDocumentVotePollDriveQueryResultType helper methods
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn has_vote_tally_returns_correct_values() {
+        use ContestedDocumentVotePollDriveQueryResultType::*;
+        assert!(!Documents.has_vote_tally());
+        assert!(VoteTally.has_vote_tally());
+        assert!(DocumentsAndVoteTally.has_vote_tally());
+        assert!(!SingleDocumentByContender(Identifier::default()).has_vote_tally());
+    }
+
+    #[test]
+    fn has_documents_returns_correct_values() {
+        use ContestedDocumentVotePollDriveQueryResultType::*;
+        assert!(Documents.has_documents());
+        assert!(!VoteTally.has_documents());
+        assert!(DocumentsAndVoteTally.has_documents());
+        assert!(SingleDocumentByContender(Identifier::default()).has_documents());
+    }
+
+    // -----------------------------------------------------------------------
+    // TryFrom<i32> for ContestedDocumentVotePollDriveQueryResultType
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn try_from_i32_valid_values() {
+        let docs = ContestedDocumentVotePollDriveQueryResultType::try_from(0).unwrap();
+        assert_eq!(
+            docs,
+            ContestedDocumentVotePollDriveQueryResultType::Documents
+        );
+
+        let tally = ContestedDocumentVotePollDriveQueryResultType::try_from(1).unwrap();
+        assert_eq!(
+            tally,
+            ContestedDocumentVotePollDriveQueryResultType::VoteTally
+        );
+
+        let both = ContestedDocumentVotePollDriveQueryResultType::try_from(2).unwrap();
+        assert_eq!(
+            both,
+            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
+        );
+    }
+
+    #[test]
+    fn try_from_i32_value_3_returns_unsupported_error() {
+        let result = ContestedDocumentVotePollDriveQueryResultType::try_from(3);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, Error::Query(QuerySyntaxError::Unsupported(msg)) if msg.contains("SingleDocumentByContender"))
+        );
+    }
+
+    #[test]
+    fn try_from_i32_out_of_range_returns_unsupported_error() {
+        let result = ContestedDocumentVotePollDriveQueryResultType::try_from(99);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, Error::Query(QuerySyntaxError::Unsupported(msg)) if msg.contains("99"))
+        );
+
+        let result_neg = ContestedDocumentVotePollDriveQueryResultType::try_from(-1);
+        assert!(result_neg.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // TryFrom<ContestedDocumentVotePollDriveQueryExecutionResult>
+    //   for FinalizedContestedDocumentVotePollDriveQueryExecutionResult
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn finalized_try_from_success_with_complete_data() {
+        let id = Identifier::from([0xAA; 32]);
+        let contender = ContenderWithSerializedDocumentV0 {
+            identity_id: id,
+            serialized_document: Some(vec![1, 2, 3]),
+            vote_tally: Some(42),
+        };
+        let result = ContestedDocumentVotePollDriveQueryExecutionResult {
+            contenders: vec![contender.into()],
+            locked_vote_tally: Some(10),
+            abstaining_vote_tally: Some(5),
+            winner: None,
+            skipped: 0,
+        };
+
+        let finalized: FinalizedContestedDocumentVotePollDriveQueryExecutionResult =
+            result.try_into().expect("should convert");
+        assert_eq!(finalized.contenders.len(), 1);
+        assert_eq!(finalized.locked_vote_tally, 10);
+        assert_eq!(finalized.abstaining_vote_tally, 5);
+    }
+
+    #[test]
+    fn finalized_try_from_fails_without_locked_tally() {
+        let result = ContestedDocumentVotePollDriveQueryExecutionResult {
+            contenders: vec![],
+            locked_vote_tally: None,
+            abstaining_vote_tally: Some(5),
+            winner: None,
+            skipped: 0,
+        };
+
+        let conversion: Result<FinalizedContestedDocumentVotePollDriveQueryExecutionResult, _> =
+            result.try_into();
+        assert!(conversion.is_err());
+    }
+
+    #[test]
+    fn finalized_try_from_fails_without_abstaining_tally() {
+        let result = ContestedDocumentVotePollDriveQueryExecutionResult {
+            contenders: vec![],
+            locked_vote_tally: Some(10),
+            abstaining_vote_tally: None,
+            winner: None,
+            skipped: 0,
+        };
+
+        let conversion: Result<FinalizedContestedDocumentVotePollDriveQueryExecutionResult, _> =
+            result.try_into();
+        assert!(conversion.is_err());
+    }
+
+    #[test]
+    fn finalized_try_from_fails_when_contender_missing_document() {
+        let contender = ContenderWithSerializedDocumentV0 {
+            identity_id: Identifier::from([0xBB; 32]),
+            serialized_document: None, // missing
+            vote_tally: Some(10),
+        };
+        let result = ContestedDocumentVotePollDriveQueryExecutionResult {
+            contenders: vec![contender.into()],
+            locked_vote_tally: Some(10),
+            abstaining_vote_tally: Some(5),
+            winner: None,
+            skipped: 0,
+        };
+
+        let conversion: Result<FinalizedContestedDocumentVotePollDriveQueryExecutionResult, _> =
+            result.try_into();
+        assert!(conversion.is_err());
+    }
+
+    #[test]
+    fn finalized_try_from_fails_when_contender_missing_vote_tally() {
+        let contender = ContenderWithSerializedDocumentV0 {
+            identity_id: Identifier::from([0xCC; 32]),
+            serialized_document: Some(vec![1]),
+            vote_tally: None, // missing
+        };
+        let result = ContestedDocumentVotePollDriveQueryExecutionResult {
+            contenders: vec![contender.into()],
+            locked_vote_tally: Some(10),
+            abstaining_vote_tally: Some(5),
+            winner: None,
+            skipped: 0,
+        };
+
+        let conversion: Result<FinalizedContestedDocumentVotePollDriveQueryExecutionResult, _> =
+            result.try_into();
+        assert!(conversion.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // construct_path_query on ResolvedContestedDocumentVotePollDriveQuery
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn construct_path_query_documents_no_start_no_tally() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::Documents,
+            None,    // offset
+            Some(5), // limit
+            None,    // start_at
+            false,   // allow tally
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // Path should have multiple components (voting root + contested + active polls + contract + doc type + index key + index values)
+        assert!(!path_query.path.is_empty());
+
+        // Limit should pass through directly for Documents without tally
+        assert_eq!(path_query.query.limit, Some(5));
+        assert_eq!(path_query.query.offset, None);
+
+        // The query items should contain a RangeAfter (after RESOURCE_LOCK_VOTE_TREE_KEY)
+        let items = &path_query.query.query.items;
+        assert_eq!(
+            items.len(),
+            1,
+            "should have exactly 1 query item for Documents without tally"
+        );
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfter(..)),
+            "expected RangeAfter, got {:?}",
+            &items[0]
+        );
+
+        // Subquery path should point to document storage [vec![0]]
+        assert_eq!(
+            path_query.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![0]])
+        );
+    }
+
+    #[test]
+    fn construct_path_query_vote_tally_with_locked_and_abstaining() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            None,     // offset
+            Some(10), // limit
+            None,     // start_at
+            true,     // allow tally (enabled AND result_type has_vote_tally)
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // With allow_include_locked_and_abstaining + VoteTally, query is insert_all()
+        // and limit is original + 3
+        assert_eq!(path_query.query.limit, Some(13));
+
+        // Query should be RangeFull (insert_all)
+        let items = &path_query.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeFull(..)),
+            "expected RangeFull, got {:?}",
+            &items[0]
+        );
+
+        // Subquery path should point to vote tally [vec![1]]
+        assert_eq!(
+            path_query.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![1]])
+        );
+    }
+
+    #[test]
+    fn construct_path_query_documents_and_vote_tally_with_locked_and_abstaining() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            None,     // offset
+            Some(10), // limit
+            None,     // start_at
+            true,     // allow tally
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // With allow_include + DocumentsAndVoteTally: limit = limit * 2 + 3
+        assert_eq!(path_query.query.limit, Some(23));
+
+        // Subquery should be a query with keys [0, 1] (not a path)
+        assert!(path_query
+            .query
+            .query
+            .default_subquery_branch
+            .subquery
+            .is_some());
+        assert!(path_query
+            .query
+            .query
+            .default_subquery_branch
+            .subquery_path
+            .is_none());
+    }
+
+    #[test]
+    fn construct_path_query_vote_tally_without_locked_and_abstaining() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            None,     // offset
+            Some(10), // limit
+            None,     // start_at
+            false,    // allow_include_locked_and_abstaining = false
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // Without locked/abstaining: VoteTally inserts StoredInfo key + RangeAfter
+        // limit = limit + 1
+        assert_eq!(path_query.query.limit, Some(11));
+
+        // Should have 2 query items: Key(RESOURCE_STORED_INFO) and RangeAfter
+        let items = &path_query.query.query.items;
+        assert_eq!(items.len(), 2);
+        assert!(
+            matches!(&items[0], QueryItem::Key(k) if *k == RESOURCE_STORED_INFO_KEY_U8_32.to_vec())
+        );
+        assert!(matches!(&items[1], QueryItem::RangeAfter(..)));
+    }
+
+    #[test]
+    fn construct_path_query_with_start_at_included() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let start_key = [0x42u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::Documents,
+            None,                    // offset
+            Some(5),                 // limit
+            Some((start_key, true)), // start_at included
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // With start_at included, should be RangeFrom
+        let items = &path_query.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeFrom(r) if r.start == start_key.to_vec()),
+            "expected RangeFrom starting at start_key"
+        );
+        assert_eq!(path_query.query.limit, Some(5));
+    }
+
+    #[test]
+    fn construct_path_query_with_start_at_excluded() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let start_key = [0x42u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::Documents,
+            None,                     // offset
+            Some(5),                  // limit
+            Some((start_key, false)), // start_at NOT included
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // With start_at excluded, should be RangeAfter
+        let items = &path_query.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::RangeAfter(r) if r.start == start_key.to_vec()),
+            "expected RangeAfter starting at start_key"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_with_offset() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::Documents,
+            Some(3),  // offset
+            Some(10), // limit
+            None,     // start_at
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        assert_eq!(path_query.query.offset, Some(3));
+        assert_eq!(path_query.query.limit, Some(10));
+    }
+
+    #[test]
+    fn construct_path_query_no_limit() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::Documents,
+            None, // offset
+            None, // no limit
+            None, // start_at
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        assert_eq!(path_query.query.limit, None);
+    }
+
+    #[test]
+    fn construct_path_query_documents_and_vote_tally_with_start_at_doubles_limit() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let start_key = [0x50u8; 32];
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
+            None,                    // offset
+            Some(10),                // limit
+            Some((start_key, true)), // start_at included
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // With start_at + DocumentsAndVoteTally: limit = limit * 2
+        assert_eq!(path_query.query.limit, Some(20));
+    }
+
+    #[test]
+    fn construct_path_query_single_document_by_contender() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let contender_id = Identifier::from([0xDD; 32]);
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::SingleDocumentByContender(contender_id),
+            None,    // offset
+            Some(1), // limit
+            None,    // start_at
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // Should have a Key query item with the contender_id bytes
+        let items = &path_query.query.query.items;
+        assert_eq!(items.len(), 1);
+        assert!(
+            matches!(&items[0], QueryItem::Key(k) if k.as_slice() == contender_id.as_bytes()),
+            "expected Key with contender ID"
+        );
+        assert_eq!(path_query.query.limit, Some(1));
+
+        // Subquery path for SingleDocumentByContender should be [vec![0]] (document storage)
+        assert_eq!(
+            path_query.query.query.default_subquery_branch.subquery_path,
+            Some(vec![vec![0]])
+        );
+    }
+
+    #[test]
+    fn construct_path_query_has_conditional_subquery_for_stored_info() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::Documents,
+            None,
+            Some(5),
+            None,
+            false,
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        // Should always have a conditional subquery for RESOURCE_STORED_INFO_KEY
+        let conditional = path_query
+            .query
+            .query
+            .conditional_subquery_branches
+            .as_ref()
+            .expect("should have conditional branches");
+        let stored_info_key = QueryItem::Key(RESOURCE_STORED_INFO_KEY_U8_32.to_vec());
+        assert!(
+            conditional.contains_key(&stored_info_key),
+            "should have conditional subquery for stored info key"
+        );
+    }
+
+    #[test]
+    fn construct_path_query_with_locked_abstaining_has_conditional_subqueries() {
+        let platform_version = PlatformVersion::latest();
+        let dpns = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version);
+        let contract = dpns.data_contract_owned();
+
+        let query = build_resolved_query(
+            &contract,
+            ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            None,
+            Some(5),
+            None,
+            true, // allow locked and abstaining
+        );
+
+        let path_query = query
+            .construct_path_query(platform_version)
+            .expect("should build path query");
+
+        let conditional = path_query
+            .query
+            .query
+            .conditional_subquery_branches
+            .as_ref()
+            .expect("should have conditional branches");
+
+        // Should have conditional subqueries for lock and abstain keys
+        let lock_key = QueryItem::Key(RESOURCE_LOCK_VOTE_TREE_KEY_U8_32.to_vec());
+        let abstain_key = QueryItem::Key(RESOURCE_ABSTAIN_VOTE_TREE_KEY_U8_32.to_vec());
+        assert!(
+            conditional.contains_key(&lock_key),
+            "should have conditional subquery for lock key"
+        );
+        assert!(
+            conditional.contains_key(&abstain_key),
+            "should have conditional subquery for abstain key"
+        );
+    }
+}

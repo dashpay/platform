@@ -14,44 +14,21 @@ use dpp::version::drive_versions::DriveVersion;
 use grovedb::{Element, GroveDb, TransactionArg};
 
 impl Drive {
-    /// Version 0 implementation of the "insert element if the path key does not yet exist" operation.
-    /// If the element already exists, it returns the existing element.
+    /// Inserts an element at the given path/key if it does not already exist,
+    /// returning any pre-existing element.
     ///
-    /// This function checks whether an element exists at a specified path and key.
-    /// If the element exists, it returns the existing element. If not, it inserts the new element
-    /// into the database and returns `None`. This operation supports different types of path, key, and element configurations
-    /// and can be applied in either stateless or stateful contexts.
+    /// If the element already exists, the new element is NOT inserted and the
+    /// existing element is returned as `Ok(Some(existing))`. If no element
+    /// exists, the new element is inserted and `Ok(None)` is returned.
     ///
-    /// # Parameters
-    ///
-    /// * `path_key_element_info`: Information about the path, key, and element to insert.
-    ///   - Supports multiple configurations: direct references, owned elements, fixed size keys, or estimated sizes.
-    /// * `apply_type`: The application type of the operation, defining whether the operation is stateless or stateful.
-    /// * `transaction`: The transaction context for the operation, allowing it to be atomic within a batch.
-    /// * `drive_operations`: A mutable reference to the list of drive operations to which this operation will be appended.
-    /// * `drive_version`: The version of the drive being used, ensuring compatibility with the function version.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Some(Element))`: If the element already exists at the specified path and key, returning the existing element.
-    /// * `Ok(None)`: If the element was successfully inserted because it did not exist before.
-    /// * `Err(Error)`: Returns an error if:
-    ///   - The insertion operation is not supported in the current state.
-    ///   - The operation encounters any unexpected issues related to invalid configurations or unsupported features.
+    /// Supports `PathKeyRefElement`, `PathKeyElement`, `PathFixedSizeKeyRefElement`,
+    /// and `PathKeyElementSize` (stateless estimation) variants.
     ///
     /// # Errors
     ///
-    /// * `Error::Drive(DriveError::NotSupportedPrivate)`: If the function encounters unsupported configurations, such as document sizes for stateful inserts.
-    /// * `Error::Drive(DriveError::UnknownVersionMismatch)`: If the drive version is not supported for the operation.
-    ///
-    /// # PathKeyElementInfo Variants
-    ///
-    /// The function supports various `PathKeyElementInfo` variants:
-    /// * `PathKeyRefElement`: Reference to the path, key, and element.
-    /// * `PathKeyElement`: Owned path, key, and element.
-    /// * `PathFixedSizeKeyRefElement`: Reference to the path with a fixed-size key and element.
-    /// * `PathKeyElementSize`: Path and key with known element size, used for estimation.
-    /// * `PathKeyUnknownElementSize`: Unsupported in this version and returns an error.
+    /// - `NotSupportedPrivate`: if `PathKeyUnknownElementSize` is used.
+    /// - `CorruptedCodeExecution`: if the stateless estimated cost variant
+    ///   encounters an unexpected key info type.
     pub(super) fn batch_insert_if_not_exists_return_existing_element_v0<const N: usize>(
         &self,
         path_key_element_info: PathKeyElementInfo<N>,
@@ -162,5 +139,265 @@ impl Drive {
                 "document sizes in batch operations not supported",
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::util::grove_operations::{BatchInsertApplyType, QueryTarget};
+    use crate::util::object_size_info::PathKeyElementInfo;
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::batch::key_info::KeyInfo;
+    use grovedb::batch::KeyInfoPath;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    /// Insert new element via PathKeyRefElement - should return None (inserted).
+    #[test]
+    fn test_insert_if_not_exists_return_existing_new_ref() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyRefElement((
+            vec![b"root".to_vec()],
+            b"key",
+            Element::new_item(b"val".to_vec()),
+        ));
+
+        let result = drive
+            .batch_insert_if_not_exists_return_existing_element_v0(
+                info,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(result.is_none());
+    }
+
+    /// Insert when element exists - should return existing element via PathKeyRefElement.
+    #[test]
+    fn test_insert_if_not_exists_return_existing_ref_existing() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key",
+                Element::new_item(b"existing".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to insert element");
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyRefElement((
+            vec![b"root".to_vec()],
+            b"key",
+            Element::new_item(b"new".to_vec()),
+        ));
+
+        let result = drive
+            .batch_insert_if_not_exists_return_existing_element_v0(
+                info,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert_eq!(result, Some(Element::new_item(b"existing".to_vec())));
+    }
+
+    /// Test PathKeyElement variant - new insert.
+    #[test]
+    fn test_insert_if_not_exists_return_existing_path_key_element_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElement((
+            vec![b"root".to_vec()],
+            b"key".to_vec(),
+            Element::new_item(b"val".to_vec()),
+        ));
+
+        let result = drive
+            .batch_insert_if_not_exists_return_existing_element_v0(
+                info,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(result.is_none());
+    }
+
+    /// Test PathFixedSizeKeyRefElement variant - new insert.
+    #[test]
+    fn test_insert_if_not_exists_return_existing_fixed_key_new() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        let mut ops = vec![];
+        let path: [&[u8]; 1] = [b"root"];
+        let info = PathKeyElementInfo::PathFixedSizeKeyRefElement((
+            path,
+            b"key",
+            Element::new_item(b"val".to_vec()),
+        ));
+
+        let result = drive
+            .batch_insert_if_not_exists_return_existing_element_v0(
+                info,
+                BatchInsertApplyType::StatefulBatchInsert,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(result.is_none());
+    }
+
+    /// Test PathKeyElementSize stateless variant.
+    #[test]
+    fn test_insert_if_not_exists_return_existing_stateless_size() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElementSize((
+            KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]),
+            KeyInfo::KnownKey(b"key".to_vec()),
+            Element::new_item(b"val".to_vec()),
+        ));
+
+        let result = drive
+            .batch_insert_if_not_exists_return_existing_element_v0(
+                info,
+                BatchInsertApplyType::StatelessBatchInsert {
+                    in_tree_type: TreeType::NormalTree,
+                    target: QueryTarget::QueryTargetValue(100),
+                },
+                None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(result.is_none());
+        assert_eq!(ops.len(), 2); // cost + insert
+    }
+
+    /// Test PathKeyElementSize stateful variant returns error.
+    #[test]
+    fn test_insert_if_not_exists_return_existing_stateful_size_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyElementSize((
+            KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]),
+            KeyInfo::KnownKey(b"key".to_vec()),
+            Element::new_item(b"val".to_vec()),
+        ));
+
+        let result = drive.batch_insert_if_not_exists_return_existing_element_v0(
+            info,
+            BatchInsertApplyType::StatefulBatchInsert,
+            None,
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
+    }
+
+    /// Test PathKeyUnknownElementSize returns error.
+    #[test]
+    fn test_insert_if_not_exists_return_existing_unknown_size_error() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let info = PathKeyElementInfo::<0>::PathKeyUnknownElementSize((
+            KeyInfoPath::from_known_owned_path(vec![b"root".to_vec()]),
+            KeyInfo::KnownKey(b"key".to_vec()),
+            8,
+        ));
+
+        let result = drive.batch_insert_if_not_exists_return_existing_element_v0(
+            info,
+            BatchInsertApplyType::StatefulBatchInsert,
+            None,
+            &mut ops,
+            &pv.drive,
+        );
+
+        assert!(result.is_err());
     }
 }

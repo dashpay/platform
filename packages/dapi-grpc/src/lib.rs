@@ -6,17 +6,46 @@ pub mod core {
     pub mod v0 {
         // Note: only one of the features can be analyzed at a time
         #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
-        include!("core/server/org.dash.platform.dapi.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/server/org.dash.platform.dapi.v0.rs"
+        ));
 
         #[cfg(all(
             feature = "client",
             not(feature = "server"),
             not(target_arch = "wasm32")
         ))]
-        include!("core/client/org.dash.platform.dapi.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/client/org.dash.platform.dapi.v0.rs"
+        ));
 
         #[cfg(target_arch = "wasm32")]
-        include!("core/wasm/org.dash.platform.dapi.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/wasm/org.dash.platform.dapi.v0.rs"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Core proto — lets consumers
+        /// enumerate the served rpcs (e.g. to assert metrics allowlists).
+        #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/server/descriptor.bin"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Core proto — lets consumers
+        /// enumerate the served rpcs (e.g. to assert metrics allowlists).
+        #[cfg(all(
+            feature = "client",
+            not(feature = "server"),
+            not(target_arch = "wasm32")
+        ))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/client/descriptor.bin"
+        ));
     }
 }
 
@@ -24,17 +53,48 @@ pub mod core {
 pub mod platform {
     pub mod v0 {
         #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
-        include!("platform/server/org.dash.platform.dapi.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/server/org.dash.platform.dapi.v0.rs"
+        ));
 
         #[cfg(all(
             feature = "client",
             not(feature = "server"),
             not(target_arch = "wasm32")
         ))]
-        include!("platform/client/org.dash.platform.dapi.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/client/org.dash.platform.dapi.v0.rs"
+        ));
 
         #[cfg(target_arch = "wasm32")]
-        include!("platform/wasm/org.dash.platform.dapi.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/wasm/org.dash.platform.dapi.v0.rs"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Platform proto — lets
+        /// consumers enumerate the served rpcs (e.g. to assert metrics
+        /// allowlists).
+        #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/server/descriptor.bin"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Platform proto — lets
+        /// consumers enumerate the served rpcs (e.g. to assert metrics
+        /// allowlists).
+        #[cfg(all(
+            feature = "client",
+            not(feature = "server"),
+            not(target_arch = "wasm32")
+        ))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/client/descriptor.bin"
+        ));
     }
 
     #[cfg(feature = "tenderdash-proto")]
@@ -57,14 +117,20 @@ pub(crate) mod dapi {
 pub mod drive {
     pub mod v0 {
         #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
-        include!("drive/server/org.dash.platform.drive.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/drive/server/org.dash.platform.drive.v0.rs"
+        ));
 
         #[cfg(all(
             feature = "client",
             not(feature = "server"),
             not(target_arch = "wasm32")
         ))]
-        include!("drive/client/org.dash.platform.drive.v0.rs");
+        include!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/drive/client/org.dash.platform.drive.v0.rs"
+        ));
     }
 
     #[cfg(feature = "tenderdash-proto")]

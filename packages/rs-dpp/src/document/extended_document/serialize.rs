@@ -70,7 +70,7 @@ impl PlatformVersionEncode for ExtendedDocument {
 }
 
 impl PlatformVersionedDecode for ExtendedDocument {
-    fn platform_versioned_decode<D: bincode::de::Decoder>(
+    fn platform_versioned_decode<D: bincode::de::Decoder<Context = ()>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, bincode::error::DecodeError> {

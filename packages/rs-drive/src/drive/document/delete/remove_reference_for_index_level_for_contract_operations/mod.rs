@@ -39,7 +39,10 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
-        index_type: IndexLevelTypeInfo,
+        // Borrow rather than owned — see the matching insert-path
+        // wrapper for the rationale (IndexLevelTypeInfo dropped Copy
+        // when `summable: Option<String>` was added in v3).
+        index_type: &IndexLevelTypeInfo,
         any_fields_null: bool,
         all_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,

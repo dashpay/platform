@@ -1,13 +1,15 @@
 //! Main server process for RS-Drive-ABCI
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
+#[cfg(feature = "replay")]
+use drive_abci::replay::{self, ReplayArgs};
+use drive_abci::verify::verify_grovedb;
 
 use clap::{Parser, Subcommand};
 use dapi_grpc::platform::v0::get_status_request;
 use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::transport::Uri;
-use dpp::version::PlatformVersion;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::core::wait_for_core_to_sync::v0::wait_for_core_to_sync_v0;
 use drive_abci::logging::{LogBuilder, LogConfig, LogDestination, Loggers};
@@ -16,7 +18,6 @@ use drive_abci::platform_types::platform::Platform;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use drive_abci::{logging, server};
 use itertools::Itertools;
-use std::fs::remove_file;
 #[cfg(all(tokio_unstable, feature = "console"))]
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -63,6 +64,29 @@ enum Commands {
     /// Print current software version
     #[command()]
     Version,
+
+    /// Replay ABCI requests captured from drive-abci logs.
+    #[cfg(feature = "replay")]
+    #[command()]
+    Replay(ReplayArgs),
+
+    /// Produce a shielded-pool snapshot file at `--out` by running the full
+    /// genesis + seed cycle against a fresh temporary GroveDB, then dumping
+    /// the resulting subtree. Self-contained — does not need a running
+    /// drive-abci or a populated DB.
+    ///
+    /// Intended for the Dockerfile bake stage, where the snapshot file is
+    /// embedded into the runtime image and consumed at boot via
+    /// `DRIVE_SHIELDED_SNAPSHOT=<path>`. Requires the binary to be built
+    /// with `--features=shielded_test_data` — the command is compiled out
+    /// otherwise.
+    #[cfg(feature = "shielded_test_data")]
+    #[command()]
+    SnapshotBake {
+        /// Where to write the snapshot file. Parent directory must exist.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -143,6 +167,15 @@ impl Cli {
                 )
                 .expect("Failed to open platform");
 
+                // Pre-build the shielded verifying key on a background thread so
+                // the first shielded transaction doesn't pay the ~5-15s build cost.
+                std::thread::spawn(|| {
+                    use drive_abci::execution::validation::state_transition::shielded_common::warmup_shielded_verifying_key;
+                    tracing::info!("pre-building shielded verifying key in background");
+                    warmup_shielded_verifying_key();
+                    tracing::info!("shielded verifying key is ready");
+                });
+
                 server::start(runtime, Arc::new(platform), config, cancel);
 
                 tracing::info!("drive-abci server is stopped");
@@ -151,8 +184,15 @@ impl Cli {
             }
             Commands::Config => dump_config(&config)?,
             Commands::Status => runtime.block_on(check_status(&config))?,
-            Commands::Verify => verify_grovedb(&config.db_path, true)?,
+            Commands::Verify => drive_abci::verify::run(&config, true)?,
+            #[cfg(feature = "shielded_test_data")]
+            Commands::SnapshotBake { out } => snapshot_bake_main::run(&config, &out)?,
             Commands::Version => print_version(),
+            #[cfg(feature = "replay")]
+            Commands::Replay(args) => {
+                replay::run(config, args, cancel.clone()).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
         };
 
         Ok(())
@@ -161,6 +201,18 @@ impl Cli {
 
 fn main() -> Result<(), ExitCode> {
     let cli = Cli::parse();
+    // SnapshotBake runs against an in-container tempdir with no chain env —
+    // skip `load_config` (which would panic on missing GRPC_BIND_ADDRESS etc.)
+    // and use a sensible default. Other subcommands (Start / Status / etc.)
+    // still need the full config. The command only exists under
+    // `feature = "shielded_test_data"`, so the branch is compiled out otherwise.
+    #[cfg(feature = "shielded_test_data")]
+    let config = if matches!(cli.command, Commands::SnapshotBake { .. }) {
+        drive_abci::config::PlatformConfig::default_local()
+    } else {
+        load_config(&cli.config)
+    };
+    #[cfg(not(feature = "shielded_test_data"))]
     let config = load_config(&cli.config);
 
     // Start tokio runtime and thread listening for signals.
@@ -294,6 +346,197 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     Ok(())
 }
 
+/// Everything that exists only to support the `snapshot-bake` subcommand
+/// (used by the Dockerfile bake stage to pre-build a shielded-pool snapshot
+/// for the runtime image to apply at InitChain). Gated as a whole on the
+/// `shielded_test_data` Cargo feature so production builds carry none of it.
+#[cfg(feature = "shielded_test_data")]
+mod snapshot_bake_main {
+    use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+    use dpp::dashcore::{Block, BlockHash, Header, InstantLock, QuorumHash, Transaction, Txid};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{
+        AssetUnlockStatusResult, ExtendedQuorumListResult, GetChainTipsResult, MasternodeListDiff,
+        MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+    };
+    use dpp::dashcore_rpc::json::GetRawTransactionResult;
+    use dpp::dashcore_rpc::Error;
+    use dpp::prelude::TimestampMillis;
+    use dpp::version::PlatformVersion;
+    use drive_abci::config::PlatformConfig;
+    use drive_abci::platform_types::platform::Platform;
+    use drive_abci::rpc::core::CoreRPCLike;
+    use serde_json::Value;
+
+    /// Stub CoreRPCLike — Platform::open_with_client requires a CoreRPCLike,
+    /// but create_genesis_state never actually touches Core (no chain locks,
+    /// transactions, or quorum lookups happen during genesis). Every method
+    /// is `unreachable!()` so a bake that accidentally tries to talk to Core
+    /// surfaces as a loud panic.
+    pub(super) struct NoopCoreRPC;
+
+    impl CoreRPCLike for NoopCoreRPC {
+        fn get_block_hash(&self, _: u32) -> Result<BlockHash, Error> {
+            unreachable!()
+        }
+        fn get_block_header(&self, _: &BlockHash) -> Result<Header, Error> {
+            unreachable!()
+        }
+        fn get_block_time_from_height(&self, _: u32) -> Result<TimestampMillis, Error> {
+            unreachable!()
+        }
+        fn get_best_chain_lock(&self) -> Result<ChainLock, Error> {
+            unreachable!()
+        }
+        fn submit_chain_lock(&self, _: &ChainLock) -> Result<u32, Error> {
+            unreachable!()
+        }
+        fn get_transaction(&self, _: &Txid) -> Result<Transaction, Error> {
+            unreachable!()
+        }
+        fn get_asset_unlock_statuses(
+            &self,
+            _: &[u64],
+            _: u32,
+        ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
+            unreachable!()
+        }
+        fn get_transaction_extended_info(
+            &self,
+            _: &Txid,
+        ) -> Result<GetRawTransactionResult, Error> {
+            unreachable!()
+        }
+        fn get_fork_info(&self, _: &str) -> Result<Option<SoftforkInfo>, Error> {
+            unreachable!()
+        }
+        fn get_block(&self, _: &BlockHash) -> Result<Block, Error> {
+            unreachable!()
+        }
+        fn get_block_json(&self, _: &BlockHash) -> Result<Value, Error> {
+            unreachable!()
+        }
+        fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error> {
+            unreachable!()
+        }
+        fn get_quorum_listextended(
+            &self,
+            _: Option<u32>,
+        ) -> Result<ExtendedQuorumListResult, Error> {
+            unreachable!()
+        }
+        fn get_quorum_info(
+            &self,
+            _: QuorumType,
+            _: &QuorumHash,
+            _: Option<bool>,
+        ) -> Result<QuorumInfoResult, Error> {
+            unreachable!()
+        }
+        fn get_protx_diff_with_masternodes(
+            &self,
+            _: Option<u32>,
+            _: u32,
+        ) -> Result<MasternodeListDiff, Error> {
+            unreachable!()
+        }
+        fn verify_instant_lock(&self, _: &InstantLock, _: Option<u32>) -> Result<bool, Error> {
+            unreachable!()
+        }
+        fn verify_chain_lock(&self, _: &ChainLock) -> Result<bool, Error> {
+            unreachable!()
+        }
+        fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
+            unreachable!()
+        }
+        fn send_raw_transaction(&self, _: &[u8]) -> Result<Txid, Error> {
+            unreachable!()
+        }
+    }
+
+    /// Produce a shielded-pool snapshot at `out_path` from a fresh temporary
+    /// GroveDB. Runs the full `create_genesis_state` cycle (which, under
+    /// `feature = "shielded_test_data"`, invokes the shielded-pool seeder),
+    /// then dumps the resulting subtree. Self-contained — `_config` is
+    /// ignored (we use a tempdir + sensible defaults).
+    ///
+    /// Intended for the Dockerfile bake stage: produce a snapshot once during
+    /// image build, embed in the runtime image, load it at every InitChain
+    /// via `DRIVE_SHIELDED_SNAPSHOT`.
+    pub(super) fn run(_config: &PlatformConfig, out_path: &std::path::Path) -> Result<(), String> {
+        tracing::info!(
+            out = %out_path.display(),
+            "snapshot-bake: creating tempdir + bootstrapping fresh GroveDB",
+        );
+
+        let tempdir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
+
+        // Use the local (regtest) config — same network the bake target image
+        // will run on. We use NoopCoreRPC so we don't try to connect to a
+        // non-existent Core node during the in-container bake.
+        let mut platform_config = PlatformConfig::default_local();
+        platform_config.db_path = tempdir.path().to_path_buf();
+
+        let platform = Platform::<NoopCoreRPC>::open_with_client(
+            tempdir.path(),
+            Some(platform_config),
+            NoopCoreRPC,
+            None,
+        )
+        .map_err(|e| format!("open platform: {e}"))?;
+
+        let platform_version = PlatformVersion::latest();
+        let tx = platform.drive.grove.start_transaction();
+
+        // Defensively unset DRIVE_SHIELDED_SNAPSHOT before seeding. The seeder
+        // (`create_data_for_shielded_pool`) checks this env var first and, if
+        // set, APPLIES the referenced snapshot instead of running the seeder.
+        // A developer (or the Dockerfile env) with it exported would make
+        // `snapshot-bake` recursively re-dump an inherited snapshot rather
+        // than seeding a fresh one.
+        std::env::remove_var("DRIVE_SHIELDED_SNAPSHOT");
+
+        tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under feature = \"shielded_test_data\")");
+        platform
+            .create_genesis_state(
+                1, // genesis_core_height (placeholder for bake)
+                0, // genesis_time (placeholder for bake)
+                Some(&tx),
+                platform_version,
+            )
+            .map_err(|e| format!("create_genesis_state: {e}"))?;
+        tx.commit().map_err(|e| format!("commit: {e}"))?;
+
+        tracing::info!(
+            out = %out_path.display(),
+            "snapshot-bake: dumping shielded subtree to snapshot file",
+        );
+        let stats = drive_abci::shielded_snapshot::dump_shielded_subtree(
+            &platform.drive.grove,
+            None,
+            out_path,
+            platform_version,
+        )
+        .map_err(|e| format!("snapshot dump failed: {e}"))?;
+
+        tracing::info!(
+            out = %out_path.display(),
+            total_count = stats.total_count,
+            key_count = stats.key_count,
+            sst_bytes = stats.sst_bytes,
+            "snapshot-bake: wrote shielded-pool snapshot",
+        );
+        println!(
+            "wrote {} bytes ({} keys, total_count={}) to {}",
+            stats.sst_bytes,
+            stats.key_count,
+            stats.total_count,
+            out_path.display(),
+        );
+
+        Ok(())
+    }
+}
+
 fn list_enabled_features() -> Vec<&'static str> {
     vec![
         #[cfg(feature = "console")]
@@ -329,62 +572,6 @@ async fn check_status(config: &PlatformConfig) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|e| format!("can't request status: {e}"))
-}
-
-/// Verify GroveDB integrity.
-///
-/// This function will execute GroveDB integrity checks if one of the following conditions is met:
-/// - `force` is `true`
-/// - file `.fsck` in `config.db_path` exists
-///
-/// After successful verification, .fsck file is removed.
-fn verify_grovedb(db_path: &PathBuf, force: bool) -> Result<(), String> {
-    let fsck = PathBuf::from(db_path).join(".fsck");
-
-    if !force {
-        if !fsck.exists() {
-            return Ok(());
-        }
-        tracing::info!(
-            "found {} file, starting grovedb verification",
-            fsck.display()
-        );
-    }
-
-    let grovedb = drive::grovedb::GroveDb::open(db_path).expect("open grovedb");
-    //todo: get platform version instead of taking latest
-    let result = grovedb
-        .visualize_verify_grovedb(
-            None,
-            true,
-            true,
-            &PlatformVersion::latest().drive.grove_version,
-        )
-        .map_err(|e| e.to_string());
-
-    match result {
-        Ok(data) => {
-            for result in data {
-                tracing::warn!(?result, "grovedb verification")
-            }
-            tracing::info!("grovedb verification finished");
-
-            if fsck.exists() {
-                if let Err(e) = remove_file(&fsck) {
-                    tracing::warn!(
-                        error = ?e,
-                        path  =fsck.display().to_string(),
-                        "grovedb verification: cannot remove .fsck file: please remove it manually to avoid running verification again",
-                    );
-                }
-            }
-            Ok(())
-        }
-        Err(e) => {
-            tracing::error!("grovedb verification failed: {}", e);
-            Err(e)
-        }
-    }
 }
 
 /// Print current software version.

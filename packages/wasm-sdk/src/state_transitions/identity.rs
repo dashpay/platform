@@ -6,7 +6,7 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
-use crate::settings::extract_settings_from_options;
+use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
@@ -21,7 +21,10 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::asset_lock_proof::AssetLockProofWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::identity::IdentityPublicKeyWasm;
-use wasm_dpp2::utils::IntoWasm;
+use wasm_dpp2::utils::{
+    try_from_options_optional, try_from_options_optional_with, try_from_options_with, try_to_array,
+    try_to_u64, IntoWasm,
+};
 use wasm_dpp2::PrivateKeyWasm;
 use wasm_dpp2::{IdentityPublicKeyInCreationWasm, IdentitySignerWasm, IdentityWasm};
 
@@ -91,28 +94,27 @@ impl WasmSdk {
         &self,
         options: IdentityCreateOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
 
         // Extract asset lock proof from options
         let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
-            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
+            AssetLockProofWasm::try_from_options(&options, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
         let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
-            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
+            PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Put identity to platform and wait
         identity
-            .put_to_platform_and_wait_for_response(
+            .put_to_platform_and_wait_for_response_with_private_key(
                 self.inner_sdk(),
                 asset_lock_proof,
                 &asset_lock_private_key,
@@ -184,29 +186,27 @@ impl WasmSdk {
         &self,
         options: IdentityTopUpOptionsJs,
     ) -> Result<BigInt, WasmSdkError> {
-        let options_value: JsValue = options.into();
-
         // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
 
         // Extract asset lock proof from options
         let asset_lock_proof: dash_sdk::dpp::prelude::AssetLockProof =
-            AssetLockProofWasm::try_from_options(&options_value, "assetLockProof")?.into();
+            AssetLockProofWasm::try_from_options(&options, "assetLockProof")?.into();
 
         // Extract asset lock private key from options
         let asset_lock_private_key: dash_sdk::dpp::dashcore::PrivateKey =
-            PrivateKeyWasm::try_from_options(&options_value, "assetLockPrivateKey")?.into();
+            PrivateKeyWasm::try_from_options(&options, "assetLockPrivateKey")?.into();
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Top up the identity
         let new_balance = identity
-            .top_up_identity(
+            .top_up_identity_with_private_key(
                 self.inner_sdk(),
                 asset_lock_proof,
                 &asset_lock_private_key,
-                None,
                 settings,
             )
             .await
@@ -240,7 +240,7 @@ export interface IdentityCreditTransferOptions {
   /**
    * The amount of credits to transfer.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * Signer containing the private key for the sender's transfer key.
@@ -308,31 +308,27 @@ impl WasmSdk {
     ) -> Result<IdentityCreditTransferResultWasm, WasmSdkError> {
         use dash_sdk::platform::transition::transfer::TransferToIdentity;
 
-        let options_value: JsValue = options.into();
-
         // Extract identity from options
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
 
         // Extract recipient ID from options
         let recipient_id: Identifier =
-            IdentifierWasm::try_from_options(&options_value, "recipientId")?.into();
+            IdentifierWasm::try_from_options(&options, "recipientId")?.into();
 
         // Extract amount from options
-        let amount_js = js_sys::Reflect::get(&options_value, &JsValue::from_str("amount"))
-            .map_err(|_| WasmSdkError::invalid_argument("amount is required"))?;
-        let amount = wasm_dpp2::utils::try_to_u64(amount_js)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid amount: {}", e)))?;
+        let amount: u64 = try_from_options_with(&options, "amount", |v| try_to_u64(v, "amount"))?;
 
         // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
 
         // Extract optional signing key from options
         let signing_key: Option<IdentityPublicKey> =
-            IdentityPublicKeyWasm::try_from_optional_options(&options_value, "signingKey")?
+            IdentityPublicKeyWasm::try_from_optional_options(&options, "signingKey")?
                 .map(|k| k.into());
 
         // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
         // Transfer credits using rs-sdk method
         let (sender_balance, recipient_balance) = identity
@@ -372,7 +368,7 @@ export interface IdentityCreditWithdrawalOptions {
   /**
    * The amount of credits to withdraw.
    */
-  amount: bigint | number;
+  amount: bigint;
 
   /**
    * Optional Dash address to send the withdrawn credits to.
@@ -454,10 +450,17 @@ impl WasmSdk {
         use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
         use std::str::FromStr;
 
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let signing_key: Option<IdentityPublicKey> =
+            IdentityPublicKeyWasm::try_from_optional_options(&options, "signingKey")?
+                .map(|k| k.into());
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize simple fields using serde
-        let parsed = deserialize_withdrawal_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_withdrawal_options(options.into())?;
 
         // Validate amount
         if parsed.amount == 0 {
@@ -465,9 +468,6 @@ impl WasmSdk {
                 "Withdrawal amount must be greater than 0",
             ));
         }
-
-        // Extract identity from options (WASM type)
-        let identity: Identity = IdentityWasm::try_from_options(&options_value, "identity")?.into();
 
         // Parse address if provided
         let address = parsed
@@ -480,17 +480,6 @@ impl WasmSdk {
                     })
             })
             .transpose()?;
-
-        // Extract signer from options (WASM type)
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
-
-        // Extract optional signing key from options (WASM type)
-        let signing_key: Option<IdentityPublicKey> =
-            IdentityPublicKeyWasm::try_from_optional_options(&options_value, "signingKey")?
-                .map(|k| k.into());
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Perform the withdrawal
         let remaining_balance = identity
@@ -593,23 +582,50 @@ impl WasmSdk {
         &self,
         options: IdentityUpdateOptionsJs,
     ) -> Result<(), WasmSdkError> {
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let mut identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_array) =
+            try_from_options_optional_with(&options, "addPublicKeys", |v| {
+                try_to_array(v, "addPublicKeys")
+            })? {
+            let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
+            let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {
+                WasmSdkError::invalid_argument("Key ID overflow: identity has too many keys")
+            })?;
 
-        // Deserialize and validate options
-        let parsed = deserialize_identity_update_options(options_value.clone())?;
+            keys_array
+                .iter()
+                .map(|key_js| {
+                    let mut key_in_creation = key_js
+                        .to_wasm::<IdentityPublicKeyInCreationWasm>("IdentityPublicKeyInCreation")?
+                        .clone();
 
-        // Extract identity from options (WASM type)
-        let mut identity: Identity =
-            IdentityWasm::try_from_options(&options_value, "identity")?.into();
+                    // Set the key ID to the next available ID
+                    key_in_creation.set_key_id(next_key_id.into())?;
+
+                    // Convert to IdentityPublicKey using From impl
+                    let public_key: IdentityPublicKey = key_in_creation.into();
+                    next_key_id = next_key_id.checked_add(1).ok_or_else(|| {
+                        WasmSdkError::invalid_argument("Key ID overflow: too many keys to add")
+                    })?;
+                    Ok(public_key)
+                })
+                .collect::<Result<Vec<_>, WasmSdkError>>()?
+        } else {
+            Vec::new()
+        };
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_identity_update_options(options.into())?;
 
         // Increment the identity revision for the update transition
         // The platform expects the new revision (current + 1) in the state transition
         use dash_sdk::dpp::identity::accessors::IdentitySettersV0;
         let original_revision = identity.revision();
         identity.set_revision(original_revision + 1);
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Find all valid master keys (AUTHENTICATION + MASTER + supported key type)
         let master_keys: Vec<_> = identity
@@ -641,47 +657,8 @@ impl WasmSdk {
                 )
             })?;
 
-        // Parse keys to add from options
-        let add_public_keys_js =
-            js_sys::Reflect::get(&options_value, &JsValue::from_str("addPublicKeys"))
-                .unwrap_or(JsValue::UNDEFINED);
-
-        let keys_to_add: Vec<IdentityPublicKey> = if !add_public_keys_js.is_undefined()
-            && !add_public_keys_js.is_null()
-        {
-            let keys_array = js_sys::Array::from(&add_public_keys_js);
-            let max_existing_key_id = identity.public_keys().keys().max().copied().unwrap_or(0);
-            let mut next_key_id = max_existing_key_id.checked_add(1).ok_or_else(|| {
-                WasmSdkError::invalid_argument("Key ID overflow: identity has too many keys")
-            })?;
-
-            keys_array
-                .iter()
-                .map(|key_js| {
-                    let mut key_in_creation = key_js
-                        .to_wasm::<IdentityPublicKeyInCreationWasm>("IdentityPublicKeyInCreation")?
-                        .clone();
-
-                    // Set the key ID to the next available ID
-                    key_in_creation.set_key_id(next_key_id);
-
-                    // Convert to IdentityPublicKey using From impl
-                    let public_key: IdentityPublicKey = key_in_creation.into();
-                    next_key_id = next_key_id.checked_add(1).ok_or_else(|| {
-                        WasmSdkError::invalid_argument("Key ID overflow: too many keys to add")
-                    })?;
-                    Ok(public_key)
-                })
-                .collect::<Result<Vec<_>, WasmSdkError>>()?
-        } else {
-            Vec::new()
-        };
-
         // Get keys to disable
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Get identity nonce
         let identity_nonce = self
@@ -706,6 +683,7 @@ impl WasmSdk {
             self.inner_sdk().version(),
             None,
         )
+        .await
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
 
         // Broadcast the transition
@@ -809,28 +787,22 @@ impl WasmSdk {
         use wasm_dpp2::voting::resource_vote_choice::ResourceVoteChoiceWasm;
         use wasm_dpp2::voting::vote_poll::VotePollWasm;
 
-        let options_value: JsValue = options.into();
+        // Extract complex types first (borrows &options)
+        let vote_poll: dash_sdk::dpp::voting::vote_polls::VotePoll =
+            VotePollWasm::try_from_options(&options, "votePoll")?.into();
+        let resource_vote_choice: dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice =
+            ResourceVoteChoiceWasm::try_from_options(&options, "voteChoice")?.into();
+        let voting_public_key: IdentityPublicKey =
+            IdentityPublicKeyWasm::try_from_options(&options, "votingKey")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+        let settings =
+            try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
 
-        // Deserialize and validate options
-        let parsed = deserialize_masternode_vote_options(options_value.clone())?;
+        // Deserialize simple fields last (consumes options)
+        let parsed = deserialize_masternode_vote_options(options.into())?;
 
         // Convert ProTxHash
         let pro_tx_hash: Identifier = parsed.masternode_pro_tx_hash.into();
-
-        // Extract vote poll from options
-        let vote_poll: dash_sdk::dpp::voting::vote_polls::VotePoll =
-            VotePollWasm::try_from_options(&options_value, "votePoll")?.into();
-
-        // Extract vote choice from options
-        let resource_vote_choice: dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice =
-            ResourceVoteChoiceWasm::try_from_options(&options_value, "voteChoice")?.into();
-
-        // Extract voting key from options
-        let voting_public_key: IdentityPublicKey =
-            IdentityPublicKeyWasm::try_from_options(&options_value, "votingKey")?.into();
-
-        // Extract signer from options
-        let signer = IdentitySignerWasm::try_from_options(&options_value)?;
 
         // Create the resource vote
         use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
@@ -843,9 +815,6 @@ impl WasmSdk {
         // Create the vote
         use dash_sdk::dpp::voting::votes::Vote;
         let vote = Vote::ResourceVote(resource_vote);
-
-        // Extract settings from options
-        let settings = extract_settings_from_options(&options_value)?;
 
         // Submit the vote using PutVote trait
         use dash_sdk::platform::transition::vote::PutVote;

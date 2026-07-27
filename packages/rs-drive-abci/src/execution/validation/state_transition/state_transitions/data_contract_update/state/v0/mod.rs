@@ -844,6 +844,759 @@ mod tests {
             // We have tons of operations here so not sure if we want to assert all of them
             assert!(!execution_context.operations_slice().is_empty());
         }
+
+        #[test]
+        fn should_return_invalid_result_when_group_member_identity_does_not_exist() {
+            use dpp::data_contract::accessors::v1::DataContractV1Getters;
+            use dpp::data_contract::group::v0::GroupV0;
+            use dpp::data_contract::group::Group;
+            use dpp::identifier::Identifier;
+            use dpp::identity::accessors::IdentityGettersV0;
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+            use rand::prelude::StdRng;
+            use rand::SeedableRng;
+            use simple_signer::signer::SimpleSigner;
+            use std::collections::BTreeMap;
+
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create and register the contract owner identity
+            let mut signer = SimpleSigner::default();
+            let mut rng = StdRng::seed_from_u64(42);
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected key pair");
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+            let owner_identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(0, master_key.clone())]),
+                balance: 1_000_000_000,
+                revision: 0,
+            }
+            .into();
+
+            platform
+                .drive
+                .add_new_identity(
+                    owner_identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add identity");
+
+            // Create initial contract without groups
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            data_contract.set_owner_id(owner_identity.id());
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            // Update contract: add a group with a non-existent member identity
+            let non_existent_id = Identifier::from([99u8; 32]);
+            data_contract.set_version(2);
+            {
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [
+                            (owner_identity.id(), 1),
+                            (non_existent_id, 1), // does not exist
+                        ]
+                        .into(),
+                        required_power: 1,
+                    }),
+                );
+            }
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("expected validation to succeed");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::IdentityMemberOfGroupNotFoundError(_)
+                )]
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    _
+                ))
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_token_perpetual_distribution_recipient_not_found() {
+            use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+            use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+            use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+            use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+            use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+            use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+            use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+            use dpp::identifier::Identifier;
+            use std::collections::BTreeMap;
+
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create initial contract without tokens
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            // Update contract: add a token with perpetual distribution to a non-existent identity
+            data_contract.set_version(2);
+
+            let non_existent_id = Identifier::from([77u8; 32]);
+
+            let mut token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_cfg.set_base_supply(1_000);
+
+            token_cfg.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "coin".to_string(),
+                            plural_form: "coins".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            // Set perpetual distribution to a non-existent identity
+            token_cfg
+                .distribution_rules_mut()
+                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 200,
+                            function: DistributionFunction::FixedAmount { amount: 100 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::Identity(
+                            non_existent_id,
+                        ),
+                    },
+                )));
+
+            data_contract.add_token(0, token_cfg);
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("expected validation to succeed");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::IdentityInTokenConfigurationNotFoundError(_)
+                )]
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    _
+                ))
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_token_pre_programmed_distribution_recipient_not_found()
+        {
+            use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+            use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+            use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+            use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+            use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+            use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+            use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+            use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+            use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+            use dpp::identifier::Identifier;
+            use std::collections::BTreeMap;
+
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create initial contract without tokens
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            // Update contract: add token with pre-programmed distribution to non-existent identity
+            data_contract.set_version(2);
+
+            let non_existent_id = Identifier::from([88u8; 32]);
+
+            let mut token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_cfg.set_base_supply(1_000);
+
+            token_cfg.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "coin".to_string(),
+                            plural_form: "coins".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            // Set pre-programmed distribution with non-existent identity
+            let distributions = BTreeMap::from([(
+                1_000_000u64, // timestamp
+                BTreeMap::from([(non_existent_id, 500u64)]),
+            )]);
+
+            token_cfg
+                .distribution_rules_mut()
+                .set_pre_programmed_distribution(Some(TokenPreProgrammedDistribution::V0(
+                    TokenPreProgrammedDistributionV0 { distributions },
+                )));
+
+            data_contract.add_token(0, token_cfg);
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("expected validation to succeed");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::IdentityInTokenConfigurationNotFoundError(_)
+                )]
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    _
+                ))
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_minting_destination_identity_not_found() {
+            use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+            use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+            use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+            use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+            use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+            use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+            use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+            use dpp::identifier::Identifier;
+            use std::collections::BTreeMap;
+
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create initial contract without tokens
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            // Update contract: add token with minting destination set to non-existent identity
+            data_contract.set_version(2);
+
+            let non_existent_id = Identifier::from([66u8; 32]);
+
+            let mut token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_cfg.set_base_supply(1_000);
+
+            token_cfg.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "coin".to_string(),
+                            plural_form: "coins".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            // Set the new_tokens_destination_identity to a non-existent identity
+            token_cfg
+                .distribution_rules_mut()
+                .set_new_tokens_destination_identity(Some(non_existent_id));
+
+            data_contract.add_token(0, token_cfg);
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("expected validation to succeed");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::IdentityInTokenConfigurationNotFoundError(_)
+                )]
+            );
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    _
+                ))
+            );
+        }
+
+        #[test]
+        fn should_pass_when_group_members_and_token_identities_all_exist() {
+            use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+            use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+            use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+            use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+            use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
+            use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
+            use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+            use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+            use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_type::RewardDistributionType;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+            use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+            use dpp::data_contract::group::v0::GroupV0;
+            use dpp::data_contract::group::Group;
+            use dpp::identifier::Identifier;
+            use dpp::identity::accessors::IdentityGettersV0;
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+            use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+            use rand::prelude::StdRng;
+            use rand::SeedableRng;
+            use simple_signer::signer::SimpleSigner;
+            use std::collections::BTreeMap;
+
+            let platform_version = PlatformVersion::latest();
+            let identity_contract_nonce = IdentityNonce::default();
+
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create owner identity with proper master key
+            let mut rng = StdRng::seed_from_u64(42);
+
+            let (owner_master_key, _) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected key pair");
+
+            let owner_id = Identifier::random_with_rng(&mut rng);
+            let owner_identity: Identity = IdentityV0 {
+                id: owner_id,
+                public_keys: BTreeMap::from([(0, owner_master_key)]),
+                balance: 1_000_000_000,
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    owner_identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add identity");
+
+            // Create a second identity (group member + distribution recipient)
+            let (member_master_key, _) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected key pair");
+
+            let member_id = Identifier::random_with_rng(&mut rng);
+            let member_identity: Identity = IdentityV0 {
+                id: member_id,
+                public_keys: BTreeMap::from([(0, member_master_key)]),
+                balance: 500_000_000,
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    member_identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add identity");
+
+            // Create initial contract
+            let mut data_contract = get_data_contract_fixture(
+                None,
+                identity_contract_nonce,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+
+            data_contract.set_owner_id(owner_id);
+
+            platform
+                .drive
+                .apply_contract(
+                    &data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .expect("failed to apply contract");
+
+            // Update: add group + token with perpetual distribution to existing identity
+            data_contract.set_version(2);
+            {
+                let groups = data_contract.groups_mut().expect("expected groups");
+                groups.insert(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(owner_id, 1), (member_id, 1)].into(),
+                        required_power: 1,
+                    }),
+                );
+            }
+
+            let mut token_cfg =
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+            token_cfg.set_base_supply(1_000);
+            token_cfg.set_conventions(TokenConfigurationConvention::V0(
+                TokenConfigurationConventionV0 {
+                    localizations: BTreeMap::from([(
+                        "en".to_string(),
+                        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+                            should_capitalize: true,
+                            singular_form: "coin".to_string(),
+                            plural_form: "coins".to_string(),
+                        }),
+                    )]),
+                    decimals: 8,
+                },
+            ));
+
+            // Set perpetual distribution to existing identity
+            token_cfg
+                .distribution_rules_mut()
+                .set_perpetual_distribution(Some(TokenPerpetualDistribution::V0(
+                    TokenPerpetualDistributionV0 {
+                        distribution_type: RewardDistributionType::BlockBasedDistribution {
+                            interval: 200,
+                            function: DistributionFunction::FixedAmount { amount: 10 },
+                        },
+                        distribution_recipient: TokenDistributionRecipient::Identity(member_id),
+                    },
+                )));
+
+            // Set minting destination to existing identity
+            token_cfg
+                .distribution_rules_mut()
+                .set_new_tokens_destination_identity(Some(owner_id));
+
+            data_contract.add_token(0, token_cfg);
+
+            let data_contract_id = data_contract.id();
+
+            let data_contract_for_serialization = data_contract
+                .try_into_platform_versioned(platform_version)
+                .expect("failed to convert data contract");
+
+            let transition: DataContractUpdateTransition = DataContractUpdateTransitionV0 {
+                identity_contract_nonce,
+                data_contract: data_contract_for_serialization,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("failed to create execution context");
+
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = transition
+                .validate_state_v0::<MockCoreRPCLike>(
+                    &platform_ref,
+                    &BlockInfo::default(),
+                    ValidationMode::Validator,
+                    &mut execution_context,
+                    None,
+                    platform_version,
+                )
+                .expect("expected validation to succeed");
+
+            assert_matches!(result.errors.as_slice(), []);
+
+            assert_matches!(
+                result.data,
+                Some(StateTransitionAction::DataContractUpdateAction(action))
+                if action.data_contract_ref().id() == data_contract_id
+            );
+        }
     }
 
     mod transform_into_action_v0 {

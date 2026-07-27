@@ -18,6 +18,17 @@ use crate::{
     RequestSettings,
 };
 
+/// Intended minimum for the Envoy-advertised `RateLimit-Reset` ban duration.
+/// Note: the `> 0` filter applied before the clamp already rejects 0 → `None`,
+/// so this constant never actively clamps the lower bound — it documents intent
+/// (the smallest meaningful reset is 1 s) and acts as the `.clamp(MIN, MAX)`
+/// lower argument for clarity.
+pub(crate) const MIN_RATE_LIMIT_BAN_SECS: u64 = 1;
+/// Ceiling for the Envoy-advertised `RateLimit-Reset` ban duration.
+/// Prevents a misconfigured or hostile header from parking a healthy node for
+/// an unreasonably long time.
+pub(crate) const MAX_RATE_LIMIT_BAN_SECS: u64 = 600;
+
 /// General DAPI request error type.
 #[derive(Debug, thiserror::Error, Clone)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
@@ -66,6 +77,13 @@ impl CanRetry for DapiClientError {
             self,
             DapiClientError::NoAvailableAddresses | DapiClientError::NoAvailableAddressesToRetry(_)
         )
+    }
+
+    fn rate_limit_ban_duration(&self) -> Option<Duration> {
+        match self {
+            DapiClientError::Transport(te) => te.rate_limit_ban_duration(),
+            _ => None,
+        }
     }
 }
 
@@ -133,6 +151,28 @@ impl DapiClient {
     pub fn address_list(&self) -> &AddressList {
         &self.address_list
     }
+
+    /// Get all non-banned addresses from the address list.
+    ///
+    /// Returns a vector of addresses that are not currently banned or whose ban period has expired.
+    /// This is useful for diagnostics, monitoring, or when you need to know which DAPI nodes are
+    /// currently available for making requests.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use rs_dapi_client::{DapiClient, AddressList, RequestSettings};
+    ///
+    /// let address_list = "http://127.0.0.1:3000,http://127.0.0.1:3001".parse().unwrap();
+    /// let client = DapiClient::new(address_list, RequestSettings::default());
+    ///
+    /// // Get all currently available (non-banned) addresses
+    /// let live_addresses = client.get_live_addresses();
+    /// println!("Available DAPI nodes: {}", live_addresses.len());
+    /// ```
+    pub fn get_live_addresses(&self) -> Vec<crate::Address> {
+        self.address_list.get_live_addresses()
+    }
 }
 
 /// Ban address in case of retryable error or unban it
@@ -165,7 +205,25 @@ pub fn update_address_ban_status<R, E>(
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
                     if applied_settings.ban_failed_address {
-                        if address_list.ban(address) {
+                        let reason = Some(error.to_string());
+                        let period_opt = error.rate_limit_ban_duration();
+                        let banned = match period_opt {
+                            // Envoy advertised a reset window: ban for exactly that period.
+                            // ban_count is set to max(ban_count,1) so diagnostics see the node
+                            // as banned, but the exponential ladder is not inflated.
+                            Some(period) => address_list.ban_for(address, period, reason),
+                            // No rate-limit hint: normal exponential health-ban ladder.
+                            None => address_list.ban_with_reason(address, reason),
+                        };
+                        if banned {
+                            if let Some(period) = period_opt {
+                                tracing::debug!(
+                                    ?address,
+                                    ban_secs = period.as_secs(),
+                                    "rate-limited (ResourceExhausted): banning {address} for {}s (from RateLimit-Reset header)",
+                                    period.as_secs()
+                                );
+                            }
                             tracing::warn!(
                                 ?address,
                                 ?error,
@@ -196,6 +254,457 @@ pub fn update_address_ban_status<R, E>(
             }
         }
     };
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+
+    fn mock_address() -> crate::Address {
+        "http://127.0.0.1:3000".parse().expect("valid address")
+    }
+
+    fn make_applied_settings(ban: bool) -> AppliedRequestSettings {
+        AppliedRequestSettings {
+            connect_timeout: None,
+            timeout: Duration::from_secs(10),
+            retries: 5,
+            ban_failed_address: ban,
+            max_decoding_message_size: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            ca_certificate: None,
+        }
+    }
+
+    #[test]
+    fn test_can_retry_no_available_addresses() {
+        let err = DapiClientError::NoAvailableAddresses;
+        assert!(!err.can_retry());
+    }
+
+    #[test]
+    fn test_can_retry_no_available_addresses_to_retry() {
+        let transport_err = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("gone"));
+        let err = DapiClientError::NoAvailableAddressesToRetry(Box::new(transport_err));
+        assert!(!err.can_retry());
+    }
+
+    #[test]
+    fn test_can_retry_transport_retryable() {
+        let transport_err =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        let err = DapiClientError::Transport(transport_err);
+        assert!(err.can_retry());
+    }
+
+    #[test]
+    fn test_can_retry_transport_non_retryable() {
+        let transport_err = TransportError::Grpc(dapi_grpc::tonic::Status::not_found("permanent"));
+        let err = DapiClientError::Transport(transport_err);
+        assert!(!err.can_retry());
+    }
+
+    #[test]
+    fn test_can_retry_address_list_error() {
+        let err =
+            DapiClientError::AddressList(AddressListError::InvalidAddressUri("bad".to_string()));
+        assert!(!err.can_retry());
+    }
+
+    /// `rate_limit_ban_duration` returns `Some` only when the `ratelimit-reset`
+    /// header is present and positive on a `ResourceExhausted` response, and
+    /// the value is clamped to `[MIN_RATE_LIMIT_BAN_SECS, MAX_RATE_LIMIT_BAN_SECS]`.
+    #[test]
+    fn test_rate_limit_ban_duration_header_parse() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
+
+        // Helper: build a ResourceExhausted status with a ratelimit-reset header.
+        let make_rl_status = |header: Option<&str>| -> dapi_grpc::tonic::Status {
+            let mut status = dapi_grpc::tonic::Status::resource_exhausted("429");
+            if let Some(v) = header {
+                status
+                    .metadata_mut()
+                    .insert("ratelimit-reset", MetadataValue::try_from(v).unwrap());
+            }
+            status
+        };
+
+        // Normal header value: returned clamped.
+        let s = make_rl_status(Some("45"));
+        let dur = TransportError::Grpc(s).rate_limit_ban_duration();
+        assert_eq!(dur, Some(Duration::from_secs(45)));
+
+        // Value above MAX → clamped to MAX.
+        let s = make_rl_status(Some("9999"));
+        let dur = TransportError::Grpc(s).rate_limit_ban_duration();
+        assert_eq!(dur, Some(Duration::from_secs(MAX_RATE_LIMIT_BAN_SECS)));
+
+        // Clamp edge: exactly MIN (1) → 1 s (passes through unchanged).
+        let s = make_rl_status(Some("1"));
+        assert_eq!(
+            TransportError::Grpc(s).rate_limit_ban_duration(),
+            Some(Duration::from_secs(1))
+        );
+
+        // Clamp edge: exactly MAX (600) → 600 s (not clamped).
+        let s = make_rl_status(Some("600"));
+        assert_eq!(
+            TransportError::Grpc(s).rate_limit_ban_duration(),
+            Some(Duration::from_secs(600))
+        );
+
+        // One above MAX (601) → clamped to 600 s.
+        let s = make_rl_status(Some("601"));
+        assert_eq!(
+            TransportError::Grpc(s).rate_limit_ban_duration(),
+            Some(Duration::from_secs(600))
+        );
+
+        // Value below MIN (0) → filtered to None before clamp.
+        let s = make_rl_status(Some("0"));
+        assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
+
+        // Non-numeric → None.
+        let s = make_rl_status(Some("garbage"));
+        assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
+
+        // Header absent → None.
+        let s = make_rl_status(None);
+        assert!(TransportError::Grpc(s).rate_limit_ban_duration().is_none());
+
+        // Non-ResourceExhausted code → None regardless of header.
+        let mut unavail = dapi_grpc::tonic::Status::unavailable("down");
+        unavail
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("30").unwrap());
+        assert!(TransportError::Grpc(unavail)
+            .rate_limit_ban_duration()
+            .is_none());
+    }
+
+    /// When `ResourceExhausted` carries a valid `ratelimit-reset` header,
+    /// `update_address_ban_status` calls `ban_for` (exact period, no ladder
+    /// inflation); when the header is absent it falls through to `ban_with_reason`
+    /// (normal exponential ladder).
+    #[test]
+    fn test_update_address_ban_status_rate_limit_ban_path() {
+        use dapi_grpc::tonic::metadata::MetadataValue;
+
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        // Build a ResourceExhausted status with ratelimit-reset: 45.
+        let mut status = dapi_grpc::tonic::Status::resource_exhausted("429");
+        status
+            .metadata_mut()
+            .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
+
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(TransportError::Grpc(status)),
+            retries: 0,
+            address: Some(addr.clone()),
+        });
+        let before = chrono::Utc::now();
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+        let after = chrono::Utc::now();
+
+        let info = address_list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+
+        // Node is banned for ~45 s.
+        assert!(entry.banned, "rate-limited node must be banned");
+        assert_eq!(entry.ban_count, 1, "ban_count must be 1 after ban_for");
+        let until = entry.banned_until.expect("banned_until set");
+        let lo = (until - before).num_milliseconds() as f64 / 1000.0;
+        let hi = (until - after).num_milliseconds() as f64 / 1000.0;
+        assert!(
+            lo >= 44.9 && hi <= 45.1,
+            "ban window must be ~45 s, got lo={lo} hi={hi}"
+        );
+    }
+
+    /// When `ResourceExhausted` has NO `ratelimit-reset` header,
+    /// `update_address_ban_status` must fall back to the normal `ban_with_reason`
+    /// ladder (not produce a zero-second or panic ban).
+    #[test]
+    fn test_update_address_ban_status_rate_limit_no_header_uses_ladder() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(TransportError::Grpc(
+                dapi_grpc::tonic::Status::resource_exhausted("429"),
+            )),
+            retries: 0,
+            address: Some(addr.clone()),
+        });
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+
+        // The ban ladder is invoked: first ban → ban_count = 1, window = 60 s.
+        let info = address_list.ban_info();
+        let entry = info.iter().find(|i| i.uri == addr.to_string()).unwrap();
+        assert!(
+            entry.banned,
+            "node must be banned on ResourceExhausted without header"
+        );
+        assert_eq!(
+            entry.ban_count, 1,
+            "first health-ladder ban → ban_count = 1"
+        );
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn test_can_retry_mock_error() {
+        let err = DapiClientError::Mock(crate::mock::MockError::MockExpectationNotFound(
+            "test".to_string(),
+        ));
+        assert!(!err.can_retry());
+    }
+
+    #[test]
+    fn test_is_no_available_addresses() {
+        assert!(DapiClientError::NoAvailableAddresses.is_no_available_addresses());
+
+        let transport_err = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("gone"));
+        assert!(
+            DapiClientError::NoAvailableAddressesToRetry(Box::new(transport_err))
+                .is_no_available_addresses()
+        );
+
+        let transport_err =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        assert!(!DapiClientError::Transport(transport_err).is_no_available_addresses());
+    }
+
+    #[test]
+    fn test_update_address_ban_status_success_unbans() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+        address_list.ban(&addr);
+        assert!(address_list.is_banned(&addr));
+
+        let result: ExecutionResult<i32, DapiClientError> = Ok(ExecutionResponse {
+            inner: 42,
+            retries: 0,
+            address: addr.clone(),
+        });
+
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+
+        assert!(!address_list.is_banned(&addr));
+    }
+
+    #[test]
+    fn test_update_address_ban_status_success_on_unbanned_is_noop() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let result: ExecutionResult<i32, DapiClientError> = Ok(ExecutionResponse {
+            inner: 42,
+            retries: 0,
+            address: addr.clone(),
+        });
+
+        // Should not panic or change anything
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+        assert!(!address_list.is_banned(&addr));
+    }
+
+    #[test]
+    fn test_update_address_ban_status_retryable_error_bans_address() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let transport_err =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(transport_err),
+            retries: 0,
+            address: Some(addr.clone()),
+        });
+
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+        assert!(address_list.is_banned(&addr));
+
+        // The ban reason must be propagated from the error via this call path,
+        // not just the ban itself.
+        let info = address_list.ban_info();
+        assert_eq!(info.len(), 1);
+        let reason = info[0].reason.as_deref().expect("ban reason recorded");
+        assert!(
+            reason.contains("temporary"),
+            "ban reason should carry the underlying error, got: {reason}"
+        );
+    }
+
+    #[test]
+    fn test_update_address_ban_status_retryable_error_ban_disabled() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let transport_err =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(transport_err),
+            retries: 0,
+            address: Some(addr.clone()),
+        });
+
+        update_address_ban_status(&address_list, &result, &make_applied_settings(false));
+        // With ban disabled, the address should NOT be banned
+        assert!(!address_list.is_banned(&addr));
+    }
+
+    #[test]
+    fn test_update_address_ban_status_non_retryable_error_does_not_ban() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::NoAvailableAddresses,
+            retries: 0,
+            address: Some(addr.clone()),
+        });
+
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+        assert!(!address_list.is_banned(&addr));
+    }
+
+    #[test]
+    fn test_update_address_ban_status_retryable_error_no_address() {
+        let address_list = AddressList::new();
+
+        let transport_err =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(transport_err),
+            retries: 0,
+            address: None,
+        });
+
+        // Should not panic when address is None
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+    }
+
+    #[test]
+    fn test_update_address_ban_status_unban_removed_address() {
+        let mut address_list = AddressList::new();
+        let addr = mock_address();
+        address_list.add(addr.clone());
+        address_list.ban(&addr);
+
+        // Remove the address
+        address_list.remove(&addr);
+
+        let result: ExecutionResult<i32, DapiClientError> = Ok(ExecutionResponse {
+            inner: 42,
+            retries: 0,
+            address: addr.clone(),
+        });
+
+        // Should not panic when trying to unban a removed address
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+    }
+
+    #[test]
+    fn test_update_address_ban_status_ban_removed_address() {
+        let address_list = AddressList::new();
+        let addr = mock_address();
+
+        let transport_err =
+            TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
+        let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            inner: DapiClientError::Transport(transport_err),
+            retries: 0,
+            address: Some(addr),
+        });
+
+        // Should not panic when trying to ban an address not in the list
+        update_address_ban_status(&address_list, &result, &make_applied_settings(true));
+    }
+
+    #[test]
+    fn test_dapi_client_new() {
+        let address_list: AddressList = "http://127.0.0.1:3000,http://127.0.0.1:3001"
+            .parse()
+            .unwrap();
+        let client = DapiClient::new(address_list, RequestSettings::default());
+        assert_eq!(client.address_list().len(), 2);
+    }
+
+    #[test]
+    fn test_dapi_client_get_live_addresses() {
+        let address_list: AddressList = "http://127.0.0.1:3000,http://127.0.0.1:3001"
+            .parse()
+            .unwrap();
+        let client = DapiClient::new(address_list, RequestSettings::default());
+        let live = client.get_live_addresses();
+        assert_eq!(live.len(), 2);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_dapi_client_with_ca_certificate() {
+        let address_list: AddressList = "http://127.0.0.1:3000".parse().unwrap();
+        let client = DapiClient::new(address_list, RequestSettings::default());
+        let cert = dapi_grpc::tonic::transport::Certificate::from_pem("fake-pem-data");
+        let client = client.with_ca_certificate(cert);
+        assert!(client.ca_certificate.is_some());
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn test_dapi_client_error_mock_serialize_deserialize() {
+        use dapi_grpc::mock::Mockable;
+
+        let err = DapiClientError::NoAvailableAddresses;
+        let serialized = err.mock_serialize().expect("should serialize");
+        let deserialized =
+            DapiClientError::mock_deserialize(&serialized).expect("should deserialize");
+        assert!(matches!(
+            deserialized,
+            DapiClientError::NoAvailableAddresses
+        ));
+    }
+
+    #[cfg(feature = "mocks")]
+    #[test]
+    fn test_dapi_client_error_transport_mock_roundtrip() {
+        use dapi_grpc::mock::Mockable;
+
+        let transport_err = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("test"));
+        let err = DapiClientError::Transport(transport_err);
+        let serialized = err.mock_serialize().expect("should serialize");
+        let deserialized =
+            DapiClientError::mock_deserialize(&serialized).expect("should deserialize");
+        assert!(matches!(deserialized, DapiClientError::Transport(_)));
+    }
+
+    #[test]
+    fn test_dapi_client_error_display() {
+        let err = DapiClientError::NoAvailableAddresses;
+        let display = format!("{}", err);
+        assert!(display.contains("no available addresses"));
+
+        let transport_err = TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("gone"));
+        let err = DapiClientError::NoAvailableAddressesToRetry(Box::new(transport_err));
+        let display = format!("{}", err);
+        assert!(display.contains("no available addresses to retry"));
+
+        let err =
+            DapiClientError::AddressList(AddressListError::InvalidAddressUri("bad".to_string()));
+        let display = format!("{}", err);
+        assert!(display.contains("address list error"));
+    }
 }
 
 #[async_trait]
@@ -256,6 +765,15 @@ impl DapiRequestExecutor for DapiClient {
                     });
                 };
 
+                // Rec 3 — explicit trace event so the resolved DAPI endpoint
+                // appears in flat plain-text log output (not just the span context).
+                tracing::trace!(
+                    target: "dapi_client::dispatch",
+                    ?address,
+                    method = request.method_name(),
+                    request_type = request.request_name(),
+                    "dispatching request to DAPI endpoint"
+                );
                 tracing::trace!(
                     ?request,
                     "calling {} with {} request",

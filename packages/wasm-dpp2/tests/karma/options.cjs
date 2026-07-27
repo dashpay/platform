@@ -1,4 +1,4 @@
-/* eslint-disable import/no-extraneous-dependencies */
+/* eslint-disable import-x/no-extraneous-dependencies */
 const webpack = require('webpack');
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
@@ -12,6 +12,21 @@ module.exports = {
   webpack: {
     mode: 'development',
     devtool: 'eval',
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true,
+              configFile: require.resolve('../tsconfig.json'),
+            },
+          },
+          exclude: /node_modules/,
+        },
+      ],
+    },
     plugins: [
       new webpack.ProvidePlugin({
         Buffer: [require.resolve('buffer/'), 'Buffer'],
@@ -19,7 +34,7 @@ module.exports = {
       }),
     ],
     resolve: {
-      extensions: ['.mjs', '.js'],
+      extensions: ['.ts', '.mjs', '.js'],
       fallback: {
         fs: false,
         path: require.resolve('path-browserify'),

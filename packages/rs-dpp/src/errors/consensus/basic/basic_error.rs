@@ -55,7 +55,8 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
-    IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+    IdentityAssetLockTransactionTooManyInputsError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
@@ -77,7 +78,10 @@ use crate::consensus::basic::state_transition::{
     InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
+    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
+    ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
+    ShieldedInvalidDenominationError, ShieldedInvalidValueBalanceError, ShieldedNoActionsError,
+    ShieldedTooManyActionsError, ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError,
     StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
     TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
     WithdrawalBelowMinAmountError,
@@ -100,7 +104,8 @@ use crate::consensus::basic::token::{
     InvalidTokenDistributionTimeIntervalNotMinuteAlignedError,
     InvalidTokenDistributionTimeIntervalTooShortError, InvalidTokenIdError,
     InvalidTokenNoteTooBigError, InvalidTokenPositionError, MissingDefaultLocalizationError,
-    TokenNoteOnlyAllowedWhenProposerError, TokenTransferToOurselfError,
+    TokenNoteOnlyAllowedWhenProposerError, TokenPricingScheduleEmptyError,
+    TokenTransferToOurselfError,
 };
 use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
@@ -657,6 +662,40 @@ pub enum BasicError {
 
     #[error(transparent)]
     OutputAddressAlsoInputError(OutputAddressAlsoInputError),
+
+    #[error(transparent)]
+    ShieldedNoActionsError(ShieldedNoActionsError),
+
+    #[error(transparent)]
+    ShieldedTooManyActionsError(ShieldedTooManyActionsError),
+
+    #[error(transparent)]
+    ShieldedEmptyProofError(ShieldedEmptyProofError),
+
+    #[error(transparent)]
+    ShieldedZeroAnchorError(ShieldedZeroAnchorError),
+
+    #[error(transparent)]
+    ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
+
+    #[error(transparent)]
+    ShieldedEncryptedNoteSizeMismatchError(ShieldedEncryptedNoteSizeMismatchError),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionTooManyInputsError(IdentityAssetLockTransactionTooManyInputsError),
+
+    // NOTE: `BasicError` is bincode-encoded positionally (no explicit discriminants), so new
+    // variants MUST be appended at the tail — inserting mid-enum would shift the wire discriminants
+    // of every following variant and mis-decode previously-encoded errors. The error-code integer
+    // (codes.rs) is independent of variant order.
+    #[error(transparent)]
+    ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
+
+    #[error(transparent)]
+    ShieldedInvalidDenominationError(ShieldedInvalidDenominationError),
+
+    #[error(transparent)]
+    TokenPricingScheduleEmptyError(TokenPricingScheduleEmptyError),
 }
 
 impl From<BasicError> for ConsensusError {

@@ -82,6 +82,16 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
+                .map(|info| info.range_countable)
+                .unwrap_or(false);
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
+
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -119,7 +129,7 @@ impl Drive {
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: property_name_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
@@ -148,12 +158,26 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+            // The recursive dispatcher takes `parent_value_tree_type:
+            // TreeType` (so v1's cost-estimation can distinguish sum-
+            // bearing parents from `NormalTree`). v0 of the top-level
+            // walker only ever sees pre-v3 contracts whose sub-levels
+            // collapse to `CountTree` (range_countable) or
+            // `NormalTree`. Round-tripping the bool through TreeType
+            // and back is bit-identical to v3.1-dev's behavior on the
+            // v0 recursive arm.
+            let parent_value_tree_type = if sub_level_range_countable {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
             self.remove_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
+                parent_value_tree_type,
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

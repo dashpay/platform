@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::execution::check_tx::CheckTxLevel;
@@ -356,7 +357,7 @@ mod tests {
     }
 
     /// Create a signed AddressFundingFromAssetLockTransition
-    fn create_signed_address_funding_from_asset_lock_transition(
+    async fn create_signed_address_funding_from_asset_lock_transition(
         asset_lock_proof: dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
         asset_lock_private_key: &[u8],
         signer: &TestAddressSigner,
@@ -373,9 +374,10 @@ mod tests {
             fee_strategy,
             0,
         )
+        .await
     }
 
-    fn create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
+    async fn create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: &[u8],
         signer: &TestAddressSigner,
@@ -384,7 +386,7 @@ mod tests {
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
         user_fee_increase: u16,
     ) -> StateTransition {
-        AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+        AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
             asset_lock_proof,
             asset_lock_private_key,
             inputs,
@@ -394,6 +396,7 @@ mod tests {
             user_fee_increase,
             PlatformVersion::latest(),
         )
+        .await
         .expect("should create signed transition")
     }
 
@@ -442,8 +445,8 @@ mod tests {
     mod structure_validation {
         use super::*;
 
-        #[test]
-        fn test_no_outputs_returns_error() {
+        #[tokio::test]
+        async fn test_no_outputs_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
@@ -502,8 +505,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_too_many_inputs_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_inputs_returns_error() {
             // Structure validation happens before signature validation
             // so we test it directly without needing valid signatures
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -554,8 +557,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_too_many_outputs_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_outputs_returns_error() {
             // Structure validation happens before signature validation
             // so we test it directly without needing valid signatures
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -606,8 +609,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_witness_count_mismatch_returns_error() {
+        #[tokio::test]
+        async fn test_input_witness_count_mismatch_returns_error() {
             // Structure validation happens before signature validation
             // so we test it directly without needing valid signatures
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -657,8 +660,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_address_also_input_returns_error() {
+        #[tokio::test]
+        async fn test_output_address_also_input_returns_error() {
             // Structure validation happens before signature validation
             // so we test it directly without needing valid signatures
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -702,8 +705,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_empty_fee_strategy_returns_error() {
+        #[tokio::test]
+        async fn test_empty_fee_strategy_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
@@ -763,8 +766,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_strategy_index_out_of_bounds_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_index_out_of_bounds_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
@@ -825,8 +828,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_no_remainder_output_returns_error() {
+        #[tokio::test]
+        async fn test_no_remainder_output_returns_error() {
             // Exactly one output must be None (the remainder recipient)
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
@@ -867,8 +870,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_remainder_outputs_returns_error() {
+        #[tokio::test]
+        async fn test_multiple_remainder_outputs_returns_error() {
             // Exactly one output must be None (the remainder recipient)
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
@@ -911,8 +914,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_output_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_output_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
@@ -980,8 +983,8 @@ mod tests {
     mod successful_transitions {
         use super::*;
 
-        #[test]
-        fn test_simple_asset_lock_funding_to_single_address() {
+        #[tokio::test]
+        async fn test_simple_asset_lock_funding_to_single_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1015,12 +1018,28 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
+
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "address funding from asset lock",
+                );
+            }
 
             let processing_result = platform
                 .platform
@@ -1041,8 +1060,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_asset_lock_funding_to_multiple_addresses() {
+        #[tokio::test]
+        async fn test_asset_lock_funding_to_multiple_addresses() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1076,7 +1095,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1102,8 +1122,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_asset_lock_funding_combined_with_existing_address_input() {
+        #[tokio::test]
+        async fn test_asset_lock_funding_combined_with_existing_address_input() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1142,7 +1162,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1177,8 +1198,8 @@ mod tests {
     mod remainder_output_handling {
         use super::*;
 
-        #[test]
-        fn test_explicit_outputs_exceed_available_funds_returns_error() {
+        #[tokio::test]
+        async fn test_explicit_outputs_exceed_available_funds_returns_error() {
             // When explicit outputs sum > asset_lock + inputs, should return error
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -1214,7 +1235,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1247,8 +1269,8 @@ mod tests {
             assert_eq!(processing_result.invalid_paid_count(), 1);
         }
 
-        #[test]
-        fn test_exact_match_removes_remainder_output() {
+        #[tokio::test]
+        async fn test_exact_match_removes_remainder_output() {
             // When explicit outputs sum == asset_lock + inputs, remainder output should be removed
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -1291,7 +1313,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1340,8 +1363,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_surplus_funds_go_to_remainder() {
+        #[tokio::test]
+        async fn test_surplus_funds_go_to_remainder() {
             // When explicit outputs sum < asset_lock + inputs, remainder gets the difference
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -1377,7 +1400,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1435,8 +1459,8 @@ mod tests {
     mod state_validation {
         use super::*;
 
-        #[test]
-        fn test_input_address_does_not_exist_returns_error() {
+        #[tokio::test]
+        async fn test_input_address_does_not_exist_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1473,7 +1497,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1502,8 +1527,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_in_input_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_in_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1542,7 +1567,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1571,8 +1597,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_nonce_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_nonce_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1611,7 +1637,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1648,8 +1675,8 @@ mod tests {
     mod signature_validation {
         use super::*;
 
-        #[test]
-        fn test_wrong_asset_lock_signature_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_asset_lock_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1684,7 +1711,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1714,8 +1742,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_signature_from_different_key_for_input_returns_error() {
+        #[tokio::test]
+        async fn test_signature_from_different_key_for_input_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1771,7 +1799,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1809,8 +1838,8 @@ mod tests {
     mod p2sh_multisig {
         use super::*;
 
-        #[test]
-        fn test_asset_lock_with_p2sh_multisig_input() {
+        #[tokio::test]
+        async fn test_asset_lock_with_p2sh_multisig_input() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1848,7 +1877,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1874,8 +1904,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_asset_lock_with_mixed_p2pkh_and_p2sh_inputs() {
+        #[tokio::test]
+        async fn test_asset_lock_with_mixed_p2pkh_and_p2sh_inputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1919,7 +1949,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1945,8 +1976,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_with_insufficient_signatures_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_insufficient_signatures_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2043,8 +2074,8 @@ mod tests {
     mod additional_structure_validation {
         use super::*;
 
-        #[test]
-        fn test_fee_strategy_duplicate_steps_returns_error() {
+        #[tokio::test]
+        async fn test_fee_strategy_duplicate_steps_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
@@ -2108,8 +2139,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_deduct_from_input_index_out_of_bounds_returns_error() {
+        #[tokio::test]
+        async fn test_deduct_from_input_index_out_of_bounds_returns_error() {
             // Structure validation happens before signature validation
             // so we test it directly without needing valid signatures
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -2155,8 +2186,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_input_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_input_below_minimum_returns_error() {
             // Structure validation happens before signature validation
             // so we test it directly without needing valid signatures
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -2205,8 +2236,8 @@ mod tests {
     mod edge_cases {
         use super::*;
 
-        #[test]
-        fn test_maximum_allowed_inputs_succeeds() {
+        #[tokio::test]
+        async fn test_maximum_allowed_inputs_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2246,7 +2277,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2272,8 +2304,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_maximum_allowed_outputs_succeeds() {
+        #[tokio::test]
+        async fn test_maximum_allowed_outputs_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2310,7 +2342,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2336,8 +2369,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_p2pkh_inputs_with_asset_lock() {
+        #[tokio::test]
+        async fn test_multiple_p2pkh_inputs_with_asset_lock() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2383,7 +2416,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2417,8 +2451,8 @@ mod tests {
     mod fee_strategy {
         use super::*;
 
-        #[test]
-        fn test_multiple_fee_strategy_steps_succeeds() {
+        #[tokio::test]
+        async fn test_multiple_fee_strategy_steps_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2460,7 +2494,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(1),
                 ],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2486,8 +2521,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_deduct_from_input_only_succeeds() {
+        #[tokio::test]
+        async fn test_deduct_from_input_only_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2524,7 +2559,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2558,8 +2594,8 @@ mod tests {
     mod asset_lock_validation {
         use super::*;
 
-        #[test]
-        fn test_asset_lock_already_spent_returns_error() {
+        #[tokio::test]
+        async fn test_asset_lock_already_spent_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2590,7 +2626,8 @@ mod tests {
                 inputs.clone(),
                 outputs.clone(),
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2632,7 +2669,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
@@ -2662,8 +2700,8 @@ mod tests {
             assert_eq!(processing_result2.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_invalid_signature_format_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_signature_format_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut rng = StdRng::seed_from_u64(567);
@@ -2741,8 +2779,8 @@ mod tests {
     mod balance_verification {
         use super::*;
 
-        #[test]
-        fn test_output_address_receives_correct_balance() {
+        #[tokio::test]
+        async fn test_output_address_receives_correct_balance() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2774,7 +2812,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2821,8 +2860,8 @@ mod tests {
             assert!(actual_balance < dash_to_credits!(1.0));
         }
 
-        #[test]
-        fn test_input_address_balance_reduced_correctly() {
+        #[tokio::test]
+        async fn test_input_address_balance_reduced_correctly() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2860,7 +2899,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -2913,8 +2953,8 @@ mod tests {
     mod witness_validation {
         use super::*;
 
-        #[test]
-        fn test_p2pkh_with_wrong_signature_length_fails() {
+        #[tokio::test]
+        async fn test_p2pkh_with_wrong_signature_length_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2985,8 +3025,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_p2sh_with_wrong_redeem_script_fails() {
+        #[tokio::test]
+        async fn test_p2sh_with_wrong_redeem_script_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3073,8 +3113,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_witness_type_mismatch_fails() {
+        #[tokio::test]
+        async fn test_witness_type_mismatch_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3151,8 +3191,8 @@ mod tests {
     mod fee_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_fee_equals_exact_remaining_balance() {
+        #[tokio::test]
+        async fn test_fee_equals_exact_remaining_balance() {
             // Test where fee exactly equals the remaining balance after outputs
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3186,7 +3226,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -3215,8 +3256,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_fee_exceeds_remaining_by_one_credit() {
+        #[tokio::test]
+        async fn test_fee_exceeds_remaining_by_one_credit() {
             // Test where the output amount equals the entire asset lock value.
             // The fee strategy reduces the output to cover fees.
             // After fee deduction, the output should be reduced, which is valid behavior.
@@ -3252,7 +3293,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -3282,8 +3324,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_user_fee_increase_with_reduce_output_succeeds() {
+        #[tokio::test]
+        async fn test_user_fee_increase_with_reduce_output_succeeds() {
             // Test that the fee increase actually results in higher fees being paid.
             // The user_fee_increase multiplier only applies to processing fees, not storage fees.
             // Formula: total_fee = storage_fee + processing_fee * (1 + user_fee_increase / 100)
@@ -3322,7 +3364,8 @@ mod tests {
                     outputs.clone(),
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
                     0, // No fee increase
-                );
+                )
+                .await;
 
             let result = state_transition_no_increase
                 .serialize_to_bytes()
@@ -3371,7 +3414,8 @@ mod tests {
                     outputs,
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
                     u16::MAX, // Maximum fee increase (655.35% extra on processing fees)
-                );
+                )
+                .await;
 
             let result = state_transition_max_increase
                 .serialize_to_bytes()
@@ -3457,8 +3501,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_user_fee_increase_small_amount() {
+        #[tokio::test]
+        async fn test_user_fee_increase_small_amount() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3491,7 +3535,8 @@ mod tests {
                     outputs,
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
                     100, // Small fee increase (1%)
-                );
+                )
+                .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -3524,8 +3569,8 @@ mod tests {
     mod asset_lock_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_asset_lock_double_spend_same_block() {
+        #[tokio::test]
+        async fn test_asset_lock_double_spend_same_block() {
             // Test using the same asset lock twice in the same block
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3561,7 +3606,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs1,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let state_transition2 = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -3570,7 +3616,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs2,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result1 = state_transition1
                 .serialize_to_bytes()
@@ -3609,8 +3656,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_asset_lock_already_used_in_previous_block() {
+        #[tokio::test]
+        async fn test_asset_lock_already_used_in_previous_block() {
             // Test using an asset lock that was already consumed in a previous block
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3643,7 +3690,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs.clone(),
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result1 = state_transition1
                 .serialize_to_bytes()
@@ -3689,7 +3737,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs2,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result2 = state_transition2
                 .serialize_to_bytes()
@@ -3725,8 +3774,8 @@ mod tests {
     mod nonce_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_nonce_zero_for_new_address() {
+        #[tokio::test]
+        async fn test_nonce_zero_for_new_address() {
             // New address should have nonce 0, so first tx should use nonce 1
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3764,7 +3813,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -3792,8 +3842,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_nonce_gap_fails() {
+        #[tokio::test]
+        async fn test_nonce_gap_fails() {
             // Skipping a nonce should fail
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3829,6 +3879,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
             let witness = signer
                 .sign_p2pkh(input_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -3876,8 +3927,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_nonce_reuse_fails() {
+        #[tokio::test]
+        async fn test_nonce_reuse_fails() {
             // Using an already-used nonce should fail
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -3913,6 +3964,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
             let witness = signer
                 .sign_p2pkh(input_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -3960,8 +4012,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_high_nonce_value() {
+        #[tokio::test]
+        async fn test_high_nonce_value() {
             // Test with a very high nonce value
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4005,7 +4057,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
@@ -4037,8 +4090,8 @@ mod tests {
     mod amount_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_output_amount_near_u64_max() {
+        #[tokio::test]
+        async fn test_output_amount_near_u64_max() {
             // Test with amounts near u64::MAX to check overflow protection
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4107,8 +4160,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_zero_input_amount() {
+        #[tokio::test]
+        async fn test_zero_input_amount() {
             // Input with zero amount
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4142,6 +4195,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
             let witness = signer
                 .sign_p2pkh(input_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -4189,8 +4243,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_zero_output_amount() {
+        #[tokio::test]
+        async fn test_zero_output_amount() {
             // Output with zero amount
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4263,8 +4317,8 @@ mod tests {
     mod platform_state_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_address_with_zero_balance() {
+        #[tokio::test]
+        async fn test_address_with_zero_balance() {
             // Address exists but has zero balance
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4302,7 +4356,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -4334,8 +4389,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_output_to_existing_address_adds_balance() {
+        #[tokio::test]
+        async fn test_output_to_existing_address_adds_balance() {
             // Sending to an address that already exists should add to balance
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4370,7 +4425,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -4416,8 +4472,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_inputs_from_same_address_deduplicated_by_btreemap() {
+        #[tokio::test]
+        async fn test_multiple_inputs_from_same_address_deduplicated_by_btreemap() {
             // BTreeMap naturally prevents duplicate addresses in inputs
             // This test demonstrates that behavior - the second insert overwrites the first
             let platform_version = PlatformVersion::latest();
@@ -4460,7 +4516,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -4494,8 +4551,8 @@ mod tests {
     mod dust_and_minimum_amounts {
         use super::*;
 
-        #[test]
-        fn test_output_becomes_below_minimum_after_fee_deduction() {
+        #[tokio::test]
+        async fn test_output_becomes_below_minimum_after_fee_deduction() {
             // Output starts above minimum but falls below after fee deduction
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4565,8 +4622,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_minimum_output_after_fee_deduction() {
+        #[tokio::test]
+        async fn test_minimum_output_after_fee_deduction() {
             // Output after fee deduction equals exactly minimum
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4598,7 +4655,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -4631,8 +4689,8 @@ mod tests {
     mod signature_recovery_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_recovered_pubkey_wrong_address() {
+        #[tokio::test]
+        async fn test_recovered_pubkey_wrong_address() {
             // Signature is valid but recovered pubkey hashes to wrong address
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4672,6 +4730,7 @@ mod tests {
             // Create signature with wrong key - the recovered pubkey won't match the address
             let witness = wrong_signer
                 .sign_p2pkh(_wrong_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -4719,8 +4778,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_invalid_recovery_id() {
+        #[tokio::test]
+        async fn test_invalid_recovery_id() {
             // Signature with invalid recovery ID
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4754,6 +4813,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
             let mut witness = signer
                 .sign_p2pkh(input_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             // Corrupt the recovery ID (last byte of signature)
@@ -4810,8 +4870,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_signature_for_different_message() {
+        #[tokio::test]
+        async fn test_signature_for_different_message() {
             // Valid signature but for different signable bytes
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4848,6 +4908,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &wrong_inputs, &outputs);
             let witness = signer
                 .sign_p2pkh(input_address, &wrong_signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -4899,8 +4960,8 @@ mod tests {
     mod complex_scenarios {
         use super::*;
 
-        #[test]
-        fn test_all_inputs_p2sh_multisig() {
+        #[tokio::test]
+        async fn test_all_inputs_p2sh_multisig() {
             // All inputs are P2SH multisig (no P2PKH)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4941,7 +5002,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -4970,8 +5032,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_complex_fee_strategy_multiple_outputs() {
+        #[tokio::test]
+        async fn test_complex_fee_strategy_multiple_outputs() {
             // Complex fee strategy that deducts from multiple outputs
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5009,7 +5071,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(1),
                 ],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5038,8 +5101,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_self_transfer_same_input_output_address() {
+        #[tokio::test]
+        async fn test_self_transfer_same_input_output_address() {
             // Input and output have the same address (though this should be blocked by structure validation)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5076,7 +5139,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5108,8 +5172,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_maximum_total_amount() {
+        #[tokio::test]
+        async fn test_maximum_total_amount() {
             // Test with maximum combined input amounts
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5154,7 +5218,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5187,8 +5252,8 @@ mod tests {
     mod chain_asset_lock {
         use super::*;
 
-        #[test]
-        fn test_chain_asset_lock_proof_basic() {
+        #[tokio::test]
+        async fn test_chain_asset_lock_proof_basic() {
             // Test with ChainAssetLockProof instead of InstantAssetLockProof
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5232,7 +5297,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5269,8 +5335,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_chain_asset_lock_insufficient_confirmations() {
+        #[tokio::test]
+        async fn test_chain_asset_lock_insufficient_confirmations() {
             // Chain lock that doesn't have enough confirmations
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5310,7 +5376,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5354,8 +5421,8 @@ mod tests {
     mod asset_lock_signature_field {
         use super::*;
 
-        #[test]
-        fn test_empty_asset_lock_signature() {
+        #[tokio::test]
+        async fn test_empty_asset_lock_signature() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5422,8 +5489,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_asset_lock_signature_too_short() {
+        #[tokio::test]
+        async fn test_asset_lock_signature_too_short() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5490,8 +5557,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_asset_lock_signature_too_long() {
+        #[tokio::test]
+        async fn test_asset_lock_signature_too_long() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5558,8 +5625,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_asset_lock_signature_wrong_key() {
+        #[tokio::test]
+        async fn test_asset_lock_signature_wrong_key() {
             // Signature is valid but from wrong key (doesn't match asset lock tx pubkey)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5634,8 +5701,8 @@ mod tests {
     mod witness_ordering {
         use super::*;
 
-        #[test]
-        fn test_witnesses_wrong_order() {
+        #[tokio::test]
+        async fn test_witnesses_wrong_order() {
             // Witnesses provided in wrong order
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5675,9 +5742,11 @@ mod tests {
 
             let witness1 = signer
                 .sign_p2pkh(input_address1, &signable_bytes)
+                .await
                 .expect("should sign");
             let witness2 = signer
                 .sign_p2pkh(input_address2, &signable_bytes)
+                .await
                 .expect("should sign");
 
             // Provide witnesses in WRONG order (swapped)
@@ -5726,8 +5795,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_missing_middle_witness() {
+        #[tokio::test]
+        async fn test_missing_middle_witness() {
             // 3 inputs but only witnesses 0 and 2 (missing witness 1)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5770,9 +5839,11 @@ mod tests {
 
             let witness1 = signer
                 .sign_p2pkh(input_address1, &signable_bytes)
+                .await
                 .expect("should sign");
             let witness3 = signer
                 .sign_p2pkh(input_address3, &signable_bytes)
+                .await
                 .expect("should sign");
 
             // Only 2 witnesses for 3 inputs
@@ -5825,8 +5896,8 @@ mod tests {
     mod p2sh_variations {
         use super::*;
 
-        #[test]
-        fn test_p2sh_1_of_1_multisig() {
+        #[tokio::test]
+        async fn test_p2sh_1_of_1_multisig() {
             // Single signature wrapped in P2SH
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5864,7 +5935,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5893,8 +5965,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_3_of_3_multisig() {
+        #[tokio::test]
+        async fn test_p2sh_3_of_3_multisig() {
             // All signatures required
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -5932,7 +6004,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -5961,8 +6034,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_more_signatures_than_threshold() {
+        #[tokio::test]
+        async fn test_p2sh_more_signatures_than_threshold() {
             // Provide 3 signatures for a 2-of-3 multisig
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6036,8 +6109,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_p2sh_maximum_keys() {
+        #[tokio::test]
+        async fn test_p2sh_maximum_keys() {
             // 15-of-15 multisig (maximum allowed)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6077,7 +6150,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6110,8 +6184,8 @@ mod tests {
     mod state_verification_after_success {
         use super::*;
 
-        #[test]
-        fn test_nonce_incremented_after_success() {
+        #[tokio::test]
+        async fn test_nonce_incremented_after_success() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6153,7 +6227,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6185,8 +6260,8 @@ mod tests {
             assert_eq!(new_nonce, initial_nonce + 1);
         }
 
-        #[test]
-        fn test_asset_lock_marked_as_spent() {
+        #[tokio::test]
+        async fn test_asset_lock_marked_as_spent() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6217,7 +6292,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6249,8 +6325,8 @@ mod tests {
             assert!(is_spent);
         }
 
-        #[test]
-        fn test_exact_balance_deltas() {
+        #[tokio::test]
+        async fn test_exact_balance_deltas() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6291,7 +6367,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6346,8 +6423,8 @@ mod tests {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
 
-        #[test]
-        fn test_address_not_found_error_type() {
+        #[tokio::test]
+        async fn test_address_not_found_error_type() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6383,7 +6460,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6430,8 +6508,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_insufficient_balance_error_type() {
+        #[tokio::test]
+        async fn test_insufficient_balance_error_type() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6468,7 +6546,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6515,8 +6594,8 @@ mod tests {
             ));
         }
 
-        #[test]
-        fn test_invalid_nonce_error_type() {
+        #[tokio::test]
+        async fn test_invalid_nonce_error_type() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6552,7 +6631,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6603,8 +6683,8 @@ mod tests {
     mod signature_malleability {
         use super::*;
 
-        #[test]
-        fn test_high_s_signature_rejected() {
+        #[tokio::test]
+        async fn test_high_s_signature_rejected() {
             // High-S signatures should be rejected per BIP-62
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6638,6 +6718,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
             let mut witness = signer
                 .sign_p2pkh(input_address, &signable_bytes)
+                .await
                 .expect("should sign");
 
             // Convert signature to high-S form
@@ -6705,8 +6786,8 @@ mod tests {
     mod block_info_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_block_height_zero() {
+        #[tokio::test]
+        async fn test_block_height_zero() {
             // Genesis-like block
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6737,7 +6818,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6776,8 +6858,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_very_high_block_height() {
+        #[tokio::test]
+        async fn test_very_high_block_height() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6807,7 +6889,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -6847,8 +6930,8 @@ mod tests {
     mod partial_failure_scenarios {
         use super::*;
 
-        #[test]
-        fn test_one_valid_one_invalid_input_signature() {
+        #[tokio::test]
+        async fn test_one_valid_one_invalid_input_signature() {
             // Two inputs, one with valid signature, one with invalid - whole tx should fail
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6888,6 +6971,7 @@ mod tests {
             // Create valid witness for first input
             let witness1 = signer
                 .sign_p2pkh(input_address1, &signable_bytes)
+                .await
                 .expect("should sign");
 
             // Create INVALID witness for second input (wrong message)
@@ -6898,6 +6982,7 @@ mod tests {
                 get_signable_bytes_for_transition(&asset_lock_proof, &wrong_inputs, &outputs);
             let witness2 = signer
                 .sign_p2pkh(input_address2, &wrong_signable_bytes)
+                .await
                 .expect("should sign");
 
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -6949,8 +7034,8 @@ mod tests {
     mod size_limit_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_minimum_valid_transition() {
+        #[tokio::test]
+        async fn test_minimum_valid_transition() {
             // Smallest possible valid transition
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -6982,7 +7067,8 @@ mod tests {
                 BTreeMap::new(), // No inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let serialized = state_transition
                 .serialize_to_bytes()
@@ -7018,8 +7104,8 @@ mod tests {
     mod address_format_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_all_zero_address_hash() {
+        #[tokio::test]
+        async fn test_all_zero_address_hash() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -7053,7 +7139,8 @@ mod tests {
                 BTreeMap::new(), // No inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -7082,8 +7169,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_all_ff_address_hash() {
+        #[tokio::test]
+        async fn test_all_ff_address_hash() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -7117,7 +7204,8 @@ mod tests {
                 BTreeMap::new(), // No inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -7150,8 +7238,8 @@ mod tests {
     mod fee_strategy_input_combinations {
         use super::*;
 
-        #[test]
-        fn test_deduct_from_input_and_reduce_output() {
+        #[tokio::test]
+        async fn test_deduct_from_input_and_reduce_output() {
             // Combined fee strategy
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7192,7 +7280,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                 ],
-            );
+            )
+            .await;
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
@@ -7220,8 +7309,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_deduct_from_input_exact_amount() {
+        #[tokio::test]
+        async fn test_deduct_from_input_exact_amount() {
             // DeductFromInput leaves exactly 0 remaining
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7260,7 +7349,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -7297,8 +7387,8 @@ mod tests {
     mod replay_and_idempotency {
         use super::*;
 
-        #[test]
-        fn test_replay_same_transition_fails() {
+        #[tokio::test]
+        async fn test_replay_same_transition_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -7328,7 +7418,8 @@ mod tests {
                 BTreeMap::new(),
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let serialized = state_transition
                 .serialize_to_bytes()
@@ -7393,8 +7484,8 @@ mod tests {
     mod concurrent_input_usage {
         use super::*;
 
-        #[test]
-        fn test_two_transitions_same_input_address_same_block() {
+        #[tokio::test]
+        async fn test_two_transitions_same_input_address_same_block() {
             // Two transitions in the same block both try to use the same input address.
             // The second one should fail due to nonce mismatch (first uses nonce 1,
             // but both were created expecting nonce 1).
@@ -7435,7 +7526,8 @@ mod tests {
                 inputs1,
                 outputs1,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             // Second transition: also uses nonce 1 (will conflict)
             let mut rng2 = StdRng::seed_from_u64(902);
@@ -7454,7 +7546,8 @@ mod tests {
                 inputs2,
                 outputs2,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result1 = state_transition1
                 .serialize_to_bytes()
@@ -7499,8 +7592,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_two_transitions_same_input_address_sequential_nonces() {
+        #[tokio::test]
+        async fn test_two_transitions_same_input_address_sequential_nonces() {
             // Two transitions in the same block using same input but with sequential nonces.
             // First uses nonce 1, second uses nonce 2. Both should succeed.
             let platform_version = PlatformVersion::latest();
@@ -7540,7 +7633,8 @@ mod tests {
                 inputs1,
                 outputs1,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             // Second transition: uses nonce 2 (sequential)
             let mut rng2 = StdRng::seed_from_u64(904);
@@ -7559,7 +7653,8 @@ mod tests {
                 inputs2,
                 outputs2,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result1 = state_transition1
                 .serialize_to_bytes()
@@ -7603,8 +7698,8 @@ mod tests {
             assert_eq!(final_balance, dash_to_credits!(5.0));
         }
 
-        #[test]
-        fn test_second_transition_exceeds_remaining_balance() {
+        #[tokio::test]
+        async fn test_second_transition_exceeds_remaining_balance() {
             // Two transitions in same block. First succeeds, second fails because
             // the first consumed balance that second was counting on.
             let platform_version = PlatformVersion::latest();
@@ -7644,7 +7739,8 @@ mod tests {
                 inputs1,
                 outputs1,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             // Second transition: tries to use 3 DASH (nonce 2)
             // But after first transition, only 2 DASH remains
@@ -7664,7 +7760,8 @@ mod tests {
                 inputs2,
                 outputs2,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result1 = state_transition1
                 .serialize_to_bytes()
@@ -7717,8 +7814,8 @@ mod tests {
     mod overflow_protection {
         use super::*;
 
-        #[test]
-        fn test_output_sum_overflow() {
+        #[tokio::test]
+        async fn test_output_sum_overflow() {
             // Multiple outputs that would overflow u64 when summed
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7789,8 +7886,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_input_sum_overflow() {
+        #[tokio::test]
+        async fn test_input_sum_overflow() {
             // Multiple inputs that would overflow u64 when summed
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7873,8 +7970,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_output_plus_fee_overflow() {
+        #[tokio::test]
+        async fn test_output_plus_fee_overflow() {
             // Output amount that when fee is added would overflow
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7944,8 +8041,8 @@ mod tests {
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
-        #[test]
-        fn test_user_fee_increase_overflow() {
+        #[tokio::test]
+        async fn test_user_fee_increase_overflow() {
             // Very high fee increase that could cause overflow in fee calculation
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -7979,7 +8076,8 @@ mod tests {
                     outputs,
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
                     u16::MAX, // Maximum fee increase
-                );
+                )
+                .await;
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -8025,8 +8123,8 @@ mod tests {
         use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
         use simple_signer::signer::SimpleSigner;
 
-        #[test]
-        fn test_address_funding_with_partially_used_asset_lock() {
+        #[tokio::test]
+        async fn test_address_funding_with_partially_used_asset_lock() {
             // This test verifies that an asset lock that was partially consumed
             // (due to a failed identity create with duplicate unique key) can still
             // be used for address funding with the remaining balance.
@@ -8141,7 +8239,7 @@ mod tests {
             .into();
 
             let identity_create_transition: StateTransition =
-                IdentityCreateTransition::try_from_identity_with_signer(
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                     &identity_to_fail,
                     asset_lock_proof.clone(),
                     pk.as_slice(),
@@ -8150,6 +8248,7 @@ mod tests {
                     0,
                     platform_version,
                 )
+                .await
                 .expect("expected an identity create transition");
 
             let identity_create_serialized_transition = identity_create_transition
@@ -8207,7 +8306,8 @@ mod tests {
                     BTreeMap::new(), // No additional inputs
                     outputs,
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-                );
+                )
+                .await;
 
             let address_funding_serialized = address_funding_transition
                 .serialize_to_bytes()
@@ -8235,8 +8335,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_address_funding_with_small_output_after_partial_consumption() {
+        #[tokio::test]
+        async fn test_address_funding_with_small_output_after_partial_consumption() {
             // This test verifies that an asset lock that was partially consumed can still
             // be used for address funding with an output that fits within the remaining balance.
             //
@@ -8355,7 +8455,7 @@ mod tests {
             .into();
 
             let identity_create_transition: StateTransition =
-                IdentityCreateTransition::try_from_identity_with_signer(
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                     &identity,
                     asset_lock_proof.clone(),
                     pk.as_slice(),
@@ -8364,6 +8464,7 @@ mod tests {
                     0,
                     platform_version,
                 )
+                .await
                 .expect("expected an identity create transition");
 
             let identity_create_serialized = identity_create_transition
@@ -8416,7 +8517,8 @@ mod tests {
                     BTreeMap::new(),
                     outputs,
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-                );
+                )
+                .await;
 
             let address_funding_serialized = address_funding_transition
                 .serialize_to_bytes()
@@ -8480,8 +8582,8 @@ mod tests {
                 .expect("should fetch asset lock info")
         }
 
-        #[test]
-        fn test_invalid_paid_fee_from_asset_lock_only() {
+        #[tokio::test]
+        async fn test_invalid_paid_fee_from_asset_lock_only() {
             // Scenario: No inputs provided, so the penalty must come entirely from the asset lock.
             // Expected: Asset lock remaining balance is reduced by at least the penalty.
             //
@@ -8523,7 +8625,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -8606,16 +8709,15 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_invalid_paid_fee_from_input_only() {
+        #[tokio::test]
+        async fn test_invalid_paid_fee_from_input_only() {
             // Scenario: Input has enough balance to cover the entire penalty + processing fee.
             // Fee strategy specifies DeductFromInput first.
-            // Expected: Input balance is reduced, asset lock remains untouched.
+            // Expected: Input balance is reduced by ONLY the fee, asset lock remains untouched.
             //
-            // Note: When a transition fails in advanced_structure validation, the action still has
-            // the "remaining balance" which is (actual_balance - input_spend_amount). The fee is
-            // then deducted from this remaining balance. So the final balance is:
-            // actual_balance - input_spend_amount - fee_from_remaining
+            // Note: When a transition fails in advanced_structure validation, no outputs are created,
+            // so the intended spend is NOT consumed -- only the penalty fee is charged. The final
+            // balance is: actual_balance - fee (the spend is preserved).
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8666,7 +8768,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                 ],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -8706,29 +8809,35 @@ mod tests {
                 .penalties
                 .address_funds_insufficient_balance;
 
-            // Verify input balance was reduced
+            // Verify input balance was reduced by ONLY the fee (the intended spend is preserved
+            // because the transition failed and no outputs were created).
             let input_balance_after = get_address_balance(&platform, input_address, &transaction);
 
-            // The remaining_balance in action = initial_input_balance - input_spend_amount
-            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
+            // Amount actually charged to the input address.
+            let fee_from_input = initial_input_balance - input_balance_after;
 
-            // Fee deducted from input = remaining_balance - balance_after
-            let fee_from_input = remaining_balance_in_action - input_balance_after;
-
-            // Verify that input was charged (balance reduced)
+            // Verify that the input was charged (balance reduced).
             assert!(
-                input_balance_after < remaining_balance_in_action,
-                "Input balance {} should be less than remaining {} (some fee was taken)",
+                input_balance_after < initial_input_balance,
+                "Input balance {} should be less than the initial {} (the fee was taken)",
                 input_balance_after,
-                remaining_balance_in_action
+                initial_input_balance
             );
 
-            // Verify at least the penalty was taken from input
+            // Verify at least the penalty was taken from the input.
             assert!(
                 fee_from_input >= penalty,
                 "Fee from input {} should be at least the penalty {}",
                 fee_from_input,
                 penalty
+            );
+
+            // Verify the intended spend was NOT confiscated -- only the fee should be charged.
+            assert!(
+                fee_from_input < input_spend_amount,
+                "Only the fee ({}) should be charged to the input, not the intended spend ({})",
+                fee_from_input,
+                input_spend_amount
             );
 
             // Verify asset lock is untouched (full value remains)
@@ -8755,14 +8864,205 @@ mod tests {
             }
         }
 
-        #[test]
-        fn test_invalid_paid_fee_from_input_then_asset_lock() {
-            // Scenario: Input has some balance but not enough for the full fee (penalty + processing).
-            // Fee strategy specifies DeductFromInput first.
-            // Expected: Input contributes what it can, remainder comes from asset lock.
+        #[tokio::test]
+        async fn test_address_funding_penalty_charges_only_fee_and_conserves_credits() {
+            // Credit-accounting test for the AddressFundingFromAssetLock penalty path (the branch
+            // taken when a transition can't be fully applied):
             //
-            // Note: The action's inputs_with_remaining_balance contains (actual_balance - input_spend_amount).
-            // Fee is deducted from this remaining balance, not the original balance.
+            //   - When the penalty fee is (partly) covered by an address input, only the
+            //     asset-lock-sourced portion of the fee should be reflected in the system credit
+            //     total; the input-covered portion already lives in the address balances.
+            //
+            //   - The failed transition creates no outputs, so the inputs' intended "spend" should
+            //     not be consumed -- only the penalty fee is charged (the address ends at
+            //     actual - fee), so an address keeps its funds aside from the fee.
+            //
+            // This checks that, after processing, the system credit total and the balance trees
+            // reconcile: the asset lock is untouched (no asset-lock-sourced credits), the address is
+            // charged only the penalty fee (its spend preserved), the system credit total does not
+            // grow (scalar_delta == 0), and the totals line up (accounting_gap == 0).
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([200u8; 32]);
+
+            // Seed the address with plenty of balance to cover penalty + processing fee.
+            let initial_input_balance = dash_to_credits!(0.5);
+            let input_spend_amount = dash_to_credits!(0.1);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
+
+            let mut rng = StdRng::seed_from_u64(2002);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_spend_amount));
+
+            let mut outputs = BTreeMap::new();
+            // Outputs (3 DASH) exceed asset_lock (1) + input spend (0.1) -> insufficient-funds
+            // penalty path, with the fee deducted from the input address first.
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(3.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+            )
+            .await;
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // --- Capture conservation state before processing (delta approach) ---
+            let before = platform
+                .drive
+                .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                .expect("should calculate total credits balance before");
+            let scalar_before = before.total_credits_in_platform as i128;
+            let trees_before = before.total_in_trees().expect("trees before") as i128;
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Confirm we hit the invalid_paid (penalty) path.
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            // The asset lock must be left UNTOUCHED: the fee came from the address, so 0 credits
+            // entered the platform from L1.
+            let asset_lock_consumed =
+                match get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction) {
+                    StoredAssetLockInfo::PartiallyConsumed(value) => {
+                        initial_asset_lock_value as i128 - value.remaining_credit_value() as i128
+                    }
+                    StoredAssetLockInfo::FullyConsumed => {
+                        panic!("asset lock should not be fully consumed")
+                    }
+                    StoredAssetLockInfo::NotPresent => {
+                        panic!("asset lock should be present after processing")
+                    }
+                };
+            assert_eq!(
+                asset_lock_consumed, 0,
+                "asset lock should be untouched (fee paid from address), so 0 new money entered from L1"
+            );
+
+            // 2b: the address must be charged ONLY the penalty fee -- its intended spend is preserved.
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .address_funds_insufficient_balance;
+            let address_after = get_address_balance(&platform, input_address, &transaction);
+            let charged_from_address = initial_input_balance as i128 - address_after as i128;
+            assert!(
+                charged_from_address >= penalty as i128,
+                "the penalty ({}) should have been charged to the address (charged {})",
+                penalty,
+                charged_from_address
+            );
+            assert!(
+                charged_from_address < input_spend_amount as i128,
+                "only the fee should be charged, not the intended spend ({}); charged {} -- the \
+                 spend must be preserved on a failed transition",
+                input_spend_amount,
+                charged_from_address
+            );
+
+            // Fees the engine books into the Pools sum tree at block end.
+            let fees = processing_result.aggregated_fees();
+            let fees_to_pools = fees.storage_fee as i128 + fees.processing_fee as i128;
+
+            let after = platform
+                .drive
+                .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                .expect("should calculate total credits balance after");
+            let scalar_after = after.total_credits_in_platform as i128;
+            let trees_after = after.total_in_trees().expect("trees after") as i128;
+
+            let scalar_delta = scalar_after - scalar_before;
+            let trees_delta = trees_after - trees_before;
+
+            // After the block's fees are booked into the pools, the system credit total should equal
+            // the sum of the balance trees, i.e. scalar_delta == trees_delta + fees_to_pools.
+            let accounting_gap = scalar_delta - (trees_delta + fees_to_pools);
+
+            println!(
+                "address-funding penalty credit-accounting check:\n  \
+                 asset_lock_consumed   = {}\n  \
+                 charged_from_address  = {}\n  \
+                 scalar_delta          = {}\n  \
+                 trees_delta           = {}\n  \
+                 fees_to_pools         = {}\n  \
+                 accounting_gap        = {}",
+                asset_lock_consumed,
+                charged_from_address,
+                scalar_delta,
+                trees_delta,
+                fees_to_pools,
+                accounting_gap,
+            );
+
+            // The asset lock contributed nothing and the entire fee was paid from the pre-existing
+            // address balance, so the system credit total must not grow.
+            assert_eq!(
+                scalar_delta, 0,
+                "the system credit total must not grow when the fee is paid from an existing \
+                 address balance and nothing came from the asset lock (scalar_delta {})",
+                scalar_delta,
+            );
+
+            // The system credit total reconciles with the balance trees on this path.
+            assert_eq!(
+                accounting_gap, 0,
+                "the system credit total must reconcile with the balance trees on the penalty path \
+                 (gap {})",
+                accounting_gap,
+            );
+        }
+
+        #[tokio::test]
+        async fn test_invalid_paid_fee_from_input_then_asset_lock() {
+            // Scenario: Input's full balance is not enough for the full fee (penalty + processing).
+            // Fee strategy specifies DeductFromInput first.
+            // Expected: Input contributes everything it has, remainder comes from asset lock.
+            //
+            // Note: on the failed-transition penalty path the fee is charged from the input's full
+            // ACTUAL balance (the intended spend is no longer destroyed). Here the fee exceeds the
+            // balance, so the input is fully drained and the asset lock covers the remainder.
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8781,13 +9081,10 @@ mod tests {
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([201u8; 32]);
 
-            // Set up input such that remaining_balance < total_fee
-            // remaining_balance = initial_input_balance - input_spend_amount
-            // We want: remaining_balance < penalty (~10M) + processing (~10M)
-            // But remaining_balance > 0 so both input and asset lock contribute
-            let initial_input_balance = 15_000_000u64; // 15M credits
-            let input_spend_amount = 10_000_000u64; // 10M credits
-                                                    // remaining_balance_in_action = 15M - 10M = 5M (less than ~20M total fee)
+            // Set up the input so its FULL actual balance is less than the total fee (penalty +
+            // processing, ~10M), so the input is fully drained and the asset lock covers the rest.
+            let initial_input_balance = 5_000_000u64; // 5M credits (< ~10M total fee)
+            let input_spend_amount = 2_000_000u64; // 2M credits
             setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
 
             let mut rng = StdRng::seed_from_u64(2003);
@@ -8814,7 +9111,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                 ],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -8854,23 +9152,16 @@ mod tests {
                 .penalties
                 .address_funds_insufficient_balance;
 
-            // Verify input balance after processing
+            // The fee exceeds the input's full balance, so the input is fully drained.
             let input_balance_after = get_address_balance(&platform, input_address, &transaction);
-
-            // The remaining_balance in action = initial_input_balance - input_spend_amount
-            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
-
-            // Input balance should be 0 or reduced significantly (fee deducted from remaining)
-            // Final balance = remaining_balance - min(fee, remaining_balance) = 0 (if remaining < fee)
-            assert!(
-                input_balance_after < remaining_balance_in_action,
-                "Input balance after {} should be less than remaining {} (some fee was taken)",
-                input_balance_after,
-                remaining_balance_in_action
+            assert_eq!(
+                input_balance_after, 0,
+                "Input balance after {} should be 0 (fully drained by the fee)",
+                input_balance_after
             );
 
-            // Fee deducted from input = remaining_balance_in_action - input_balance_after
-            let fee_from_input = remaining_balance_in_action - input_balance_after;
+            // Fee charged to the input = everything it had.
+            let fee_from_input = initial_input_balance - input_balance_after;
 
             // Verify asset lock was partially consumed
             let asset_lock_info =
@@ -8932,8 +9223,8 @@ mod tests {
         /// because all indices shifted down after the removal.
         ///
         /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
-        #[test]
-        fn test_fee_deduction_stable_after_entry_removal() {
+        #[tokio::test]
+        async fn test_fee_deduction_stable_after_entry_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -8998,7 +9289,8 @@ mod tests {
                     AddressFundsFeeStrategyStep::DeductFromInput(0),
                     AddressFundsFeeStrategyStep::DeductFromInput(1),
                 ],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -9063,8 +9355,8 @@ mod tests {
         /// (so remainder is 0 and removed), with a fee strategy targeting the removed output.
         ///
         /// Location: rs-dpp/.../address_funding_from_asset_lock/advanced_structure/v0/mod.rs:84-86
-        #[test]
-        fn test_reduce_output_index_after_remainder_removal() {
+        #[tokio::test]
+        async fn test_reduce_output_index_after_remainder_removal() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9105,7 +9397,8 @@ mod tests {
                 BTreeMap::new(), // No address inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(2)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -9179,8 +9472,8 @@ mod tests {
         /// This is a standalone conservation test complementing C2.
         ///
         /// Location: rs-drive/.../address_funding_from_asset_lock_transition.rs
-        #[test]
-        fn test_credits_conservation_with_asset_lock_only() {
+        #[tokio::test]
+        async fn test_credits_conservation_with_asset_lock_only() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9217,7 +9510,8 @@ mod tests {
                 BTreeMap::new(), // No address inputs
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -9304,8 +9598,8 @@ mod tests {
         /// correct level, but notes the transformer lacks defense-in-depth.
         ///
         /// Location: rs-drive/.../address_funding_from_asset_lock/mod.rs:61,64
-        #[test]
-        fn test_remainder_arithmetic_uses_checked_operations() {
+        #[tokio::test]
+        async fn test_remainder_arithmetic_uses_checked_operations() {
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -9353,8 +9647,8 @@ mod tests {
         /// Locations:
         /// - rs-drive/.../address_funding_from_asset_lock/mod.rs:64 (resolved_outputs)
         /// - rs-drive/.../address_funding_from_asset_lock_transition.rs:61 (operations)
-        #[test]
-        fn test_remainder_includes_input_contributions() {
+        #[tokio::test]
+        async fn test_remainder_includes_input_contributions() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9395,7 +9689,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -9461,8 +9756,8 @@ mod tests {
         /// credits across all affected addresses plus the withdrawal document
         /// should equal the initial credits. Currently, input contributions
         /// vanish, violating conservation.
-        #[test]
-        fn test_credits_conservation_with_inputs() {
+        #[tokio::test]
+        async fn test_credits_conservation_with_inputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -9506,7 +9801,8 @@ mod tests {
                 inputs,
                 outputs,
                 vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            )
+            .await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 

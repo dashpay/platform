@@ -1,12 +1,12 @@
-#[cfg(feature = "index-serde-conversion")]
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+#[cfg(feature = "serde-conversion")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Eq)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum OrderBy {
-    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "asc"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "asc"))]
     Asc,
-    #[cfg_attr(feature = "index-serde-conversion", serde(rename = "desc"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "desc"))]
     Desc,
 }
 
@@ -21,11 +21,7 @@ use crate::data_contract::errors::DataContractError::RegexError;
 use platform_value::{Value, ValueMap};
 use rand::distributions::{Alphanumeric, DistString};
 use regex::Regex;
-#[cfg(feature = "index-serde-conversion")]
-use serde::de::{VariantAccess, Visitor};
 use std::cmp::Ordering;
-#[cfg(feature = "index-serde-conversion")]
-use std::fmt;
 use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
@@ -33,7 +29,7 @@ pub mod random_index;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum ContestedIndexResolution {
     MasternodeVote = 0,
 }
@@ -54,15 +50,84 @@ impl TryFrom<u8> for ContestedIndexResolution {
 
 #[repr(u8)]
 #[derive(Debug)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(
+        into = "ContestedIndexFieldMatchRepr",
+        from = "ContestedIndexFieldMatchRepr"
+    )
+)]
 pub enum ContestedIndexFieldMatch {
     Regex(LazyRegex),
     PositiveIntegerMatch(u128),
 }
 
+// Internal-`$type` serde shape with a uniform `value` payload, via a
+// struct-variant Repr (tuple variants can't auto-internal-tag). `LazyRegex`
+// round-trips as a bare string; the `u128` uses `json_safe_u128_content` rather
+// than the plain `json_safe_u128` because internal tagging buffers the map
+// through serde's `Content`, which can't hold a `u128` — see that helper's docs.
+#[cfg(feature = "serde-conversion")]
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "$type", rename_all = "camelCase")]
+enum ContestedIndexFieldMatchRepr {
+    Regex {
+        value: LazyRegex,
+    },
+    PositiveIntegerMatch {
+        #[serde(with = "crate::serialization::json_safe_u128_content")]
+        value: u128,
+    },
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<ContestedIndexFieldMatch> for ContestedIndexFieldMatchRepr {
+    fn from(m: ContestedIndexFieldMatch) -> Self {
+        match m {
+            ContestedIndexFieldMatch::Regex(value) => Self::Regex { value },
+            ContestedIndexFieldMatch::PositiveIntegerMatch(value) => {
+                Self::PositiveIntegerMatch { value }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<ContestedIndexFieldMatchRepr> for ContestedIndexFieldMatch {
+    fn from(r: ContestedIndexFieldMatchRepr) -> Self {
+        match r {
+            ContestedIndexFieldMatchRepr::Regex { value } => Self::Regex(value),
+            ContestedIndexFieldMatchRepr::PositiveIntegerMatch { value } => {
+                Self::PositiveIntegerMatch(value)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(from = "String", into = "String")
+)]
 pub struct LazyRegex {
     regex: OnceLock<Regex>,
     regex_str: String,
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<String> for LazyRegex {
+    fn from(regex_str: String) -> Self {
+        LazyRegex::new(regex_str)
+    }
+}
+
+#[cfg(feature = "serde-conversion")]
+impl From<LazyRegex> for String {
+    fn from(value: LazyRegex) -> Self {
+        value.regex_str
+    }
 }
 
 impl LazyRegex {
@@ -86,101 +151,13 @@ impl LazyRegex {
     }
 }
 
-#[cfg(feature = "index-serde-conversion")]
-impl Serialize for ContestedIndexFieldMatch {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match *self {
-            ContestedIndexFieldMatch::Regex(ref regex) => serializer.serialize_newtype_variant(
-                "ContestedIndexFieldMatch",
-                0,
-                "Regex",
-                regex.as_str(),
-            ),
-            ContestedIndexFieldMatch::PositiveIntegerMatch(ref num) => serializer
-                .serialize_newtype_variant(
-                    "ContestedIndexFieldMatch",
-                    1,
-                    "PositiveIntegerMatch",
-                    num,
-                ),
-        }
-    }
-}
-
-#[cfg(feature = "index-serde-conversion")]
-impl<'de> Deserialize<'de> for ContestedIndexFieldMatch {
-    fn deserialize<D>(deserializer: D) -> Result<ContestedIndexFieldMatch, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field {
-            Regex,
-            PositiveIntegerMatch,
-        }
-
-        struct FieldVisitor;
-
-        impl Visitor<'_> for FieldVisitor {
-            type Value = Field;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("`regex` or `positive_integer_match`")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Field, E>
-            where
-                E: de::Error,
-            {
-                match value {
-                    "regex" => Ok(Field::Regex),
-                    "positive_integer_match" => Ok(Field::PositiveIntegerMatch),
-                    _ => Err(de::Error::unknown_variant(
-                        value,
-                        &["regex", "positive_integer_match"],
-                    )),
-                }
-            }
-        }
-
-        struct ContestedIndexFieldMatchVisitor;
-
-        impl<'de> Visitor<'de> for ContestedIndexFieldMatchVisitor {
-            type Value = ContestedIndexFieldMatch;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("enum ContestedIndexFieldMatch")
-            }
-
-            fn visit_enum<V>(self, visitor: V) -> Result<ContestedIndexFieldMatch, V::Error>
-            where
-                V: de::EnumAccess<'de>,
-            {
-                match visitor.variant()? {
-                    (Field::Regex, v) => {
-                        let regex_str: String = v.newtype_variant()?;
-
-                        Ok(ContestedIndexFieldMatch::Regex(LazyRegex::new(regex_str)))
-                    }
-                    (Field::PositiveIntegerMatch, v) => {
-                        let num: u128 = v.newtype_variant()?;
-                        Ok(ContestedIndexFieldMatch::PositiveIntegerMatch(num))
-                    }
-                }
-            }
-        }
-
-        deserializer.deserialize_enum(
-            "ContestedIndexFieldMatch",
-            &["regex", "positive_integer_match"],
-            ContestedIndexFieldMatchVisitor,
-        )
-    }
-}
+// Manual Serialize/Deserialize impls deleted in Phase D step 11.
+// The previous custom Serialize emitted PascalCase variant tags
+// (`{"Regex": ...}`) while the custom Deserialize expected snake_case
+// (`{"regex": ...}`) — non-round-trippable. The replacement uses serde
+// `rename_all = "camelCase"` matching the rest of the codebase's
+// JSON wire-shape convention. `LazyRegex` round-trips as a plain
+// string via `serde(from = "String", into = "String")` above.
 
 #[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for ContestedIndexFieldMatch {
@@ -268,7 +245,7 @@ impl ContestedIndexFieldMatch {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ContestedIndexInformation {
     pub field_matches: BTreeMap<String, ContestedIndexFieldMatch>,
     pub resolution: ContestedIndexResolution,
@@ -283,9 +260,67 @@ impl Default for ContestedIndexInformation {
     }
 }
 
+/// What countable operations the index's tree supports.
+///
+/// - `NotCountable` — plain `NormalTree`. Counts on this index require enumerating
+///   documents (no fast path).
+/// - `Countable` — `CountTree`. The total count of documents under any covering
+///   equality / `In` prefix is an O(1) read (or O(distinct values) for partial
+///   prefixes).
+/// - `CountableAllowingOffset` — `ProvableCountTree`. Same total-count semantics
+///   as `Countable`, plus every internal node carries the count of its left and
+///   right subtrees, so future range / offset queries (e.g. "the next 50 items
+///   starting after key X") will be answerable in O(log n) without enumerating.
+///
+/// `CountableAllowingOffset` is strictly more capable than `Countable` but also
+/// strictly more expensive (every node carries count metadata, not just the
+/// root). Pick `Countable` when you only need totals; pick
+/// `CountableAllowingOffset` when you also need range/offset queries on this
+/// index.
+///
+/// **Note on `unique` indexes.** A unique index stores its terminal as a bare
+/// `Reference` at key `[0]` rather than wrapping it in a `CountTree`, so for
+/// documents whose indexed fields are *all* non-null the `countable` flag is a
+/// no-op at the storage level. It still does meaningful work for **null-bearing**
+/// entries: when a document has any null value among the indexed properties,
+/// insertion takes the same count-tree branch a non-unique index uses (because
+/// uniqueness can't be enforced on null), and the count tree at that path
+/// aggregates them. So `Countable` / `CountableAllowingOffset` on a unique index
+/// is meaningful exactly when at least one of the indexed properties is
+/// optional in the document schema. Counts on all-non-null exact matches still
+/// return the correct value (1 if present, 0 if not) because grovedb's
+/// `Element::count_value_or_default()` returns 1 for non-`CountTree` elements
+/// like `Reference`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
+pub enum IndexCountability {
+    /// The index uses a plain `NormalTree` and does not support count fast paths.
+    #[default]
+    NotCountable,
+    /// The index uses a `CountTree` — total counts are O(1) via the root count.
+    Countable,
+    /// The index uses a `ProvableCountTree` — same as `Countable` plus per-node
+    /// counts that enable future O(log n) range / offset queries.
+    CountableAllowingOffset,
+}
+
+impl IndexCountability {
+    /// Returns true if this index supports count fast paths (either variant).
+    pub fn is_countable(&self) -> bool {
+        !matches!(self, Self::NotCountable)
+    }
+
+    /// Returns true if this index uses the provable variant (per-node counts,
+    /// enabling future range / offset support).
+    pub fn allows_offset(&self) -> bool {
+        matches!(self, Self::CountableAllowingOffset)
+    }
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct Index {
     pub name: String,
     pub properties: Vec<IndexProperty>,
@@ -295,6 +330,78 @@ pub struct Index {
     pub null_searchable: bool,
     /// Contested indexes are useful when a resource is considered valuable
     pub contested_index: Option<ContestedIndexInformation>,
+    /// Whether and how the index supports count fast paths. See
+    /// [`IndexCountability`].
+    //
+    // `serde(default)` on this and the three fields below: they were added
+    // after the struct's serde shape was already in the wild (#3623 count
+    // fields, #3661 sum fields), so JSON serialized before then must still
+    // deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub countable: IndexCountability,
+    /// Whether the index supports O(log n) count queries over a *range* of
+    /// values for the index's last property (the terminator). The flag
+    /// only affects the storage layout at the last property level — all
+    /// preceding (prefix) properties keep their default tree shape:
+    /// - The property-name tree at the *last* property (whose keys are
+    ///   that property's distinct values) is stored as a
+    ///   `ProvableCountTree`, so range queries over distinct values can
+    ///   be answered by walking the boundary in O(log n).
+    /// - Each value tree under it is stored as a `CountTree`, so the
+    ///   property-name aggregate sums per-value counts cleanly.
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCounted` so their counts
+    ///   do not pollute the value tree's count.
+    ///
+    /// `range_countable: true` requires `countable` to be `Countable` or
+    /// `CountableAllowingOffset` (it's additive, not a replacement).
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub range_countable: bool,
+    /// When set to `Some(property_name)`, this index's value-tree is laid out
+    /// as a `SumTree` (or `CountSumTree` if [`Index::countable`] is also set
+    /// and [`Index::range_summable`] is false) and every reference under the
+    /// index path carries an `ItemWithSumItem` contribution equal to the
+    /// document's named-property value at insert time. The named property
+    /// must be `type: integer` and listed in the document type's `required`
+    /// array (the validator enforces this at contract creation), and must
+    /// match the doctype-level
+    /// [`DocumentTypeV2::documents_summable`] when both are set.
+    ///
+    /// O(1) `sum(named_property) WHERE <index_properties_exactly_covered>`
+    /// queries land on this index. See
+    /// `book/src/drive/document-sum-trees.md` and
+    /// `book/src/drive/sum-index-examples.md` for the worked example.
+    ///
+    /// **Note on `unique` indexes.** Same caveat as
+    /// [`IndexCountability::Countable`] on a unique index: the storage
+    /// effect is a no-op for documents whose indexed fields are *all*
+    /// non-null (the terminal is a bare reference at key `[0]`), and it
+    /// does meaningful sum-aggregation work only for null-bearing entries
+    /// (which take the same sum-tree branch a non-unique index uses).
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub summable: Option<String>,
+    /// When `true`, this index supports O(log n) range-sum queries on its
+    /// last property. The storage-layout effect mirrors
+    /// [`Index::range_countable`] but on the sum surface:
+    /// - The property-name level (the level *above* the last property's
+    ///   value-tree level) is laid out as a `ProvableSumTree`, so range
+    ///   queries over the last property's distinct values can be answered
+    ///   by walking the boundary nodes' committed sub-sums in O(log n).
+    /// - Each value tree under it is laid out as a `SumTree` (so the
+    ///   property-name aggregate combines per-value sums cleanly).
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCountedItemWithSumItem`
+    ///   so their sums don't pollute the value tree's running sum.
+    ///
+    /// `range_summable: true` requires `summable` to be `Some` (it's
+    /// additive on top of summable, not a replacement). Mutually
+    /// compatible with `countable` and `range_countable` — combining
+    /// the flags promotes the tree to a `ProvableCountSumTree` so a
+    /// single tree carries both metrics. The dispatcher in
+    /// `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
+    /// picks the appropriate variant.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub range_summable: bool,
 }
 
 impl Index {
@@ -332,7 +439,7 @@ impl Index {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
-#[cfg_attr(feature = "index-serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct IndexProperty {
     pub name: String,
     pub ascending: bool,
@@ -469,6 +576,37 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut name = None;
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
+        let mut countable = IndexCountability::NotCountable;
+        // Tracks whether `countable` was explicitly present in the
+        // input map (regardless of value). After the loop, the default
+        // `NotCountable` is indistinguishable from an explicit
+        // `countable: "notCountable"` on the parsed enum — we need
+        // this bit to know whether `averageable` may silently promote
+        // (omitted countable: yes) or must reject (explicit
+        // `notCountable`: contradiction with averageable's implied
+        // countability).
+        let mut countable_was_explicit = false;
+        let mut range_countable = false;
+        // Same explicit-vs-default tracking for `rangeCountable` and
+        // `rangeSummable`. After the loop the default `false` is
+        // indistinguishable from an explicit `rangeCountable: false`
+        // on the parsed bool — but the two have different conflict
+        // semantics under `rangeAverageable: true`: omitted is
+        // silently promotable; explicit `false` is a contradiction
+        // we surface to the author.
+        let mut range_countable_was_explicit = false;
+        let mut summable: Option<String> = None;
+        let mut range_summable = false;
+        let mut range_summable_was_explicit = false;
+        // `averageable` / `rangeAverageable` are syntactic sugar for the
+        // count+sum combination — same on-disk layout and same query
+        // surface, just a friendlier name for authors who think in terms
+        // of averages rather than (count, sum) pairs. Parsed into the
+        // existing flags below after the value-key loop; intermediate
+        // bindings here let us detect conflicts (e.g. `averageable: "x"`
+        // alongside `summable: "y"`) before the merge.
+        let mut averageable: Option<String> = None;
+        let mut range_averageable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -585,6 +723,115 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     }
                     contested_index = Some(contested_index_information);
                 }
+                "countable" => {
+                    // Accept either:
+                    //   - boolean: `true` → Countable, `false` → NotCountable.
+                    //     This preserves v0 contracts (whose meta-schema enforces
+                    //     `"type": "boolean"`) and any v1 contracts written before
+                    //     the enum form was introduced.
+                    //   - string: one of `"notCountable"`, `"countable"`,
+                    //     `"countableAllowingOffset"` (camelCase, matching the
+                    //     `IndexCountability` serde rename rule).
+                    countable_was_explicit = true;
+                    countable = match value_value {
+                        Value::Bool(true) => IndexCountability::Countable,
+                        Value::Bool(false) => IndexCountability::NotCountable,
+                        Value::Text(s) => match s.as_str() {
+                            "notCountable" => IndexCountability::NotCountable,
+                            "countable" => IndexCountability::Countable,
+                            "countableAllowingOffset" => IndexCountability::CountableAllowingOffset,
+                            other => {
+                                return Err(DataContractError::ValueWrongType(format!(
+                                    "countable value must be a boolean or one of \
+                                     \"notCountable\" / \"countable\" / \
+                                     \"countableAllowingOffset\"; got {:?}",
+                                    other
+                                )))
+                            }
+                        },
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "countable value must be a boolean or a string".to_string(),
+                            ))
+                        }
+                    };
+                }
+                "rangeCountable" => {
+                    range_countable_was_explicit = true;
+                    range_countable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeCountable value must be a boolean".to_string(),
+                            ))?;
+                }
+                "summable" => {
+                    // `summable` names the integer property whose value-per-
+                    // document contributes to the index's running sum. Two
+                    // accepted shapes:
+                    //   - `null` → not summable (same as omitting the key).
+                    //   - string → property name (must exist on the doctype,
+                    //     be `type: integer`, and appear in `required`;
+                    //     enforced by higher-level doctype validation).
+                    summable = match value_value {
+                        Value::Null => None,
+                        Value::Text(s) if !s.is_empty() => Some(s.clone()),
+                        Value::Text(_) => {
+                            return Err(DataContractError::ValueWrongType(
+                                "summable value must be a non-empty string naming an integer \
+                                 property, or null"
+                                    .to_string(),
+                            ))
+                        }
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "summable value must be a string naming an integer property, \
+                                 or null"
+                                    .to_string(),
+                            ))
+                        }
+                    };
+                }
+                "rangeSummable" => {
+                    range_summable_was_explicit = true;
+                    range_summable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeSummable value must be a boolean".to_string(),
+                            ))?;
+                }
+                "averageable" => {
+                    // `averageable: "<prop>"` is shorthand for
+                    // `countable: "countable"` + `summable: "<prop>"`.
+                    // Same parsing rules as `summable`: null = not
+                    // averageable, non-empty string = property name.
+                    averageable =
+                        match value_value {
+                            Value::Null => None,
+                            Value::Text(s) if !s.is_empty() => Some(s.clone()),
+                            Value::Text(_) => return Err(DataContractError::ValueWrongType(
+                                "averageable value must be a non-empty string naming an integer \
+                                 property, or null"
+                                    .to_string(),
+                            )),
+                            _ => return Err(DataContractError::ValueWrongType(
+                                "averageable value must be a string naming an integer property, \
+                                 or null"
+                                    .to_string(),
+                            )),
+                        };
+                }
+                "rangeAverageable" => {
+                    // `rangeAverageable: true` is shorthand for
+                    // `rangeCountable: true` + `rangeSummable: true`.
+                    range_averageable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeAverageable value must be a boolean".to_string(),
+                            ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -618,6 +865,122 @@ impl TryFrom<&[(Value, Value)]> for Index {
             ));
         }
 
+        // Desugar `averageable` / `rangeAverageable` into the
+        // count + sum flags they're shorthand for. Conflict rules:
+        // - `averageable` + `summable` must name the same property (or
+        //   `summable` must be absent). They're describing the same
+        //   on-disk layout from two different angles; differing names
+        //   are an authoring mistake.
+        // - `averageable` + `countable: notCountable` is a conflict —
+        //   `averageable` implies countable but the author explicitly
+        //   said no. Setting `countable` to `countable` or
+        //   `countableAllowingOffset` alongside `averageable` is fine
+        //   because they agree.
+        // - `rangeAverageable: true` requires `averageable` to be set
+        //   (mirrors `rangeSummable` requires `summable`). Caught via
+        //   the existing range_summable check after the merge below.
+        if let Some(avg_prop) = &averageable {
+            if let Some(sum_prop) = &summable {
+                if sum_prop != avg_prop {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "averageable=\"{}\" conflicts with summable=\"{}\": both flags name \
+                         the property whose values are aggregated into the index's sum tree, \
+                         so they must agree (or only one should be set — averageable is \
+                         shorthand for countable + summable on the same property)",
+                        avg_prop, sum_prop,
+                    )));
+                }
+            }
+            // `averageable` implies countable. Three cases:
+            //  1. `countable` not present in input → silently promote to
+            //     `Countable` (this is the canonical shorthand: write
+            //     just `averageable: "x"` to get countable + summable).
+            //  2. `countable` explicitly present and already countable
+            //     (`"countable"` / `"countableAllowingOffset"`) → no-op,
+            //     the author agreed.
+            //  3. `countable` explicitly present as `"notCountable"` (or
+            //     boolean `false`) → reject. The author actively said
+            //     "not countable" while also saying "averageable" — a
+            //     direct contradiction we surface rather than silently
+            //     override.
+            if !countable_was_explicit {
+                countable = IndexCountability::Countable;
+            } else if !countable.is_countable() {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "averageable=\"{}\" implies the index must be countable, but `countable` \
+                     is explicitly set to a non-countable value. Remove the explicit \
+                     `countable: \"notCountable\"` (or set it to `\"countable\"` / \
+                     `\"countableAllowingOffset\"`); averageable is shorthand for \
+                     countable + summable on the named property.",
+                    avg_prop,
+                )));
+            }
+            // Promote `summable` to the same property.
+            summable = Some(avg_prop.clone());
+        } else if range_averageable {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeAverageable: true requires averageable: \"<prop>\" to name the integer \
+                 property to average; rangeAverageable on its own has no property to aggregate"
+                    .to_string(),
+            ));
+        }
+        if range_averageable {
+            // `rangeAverageable: true` ⇒ both range axes opt in.
+            // Reject explicit-`false` contradictions on either range
+            // axis — silently flipping the author's explicit value
+            // would emit on-disk layout the author didn't ask for.
+            // Omitted (default-false) flags are promoted silently;
+            // explicit `true` is a redundant no-op.
+            if range_countable_was_explicit && !range_countable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeAverageable: true conflicts with explicit rangeCountable: false: \
+                     rangeAverageable is shorthand for rangeCountable + rangeSummable on \
+                     the averageable property. Remove the explicit `rangeCountable: false` \
+                     (or drop rangeAverageable in favor of rangeSummable alone)."
+                        .to_string(),
+                ));
+            }
+            if range_summable_was_explicit && !range_summable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeAverageable: true conflicts with explicit rangeSummable: false: \
+                     rangeAverageable is shorthand for rangeCountable + rangeSummable on \
+                     the averageable property. Remove the explicit `rangeSummable: false` \
+                     (or drop rangeAverageable in favor of rangeCountable alone)."
+                        .to_string(),
+                ));
+            }
+            range_countable = true;
+            range_summable = true;
+        }
+
+        // `rangeCountable` is additive on top of `countable`: it changes how
+        // the index's tree is laid out (property-name → ProvableCountTree,
+        // value level → CountTree, sibling continuations → NonCounted) so
+        // that range-count queries can be answered in O(log n). It is
+        // meaningless without the underlying countability.
+        if range_countable && !countable.is_countable() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeCountable requires countable to be \"countable\" or \
+                 \"countableAllowingOffset\"; range-count queries only make \
+                 sense on a count-bearing index"
+                    .to_string(),
+            ));
+        }
+
+        // `rangeSummable` is additive on top of `summable`: it changes how
+        // the index's tree is laid out (property-name → ProvableSumTree,
+        // value level → SumTree, sibling continuations →
+        // NonCountedItemWithSumItem) so that range-sum queries can be
+        // answered in O(log n). It's meaningless without the underlying
+        // summability.
+        if range_summable && summable.is_none() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeSummable requires summable to be set to a property name; \
+                 range-sum queries only make sense on a sum-bearing index"
+                    .to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
@@ -627,6 +990,10 @@ impl TryFrom<&[(Value, Value)]> for Index {
             unique,
             null_searchable,
             contested_index,
+            countable,
+            range_countable,
+            summable,
+            range_summable,
         })
     }
 }
@@ -635,6 +1002,16 @@ impl IndexProperty {
     pub fn from_platform_value(
         index_property_map: &[(Value, Value)],
     ) -> Result<Self, DataContractError> {
+        // The document meta-schema enforces `minProperties: 1` /
+        // `maxProperties: 1` on each index property object, but that
+        // validation is skipped in check_tx (full_validation=false), so a
+        // crafted contract can reach this point with an empty or oversized
+        // map. Guard explicitly to avoid panicking on an out-of-bounds index.
+        if index_property_map.len() != 1 {
+            return Err(DataContractError::InvalidContractStructure(
+                "index property entry must contain exactly one key/value".to_string(),
+            ));
+        }
         let property = &index_property_map[0];
 
         let key = property
@@ -656,5 +1033,1430 @@ impl IndexProperty {
             name: key.to_string(),
             ascending,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_index_property(name: &str, ascending: bool) -> IndexProperty {
+        IndexProperty {
+            name: name.to_string(),
+            ascending,
+        }
+    }
+
+    fn make_index(name: &str, properties: Vec<(&str, bool)>, unique: bool) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .into_iter()
+                .map(|(n, asc)| make_index_property(n, asc))
+                .collect(),
+            unique,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexResolution tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_resolution_try_from_valid() {
+        let res = ContestedIndexResolution::try_from(0u8).unwrap();
+        assert_eq!(res, ContestedIndexResolution::MasternodeVote);
+    }
+
+    #[test]
+    fn test_contested_index_resolution_try_from_invalid() {
+        let res = ContestedIndexResolution::try_from(1u8);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_contested_index_resolution_try_from_255() {
+        let res = ContestedIndexResolution::try_from(255u8);
+        assert!(res.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // LazyRegex tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_lazy_regex_match() {
+        let lr = LazyRegex::new("^[a-z]+$".to_string());
+        assert!(lr.is_match("hello"));
+        assert!(!lr.is_match("Hello"));
+        assert!(!lr.is_match("123"));
+    }
+
+    #[test]
+    fn test_lazy_regex_as_str() {
+        let lr = LazyRegex::new("test_pattern".to_string());
+        assert_eq!(lr.as_str(), "test_pattern");
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_regex_matches() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash".to_string()));
+        assert!(m.matches(&Value::Text("dashname".to_string())));
+        assert!(!m.matches(&Value::Text("notdash".to_string())));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_non_string() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new(".*".to_string()));
+        assert!(!m.matches(&Value::U64(42)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_matches() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert!(m.matches(&Value::U64(42)));
+        assert!(!m.matches(&Value::U64(43)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_non_integer() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert!(!m.matches(&Value::Text("42".to_string())));
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch ordering tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_ord_integers() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(20);
+        assert!(a < b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_ord_regex_vs_integer() {
+        let regex = ContestedIndexFieldMatch::Regex(LazyRegex::new("abc".to_string()));
+        let integer = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        assert!(regex < integer);
+        assert!(integer > regex);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_ord_regex_vs_regex() {
+        let short = ContestedIndexFieldMatch::Regex(LazyRegex::new("a".to_string()));
+        let long = ContestedIndexFieldMatch::Regex(LazyRegex::new("abc".to_string()));
+        assert!(short < long);
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch equality tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_eq_regex() {
+        let a = ContestedIndexFieldMatch::Regex(LazyRegex::new("^test$".to_string()));
+        let b = ContestedIndexFieldMatch::Regex(LazyRegex::new("^test$".to_string()));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_eq_different_regex() {
+        let a = ContestedIndexFieldMatch::Regex(LazyRegex::new("^a$".to_string()));
+        let b = ContestedIndexFieldMatch::Regex(LazyRegex::new("^b$".to_string()));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_eq_integer() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_eq_different_types() {
+        let regex = ContestedIndexFieldMatch::Regex(LazyRegex::new("42".to_string()));
+        let integer = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert_ne!(regex, integer);
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexFieldMatch clone tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_clone_regex() {
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^test$".to_string()));
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_clone_integer() {
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(100);
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    // -----------------------------------------------------------------------
+    // ContestedIndexInformation default tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_information_default() {
+        let info = ContestedIndexInformation::default();
+        assert!(info.field_matches.is_empty());
+        assert_eq!(info.resolution, ContestedIndexResolution::MasternodeVote);
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::objects_are_conflicting tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_objects_are_conflicting_non_unique_always_false() {
+        let index = make_index("idx", vec![("name", true)], false);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_same_values() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_different_values() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Alice".to_string()),
+        )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_one_missing_property() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_multi_property() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], true);
+        let obj1: ValueMap = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("Sam".to_string()),
+            ),
+            (Value::Text("age".to_string()), Value::U64(30)),
+        ];
+        let obj2: ValueMap = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("Sam".to_string()),
+            ),
+            (Value::Text("age".to_string()), Value::U64(30)),
+        ];
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+
+        let obj3: ValueMap = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("Sam".to_string()),
+            ),
+            (Value::Text("age".to_string()), Value::U64(25)),
+        ];
+        assert!(!index.objects_are_conflicting(&obj1, &obj3));
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::property_names() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_property_names() {
+        let index = make_index("idx", vec![("name", true), ("age", false)], false);
+        let names = index.property_names();
+        assert_eq!(names, vec!["name".to_string(), "age".to_string()]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::extract_values() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_values_with_matching_data() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let mut data = BTreeMap::new();
+        data.insert("name".to_string(), Value::Text("Sam".to_string()));
+        data.insert("age".to_string(), Value::U64(30));
+        let values = index.extract_values(&data);
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0], Value::Text("Sam".to_string()));
+        assert_eq!(values[1], Value::U64(30));
+    }
+
+    #[test]
+    fn test_extract_values_with_missing_data() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let mut data = BTreeMap::new();
+        data.insert("name".to_string(), Value::Text("Sam".to_string()));
+        let values = index.extract_values(&data);
+        assert_eq!(values.len(), 2);
+        assert_eq!(values[0], Value::Text("Sam".to_string()));
+        assert_eq!(values[1], Value::Null); // missing key returns Null
+    }
+
+    // -----------------------------------------------------------------------
+    // Index::matches() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_matches_exact_match() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name", "age"], None, &[]);
+        assert_eq!(result, Some(0));
+    }
+
+    #[test]
+    fn test_matches_partial_match() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name"], None, &[]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_no_match() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["email"], None, &[]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_matches_with_order_by() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        // Matching on "name" with order_by "age": d starts at 2, one match decrements to 1
+        let result = index.matches(&["name"], None, &["age"]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_in_field_last_property() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name"], Some("age"), &[]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_in_field_before_last() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["age"], Some("name"), &[]);
+        assert_eq!(result, Some(1));
+    }
+
+    #[test]
+    fn test_matches_in_field_not_matching() {
+        let index = make_index("idx", vec![("name", true), ("age", true)], false);
+        let result = index.matches(&["name"], Some("email"), &[]);
+        assert_eq!(result, None);
+    }
+
+    // -----------------------------------------------------------------------
+    // IndexProperty::try_from tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_property_try_from_asc() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), "asc".to_string());
+        let prop = IndexProperty::try_from(map).unwrap();
+        assert_eq!(prop.name, "name");
+        assert!(prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_try_from_desc() {
+        let mut map = BTreeMap::new();
+        map.insert("age".to_string(), "desc".to_string());
+        let prop = IndexProperty::try_from(map).unwrap();
+        assert_eq!(prop.name, "age");
+        assert!(!prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_try_from_empty_map_error() {
+        let map: BTreeMap<String, String> = BTreeMap::new();
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_try_from_multiple_entries_error() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), "asc".to_string());
+        map.insert("age".to_string(), "desc".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_try_from_invalid_sort_order_error() {
+        let mut map = BTreeMap::new();
+        map.insert("name".to_string(), "random".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
+    // IndexProperty::from_platform_value() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_property_from_platform_value_asc() {
+        let map = vec![(
+            Value::Text("fieldName".to_string()),
+            Value::Text("asc".to_string()),
+        )];
+        let prop = IndexProperty::from_platform_value(&map).unwrap();
+        assert_eq!(prop.name, "fieldName");
+        assert!(prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_desc() {
+        let map = vec![(
+            Value::Text("fieldName".to_string()),
+            Value::Text("desc".to_string()),
+        )];
+        let prop = IndexProperty::from_platform_value(&map).unwrap();
+        assert_eq!(prop.name, "fieldName");
+        assert!(!prop.ascending);
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_bad_key_type() {
+        let map = vec![(Value::U64(42), Value::Text("asc".to_string()))];
+        let result = IndexProperty::from_platform_value(&map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_bad_value_type() {
+        let map = vec![(Value::Text("field".to_string()), Value::U64(1))];
+        let result = IndexProperty::from_platform_value(&map);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_empty_map_returns_err() {
+        // An empty index property object `{}` must not panic with an
+        // out-of-bounds index. This is reachable in check_tx, where the
+        // document meta-schema (minProperties: 1) is not enforced.
+        let result = IndexProperty::from_platform_value(&[]);
+        assert!(matches!(
+            result,
+            Err(DataContractError::InvalidContractStructure(_))
+        ));
+    }
+
+    #[test]
+    fn test_index_property_from_platform_value_multiple_entries_returns_err() {
+        // More than one key/value violates the meta-schema `maxProperties: 1`,
+        // which is also skipped in check_tx.
+        let map = vec![
+            (Value::Text("a".to_string()), Value::Text("asc".to_string())),
+            (Value::Text("b".to_string()), Value::Text("asc".to_string())),
+        ];
+        let result = IndexProperty::from_platform_value(&map);
+        assert!(matches!(
+            result,
+            Err(DataContractError::InvalidContractStructure(_))
+        ));
+    }
+
+    // -----------------------------------------------------------------------
+    // Index TryFrom<&[(Value, Value)]> tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_try_from_basic() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("test_index".to_string()),
+            ),
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (
+                Value::Text("nullSearchable".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert_eq!(index.name, "test_index");
+        assert!(index.unique);
+        assert!(!index.null_searchable);
+        assert_eq!(index.properties.len(), 1);
+        assert_eq!(index.properties[0].name, "fieldA");
+        assert!(index.properties[0].ascending);
+        assert!(index.contested_index.is_none());
+    }
+
+    #[test]
+    fn test_index_try_from_without_name_generates_random() {
+        let index_map: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("fieldA".to_string()),
+                Value::Text("asc".to_string()),
+            )])]),
+        )];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert!(!index.name.is_empty());
+        assert_eq!(index.name.len(), 24); // Alphanumeric.sample_string with len 24
+    }
+
+    #[test]
+    fn test_index_try_from_default_null_searchable_true() {
+        let index_map: Vec<(Value, Value)> = vec![(
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text("fieldA".to_string()),
+                Value::Text("asc".to_string()),
+            )])]),
+        )];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert!(index.null_searchable); // default is true
+    }
+
+    #[test]
+    fn test_index_try_from_unknown_key_error() {
+        let index_map: Vec<(Value, Value)> =
+            vec![(Value::Text("unknownKey".to_string()), Value::Bool(true))];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_try_from_summable_string_sets_property() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("summable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("valid index parses");
+        assert_eq!(index.summable.as_deref(), Some("amount"));
+        assert!(!index.range_summable);
+    }
+
+    #[test]
+    fn test_index_try_from_summable_null_treated_as_none() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text("summable".to_string()), Value::Null),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("null summable parses");
+        assert_eq!(index.summable, None);
+    }
+
+    #[test]
+    fn test_index_try_from_summable_empty_string_rejected() {
+        // Empty `summable: ""` is a contract bug — must reject at parse
+        // time, not silently store `Some("")` and fail later in the
+        // index picker.
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("summable".to_string()),
+                Value::Text(String::new()),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err(), "empty summable string must error");
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("non-empty"),
+            "error must reference the non-empty requirement; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_index_try_from_summable_non_string_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text("summable".to_string()), Value::Bool(true)),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err(), "non-string/non-null summable must error");
+    }
+
+    /// Canonical shorthand `{averageable: "x", rangeAverageable: true}`
+    /// (no explicit `countable`) must succeed and desugar to all four
+    /// underlying flags. Regression test for an inversion in the
+    /// promotion logic where `range_averageable: true` blocked the
+    /// silent-promote path and forced the explicit-contradiction path,
+    /// rejecting the canonical shape.
+    #[test]
+    fn test_index_try_from_averageable_with_range_averageable_promotes_all_flags() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("canonical shorthand parses");
+        assert!(
+            index.countable.is_countable(),
+            "averageable promotes countable"
+        );
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(
+            index.range_countable,
+            "rangeAverageable promotes range_countable"
+        );
+        assert!(
+            index.range_summable,
+            "rangeAverageable promotes range_summable"
+        );
+    }
+
+    /// `averageable` + explicit `countable: "notCountable"` is a direct
+    /// contradiction: the author wrote both "yes, averageable (which
+    /// implies countable)" and "no, not countable" in the same index.
+    /// Must reject. Regression test for the inversion that silently
+    /// promoted the explicit `notCountable` to `Countable`.
+    #[test]
+    fn test_index_try_from_averageable_with_explicit_not_countable_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("notCountable".to_string()),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "averageable + explicit notCountable must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("averageable") && msg.contains("countable"),
+            "error must reference both averageable and countable; got {msg}"
+        );
+    }
+
+    /// `averageable` alone (the simplest shorthand) must silently
+    /// promote `countable` (and set `summable`) without requiring the
+    /// author to also write `countable: "countable"`.
+    #[test]
+    fn test_index_try_from_averageable_alone_silently_promotes_countable() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("averageable alone parses");
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(!index.range_countable);
+        assert!(!index.range_summable);
+    }
+
+    /// `rangeAverageable: true` + explicit `rangeCountable: false` is a
+    /// direct contradiction: rangeAverageable is shorthand for both
+    /// range axes opting in, but the author explicitly said "no range
+    /// count". Must reject rather than silently flip.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_countable_false_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rangeCountable".to_string()),
+                Value::Bool(false),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "rangeAverageable + explicit rangeCountable: false must reject"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeCountable: false"),
+            "error must reference both flags; got {msg}"
+        );
+    }
+
+    /// Symmetric case: `rangeAverageable: true` + explicit
+    /// `rangeSummable: false` must also reject.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_summable_false_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(false)),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "rangeAverageable + explicit rangeSummable: false must reject"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeSummable: false"),
+            "error must reference both flags; got {msg}"
+        );
+    }
+
+    /// `rangeAverageable: true` + redundant explicit `rangeCountable:
+    /// true` (and / or `rangeSummable: true`) is fine — the author
+    /// agreed with what averageable promotes, no contradiction.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_countable_true_ok() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(true)),
+        ];
+        let index = Index::try_from(index_map.as_slice())
+            .expect("rangeAverageable + redundant explicit true must parse");
+        assert!(index.range_countable);
+        assert!(index.range_summable);
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
+    }
+
+    #[test]
+    fn test_index_try_from_contested_without_unique_error() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("contested".to_string()),
+                Value::Map(vec![(Value::Text("resolution".to_string()), Value::U64(0))]),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err()); // contest supported only for unique indexes
+    }
+
+    #[test]
+    fn test_index_try_from_contested_with_unique() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("fieldA".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("contested".to_string()),
+                Value::Map(vec![
+                    (Value::Text("resolution".to_string()), Value::U64(0)),
+                    (
+                        Value::Text("fieldMatches".to_string()),
+                        Value::Array(vec![Value::Map(vec![
+                            (
+                                Value::Text("field".to_string()),
+                                Value::Text("normalizedLabel".to_string()),
+                            ),
+                            (
+                                Value::Text("regexPattern".to_string()),
+                                Value::Text("^[a-zA-Z]+$".to_string()),
+                            ),
+                        ])]),
+                    ),
+                ]),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).unwrap();
+        assert!(index.unique);
+        assert!(index.contested_index.is_some());
+        let contested = index.contested_index.unwrap();
+        assert_eq!(
+            contested.resolution,
+            ContestedIndexResolution::MasternodeVote
+        );
+        assert!(contested.field_matches.contains_key("normalizedLabel"));
+    }
+
+    // -----------------------------------------------------------------------
+    // OrderBy tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_order_by_partial_ord() {
+        assert!(OrderBy::Asc < OrderBy::Desc);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional objects_are_conflicting tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_objects_are_conflicting_both_null_values_not_conflicting() {
+        // If either property is null (missing) for either object, they should not conflict
+        let index = make_index("idx", vec![("name", true), ("age", true)], true);
+        // obj1 has name but not age, obj2 has name but not age
+        let obj1: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        // Even though "name" matches, "age" is missing in both, so no conflict
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_three_properties_all_match() {
+        let index = make_index("idx", vec![("a", true), ("b", true), ("c", true)], true);
+        let obj1: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(2)),
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        let obj2: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(2)),
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        assert!(index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_unique_three_properties_one_different() {
+        let index = make_index("idx", vec![("a", true), ("b", true), ("c", true)], true);
+        let obj1: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(2)),
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        let obj2: ValueMap = vec![
+            (Value::Text("a".to_string()), Value::U64(1)),
+            (Value::Text("b".to_string()), Value::U64(999)), // different
+            (Value::Text("c".to_string()), Value::U64(3)),
+        ];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_non_unique_same_values_still_false() {
+        // Even with identical values, non-unique index should never conflict
+        let index = make_index("idx", vec![("x", true), ("y", true)], false);
+        let obj1: ValueMap = vec![
+            (Value::Text("x".to_string()), Value::U64(1)),
+            (Value::Text("y".to_string()), Value::U64(2)),
+        ];
+        let obj2: ValueMap = vec![
+            (Value::Text("x".to_string()), Value::U64(1)),
+            (Value::Text("y".to_string()), Value::U64(2)),
+        ];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    #[test]
+    fn test_objects_are_conflicting_first_obj_missing_property() {
+        let index = make_index("idx", vec![("name", true)], true);
+        let obj1: ValueMap = vec![];
+        let obj2: ValueMap = vec![(
+            Value::Text("name".to_string()),
+            Value::Text("Sam".to_string()),
+        )];
+        assert!(!index.objects_are_conflicting(&obj1, &obj2));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional ContestedIndexFieldMatch::matches() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_regex_full_match() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("^[0-9]{3}$".to_string()));
+        assert!(m.matches(&Value::Text("123".to_string())));
+        assert!(!m.matches(&Value::Text("1234".to_string())));
+        assert!(!m.matches(&Value::Text("ab3".to_string())));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_empty_string() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("^$".to_string()));
+        assert!(m.matches(&Value::Text("".to_string())));
+        assert!(!m.matches(&Value::Text("x".to_string())));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_null_value() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new(".*".to_string()));
+        assert!(!m.matches(&Value::Null));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_regex_bool_value() {
+        let m = ContestedIndexFieldMatch::Regex(LazyRegex::new("true".to_string()));
+        assert!(!m.matches(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_zero() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(0);
+        assert!(m.matches(&Value::U64(0)));
+        assert!(!m.matches(&Value::U64(1)));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_null_value() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        assert!(!m.matches(&Value::Null));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_positive_integer_bool_value() {
+        let m = ContestedIndexFieldMatch::PositiveIntegerMatch(1);
+        assert!(!m.matches(&Value::Bool(true)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional ContestedIndexFieldMatch Ord tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_contested_index_field_match_ord_regex_same_length() {
+        let a = ContestedIndexFieldMatch::Regex(LazyRegex::new("ab".to_string()));
+        let b = ContestedIndexFieldMatch::Regex(LazyRegex::new("cd".to_string()));
+        // Same length means Equal
+        assert_eq!(a.cmp(&b), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_ord_integer_equal() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(100);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(100);
+        assert_eq!(a.cmp(&b), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_contested_index_field_match_partial_ord_regex_vs_integer() {
+        let regex = ContestedIndexFieldMatch::Regex(LazyRegex::new("abc".to_string()));
+        let integer = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        assert_eq!(regex.partial_cmp(&integer), Some(Ordering::Less));
+        assert_eq!(integer.partial_cmp(&regex), Some(Ordering::Greater));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_partial_ord_integers() {
+        let a = ContestedIndexFieldMatch::PositiveIntegerMatch(5);
+        let b = ContestedIndexFieldMatch::PositiveIntegerMatch(10);
+        assert_eq!(a.partial_cmp(&b), Some(Ordering::Less));
+        assert_eq!(b.partial_cmp(&a), Some(Ordering::Greater));
+        let c = ContestedIndexFieldMatch::PositiveIntegerMatch(5);
+        assert_eq!(a.partial_cmp(&c), Some(Ordering::Equal));
+    }
+
+    #[test]
+    fn test_contested_index_field_match_partial_ord_regex_by_length() {
+        let short = ContestedIndexFieldMatch::Regex(LazyRegex::new("x".to_string()));
+        let long = ContestedIndexFieldMatch::Regex(LazyRegex::new("xxxxxxxxxxxx".to_string()));
+        assert_eq!(short.partial_cmp(&long), Some(Ordering::Less));
+        assert_eq!(long.partial_cmp(&short), Some(Ordering::Greater));
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional IndexProperty::TryFrom<BTreeMap> tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_index_property_try_from_unknown_direction() {
+        let mut map = BTreeMap::new();
+        map.insert("field".to_string(), "up".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("up"));
+    }
+
+    #[test]
+    fn test_index_property_try_from_empty_map() {
+        let map: BTreeMap<String, String> = BTreeMap::new();
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("empty"));
+    }
+
+    #[test]
+    fn test_index_property_try_from_three_entries_error() {
+        let mut map = BTreeMap::new();
+        map.insert("a".to_string(), "asc".to_string());
+        map.insert("b".to_string(), "desc".to_string());
+        map.insert("c".to_string(), "asc".to_string());
+        let result = IndexProperty::try_from(map);
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(err_msg.contains("more than one"));
+    }
+}
+
+// --- canonical conversion trait impls (unification pass 1) ---
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for OrderBy {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for OrderBy {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ContestedIndexResolution {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ContestedIndexResolution {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ContestedIndexFieldMatch {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ContestedIndexFieldMatch {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for ContestedIndexInformation {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for ContestedIndexInformation {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Index {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Index {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for IndexProperty {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for IndexProperty {}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for IndexCountability {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for IndexCountability {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    fn ix_info_fixture() -> ContestedIndexInformation {
+        ContestedIndexInformation::default()
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_information() {
+        use crate::serialization::JsonConvertible;
+        let original = ix_info_fixture();
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedIndexInformation::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_information() {
+        use crate::serialization::ValueConvertible;
+        let original = ix_info_fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = ContestedIndexInformation::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_round_trip_order_by() {
+        use crate::serialization::JsonConvertible;
+        for original in [OrderBy::Asc, OrderBy::Desc] {
+            let json = original.to_json().expect("to_json");
+            let recovered = OrderBy::from_json(json).expect("from_json");
+            assert_eq!(original, recovered, "variant: {:?}", original);
+        }
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_resolution() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexResolution::MasternodeVote;
+        let json = original.to_json().expect("to_json");
+        let recovered = ContestedIndexResolution::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    // --- ContestedIndexFieldMatch (internal `$type` tag) ---
+    // Wire shape: internally tagged with a uniform `value` payload.
+    //   `{"$type":"regex","value":"<pattern>"}` -> Regex(LazyRegex)
+    //   `{"$type":"positiveIntegerMatch","value":<u128>}` -> PositiveIntegerMatch
+    // LazyRegex serializes as the bare regex string via
+    // `serde(from = "String", into = "String")`, carried in `value`.
+
+    #[test]
+    fn json_round_trip_contested_index_field_match_regex() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("^dash$".to_string()));
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({ "$type": "regex", "value": "^dash$" })
+        );
+        let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
+        match recovered {
+            ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "^dash$"),
+            other => panic!("expected Regex, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn json_round_trip_contested_index_field_match_positive_integer() {
+        use crate::serialization::JsonConvertible;
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(42);
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({ "$type": "positiveIntegerMatch", "value": 42 })
+        );
+        let recovered = ContestedIndexFieldMatch::from_json(json).expect("from_json");
+        match recovered {
+            ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, 42),
+            other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_field_match_regex() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedIndexFieldMatch::Regex(LazyRegex::new("[a-z]+".to_string()));
+        let value = original.to_object().expect("to_object");
+        // LazyRegex serializes as a bare string in non-HR Value too.
+        assert_eq!(
+            value,
+            platform_value::platform_value!({ "$type": "regex", "value": "[a-z]+" })
+        );
+        let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
+        match recovered {
+            ContestedIndexFieldMatch::Regex(r) => assert_eq!(r.as_str(), "[a-z]+"),
+            other => panic!("expected Regex, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn value_round_trip_contested_index_field_match_positive_integer() {
+        use crate::serialization::ValueConvertible;
+        let original = ContestedIndexFieldMatch::PositiveIntegerMatch(u128::MAX);
+        let value = original.to_object().expect("to_object");
+        // u128::MAX exceeds u64::MAX, so it's encoded as a string (Content-safe;
+        // serde's internal-tag buffer can't hold a 128-bit int). Values that fit
+        // in u64 stay numeric.
+        assert_eq!(
+            value,
+            platform_value::platform_value!({ "$type": "positiveIntegerMatch", "value": "340282366920938463463374607431768211455" })
+        );
+        let recovered = ContestedIndexFieldMatch::from_object(value).expect("from_object");
+        match recovered {
+            ContestedIndexFieldMatch::PositiveIntegerMatch(n) => assert_eq!(n, u128::MAX),
+            other => panic!("expected PositiveIntegerMatch, got {:?}", other),
+        }
+    }
+
+    // --- Index / IndexProperty / IndexCountability (count + sum fields from
+    // base PRs #3623 / #3661) ---
+
+    fn index_fixture() -> Index {
+        Index {
+            name: "byOwnerAndPrice".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "ownerId".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "price".to_string(),
+                    ascending: false,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::CountableAllowingOffset,
+            range_countable: true,
+            summable: Some("price".to_string()),
+            range_summable: true,
+        }
+    }
+
+    #[test]
+    fn index_json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = index_fixture();
+        let json = original.to_json().expect("to_json");
+        // Internal (non-user-authored) shape: snake_case field names, no
+        // rename_all on the struct. `countable` is the camelCase-renamed
+        // IndexCountability unit enum.
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "name": "byOwnerAndPrice",
+                "properties": [
+                    {"name": "ownerId", "ascending": true},
+                    {"name": "price", "ascending": false},
+                ],
+                "unique": false,
+                "null_searchable": true,
+                "contested_index": serde_json::Value::Null,
+                "countable": "countableAllowingOffset",
+                "range_countable": true,
+                "summable": "price",
+                "range_summable": true,
+            })
+        );
+        let recovered = Index::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_value_round_trip() {
+        use crate::serialization::ValueConvertible;
+        let original = index_fixture();
+        let value = original.to_object().expect("to_object");
+        let recovered = Index::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    /// JSON serialized before the count (#3623) and sum (#3661) fields existed
+    /// must still deserialize — the four new fields default (NotCountable /
+    /// false / None / false). Without `serde(default)` this fails with
+    /// "missing field `countable`".
+    #[test]
+    fn index_deserializes_pre_count_sum_json() {
+        use crate::serialization::JsonConvertible;
+        let old_json = serde_json::json!({
+            "name": "byOwner",
+            "properties": [{"name": "ownerId", "ascending": true}],
+            "unique": true,
+            "null_searchable": false,
+            "contested_index": serde_json::Value::Null,
+        });
+        let recovered = Index::from_json(old_json).expect("pre-#3623 JSON must deserialize");
+        assert_eq!(recovered.countable, IndexCountability::NotCountable);
+        assert!(!recovered.range_countable);
+        assert_eq!(recovered.summable, None);
+        assert!(!recovered.range_summable);
+    }
+
+    #[test]
+    fn index_property_json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = IndexProperty {
+            name: "ownerId".to_string(),
+            ascending: false,
+        };
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json,
+            serde_json::json!({"name": "ownerId", "ascending": false})
+        );
+        let recovered = IndexProperty::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_property_value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        use platform_value::platform_value;
+        let original = IndexProperty {
+            name: "ownerId".to_string(),
+            ascending: false,
+        };
+        let value = original.to_object().expect("to_object");
+        assert_eq!(
+            value,
+            platform_value!({"name": "ownerId", "ascending": false})
+        );
+        let recovered = IndexProperty::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn index_countability_round_trips_all_variants() {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+        let cases = [
+            (IndexCountability::NotCountable, "notCountable"),
+            (IndexCountability::Countable, "countable"),
+            (
+                IndexCountability::CountableAllowingOffset,
+                "countableAllowingOffset",
+            ),
+        ];
+        for (original, expected) in cases {
+            let json_v = original.to_json().expect("to_json");
+            assert_eq!(json_v, serde_json::json!(expected));
+            assert_eq!(
+                IndexCountability::from_json(json_v).expect("from_json"),
+                original
+            );
+            let value = original.to_object().expect("to_object");
+            assert_eq!(value, platform_value::Value::Text(expected.to_string()));
+            assert_eq!(
+                IndexCountability::from_object(value).expect("from_object"),
+                original
+            );
+        }
     }
 }

@@ -140,6 +140,30 @@ pub enum ProtocolError {
     #[error("Generic Error: {0}")]
     Generic(String),
 
+    /// External signer (e.g. Swift Keychain-backed
+    /// `MnemonicResolverCoreSigner`) reported a failure or returned a
+    /// non-conformant result. This is a distinct surface from
+    /// [`Self::Generic`] so callers (FFI layer, retry policies) can
+    /// distinguish a signer-side failure from a generic protocol
+    /// invariant.
+    ///
+    /// Examples of failures that surface here:
+    /// - The signer's `sign_ecdsa` future returned an error (resolver
+    ///   miss, derivation failure, invalid mnemonic, etc.).
+    /// - The signer returned a signature whose recovery id does not
+    ///   match the returned public key (invariant violation by a
+    ///   non-conformant signer — distinct from a soft failure, but
+    ///   surfaced uniformly here so the FFI layer doesn't need to
+    ///   pattern-match on signer-specific shapes).
+    #[error("External signer error: {0}")]
+    ExternalSignerError(String),
+
+    #[error("Address witness verification error: {0}")]
+    AddressWitnessError(String),
+
+    #[error("Shielded transaction build error: {0}")]
+    ShieldedBuildError(String),
+
     #[error("Not supported Error: {0}")]
     NotSupported(String),
 

@@ -1,0 +1,419 @@
+import Foundation
+import SwiftData
+
+/// SwiftData model for persisting Identity data
+@Model
+public final class PersistentIdentity {
+    /// Index `networkRaw` so per-network scans (`#Predicate { $0.networkRaw == raw }`)
+    /// don't degrade to a table scan. Every UI surface that lists
+    /// identities filters by the active network.
+    #Index<PersistentIdentity>([\.networkRaw])
+
+    // MARK: - Core Properties
+    @Attribute(.unique) public var identityId: Data
+    public var balance: Int64
+    public var revision: Int64
+    public var isLocal: Bool
+    public var alias: String?
+    /// User's chosen primary display label (the one rendered on
+    /// list rows and avatars). Populated only when the user selects a
+    /// main name from `mainDpnsName` selection or as the fallback set
+    /// during initial registration. The full label collection lives on
+    /// the `dpnsNames` relationship below; this scalar is just the
+    /// "show this one in the cell" hint.
+    public var dpnsName: String?
+    public var mainDpnsName: String?
+    public var identityType: String
+
+    // MARK: - Special Key Storage (stored in keychain)
+    public var votingPrivateKeyIdentifier: String?
+    public var ownerPrivateKeyIdentifier: String?
+    public var payoutPrivateKeyIdentifier: String?
+
+    // MARK: - Public Keys
+    @Relationship(deleteRule: .cascade) public var publicKeys: [PersistentPublicKey]
+
+    // MARK: - Timestamps
+    public var createdAt: Date
+    public var lastUpdated: Date
+    public var lastSyncedAt: Date?
+
+    // MARK: - Network
+    /// Stored as the `Network.rawValue` `UInt32` so SwiftData
+    /// `#Predicate` expressions can evaluate it directly. Foundation's
+    /// predicate engine rejects captured non-primitive types — even
+    /// Codable raw-value enums crash at evaluation with
+    /// "Unsupported Predicate: Captured/constant values of type
+    /// 'Network' are not supported". The `network` computed
+    /// accessor below keeps the public API type-safe; only predicates
+    /// that need to filter by network reach for `networkRaw`.
+    public var networkRaw: UInt32
+
+    /// Type-safe accessor over `networkRaw`. Reads fall back to
+    /// `.testnet` if the stored raw value ever drifts out of the
+    /// `Network` range (shouldn't happen — writers only go through
+    /// this setter which uses `Network.rawValue`).
+    public var network: Network {
+        get { Network(rawValue: networkRaw) ?? .testnet }
+        set { networkRaw = newValue.rawValue }
+    }
+
+    // MARK: - Wallet Association
+    //
+    // Cardinality: an identity belongs to 0 or 1 wallet. A wallet
+    // holds N identities (see `PersistentWallet.identities`). When
+    // the wallet is deleted, `wallet` nulls out (deleteRule:
+    // `.nullify`) and the identity row survives orphaned.
+    //
+    // The `wallet` reference is the single source of truth — there
+    // is no denormalized scalar `walletId`. Callers that want the
+    // 32-byte wallet id read `identity.wallet?.walletId`;
+    // predicates filter with `$0.wallet?.walletId == target`.
+    // `@Relationship` is declared on the `PersistentWallet` side
+    // (`identities`, with `inverse: \PersistentIdentity.wallet`),
+    // so this is a plain stored property.
+    public var wallet: PersistentWallet?
+    /// DIP-9 identity index within the owning wallet. Mirrors the
+    /// `identity_index` carried on `IdentityEntryFFI` from Rust.
+    /// Only meaningful when `wallet != nil`; defaults to 0
+    /// otherwise. Used to stable-sort identities within a wallet
+    /// (e.g. when grouping public keys by identity).
+    public var identityIndex: UInt32 = 0
+
+    // MARK: - Relationships
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDocument.ownerIdentity) public var documents: [PersistentDocument]
+    @Relationship(deleteRule: .nullify) public var tokenBalances: [PersistentTokenBalance]
+
+    /// Confirmed DPNS labels owned by this identity. Cascade-deleted
+    /// from the parent — losing the identity row drops the label
+    /// cache too. Append-only on the write path: the changeset's
+    /// merge policy never removes labels (DPNS doesn't expose a
+    /// user-driven "delete name" today), so the persister callback
+    /// only inserts new rows, never removes them. Predicates filter
+    /// by the denormalized `PersistentDPNSName.identityId` column,
+    /// not through this collection — see
+    /// `PersistentDPNSName.predicate(identityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDPNSName.identity)
+    public var dpnsNames: [PersistentDPNSName] = []
+
+    /// DashPay profile cache for this identity — at most one row per
+    /// (network, identity) per the contract's per-`ownerId`
+    /// uniqueness on the `profile` document. Cascade-deleted from the
+    /// parent. Optional because not every identity has published a
+    /// profile (and the FFI changeset's `dashpay_profile: None`
+    /// semantics mean "no update", not "delete" — the persister never
+    /// nils this out from a flush). Inserted / refreshed by
+    /// `PlatformWalletPersistenceHandler.upsertDashpayProfile(...)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayProfile.identity)
+    public var dashpayProfile: PersistentDashpayProfile?
+
+    /// DashPay contact-request rows owned by this identity (both
+    /// outgoing and incoming). Cascade-deleted from the parent. Same
+    /// query-by-denormalized-id pattern as `dpnsNames`: filters use
+    /// `PersistentDashpayContactRequest.predicate(ownerIdentityId:)`
+    /// rather than walking this collection from a SwiftUI view.
+    /// Append / overwrite / delete on the write path: the persister
+    /// callback applies upserts (per `(owner, contact, isOutgoing)`)
+    /// and tombstones (`removed_sent` / `removed_incoming`) directly.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactRequest.owner)
+    public var contactRequests: [PersistentDashpayContactRequest] = []
+
+    /// DashPay payment-history rows owned by this identity.
+    /// Cascade-deleted from the parent. Same
+    /// query-by-denormalized-id pattern as `contactRequests`: filters
+    /// use `PersistentDashpayPayment.predicate(ownerIdentityId:)`
+    /// rather than walking this collection from a SwiftUI view.
+    /// Populated by `PlatformWalletManager.refreshDashPayPayments`
+    /// (FFI getter → upsert), not by the persister callback.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayPayment.owner)
+    public var dashpayPayments: [PersistentDashpayPayment] = []
+
+    /// DashPay ignored senders (per-sender mute, = block, reversible,
+    /// local-only) owned by this identity. Cascade-deleted from the parent.
+    /// Persisted from the `ignored` changeset array by `persistContacts`
+    /// and read back at load to rebuild the Rust `ignored_senders` set —
+    /// without them an ignored sender resurfaces on relaunch. Filters use
+    /// `PersistentDashpayIgnoredSender.predicate(ownerIdentityId:)`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayIgnoredSender.owner)
+    public var dashpayIgnoredSenders: [PersistentDashpayIgnoredSender] = []
+
+    /// Cached DashPay **contact** profiles owned by this identity (one
+    /// per contact whose public profile has been fetched). Cascade-deleted
+    /// from the parent. Same query-by-denormalized-id pattern as
+    /// `contactRequests`: filters use
+    /// `PersistentDashpayContactProfile.predicate(ownerIdentityId:)` rather
+    /// than walking this collection from a SwiftUI view. Populated by the
+    /// persister callback (`IdentityEntryFFI.contact_profiles` rows) and
+    /// read back at load to rebuild the Rust `contact_profiles` map.
+    /// Distinct from the owner's own `dashpayProfile`.
+    @Relationship(deleteRule: .cascade, inverse: \PersistentDashpayContactProfile.owner)
+    public var contactProfiles: [PersistentDashpayContactProfile] = []
+
+    // Contracts in the local store that name this identity as their
+    // owner. `.nullify` so deleting the identity leaves the contract
+    // rows alive (with `ownerIdentity` nulled) — matches the user's
+    // intent that contracts persist independently of whether the owner
+    // identity happens to be loaded.
+    // The `@Relationship` macro is declared on the contract side
+    // (`PersistentDataContract.ownerIdentity`) so this is a plain
+    // stored property — see `wallet` above for the same pattern.
+    public var ownedDataContracts: [PersistentDataContract]
+
+    // MARK: - Initialization
+    public init(
+        identityId: Data,
+        balance: Int64 = 0,
+        revision: Int64 = 0,
+        isLocal: Bool = true,
+        alias: String? = nil,
+        dpnsName: String? = nil,
+        mainDpnsName: String? = nil,
+        identityType: IdentityType = .user,
+        votingPrivateKeyIdentifier: String? = nil,
+        ownerPrivateKeyIdentifier: String? = nil,
+        payoutPrivateKeyIdentifier: String? = nil,
+        network: Network,
+        identityIndex: UInt32 = 0
+    ) {
+        self.identityId = identityId
+        self.balance = balance
+        self.revision = revision
+        self.isLocal = isLocal
+        self.alias = alias
+        self.dpnsName = dpnsName
+        self.mainDpnsName = mainDpnsName
+        self.identityType = identityType.rawValue
+        self.votingPrivateKeyIdentifier = votingPrivateKeyIdentifier
+        self.ownerPrivateKeyIdentifier = ownerPrivateKeyIdentifier
+        self.payoutPrivateKeyIdentifier = payoutPrivateKeyIdentifier
+        self.networkRaw = network.rawValue
+        self.identityIndex = identityIndex
+        self.publicKeys = []
+        self.documents = []
+        self.tokenBalances = []
+        self.dpnsNames = []
+        self.dashpayProfile = nil
+        self.contactRequests = []
+        self.dashpayPayments = []
+        self.dashpayIgnoredSenders = []
+        self.contactProfiles = []
+        self.ownedDataContracts = []
+        self.createdAt = Date()
+        self.lastUpdated = Date()
+        self.lastSyncedAt = nil
+    }
+
+    // MARK: - Computed Properties
+    public var identityIdString: String {
+        identityId.toHexString()
+    }
+
+    public var identityIdBase58: String {
+        identityId.toBase58String()
+    }
+
+    public var formattedBalance: String {
+        let dashAmount = Double(balance) / 100_000_000_000
+        return String(format: "%.8f DASH", dashAmount)
+    }
+
+    /// Projected DPP `IdentityPublicKey` view of `publicKeys`.
+    /// Views that deal in DPP types (key signing, state
+    /// transitions, crypto helpers) get their input here without
+    /// having to thread `PersistentPublicKey` → DPP conversions
+    /// themselves. Recomputed on each access — cheap.
+    public var identityPublicKeys: [IdentityPublicKey] {
+        publicKeys.compactMap { $0.toIdentityPublicKey() }
+    }
+
+    /// User-facing short name. Priority: `alias` → `mainDpnsName`
+    /// → `dpnsName` → truncated hex id. Mirrors the old
+    /// `IdentityModel.displayName` extension so views that read
+    /// this don't change behavior post-migration.
+    public var displayName: String {
+        if let alias = alias, !alias.isEmpty {
+            return alias
+        }
+        if let mainDpnsName = mainDpnsName, !mainDpnsName.isEmpty {
+            return mainDpnsName
+        }
+        if let dpnsName = dpnsName, !dpnsName.isEmpty {
+            return dpnsName
+        }
+        return String(identityIdString.prefix(12)) + "..."
+    }
+
+    public var identityTypeEnum: IdentityType {
+        IdentityType(rawValue: identityType) ?? .user
+    }
+
+    // MARK: - Methods
+    public func updateBalance(_ newBalance: Int64) {
+        self.balance = newBalance
+        self.lastUpdated = Date()
+    }
+
+    public func updateRevision(_ newRevision: Int64) {
+        self.revision = newRevision
+        self.lastUpdated = Date()
+    }
+
+    public func markAsSynced() {
+        self.lastSyncedAt = Date()
+    }
+
+    public func updateDPNSName(_ name: String?) {
+        self.dpnsName = name
+        self.lastUpdated = Date()
+    }
+
+    public func addPublicKey(_ key: PersistentPublicKey) {
+        publicKeys.append(key)
+        lastUpdated = Date()
+    }
+
+    public func removePublicKey(withId keyId: Int32) {
+        publicKeys.removeAll { $0.keyId == keyId }
+        lastUpdated = Date()
+    }
+}
+
+
+// MARK: - Queries
+
+extension PersistentIdentity {
+    public static func predicate(identityId: Data) -> Predicate<PersistentIdentity> {
+        #Predicate<PersistentIdentity> { identity in
+            identity.identityId == identityId
+        }
+    }
+
+    /// Identities owned by *some* wallet on this device — i.e. ones
+    /// the persister attached to a `PersistentWallet` via the
+    /// `wallet` relationship. Use this for views that should only
+    /// surface identities the user can act as / sign for.
+    ///
+    /// Distinct from the `isLocal` flag — that drives the
+    /// "Local Only" / "On Network" UI badge (Platform-confirmed vs
+    /// pending broadcast). Wallet ownership is orthogonal: an
+    /// identity can be wallet-owned and `isLocal` (just registered,
+    /// not yet confirmed), wallet-owned and on-network (confirmed),
+    /// or out-of-wallet (DashPay contact / payment recipient).
+    public static var walletOwnedIdentitiesPredicate: Predicate<PersistentIdentity> {
+        #Predicate<PersistentIdentity> { identity in
+            identity.wallet != nil
+        }
+    }
+
+    public static func predicate(type: IdentityType) -> Predicate<PersistentIdentity> {
+        let typeString = type.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.identityType == typeString
+        }
+    }
+
+    public static func needsSyncPredicate(olderThan date: Date) -> Predicate<PersistentIdentity> {
+        #Predicate<PersistentIdentity> { identity in
+            identity.lastSyncedAt == nil || identity.lastSyncedAt! < date
+        }
+    }
+
+    public static func predicate(network: Network) -> Predicate<PersistentIdentity> {
+        // Compare against the UInt32-backed `networkRaw` because Foundation's
+        // predicate evaluator can't capture non-primitive types like
+        // `Network` (the computed `network` accessor is invisible to
+        // SwiftData — it can't see through `\.network.rawValue` either).
+        let target = network.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.networkRaw == target
+        }
+    }
+
+    /// Network-scoped variant of [`walletOwnedIdentitiesPredicate`].
+    /// Used by the recipient pickers, the "Acting as" picker, and any
+    /// view that needs to restrict to identities the user controls on
+    /// a specific network.
+    public static func walletOwnedIdentitiesPredicate(network: Network) -> Predicate<PersistentIdentity> {
+        let target = network.rawValue
+        return #Predicate<PersistentIdentity> { identity in
+            identity.wallet != nil && identity.networkRaw == target
+        }
+    }
+
+    /// Fetch a single `PersistentIdentity` by its raw 32-byte id.
+    /// Returns `nil` if the row doesn't exist or the fetch throws.
+    public static func fetch(
+        in context: ModelContext,
+        identityId: Data
+    ) -> PersistentIdentity? {
+        let target = identityId
+        let descriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == target }
+        )
+        return try? context.fetch(descriptor).first
+    }
+}
+
+// MARK: - Mutation helpers
+//
+// Deliberately small surface: only the fields views actually
+// mutate from inside SwiftUI. Every helper fetches by identityId,
+// applies the change, bumps `lastUpdated`, and leaves `save()` to
+// the caller (or to the atomic-round bracket on the persister
+// handler). `@discardableResult` on all of them because most
+// call sites don't care whether the row existed.
+
+extension PersistentIdentity {
+    @discardableResult
+    public static func updateBalance(
+        in context: ModelContext,
+        identityId: Data,
+        balance: UInt64
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.balance = Int64(bitPattern: balance)
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func updateDpnsName(
+        in context: ModelContext,
+        identityId: Data,
+        dpnsName: String?
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.dpnsName = dpnsName
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func updateMainDpnsName(
+        in context: ModelContext,
+        identityId: Data,
+        mainDpnsName: String?
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        row.mainDpnsName = mainDpnsName
+        row.lastUpdated = Date()
+        return true
+    }
+
+    @discardableResult
+    public static func remove(
+        in context: ModelContext,
+        identityId: Data
+    ) -> Bool {
+        guard let row = fetch(in: context, identityId: identityId) else { return false }
+        context.delete(row)
+        return true
+    }
+}
+
+// `PersistentIdentity` used to round-trip through the legacy
+// `IdentityModel` value-type via `from(_:network:)` /
+// `toIdentityModel()`. Both sides of that bridge are gone now —
+// views read and mutate `PersistentIdentity` rows directly, and the
+// DPP projection for key crypto lives under `identityPublicKeys`
+// above.

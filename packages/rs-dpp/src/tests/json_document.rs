@@ -1,5 +1,7 @@
 use crate::data_contract::accessors::v0::DataContractV0Setters;
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
+use crate::data_contract::config::DataContractConfig;
+#[cfg(feature = "json-conversion")]
 use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 #[cfg(any(feature = "state-transitions", feature = "factories"))]
 use crate::data_contract::created_data_contract::v0::CreatedDataContractV0;
@@ -19,7 +21,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 /// Reads a JSON file and converts it to serde_value.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub fn json_document_to_json_value(
     path: impl AsRef<Path>,
 ) -> Result<serde_json::Value, ProtocolError> {
@@ -62,7 +64,7 @@ pub fn json_document_to_cbor(
 }
 
 /// Reads a JSON file and converts it a contract.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub fn json_document_to_contract(
     path: impl AsRef<Path>,
     full_validation: bool,
@@ -70,12 +72,25 @@ pub fn json_document_to_contract(
 ) -> Result<DataContract, ProtocolError> {
     let value = json_document_to_json_value(path)?;
 
-    DataContract::from_json(value, full_validation, platform_version)
+    if full_validation {
+        DataContract::from_json(value, true, platform_version)
+    } else {
+        // Non-validating path: deserialize the platform-version-agnostic
+        // serialization format (which handles both V0/V1 wire shapes via
+        // `$formatVersion`), then dispatch on the caller-provided
+        // `platform_version` to pick the DataContract variant. We avoid
+        // `serde_json::from_value::<DataContract>` here because that path
+        // ignores the caller pv and uses the process-global current/latest.
+        let format: crate::data_contract::serialized_version::DataContractInSerializationFormat =
+            serde_json::from_value(value)
+                .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
+        DataContract::try_from_platform_versioned(format, false, &mut vec![], platform_version)
+    }
 }
 
 #[cfg(all(
     any(feature = "state-transitions", feature = "factories"),
-    feature = "data-contract-json-conversion"
+    feature = "json-conversion"
 ))]
 /// Reads a JSON file and converts it a contract.
 pub fn json_document_to_created_contract(
@@ -84,7 +99,12 @@ pub fn json_document_to_created_contract(
     full_validation: bool,
     platform_version: &PlatformVersion,
 ) -> Result<CreatedDataContract, ProtocolError> {
-    let data_contract = json_document_to_contract(path, full_validation, platform_version)?;
+    let mut data_contract = json_document_to_contract(path, full_validation, platform_version)?;
+
+    // JSON fixtures typically lack a config field, so they deserialize with V0 config default.
+    // Set config to the platform version default to match what the factory would produce,
+    // ensuring the contract passes config min_version validation during state transition processing.
+    data_contract.set_config(DataContractConfig::default_for_version(platform_version)?);
 
     Ok(CreatedDataContractV0 {
         data_contract,
@@ -94,7 +114,7 @@ pub fn json_document_to_created_contract(
 }
 
 /// Reads a JSON file and converts it a document.
-#[cfg(feature = "data-contract-json-conversion")]
+#[cfg(feature = "json-conversion")]
 pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
     id: Option<Identifier>,

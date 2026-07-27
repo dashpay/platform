@@ -1,0 +1,182 @@
+import { expect } from './helpers/chai.ts';
+import { initWasm, wasm } from '../../dist/dpp.compressed.js';
+
+before(async () => {
+  await initWasm();
+});
+
+describe('BlockInfo', () => {
+  describe('constructor()', () => {
+    it('should create BlockInfo with all parameters', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1000n, height: 100n, coreHeight: 50, epochIndex: 5 });
+
+      expect(blockInfo.timeMs).to.equal(1000n);
+      expect(blockInfo.height).to.equal(100n);
+      expect(blockInfo.coreHeight).to.equal(50);
+      expect(blockInfo.epochIndex).to.equal(5);
+    });
+
+    it('should create BlockInfo with zero values', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 0n, height: 0n, coreHeight: 0, epochIndex: 0 });
+
+      expect(blockInfo.timeMs).to.equal(0n);
+      expect(blockInfo.height).to.equal(0n);
+      expect(blockInfo.coreHeight).to.equal(0);
+      expect(blockInfo.epochIndex).to.equal(0);
+    });
+  });
+
+  describe('toJSON()', () => {
+    it('should round-trip via toJSON/fromJSON', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
+
+      const json = blockInfo.toJSON();
+
+      expect(json.timeMs).to.equal(1234567890);
+      expect(json.height).to.equal(999);
+      expect(json.coreHeight).to.equal(500);
+      expect(json.epoch.index).to.equal(10);
+
+      const restored = wasm.BlockInfo.fromJSON(json);
+      expect(restored.timeMs).to.equal(blockInfo.timeMs);
+      expect(restored.height).to.equal(blockInfo.height);
+      expect(restored.coreHeight).to.equal(blockInfo.coreHeight);
+      expect(restored.epochIndex).to.equal(blockInfo.epochIndex);
+    });
+
+    it('should match hardcoded expected JSON fixture', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
+
+      const expectedJSON = {
+        timeMs: 1234567890,
+        height: 999,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const json = blockInfo.toJSON();
+      expect(json).to.deep.equal(expectedJSON);
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should deserialize from hardcoded JSON fixture and verify all getters', () => {
+      const jsonFixture = {
+        timeMs: 1234567890,
+        height: 999,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const blockInfo = wasm.BlockInfo.fromJSON(jsonFixture);
+
+      expect(blockInfo.timeMs).to.equal(1234567890n);
+      expect(blockInfo.height).to.equal(999n);
+      expect(blockInfo.coreHeight).to.equal(500);
+      expect(blockInfo.epochIndex).to.equal(10);
+    });
+  });
+
+  describe('toObject()', () => {
+    it('should round-trip via toObject/fromObject', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
+
+      const obj = blockInfo.toObject();
+
+      expect(Number(obj.timeMs)).to.equal(1234567890);
+      expect(Number(obj.height)).to.equal(999);
+      expect(obj.coreHeight).to.equal(500);
+      expect(obj.epoch.index).to.equal(10);
+
+      const restored = wasm.BlockInfo.fromObject(obj);
+      expect(restored.timeMs).to.equal(blockInfo.timeMs);
+      expect(restored.height).to.equal(blockInfo.height);
+      expect(restored.coreHeight).to.equal(blockInfo.coreHeight);
+      expect(restored.epochIndex).to.equal(blockInfo.epochIndex);
+    });
+
+    it('should match hardcoded expected Object fixture', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
+
+      const expectedObject = {
+        timeMs: 1234567890n,
+        height: 999n,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const obj = blockInfo.toObject();
+      expect(obj).to.deep.equal(expectedObject);
+    });
+
+    it('should handle large values correctly', () => {
+      // Test with BigInt-sized values
+      const largeTimeMs = 1702500000000n; // realistic timestamp in ms
+      const largeHeight = 1000000n;
+      const blockInfo = new wasm.BlockInfo({
+        timeMs: largeTimeMs,
+        height: largeHeight,
+        coreHeight: 800000,
+        epochIndex: 100,
+      });
+
+      // JSON round-trip
+      const json = blockInfo.toJSON();
+      const restoredFromJson = wasm.BlockInfo.fromJSON(json);
+      expect(restoredFromJson.timeMs).to.equal(largeTimeMs);
+      expect(restoredFromJson.height).to.equal(largeHeight);
+
+      // Object round-trip
+      const obj = blockInfo.toObject();
+      const restoredFromObj = wasm.BlockInfo.fromObject(obj);
+      expect(restoredFromObj.timeMs).to.equal(largeTimeMs);
+      expect(restoredFromObj.height).to.equal(largeHeight);
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should deserialize from hardcoded Object fixture and verify all getters', () => {
+      const objectFixture = {
+        timeMs: 1234567890n,
+        height: 999n,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const blockInfo = wasm.BlockInfo.fromObject(objectFixture);
+
+      expect(blockInfo.timeMs).to.equal(1234567890n);
+      expect(blockInfo.height).to.equal(999n);
+      expect(blockInfo.coreHeight).to.equal(500);
+      expect(blockInfo.epochIndex).to.equal(10);
+    });
+  });
+
+  describe('timeMs', () => {
+    it('should return timeMs', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
+      expect(blockInfo.timeMs).to.equal(5000n);
+    });
+  });
+
+  describe('height', () => {
+    it('should return height', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
+      expect(blockInfo.height).to.equal(100n);
+    });
+  });
+
+  describe('coreHeight', () => {
+    it('should return coreHeight', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
+      expect(blockInfo.coreHeight).to.equal(50);
+    });
+  });
+
+  describe('epochIndex', () => {
+    it('should return epochIndex', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 5000n, height: 100n, coreHeight: 50, epochIndex: 5 });
+      expect(blockInfo.epochIndex).to.equal(5);
+    });
+  });
+});

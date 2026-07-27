@@ -63,3 +63,53 @@ pub(crate) fn encode_option_variant<E: Encoder, T>(
 pub(crate) fn encode_slice_len<E: Encoder>(encoder: &mut E, len: usize) -> Result<(), EncodeError> {
     (len as u64).encode(encoder)
 }
+
+#[cfg(test)]
+#[allow(clippy::drop_non_drop)]
+mod tests {
+    use super::*;
+    use bincode::config;
+
+    fn cfg() -> impl bincode::config::Config {
+        config::standard().with_big_endian().with_no_limit()
+    }
+
+    #[test]
+    fn encode_option_variant_none() {
+        let value: Option<u32> = None;
+        let mut writer = VecWriter::default();
+        let mut encoder = bincode::enc::EncoderImpl::new(&mut writer, cfg());
+        encode_option_variant(&mut encoder, &value).unwrap();
+        drop(encoder);
+        assert_eq!(writer.inner, &[0u8]);
+    }
+
+    #[test]
+    fn encode_option_variant_some() {
+        let value: Option<u32> = Some(42);
+        let mut writer = VecWriter::default();
+        let mut encoder = bincode::enc::EncoderImpl::new(&mut writer, cfg());
+        encode_option_variant(&mut encoder, &value).unwrap();
+        drop(encoder);
+        assert_eq!(writer.inner, &[1u8]);
+    }
+
+    #[test]
+    fn encode_slice_len_encodes_as_u64() {
+        let mut writer = VecWriter::default();
+        let mut encoder = bincode::enc::EncoderImpl::new(&mut writer, cfg());
+        encode_slice_len(&mut encoder, 5).unwrap();
+        drop(encoder);
+        // 5 as u64 in big-endian varint
+        let expected = bincode::encode_to_vec(5u64, cfg()).unwrap();
+        assert_eq!(writer.inner, expected);
+    }
+
+    #[test]
+    fn vec_writer_write_impl() {
+        let mut writer = VecWriter::default();
+        bincode::enc::write::Writer::write(&mut writer, b"hello").unwrap();
+        bincode::enc::write::Writer::write(&mut writer, b" world").unwrap();
+        assert_eq!(writer.inner, b"hello world");
+    }
+}

@@ -67,8 +67,7 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
     chain.getLongestChain().length.should.equal(25);
   });
 
-  // TODO: restore when conesnsus rules are enabled
-  it.skip('not add an invalid header', () => {
+  it('should not add an invalid header', () => {
     should(() => chain.addHeaders([headers[25]])).throw();
     chain.getLongestChain().length.should.equal(25);
   });
@@ -78,7 +77,7 @@ describe('SPV-DASH (forks & re-orgs) deserialized headers', () => {
       chain.addHeaders([headers[25], headers[10]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
-      e.message.should.equal('SPV: Header 00000ce430de949c85a145b02e33ebbaed3772dc8f3d668f66edc6852c24d002 is not a child of e59b97d3d11b4d4563b557e32c62afbdb6e947e9cbb4915c94073f08f7936d5f');
+      e.message.should.match(/SPV: Header .* (is invalid|is not a child of)/);
       done();
     }
   });
@@ -109,7 +108,7 @@ describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => 
     chain.getLongestChain().length.should.equal(2);
   });
 
-  it('should discard addding of duplicate block', () => {
+  it('should discard adding of duplicate block', () => {
     chain.addHeaders([mainnet[1]]);
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(2);
@@ -126,6 +125,39 @@ describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => 
     chain.getOrphanChunks().length.should.equal(0);
     chain.getAllBranches().length.should.equal(1);
     chain.getLongestChain().length.should.equal(4);
+  });
+});
+
+describe('Block header consensus validation', () => {
+  before(async () => {
+    await Blockchain.wasmX11Ready();
+  });
+
+  it('should reject a linked header that does not satisfy proof of work', () => {
+    const invalidHeader = utils.normalizeHeader(headers[0]);
+    invalidHeader.bits = 0;
+
+    consensus.isValidBlockHeader(
+      invalidHeader,
+      [new Blockchain('testnet').genesis],
+      'testnet',
+    ).should.equal(false);
+  });
+
+  it('should validate difficulty using history from before the current batch', () => {
+    const previousHeaders = mainnet.slice(0, 24).map(utils.normalizeHeader);
+    const nextHeader = utils.normalizeHeader(mainnet[24]);
+
+    consensus.isValidBlockHeader(nextHeader, previousHeaders, 'mainnet')
+      .should.equal(true);
+  });
+
+  it('should reject a proof-of-work-valid header for the wrong difficulty history', () => {
+    const wrongHistory = testnet.slice(0, 24).map(utils.normalizeHeader);
+    const nextHeader = utils.normalizeHeader(mainnet[24]);
+
+    consensus.isValidBlockHeader(nextHeader, wrongHistory, 'mainnet')
+      .should.equal(false);
   });
 });
 
@@ -197,7 +229,7 @@ describe('SPV-DASH (addHeaders) add many headers for testnet', () => {
       chain.addHeaders([badRawHeaders[0], badRawHeaders[2]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
-      e.message.should.equal('Some headers are invalid');
+      e.message.should.match(/SPV: Header .* (is invalid|is not a child of)/);
       done();
     }
   });
@@ -279,9 +311,9 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
     chain.getLongestChain().length.should.equal(1500);
   });
 
-  it('should orphan and not add invalid but consistent headers', () => {
-    chain.addHeaders([badRawHeaders[0], badRawHeaders[1]]);
-    chain.getOrphanChunks().length.should.equal(1);
+  it('should reject orphan headers outside the network proof-of-work limit', () => {
+    should(() => chain.addHeaders([badRawHeaders[0], badRawHeaders[1]])).throw();
+    chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(1500);
   });
 
@@ -290,7 +322,7 @@ describe('SPV-DASH (addHeaders) add many headers for mainnet', () => {
       chain.addHeaders([badRawHeaders[0], badRawHeaders[2]]);
       done(new Error('SPV chain failed to throw an error on invalid block'));
     } catch (e) {
-      e.message.should.equal('Some headers are invalid');
+      e.message.should.match(/SPV: Header .* (is invalid|is not a child of)/);
       done();
     }
   });

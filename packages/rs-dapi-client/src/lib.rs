@@ -2,6 +2,7 @@
 
 #![deny(missing_docs)]
 
+mod address_ban_info;
 mod address_list;
 mod connection_pool;
 mod dapi_client;
@@ -13,6 +14,7 @@ pub mod mock;
 mod request_settings;
 pub mod transport;
 
+pub use address_ban_info::AddressBanInfo;
 pub use address_list::Address;
 pub use address_list::AddressList;
 pub use address_list::AddressListError;
@@ -93,9 +95,18 @@ pub trait CanRetry {
         false
     }
 
+    /// If this error is a gRPC `ResourceExhausted` (Envoy rate-limit) that
+    /// carries a `RateLimit-Reset` metadata header, returns the server-advertised
+    /// ban duration (clamped to a safe range).  Returns `None` for all other
+    /// errors and for rate-limit errors that carry no usable header (the caller
+    /// falls back to the normal exponential ban ladder in that case).
+    fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
+        None
+    }
+
     /// Get boolean flag that indicates if the error is retryable.
     ///
-    /// Depreacted in favor of [CanRetry::can_retry].
+    /// Deprecated in favor of [CanRetry::can_retry].
     #[deprecated = "Use !can_retry() instead"]
     fn is_node_failure(&self) -> bool {
         !self.can_retry()

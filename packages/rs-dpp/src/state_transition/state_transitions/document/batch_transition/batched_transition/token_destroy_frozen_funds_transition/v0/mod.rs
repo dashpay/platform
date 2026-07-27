@@ -1,22 +1,25 @@
 pub mod v0_methods;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use bincode::{Decode, Encode};
 use derive_more::Display;
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq, Display)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 #[display("Base: {base}, Destroyed Account Identity ID: {frozen_identity_id}")]
 pub struct TokenDestroyFrozenFundsTransitionV0 {
     /// Document Base Transition
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
     /// The identity id of the account whose balance should be destroyed
     pub frozen_identity_id: Identifier,

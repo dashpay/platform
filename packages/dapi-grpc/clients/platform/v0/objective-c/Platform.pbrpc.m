@@ -72,16 +72,29 @@
 
 #pragma mark broadcastStateTransition(BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse)
 
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)broadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTobroadcastStateTransitionWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTobroadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"broadcastStateTransition"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[BroadcastStateTransitionResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
+/**
+ * @sdk-ignore: Write-only endpoint, not a query
+ */
 - (GRPCUnaryProtoCall *)broadcastStateTransitionWithMessage:(BroadcastStateTransitionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"broadcastStateTransition"
                    message:message
@@ -350,6 +363,26 @@
              responseClass:[GetDataContractsResponse class]];
 }
 
+#pragma mark getDocumentHistory(GetDocumentHistoryRequest) returns (GetDocumentHistoryResponse)
+
+- (void)getDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetDocumentHistoryWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetDocumentHistoryWithRequest:(GetDocumentHistoryRequest *)request handler:(void(^)(GetDocumentHistoryResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getDocumentHistory"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetDocumentHistoryResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getDocumentHistoryWithMessage:(GetDocumentHistoryRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getDocumentHistory"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetDocumentHistoryResponse class]];
+}
+
 #pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
 - (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -432,16 +465,29 @@
 
 #pragma mark getConsensusParams(GetConsensusParamsRequest) returns (GetConsensusParamsResponse)
 
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (void)getConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetConsensusParamsWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
 - (GRPCProtoCall *)RPCTogetConsensusParamsWithRequest:(GetConsensusParamsRequest *)request handler:(void(^)(GetConsensusParamsResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getConsensusParams"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[GetConsensusParamsResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
+/**
+ * @sdk-ignore: Consensus params fetched via Tenderdash RPC
+ */
 - (GRPCUnaryProtoCall *)getConsensusParamsWithMessage:(GetConsensusParamsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getConsensusParams"
                    message:message
@@ -1193,6 +1239,126 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetRecentCompactedAddressBalanceChangesResponse class]];
+}
+
+#pragma mark getShieldedEncryptedNotes(GetShieldedEncryptedNotesRequest) returns (GetShieldedEncryptedNotesResponse)
+
+- (void)getShieldedEncryptedNotesWithRequest:(GetShieldedEncryptedNotesRequest *)request handler:(void(^)(GetShieldedEncryptedNotesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetShieldedEncryptedNotesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetShieldedEncryptedNotesWithRequest:(GetShieldedEncryptedNotesRequest *)request handler:(void(^)(GetShieldedEncryptedNotesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getShieldedEncryptedNotes"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetShieldedEncryptedNotesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getShieldedEncryptedNotesWithMessage:(GetShieldedEncryptedNotesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getShieldedEncryptedNotes"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetShieldedEncryptedNotesResponse class]];
+}
+
+#pragma mark getShieldedAnchors(GetShieldedAnchorsRequest) returns (GetShieldedAnchorsResponse)
+
+- (void)getShieldedAnchorsWithRequest:(GetShieldedAnchorsRequest *)request handler:(void(^)(GetShieldedAnchorsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetShieldedAnchorsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetShieldedAnchorsWithRequest:(GetShieldedAnchorsRequest *)request handler:(void(^)(GetShieldedAnchorsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getShieldedAnchors"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetShieldedAnchorsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getShieldedAnchorsWithMessage:(GetShieldedAnchorsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getShieldedAnchors"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetShieldedAnchorsResponse class]];
+}
+
+#pragma mark getMostRecentShieldedAnchor(GetMostRecentShieldedAnchorRequest) returns (GetMostRecentShieldedAnchorResponse)
+
+- (void)getMostRecentShieldedAnchorWithRequest:(GetMostRecentShieldedAnchorRequest *)request handler:(void(^)(GetMostRecentShieldedAnchorResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetMostRecentShieldedAnchorWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetMostRecentShieldedAnchorWithRequest:(GetMostRecentShieldedAnchorRequest *)request handler:(void(^)(GetMostRecentShieldedAnchorResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getMostRecentShieldedAnchor"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetMostRecentShieldedAnchorResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getMostRecentShieldedAnchorWithMessage:(GetMostRecentShieldedAnchorRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getMostRecentShieldedAnchor"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetMostRecentShieldedAnchorResponse class]];
+}
+
+#pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)
+
+- (void)getShieldedPoolStateWithRequest:(GetShieldedPoolStateRequest *)request handler:(void(^)(GetShieldedPoolStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetShieldedPoolStateWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetShieldedPoolStateWithRequest:(GetShieldedPoolStateRequest *)request handler:(void(^)(GetShieldedPoolStateResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getShieldedPoolState"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetShieldedPoolStateResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getShieldedPoolStateWithMessage:(GetShieldedPoolStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getShieldedPoolState"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetShieldedPoolStateResponse class]];
+}
+
+#pragma mark getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse)
+
+- (void)getShieldedNotesCountWithRequest:(GetShieldedNotesCountRequest *)request handler:(void(^)(GetShieldedNotesCountResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetShieldedNotesCountWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetShieldedNotesCountWithRequest:(GetShieldedNotesCountRequest *)request handler:(void(^)(GetShieldedNotesCountResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getShieldedNotesCount"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetShieldedNotesCountResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getShieldedNotesCountWithMessage:(GetShieldedNotesCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getShieldedNotesCount"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetShieldedNotesCountResponse class]];
+}
+
+#pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)
+
+- (void)getShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetShieldedNullifiersWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetShieldedNullifiersWithRequest:(GetShieldedNullifiersRequest *)request handler:(void(^)(GetShieldedNullifiersResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getShieldedNullifiers"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetShieldedNullifiersResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getShieldedNullifiersWithMessage:(GetShieldedNullifiersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getShieldedNullifiers"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetShieldedNullifiersResponse class]];
 }
 
 @end

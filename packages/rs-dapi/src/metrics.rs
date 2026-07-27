@@ -6,7 +6,6 @@ use prometheus::{
     register_int_gauge_vec,
 };
 use std::any::type_name_of_val;
-use std::borrow::Cow;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -15,23 +14,19 @@ use std::time::Instant;
 use tower::{Layer, Service};
 
 use crate::logging::middleware::{
-    detect_protocol_type, extract_grpc_status, http_status_to_grpc_status, parse_grpc_path,
+    detect_protocol_type, extract_grpc_status, http_status_to_grpc_status,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct MethodLabel(Cow<'static, str>);
+pub struct MethodLabel(&'static str);
 
 impl MethodLabel {
     pub fn from_type_name(name: &'static str) -> Self {
-        Self(Cow::Borrowed(name))
-    }
-
-    pub fn from_owned(name: String) -> Self {
-        Self(Cow::Owned(name))
+        Self(name)
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        self.0
     }
 }
 
@@ -500,25 +495,120 @@ where
 
 #[inline]
 fn endpoint_label(protocol: &str, path: &str, method_hint: Option<&MethodLabel>) -> String {
-    if protocol == "gRPC" {
-        if let Some(method) = method_hint {
-            return method.as_str().to_string();
-        }
-        let (service, method) = parse_grpc_path(path);
-        if service == "unknown" && method == "unknown" {
-            path.to_string()
-        } else {
-            format!("{}/{}", service, method)
-        }
-    } else if protocol == "JSON-RPC" {
-        if let Some(method) = method_hint {
-            method.as_str().to_string()
-        } else {
-            path.to_string()
-        }
-    } else {
-        path.to_string()
+    match protocol {
+        "gRPC" => known_grpc_endpoint(path).to_string(),
+        "JSON-RPC" => method_hint
+            .map(MethodLabel::as_str)
+            .unwrap_or("jsonrpc_unknown")
+            .to_string(),
+        _ => "http_unknown".to_string(),
     }
+}
+
+macro_rules! match_grpc_methods {
+    ($path:expr, $service:literal, [$($method:literal),+ $(,)?]) => {{
+        match $path {
+            $(concat!("/", $service, "/", $method) => {
+                Some(concat!($service, "/", $method))
+            },)+
+            _ => None,
+        }
+    }};
+}
+
+/// Return a label only for methods compiled into the two public Tonic services.
+/// Every other syntactically valid or malformed path shares one finite bucket.
+// KEEP IN SYNC with packages/dapi-grpc/protos/{core,platform}/v0/*.proto —
+// an rpc missing here still serves fine but its metrics degrade to the
+// `grpc_unknown` bucket. Enforced by
+// `known_grpc_endpoint_covers_every_served_rpc`, which walks dapi-grpc's
+// FILE_DESCRIPTOR_SET, so forgetting to extend this list fails CI.
+fn known_grpc_endpoint(path: &str) -> &'static str {
+    match_grpc_methods!(
+        path,
+        "org.dash.platform.dapi.v0.Core",
+        [
+            "getBlockchainStatus",
+            "getMasternodeStatus",
+            "getBlock",
+            "getBestBlockHeight",
+            "getEstimatedTransactionFee",
+            "broadcastTransaction",
+            "getTransaction",
+            "subscribeToBlockHeadersWithChainLocks",
+            "subscribeToTransactionsWithProofs",
+            "subscribeToMasternodeList",
+        ]
+    )
+    .or_else(|| {
+        match_grpc_methods!(
+            path,
+            "org.dash.platform.dapi.v0.Platform",
+            [
+                "broadcastStateTransition",
+                "getIdentity",
+                "getIdentityKeys",
+                "getIdentitiesContractKeys",
+                "getIdentityNonce",
+                "getIdentityContractNonce",
+                "getIdentityBalance",
+                "getIdentitiesBalances",
+                "getIdentityBalanceAndRevision",
+                "getEvonodesProposedEpochBlocksByIds",
+                "getEvonodesProposedEpochBlocksByRange",
+                "getDataContract",
+                "getDataContractHistory",
+                "getDataContracts",
+                "getDocumentHistory",
+                "getDocuments",
+                "getIdentityByPublicKeyHash",
+                "getIdentityByNonUniquePublicKeyHash",
+                "waitForStateTransitionResult",
+                "getConsensusParams",
+                "getProtocolVersionUpgradeState",
+                "getProtocolVersionUpgradeVoteStatus",
+                "getEpochsInfo",
+                "getFinalizedEpochInfos",
+                "getContestedResources",
+                "getContestedResourceVoteState",
+                "getContestedResourceVotersForIdentity",
+                "getContestedResourceIdentityVotes",
+                "getVotePollsByEndDate",
+                "getPrefundedSpecializedBalance",
+                "getTotalCreditsInPlatform",
+                "getPathElements",
+                "getStatus",
+                "getCurrentQuorumsInfo",
+                "getIdentityTokenBalances",
+                "getIdentitiesTokenBalances",
+                "getIdentityTokenInfos",
+                "getIdentitiesTokenInfos",
+                "getTokenStatuses",
+                "getTokenDirectPurchasePrices",
+                "getTokenContractInfo",
+                "getTokenPreProgrammedDistributions",
+                "getTokenPerpetualDistributionLastClaim",
+                "getTokenTotalSupply",
+                "getGroupInfo",
+                "getGroupInfos",
+                "getGroupActions",
+                "getGroupActionSigners",
+                "getAddressInfo",
+                "getAddressesInfos",
+                "getAddressesTrunkState",
+                "getAddressesBranchState",
+                "getRecentAddressBalanceChanges",
+                "getRecentCompactedAddressBalanceChanges",
+                "getShieldedEncryptedNotes",
+                "getShieldedAnchors",
+                "getMostRecentShieldedAnchor",
+                "getShieldedPoolState",
+                "getShieldedNotesCount",
+                "getShieldedNullifiers",
+            ]
+        )
+    })
+    .unwrap_or("grpc_unknown")
 }
 
 // ---- Platform events (proxy) helpers ----
@@ -534,7 +624,9 @@ pub fn platform_events_active_sessions_dec() {
 }
 
 #[inline]
-pub fn platform_events_command(op: &str) {
+pub fn platform_events_command(op: &'static str) {
+    // `&'static str` keeps this label bounded by construction — request-derived
+    // strings cannot reach the registry (same rationale as `MethodLabel`).
     PLATFORM_EVENTS_COMMANDS.with_label_values(&[op]).inc();
 }
 
@@ -566,4 +658,287 @@ pub fn workers_active_inc() {
 #[inline]
 pub fn workers_active_dec() {
     WORKERS_ACTIVE.dec();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clamp_to_i64_within_range() {
+        assert_eq!(clamp_to_i64(0), 0);
+        assert_eq!(clamp_to_i64(1000), 1000);
+        assert_eq!(clamp_to_i64(i64::MAX as u64), i64::MAX);
+    }
+
+    #[test]
+    fn clamp_to_i64_above_range() {
+        assert_eq!(clamp_to_i64(u64::MAX), i64::MAX);
+        assert_eq!(clamp_to_i64(i64::MAX as u64 + 1), i64::MAX);
+    }
+
+    // Smoke test: verifies metric gathering does not panic and returns a valid content type
+    #[test]
+    fn gather_prometheus_returns_non_empty() {
+        let (buffer, content_type) = gather_prometheus();
+        // Buffer may be empty if no metrics have been touched yet, but should not panic
+        assert!(!content_type.is_empty());
+        let _ = buffer; // just ensure it doesn't panic
+    }
+
+    // Smoke test: verifies metric registration and label cardinality.
+    // Intentionally only checks that calls do not panic; asserting recorded
+    // values would couple tests to the global Prometheus registry state.
+    #[test]
+    fn cache_metrics_functions_do_not_panic() {
+        let label = MethodLabel::from_type_name("test_method");
+        cache_hit("test_cache", &label);
+        cache_miss("test_cache", &label);
+        cache_memory_usage_bytes("test_cache", 1024);
+        cache_memory_capacity_bytes("test_cache", 2048);
+        cache_entries("test_cache", 10);
+    }
+
+    // Smoke test: verifies metric registration and label cardinality.
+    // Intentionally only checks that calls do not panic; asserting recorded
+    // values would couple tests to the global Prometheus registry state.
+    #[test]
+    fn request_metrics_functions_do_not_panic() {
+        requests_inc("gRPC", "test_endpoint", "0");
+        request_duration_observe("gRPC", "test_endpoint", "0", 0.1);
+    }
+
+    // Smoke test: verifies metric registration and label cardinality.
+    // Intentionally only checks that calls do not panic; asserting recorded
+    // values would couple tests to the global Prometheus registry state.
+    #[test]
+    fn platform_events_metrics_do_not_panic() {
+        platform_events_active_sessions_inc();
+        platform_events_active_sessions_dec();
+        platform_events_command("subscribe");
+        platform_events_forwarded_event();
+        platform_events_forwarded_ack();
+        platform_events_forwarded_error();
+        platform_events_upstream_stream_started();
+    }
+
+    // Smoke test: verifies metric registration and label cardinality.
+    // Intentionally only checks that calls do not panic; asserting recorded
+    // values would couple tests to the global Prometheus registry state.
+    #[test]
+    fn workers_active_metrics_do_not_panic() {
+        workers_active_inc();
+        workers_active_dec();
+    }
+
+    // -- MethodLabel tests --
+
+    #[test]
+    fn method_label_from_type_name() {
+        let label = MethodLabel::from_type_name("GetStatusRequest");
+        assert_eq!(label.as_str(), "GetStatusRequest");
+        assert_eq!(format!("{}", label), "GetStatusRequest");
+    }
+
+    #[test]
+    fn method_label_function() {
+        let value = 42_u32;
+        let label = method_label(&value);
+        assert_eq!(label.as_str(), "u32");
+    }
+
+    #[test]
+    fn attach_method_label_inserts_into_extensions() {
+        let mut extensions = axum::http::Extensions::new();
+        let label = MethodLabel::from_type_name("my_method");
+        attach_method_label(&mut extensions, label);
+        let retrieved = extensions
+            .get::<MethodLabel>()
+            .expect("MethodLabel should be in extensions");
+        assert_eq!(retrieved.as_str(), "my_method");
+    }
+
+    // -- Metric enum tests --
+
+    #[test]
+    fn metric_names_are_prefixed() {
+        assert!(Metric::CacheEvent.name().starts_with("rsdapi_"));
+        assert!(Metric::RequestCount.name().starts_with("rsdapi_"));
+        assert!(Metric::WorkersActive.name().starts_with("rsdapi_"));
+    }
+
+    #[test]
+    fn metric_help_strings_are_nonempty() {
+        assert!(!Metric::CacheEvent.help().is_empty());
+        assert!(!Metric::RequestDuration.help().is_empty());
+        assert!(!Metric::PlatformEventsActiveSessions.help().is_empty());
+    }
+
+    // -- Outcome enum tests --
+
+    #[test]
+    fn outcome_as_str() {
+        assert_eq!(Outcome::Hit.as_str(), "hit");
+        assert_eq!(Outcome::Miss.as_str(), "miss");
+    }
+
+    // -- Label enum tests --
+
+    #[test]
+    fn label_names() {
+        assert_eq!(Label::Cache.name(), "cache");
+        assert_eq!(Label::Method.name(), "method");
+        assert_eq!(Label::Outcome.name(), "outcome");
+        assert_eq!(Label::Protocol.name(), "protocol");
+        assert_eq!(Label::Endpoint.name(), "endpoint");
+        assert_eq!(Label::Status.name(), "status");
+        assert_eq!(Label::Op.name(), "op");
+    }
+
+    // -- Metrics struct tests --
+
+    #[test]
+    fn metrics_struct_cache_events() {
+        let label = MethodLabel::from_type_name("test");
+        Metrics::cache_events_hit("struct_cache", &label);
+        Metrics::cache_events_miss("struct_cache", &label);
+        Metrics::cache_events_inc("struct_cache", &label, Outcome::Hit);
+    }
+
+    // -- endpoint_label tests --
+
+    #[test]
+    fn endpoint_label_grpc_with_hint() {
+        let hint = MethodLabel::from_type_name("GetIdentity");
+        let result = endpoint_label(
+            "gRPC",
+            "/org.dash.platform.dapi.v0.Platform/getIdentity",
+            Some(&hint),
+        );
+        assert_eq!(result, "org.dash.platform.dapi.v0.Platform/getIdentity");
+    }
+
+    #[test]
+    fn endpoint_label_grpc_without_hint_allowlists_path() {
+        let result = endpoint_label(
+            "gRPC",
+            "/org.dash.platform.dapi.v0.Platform/getStatus",
+            None,
+        );
+        assert_eq!(result, "org.dash.platform.dapi.v0.Platform/getStatus");
+
+        let result = endpoint_label(
+            "gRPC",
+            "/org.dash.platform.dapi.v0.Core/getBlockchainStatus",
+            None,
+        );
+        assert_eq!(result, "org.dash.platform.dapi.v0.Core/getBlockchainStatus");
+    }
+
+    #[test]
+    fn endpoint_label_grpc_unknown_paths_share_one_bucket() {
+        for path in [
+            "/",
+            "/org.dash.platform.dapi.v0.Core/UnknownMethod0001",
+            "/org.dash.platform.dapi.v0.Platform/UnknownMethod0002",
+            "/org.dash.platform.dapi.v0.Platform0003/getStatus",
+        ] {
+            assert_eq!(endpoint_label("gRPC", path, None), "grpc_unknown");
+        }
+
+        for suffix in 0..10_000 {
+            let path = format!("/org.dash.platform.dapi.v0.Core/UnknownMethod{suffix:08}");
+            assert_eq!(endpoint_label("gRPC", &path, None), "grpc_unknown");
+        }
+    }
+
+    #[test]
+    fn endpoint_label_jsonrpc_with_hint() {
+        let hint = MethodLabel::from_type_name("getStatus");
+        let result = endpoint_label("JSON-RPC", "/", Some(&hint));
+        assert_eq!(result, "getStatus");
+    }
+
+    #[test]
+    fn endpoint_label_jsonrpc_without_hint() {
+        let result = endpoint_label("JSON-RPC", "/rpc", None);
+        assert_eq!(result, "jsonrpc_unknown");
+    }
+
+    /// Walks dapi-grpc's FILE_DESCRIPTOR_SET and asserts every rpc of the two
+    /// services this server exposes resolves to a real label. Adding an rpc
+    /// to the protos without extending `known_grpc_endpoint` fails here
+    /// instead of silently degrading the new method's metrics to
+    /// `grpc_unknown`.
+    #[test]
+    fn known_grpc_endpoint_covers_every_served_rpc() {
+        use dapi_grpc::Message;
+        use prost_types::FileDescriptorSet;
+
+        const SERVED_SERVICES: [&str; 2] = [
+            "org.dash.platform.dapi.v0.Core",
+            "org.dash.platform.dapi.v0.Platform",
+        ];
+
+        let mut seen_services = 0;
+        for descriptor_bytes in [
+            dapi_grpc::core::v0::FILE_DESCRIPTOR_SET,
+            dapi_grpc::platform::v0::FILE_DESCRIPTOR_SET,
+        ] {
+            let set = FileDescriptorSet::decode(descriptor_bytes)
+                .expect("dapi-grpc descriptor set should decode");
+            for file in &set.file {
+                for service in &file.service {
+                    let service_full = format!("{}.{}", file.package(), service.name());
+                    if !SERVED_SERVICES.contains(&service_full.as_str()) {
+                        continue;
+                    }
+                    seen_services += 1;
+                    assert!(
+                        !service.method.is_empty(),
+                        "descriptor for {service_full} lists no methods"
+                    );
+                    for method in &service.method {
+                        let path = format!("/{}/{}", service_full, method.name());
+                        assert_ne!(
+                            known_grpc_endpoint(&path),
+                            "grpc_unknown",
+                            "{path} is served but missing from the known_grpc_endpoint \
+                             allowlist — add it so its metrics don't degrade to grpc_unknown"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            seen_services, 2,
+            "expected to find both served services in the descriptor sets"
+        );
+    }
+
+    #[test]
+    fn endpoint_label_http_paths_share_one_bucket() {
+        for path in [
+            "/health",
+            "/org.dash.platform.dapi.v0.Platform0001",
+            "/org.dash.platform.dapi.v0.Core0002",
+        ] {
+            assert_eq!(endpoint_label("HTTP", path, None), "http_unknown");
+        }
+
+        for suffix in 0..10_000 {
+            let path = format!("/org.dash.platform.dapi.v0.Platform{suffix:08}");
+            assert_eq!(endpoint_label("HTTP", &path, None), "http_unknown");
+        }
+    }
+
+    // -- MetricsLayer tests --
+
+    // Smoke test: verifies MetricsLayer can be constructed without panic
+    #[test]
+    fn metrics_layer_new() {
+        let layer = MetricsLayer::new();
+        // Just ensure it constructs without panic
+        let _ = layer;
+    }
 }

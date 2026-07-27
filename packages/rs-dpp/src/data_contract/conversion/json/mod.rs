@@ -34,23 +34,6 @@ impl DataContractJsonConversionMethodsV0 for DataContract {
             }),
         }
     }
-
-    fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        match self {
-            DataContract::V0(v0) => v0.to_json(platform_version),
-            DataContract::V1(v1) => v1.to_json(platform_version),
-        }
-    }
-
-    fn to_validating_json(
-        &self,
-        platform_version: &PlatformVersion,
-    ) -> Result<JsonValue, ProtocolError> {
-        match self {
-            DataContract::V0(v0) => v0.to_validating_json(platform_version),
-            DataContract::V1(v1) => v1.to_validating_json(platform_version),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -68,12 +51,12 @@ mod tests {
         let id = "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p";
 
         let contract = json!({
-            "$format_version": "1",
+            "$formatVersion": "1",
             "id": id,
             "ownerId": owner,
             "version": 1,
             "config": {
-                "$format_version": "0",
+                "$formatVersion": "0",
                 "canBeDeleted": false,
                 "readonly": false,
                 "keepsHistory": false,
@@ -86,118 +69,127 @@ mod tests {
             "documentSchemas": {},
             "tokens": {
                 "0": {
-                    "$format_version": "0",
-                    "conventions": { "$format_version": "0", "decimals": 2, "localizations": {} },
+                    "$formatVersion": "0",
+                    "conventions": { "$formatVersion": "0", "decimals": 2, "localizations": {} },
                     "distributionRules": {
-                        "$format_version": "0",
+                        "$formatVersion": "0",
                         "perpetualDistribution": {
-                            "$format_version": "0",
+                            "$formatVersion": "0",
                             "distributionType": {
-                                "BlockBasedDistribution": {
-                                    "interval": 10,
-                                    "function": {
-                                        "Stepwise": { "0": 100, "10": 50 }
-                                    }
-                                }
+                                "$type": "blockBasedDistribution",
+                                "interval": 10,
+                                "function": { "$type": "stepwise", "0": 100, "10": 50 }
                             },
-                            "distributionRecipient": "ContractOwner"
+                            "distributionRecipient": {"$type": "contractOwner"}
                         },
-                        "perpetualDistributionRules": {"V0": {
-                            "authorized_to_make_change": "ContractOwner",
-                            "admin_action_takers": "ContractOwner",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
+                        "perpetualDistributionRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "contractOwner"},
+                            "adminActionTakers": {"$type": "contractOwner"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
                         "preProgrammedDistribution": null,
-                        "preProgrammedDistributionRules": {"V0": {
-                            "authorized_to_make_change": "NoOne",
-                            "admin_action_takers": "NoOne",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
+                        "preProgrammedDistributionRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "noOne"},
+                            "adminActionTakers": {"$type": "noOne"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
                         "newTokensDestinationIdentity": null,
-                        "newTokensDestinationIdentityRules": {"V0": {
-                            "authorized_to_make_change": "ContractOwner",
-                            "admin_action_takers": "ContractOwner",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
+                        "newTokensDestinationIdentityRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "contractOwner"},
+                            "adminActionTakers": {"$type": "contractOwner"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
                         "mintingAllowChoosingDestination": false,
-                        "mintingAllowChoosingDestinationRules": {"V0": {
-                            "authorized_to_make_change": "ContractOwner",
-                            "admin_action_takers": "ContractOwner",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
-                        "changeDirectPurchasePricingRules": {"V0": {
-                            "authorized_to_make_change": "NoOne",
-                            "admin_action_takers": "NoOne",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }}
+                        "mintingAllowChoosingDestinationRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "contractOwner"},
+                            "adminActionTakers": {"$type": "contractOwner"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
+                        "changeDirectPurchasePricingRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "noOne"},
+                            "adminActionTakers": {"$type": "noOne"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        }
                     },
-                    "marketplaceRules": {"$format_version": "0", "tradeMode": "NotTradeable"},
-                    "manualMintingRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "manualBurningRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "freezeRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "unfreezeRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "destroyFrozenFundsRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "emergencyActionRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "directPurchaseRules": {"V0": {
-                        "authorized_to_make_change": "NoOne",
-                        "admin_action_takers": "NoOne",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
+                    "marketplaceRules": {"$formatVersion": "0", "tradeMode": "NotTradeable"},
+                    "manualMintingRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "manualBurningRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "freezeRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "unfreezeRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "destroyFrozenFundsRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "emergencyActionRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "directPurchaseRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "noOne"},
+                        "adminActionTakers": {"$type": "noOne"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
                     "mainControlGroup": null,
-                    "mainControlGroupCanBeModified": "NoOne"
+                    "mainControlGroupCanBeModified": {"$type": "noOne"}
                 }
             }
         });
 
-        let result = DataContract::from_json(contract, true, &platform_version);
+        let result = DataContract::from_json(contract, true, platform_version);
         assert!(
             result.is_ok(),
             "Stepwise with string keys should be accepted by from_json"
@@ -212,12 +204,12 @@ mod tests {
         let id = "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p";
 
         let contract = json!({
-            "$format_version": "1",
+            "$formatVersion": "1",
             "id": id,
             "ownerId": owner,
             "version": 1,
             "config": {
-                "$format_version": "0",
+                "$formatVersion": "0",
                 "canBeDeleted": false,
                 "readonly": false,
                 "keepsHistory": false,
@@ -230,114 +222,126 @@ mod tests {
             "documentSchemas": {},
             "tokens": {
                 "0": {
-                    "$format_version": "0",
-                    "conventions": { "$format_version": "0", "decimals": 2, "localizations": {} },
+                    "$formatVersion": "0",
+                    "conventions": { "$formatVersion": "0", "decimals": 2, "localizations": {} },
                     "distributionRules": {
-                        "$format_version": "0",
+                        "$formatVersion": "0",
                         "perpetualDistribution": null,
-                        "perpetualDistributionRules": {"V0": {
-                            "authorized_to_make_change": "NoOne",
-                            "admin_action_takers": "NoOne",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
+                        "perpetualDistributionRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "noOne"},
+                            "adminActionTakers": {"$type": "noOne"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
                         "preProgrammedDistribution": {
-                            "$format_version": "0",
+                            "$formatVersion": "0",
                             "distributions": {
                                 "1735689600000": {
                                     "HtQNfXBZJu3WnvjvCFJKgbvfgWYJxWxaFWy23TKoFjg9": 1000
                                 }
                             }
                         },
-                        "preProgrammedDistributionRules": {"V0": {
-                            "authorized_to_make_change": "ContractOwner",
-                            "admin_action_takers": "ContractOwner",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
+                        "preProgrammedDistributionRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "contractOwner"},
+                            "adminActionTakers": {"$type": "contractOwner"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
                         "newTokensDestinationIdentity": null,
-                        "newTokensDestinationIdentityRules": {"V0": {
-                            "authorized_to_make_change": "ContractOwner",
-                            "admin_action_takers": "ContractOwner",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
+                        "newTokensDestinationIdentityRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "contractOwner"},
+                            "adminActionTakers": {"$type": "contractOwner"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
                         "mintingAllowChoosingDestination": false,
-                        "mintingAllowChoosingDestinationRules": {"V0": {
-                            "authorized_to_make_change": "ContractOwner",
-                            "admin_action_takers": "ContractOwner",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }},
-                        "changeDirectPurchasePricingRules": {"V0": {
-                            "authorized_to_make_change": "NoOne",
-                            "admin_action_takers": "NoOne",
-                            "changing_authorized_action_takers_to_no_one_allowed": false,
-                            "changing_admin_action_takers_to_no_one_allowed": false,
-                            "self_changing_admin_action_takers_allowed": false
-                        }}
+                        "mintingAllowChoosingDestinationRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "contractOwner"},
+                            "adminActionTakers": {"$type": "contractOwner"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        },
+                        "changeDirectPurchasePricingRules": {
+                            "$formatVersion": "0",
+                            "authorizedToMakeChange": {"$type": "noOne"},
+                            "adminActionTakers": {"$type": "noOne"},
+                            "changingAuthorizedActionTakersToNoOneAllowed": false,
+                            "changingAdminActionTakersToNoOneAllowed": false,
+                            "selfChangingAdminActionTakersAllowed": false
+                        }
                     },
-                    "marketplaceRules": {"$format_version": "0", "tradeMode": "NotTradeable"},
-                    "manualMintingRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "manualBurningRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "freezeRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "unfreezeRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "destroyFrozenFundsRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "emergencyActionRules": {"V0": {
-                        "authorized_to_make_change": "ContractOwner",
-                        "admin_action_takers": "ContractOwner",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
-                    "directPurchaseRules": {"V0": {
-                        "authorized_to_make_change": "NoOne",
-                        "admin_action_takers": "NoOne",
-                        "changing_authorized_action_takers_to_no_one_allowed": false,
-                        "changing_admin_action_takers_to_no_one_allowed": false,
-                        "self_changing_admin_action_takers_allowed": false
-                    }},
+                    "marketplaceRules": {"$formatVersion": "0", "tradeMode": "NotTradeable"},
+                    "manualMintingRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "manualBurningRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "freezeRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "unfreezeRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "destroyFrozenFundsRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "emergencyActionRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "contractOwner"},
+                        "adminActionTakers": {"$type": "contractOwner"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
+                    "directPurchaseRules": {
+                        "$formatVersion": "0",
+                        "authorizedToMakeChange": {"$type": "noOne"},
+                        "adminActionTakers": {"$type": "noOne"},
+                        "changingAuthorizedActionTakersToNoOneAllowed": false,
+                        "changingAdminActionTakersToNoOneAllowed": false,
+                        "selfChangingAdminActionTakersAllowed": false
+                    },
                     "mainControlGroup": null,
-                    "mainControlGroupCanBeModified": "NoOne"
+                    "mainControlGroupCanBeModified": {"$type": "noOne"}
                 }
             }
         });
 
-        let result = DataContract::from_json(contract, true, &platform_version);
+        let result = DataContract::from_json(contract, true, platform_version);
         assert!(
             result.is_ok(),
             "PreProgrammed with string timestamp keys should be accepted by from_json"

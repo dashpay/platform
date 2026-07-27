@@ -7,6 +7,8 @@
 // This module contains functionality for adding a document
 mod add_document;
 
+mod add_history_operations;
+
 // Module: add_document_for_contract
 // This module contains functionality for adding a document for a given contract
 mod add_document_for_contract;
@@ -51,11 +53,17 @@ mod tests {
     use once_cell::sync::Lazy;
     use std::collections::BTreeMap;
 
+    use crate::config::DriveConfig;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use crate::query::DriveDocumentQuery;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::{Document, DocumentV0Getters};
     use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
@@ -151,6 +159,76 @@ mod tests {
                 Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to override a document successfully");
+    }
+
+    #[test]
+    fn test_add_dashpay_document_duplicate_insert_returns_error() {
+        let (drive, dashpay) = setup_dashpay("add-duplicate-error", true);
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let platform_version = PlatformVersion::first();
+
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let dashpay_cr_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get cbor document");
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &dashpay,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a document successfully");
+
+        let err = drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &dashpay,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect_err("expected duplicate insert to return an error");
+
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::CorruptedDocumentAlreadyExists(_))
+        ));
     }
 
     #[test]
@@ -875,5 +953,494 @@ mod tests {
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
             );
+    }
+
+    #[test]
+    fn test_add_document_by_contract_id() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let dashpay_profile_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let owned_document_info = OwnedDocumentInfo {
+            document_info: DocumentRefInfo((
+                &dashpay_profile_document,
+                StorageFlags::optional_default_as_cow(),
+            )),
+            owner_id: Some(random_owner_id),
+        };
+
+        // Use the add_document API which takes contract_id instead of contract ref
+        let fee_result = drive
+            .add_document(
+                owned_document_info,
+                contract.id(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+            )
+            .expect("expected to insert a document via add_document successfully");
+
+        assert!(fee_result.storage_fee > 0);
+        assert!(fee_result.processing_fee > 0);
+
+        // Fetch the document back and verify content matches
+        let sql_string = "select * from profile";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(results.len(), 1);
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected profile document type");
+        let fetched_doc = Document::from_bytes(&results[0], document_type, platform_version)
+            .expect("expected to deserialize document");
+        assert_eq!(
+            fetched_doc
+                .get("displayName")
+                .expect("displayName should exist")
+                .as_text()
+                .expect("displayName should be text"),
+            "sam",
+            "displayName should match the original value from profile0.json"
+        );
+    }
+
+    #[test]
+    fn test_add_document_with_history() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        let fee_result = drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a history-keeping document successfully");
+
+        assert!(fee_result.storage_fee > 0);
+
+        // Now add a second document with history
+        let person_document1 = json_document_to_document(
+            "tests/supporting_files/contract/family/person1.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document1, storage_flags)),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to insert a second history-keeping document successfully");
+
+        drive
+            .grove
+            .commit_transaction(db_transaction)
+            .unwrap()
+            .expect("unable to commit transaction");
+
+        // Fetch both documents back and verify they exist with correct content
+        let sql_string = "select * from person order by firstName asc limit 100";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(
+            results.len(),
+            2,
+            "expected both history-keeping documents to be present"
+        );
+
+        let doc0 = Document::from_bytes(&results[0], document_type, platform_version)
+            .expect("expected to deserialize first document");
+        let doc1 = Document::from_bytes(&results[1], document_type, platform_version)
+            .expect("expected to deserialize second document");
+
+        // Results are ordered by firstName ascending: Samuel, Tom
+        assert_eq!(
+            doc0.get("firstName")
+                .expect("firstName should exist")
+                .as_text()
+                .expect("firstName should be text"),
+            "Samuel"
+        );
+        assert_eq!(
+            doc1.get("firstName")
+                .expect("firstName should exist")
+                .as_text()
+                .expect("firstName should be text"),
+            "Tom"
+        );
+    }
+
+    #[test]
+    fn test_add_document_with_history_estimated_costs() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-with-history.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let person_document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        // apply=false for estimation path of history-keeping documents
+        let fee_result = drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&person_document, storage_flags)),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                false,
+                Some(&db_transaction),
+                platform_version,
+                None,
+            )
+            .expect("expected to estimate insert of a history-keeping document");
+
+        // Estimation should have storage fee and processing fee
+        assert!(fee_result.storage_fee > 0);
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn test_add_document_for_contract_with_non_unique_batch() {
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        let db_transaction = drive.grove.start_transaction();
+
+        let platform_version = PlatformVersion::latest();
+
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            Some(&db_transaction),
+            None,
+        );
+
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document0 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let document1 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        // Insert first document setting document_is_unique_for_document_type_in_batch=true
+        let mut drive_operations = vec![];
+        drive
+            .add_document_for_contract_apply_and_add_to_operations(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document0,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                &BlockInfo::default(),
+                true, // unique in batch
+                true,
+                Some(&db_transaction),
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected first document insertion to succeed");
+
+        // Insert second document with document_is_unique_for_document_type_in_batch=false
+        // This exercises the else branch in apply_and_add_to_operations_v0
+        drive
+            .add_document_for_contract_apply_and_add_to_operations(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document1,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                &BlockInfo::default(),
+                false, // not unique in batch - exercises else branch
+                true,
+                Some(&db_transaction),
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected second document insertion to succeed");
+
+        // Verify both documents were inserted by fetching them
+        let sql_string = "select * from contactRequest";
+        let query =
+            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
+                .expect("should build query");
+
+        let (results, _, _) = query
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
+            .expect("expected to execute query");
+
+        assert_eq!(
+            results.len(),
+            2,
+            "expected both documents to be present after batch insertion"
+        );
+    }
+
+    // ---------- Error-path tests (added for coverage) ----------
+
+    #[test]
+    fn test_add_document_with_nonexistent_contract_id_returns_data_contract_not_found() {
+        // `add_document` takes a contract_id and must resolve it internally.
+        // Supplying a random id that does not exist should fail with
+        // DocumentError::DataContractNotFound (instead of, e.g., a panic or
+        // lower-level grovedb error).
+        use crate::error::document::DocumentError;
+
+        let (drive, contract) = setup_dashpay("add-doc-nonexistent-contract", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let nonexistent_contract_id: [u8; 32] = random();
+
+        let err = drive
+            .add_document(
+                OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id),
+                },
+                nonexistent_contract_id.into(),
+                "profile",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect_err("expected add_document with nonexistent contract id to fail");
+
+        assert!(
+            matches!(err, Error::Document(DocumentError::DataContractNotFound)),
+            "expected DataContractNotFound, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_add_document_with_invalid_document_type_name_returns_error() {
+        // `add_document` should fail when given a document type name that does
+        // not exist in the contract (contract.document_type_for_name(...) ?).
+        let (drive, contract) = setup_dashpay("add-doc-bad-type", true);
+
+        let platform_version = PlatformVersion::latest();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("profile document exists");
+
+        let random_owner_id = random::<[u8; 32]>();
+
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected to get document");
+
+        let err = drive
+            .add_document(
+                OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((
+                        &document,
+                        StorageFlags::optional_default_as_cow(),
+                    )),
+                    owner_id: Some(random_owner_id),
+                },
+                contract.id(),
+                "not_a_real_document_type",
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect_err("expected add_document with bad document type to fail");
+
+        // The error originates from DataContract::document_type_for_name, which
+        // maps through the `?` into an Error. We don't match a specific variant
+        // because that depends on dpp's mapping, but we verify it's not a
+        // contract-not-found error (which would be the other likely branch).
+        assert!(
+            !matches!(
+                err,
+                Error::Document(crate::error::document::DocumentError::DataContractNotFound)
+            ),
+            "expected a document-type error, not DataContractNotFound: {err:?}"
+        );
     }
 }

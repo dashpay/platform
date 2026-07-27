@@ -5,7 +5,12 @@ inputs:
   node-version:
     description: "Node.js version to use"
     required: false
-    default: "20"
+    # Pinned: Node 24.15.0 shipped a regression in the ESM loader's
+    # CJS translation path that raises `EBADF: bad file descriptor,
+    # fstat` in getSourceSync -> readFileSync during postinstall
+    # scripts of native packages (bufferutil, utf-8-validate,
+    # unrs-resolver, @pshenmic/zeromq). 24.14.1 is unaffected.
+    default: "24.14.1"
 runs:
   using: composite
   steps:
@@ -24,14 +29,29 @@ runs:
       run: npm config set audit false
 
     - name: Cache NPM build artifacts
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
+        # Cache the unplugged packages (unpacked native builds), yarn's
+        # build-state (so postinstalls don't re-run) and install-state
+        # (cold-start avoidance). Missing paths are tolerated by the
+        # action, so first-run behavior is unaffected.
         path: |
           .yarn/unplugged
+          .yarn/build-state.yml
+          .yarn/install-state.gz
         key: ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/${{ hashFiles('yarn.lock') }}
         restore-keys: |
           ${{ runner.os }}/yarn/unplugged/${{ runner.arch }}/
 
     - name: Install dependencies
       shell: bash
-      run: yarn install --inline-builds
+      run: |
+        for attempt in 1 2 3; do
+          if yarn install --inline-builds; then
+            exit 0
+          fi
+          echo "::warning::yarn install failed on attempt ${attempt}, retrying..."
+          sleep $((attempt * 5))
+        done
+        echo "::error::yarn install failed after 3 attempts"
+        exit 1

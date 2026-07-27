@@ -72,7 +72,7 @@ impl<T> PlatformVersionedDecode for BinaryHeap<T>
 where
     T: PlatformVersionedDecode + Ord,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -94,7 +94,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for BinaryHeap<T>
 where
     T: PlatformVersionedBorrowDecode<'de> + Ord,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -135,7 +135,7 @@ where
     K: PlatformVersionedDecode + Ord,
     V: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -159,7 +159,7 @@ where
     K: PlatformVersionedBorrowDecode<'de> + Ord,
     V: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -202,7 +202,7 @@ impl<T> PlatformVersionedDecode for BTreeSet<T>
 where
     T: PlatformVersionedDecode + Ord,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -224,7 +224,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for BTreeSet<T>
 where
     T: PlatformVersionedBorrowDecode<'de> + Ord,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -264,7 +264,7 @@ impl<T> PlatformVersionedDecode for VecDeque<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -286,7 +286,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for VecDeque<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -326,7 +326,7 @@ impl<T> PlatformVersionedDecode for Vec<T>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -357,7 +357,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Vec<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -401,7 +401,7 @@ where
 }
 
 impl PlatformVersionedDecode for String {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -411,7 +411,7 @@ impl PlatformVersionedDecode for String {
 impl_platform_versioned_borrow_decode!(String);
 
 impl PlatformVersionedDecode for Box<str> {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -434,7 +434,7 @@ impl<T> PlatformVersionedDecode for Box<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -446,7 +446,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Box<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -472,7 +472,7 @@ impl<T> PlatformVersionedDecode for Box<[T]>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -485,7 +485,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Box<[T]>
 where
     T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -499,7 +499,7 @@ where
     T: ToOwned + ?Sized,
     <T as ToOwned>::Owned: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -512,7 +512,7 @@ where
     T: ToOwned + ?Sized,
     &'cow T: PlatformVersionedBorrowDecode<'cow>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'cow>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'cow, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -564,7 +564,7 @@ impl<T> PlatformVersionedDecode for Rc<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -577,7 +577,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -603,7 +603,7 @@ impl<T> PlatformVersionedDecode for Rc<[T]>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -616,7 +616,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Rc<[T]>
 where
     T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -630,7 +630,7 @@ impl<T> PlatformVersionedDecode for Arc<T>
 where
     T: PlatformVersionedDecode,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -641,7 +641,7 @@ where
 
 #[cfg(target_has_atomic = "ptr")]
 impl PlatformVersionedDecode for Arc<str> {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -654,7 +654,7 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<T>
 where
     T: PlatformVersionedBorrowDecode<'de>,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_versioned: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -665,7 +665,7 @@ where
 
 #[cfg(target_has_atomic = "ptr")]
 impl<'de> PlatformVersionedBorrowDecode<'de> for Arc<str> {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         _: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -692,7 +692,7 @@ impl<T> PlatformVersionedDecode for Arc<[T]>
 where
     T: PlatformVersionedDecode + 'static,
 {
-    fn platform_versioned_decode<D: Decoder>(
+    fn platform_versioned_decode<D: Decoder<Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
@@ -706,11 +706,385 @@ impl<'de, T> PlatformVersionedBorrowDecode<'de> for Arc<[T]>
 where
     T: PlatformVersionedBorrowDecode<'de> + 'de,
 {
-    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de>>(
+    fn platform_versioned_borrow_decode<D: BorrowDecoder<'de, Context = crate::BincodeContext>>(
         decoder: &mut D,
         platform_version: &PlatformVersion,
     ) -> Result<Self, DecodeError> {
         let vec = Vec::platform_versioned_borrow_decode(decoder, platform_version)?;
         Ok(vec.into())
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::needless_borrows_for_generic_args)]
+mod tests {
+    use super::*;
+    use alloc::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
+    use bincode::config;
+
+    fn cfg() -> impl bincode::config::Config {
+        config::standard().with_big_endian().with_no_limit()
+    }
+
+    fn pv() -> &'static PlatformVersion {
+        PlatformVersion::first()
+    }
+
+    fn round_trip<T>(value: T) -> T
+    where
+        T: PlatformVersionEncode + crate::PlatformVersionedDecode,
+    {
+        let encoded = crate::platform_encode_to_vec(value, cfg(), pv()).unwrap();
+        crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap()
+    }
+
+    // -----------------------------------------------------------------------
+    // platform_encode_to_vec
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn encode_to_vec_basic() {
+        let encoded = crate::platform_encode_to_vec(42u32, cfg(), pv()).unwrap();
+        assert!(!encoded.is_empty());
+        let decoded: u32 =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, 42);
+    }
+
+    // -----------------------------------------------------------------------
+    // Vec<T> encode/decode: u8 optimization vs generic
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn vec_u8_round_trip() {
+        let value: Vec<u8> = vec![0, 1, 2, 255, 128];
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn vec_u32_round_trip() {
+        let value: Vec<u32> = vec![100, 200, 300];
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn vec_empty_round_trip() {
+        let value: Vec<u32> = vec![];
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // BTreeMap
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn btree_map_round_trip() {
+        let mut map = BTreeMap::new();
+        map.insert(1u32, "one".to_string());
+        map.insert(2, "two".to_string());
+        map.insert(3, "three".to_string());
+        assert_eq!(round_trip(map.clone()), map);
+    }
+
+    #[test]
+    fn btree_map_empty_round_trip() {
+        let map: BTreeMap<u32, String> = BTreeMap::new();
+        assert_eq!(round_trip(map.clone()), map);
+    }
+
+    // -----------------------------------------------------------------------
+    // BTreeSet
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn btree_set_round_trip() {
+        let mut set = BTreeSet::new();
+        set.insert(10u32);
+        set.insert(20);
+        set.insert(30);
+        assert_eq!(round_trip(set.clone()), set);
+    }
+
+    // -----------------------------------------------------------------------
+    // BinaryHeap
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn binary_heap_round_trip() {
+        let mut heap = BinaryHeap::new();
+        heap.push(3u32);
+        heap.push(1);
+        heap.push(2);
+        let result = round_trip(heap);
+        // BinaryHeap doesn't implement Eq, so compare sorted vecs
+        let sorted: Vec<u32> = result.into_sorted_vec();
+        assert_eq!(sorted, vec![1, 2, 3]);
+    }
+
+    // -----------------------------------------------------------------------
+    // VecDeque
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn vec_deque_round_trip() {
+        let mut deque = VecDeque::new();
+        deque.push_back(1u32);
+        deque.push_back(2);
+        deque.push_front(0);
+        assert_eq!(round_trip(deque.clone()), deque);
+    }
+
+    // -----------------------------------------------------------------------
+    // String
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn string_round_trip() {
+        let value = "hello world".to_string();
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn string_empty_round_trip() {
+        let value = String::new();
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Box<T>, Box<str>, Box<[T]>
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn box_round_trip() {
+        let value = Box::new(42u32);
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn box_str_round_trip() {
+        let value: Box<str> = "boxed string".into();
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    #[test]
+    fn box_slice_round_trip() {
+        let value: Box<[u32]> = vec![1, 2, 3].into_boxed_slice();
+        assert_eq!(round_trip(value.clone()), value);
+    }
+
+    // -----------------------------------------------------------------------
+    // Rc<T>, Rc<[T]>
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rc_round_trip() {
+        let value = Rc::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Rc<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded, 42);
+    }
+
+    #[test]
+    fn rc_slice_round_trip() {
+        let value: Rc<[u32]> = vec![1, 2, 3].into();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Rc<[u32]> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, &[1, 2, 3]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Arc<T>, Arc<str>, Arc<[T]>
+    // -----------------------------------------------------------------------
+
+    #[cfg(target_has_atomic = "ptr")]
+    #[test]
+    fn arc_round_trip() {
+        let value = Arc::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Arc<u32> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded, 42);
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    #[test]
+    fn arc_str_round_trip() {
+        let value: Arc<str> = Arc::from("arc string");
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Arc<str> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, "arc string");
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    #[test]
+    fn arc_slice_round_trip() {
+        let value: Arc<[u32]> = vec![10, 20, 30].into();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Arc<[u32]> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, &[10, 20, 30]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Cow
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cow_owned_round_trip() {
+        let value: Cow<str> = Cow::Owned("owned".to_string());
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Cow<str> =
+            crate::platform_versioned_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, "owned");
+    }
+
+    // -----------------------------------------------------------------------
+    // VecWriter (alloc version)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn vec_writer_with_capacity() {
+        let writer = VecWriter::with_capacity(100);
+        let collected = writer.collect();
+        assert!(collected.is_empty());
+        assert!(collected.capacity() >= 100);
+    }
+
+    // -----------------------------------------------------------------------
+    // Borrow-decode paths for collection types
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn btree_map_borrow_decode() {
+        let mut map = BTreeMap::new();
+        map.insert(1u32, 10u32);
+        map.insert(2, 20);
+        let encoded = crate::platform_encode_to_vec(&map, cfg(), pv()).unwrap();
+        let decoded: BTreeMap<u32, u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, map);
+    }
+
+    #[test]
+    fn btree_set_borrow_decode() {
+        let mut set = BTreeSet::new();
+        set.insert(1u32);
+        set.insert(2);
+        let encoded = crate::platform_encode_to_vec(&set, cfg(), pv()).unwrap();
+        let decoded: BTreeSet<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, set);
+    }
+
+    #[test]
+    fn binary_heap_borrow_decode() {
+        let mut heap = BinaryHeap::new();
+        heap.push(5u32);
+        heap.push(3);
+        heap.push(7);
+        let encoded = crate::platform_encode_to_vec(&heap, cfg(), pv()).unwrap();
+        let decoded: BinaryHeap<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        let sorted: Vec<u32> = decoded.into_sorted_vec();
+        assert_eq!(sorted, vec![3, 5, 7]);
+    }
+
+    #[test]
+    fn vec_deque_borrow_decode() {
+        let mut deque = VecDeque::new();
+        deque.push_back(1u32);
+        deque.push_back(2);
+        let encoded = crate::platform_encode_to_vec(&deque, cfg(), pv()).unwrap();
+        let decoded: VecDeque<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, deque);
+    }
+
+    #[test]
+    fn vec_borrow_decode() {
+        let value: Vec<u32> = vec![1, 2, 3];
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Vec<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn box_borrow_decode() {
+        let value = Box::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Box<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn box_slice_borrow_decode() {
+        let value: Box<[u32]> = vec![10, 20, 30].into_boxed_slice();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Box<[u32]> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn rc_borrow_decode() {
+        let value = Rc::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Rc<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded, 42);
+    }
+
+    #[test]
+    fn rc_slice_borrow_decode() {
+        let value: Rc<[u32]> = vec![1, 2, 3].into();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Rc<[u32]> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, &[1, 2, 3]);
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    #[test]
+    fn arc_borrow_decode() {
+        let value = Arc::new(42u32);
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Arc<u32> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(*decoded, 42);
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    #[test]
+    fn arc_str_borrow_decode() {
+        let value: Arc<str> = Arc::from("test arc str");
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Arc<str> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, "test arc str");
+    }
+
+    #[cfg(target_has_atomic = "ptr")]
+    #[test]
+    fn arc_slice_borrow_decode() {
+        let value: Arc<[u32]> = vec![10, 20].into();
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Arc<[u32]> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, &[10, 20]);
+    }
+
+    #[test]
+    fn cow_borrow_decode() {
+        use alloc::borrow::Cow;
+        let value = "borrowed cow";
+        let encoded = crate::platform_encode_to_vec(&value, cfg(), pv()).unwrap();
+        let decoded: Cow<str> =
+            crate::platform_versioned_borrow_decode_from_slice(&encoded, cfg(), pv()).unwrap();
+        assert_eq!(&*decoded, value);
     }
 }

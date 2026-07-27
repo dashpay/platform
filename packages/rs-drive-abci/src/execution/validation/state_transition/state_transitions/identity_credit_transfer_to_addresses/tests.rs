@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -21,6 +22,7 @@ mod tests {
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
     use dpp::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
     use dpp::state_transition::StateTransition;
+    use dpp::state_transition::StateTransitionHasUserFeeIncrease;
     use platform_version::version::PlatformVersion;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -109,7 +111,7 @@ mod tests {
     }
 
     /// Create a signed IdentityCreditTransferToAddressesTransition
-    fn create_signed_transition(
+    async fn create_signed_transition(
         identity: &Identity,
         signer: &SimpleSigner,
         recipient_addresses: BTreeMap<PlatformAddress, u64>,
@@ -125,6 +127,7 @@ mod tests {
             PlatformVersion::latest(),
             None,
         )
+        .await
         .expect("should create signed transition")
     }
 
@@ -137,8 +140,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
 
-        #[test]
-        fn test_no_recipient_addresses_returns_error() {
+        #[tokio::test]
+        async fn test_no_recipient_addresses_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             // Create a raw transition V0 with no recipient addresses
@@ -166,8 +169,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_too_many_recipient_addresses_returns_error() {
+        #[tokio::test]
+        async fn test_too_many_recipient_addresses_returns_error() {
             let platform_version = PlatformVersion::latest();
             let max_outputs = platform_version.dpp.state_transitions.max_address_outputs;
 
@@ -202,8 +205,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_recipient_amount_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_recipient_amount_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             let mut recipient_addresses = BTreeMap::new();
@@ -251,8 +254,8 @@ mod tests {
         /// This test verifies structure validation catches the overflow.
         ///
         /// Location: rs-drive/.../identity_credit_transfer_to_addresses_transition.rs:38
-        #[test]
-        fn test_recipient_sum_overflow_returns_error() {
+        #[tokio::test]
+        async fn test_recipient_sum_overflow_returns_error() {
             let platform_version = PlatformVersion::latest();
 
             // Create two recipients whose amounts sum to > u64::MAX
@@ -301,8 +304,8 @@ mod tests {
         /// This test demonstrates that any data passes through unchecked.
         ///
         /// Location: rs-drive-abci/.../identity_credit_transfer_to_addresses/transform_into_action/v0/mod.rs:16-23
-        #[test]
-        fn test_transform_into_action_passes_without_validation() {
+        #[tokio::test]
+        async fn test_transform_into_action_passes_without_validation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -334,7 +337,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(1.0));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -375,8 +379,8 @@ mod tests {
         /// transition to pass fee estimation but fail structure validation.
         ///
         /// Location: rs-drive-abci/.../state_transition_estimated_fee_validation.rs:19
-        #[test]
-        fn test_fee_estimation_saturating_add_matches_structure_validation() {
+        #[tokio::test]
+        async fn test_fee_estimation_saturating_add_matches_structure_validation() {
             let platform_version = PlatformVersion::latest();
 
             // Create recipients whose sum overflows u64
@@ -433,8 +437,8 @@ mod tests {
     mod successful_transitions {
         use super::*;
 
-        #[test]
-        fn test_simple_transfer_to_single_address() {
+        #[tokio::test]
+        async fn test_simple_transfer_to_single_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -467,12 +471,28 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
+
+            // CheckTx root-invariance guard (devnet paloma h788): `check_tx` asserts under
+            // cfg(test) that it never mutates committed grovedb state, so running the
+            // canonical valid fixture through it pins the invariant for this transition type.
+            {
+                use dpp::serialization::PlatformSerializable;
+                let guard_serialized_transition = transition
+                    .serialize_to_bytes()
+                    .expect("expected to serialize transition for the check_tx guard");
+                crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels(
+                    &platform,
+                    &guard_serialized_transition,
+                    "identity credit transfer to addresses",
+                );
+            }
 
             let processing_result = platform
                 .platform
@@ -493,8 +513,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_to_multiple_addresses() {
+        #[tokio::test]
+        async fn test_transfer_to_multiple_addresses() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -529,7 +549,8 @@ mod tests {
             recipient_addresses.insert(create_platform_address(2), dash_to_credits!(0.2));
             recipient_addresses.insert(create_platform_address(3), dash_to_credits!(0.3));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -555,8 +576,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_with_user_fee_increase() {
+        #[tokio::test]
+        async fn test_transfer_with_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -600,6 +621,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create signed transition");
 
             let result = transition.serialize_to_bytes().expect("should serialize");
@@ -626,8 +648,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_maximum_allowed_outputs() {
+        #[tokio::test]
+        async fn test_transfer_maximum_allowed_outputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -669,7 +691,8 @@ mod tests {
                 recipient_addresses.insert(create_platform_address(i), min_output);
             }
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -704,8 +727,8 @@ mod tests {
     mod state_verification {
         use super::*;
 
-        #[test]
-        fn test_identity_balance_decreases_after_transfer() {
+        #[tokio::test]
+        async fn test_identity_balance_decreases_after_transfer() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -748,7 +771,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), transfer_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -799,8 +823,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_recipient_address_receives_credits() {
+        #[tokio::test]
+        async fn test_recipient_address_receives_credits() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -845,7 +869,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(recipient_address, transfer_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -892,8 +917,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_recipients_all_receive_credits() {
+        #[tokio::test]
+        async fn test_multiple_recipients_all_receive_credits() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -936,7 +961,8 @@ mod tests {
             recipient_addresses.insert(recipient2, amount2);
             recipient_addresses.insert(recipient3, amount3);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1001,8 +1027,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_identity_nonce_increments_after_transfer() {
+        #[tokio::test]
+        async fn test_identity_nonce_increments_after_transfer() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1036,7 +1062,8 @@ mod tests {
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
             // First transfer with nonce 1
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1073,7 +1100,8 @@ mod tests {
             let mut recipient_addresses2 = BTreeMap::new();
             recipient_addresses2.insert(create_platform_address(2), dash_to_credits!(0.1));
 
-            let transition2 = create_signed_transition(&identity, &signer, recipient_addresses2, 2);
+            let transition2 =
+                create_signed_transition(&identity, &signer, recipient_addresses2, 2).await;
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
@@ -1108,8 +1136,8 @@ mod tests {
     mod state_validation {
         use super::*;
 
-        #[test]
-        fn test_identity_does_not_exist_returns_error() {
+        #[tokio::test]
+        async fn test_identity_does_not_exist_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1139,7 +1167,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1169,8 +1198,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_insufficient_balance_returns_error() {
+        #[tokio::test]
+        async fn test_insufficient_balance_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1203,7 +1232,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(1.0)); // More than balance
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1233,8 +1263,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_invalid_nonce_too_low_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_nonce_too_low_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1267,7 +1297,8 @@ mod tests {
             let mut recipient_addresses1 = BTreeMap::new();
             recipient_addresses1.insert(create_platform_address(1), dash_to_credits!(0.1));
 
-            let transition1 = create_signed_transition(&identity, &signer, recipient_addresses1, 1);
+            let transition1 =
+                create_signed_transition(&identity, &signer, recipient_addresses1, 1).await;
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
 
@@ -1304,7 +1335,8 @@ mod tests {
             let mut recipient_addresses2 = BTreeMap::new();
             recipient_addresses2.insert(create_platform_address(2), dash_to_credits!(0.1));
 
-            let transition2 = create_signed_transition(&identity, &signer, recipient_addresses2, 1); // Same nonce!
+            let transition2 =
+                create_signed_transition(&identity, &signer, recipient_addresses2, 1).await; // Same nonce!
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
@@ -1333,8 +1365,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_invalid_nonce_too_high_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_nonce_too_high_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1367,7 +1399,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 100);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 100).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1404,8 +1437,8 @@ mod tests {
     mod signature_validation {
         use super::*;
 
-        #[test]
-        fn test_invalid_signature_returns_error() {
+        #[tokio::test]
+        async fn test_invalid_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1487,8 +1520,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_key_type_for_signing_returns_error() {
+        #[tokio::test]
+        async fn test_wrong_key_type_for_signing_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1548,7 +1581,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             assert!(
                 result.is_err(),
@@ -1564,8 +1598,8 @@ mod tests {
     mod edge_cases {
         use super::*;
 
-        #[test]
-        fn test_transfer_entire_balance_minus_fees() {
+        #[tokio::test]
+        async fn test_transfer_entire_balance_minus_fees() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1600,7 +1634,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), transfer_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1626,8 +1661,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_to_same_address_twice() {
+        #[tokio::test]
+        async fn test_transfer_to_same_address_twice() {
             // Since recipient_addresses is a BTreeMap, adding the same address twice
             // just updates the amount. This test verifies that behavior.
             let platform_version = PlatformVersion::latest();
@@ -1663,7 +1698,8 @@ mod tests {
             recipient_addresses.insert(same_address, dash_to_credits!(0.1));
             // In BTreeMap, inserting same key again would overwrite, so we only have one entry
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1689,8 +1725,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_minimum_valid_amount() {
+        #[tokio::test]
+        async fn test_transfer_minimum_valid_amount() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1729,7 +1765,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), min_output_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1755,8 +1792,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_to_p2sh_address() {
+        #[tokio::test]
+        async fn test_transfer_to_p2sh_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1794,7 +1831,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(p2sh_address, dash_to_credits!(0.1));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
@@ -1820,8 +1858,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_to_existing_address_accumulates_balance() {
+        #[tokio::test]
+        async fn test_transfer_to_existing_address_accumulates_balance() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1857,7 +1895,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(recipient_address, first_transfer);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -1900,7 +1939,8 @@ mod tests {
             let mut recipient_addresses2 = BTreeMap::new();
             recipient_addresses2.insert(recipient_address, second_transfer);
 
-            let transition2 = create_signed_transition(&identity, &signer, recipient_addresses2, 2);
+            let transition2 =
+                create_signed_transition(&identity, &signer, recipient_addresses2, 2).await;
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
             let platform_state2 = platform.state.load();
@@ -1945,8 +1985,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_multiple_sequential_transfers_from_same_identity() {
+        #[tokio::test]
+        async fn test_multiple_sequential_transfers_from_same_identity() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -1982,7 +2022,7 @@ mod tests {
                     .insert(create_platform_address(60 + i as u8), dash_to_credits!(0.1));
 
                 let transition =
-                    create_signed_transition(&identity, &signer, recipient_addresses, i);
+                    create_signed_transition(&identity, &signer, recipient_addresses, i).await;
                 let result = transition.serialize_to_bytes().expect("should serialize");
 
                 let platform_state = platform.state.load();
@@ -2026,8 +2066,8 @@ mod tests {
         use super::*;
         use dpp::state_transition::StateTransitionStructureValidation;
 
-        #[test]
-        fn test_balance_exactly_covers_transfer_and_fees() {
+        #[tokio::test]
+        async fn test_balance_exactly_covers_transfer_and_fees() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2066,7 +2106,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), transfer_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -2091,8 +2132,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_amount_exactly_at_minimum() {
+        #[tokio::test]
+        async fn test_amount_exactly_at_minimum() {
             let platform_version = PlatformVersion::latest();
             let min_output = platform_version
                 .dpp
@@ -2119,8 +2160,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_amount_one_below_minimum_returns_error() {
+        #[tokio::test]
+        async fn test_amount_one_below_minimum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let min_output = platform_version
                 .dpp
@@ -2151,8 +2192,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_outputs_exactly_at_maximum() {
+        #[tokio::test]
+        async fn test_outputs_exactly_at_maximum() {
             let platform_version = PlatformVersion::latest();
             let max_outputs = platform_version.dpp.state_transitions.max_address_outputs;
             let min_output = platform_version
@@ -2179,8 +2220,8 @@ mod tests {
             assert!(result.is_valid(), "Exactly max outputs should be valid");
         }
 
-        #[test]
-        fn test_outputs_one_over_maximum_returns_error() {
+        #[tokio::test]
+        async fn test_outputs_one_over_maximum_returns_error() {
             let platform_version = PlatformVersion::latest();
             let max_outputs = platform_version.dpp.state_transitions.max_address_outputs;
             let min_output = platform_version
@@ -2214,8 +2255,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_mixed_valid_and_invalid_output_amounts() {
+        #[tokio::test]
+        async fn test_mixed_valid_and_invalid_output_amounts() {
             let platform_version = PlatformVersion::latest();
             let min_output = platform_version
                 .dpp
@@ -2253,8 +2294,8 @@ mod tests {
         use super::*;
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
 
-        #[test]
-        fn test_transfer_with_disabled_key_fails_at_creation() {
+        #[tokio::test]
+        async fn test_transfer_with_disabled_key_fails_at_creation() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(588);
 
@@ -2296,7 +2337,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             assert!(
                 result.is_err(),
@@ -2304,8 +2346,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_with_non_transfer_purpose_key_fails_at_creation() {
+        #[tokio::test]
+        async fn test_transfer_with_non_transfer_purpose_key_fails_at_creation() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(589);
             let mut signer = SimpleSigner::default();
@@ -2345,7 +2387,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             assert!(
                 result.is_err(),
@@ -2353,8 +2396,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_transfer_with_high_security_level_transfer_key_fails_at_creation() {
+        #[tokio::test]
+        async fn test_transfer_with_high_security_level_transfer_key_fails_at_creation() {
             // Transfer keys for credit transfer to addresses require CRITICAL security level
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(590);
@@ -2411,7 +2454,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             assert!(
                 result.is_err(),
@@ -2427,8 +2471,8 @@ mod tests {
     mod user_fee_increase_tests {
         use super::*;
 
-        #[test]
-        fn test_maximum_user_fee_increase() {
+        #[tokio::test]
+        async fn test_maximum_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2470,6 +2514,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create transition");
 
             let result = transition.serialize_to_bytes().expect("should serialize");
@@ -2496,8 +2541,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_zero_user_fee_increase() {
+        #[tokio::test]
+        async fn test_zero_user_fee_increase() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2538,6 +2583,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create transition");
 
             let result = transition.serialize_to_bytes().expect("should serialize");
@@ -2572,8 +2618,8 @@ mod tests {
     mod nonce_edge_cases {
         use super::*;
 
-        #[test]
-        fn test_nonce_zero_is_invalid() {
+        #[tokio::test]
+        async fn test_nonce_zero_is_invalid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2604,7 +2650,8 @@ mod tests {
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
             // Use nonce 0 (should be invalid, nonces start at 1)
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 0);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 0).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -2632,8 +2679,8 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_nonce_skipping_one_ahead_may_be_valid() {
+        #[tokio::test]
+        async fn test_nonce_skipping_one_ahead_may_be_valid() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2664,7 +2711,8 @@ mod tests {
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
             // Use nonce 2 (skipping nonce 1)
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 2);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 2).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -2709,8 +2757,8 @@ mod tests {
 
         /// Test that multiple different identities can transfer to the same recipient address
         /// and the balance accumulates correctly
-        #[test]
-        fn test_multiple_identities_transfer_to_same_address() {
+        #[tokio::test]
+        async fn test_multiple_identities_transfer_to_same_address() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2764,7 +2812,8 @@ mod tests {
                 let mut recipient_addresses = BTreeMap::new();
                 recipient_addresses.insert(shared_recipient, transfer_amount);
 
-                let transition = create_signed_transition(identity, signer, recipient_addresses, 1);
+                let transition =
+                    create_signed_transition(identity, signer, recipient_addresses, 1).await;
                 let result = transition.serialize_to_bytes().expect("should serialize");
 
                 let platform_state = platform.state.load();
@@ -2813,8 +2862,8 @@ mod tests {
         }
 
         /// Test that two identities can transfer to each other's derived addresses
-        #[test]
-        fn test_cross_identity_transfers() {
+        #[tokio::test]
+        async fn test_cross_identity_transfers() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -2856,12 +2905,12 @@ mod tests {
             // Identity 1 transfers to recipient 2
             let mut addresses1 = BTreeMap::new();
             addresses1.insert(recipient2, dash_to_credits!(0.5));
-            let transition1 = create_signed_transition(&identity1, &signer1, addresses1, 1);
+            let transition1 = create_signed_transition(&identity1, &signer1, addresses1, 1).await;
 
             // Identity 2 transfers to recipient 1
             let mut addresses2 = BTreeMap::new();
             addresses2.insert(recipient1, dash_to_credits!(0.3));
-            let transition2 = create_signed_transition(&identity2, &signer2, addresses2, 1);
+            let transition2 = create_signed_transition(&identity2, &signer2, addresses2, 1).await;
 
             // Process both transitions
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
@@ -2913,8 +2962,8 @@ mod tests {
         use dpp::state_transition::StateTransitionSingleSigned;
 
         /// Test that a transition can be serialized and deserialized correctly
-        #[test]
-        fn test_serialization_roundtrip() {
+        #[tokio::test]
+        async fn test_serialization_roundtrip() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(602);
 
@@ -2931,7 +2980,7 @@ mod tests {
             recipient_addresses.insert(create_platform_address(3), dash_to_credits!(0.15));
 
             let original_transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 42);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 42).await;
 
             // Serialize
             let serialized = original_transition
@@ -2963,8 +3012,8 @@ mod tests {
         }
 
         /// Test serialization with maximum outputs
-        #[test]
-        fn test_serialization_with_max_outputs() {
+        #[tokio::test]
+        async fn test_serialization_with_max_outputs() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(603);
             let max_outputs = platform_version.dpp.state_transitions.max_address_outputs;
@@ -2987,7 +3036,7 @@ mod tests {
             }
 
             let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
 
             // Should serialize successfully
             let serialized = transition.serialize_to_bytes().expect("should serialize");
@@ -3009,8 +3058,8 @@ mod tests {
         }
 
         /// Test that serialized bytes are deterministic
-        #[test]
-        fn test_serialization_is_deterministic() {
+        #[tokio::test]
+        async fn test_serialization_is_deterministic() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(604);
 
@@ -3025,9 +3074,9 @@ mod tests {
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
             let transition1 =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
             let transition2 =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
 
             let bytes1 = transition1.serialize_to_bytes().expect("should serialize");
             let bytes2 = transition2.serialize_to_bytes().expect("should serialize");
@@ -3048,8 +3097,8 @@ mod tests {
         use dpp::state_transition::StateTransitionIdentitySigned;
 
         /// Test explicitly specifying which transfer key to use when identity has multiple
-        #[test]
-        fn test_explicit_transfer_key_selection() {
+        #[tokio::test]
+        async fn test_explicit_transfer_key_selection() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(605);
             let mut signer = SimpleSigner::default();
@@ -3119,6 +3168,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create transition with explicit key");
 
             // Verify that key 2 was used
@@ -3135,8 +3185,8 @@ mod tests {
         }
 
         /// Test that identity with multiple transfer keys uses the first one by default
-        #[test]
-        fn test_multiple_transfer_keys_default_selection() {
+        #[tokio::test]
+        async fn test_multiple_transfer_keys_default_selection() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(606);
             let mut signer = SimpleSigner::default();
@@ -3206,6 +3256,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create transition");
 
             // The transition should be created successfully with one of the transfer keys
@@ -3223,8 +3274,8 @@ mod tests {
         }
 
         /// Test specifying a key that the signer cannot sign with
-        #[test]
-        fn test_explicit_key_not_in_signer_fails() {
+        #[tokio::test]
+        async fn test_explicit_key_not_in_signer_fails() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(607);
             let mut signer = SimpleSigner::default();
@@ -3293,7 +3344,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             assert!(
                 result.is_err(),
@@ -3311,8 +3363,8 @@ mod tests {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
 
         /// Test that a key disabled at a future block height can still be used
-        #[test]
-        fn test_key_disabled_at_future_block_still_works() {
+        #[tokio::test]
+        async fn test_key_disabled_at_future_block_still_works() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3373,7 +3425,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             // The key is considered disabled regardless of when, so this should fail
             assert!(
@@ -3383,8 +3436,8 @@ mod tests {
         }
 
         /// Test transfer at a specific block height
-        #[test]
-        fn test_transfer_at_specific_block_height() {
+        #[tokio::test]
+        async fn test_transfer_at_specific_block_height() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3414,7 +3467,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             // Use a specific block height instead of default
@@ -3456,8 +3510,8 @@ mod tests {
         use super::*;
 
         /// Test that fees are correctly deducted from the identity balance
-        #[test]
-        fn test_fee_deduction_verification() {
+        #[tokio::test]
+        async fn test_fee_deduction_verification() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3489,7 +3543,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), transfer_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -3551,8 +3606,8 @@ mod tests {
         }
 
         /// Test that user_fee_increase actually increases the fee paid
-        #[test]
-        fn test_user_fee_increase_affects_total_fee() {
+        #[tokio::test]
+        async fn test_user_fee_increase_affects_total_fee() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3600,6 +3655,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create transition");
 
             // Identity 2: 100% fee increase (10000 = 100%)
@@ -3615,6 +3671,7 @@ mod tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("should create transition");
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
@@ -3695,8 +3752,8 @@ mod tests {
         use super::*;
 
         /// Test transition with empty signature field
-        #[test]
-        fn test_empty_signature_returns_error() {
+        #[tokio::test]
+        async fn test_empty_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3776,8 +3833,8 @@ mod tests {
         }
 
         /// Test transition with truncated signature
-        #[test]
-        fn test_truncated_signature_returns_error() {
+        #[tokio::test]
+        async fn test_truncated_signature_returns_error() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3865,8 +3922,8 @@ mod tests {
         use super::*;
 
         /// Test many small transfers near the minimum amount
-        #[test]
-        fn test_many_minimum_amount_transfers() {
+        #[tokio::test]
+        async fn test_many_minimum_amount_transfers() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3905,7 +3962,8 @@ mod tests {
                 recipient_addresses.insert(create_platform_address(i), min_output);
             }
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -3951,8 +4009,8 @@ mod tests {
         }
 
         /// Test processing multiple transitions in a single block
-        #[test]
-        fn test_batch_processing_multiple_transitions() {
+        #[tokio::test]
+        async fn test_batch_processing_multiple_transitions() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3988,7 +4046,7 @@ mod tests {
                 recipient_addresses.insert(create_platform_address(200 + i), dash_to_credits!(0.1));
 
                 let transition =
-                    create_signed_transition(&identity, &signer, recipient_addresses, 1);
+                    create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
                 transitions.push(transition.serialize_to_bytes().expect("should serialize"));
             }
 
@@ -4033,8 +4091,8 @@ mod tests {
         use super::*;
 
         /// Test that balance can reach zero after transfer
-        #[test]
-        fn test_balance_reaches_zero() {
+        #[tokio::test]
+        async fn test_balance_reaches_zero() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4078,7 +4136,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), min_output);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -4134,8 +4193,8 @@ mod tests {
 
         /// Test that a read-only transfer key can still be used for signing
         /// (read_only affects whether the key can be updated, not whether it can sign)
-        #[test]
-        fn test_read_only_transfer_key_can_sign() {
+        #[tokio::test]
+        async fn test_read_only_transfer_key_can_sign() {
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(618);
             let mut signer = SimpleSigner::default();
@@ -4199,7 +4258,8 @@ mod tests {
                 1,
                 platform_version,
                 None,
-            );
+            )
+            .await;
 
             assert!(
                 result.is_ok(),
@@ -4217,8 +4277,8 @@ mod tests {
         use super::*;
 
         /// Test that IdentityInsufficientBalanceError contains correct values
-        #[test]
-        fn test_insufficient_balance_error_details() {
+        #[tokio::test]
+        async fn test_insufficient_balance_error_details() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4250,7 +4310,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), transfer_amount);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -4291,8 +4352,8 @@ mod tests {
         }
 
         /// Test that InvalidIdentityNonceError contains correct nonce values
-        #[test]
-        fn test_invalid_nonce_error_details() {
+        #[tokio::test]
+        async fn test_invalid_nonce_error_details() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4323,7 +4384,8 @@ mod tests {
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
             // Use nonce 0 which is invalid
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 0);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 0).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -4363,8 +4425,8 @@ mod tests {
         }
 
         /// Test that TransitionOverMaxOutputsError contains correct counts
-        #[test]
-        fn test_over_max_outputs_error_details() {
+        #[tokio::test]
+        async fn test_over_max_outputs_error_details() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
@@ -4406,8 +4468,8 @@ mod tests {
         }
 
         /// Test that OutputBelowMinimumError contains correct amount information
-        #[test]
-        fn test_below_minimum_error_details() {
+        #[tokio::test]
+        async fn test_below_minimum_error_details() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();
@@ -4459,8 +4521,8 @@ mod tests {
         use super::*;
 
         /// Test two transitions from same identity in same block (should fail for second due to nonce)
-        #[test]
-        fn test_same_identity_two_transitions_same_block_same_nonce_fails() {
+        #[tokio::test]
+        async fn test_same_identity_two_transitions_same_block_same_nonce_fails() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4490,11 +4552,11 @@ mod tests {
             // Create two transitions with the SAME nonce
             let mut addresses1 = BTreeMap::new();
             addresses1.insert(create_platform_address(1), dash_to_credits!(0.1));
-            let transition1 = create_signed_transition(&identity, &signer, addresses1, 1);
+            let transition1 = create_signed_transition(&identity, &signer, addresses1, 1).await;
 
             let mut addresses2 = BTreeMap::new();
             addresses2.insert(create_platform_address(2), dash_to_credits!(0.1));
-            let transition2 = create_signed_transition(&identity, &signer, addresses2, 1); // Same nonce!
+            let transition2 = create_signed_transition(&identity, &signer, addresses2, 1).await; // Same nonce!
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
@@ -4536,8 +4598,8 @@ mod tests {
         }
 
         /// Test two transitions from same identity with sequential nonces in same block
-        #[test]
-        fn test_same_identity_sequential_nonces_same_block() {
+        #[tokio::test]
+        async fn test_same_identity_sequential_nonces_same_block() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4567,11 +4629,11 @@ mod tests {
             // Create two transitions with sequential nonces
             let mut addresses1 = BTreeMap::new();
             addresses1.insert(create_platform_address(1), dash_to_credits!(0.1));
-            let transition1 = create_signed_transition(&identity, &signer, addresses1, 1);
+            let transition1 = create_signed_transition(&identity, &signer, addresses1, 1).await;
 
             let mut addresses2 = BTreeMap::new();
             addresses2.insert(create_platform_address(2), dash_to_credits!(0.1));
-            let transition2 = create_signed_transition(&identity, &signer, addresses2, 2); // Next nonce
+            let transition2 = create_signed_transition(&identity, &signer, addresses2, 2).await; // Next nonce
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
@@ -4615,8 +4677,8 @@ mod tests {
         use super::*;
 
         /// Test transfer to mixed P2PKH and P2SH addresses in a single transition
-        #[test]
-        fn test_mixed_p2pkh_and_p2sh_addresses_in_single_transition() {
+        #[tokio::test]
+        async fn test_mixed_p2pkh_and_p2sh_addresses_in_single_transition() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4655,7 +4717,8 @@ mod tests {
             recipient_addresses.insert(p2sh_address1, dash_to_credits!(0.2));
             recipient_addresses.insert(p2sh_address2, dash_to_credits!(0.12));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -4717,8 +4780,8 @@ mod tests {
         }
 
         /// Test raw transition with signature_public_key_id pointing to non-existent key
-        #[test]
-        fn test_raw_transition_with_nonexistent_key_id() {
+        #[tokio::test]
+        async fn test_raw_transition_with_nonexistent_key_id() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4790,8 +4853,8 @@ mod tests {
         }
 
         /// Test raw transition where signature_public_key_id points to AUTHENTICATION key
-        #[test]
-        fn test_raw_transition_with_authentication_key_id() {
+        #[tokio::test]
+        async fn test_raw_transition_with_authentication_key_id() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4876,8 +4939,8 @@ mod tests {
         /// fails with IdentityInsufficientBalanceError because fee estimation uses a higher
         /// worst-case estimate than the actual fee. This demonstrates that users need slightly
         /// more than (output + actual_fee) to pass validation.
-        #[test]
-        fn test_exact_actual_fee_balance_fails_due_to_fee_estimation() {
+        #[tokio::test]
+        async fn test_exact_actual_fee_balance_fails_due_to_fee_estimation() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4918,7 +4981,7 @@ mod tests {
 
             // Create the transition once - we'll reuse it for both runs
             let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
             let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             // First run in a transaction to measure actual fee (then rollback)
@@ -5012,8 +5075,8 @@ mod tests {
         /// Test that when balance equals (total_outputs + actual_fee_from_first_run) with 128 outputs,
         /// the second run succeeds because fee estimation is now accurate enough with count sum trees.
         /// (Previously this would fail because fee estimation used a higher worst-case estimate.)
-        #[test]
-        fn test_exact_actual_fee_balance_succeeds_with_128_outputs() {
+        #[tokio::test]
+        async fn test_exact_actual_fee_balance_succeeds_with_128_outputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5062,7 +5125,7 @@ mod tests {
 
             // Create the transition once - we'll reuse it for both runs
             let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
             let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             // First run in a transaction to measure actual fee (then rollback)
@@ -5143,8 +5206,8 @@ mod tests {
         }
 
         /// Test that 129 outputs exceeds the maximum allowed outputs and returns an error.
-        #[test]
-        fn test_129_outputs_exceeds_maximum() {
+        #[tokio::test]
+        async fn test_129_outputs_exceeds_maximum() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5189,7 +5252,7 @@ mod tests {
             }
 
             let transition =
-                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1);
+                create_signed_transition(&identity, &signer, recipient_addresses.clone(), 1).await;
             let transition_bytes = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -5218,8 +5281,8 @@ mod tests {
         }
 
         /// Test with a very large single output (near u64::MAX / 2)
-        #[test]
-        fn test_very_large_single_output() {
+        #[tokio::test]
+        async fn test_very_large_single_output() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5255,7 +5318,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), large_output);
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -5300,8 +5364,8 @@ mod tests {
         }
 
         /// Test identity with no public keys at all
-        #[test]
-        fn test_identity_with_no_public_keys() {
+        #[tokio::test]
+        async fn test_identity_with_no_public_keys() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5373,8 +5437,8 @@ mod tests {
         }
 
         /// Test identity with non-zero revision
-        #[test]
-        fn test_identity_with_different_revision() {
+        #[tokio::test]
+        async fn test_identity_with_different_revision() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5435,7 +5499,8 @@ mod tests {
             let mut recipient_addresses = BTreeMap::new();
             recipient_addresses.insert(create_platform_address(1), dash_to_credits!(0.1));
 
-            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let transition =
+                create_signed_transition(&identity, &signer, recipient_addresses, 1).await;
             let result = transition.serialize_to_bytes().expect("should serialize");
 
             let platform_state = platform.state.load();
@@ -5462,8 +5527,8 @@ mod tests {
         }
 
         /// Test overflow when adding fee to transfer amount during balance check
-        #[test]
-        fn test_overflow_transfer_plus_fee() {
+        #[tokio::test]
+        async fn test_overflow_transfer_plus_fee() {
             use dpp::state_transition::StateTransitionStructureValidation;
 
             let platform_version = PlatformVersion::latest();

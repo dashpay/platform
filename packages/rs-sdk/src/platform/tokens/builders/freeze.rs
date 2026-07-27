@@ -29,14 +29,14 @@ pub struct TokenFreezeTransitionBuilder {
 }
 
 impl TokenFreezeTransitionBuilder {
-    /// Start building a mint tokens request for the provided DataContract.
+    /// Start building a freeze tokens transition for the provided DataContract.
     ///
     /// # Arguments
     ///
     /// * `data_contract` - An Arc to the data contract
     /// * `token_position` - The position of the token in the contract
     /// * `actor_id` - The identifier of the actor
-    /// * `freeze_identity_id` - The identifier of the frozen identity
+    /// * `freeze_identity_id` - The identifier of the identity to freeze
     ///
     /// # Returns
     ///
@@ -183,7 +183,8 @@ impl TokenFreezeTransitionBuilder {
             signer,
             platform_version,
             self.state_transition_creation_options,
-        )?;
+        )
+        .await?;
 
         Ok(state_transition)
     }

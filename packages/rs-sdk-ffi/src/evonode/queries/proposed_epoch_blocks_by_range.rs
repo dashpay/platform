@@ -85,7 +85,7 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
         return Err("SDK handle is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
@@ -173,8 +173,8 @@ impl
     > for EvonodesProposedEpochBlocksByRangeQuery
 {
     fn query(
-        self,
-        prove: bool,
+        &self,
+        settings: &dash_sdk::platform::QuerySettings<'_>,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
         dash_sdk::Error,
@@ -186,13 +186,14 @@ impl
             },
         };
 
-        let start = if let Some(start_after) = self.start_after {
+        let start = if let Some(start_after) = self.start_after.as_ref() {
             Some(Start::StartAfter(
-                AsRef::<[u8]>::as_ref(&start_after).to_vec(),
+                AsRef::<[u8]>::as_ref(start_after).to_vec(),
             ))
         } else {
             self.start_at
-                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
+                .as_ref()
+                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(start_at).to_vec()))
         };
 
         let request =
@@ -202,7 +203,7 @@ impl
                         epoch: self.epoch,
                         limit: None, // Limit is handled by LimitQuery wrapper
                         start,
-                        prove,
+                        prove: settings.prove,
                     },
                 )),
             };

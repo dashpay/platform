@@ -1,7 +1,7 @@
 use crate::bls_signatures::PublicKey as BlsPublicKey;
 use crate::core_types::validator::v0::ValidatorV0;
 #[cfg(feature = "core-types-serialization")]
-use bincode::de::Decoder;
+use bincode::de::{BorrowDecoder, Decoder};
 #[cfg(feature = "core-types-serialization")]
 use bincode::enc::Encoder;
 #[cfg(feature = "core-types-serialization")]
@@ -13,7 +13,7 @@ use dashcore::blsful::Bls12381G2Impl;
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
-#[cfg(feature = "core-types-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -22,10 +22,7 @@ use std::fmt::{Debug, Display, Formatter};
 /// The validator set is only slightly different from a quorum as it does not contain non-valid
 /// members
 #[derive(Clone, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "core-types-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
@@ -36,6 +33,13 @@ pub struct ValidatorSetV0 {
     /// The list of masternodes
     pub members: BTreeMap<ProTxHash, ValidatorV0>,
     /// The threshold quorum public key
+    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
+    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
+    // dependency; accepts hex string or byte sequence through any deserializer).
+    #[cfg_attr(
+        feature = "serde-conversion",
+        serde(with = "crate::serialization::dashcore::bls_pubkey")
+    )]
     pub threshold_public_key: BlsPublicKey<Bls12381G2Impl>,
 }
 
@@ -95,8 +99,10 @@ impl Encode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl Decode for ValidatorSetV0 {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+impl<C> Decode<C> for ValidatorSetV0 {
+    fn decode<D: Decoder<Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         // Decode the quorum hash directly as a [u8; 32] array
         let quorum_hash = <[u8; 32]>::decode(decoder)?;
         let quorum_index = Option::<u32>::decode(decoder)?;
@@ -139,8 +145,10 @@ impl Decode for ValidatorSetV0 {
 }
 
 #[cfg(feature = "core-types-serialization")]
-impl BorrowDecode<'_> for ValidatorSetV0 {
-    fn borrow_decode<D: Decoder>(decoder: &mut D) -> Result<Self, bincode::error::DecodeError> {
+impl<'de, C> BorrowDecode<'de, C> for ValidatorSetV0 {
+    fn borrow_decode<D: BorrowDecoder<'de, Context = C>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
         // Decode each field in the same order as they were encoded
 
         // Decode the quorum hash directly as a [u8; 32] array

@@ -1,6 +1,6 @@
 use bincode::{Decode, Encode};
 use derive_more::From;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 pub mod document_base_transition;
@@ -38,23 +38,100 @@ pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_purchase_transition::DocumentPurchaseTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 pub use document_transfer_transition::DocumentTransferTransition;
-use document_transition::DocumentTransition;
+pub use document_transition::DocumentTransition;
 pub use document_update_price_transition::DocumentUpdatePriceTransition;
 use platform_value::Identifier;
-use token_transition::TokenTransition;
+pub use token_transition::TokenTransition;
 
 pub const PROPERTY_ACTION: &str = "$action";
 
 #[derive(Debug, Clone, Encode, Decode, From, PartialEq, Display)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
+    feature = "serde-conversion",
+    derive(Serialize, Deserialize),
+    // Internal tagging with the system-field key `$transition` — distinct
+    // from the inner umbrellas' `$type` discriminator so both flatten into
+    // the same wire shape without collision. Per the wasm-dpp2 convention
+    // (no `data` wrapper), the inner umbrella's fields appear at the top
+    // level alongside `$transition`. Resulting wire shape:
+    //   { "$transition": "document", "$type": "create", "$formatVersion": "0", ... }
+    serde(tag = "$transition", rename_all = "camelCase")
 )]
 pub enum BatchedTransition {
     #[display("DocumentTransition({})", "_0")]
     Document(DocumentTransition),
     #[display("TokenTransition({})", "_0")]
     Token(TokenTransition),
+}
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for BatchedTransition {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for BatchedTransition {}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+pub(crate) mod json_convertible_tests {
+    use super::*;
+    use crate::state_transition::batch_transition::batched_transition::{
+        document_create_transition, token_burn_transition,
+    };
+    use document_transition::DocumentTransition;
+    use token_transition::TokenTransition;
+
+    /// Internally tagged with `$transition` — wire shape is
+    /// `{"$transition": "<variant>", "$type": "<inner>", ...inner fields}`.
+    /// Both discriminators sit at the top level (no envelope nesting).
+    fn assert_umbrella_round_trip(transition: BatchedTransition, expected_transition: &str) {
+        use crate::serialization::{JsonConvertible, ValueConvertible};
+
+        let json = transition.to_json().expect("to_json");
+        let json_obj = json.as_object().expect("json object");
+        assert_eq!(
+            json_obj.get("$transition").and_then(|v| v.as_str()),
+            Some(expected_transition),
+            "json `$transition` discriminator mismatch"
+        );
+        assert!(
+            json_obj.get("$action").and_then(|v| v.as_str()).is_some(),
+            "json inner `$action` discriminator missing"
+        );
+        let recovered_json = BatchedTransition::from_json(json).expect("from_json");
+        assert_eq!(transition, recovered_json);
+
+        let value = transition.to_object().expect("to_object");
+        let value_map = value.as_map().expect("value map");
+        let kv = value_map
+            .iter()
+            .find(|(k, _)| matches!(k, platform_value::Value::Text(s) if s == "$transition"))
+            .expect("$transition key present");
+        assert_eq!(
+            kv.1,
+            platform_value::Value::Text(expected_transition.to_string()),
+            "value `$transition` discriminator mismatch"
+        );
+        let recovered_value = BatchedTransition::from_object(value).expect("from_object");
+        assert_eq!(transition, recovered_value);
+    }
+
+    #[test]
+    fn umbrella_document() {
+        let inner = DocumentTransition::Create(
+            document_create_transition::json_convertible_tests::fixture(),
+        );
+        assert_umbrella_round_trip(BatchedTransition::Document(inner), "document");
+    }
+
+    #[test]
+    fn umbrella_token() {
+        let inner = TokenTransition::Burn(token_burn_transition::json_convertible_tests::fixture());
+        assert_umbrella_round_trip(BatchedTransition::Token(inner), "token");
+    }
 }
 
 #[derive(Debug, From, Clone, Copy, PartialEq, Display)]

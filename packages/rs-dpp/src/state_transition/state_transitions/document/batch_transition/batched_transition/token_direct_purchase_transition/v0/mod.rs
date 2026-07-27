@@ -4,7 +4,7 @@ use crate::balances::credits::TokenAmount;
 use crate::fee::Credits;
 use crate::state_transition::batch_transition::token_base_transition::TokenBaseTransition;
 use bincode::{Decode, Encode};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -12,14 +12,17 @@ use std::fmt;
 pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
+// Auto-injects `json_safe_u64` on `token_count: TokenAmount` and
+// `total_agreed_price: Credits` (both u64).
+#[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub struct TokenDirectPurchaseTransitionV0 {
     /// Document Base Transition
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
     /// How many tokens should we buy.
     pub token_count: TokenAmount,

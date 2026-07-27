@@ -90,6 +90,10 @@ impl Drive {
                         count_trees_weight: 0,
                         count_sum_trees_weight: 0,
                         non_sum_trees_weight: 2,
+                        provable_sum_trees_weight: 0,
+                        provable_count_trees_weight: 0,
+                        provable_count_sum_trees_weight: 0,
+                        provable_count_provable_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -153,6 +157,8 @@ impl Drive {
                         subtrees_size: Some((1, AllSumTrees, None, 1)),
                         items_size: Some((1, 8, Some(36), 1)),
                         references_size: None,
+                        items_with_sum_item_size: None,
+                        references_with_sum_item_size: None,
                     },
                 },
             );
@@ -198,6 +204,8 @@ impl Drive {
                             subtrees_size: Some((1, AllSumTrees, None, 1)),
                             items_size: Some((1, 8, Some(36), 1)),
                             references_size: None,
+                            items_with_sum_item_size: None,
+                            references_with_sum_item_size: None,
                         },
                     },
                 );

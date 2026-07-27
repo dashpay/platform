@@ -1,1 +1,21 @@
 * @QuantumExplorer
+
+# SDK packages
+/packages/rs-sdk/ @QuantumExplorer @shumkov @lklimek
+/packages/rs-sdk-ffi/ @QuantumExplorer @shumkov @lklimek
+/packages/rs-sdk-trusted-context-provider/ @QuantumExplorer @shumkov
+/packages/js-dash-sdk/ @QuantumExplorer @shumkov
+/packages/js-evo-sdk/ @QuantumExplorer @shumkov
+/packages/wasm-sdk/ @QuantumExplorer @shumkov
+/packages/swift-sdk/ @QuantumExplorer @shumkov @llbartekll @ZocoLini
+
+# Platform wallet stack
+/packages/rs-platform-wallet/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
+/packages/rs-platform-wallet-ffi/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
+/packages/rs-platform-wallet-storage/ @QuantumExplorer @shumkov @lklimek @llbartekll @ZocoLini
+
+# Proof verification
+/packages/rs-drive-proof-verifier/ @QuantumExplorer @shumkov @lklimek
+
+# WASM DPP v2
+/packages/wasm-dpp2/ @QuantumExplorer @shumkov

@@ -1,375 +1,98 @@
 //! Platform wallet with identity management
-//!
-//! This crate provides a wallet implementation that combines traditional
-//! wallet functionality with Dash Platform identity management.
 
-use dashcore::Address as DashAddress;
-use dashcore::Transaction;
-use dpp::async_trait::async_trait;
-use dpp::identity::Identity;
-use dpp::prelude::Identifier;
-use indexmap::IndexMap;
-use key_wallet::account::AccountType;
-use key_wallet::account::ManagedAccountCollection;
-use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
-use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
-use key_wallet::wallet::immature_transaction::{
-    ImmatureTransaction, ImmatureTransactionCollection,
+// The crate's error enum wraps several large variants (SDK errors, DPP
+// consensus errors, etc.). Shrinking it (e.g. boxing variants) would be a
+// broader refactor; allow the lints for now.
+#![allow(clippy::result_large_err)]
+#![allow(clippy::large_enum_variant)]
+// Test-code-heavy lints used intentionally across this crate's unit tests.
+#![cfg_attr(test, allow(clippy::bool_assert_comparison))]
+#![cfg_attr(test, allow(clippy::field_reassign_with_default))]
+// Doc list formatting nits from our Markdown-style bullet lists in rustdoc.
+#![allow(clippy::doc_lazy_continuation)]
+#![allow(clippy::doc_overindented_list_items)]
+
+pub mod address_paths;
+pub mod broadcaster;
+pub mod changeset;
+pub mod error;
+pub mod events;
+pub mod manager;
+pub mod spv;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_support;
+mod util;
+pub mod wallet;
+
+pub use error::PlatformWalletError;
+pub use events::{PlatformEventHandler, PlatformEventManager};
+pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+// Surface the upstream `DerivedAddress` event payload through this
+// crate so downstream FFI consumers (rs-platform-wallet-ffi) can
+// project `CoreChangeSet.addresses_derived` without taking an extra
+// direct dependency on `key-wallet-manager`.
+pub use key_wallet_manager::DerivedAddress;
+// Re-export the path-rendering helpers so FFI shims and other
+// consumers can render `DerivedAddress.derivation_path` without
+// reimplementing the layout rules.
+pub use address_paths::{
+    derivation_path_for_derived_address, derivation_path_string_for_derived_address,
 };
-use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
-use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
-use key_wallet::wallet::managed_wallet_info::transaction_building::{
-    AccountTypePreference, TransactionError,
+pub use manager::dashpay_sync::{
+    DashPaySyncManager, DashPaySyncSummary, WalletDashPaySyncOutcome,
+    DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,
 };
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::wallet::managed_wallet_info::{ManagedWalletInfo, TransactionRecord};
-use key_wallet::{Address, Network, Utxo, Wallet, WalletBalance};
-use std::collections::BTreeSet;
-pub mod identity_manager;
-pub mod managed_identity;
+pub use manager::identity_sync::{
+    IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
+    DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,
+    MAX_TOKENS_PER_BALANCE_BATCH as IDENTITY_SYNC_MAX_TOKENS_PER_BATCH,
+};
+pub use manager::platform_address_sync::{
+    PlatformAddressSyncManager, PlatformAddressSyncSummary, WalletSyncOutcome,
+    DEFAULT_SYNC_INTERVAL_SECS,
+};
+pub use manager::PlatformWalletManager;
+pub use spv::SpvRuntime;
+pub use wallet::asset_lock::manager::AssetLockManager;
+pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+pub use wallet::asset_lock::AssetLockFunding;
+pub use wallet::core::WalletBalance;
+pub use wallet::core::{CoreWallet, SignedCoreTransaction};
+// DashPay types + crypto helpers re-exported through the identity
+// domain (they live under `identity::types::dashpay::*` and
+// `identity::crypto::*` internally).
+pub use wallet::core_address_key::CoreAddressPrivateKey;
+pub use wallet::identity::network::{
+    derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
+    ContactInfoPublishOutcome, ContactInfoSealed, SeedBindingVerification, IDENTITY_GAP_LIMIT,
+    MASTER_KEY_INDEX,
+};
+pub use wallet::identity::{
+    calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
+    derive_contact_payment_addresses, derive_contact_xpub, pubkey_binds_expected_key_data,
+    unmask_account_reference, BlockTime, ContactProfileEntry, ContactRequest, ContactXpubData,
+    DashPayProfile, DashPayState, DpnsNameInfo, EstablishedContact, IdentityLocation,
+    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
+    RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+};
+pub use wallet::platform_wallet::PlatformWalletInfo;
+pub use wallet::provider_key_at_index::{ProviderDerivedKey, ProviderKeyKind};
+pub use wallet::PlatformAddressTag;
+pub use wallet::PlatformWallet;
 
-pub use identity_manager::IdentityManager;
-pub use managed_identity::ManagedIdentity;
+// Re-export changeset types for caller-level staging.
+pub use changeset::Merge;
+pub use changeset::{
+    AssetLockChangeSet, AssetLockEntry, ClientStartState, ClientWalletStartState, ContactChangeSet,
+    ContactRequestEntry, IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet,
+    IdentityManagerStartState, PlatformAddressBalanceEntry, PlatformAddressChangeSet,
+    PlatformAddressSyncStartState, PlatformWalletChangeSet, TokenBalanceChangeSet,
+};
+pub use changeset::{PersistenceCapabilities, PERSISTENCE_CAPABILITIES_VERSION};
 
-#[cfg(feature = "manager")]
 pub use key_wallet_manager;
 
-/// Platform wallet information that extends ManagedWalletInfo with identity support
-#[derive(Debug, Clone)]
-pub struct PlatformWalletInfo {
-    /// The underlying managed wallet info
-    pub wallet_info: ManagedWalletInfo,
-
-    /// Identity manager for handling Platform identities
-    pub identity_manager: IdentityManager,
-}
-
-impl PlatformWalletInfo {
-    /// Create a new platform wallet info
-    pub fn new(wallet_id: [u8; 32], name: String, network: Network) -> Self {
-        Self {
-            wallet_info: ManagedWalletInfo::with_name(network, wallet_id, name),
-            identity_manager: IdentityManager::new(),
-        }
-    }
-
-    /// Get all identities associated with this wallet
-    pub fn identities(&self) -> IndexMap<Identifier, Identity> {
-        self.identity_manager.identities()
-    }
-
-    /// Get direct access to managed identities
-    pub fn managed_identities(&self) -> &IndexMap<Identifier, ManagedIdentity> {
-        &self.identity_manager.identities
-    }
-
-    /// Add an identity to this wallet
-    pub fn add_identity(&mut self, identity: Identity) -> Result<(), PlatformWalletError> {
-        self.identity_manager.add_identity(identity)
-    }
-
-    /// Get a specific identity by ID
-    pub fn get_identity(&self, identity_id: &Identifier) -> Option<&Identity> {
-        self.identity_manager.get_identity(identity_id)
-    }
-
-    /// Remove an identity from this wallet
-    pub fn remove_identity(
-        &mut self,
-        identity_id: &Identifier,
-    ) -> Result<Identity, PlatformWalletError> {
-        self.identity_manager.remove_identity(identity_id)
-    }
-
-    /// Get the primary identity (if set)
-    pub fn primary_identity(&self) -> Option<&Identity> {
-        self.identity_manager.primary_identity()
-    }
-
-    /// Set the primary identity
-    pub fn set_primary_identity(
-        &mut self,
-        identity_id: Identifier,
-    ) -> Result<(), PlatformWalletError> {
-        self.identity_manager.set_primary_identity(identity_id)
-    }
-}
-
-/// Implement WalletTransactionChecker by delegating to ManagedWalletInfo
-#[async_trait]
-impl WalletTransactionChecker for PlatformWalletInfo {
-    async fn check_transaction(
-        &mut self,
-        tx: &Transaction,
-        context: TransactionContext,
-        wallet: &mut Wallet,
-        update_state_with_wallet_if_found: bool,
-    ) -> TransactionCheckResult {
-        // Delegate to the underlying wallet info
-        self.wallet_info
-            .check_transaction(tx, context, wallet, update_state_with_wallet_if_found)
-            .await
-    }
-}
-
-/// Implement ManagedAccountOperations for PlatformWalletInfo
-impl ManagedAccountOperations for PlatformWalletInfo {
-    fn add_managed_account(
-        &mut self,
-        wallet: &Wallet,
-        account_type: AccountType,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info.add_managed_account(wallet, account_type)
-    }
-
-    fn add_managed_account_with_passphrase(
-        &mut self,
-        wallet: &Wallet,
-        account_type: AccountType,
-        passphrase: &str,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_account_with_passphrase(wallet, account_type, passphrase)
-    }
-
-    fn add_managed_account_from_xpub(
-        &mut self,
-        account_type: AccountType,
-        account_xpub: ExtendedPubKey,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_account_from_xpub(account_type, account_xpub)
-    }
-
-    #[cfg(feature = "bls")]
-    fn add_managed_bls_account(
-        &mut self,
-        wallet: &Wallet,
-        account_type: AccountType,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_bls_account(wallet, account_type)
-    }
-
-    #[cfg(feature = "bls")]
-    fn add_managed_bls_account_with_passphrase(
-        &mut self,
-        wallet: &Wallet,
-        account_type: AccountType,
-        passphrase: &str,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_bls_account_with_passphrase(wallet, account_type, passphrase)
-    }
-
-    #[cfg(feature = "bls")]
-    fn add_managed_bls_account_from_public_key(
-        &mut self,
-        account_type: AccountType,
-        bls_public_key: [u8; 48],
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_bls_account_from_public_key(account_type, bls_public_key)
-    }
-
-    #[cfg(feature = "eddsa")]
-    fn add_managed_eddsa_account(
-        &mut self,
-        wallet: &Wallet,
-        account_type: AccountType,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_eddsa_account(wallet, account_type)
-    }
-
-    #[cfg(feature = "eddsa")]
-    fn add_managed_eddsa_account_with_passphrase(
-        &mut self,
-        wallet: &Wallet,
-        account_type: AccountType,
-        passphrase: &str,
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_eddsa_account_with_passphrase(wallet, account_type, passphrase)
-    }
-
-    #[cfg(feature = "eddsa")]
-    fn add_managed_eddsa_account_from_public_key(
-        &mut self,
-        account_type: AccountType,
-        ed25519_public_key: [u8; 32],
-    ) -> key_wallet::Result<()> {
-        self.wallet_info
-            .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key)
-    }
-}
-
-/// Implement WalletInfoInterface for PlatformWalletInfo
-impl WalletInfoInterface for PlatformWalletInfo {
-    fn from_wallet(wallet: &Wallet) -> Self {
-        Self {
-            wallet_info: ManagedWalletInfo::from_wallet(wallet),
-            identity_manager: IdentityManager::new(),
-        }
-    }
-
-    fn from_wallet_with_name(wallet: &Wallet, name: String) -> Self {
-        Self {
-            wallet_info: ManagedWalletInfo::from_wallet_with_name(wallet, name),
-            identity_manager: IdentityManager::new(),
-        }
-    }
-
-    fn wallet_id(&self) -> [u8; 32] {
-        self.wallet_info.wallet_id()
-    }
-
-    fn name(&self) -> Option<&str> {
-        self.wallet_info.name()
-    }
-
-    fn set_name(&mut self, name: String) {
-        self.wallet_info.set_name(name)
-    }
-
-    fn description(&self) -> Option<&str> {
-        self.wallet_info.description()
-    }
-
-    fn set_description(&mut self, description: Option<String>) {
-        self.wallet_info.set_description(description)
-    }
-
-    fn birth_height(&self) -> u32 {
-        self.wallet_info.birth_height()
-    }
-
-    fn set_birth_height(&mut self, height: u32) {
-        self.wallet_info.set_birth_height(height)
-    }
-
-    fn first_loaded_at(&self) -> u64 {
-        self.wallet_info.first_loaded_at()
-    }
-
-    fn set_first_loaded_at(&mut self, timestamp: u64) {
-        self.wallet_info.set_first_loaded_at(timestamp)
-    }
-
-    fn update_last_synced(&mut self, timestamp: u64) {
-        self.wallet_info.update_last_synced(timestamp)
-    }
-
-    fn monitored_addresses(&self) -> Vec<DashAddress> {
-        self.wallet_info.monitored_addresses()
-    }
-
-    fn utxos(&self) -> BTreeSet<&Utxo> {
-        self.wallet_info.utxos()
-    }
-
-    fn get_spendable_utxos(&self) -> BTreeSet<&Utxo> {
-        // Use the default trait implementation which filters utxos
-        self.utxos()
-            .into_iter()
-            .filter(|utxo| !utxo.is_locked && (utxo.is_confirmed || utxo.is_instantlocked))
-            .collect()
-    }
-
-    fn balance(&self) -> WalletBalance {
-        self.wallet_info.balance()
-    }
-
-    fn update_balance(&mut self) {
-        self.wallet_info.update_balance()
-    }
-
-    fn transaction_history(&self) -> Vec<&TransactionRecord> {
-        self.wallet_info.transaction_history()
-    }
-
-    fn accounts_mut(&mut self) -> &mut ManagedAccountCollection {
-        self.wallet_info.accounts_mut()
-    }
-
-    fn accounts(&self) -> &ManagedAccountCollection {
-        self.wallet_info.accounts()
-    }
-
-    fn process_matured_transactions(&mut self, current_height: u32) -> Vec<ImmatureTransaction> {
-        self.wallet_info
-            .process_matured_transactions(current_height)
-    }
-
-    fn add_immature_transaction(&mut self, tx: ImmatureTransaction) {
-        self.wallet_info.add_immature_transaction(tx)
-    }
-
-    fn immature_transactions(&self) -> &ImmatureTransactionCollection {
-        self.wallet_info.immature_transactions()
-    }
-
-    fn immature_balance(&self) -> u64 {
-        self.wallet_info.immature_balance()
-    }
-
-    fn create_unsigned_payment_transaction(
-        &mut self,
-        wallet: &Wallet,
-        account_index: u32,
-        account_type_pref: Option<AccountTypePreference>,
-        recipients: Vec<(Address, u64)>,
-        fee_level: FeeLevel,
-        current_block_height: u32,
-    ) -> Result<Transaction, TransactionError> {
-        self.wallet_info.create_unsigned_payment_transaction(
-            wallet,
-            account_index,
-            account_type_pref,
-            recipients,
-            fee_level,
-            current_block_height,
-        )
-    }
-    fn update_chain_height(&mut self, current_height: u32) {
-        self.wallet_info.update_chain_height(current_height)
-    }
-
-    fn network(&self) -> Network {
-        self.wallet_info.network()
-    }
-}
-
-/// Errors that can occur in platform wallet operations
-#[derive(Debug, thiserror::Error)]
-pub enum PlatformWalletError {
-    #[error("Identity already exists: {0}")]
-    IdentityAlreadyExists(Identifier),
-
-    #[error("Identity not found: {0}")]
-    IdentityNotFound(Identifier),
-
-    #[error("No primary identity set")]
-    NoPrimaryIdentity,
-
-    #[error("Invalid identity data: {0}")]
-    InvalidIdentityData(String),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_platform_wallet_creation() {
-        let wallet_id = [1u8; 32];
-        let network = Network::Testnet;
-        let wallet =
-            PlatformWalletInfo::new(wallet_id, "Test Platform Wallet".to_string(), network);
-
-        assert_eq!(wallet.wallet_id(), wallet_id);
-        assert_eq!(wallet.name(), Some("Test Platform Wallet"));
-        assert_eq!(wallet.identities().len(), 0);
-    }
-}
+// Re-export the per-wallet persistence handle so callers outside
+// the crate can pass it to `ManagedIdentity` mutation methods
+// (`set_dashpay_profile`, `record_dashpay_payment`, `add_identity`, …).
+pub use wallet::persister::WalletPersister;

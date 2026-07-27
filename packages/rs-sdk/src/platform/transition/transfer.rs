@@ -14,17 +14,16 @@ use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 pub trait TransferToIdentity: Waitable {
-    /// Function to transfer credits from an identity to another identity. Returns the final
-    /// identity balance.
+    /// Transfers credits from an identity to another identity.
     ///
-    /// If signing_transfer_key_to_use is not set, we will try to use one in the signer that is
+    /// If `signing_transfer_key_to_use` is not set, we will try to use one in the signer that is
     /// available for the transfer.
     ///
     /// This method will resolve once the state transition is executed.
     ///
     /// ## Returns
     ///
-    /// Final balance of the identity after the transfer.
+    /// A tuple of `(sender_balance, receiver_balance)` after the transfer.
     async fn transfer_credits<S: Signer<IdentityPublicKey> + Send>(
         &self,
         sdk: &Sdk,
@@ -59,11 +58,13 @@ impl TransferToIdentity for Identity {
             new_identity_nonce,
             sdk.version(),
             None,
-        )?;
+        )
+        .await?;
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
-        let (sender, receiver): (PartialIdentity, PartialIdentity) =
-            state_transition.broadcast_and_wait(sdk, settings).await?;
+        let (sender, receiver): (PartialIdentity, PartialIdentity) = state_transition
+            .broadcast_and_wait_for_affected_state(sdk, settings)
+            .await?;
 
         let sender_balance = sender.balance.ok_or_else(|| {
             Error::Generic("expected an identity balance after transfer (sender)".to_string())

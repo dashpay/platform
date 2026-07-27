@@ -75,7 +75,7 @@ fn get_group_info(
         return Err("Contract ID is null".to_string());
     }
 
-    let rt = tokio::runtime::Runtime::new()
+    let rt = crate::runtime::BigStackRuntime::new_isolated()
         .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
 
     let contract_id_str = unsafe {

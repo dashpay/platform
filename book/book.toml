@@ -1,0 +1,21 @@
+[book]
+authors = ["Dash Platform Team"]
+language = "en"
+src = "src"
+title = "The Dash Platform Book"
+description = "A guide to the design philosophy, patterns, and conventions of the Dash Platform Rust codebase"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/dashpay/platform"
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+[preprocessor]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+

@@ -1,4 +1,22 @@
 //! Identity withdrawal operations
+//!
+//! # Safety note on pointer validation
+//!
+//! Previous versions of this code used `std::panic::catch_unwind` around raw pointer
+//! dereferences in an attempt to detect invalid (dangling) pointers. This was removed
+//! because:
+//!
+//! 1. Dereferencing an invalid pointer is **undefined behavior** in Rust, regardless of
+//!    whether it is wrapped in `catch_unwind`. The UB occurs at the dereference itself,
+//!    before any panic could be raised.
+//! 2. The release profile sets `panic = "abort"`, which means `catch_unwind` is a
+//!    complete no-op in release builds -- the compiler eliminates it entirely.
+//! 3. `AssertUnwindSafe` further suppressed any soundness diagnostics.
+//!
+//! The only sound validation we can perform on a raw pointer without a handle registry
+//! is a null check, which is what we do now. Callers are responsible for ensuring that
+//! non-null pointers are valid and properly aligned as documented in each function's
+//! `# Safety` section.
 
 use dash_sdk::dpp::dashcore::{self, Address};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -67,43 +85,15 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
 
-    // Carefully validate the identity handle
-    debug!("dash_sdk_identity_withdraw: dereferencing identity handle");
-    let identity = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        &*(identity_handle as *const Identity)
-    })) {
-        Ok(identity) => {
-            debug!("dash_sdk_identity_withdraw: identity handle dereferenced");
-            identity
-        }
-        Err(_) => {
-            error!("dash_sdk_identity_withdraw: failed to dereference identity handle - invalid pointer");
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                "Invalid identity handle - possible use after free".to_string(),
-            ));
-        }
-    };
-
-    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
+    // SAFETY: Null check was performed above. Caller must guarantee the pointer is valid
+    // and points to a live Identity. We cannot detect dangling pointers without a handle
+    // registry; null checks are the only sound validation available.
+    let identity = &*(identity_handle as *const Identity);
+    let signer =
+        crate::signer::VTableSignerRef(&*(signer_handle as *const crate::signer::VTableSigner));
 
     debug!("dash_sdk_identity_withdraw: handles dereferenced successfully");
-
-    // Try to access identity fields safely
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        debug!(id = ?identity.id(), balance = identity.balance(), keys = identity.public_keys().len(), "dash_sdk_identity_withdraw: identity summary");
-    })) {
-        Ok(_) => debug!("dash_sdk_identity_withdraw: identity fields accessed"),
-        Err(_) => {
-            error!(
-                "dash_sdk_identity_withdraw: failed to access identity fields - corrupted identity"
-            );
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                "Identity handle points to corrupted data".to_string(),
-            ));
-        }
-    };
+    debug!(id = ?identity.id(), balance = identity.balance(), keys = identity.public_keys().len(), "dash_sdk_identity_withdraw: identity summary");
 
     let address_str = match CStr::from_ptr(address).to_str() {
         Ok(s) => {
@@ -203,25 +193,19 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
         debug!("dash_sdk_identity_withdraw: trait imported");
 
-        debug!(?withdraw_address, amount, ?core_fee, has_signing_key = signing_key.is_some(), signer_ptr = ?(signer as *const _), "dash_sdk_identity_withdraw: calling withdraw method");
+        debug!(?withdraw_address, amount, ?core_fee, has_signing_key = signing_key.is_some(), signer_ptr = ?(signer.0 as *const _), "dash_sdk_identity_withdraw: calling withdraw method");
 
-        // Additional defensive check on the signing_key if present
+        // Log signing key details for diagnostics
         if let Some(key) = signing_key {
-            eprintln!("🔵 dash_sdk_identity_withdraw: Signing key details:");
-            eprintln!("  - Key ID: {}", key.id());
-            eprintln!("  - Purpose: {:?}", key.purpose());
-            eprintln!("  - Security level: {:?}", key.security_level());
-            eprintln!("  - Key type: {:?}", key.key_type());
-            eprintln!("  - Read only: {}", key.read_only());
-
-            // Try to access the key data to see if it crashes here
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _data = key.data();
-                debug!(len = key.data().len(), "dash_sdk_identity_withdraw: key data length");
-            })) {
-                Ok(_) => debug!("dash_sdk_identity_withdraw: key data accessible"),
-                Err(_) => warn!("dash_sdk_identity_withdraw: key data access caused panic"),
-            }
+            debug!(
+                key_id = key.id(),
+                purpose = ?key.purpose(),
+                security_level = ?key.security_level(),
+                key_type = ?key.key_type(),
+                read_only = key.read_only(),
+                key_data_len = key.data().len(),
+                "dash_sdk_identity_withdraw: signing key details"
+            );
         }
 
         debug!("dash_sdk_identity_withdraw: calling SDK withdraw");
@@ -233,7 +217,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
                 amount,
                 core_fee,
                 signing_key,
-                *signer,
+                signer,
                 settings,
             )
             .await
@@ -261,5 +245,92 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             DashSDKResult::success_string(balance_str.into_raw())
         }
         Err(e) => DashSDKResult::error(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::{
+        create_c_string, create_mock_sdk_handle, create_mock_signer, destroy_mock_sdk_handle,
+    };
+    use std::ffi::CString;
+
+    /// Verify that passing a null identity handle returns an error instead of crashing.
+    #[test]
+    fn null_identity_handle_returns_error() {
+        let sdk_handle = create_mock_sdk_handle();
+        let address = create_c_string("yR9kXCN3fVjjMEB2R4F4kCU6GM93pBvVpz");
+        let signer = create_mock_signer();
+        let signer_ptr = Box::into_raw(signer) as *const crate::types::SignerHandle;
+
+        let result = unsafe {
+            dash_sdk_identity_withdraw(
+                sdk_handle,
+                std::ptr::null(), // null identity handle
+                address,
+                1000,
+                0,
+                0,
+                signer_ptr,
+                std::ptr::null(),
+            )
+        };
+
+        assert!(
+            !result.error.is_null(),
+            "Expected error for null identity handle"
+        );
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        // Clean up
+        unsafe {
+            if !error.message.is_null() {
+                let _ = CString::from_raw(error.message as *mut _);
+            }
+            let _ = Box::from_raw(result.error);
+            let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
+            let _ = CString::from_raw(address as *mut _);
+            destroy_mock_sdk_handle(sdk_handle);
+        }
+    }
+
+    /// Verify that passing a null SDK handle returns an error instead of crashing.
+    #[test]
+    fn null_sdk_handle_returns_error() {
+        let address = create_c_string("yR9kXCN3fVjjMEB2R4F4kCU6GM93pBvVpz");
+        let signer = create_mock_signer();
+        let signer_ptr = Box::into_raw(signer) as *const crate::types::SignerHandle;
+
+        let result = unsafe {
+            dash_sdk_identity_withdraw(
+                std::ptr::null_mut(), // null SDK handle
+                std::ptr::dangling::<IdentityHandle>(),
+                address,
+                1000,
+                0,
+                0,
+                signer_ptr,
+                std::ptr::null(),
+            )
+        };
+
+        assert!(
+            !result.error.is_null(),
+            "Expected error for null SDK handle"
+        );
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        // Clean up
+        unsafe {
+            if !error.message.is_null() {
+                let _ = CString::from_raw(error.message as *mut _);
+            }
+            let _ = Box::from_raw(result.error);
+            let _ = Box::from_raw(signer_ptr as *mut crate::signer::VTableSigner);
+            let _ = CString::from_raw(address as *mut _);
+        }
     }
 }

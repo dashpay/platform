@@ -6,7 +6,7 @@ The `platform.gateway` section configures the Dash Platform Gateway, which serve
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.35.11-impr.1` | `dashpay/envoy:latest` |
+| `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.39.0-impr.1` | `dashpay/envoy:latest` |
 
 ## Listeners
 
@@ -50,7 +50,7 @@ These settings control the metrics endpoint for monitoring the Gateway:
 |--------|-------------|---------|---------|
 | `platform.gateway.metrics.enabled` | Enable metrics server | `false` | `true` |
 | `platform.gateway.metrics.host` | Host binding for metrics server | `127.0.0.1` | `0.0.0.0` |
-| `platform.gateway.metrics.port` | Port for metrics server | `9090` | `9091` |
+| `platform.gateway.metrics.port` | Port for metrics server | `9090` (mainnet), `19090` (testnet), `29090` (local) | `9091` |
 
 Metrics provide performance and health information about the Gateway service.
 Dashmate automatically enables the Envoy admin endpoint whenever metrics are enabled so that the Prometheus listener can proxy `/stats/prometheus`; if admin itself is still disabled, the listener is not exposed outside of Docker.
@@ -63,7 +63,7 @@ These settings control the admin interface for the Gateway:
 |--------|-------------|---------|---------|
 | `platform.gateway.admin.enabled` | Enable admin interface | `false` | `true` |
 | `platform.gateway.admin.host` | Host binding for admin interface | `127.0.0.1` | `0.0.0.0` |
-| `platform.gateway.admin.port` | Port for admin interface | `9901` | `9902` |
+| `platform.gateway.admin.port` | Port for admin interface | `9901` (mainnet), `19901` (testnet), `29901` (local) | `9902` |
 
 The admin interface allows for runtime configuration and statistics retrieval.
 
@@ -159,6 +159,7 @@ The rate limiter protects the Platform from excessive requests:
 | `platform.gateway.rateLimiter.unit` | Time unit for rate limiting | `minute` | `hour` |
 | `platform.gateway.rateLimiter.whitelist` | IPs exempt from rate limiting | `[]` | `["192.168.1.1"]` |
 | `platform.gateway.rateLimiter.blacklist` | IPs blocked from all requests | `[]` | `["10.0.0.1"]` |
+| `platform.gateway.rateLimiter.responseHeaders.enabled` | Emit `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` response headers. `rs-dapi-client` reads the Reset header to apply a precise ban window instead of the exponential health-ban ladder. Disable only for privacy reasons. | `true` | `false` |
 
 Available time units:
 - `second`: Per-second rate limiting
@@ -173,4 +174,4 @@ Available time units:
 | `platform.gateway.rateLimiter.metrics.enabled` | Enable metrics for rate limiter | `false` | `true` |
 | `platform.gateway.rateLimiter.metrics.docker.image` | Docker image for rate limiter metrics | `prom/statsd-exporter:v0.26.1` | `prom/statsd-exporter:latest` |
 | `platform.gateway.rateLimiter.metrics.host` | Host binding for metrics | `127.0.0.1` | `0.0.0.0` |
-| `platform.gateway.rateLimiter.metrics.port` | Port for metrics | `9102` | `9103` |
+| `platform.gateway.rateLimiter.metrics.port` | Port for metrics | `9102` (mainnet), `19102` (testnet), `29102` (local) | `9103` |

@@ -1,6 +1,7 @@
 pub use fields::{property_names, IDENTIFIER_FIELDS};
 
 mod accessors;
+pub mod document_event;
 #[cfg(feature = "client")]
 mod document_facade;
 #[cfg(feature = "factories")]
@@ -47,23 +48,20 @@ use std::fmt::Formatter;
 
 #[derive(Clone, Debug, PartialEq, From)]
 #[cfg_attr(
-    any(
-        feature = "document-serde-conversion",
-        feature = "state-transition-serde-conversion"
-    ),
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
 pub enum Document {
-    #[cfg_attr(
-        any(
-            feature = "document-serde-conversion",
-            feature = "state-transition-serde-conversion"
-        ),
-        serde(rename = "0")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(DocumentV0),
 }
+
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+impl crate::serialization::JsonConvertible for Document {}
+
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+impl crate::serialization::ValueConvertible for Document {}
 
 impl fmt::Display for Document {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -337,5 +335,491 @@ mod tests {
             let _deserialized = Document::from_bytes(&serialized, document_type, platform_version)
                 .expect("expected to deserialize domain document");
         }
+    }
+
+    // ================================================================
+    //  Display impl tests for Document
+    // ================================================================
+
+    #[test]
+    fn display_document_with_no_properties() {
+        let doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([0xAA; 32]),
+            owner_id: platform_value::Identifier::new([0xBB; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let s = format!("{}", doc);
+        assert!(
+            s.contains("no properties"),
+            "should say 'no properties' when the BTreeMap is empty, got: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn display_document_shows_transferred_at_fields() {
+        let doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: Some(1_700_000_000_000),
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: Some(500),
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: Some(42),
+            creator_id: None,
+        });
+
+        let s = format!("{}", doc);
+        assert!(
+            s.contains("transferred_at:"),
+            "should contain transferred_at, got: {}",
+            s
+        );
+        assert!(
+            s.contains("transferred_at_block_height:500"),
+            "should contain transferred_at_block_height:500, got: {}",
+            s
+        );
+        assert!(
+            s.contains("transferred_at_core_block_height:42"),
+            "should contain transferred_at_core_block_height:42, got: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn display_document_shows_creator_id() {
+        let creator = platform_value::Identifier::new([0xCC; 32]);
+        let doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: Some(creator),
+        });
+
+        let s = format!("{}", doc);
+        assert!(
+            s.contains("creator_id:"),
+            "should contain creator_id, got: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn display_document_shows_block_height_fields() {
+        let doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: Some(100),
+            updated_at_block_height: Some(200),
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(50),
+            updated_at_core_block_height: Some(60),
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let s = format!("{}", doc);
+        assert!(s.contains("created_at_block_height:100"), "got: {}", s);
+        assert!(s.contains("updated_at_block_height:200"), "got: {}", s);
+        assert!(s.contains("created_at_core_block_height:50"), "got: {}", s);
+        assert!(s.contains("updated_at_core_block_height:60"), "got: {}", s);
+    }
+
+    // ================================================================
+    //  Version dispatch: increment_revision
+    // ================================================================
+
+    #[test]
+    fn increment_revision_works_on_mutable_document() {
+        let mut doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        doc.increment_revision()
+            .expect("increment_revision should succeed");
+        assert_eq!(doc.revision(), Some(2));
+    }
+
+    #[test]
+    fn increment_revision_fails_when_no_revision() {
+        let mut doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let result = doc.increment_revision();
+        assert!(
+            result.is_err(),
+            "increment_revision should fail when revision is None"
+        );
+    }
+
+    // ================================================================
+    //  Version dispatch: is_equal_ignoring_time_based_fields
+    // ================================================================
+
+    #[test]
+    fn is_equal_ignoring_time_based_fields_dispatches_correctly() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+
+        let doc1 = document_type
+            .random_document(Some(42), platform_version)
+            .expect("expected random document");
+
+        let mut doc2 = doc1.clone();
+        // Change timestamps
+        doc2.set_created_at(Some(9_999_999));
+        doc2.set_updated_at(Some(8_888_888));
+
+        let result = doc1
+            .is_equal_ignoring_time_based_fields(&doc2, None, platform_version)
+            .expect("should succeed");
+        assert!(
+            result,
+            "same document with different timestamps should be equal ignoring time fields"
+        );
+    }
+
+    // ================================================================
+    //  Version dispatch: get_raw_for_contract
+    // ================================================================
+
+    #[test]
+    fn get_raw_for_contract_dispatches_to_v0() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+
+        let document = document_type
+            .random_document(Some(7), platform_version)
+            .expect("expected random document");
+
+        let raw_id = document
+            .get_raw_for_contract("$id", "profile", &contract, None, platform_version)
+            .expect("should succeed");
+        assert_eq!(raw_id, Some(document.id().to_vec()));
+    }
+
+    // ================================================================
+    //  Version dispatch: hash
+    // ================================================================
+
+    #[test]
+    fn document_hash_is_deterministic() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected to get contract");
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+
+        let document = document_type
+            .random_document(Some(42), platform_version)
+            .expect("expected random document");
+
+        let hash1 = document
+            .hash(&contract, document_type, platform_version)
+            .expect("hash should succeed");
+        let hash2 = document
+            .hash(&contract, document_type, platform_version)
+            .expect("hash should succeed");
+        assert_eq!(hash1, hash2, "hash should be deterministic");
+        assert!(!hash1.is_empty(), "hash should not be empty");
+    }
+
+    // ================================================================
+    //  increment_revision: overflow from Revision::MAX surfaces an
+    //  Overflow ProtocolError (not a silent saturate — this is the
+    //  Document-enum path which uses checked_add).
+    // ================================================================
+
+    #[test]
+    fn increment_revision_errors_on_overflow() {
+        let mut doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: Some(crate::prelude::Revision::MAX),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+        let err = doc.increment_revision().expect_err("MAX + 1 must overflow");
+        match err {
+            ProtocolError::Overflow(_) => {}
+            other => panic!("expected ProtocolError::Overflow, got {:?}", other),
+        }
+    }
+
+    // ================================================================
+    //  From<DocumentV0> for Document produces a V0 variant.
+    // ================================================================
+
+    #[test]
+    fn from_document_v0_produces_v0_variant() {
+        let v0 = DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: Some(7),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        };
+        let document: Document = v0.clone().into();
+        match document {
+            Document::V0(inner) => assert_eq!(inner, v0),
+        }
+    }
+
+    // ================================================================
+    //  Document Display forwards to DocumentV0 Display with a version
+    //  prefix.
+    // ================================================================
+
+    #[test]
+    fn document_display_has_version_prefix() {
+        let doc = Document::V0(DocumentV0 {
+            id: platform_value::Identifier::new([1u8; 32]),
+            owner_id: platform_value::Identifier::new([2u8; 32]),
+            properties: Default::default(),
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+        let s = format!("{}", doc);
+        assert!(
+            s.starts_with("v0 : "),
+            "Display should prefix with version, got: {s}"
+        );
+    }
+
+    // ================================================================
+    //  get_raw_for_document_type dispatches via platform version 0
+    //  to the V0 implementation.
+    // ================================================================
+
+    #[test]
+    fn get_raw_for_document_type_dispatch_path_returns_id() {
+        let platform_version = PlatformVersion::latest();
+        let contract = json_document_to_contract(
+            "../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract.json",
+            false,
+            platform_version,
+        )
+        .expect("expected contract");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected document type");
+
+        let document = document_type
+            .random_document(Some(11), platform_version)
+            .expect("expected random document");
+
+        let raw = document
+            .get_raw_for_document_type("$id", document_type, None, platform_version)
+            .expect("should succeed");
+        assert_eq!(raw, Some(document.id().to_vec()));
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "json-conversion",
+    feature = "value-conversion",
+    feature = "serde-conversion"
+))]
+mod json_convertible_tests {
+    use super::*;
+
+    use platform_value::{platform_value, Identifier};
+    use serde_json::json;
+    use std::collections::BTreeMap;
+
+    fn fixture() -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::new([0xa1; 32]),
+            owner_id: Identifier::new([0xb2; 32]),
+            properties: BTreeMap::new(),
+            revision: Some(2),
+            created_at: Some(1_700_000_000_000),
+            updated_at: Some(1_700_000_001_000),
+            transferred_at: None,
+            created_at_block_height: Some(100),
+            updated_at_block_height: Some(101),
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(50),
+            updated_at_core_block_height: Some(51),
+            transferred_at_core_block_height: None,
+            creator_id: Some(Identifier::new([0xc3; 32])),
+        })
+    }
+
+    #[test]
+    fn json_round_trip_with_full_wire_shape() {
+        use crate::serialization::JsonConvertible;
+        let original = fixture();
+        let json = original.to_json().expect("to_json");
+        // Sized-int fields whose JSON wire encoding loses size info:
+        // `$revision`/`$createdAt`/`$updatedAt`/`$createdAtBlockHeight`/
+        // `$updatedAtBlockHeight` (u64), `$createdAtCoreBlockHeight`/
+        // `$updatedAtCoreBlockHeight` (u32). The value-path locks variants
+        // via explicit suffixes. `properties` is flattened into the document
+        // root; for an empty `BTreeMap`, no extra keys appear.
+        assert_eq!(
+            json,
+            json!({
+                "$formatVersion": "0",
+                "$id": Identifier::new([0xa1; 32]),
+                "$ownerId": Identifier::new([0xb2; 32]),
+                "$revision": 2,
+                "$createdAt": 1_700_000_000_000u64,
+                "$updatedAt": 1_700_000_001_000u64,
+                "$transferredAt": serde_json::Value::Null,
+                "$createdAtBlockHeight": 100,
+                "$updatedAtBlockHeight": 101,
+                "$transferredAtBlockHeight": serde_json::Value::Null,
+                "$createdAtCoreBlockHeight": 50,
+                "$updatedAtCoreBlockHeight": 51,
+                "$transferredAtCoreBlockHeight": serde_json::Value::Null,
+                "$creatorId": Identifier::new([0xc3; 32]),
+            })
+        );
+        let recovered = Document::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn value_round_trip_with_full_wire_shape() {
+        use crate::serialization::ValueConvertible;
+        let original = fixture();
+        let value = original.to_object().expect("to_object");
+        // Explicit suffixes lock in sized variants: revision / *At /
+        // *AtBlockHeight are u64; *AtCoreBlockHeight are u32.
+        assert_eq!(
+            value,
+            platform_value!({
+                "$formatVersion": "0",
+                "$id": Identifier::new([0xa1; 32]),
+                "$ownerId": Identifier::new([0xb2; 32]),
+                "$revision": 2u64,
+                "$createdAt": 1_700_000_000_000u64,
+                "$updatedAt": 1_700_000_001_000u64,
+                "$transferredAt": platform_value::Value::Null,
+                "$createdAtBlockHeight": 100u64,
+                "$updatedAtBlockHeight": 101u64,
+                "$transferredAtBlockHeight": platform_value::Value::Null,
+                "$createdAtCoreBlockHeight": 50u32,
+                "$updatedAtCoreBlockHeight": 51u32,
+                "$transferredAtCoreBlockHeight": platform_value::Value::Null,
+                "$creatorId": Identifier::new([0xc3; 32]),
+            })
+        );
+        let recovered = Document::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
     }
 }

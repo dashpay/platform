@@ -15,6 +15,7 @@ pub enum WasmSdkErrorKind {
     Protocol,
     Proof,
     InvalidProvedResponse,
+    ExecutionNotProved,
     DapiClientError,
     DapiMocksError,
     CoreError,
@@ -31,11 +32,19 @@ pub enum WasmSdkErrorKind {
     Cancelled,
     StaleNode,
     StateTransitionBroadcastError,
+    NonceOverflow,
+    IdentityNonceNotFound,
+    DriveInternalError,
 
     // Local helper kinds
     InvalidArgument,
     SerializationError,
     NotFound,
+    /// Surface-stable scaffolded API that hasn't been wired through
+    /// the wasm-sdk layer yet. JS callers can branch on this kind
+    /// (vs `Generic`) to detect "the API exists but execution waits
+    /// on a follow-up" without parsing the message.
+    NotImplemented,
 }
 
 /// Structured error surfaced to JS consumers
@@ -48,7 +57,7 @@ pub struct WasmSdkError {
     /// Optional numeric code for some errors (e.g., broadcast error code).
     code: i32,
     /// Indicates if the operation can be retried safely.
-    retriable: bool,
+    is_retriable: bool,
 }
 
 // wasm-bindgen getters defined below in the second impl block
@@ -58,13 +67,13 @@ impl WasmSdkError {
         kind: WasmSdkErrorKind,
         message: M,
         code: Option<i32>,
-        retriable: bool,
+        is_retriable: bool,
     ) -> Self {
         Self {
             kind,
             message: message.into(),
             code: code.unwrap_or(-1),
-            retriable,
+            is_retriable,
         }
     }
 
@@ -82,6 +91,33 @@ impl WasmSdkError {
 
     pub(crate) fn not_found(message: impl Into<String>) -> Self {
         Self::new(WasmSdkErrorKind::NotFound, message, None, false)
+    }
+
+    /// Construct a [`WasmSdkErrorKind::NotImplemented`] error for a
+    /// scaffolded API. `api_name` is the JS-facing method name (e.g.
+    /// `"getDocumentsAverage"`) — keep the message short so JS callers
+    /// can branch on `kind` rather than message-match.
+    ///
+    /// `#[allow(dead_code)]` because all the previously-scaffolded
+    /// SUM/AVG bindings now have real implementations; kept as a
+    /// constructor for future scaffolded APIs so the
+    /// `WasmSdkErrorKind::NotImplemented` variant (still serialized
+    /// in [`WasmSdkErrorKind::Display`] at the bottom of this file)
+    /// has a single canonical construction site.
+    #[allow(dead_code)]
+    pub(crate) fn not_implemented(api_name: impl Into<String>) -> Self {
+        let api = api_name.into();
+        Self::new(
+            WasmSdkErrorKind::NotImplemented,
+            format!(
+                "{api}: scaffolded API not yet wired through the wasm-sdk \
+                 layer. The rs-drive primitives are available; plumbing them \
+                 up to the browser-facing API is the pending SDK fan-out \
+                 follow-up."
+            ),
+            None,
+            false,
+        )
     }
 }
 
@@ -101,6 +137,11 @@ impl From<SdkError> for WasmSdkError {
             ),
             Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
             Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
+            // Deterministic for a given transition family: retrying another
+            // node cannot upgrade a snapshot into execution evidence.
+            ExecutionNotProved(msg) => {
+                Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
+            }
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,
@@ -177,6 +218,21 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            NonceOverflow(nonce) => Self::new(
+                WasmSdkErrorKind::NonceOverflow,
+                format!(
+                    "Identity nonce overflow: nonce has reached the maximum value ({})",
+                    nonce
+                ),
+                None,
+                false,
+            ),
+            IdentityNonceNotFound(msg) => {
+                Self::new(WasmSdkErrorKind::IdentityNonceNotFound, msg, None, true)
+            }
+            DriveInternalError(msg) => {
+                Self::new(WasmSdkErrorKind::DriveInternalError, msg, None, retriable)
+            }
             NoAvailableAddressesToRetry(inner) => Self::new(
                 WasmSdkErrorKind::DapiClientError,
                 format!("no available addresses to retry, last error: {}", inner),
@@ -237,6 +293,7 @@ impl WasmSdkError {
             K::Protocol => "Protocol",
             K::Proof => "Proof",
             K::InvalidProvedResponse => "InvalidProvedResponse",
+            K::ExecutionNotProved => "ExecutionNotProved",
             K::DapiClientError => "DapiClientError",
             K::DapiMocksError => "DapiMocksError",
             K::CoreError => "CoreError",
@@ -253,9 +310,13 @@ impl WasmSdkError {
             K::Cancelled => "Cancelled",
             K::StaleNode => "StaleNode",
             K::StateTransitionBroadcastError => "StateTransitionBroadcastError",
+            K::NonceOverflow => "NonceOverflow",
+            K::IdentityNonceNotFound => "IdentityNonceNotFound",
+            K::DriveInternalError => "DriveInternalError",
             K::InvalidArgument => "InvalidArgument",
             K::SerializationError => "SerializationError",
             K::NotFound => "NotFound",
+            K::NotImplemented => "NotImplemented",
         }
         .to_string()
     }
@@ -273,8 +334,8 @@ impl WasmSdkError {
     }
 
     /// Whether the error is retryable
-    #[wasm_bindgen(getter)]
-    pub fn retriable(&self) -> bool {
-        self.retriable
+    #[wasm_bindgen(getter = "isRetriable")]
+    pub fn is_retriable(&self) -> bool {
+        self.is_retriable
     }
 }

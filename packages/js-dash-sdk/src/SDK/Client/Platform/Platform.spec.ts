@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-// import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
+import { getLatestProtocolVersion } from '@dashevo/wasm-dpp';
 import { Platform } from './index';
 import 'mocha';
 import Client from '../Client';
@@ -10,40 +10,30 @@ describe('Dash - Platform', () => {
     expect(Platform.constructor.name).to.be.equal('Function');
   });
 
-  // TODO(versioning): obsolete now?
-  it.skip('should set protocol version for DPP though options', async () => {
+  it('should use the protocol version passed through options', async () => {
     const platform = new Platform({
-      client: new Client(),
+      client: new Client({ network: 'testnet' }),
       network: 'testnet',
-      driveProtocolVersion: 42,
+      driveProtocolVersion: 1,
     });
 
     await platform.initialize();
-    // expect(platform.dpp.getProtocolVersion()).to.equal(42);
+
+    expect(platform.protocolVersion).to.equal(1);
   });
 
-  // TODO(versioning): obsolete now?
-  it.skip('should set protocol version for DPP using mapping', async () => {
+  it('should default to the latest protocol version on testnet', async () => {
+    // Regression: testnet must not be pinned to an old protocol version.
+    // wasm-dpp deserializes fetched contracts at this version, and an old
+    // version downgrades a V1 config (sized_integer_types) to V0, which the
+    // network rejects on contract update ("config version 0 is not supported").
     const platform = new Platform({
-      client: new Client(),
+      client: new Client({ network: 'testnet' }),
       network: 'testnet',
     });
 
-    // @ts-ignore
-    // const testnetProtocolVersion = Platform.networkToProtocolVersion.get('testnet');
-
     await platform.initialize();
-    // expect(platform.dpp.getProtocolVersion()).to.equal(testnetProtocolVersion);
-  });
 
-  // TODO(versioning): obsolete now?
-  it.skip('should set protocol version for DPP using latest version', async () => {
-    const platform = new Platform({
-      client: new Client(),
-      network: 'unknown',
-    });
-
-    await platform.initialize();
-    // expect(platform.dpp.getProtocolVersion()).to.equal(latestProtocolVersion);
+    expect(platform.protocolVersion).to.equal(getLatestProtocolVersion());
   });
 });

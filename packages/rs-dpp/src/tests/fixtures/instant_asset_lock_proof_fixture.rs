@@ -98,7 +98,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     });
 
     Transaction {
-        version: 0,
+        version: 3,
         lock_time: 0,
         input: vec![input],
         output: vec![burn_output, change_output],

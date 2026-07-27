@@ -65,7 +65,11 @@ impl TryFrom<IdentitiesContractKeysQuery> for GetIdentitiesContractKeysRequest {
 }
 
 impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
-    fn query(self, prove: bool) -> Result<GetIdentitiesContractKeysRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetIdentitiesContractKeysRequest, Error> {
+        let prove = settings.prove;
         let IdentitiesContractKeysQuery {
             identities_ids,
             contract_id,
@@ -74,10 +78,10 @@ impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
         } = self;
         Ok(GetIdentitiesContractKeysRequest {
             version: Some(V0(GetIdentitiesContractKeysRequestV0 {
-                identities_ids: identities_ids.into_iter().map(|a| a.to_vec()).collect(),
+                identities_ids: identities_ids.iter().map(|a| a.to_vec()).collect(),
                 contract_id: contract_id.to_vec(),
-                document_type_name,
-                purposes: purposes.into_iter().map(|purpose| purpose as i32).collect(),
+                document_type_name: document_type_name.clone(),
+                purposes: purposes.iter().map(|purpose| *purpose as i32).collect(),
                 prove,
             })),
         })

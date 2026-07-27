@@ -37,33 +37,40 @@ describe('Search Contract', () => {
 
     identityId = await generateRandomIdentifier();
 
-    dataContract = dpp.dataContract.create(identityId, BigInt(1), keywordSearchContractDocumentsSchema);
+    dataContract = dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      keywordSearchContractDocumentsSchema,
+    );
   });
 
   it('should have a valid contract definition', async () => {
-    expect(() => dpp.dataContract.create(identityId, BigInt(1), keywordSearchContractDocumentsSchema))
+    expect(() => dpp.dataContract.create(
+      identityId,
+      BigInt(1),
+      keywordSearchContractDocumentsSchema,
+    ))
       .to
       .not
       .throw();
   });
 
   describe('documents', () => {
-    describe('txMetadata', () => {
-      let rawTxMetadataDocument;
+    describe('contractKeywords', () => {
+      let rawContractKeywordsDocument;
 
       beforeEach(() => {
-        rawTxMetadataDocument = {
-          keyIndex: 0,
-          encryptionKeyIndex: 100,
-          encryptedMetadata: crypto.randomBytes(64),
+        rawContractKeywordsDocument = {
+          keyword: 'accounting',
+          contractId: crypto.randomBytes(32),
         };
       });
 
-      describe('keyIndex', () => {
+      describe('keyword', () => {
         it('should be defined', async () => {
-          delete rawTxMetadataDocument.keyIndex;
+          delete rawContractKeywordsDocument.keyword;
 
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+          const document = dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
@@ -72,23 +79,35 @@ describe('Search Contract', () => {
             .equal('required');
           expect(error.params.missingProperty)
             .to
-            .equal('keyIndex');
+            .equal('keyword');
         });
 
-        it('should be a non-negative integer', async () => {
-          rawTxMetadataDocument.keyIndex = -1;
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+        it('should be not shorter than 3 characters', async () => {
+          rawContractKeywordsDocument.keyword = 'ab';
+
+          const document = dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minimum');
+
+          expect(error.keyword).to.equal('minLength');
+        });
+
+        it('should be not longer than 50 characters', async () => {
+          rawContractKeywordsDocument.keyword = 'a'.repeat(51);
+
+          const document = dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword).to.equal('maxLength');
         });
       });
 
-      describe('encryptionKeyIndex', () => {
+      describe('contractId', () => {
         it('should be defined', async () => {
-          delete rawTxMetadataDocument.encryptionKeyIndex;
+          delete rawContractKeywordsDocument.contractId;
 
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+          const document = dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
           const validationResult = document.validate(dpp.protocolVersion);
           const error = expectJsonSchemaError(validationResult);
 
@@ -97,90 +116,213 @@ describe('Search Contract', () => {
             .equal('required');
           expect(error.params.missingProperty)
             .to
-            .equal('encryptionKeyIndex');
+            .equal('contractId');
         });
 
-        it('should be a non-negative integer', async () => {
-          rawTxMetadataDocument.encryptionKeyIndex = -1;
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-          expect(error.keyword).to.equal('minimum');
-        });
-      });
+        it('should be exactly 32 bytes long', async () => {
+          rawContractKeywordsDocument.contractId = crypto.randomBytes(31);
 
-      describe('encryptedMetadata', () => {
-        it('should be defined', async () => {
-          delete rawTxMetadataDocument.encryptedMetadata;
+          // Identifier-typed byte arrays are converted at document creation,
+          // so a wrong-length value throws there instead of surfacing as a
+          // JSON-schema validation error.
+          let error;
+          try {
+            dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
+          } catch (e) {
+            error = e;
+          }
 
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword)
-            .to
-            .equal('required');
-          expect(error.params.missingProperty)
-            .to
-            .equal('encryptedMetadata');
-        });
-
-        it('should be not shorter than 32 bytes', async () => {
-          rawTxMetadataDocument.encryptedMetadata = crypto.randomBytes(31);
-
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword)
-            .to
-            .equal('minItems');
-          expect(error.instancePath)
-            .to
-            .equal('/encryptedMetadata');
-        });
-
-        it('should be not longer than 4096 bytes', async () => {
-          rawTxMetadataDocument.encryptedMetadata = crypto.randomBytes(4097);
-
-          const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
-          const validationResult = document.validate(dpp.protocolVersion);
-          const error = expectJsonSchemaError(validationResult);
-
-          expect(error.keyword)
-            .to
-            .equal('maxItems');
-          expect(error.instancePath)
-            .to
-            .equal('/encryptedMetadata');
+          expect(error).to.exist();
+          expect(String(error)).to.contain('not 32 bytes long');
         });
       });
 
       it('should not have additional properties', async () => {
-        rawTxMetadataDocument.someOtherProperty = 42;
+        rawContractKeywordsDocument.someOtherProperty = 42;
 
-        const document = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+        const document = dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
         const validationResult = document.validate(dpp.protocolVersion);
         const error = expectJsonSchemaError(validationResult);
 
-        expect(error.keyword)
-          .to
-          .equal('additionalProperties');
-        expect(error.params.additionalProperties)
-          .to
-          .deep
-          .equal(['someOtherProperty']);
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
       });
 
       it('should be valid', async () => {
-        const txMetadata = dpp.document.create(dataContract, identityId, 'txMetadata', rawTxMetadataDocument);
+        const document = dpp.document.create(dataContract, identityId, 'contractKeywords', rawContractKeywordsDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
 
-        const result = await txMetadata.validate(dpp.protocolVersion);
+        expect(validationResult.isValid()).to.be.true();
+      });
+    });
 
-        expect(result.isValid())
-          .to
-          .be
-          .true();
+    describe('shortDescription', () => {
+      let rawShortDescriptionDocument;
+
+      beforeEach(() => {
+        rawShortDescriptionDocument = {
+          contractId: crypto.randomBytes(32),
+          description: 'A short description of the contract',
+        };
+      });
+
+      describe('description', () => {
+        it('should be defined', async () => {
+          delete rawShortDescriptionDocument.description;
+
+          const document = dpp.document.create(dataContract, identityId, 'shortDescription', rawShortDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('description');
+        });
+
+        it('should be not shorter than 3 characters', async () => {
+          rawShortDescriptionDocument.description = 'ab';
+
+          const document = dpp.document.create(dataContract, identityId, 'shortDescription', rawShortDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword).to.equal('minLength');
+        });
+
+        it('should be not longer than 100 characters', async () => {
+          rawShortDescriptionDocument.description = 'a'.repeat(101);
+
+          const document = dpp.document.create(dataContract, identityId, 'shortDescription', rawShortDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword).to.equal('maxLength');
+        });
+      });
+
+      describe('contractId', () => {
+        it('should be defined', async () => {
+          delete rawShortDescriptionDocument.contractId;
+
+          const document = dpp.document.create(dataContract, identityId, 'shortDescription', rawShortDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('contractId');
+        });
+      });
+
+      it('should not have additional properties', async () => {
+        rawShortDescriptionDocument.someOtherProperty = 42;
+
+        const document = dpp.document.create(dataContract, identityId, 'shortDescription', rawShortDescriptionDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
+
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
+      });
+
+      it('should be valid', async () => {
+        const document = dpp.document.create(dataContract, identityId, 'shortDescription', rawShortDescriptionDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+
+        expect(validationResult.isValid()).to.be.true();
+      });
+    });
+
+    describe('fullDescription', () => {
+      let rawFullDescriptionDocument;
+
+      beforeEach(() => {
+        rawFullDescriptionDocument = {
+          contractId: crypto.randomBytes(32),
+          description: 'A much longer description of the contract and everything it does',
+        };
+      });
+
+      describe('description', () => {
+        it('should be defined', async () => {
+          delete rawFullDescriptionDocument.description;
+
+          const document = dpp.document.create(dataContract, identityId, 'fullDescription', rawFullDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('description');
+        });
+
+        it('should be not shorter than 3 characters', async () => {
+          rawFullDescriptionDocument.description = 'ab';
+
+          const document = dpp.document.create(dataContract, identityId, 'fullDescription', rawFullDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword).to.equal('minLength');
+        });
+
+        // The schema's maxLength (10000) sits above the system per-field size
+        // cap (5120), so an overlong description surfaces as a field-size
+        // error rather than a JSON-schema maxLength error.
+        it('should be rejected when longer than the system maximum field size', async () => {
+          rawFullDescriptionDocument.description = 'a'.repeat(10001);
+
+          const document = dpp.document.create(dataContract, identityId, 'fullDescription', rawFullDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+
+          expect(validationResult.isValid()).to.be.false();
+          const [error] = validationResult.getErrors();
+          expect(error.message).to.contain('more than system maximum');
+        });
+      });
+
+      describe('contractId', () => {
+        it('should be defined', async () => {
+          delete rawFullDescriptionDocument.contractId;
+
+          const document = dpp.document.create(dataContract, identityId, 'fullDescription', rawFullDescriptionDocument);
+          const validationResult = document.validate(dpp.protocolVersion);
+          const error = expectJsonSchemaError(validationResult);
+
+          expect(error.keyword)
+            .to
+            .equal('required');
+          expect(error.params.missingProperty)
+            .to
+            .equal('contractId');
+        });
+      });
+
+      it('should not have additional properties', async () => {
+        rawFullDescriptionDocument.someOtherProperty = 42;
+
+        const document = dpp.document.create(dataContract, identityId, 'fullDescription', rawFullDescriptionDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+        const error = expectJsonSchemaError(validationResult);
+
+        expect(error.keyword).to.equal('additionalProperties');
+        expect(error.params.additionalProperties).to.deep.equal(['someOtherProperty']);
+      });
+
+      it('should be valid', async () => {
+        const document = dpp.document.create(dataContract, identityId, 'fullDescription', rawFullDescriptionDocument);
+        const validationResult = document.validate(dpp.protocolVersion);
+
+        expect(validationResult.isValid()).to.be.true();
       });
     });
   });

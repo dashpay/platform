@@ -1,4 +1,4 @@
-//! Example ContextProvider that uses the Core gRPC API to fetch data from Platform.
+//! Example ContextProvider that uses the Core RPC API and the Sdk to fetch data.
 
 use crate::core::LowLevelDashCoreClient;
 use crate::platform::Fetch;
@@ -13,7 +13,7 @@ use std::hash::Hash;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-/// Context provider that uses the Core gRPC API to fetch data from Platform.
+/// Context provider that uses the Core RPC API and the Sdk to fetch data.
 ///
 /// Example [ContextProvider] used by the Sdk for testing purposes.
 pub struct GrpcContextProvider {
@@ -136,9 +136,9 @@ impl GrpcContextProvider {
 
     /// Save data contract to disk.
     ///
-    /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
+    /// Files are named: `data_contract-<hex_data_contract_id>.json`
     ///
-    /// Note that this will overwrite files with the same quorum type and quorum hash.
+    /// Note that this will overwrite files with the same data contract ID.
     ///
     /// Any errors are logged on `warn` level and ignored.
     #[cfg(feature = "mocks")]
@@ -224,6 +224,12 @@ impl ContextProvider for GrpcContextProvider {
         Ok(data_contract.map(Arc::new))
     }
 
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        self.data_contracts_cache
+            .put(contract.id(), (*contract).clone());
+    }
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
@@ -245,7 +251,7 @@ impl ContextProvider for GrpcContextProvider {
 ///
 /// This is used to cache objects that are expensive to fetch from Platform, like data contracts.
 pub struct Cache<K: Hash + Eq, V> {
-    // We use a Mutex to allow access to the cache when we don't have mutable &self
+    // We use a RwLock to allow access to the cache when we don't have mutable &self
     // And we use Arc to allow multiple threads to access the cache without having to clone it
     inner: std::sync::RwLock<lru::LruCache<K, Arc<V>>>,
 }

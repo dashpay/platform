@@ -8,9 +8,11 @@ use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_config_update_transition_action::state_v0::TokenConfigUpdateTransitionActionStateValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::token::token_config_update_transition_action::state_v1::TokenConfigUpdateTransitionActionStateValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod state_v0;
+mod state_v1;
 
 pub trait TokenConfigUpdateTransitionActionValidation {
     fn validate_state(
@@ -49,9 +51,17 @@ impl TokenConfigUpdateTransitionActionValidation for TokenConfigUpdateTransition
                 transaction,
                 platform_version,
             ),
+            1 => self.validate_state_v1(
+                platform,
+                owner_id,
+                block_info,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "TokenConfigUpdateTransitionAction::validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

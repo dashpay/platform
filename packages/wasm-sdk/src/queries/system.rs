@@ -1,14 +1,72 @@
 use crate::error::WasmSdkError;
 use crate::impl_wasm_serde_conversions;
-use crate::queries::utils::identifier_from_js;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
-use js_sys::{Array, BigInt};
+use dash_sdk::drive::grovedb::{element::reference_path::path_from_reference_path_type, Element};
+use dash_sdk::platform::Identifier;
+use js_sys::{Array, ArrayBuffer, BigInt, Object, Reflect, Uint8Array};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::ProTxHashWasm;
+
+#[wasm_bindgen(typescript_custom_section)]
+const GROVE_PATH_ELEMENT_TS: &'static str = r#"
+export type GrovePathSegment = string | Uint8Array;
+
+export type GroveElementType =
+  | "item"
+  | "reference"
+  | "tree"
+  | "sumItem"
+  | "sumTree"
+  | "bigSumTree"
+  | "countTree"
+  | "countSumTree"
+  | "provableCountTree"
+  | "itemWithSumItem"
+  | "referenceWithSumItem"
+  | "provableCountSumTree"
+  | "provableCountProvableSumTree"
+  | "provableSumTree"
+  | "commitmentTree"
+  | "mmrTree"
+  | "bulkAppendTree"
+  | "denseAppendOnlyFixedSizeTree"
+  | "nonCountedItem"
+  | "nonCountedReference"
+  | "nonCountedTree"
+  | "nonCountedSumItem"
+  | "nonCountedSumTree"
+  | "nonCountedBigSumTree"
+  | "nonCountedCountTree"
+  | "nonCountedCountSumTree"
+  | "nonCountedProvableCountTree"
+  | "nonCountedItemWithSumItem"
+  | "nonCountedReferenceWithSumItem"
+  | "nonCountedProvableCountSumTree"
+  | "nonCountedProvableCountProvableSumTree"
+  | "nonCountedProvableSumTree"
+  | "nonCountedCommitmentTree"
+  | "nonCountedMmrTree"
+  | "nonCountedBulkAppendTree"
+  | "nonCountedDenseAppendOnlyFixedSizeTree"
+  | "notSummedSumTree"
+  | "notSummedBigSumTree"
+  | "notSummedCountSumTree"
+  | "notSummedProvableCountSumTree"
+  | "notSummedProvableCountProvableSumTree"
+  | "notSummedProvableSumTree"
+  | "notCountedOrSummedSumTree"
+  | "notCountedOrSummedBigSumTree"
+  | "notCountedOrSummedCountSumTree"
+  | "notCountedOrSummedProvableCountSumTree"
+  | "notCountedOrSummedProvableCountProvableSumTree"
+  | "notCountedOrSummedProvableSumTree";
+"#;
 
 #[wasm_bindgen(js_name = "StatusSoftware")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -100,10 +158,8 @@ impl StatusVersionWasm {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusNodeWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub id: String,
-    #[wasm_bindgen(getter_with_clone)]
-    pub pro_tx_hash: Option<String>,
+    pub(crate) id: String,
+    pub(crate) pro_tx_hash: Option<String>,
 }
 
 impl StatusNodeWasm {
@@ -112,12 +168,27 @@ impl StatusNodeWasm {
     }
 }
 
+#[wasm_bindgen(js_class = StatusNode)]
+impl StatusNodeWasm {
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    #[wasm_bindgen(getter = "proTxHash")]
+    pub fn pro_tx_hash(&self) -> Option<ProTxHashWasm> {
+        self.pro_tx_hash
+            .as_ref()
+            .and_then(|hex| ProTxHashWasm::from_hex(hex).ok())
+    }
+}
+
 #[wasm_bindgen(js_name = "StatusChain")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusChainWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub catching_up: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "isCatchingUp")]
+    pub is_catching_up: bool,
     #[wasm_bindgen(getter_with_clone)]
     pub latest_block_hash: String,
     #[wasm_bindgen(getter_with_clone)]
@@ -139,7 +210,7 @@ pub struct StatusChainWasm {
 impl StatusChainWasm {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        catching_up: bool,
+        is_catching_up: bool,
         latest_block_hash: String,
         latest_app_hash: String,
         latest_block_height: String,
@@ -150,7 +221,7 @@ impl StatusChainWasm {
         core_chain_locked_height: Option<u32>,
     ) -> Self {
         Self {
-            catching_up,
+            is_catching_up,
             latest_block_hash,
             latest_app_hash,
             latest_block_height,
@@ -171,16 +242,16 @@ pub struct StatusNetworkWasm {
     pub chain_id: String,
     #[wasm_bindgen(getter_with_clone)]
     pub peers_count: u32,
-    #[wasm_bindgen(getter_with_clone)]
-    pub listening: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "isListening")]
+    pub is_listening: bool,
 }
 
 impl StatusNetworkWasm {
-    fn new(chain_id: String, peers_count: u32, listening: bool) -> Self {
+    fn new(chain_id: String, peers_count: u32, is_listening: bool) -> Self {
         Self {
             chain_id,
             peers_count,
-            listening,
+            is_listening,
         }
     }
 }
@@ -289,22 +360,26 @@ impl_wasm_serde_conversions!(StatusResponseWasm, StatusResponse);
 impl_wasm_serde_conversions!(QuorumInfoWasm, QuorumInfo);
 impl_wasm_serde_conversions!(CurrentQuorumsInfoWasm, CurrentQuorumsInfo);
 impl_wasm_serde_conversions!(PrefundedSpecializedBalanceWasm, PrefundedSpecializedBalance);
-impl_wasm_serde_conversions!(PathElementWasm, PathElement);
 impl_wasm_serde_conversions!(StateTransitionResultWasm, StateTransitionResult);
 
 #[wasm_bindgen(js_name = "QuorumInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuorumInfoWasm {
-    quorum_hash: String,
-    quorum_type: String,
-    member_count: u32,
-    threshold: u32,
-    is_verified: bool,
+    #[wasm_bindgen(getter_with_clone, js_name = "quorumHash")]
+    pub quorum_hash: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "quorumType")]
+    pub quorum_type: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "memberCount")]
+    pub member_count: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub threshold: u32,
+    #[wasm_bindgen(getter_with_clone, js_name = "isVerified")]
+    pub is_verified: bool,
 }
 
 impl QuorumInfoWasm {
-    fn new(
+    pub(crate) fn new(
         quorum_hash: String,
         quorum_type: String,
         member_count: u32,
@@ -321,34 +396,7 @@ impl QuorumInfoWasm {
     }
 }
 
-#[wasm_bindgen(js_class = QuorumInfo)]
-impl QuorumInfoWasm {
-    #[wasm_bindgen(getter = "quorumHash")]
-    pub fn quorum_hash(&self) -> String {
-        self.quorum_hash.clone()
-    }
-
-    #[wasm_bindgen(getter = "quorumType")]
-    pub fn quorum_type(&self) -> String {
-        self.quorum_type.clone()
-    }
-
-    #[wasm_bindgen(getter = "memberCount")]
-    pub fn member_count(&self) -> u32 {
-        self.member_count
-    }
-
-    #[wasm_bindgen(getter = "threshold")]
-    pub fn threshold(&self) -> u32 {
-        self.threshold
-    }
-
-    #[wasm_bindgen(getter = "isVerified")]
-    pub fn is_verified(&self) -> bool {
-        self.is_verified
-    }
-}
-
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "CurrentQuorumsInfo")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -380,6 +428,7 @@ impl CurrentQuorumsInfoWasm {
     }
 }
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "PrefundedSpecializedBalance")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -415,18 +464,587 @@ impl PrefundedSpecializedBalanceWasm {
 #[serde(rename_all = "camelCase")]
 pub struct PathElementWasm {
     path: Vec<String>,
-    value: Option<String>,
+    #[serde(with = "path_element_bytes")]
+    key: Vec<u8>,
+    #[serde(with = "path_element_bytes_vec")]
+    path_bytes: Vec<Vec<u8>>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub value: Option<String>,
+    #[serde(with = "path_element_optional_bytes")]
+    value_bytes: Option<Vec<u8>>,
+    element_type: Option<String>,
+    #[serde(with = "path_element_optional_i128")]
+    sum: Option<i128>,
+    #[serde(with = "path_element_optional_bytes_vec")]
+    reference_target: Option<Vec<Vec<u8>>>,
+    reference_target_error: Option<String>,
 }
 
 impl PathElementWasm {
-    fn new(path: Vec<String>, value: Option<String>) -> Self {
-        Self { path, value }
+    fn missing(parent_path: &[Vec<u8>], key: &DecodedPathInput) -> Self {
+        let mut path_bytes = parent_path.to_vec();
+        path_bytes.push(key.bytes.clone());
+
+        Self {
+            path: key.legacy_path_segment.clone().into_iter().collect(),
+            key: key.bytes.clone(),
+            path_bytes,
+            value: None,
+            value_bytes: None,
+            element_type: None,
+            sum: None,
+            reference_target: None,
+            reference_target_error: None,
+        }
+    }
+
+    fn from_element(parent_path: &[Vec<u8>], key: &DecodedPathInput, element: &Element) -> Self {
+        let value_bytes = element_value_bytes(element);
+        let value = value_bytes.as_ref().map(|bytes| {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        });
+        let mut path_bytes = parent_path.to_vec();
+        path_bytes.push(key.bytes.clone());
+        let (reference_target, reference_target_error) =
+            element_reference_target(element, parent_path, &key.bytes);
+
+        Self {
+            path: key.legacy_path_segment.clone().into_iter().collect(),
+            key: key.bytes.clone(),
+            path_bytes,
+            value,
+            value_bytes,
+            element_type: Some(element_type_name(element).to_string()),
+            sum: element_sum(element),
+            reference_target,
+            reference_target_error,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DecodedPathInput {
+    bytes: Vec<u8>,
+    legacy_path_segment: Option<String>,
+}
+
+enum PathInputValue<'a> {
+    Bytes(&'a [u8]),
+    String(&'a str),
+}
+
+mod path_element_bytes {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    pub(super) struct BytesField(
+        #[serde(with = "dash_sdk::dpp::serialization::serde_bytes_var")] pub(super) Vec<u8>,
+    );
+
+    pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        BytesField(bytes.to_owned()).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        BytesField::deserialize(deserializer).map(|field| field.0)
+    }
+}
+
+mod path_element_optional_bytes {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::path_element_bytes::BytesField;
+
+    pub fn serialize<S>(bytes: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        bytes
+            .as_ref()
+            .map(|bytes| BytesField(bytes.clone()))
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<BytesField>::deserialize(deserializer).map(|field| field.map(|bytes| bytes.0))
+    }
+}
+
+mod path_element_bytes_vec {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::path_element_bytes::BytesField;
+
+    pub fn serialize<S>(path: &[Vec<u8>], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        path.iter()
+            .cloned()
+            .map(BytesField)
+            .collect::<Vec<_>>()
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Vec::<BytesField>::deserialize(deserializer)
+            .map(|path| path.into_iter().map(|bytes| bytes.0).collect())
+    }
+}
+
+mod path_element_optional_bytes_vec {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::path_element_bytes::BytesField;
+
+    pub fn serialize<S>(path: &Option<Vec<Vec<u8>>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        path.as_ref()
+            .map(|path| path.iter().cloned().map(BytesField).collect::<Vec<_>>())
+            .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<Vec<u8>>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<Vec<BytesField>>::deserialize(deserializer)
+            .map(|path| path.map(|path| path.into_iter().map(|bytes| bytes.0).collect()))
+    }
+}
+
+mod path_element_optional_i128 {
+    use serde::de::{self, Deserializer, Visitor};
+    use serde::ser::Serializer;
+
+    pub fn serialize<S>(value: &Option<i128>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(value) if serializer.is_human_readable() => {
+                serializer.serialize_some(&value.to_string())
+            }
+            Some(value) => serializer.serialize_some(value),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<i128>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            deserializer.deserialize_option(OptionI128Visitor)
+        } else {
+            serde::Deserialize::deserialize(deserializer)
+        }
+    }
+
+    struct OptionI128Visitor;
+
+    impl<'de> Visitor<'de> for OptionI128Visitor {
+        type Value = Option<i128>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("null, an integer, or a string containing an i128")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D: Deserializer<'de>>(
+            self,
+            deserializer: D,
+        ) -> Result<Self::Value, D::Error> {
+            deserializer.deserialize_any(I128Visitor).map(Some)
+        }
+    }
+
+    struct I128Visitor;
+
+    impl<'de> Visitor<'de> for I128Visitor {
+        type Value = i128;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an integer or a string containing an i128")
+        }
+
+        fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(value as i128)
+        }
+
+        fn visit_i128<E: de::Error>(self, value: i128) -> Result<Self::Value, E> {
+            Ok(value)
+        }
+
+        fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(value as i128)
+        }
+
+        fn visit_u128<E: de::Error>(self, value: u128) -> Result<Self::Value, E> {
+            i128::try_from(value)
+                .map_err(|_| de::Error::custom(format!("u128 value {value} out of i128 range")))
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            value
+                .parse::<i128>()
+                .map_err(|_| de::Error::custom(format!("invalid i128 string: {value}")))
+        }
+    }
+}
+
+/// Decode a public Grove path segment.
+///
+/// String path segments preserve a legacy compatibility rule: decimal strings
+/// in the `u8` range are decoded as a single byte, while other strings are
+/// decoded as UTF-8. Use `Uint8Array` for unambiguous binary path segments.
+fn decode_path_input(value: PathInputValue<'_>) -> DecodedPathInput {
+    match value {
+        PathInputValue::Bytes(bytes) => DecodedPathInput {
+            bytes: bytes.to_vec(),
+            legacy_path_segment: bytes_to_round_trippable_path_display(bytes),
+        },
+        PathInputValue::String(value) => DecodedPathInput {
+            bytes: decode_path_string(value),
+            legacy_path_segment: Some(value.to_string()),
+        },
+    }
+}
+
+fn decode_key_input(value: PathInputValue<'_>) -> DecodedPathInput {
+    match value {
+        PathInputValue::Bytes(bytes) => DecodedPathInput {
+            bytes: bytes.to_vec(),
+            legacy_path_segment: bytes_to_round_trippable_key_display(bytes),
+        },
+        PathInputValue::String(value) => DecodedPathInput {
+            bytes: value.as_bytes().to_vec(),
+            legacy_path_segment: Some(value.to_string()),
+        },
+    }
+}
+
+fn decode_path_string(value: &str) -> Vec<u8> {
+    if let Ok(number) = value.parse::<u8>() {
+        tracing::warn!(
+            "decoding Grove path string segment as legacy decimal u8; use Uint8Array for unambiguous binary paths"
+        );
+        vec![number]
+    } else {
+        value.as_bytes().to_vec()
+    }
+}
+
+fn decode_path_string_silent(value: &str) -> Vec<u8> {
+    value
+        .parse::<u8>()
+        .map(|number| vec![number])
+        .unwrap_or_else(|_| value.as_bytes().to_vec())
+}
+
+fn decode_js_path_inputs(
+    array: &Array,
+    field: &str,
+) -> Result<Vec<DecodedPathInput>, WasmSdkError> {
+    decode_js_inputs(array, field, decode_path_input)
+}
+
+fn decode_js_key_inputs(array: &Array, field: &str) -> Result<Vec<DecodedPathInput>, WasmSdkError> {
+    decode_js_inputs(array, field, decode_key_input)
+}
+
+fn decode_js_inputs(
+    array: &Array,
+    field: &str,
+    decode: fn(PathInputValue<'_>) -> DecodedPathInput,
+) -> Result<Vec<DecodedPathInput>, WasmSdkError> {
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            if is_uint8_array_value(&value) {
+                let bytes = value.unchecked_ref::<Uint8Array>().to_vec();
+                Ok(decode(PathInputValue::Bytes(&bytes)))
+            } else if let Some(string) = value.as_string() {
+                Ok(decode(PathInputValue::String(&string)))
+            } else {
+                Err(WasmSdkError::invalid_argument(format!(
+                    "{}[{}] must be a string or Uint8Array",
+                    field, index
+                )))
+            }
+        })
+        .collect()
+}
+
+fn is_uint8_array_value(value: &JsValue) -> bool {
+    if value.is_instance_of::<Uint8Array>() {
+        return true;
+    }
+
+    if !ArrayBuffer::is_view(value) {
+        return false;
+    }
+
+    let constructor_name = Reflect::get(value, &JsValue::from_str("constructor"))
+        .ok()
+        .and_then(|constructor| Reflect::get(&constructor, &JsValue::from_str("name")).ok())
+        .and_then(|name| name.as_string());
+
+    matches!(
+        constructor_name.as_deref(),
+        Some("Uint8Array") | Some("Buffer")
+    )
+}
+
+fn decoded_bytes(inputs: &[DecodedPathInput]) -> Vec<Vec<u8>> {
+    inputs.iter().map(|input| input.bytes.clone()).collect()
+}
+
+fn bytes_to_round_trippable_path_display(bytes: &[u8]) -> Option<String> {
+    let value = std::str::from_utf8(bytes).ok()?;
+    (decode_path_string_silent(value) == bytes).then(|| value.to_string())
+}
+
+fn bytes_to_round_trippable_key_display(bytes: &[u8]) -> Option<String> {
+    std::str::from_utf8(bytes).ok().map(str::to_string)
+}
+
+fn bytes_path_to_js_array(path: &[Vec<u8>]) -> Array {
+    let array = Array::new();
+    for segment in path {
+        array.push(&Uint8Array::from(segment.as_slice()));
+    }
+    array
+}
+
+fn set_js_property(object: &Object, property: &str, value: &JsValue) -> Result<(), WasmSdkError> {
+    Reflect::set(object, &JsValue::from_str(property), value).map_err(|_| {
+        WasmSdkError::generic(format!("failed to set PathElement.{} property", property))
+    })?;
+    Ok(())
+}
+
+fn element_value_bytes(element: &Element) -> Option<Vec<u8>> {
+    match element {
+        Element::Item(bytes, _) => Some(bytes.clone()),
+        Element::ItemWithSumItem(bytes, _, _) => Some(bytes.clone()),
+        Element::NonCounted(inner)
+        | Element::NotSummed(inner)
+        | Element::NotCountedOrSummed(inner) => element_value_bytes(inner),
+        _ => None,
+    }
+}
+
+fn element_sum(element: &Element) -> Option<i128> {
+    match element {
+        Element::SumItem(sum, _) => Some(*sum as i128),
+        Element::SumTree(_, sum, _) => Some(*sum as i128),
+        Element::BigSumTree(_, sum, _) => Some(*sum),
+        Element::CountSumTree(_, _, sum, _) => Some(*sum as i128),
+        Element::ItemWithSumItem(_, sum, _) => Some(*sum as i128),
+        Element::ProvableCountSumTree(_, _, sum, _) => Some(*sum as i128),
+        Element::ProvableCountProvableSumTree(_, _, sum, _) => Some(*sum as i128),
+        Element::ReferenceWithSumItem(_, _, sum, _) => Some(*sum as i128),
+        Element::ProvableSumTree(_, sum, _) => Some(*sum as i128),
+        Element::NonCounted(inner)
+        | Element::NotSummed(inner)
+        | Element::NotCountedOrSummed(inner) => element_sum(inner),
+        _ => None,
+    }
+}
+
+fn element_reference_target(
+    element: &Element,
+    parent_path: &[Vec<u8>],
+    key: &[u8],
+) -> (Option<Vec<Vec<u8>>>, Option<String>) {
+    match element {
+        Element::Reference(reference_path, _, _)
+        | Element::ReferenceWithSumItem(reference_path, _, _, _) => {
+            match path_from_reference_path_type(reference_path.clone(), parent_path, Some(key)) {
+                Ok(target) => (Some(target), None),
+                Err(error) => {
+                    let message = error.to_string();
+                    tracing::warn!("failed to resolve GroveDB reference target: {}", message);
+                    (None, Some(message))
+                }
+            }
+        }
+        Element::NonCounted(inner)
+        | Element::NotSummed(inner)
+        | Element::NotCountedOrSummed(inner) => element_reference_target(inner, parent_path, key),
+        _ => (None, None),
+    }
+}
+
+fn element_type_name(element: &Element) -> &'static str {
+    match element {
+        Element::Item(_, _) => "item",
+        Element::Reference(_, _, _) => "reference",
+        Element::Tree(_, _) => "tree",
+        Element::SumItem(_, _) => "sumItem",
+        Element::SumTree(_, _, _) => "sumTree",
+        Element::BigSumTree(_, _, _) => "bigSumTree",
+        Element::CountTree(_, _, _) => "countTree",
+        Element::CountSumTree(_, _, _, _) => "countSumTree",
+        Element::ProvableCountTree(_, _, _) => "provableCountTree",
+        Element::ItemWithSumItem(_, _, _) => "itemWithSumItem",
+        Element::ReferenceWithSumItem(_, _, _, _) => "referenceWithSumItem",
+        Element::ProvableCountSumTree(_, _, _, _) => "provableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => "provableCountProvableSumTree",
+        Element::ProvableSumTree(_, _, _) => "provableSumTree",
+        Element::CommitmentTree(_, _, _) => "commitmentTree",
+        Element::MmrTree(_, _) => "mmrTree",
+        Element::BulkAppendTree(_, _, _) => "bulkAppendTree",
+        Element::DenseAppendOnlyFixedSizeTree(_, _, _) => "denseAppendOnlyFixedSizeTree",
+        Element::NonCounted(inner) => non_counted_element_type_name(inner),
+        Element::NotSummed(inner) => not_summed_element_type_name(inner),
+        Element::NotCountedOrSummed(inner) => not_counted_or_summed_element_type_name(inner),
+    }
+}
+
+fn non_counted_element_type_name(element: &Element) -> &'static str {
+    match element {
+        Element::Item(_, _) => "nonCountedItem",
+        Element::Reference(_, _, _) => "nonCountedReference",
+        Element::Tree(_, _) => "nonCountedTree",
+        Element::SumItem(_, _) => "nonCountedSumItem",
+        Element::SumTree(_, _, _) => "nonCountedSumTree",
+        Element::BigSumTree(_, _, _) => "nonCountedBigSumTree",
+        Element::CountTree(_, _, _) => "nonCountedCountTree",
+        Element::CountSumTree(_, _, _, _) => "nonCountedCountSumTree",
+        Element::ProvableCountTree(_, _, _) => "nonCountedProvableCountTree",
+        Element::ItemWithSumItem(_, _, _) => "nonCountedItemWithSumItem",
+        Element::ReferenceWithSumItem(_, _, _, _) => "nonCountedReferenceWithSumItem",
+        Element::ProvableCountSumTree(_, _, _, _) => "nonCountedProvableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "nonCountedProvableCountProvableSumTree"
+        }
+        Element::ProvableSumTree(_, _, _) => "nonCountedProvableSumTree",
+        Element::CommitmentTree(_, _, _) => "nonCountedCommitmentTree",
+        Element::MmrTree(_, _) => "nonCountedMmrTree",
+        Element::BulkAppendTree(_, _, _) => "nonCountedBulkAppendTree",
+        Element::DenseAppendOnlyFixedSizeTree(_, _, _) => "nonCountedDenseAppendOnlyFixedSizeTree",
+        Element::NonCounted(_) | Element::NotSummed(_) | Element::NotCountedOrSummed(_) => {
+            element_type_name(element)
+        }
+    }
+}
+
+fn not_summed_element_type_name(element: &Element) -> &'static str {
+    match element {
+        Element::SumTree(_, _, _) => "notSummedSumTree",
+        Element::BigSumTree(_, _, _) => "notSummedBigSumTree",
+        Element::CountSumTree(_, _, _, _) => "notSummedCountSumTree",
+        Element::ProvableCountSumTree(_, _, _, _) => "notSummedProvableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "notSummedProvableCountProvableSumTree"
+        }
+        Element::ProvableSumTree(_, _, _) => "notSummedProvableSumTree",
+        _ => element_type_name(element),
+    }
+}
+
+fn not_counted_or_summed_element_type_name(element: &Element) -> &'static str {
+    match element {
+        Element::SumTree(_, _, _) => "notCountedOrSummedSumTree",
+        Element::BigSumTree(_, _, _) => "notCountedOrSummedBigSumTree",
+        Element::CountSumTree(_, _, _, _) => "notCountedOrSummedCountSumTree",
+        Element::ProvableCountSumTree(_, _, _, _) => "notCountedOrSummedProvableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "notCountedOrSummedProvableCountProvableSumTree"
+        }
+        Element::ProvableSumTree(_, _, _) => "notCountedOrSummedProvableSumTree",
+        _ => element_type_name(element),
     }
 }
 
 #[wasm_bindgen(js_class = PathElement)]
 impl PathElementWasm {
-    #[wasm_bindgen(getter = "path")]
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
+        let object = Object::new();
+
+        set_js_property(&object, "path", &self.path().into())?;
+        set_js_property(&object, "key", &self.key().into())?;
+        set_js_property(&object, "pathBytes", &self.path_bytes().into())?;
+
+        let value = self
+            .value
+            .as_ref()
+            .map(|value| JsValue::from_str(value))
+            .unwrap_or(JsValue::UNDEFINED);
+        set_js_property(&object, "value", &value)?;
+
+        let value_bytes = self
+            .value_bytes()
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED);
+        set_js_property(&object, "valueBytes", &value_bytes)?;
+
+        let element_type = self
+            .element_type()
+            .map(|element_type| JsValue::from_str(&element_type))
+            .unwrap_or(JsValue::UNDEFINED);
+        set_js_property(&object, "elementType", &element_type)?;
+
+        let sum = self.sum().map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
+        set_js_property(&object, "sum", &sum)?;
+
+        let reference_target = self
+            .reference_target()
+            .map(JsValue::from)
+            .unwrap_or(JsValue::UNDEFINED);
+        set_js_property(&object, "referenceTarget", &reference_target)?;
+
+        let reference_target_error = self
+            .reference_target_error()
+            .map(|error| JsValue::from_str(&error))
+            .unwrap_or(JsValue::UNDEFINED);
+        set_js_property(&object, "referenceTargetError", &reference_target_error)?;
+
+        Ok(object.into())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(obj: Object) -> Result<PathElementWasm, WasmSdkError> {
+        wasm_dpp2::serialization::from_object(obj.into()).map_err(WasmSdkError::from)
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        wasm_dpp2::serialization::to_json(self).map_err(WasmSdkError::from)
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(js: Object) -> Result<PathElementWasm, WasmSdkError> {
+        wasm_dpp2::serialization::from_json(js.into()).map_err(WasmSdkError::from)
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn path(&self) -> Array {
         let array = Array::new();
         for segment in &self.path {
@@ -435,9 +1053,52 @@ impl PathElementWasm {
         array
     }
 
-    #[wasm_bindgen(getter = "value")]
-    pub fn value(&self) -> Option<String> {
-        self.value.clone()
+    #[wasm_bindgen(getter)]
+    pub fn key(&self) -> Uint8Array {
+        Uint8Array::from(self.key.as_slice())
+    }
+
+    #[wasm_bindgen(getter = "pathBytes", unchecked_return_type = "Uint8Array[]")]
+    pub fn path_bytes(&self) -> Array {
+        bytes_path_to_js_array(&self.path_bytes)
+    }
+
+    #[wasm_bindgen(getter = "valueBytes")]
+    pub fn value_bytes(&self) -> Option<Uint8Array> {
+        self.value_bytes
+            .as_ref()
+            .map(|bytes| Uint8Array::from(bytes.as_slice()))
+    }
+
+    #[wasm_bindgen(
+        getter = "elementType",
+        unchecked_return_type = "GroveElementType | undefined"
+    )]
+    pub fn element_type(&self) -> Option<String> {
+        self.element_type.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn sum(&self) -> Option<BigInt> {
+        self.sum.as_ref().map(|sum| {
+            BigInt::new(&JsValue::from_str(&sum.to_string()))
+                .expect("i128 decimal string always parses as BigInt")
+        })
+    }
+
+    #[wasm_bindgen(
+        getter = "referenceTarget",
+        unchecked_return_type = "Uint8Array[] | undefined"
+    )]
+    pub fn reference_target(&self) -> Option<Array> {
+        self.reference_target
+            .as_ref()
+            .map(|path| bytes_path_to_js_array(path))
+    }
+
+    #[wasm_bindgen(getter = "referenceTargetError")]
+    pub fn reference_target_error(&self) -> Option<String> {
+        self.reference_target_error.clone()
     }
 }
 
@@ -796,14 +1457,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
@@ -891,34 +1552,20 @@ impl WasmSdk {
     )]
     pub async fn get_path_elements(
         &self,
-        path: Vec<String>,
-        keys: Vec<String>,
+        #[wasm_bindgen(unchecked_param_type = "GrovePathSegment[]")] path: Array,
+        #[wasm_bindgen(unchecked_param_type = "GrovePathSegment[]")] keys: Array,
     ) -> Result<Array, WasmSdkError> {
-        use dash_sdk::drive::grovedb::Element;
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::{Elements, KeysInPath};
 
-        // Convert string path to byte vectors
-        // Path elements can be either numeric values (like "96" for Balances) or string keys
-        let path_bytes: Vec<Vec<u8>> = path
-            .iter()
-            .map(|p| {
-                // Try to parse as a u8 number first (for root tree paths)
-                if let Ok(num) = p.parse::<u8>() {
-                    vec![num]
-                } else {
-                    // Otherwise treat as a string key
-                    p.as_bytes().to_vec()
-                }
-            })
-            .collect();
-
-        // Convert string keys to byte vectors
-        let key_bytes: Vec<Vec<u8>> = keys.iter().map(|k| k.as_bytes().to_vec()).collect();
+        let decoded_path = decode_js_path_inputs(&path, "path")?;
+        let decoded_keys = decode_js_key_inputs(&keys, "keys")?;
+        let path_bytes = decoded_bytes(&decoded_path);
+        let key_bytes = decoded_bytes(&decoded_keys);
 
         // Create the query
         let query = KeysInPath {
-            path: path_bytes,
+            path: path_bytes.clone(),
             keys: key_bytes,
         };
 
@@ -927,18 +1574,14 @@ impl WasmSdk {
 
         // Convert the result to our response format
         let elements_array = Array::new();
-        for key in keys {
-            let value = path_elements_result
-                .get(key.as_bytes())
+        for key in &decoded_keys {
+            let path_element = path_elements_result
+                .get(key.bytes.as_slice())
                 .and_then(|element_opt| element_opt.as_ref())
-                .and_then(|element| {
-                    element.as_item_bytes().ok().map(|bytes| {
-                        use base64::Engine;
-                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                    })
-                });
+                .map(|element| PathElementWasm::from_element(&path_bytes, key, element))
+                .unwrap_or_else(|| PathElementWasm::missing(&path_bytes, key));
 
-            elements_array.push(&JsValue::from(PathElementWasm::new(vec![key], value)));
+            elements_array.push(&JsValue::from(path_element));
         }
 
         Ok(elements_array)
@@ -977,14 +1620,14 @@ impl WasmSdk {
     )]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_identifier: Identifier = identity_id.try_into().map_err(|err| {
+            WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
+        })?;
 
         // Fetch prefunded specialized balance with proof
         let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(
@@ -1014,34 +1657,20 @@ impl WasmSdk {
     )]
     pub async fn get_path_elements_with_proof_info(
         &self,
-        path: Vec<String>,
-        keys: Vec<String>,
+        #[wasm_bindgen(unchecked_param_type = "GrovePathSegment[]")] path: Array,
+        #[wasm_bindgen(unchecked_param_type = "GrovePathSegment[]")] keys: Array,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        use dash_sdk::drive::grovedb::Element;
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::KeysInPath;
 
-        // Convert string path to byte vectors
-        // Path elements can be either numeric values (like "96" for Balances) or string keys
-        let path_bytes: Vec<Vec<u8>> = path
-            .iter()
-            .map(|p| {
-                // Try to parse as a u8 number first (for root tree paths)
-                if let Ok(num) = p.parse::<u8>() {
-                    vec![num]
-                } else {
-                    // Otherwise treat as a string key
-                    p.as_bytes().to_vec()
-                }
-            })
-            .collect();
-
-        // Convert string keys to byte vectors
-        let key_bytes: Vec<Vec<u8>> = keys.iter().map(|k| k.as_bytes().to_vec()).collect();
+        let decoded_path = decode_js_path_inputs(&path, "path")?;
+        let decoded_keys = decode_js_key_inputs(&keys, "keys")?;
+        let path_bytes = decoded_bytes(&decoded_path);
+        let key_bytes = decoded_bytes(&decoded_keys);
 
         // Create the query
         let query = KeysInPath {
-            path: path_bytes,
+            path: path_bytes.clone(),
             keys: key_bytes,
         };
 
@@ -1050,18 +1679,14 @@ impl WasmSdk {
             Element::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         let elements_array = Array::new();
-        for key in keys {
-            let value = path_elements_result
-                .get(key.as_bytes())
+        for key in &decoded_keys {
+            let path_element = path_elements_result
+                .get(key.bytes.as_slice())
                 .and_then(|element_opt| element_opt.as_ref())
-                .and_then(|element| {
-                    element.as_item_bytes().ok().map(|bytes| {
-                        use base64::Engine;
-                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                    })
-                });
+                .map(|element| PathElementWasm::from_element(&path_bytes, key, element))
+                .unwrap_or_else(|| PathElementWasm::missing(&path_bytes, key));
 
-            elements_array.push(&JsValue::from(PathElementWasm::new(vec![key], value)));
+            elements_array.push(&JsValue::from(path_element));
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
@@ -1069,5 +1694,250 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::drive::grovedb::element::reference_path::ReferencePathType;
+
+    #[test]
+    fn should_decode_raw_bytes_without_utf8_expansion() {
+        let input = [0x80, 0xff];
+
+        let path = decode_path_input(PathInputValue::Bytes(&input));
+        let key = decode_key_input(PathInputValue::Bytes(&input));
+
+        assert_eq!(path.bytes, input);
+        assert_eq!(key.bytes, input);
+        assert_eq!(path.legacy_path_segment, None);
+        assert_eq!(key.legacy_path_segment, None);
+    }
+
+    #[test]
+    fn should_decode_path_decimal_string_as_single_byte() {
+        let path = decode_path_input(PathInputValue::String("96"));
+
+        assert_eq!(path.bytes, vec![96]);
+    }
+
+    #[test]
+    fn should_decode_key_string_as_utf8() {
+        let key = decode_key_input(PathInputValue::String("96"));
+
+        assert_eq!(key.bytes, vec![0x39, 0x36]);
+        assert_eq!(key.legacy_path_segment.as_deref(), Some("96"));
+    }
+
+    #[test]
+    fn should_preserve_utf8_numeric_key_bytes_in_legacy_path_segment() {
+        let key = decode_key_input(PathInputValue::Bytes(b"96"));
+
+        assert_eq!(key.bytes, vec![0x39, 0x36]);
+        assert_eq!(key.legacy_path_segment.as_deref(), Some("96"));
+    }
+
+    #[test]
+    fn should_preserve_non_ascii_utf8_key_bytes_in_legacy_path_segment() {
+        let bytes = "café".as_bytes();
+        let key = decode_key_input(PathInputValue::Bytes(bytes));
+
+        assert_eq!(key.bytes, bytes);
+        assert_eq!(key.legacy_path_segment.as_deref(), Some("café"));
+    }
+
+    #[test]
+    fn should_preserve_non_ascii_utf8_path_bytes_in_legacy_path_segment() {
+        let bytes = "café".as_bytes();
+        let path = decode_path_input(PathInputValue::Bytes(bytes));
+
+        assert_eq!(path.bytes, bytes);
+        assert_eq!(path.legacy_path_segment.as_deref(), Some("café"));
+    }
+
+    #[test]
+    fn should_drop_legacy_path_segment_for_ambiguous_numeric_path_bytes() {
+        let path = decode_path_input(PathInputValue::Bytes(b"96"));
+
+        assert_eq!(path.bytes, b"96".to_vec());
+        assert_eq!(path.legacy_path_segment, None);
+    }
+
+    #[test]
+    fn should_convert_item_element_with_compatible_value_and_bytes() {
+        let parent_path = vec![vec![1]];
+        let key = decode_key_input(PathInputValue::String("key"));
+        let element = Element::Item(b"value".to_vec(), None);
+
+        let path_element = PathElementWasm::from_element(&parent_path, &key, &element);
+
+        assert_eq!(path_element.value.as_deref(), Some("dmFsdWU="));
+        assert_eq!(path_element.value_bytes, Some(b"value".to_vec()));
+        assert_eq!(path_element.element_type.as_deref(), Some("item"));
+        assert_eq!(path_element.key, b"key".to_vec());
+        assert_eq!(path_element.path_bytes, vec![vec![1], b"key".to_vec()]);
+    }
+
+    #[test]
+    fn should_convert_tree_elements_without_value_bytes() {
+        let parent_path = vec![vec![1]];
+        let key = decode_key_input(PathInputValue::String("subtree"));
+        let tree = Element::Tree(None, None);
+        let sum_tree = Element::SumTree(None, 42, None);
+
+        let tree_element = PathElementWasm::from_element(&parent_path, &key, &tree);
+        let sum_tree_element = PathElementWasm::from_element(&parent_path, &key, &sum_tree);
+
+        assert_eq!(tree_element.value, None);
+        assert_eq!(tree_element.value_bytes, None);
+        assert_eq!(tree_element.element_type.as_deref(), Some("tree"));
+        assert_eq!(sum_tree_element.value, None);
+        assert_eq!(sum_tree_element.value_bytes, None);
+        assert_eq!(sum_tree_element.element_type.as_deref(), Some("sumTree"));
+        assert_eq!(sum_tree_element.sum, Some(42));
+    }
+
+    #[test]
+    fn should_convert_sum_item_and_reference_metadata() {
+        let parent_path = vec![b"parent".to_vec()];
+        let key = decode_key_input(PathInputValue::String("key"));
+        let sum_item = Element::SumItem(-5, None);
+        let reference = Element::Reference(
+            ReferencePathType::SiblingReference(b"other".to_vec()),
+            None,
+            None,
+        );
+        let reference_with_sum = Element::ReferenceWithSumItem(
+            ReferencePathType::SiblingReference(b"weighted".to_vec()),
+            None,
+            7,
+            None,
+        );
+        let provable_sum_tree = Element::ProvableSumTree(None, 9, None);
+        let not_counted_or_summed =
+            Element::NotCountedOrSummed(Box::new(Element::ProvableSumTree(None, 11, None)));
+
+        let sum_element = PathElementWasm::from_element(&parent_path, &key, &sum_item);
+        let reference_element = PathElementWasm::from_element(&parent_path, &key, &reference);
+        let reference_with_sum_element =
+            PathElementWasm::from_element(&parent_path, &key, &reference_with_sum);
+        let provable_sum_tree_element =
+            PathElementWasm::from_element(&parent_path, &key, &provable_sum_tree);
+        let not_counted_or_summed_element =
+            PathElementWasm::from_element(&parent_path, &key, &not_counted_or_summed);
+
+        assert_eq!(sum_element.element_type.as_deref(), Some("sumItem"));
+        assert_eq!(sum_element.sum, Some(-5));
+        assert_eq!(reference_element.element_type.as_deref(), Some("reference"));
+        assert_eq!(
+            reference_element.reference_target,
+            Some(vec![b"parent".to_vec(), b"other".to_vec()])
+        );
+        assert_eq!(reference_element.reference_target_error, None);
+        assert_eq!(
+            reference_with_sum_element.element_type.as_deref(),
+            Some("referenceWithSumItem")
+        );
+        assert_eq!(reference_with_sum_element.sum, Some(7));
+        assert_eq!(
+            reference_with_sum_element.reference_target,
+            Some(vec![b"parent".to_vec(), b"weighted".to_vec()])
+        );
+        assert_eq!(
+            provable_sum_tree_element.element_type.as_deref(),
+            Some("provableSumTree")
+        );
+        assert_eq!(provable_sum_tree_element.sum, Some(9));
+        assert_eq!(
+            not_counted_or_summed_element.element_type.as_deref(),
+            Some("notCountedOrSummedProvableSumTree")
+        );
+        assert_eq!(not_counted_or_summed_element.sum, Some(11));
+    }
+
+    #[test]
+    fn should_report_reference_resolution_errors() {
+        let parent_path = vec![b"parent".to_vec()];
+        let key = decode_key_input(PathInputValue::String("key"));
+        let invalid_reference = Element::Reference(
+            ReferencePathType::UpstreamRootHeightReference(2, vec![b"target".to_vec()]),
+            None,
+            None,
+        );
+
+        let reference_element =
+            PathElementWasm::from_element(&parent_path, &key, &invalid_reference);
+
+        assert_eq!(reference_element.element_type.as_deref(), Some("reference"));
+        assert_eq!(reference_element.reference_target, None);
+        assert!(reference_element.reference_target_error.is_some());
+    }
+
+    #[test]
+    fn should_map_supported_grovedb_element_types() {
+        let reference_path = || ReferencePathType::SiblingReference(b"target".to_vec());
+        let cases = vec![
+            (Element::Item(vec![1], None), "item"),
+            (
+                Element::Reference(reference_path(), None, None),
+                "reference",
+            ),
+            (Element::Tree(None, None), "tree"),
+            (Element::SumItem(1, None), "sumItem"),
+            (Element::SumTree(None, 1, None), "sumTree"),
+            (Element::BigSumTree(None, 1, None), "bigSumTree"),
+            (Element::CountTree(None, 1, None), "countTree"),
+            (Element::CountSumTree(None, 1, 2, None), "countSumTree"),
+            (
+                Element::ProvableCountTree(None, 1, None),
+                "provableCountTree",
+            ),
+            (
+                Element::ItemWithSumItem(vec![1], 2, None),
+                "itemWithSumItem",
+            ),
+            (
+                Element::ReferenceWithSumItem(reference_path(), None, 2, None),
+                "referenceWithSumItem",
+            ),
+            (
+                Element::ProvableCountSumTree(None, 1, 2, None),
+                "provableCountSumTree",
+            ),
+            (Element::ProvableSumTree(None, 2, None), "provableSumTree"),
+            (Element::CommitmentTree(1, 2, None), "commitmentTree"),
+            (Element::MmrTree(1, None), "mmrTree"),
+            (Element::BulkAppendTree(1, 2, None), "bulkAppendTree"),
+            (
+                Element::DenseAppendOnlyFixedSizeTree(1, 2, None),
+                "denseAppendOnlyFixedSizeTree",
+            ),
+            (
+                Element::NonCounted(Box::new(Element::ReferenceWithSumItem(
+                    reference_path(),
+                    None,
+                    2,
+                    None,
+                ))),
+                "nonCountedReferenceWithSumItem",
+            ),
+            (
+                Element::NonCounted(Box::new(Element::ProvableSumTree(None, 2, None))),
+                "nonCountedProvableSumTree",
+            ),
+            (
+                Element::NotSummed(Box::new(Element::ProvableSumTree(None, 2, None))),
+                "notSummedProvableSumTree",
+            ),
+            (
+                Element::NotCountedOrSummed(Box::new(Element::ProvableSumTree(None, 2, None))),
+                "notCountedOrSummedProvableSumTree",
+            ),
+        ];
+
+        for (element, expected_type) in cases {
+            assert_eq!(element_type_name(&element), expected_type);
+        }
     }
 }
