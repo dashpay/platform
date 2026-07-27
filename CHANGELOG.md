@@ -1,3 +1,10 @@
+## [4.1.0](https://github.com/dashpay/platform/compare/v4.1.0-rc.3...v4.1.0) (2026-07-27)
+
+
+### Bug Fixes
+
+* **platform-wallet:** make shielded re-bind non-destructive so it cannot wipe an in-flight sync pass ([#4237](https://github.com/dashpay/platform/issues/4237))
+
 ## [4.1.0-rc.3](https://github.com/dashpay/platform/compare/v4.1.0-rc.2...v4.1.0-rc.3) (2026-07-27)
 
 
