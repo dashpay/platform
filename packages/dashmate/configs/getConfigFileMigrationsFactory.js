@@ -1580,6 +1580,37 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.1.0-rc.3': (configFile) => {
+        // The drive and rs-dapi image tags are derived from the package version:
+        // the major on a stable release, the major plus the prerelease id on a
+        // prerelease. Crossing that boundary changes the tag, so operators
+        // upgrading from a release of this major keep pulling the images of the
+        // line they installed until the tags are re-pinned from the base config.
+        // Keyed at the next release, not the released 4.1.0-rc.2: the runner
+        // skips fromVersion===toVersion, so a key equal to an operator's current
+        // version never fires.
+        //
+        // Only the stock Dash tags for this major are moved. An image the
+        // operator chose themselves (private fork, vendor-patched build, tag
+        // pinned to an exact version) is left alone.
+        const stockImagePatterns = {
+          'platform.drive.abci.docker': /^dashpay\/drive:4(-[a-z]+)?$/,
+          'platform.dapi.rsDapi.docker': /^dashpay\/rs-dapi:4(-[a-z]+)?$/,
+        };
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            Object.entries(stockImagePatterns)
+              .forEach(([dockerPath, stockImagePattern]) => {
+                const docker = lodash.get(options, dockerPath);
+                if (docker && stockImagePattern.test(docker.image)) {
+                  docker.image = base.get(`${dockerPath}.image`);
+                }
+              });
+          });
+
+        return configFile;
+      },
     };
   }
 
