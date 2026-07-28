@@ -9,6 +9,52 @@ const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAd
 const EXECUTION_NOT_PROVED = 'ExecutionNotProved';
 
 /**
+ * Read the error's kind without assuming it survives the WASM boundary.
+ *
+ * @param {*} error
+ * @returns {string|undefined}
+ */
+function readErrorName(error) {
+  try {
+    return error && error.name;
+  } catch (readError) {
+    // A WASM error object whose memory is already released throws on access.
+    return undefined;
+  }
+}
+
+/**
+ * Convert a WASM SDK error into a plain `Error`.
+ *
+ * These are wasm-bindgen class instances rather than `Error`s, and they carry
+ * their kind and message on prototype getters. Mocha runs the suite in
+ * parallel workers and serializes a failure by copying the error's own
+ * properties, so an unconverted one arrives with nothing in it and the run
+ * reports a test that failed for no stated reason.
+ *
+ * @param {*} error
+ * @returns {Error}
+ */
+function toReportableError(error) {
+  if (error instanceof Error) {
+    return error;
+  }
+
+  const name = readErrorName(error) || 'UnknownError';
+  let message;
+  try {
+    message = (error && error.message) || String(error);
+  } catch (readError) {
+    message = 'error details are unavailable';
+  }
+
+  const reportable = new Error(`${name}: ${message}`);
+  reportable.name = name;
+
+  return reportable;
+}
+
+/**
  * Shared EvoSDK instance. One per process: the verifier is stateless and the
  * underlying WASM SDK multiplexes concurrent requests.
  *
@@ -184,11 +230,15 @@ function createPlatformProofVerifier({
         // execution was not proved rather than that anything failed. Their
         // authenticated affected-state snapshot is the strongest result
         // available; every other family keeps failing closed here.
-        if (error.name !== EXECUTION_NOT_PROVED) {
-          throw error;
+        if (readErrorName(error) !== EXECUTION_NOT_PROVED) {
+          throw toReportableError(error);
         }
 
-        await sdk.stateTransitions.waitForAffectedState(stateTransition);
+        try {
+          await sdk.stateTransitions.waitForAffectedState(stateTransition);
+        } catch (affectedStateError) {
+          throw toReportableError(affectedStateError);
+        }
       }
     },
 

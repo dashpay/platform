@@ -93,6 +93,34 @@ describe('createPlatformProofVerifier', () => {
     expect(waitForAffectedState).to.not.have.been.called;
   });
 
+  it('should report a WASM error as a plain Error so its message survives', async () => {
+    // A wasm-bindgen error object: kind and message live on the prototype, and
+    // it is not an Error, so a parallel mocha worker serializes away everything
+    // it carries.
+    const wasmError = Object.create({
+      get name() {
+        return 'Proof';
+      },
+      get message() {
+        return 'quorum signature is invalid';
+      },
+    });
+    const { verifier } = createVerifierWith({
+      waitForResponse: sinon.stub().rejects(wasmError),
+      waitForAffectedState: sinon.stub().resolves(),
+    });
+
+    const error = await verifier.verifyStateTransitionResult({
+      serializedStateTransition: Uint8Array.from([1, 2, 3]),
+      network: 'local',
+    }).then(() => null, (thrown) => thrown);
+
+    expect(error).to.be.an.instanceOf(Error);
+    expect(error.name).to.equal('Proof');
+    expect(error.message).to.equal('Proof: quorum signature is invalid');
+    expect(Object.getOwnPropertyNames(error)).to.include('message');
+  });
+
   it('should propagate affected-state proof rejection', async () => {
     const proofError = new Error('invalid affected-state proof');
     const { verifier } = createVerifierWith({
