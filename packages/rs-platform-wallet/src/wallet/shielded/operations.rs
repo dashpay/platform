@@ -1627,6 +1627,14 @@ where
 
     let num_keys = public_keys.len();
 
+    // The invitee's re-derivable MASTER auth key hash: the unique, Platform-indexed
+    // handle we recover the created identity by if a claim turns out to have
+    // already executed (idempotent-retry recovery — see the spent-nullifier
+    // preflight and the broadcast handling below). Captured before `public_keys` is
+    // moved into the builder. `None` only if the caller submitted no master auth
+    // key (identity creation requires one, so this is defensive).
+    let master_key_hash = master_auth_public_key_hash(&public_keys);
+
     // Transient scan: re-derive the one-time key's note(s) from the network.
     let discovered = super::sync::scan_notes_for_foreign_key(sdk, &fvk, &ivk, denomination).await?;
     if discovered.is_empty() {
@@ -1658,6 +1666,44 @@ where
         .iter()
         .map(|(key, _)| (key.id(), key.clone()))
         .collect();
+
+    // Idempotent-retry preflight (no persisted record). If this one-time key's
+    // selected note(s) are ALREADY spent on chain, a byte-identical claim already
+    // executed — so we must NOT rebuild+rebroadcast (that would only earn a
+    // `NullifierAlreadySpent` rejection). Everything checked here is re-derived
+    // from the invite the invitee holds: the one-time key → its note(s) via the
+    // transient scan above, and each note's real nullifier (`ShieldedNote.nullifier`,
+    // stamped `note.nullifier(fvk)` during the scan). If spent, recover the
+    // previously-created identity by the invitee's own re-derivable MASTER auth key
+    // hash (`discover_inner`'s unique-hash probe) and return it as success.
+    let selected_nullifiers: Vec<[u8; 32]> = selected_notes.iter().map(|n| n.nullifier).collect();
+    if any_nullifier_spent_on_chain(sdk, &selected_nullifiers).await {
+        if let Some(key_hash) = master_key_hash {
+            if let Some(mut identity) =
+                fetch_identity_by_key_hash_with_retries(sdk, key_hash).await
+            {
+                info!(
+                    identity_id = %identity.id(),
+                    "IdentityCreateFromOneTimeKey: one-time key already spent on chain — recovered \
+                     the previously-created identity by its master auth key hash (idempotent retry; \
+                     skipped rebuild/rebroadcast)"
+                );
+                if identity.public_keys().is_empty() {
+                    identity.set_public_keys(submitted_public_keys.clone());
+                }
+                return Ok((identity.id(), identity));
+            }
+        }
+        // Spent, but not yet resolvable by key hash (indexing lag) — or no master
+        // key was present. Fall through to the normal build path; its broadcast
+        // returns `NullifierAlreadySpent`, which is handled below as
+        // executed-and-recover (that path additionally has the deterministically
+        // derived identity id as a recovery handle).
+        warn!(
+            "IdentityCreateFromOneTimeKey: one-time key note already spent on chain but identity \
+             not yet recoverable by key hash; proceeding to the idempotent broadcast path"
+        );
+    }
 
     // Witness the selected notes against a Platform-recorded anchor from the
     // shared, fully-marked commitment tree (identical probe to the pool op).
@@ -1698,6 +1744,21 @@ where
 
     match st.broadcast(sdk, None).await {
         Ok(()) => {}
+        // A `NullifierAlreadySpent` verdict is NOT a failure on this path: it is
+        // positive proof a byte-identical claim already executed (the note is
+        // consumed on chain). Recover the created identity instead of stranding
+        // the retry. Checked before the generic `broadcast_definitely_failed` arm,
+        // which would otherwise classify this consensus rejection as a hard failure.
+        Err(e) if is_nullifier_already_spent(&e) => {
+            return recover_executed_one_time_claim(
+                sdk,
+                master_key_hash,
+                identity_id,
+                &submitted_public_keys,
+                &e,
+            )
+            .await;
+        }
         Err(e) if broadcast_definitely_failed(&e) => {
             return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
         }
@@ -1723,6 +1784,21 @@ where
         .await
     {
         Ok(result) => result,
+        // Same idempotent recovery as the broadcast arm: a `NullifierAlreadySpent`
+        // verdict surfacing at wait time proves the claim executed, so recover the
+        // identity rather than reporting a broadcast failure. Ordered before the
+        // generic consensus-rejection arm below (which would classify it as a
+        // failure).
+        Err(wait_err) if is_nullifier_already_spent(&wait_err) => {
+            return recover_executed_one_time_claim(
+                sdk,
+                master_key_hash,
+                identity_id,
+                &submitted_public_keys,
+                &wait_err,
+            )
+            .await;
+        }
         Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
             return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
         }
@@ -2694,6 +2770,160 @@ fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
         dash_sdk::Error::NoAvailableAddressesToRetry(inner) => broadcast_definitely_failed(inner),
         _ => false,
     }
+}
+
+/// Best-effort on-chain check: is any of `nullifiers` already recorded spent in
+/// Platform's shielded nullifier set? Reuses the proof-verified
+/// [`ShieldedNullifierStatuses`](dash_sdk::query_types::ShieldedNullifierStatuses)
+/// fetch (query type [`ShieldedNullifiersQuery`](dash_sdk::query_types::ShieldedNullifiersQuery)).
+///
+/// A query error (or an empty response) returns `false` — "unknown, proceed":
+/// the normal build+broadcast path then reconciles via the
+/// `NullifierAlreadySpent` broadcast verdict, so a transient query failure only
+/// costs a (harmless, idempotent) rebuild, never a wrong answer.
+async fn any_nullifier_spent_on_chain(
+    sdk: &Arc<dash_sdk::Sdk>,
+    nullifiers: &[[u8; 32]],
+) -> bool {
+    use dash_sdk::platform::Fetch;
+    use dash_sdk::query_types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
+
+    if nullifiers.is_empty() {
+        return false;
+    }
+    match ShieldedNullifierStatuses::fetch(sdk, ShieldedNullifiersQuery(nullifiers.to_vec())).await {
+        Ok(Some(statuses)) => statuses.0.iter().any(|s| s.is_spent),
+        Ok(None) => false,
+        Err(e) => {
+            warn!(
+                error = %e,
+                "IdentityCreateFromOneTimeKey: nullifier spent-status query failed; treating as \
+                 unknown and proceeding to the idempotent broadcast path"
+            );
+            false
+        }
+    }
+}
+
+/// The 20-byte hash of the MASTER authentication key among `public_keys`
+/// (`purpose = AUTHENTICATION`, `security_level = MASTER`). This is the unique,
+/// Platform-indexed key hash an identity can be looked up by — the exact probe
+/// [`IdentityWallet::discover_inner`] scans with
+/// (`Identity::fetch(sdk, PublicKeyHash(..))`). The invitee re-derives these
+/// same creation keys from its own seed on a retry, so this hash re-derives
+/// deterministically and needs no persisted record.
+fn master_auth_public_key_hash(
+    public_keys: &[(IdentityPublicKey, IdentityPublicKeyInCreation)],
+) -> Option<[u8; 20]> {
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+
+    public_keys
+        .iter()
+        .map(|(key, _)| key)
+        .find(|key| {
+            key.purpose() == Purpose::AUTHENTICATION
+                && key.security_level() == SecurityLevel::MASTER
+        })
+        .and_then(|key| key.public_key_hash().ok())
+}
+
+/// Recover the identity a claim created by looking it up under its MASTER auth
+/// key hash, with the same bounded retry cadence as
+/// [`fetch_identity_with_retries`] to ride out DAPI indexing lag. Reuses
+/// `discover_inner`'s unique-hash primitive (`Identity::fetch(sdk,
+/// PublicKeyHash(..))`).
+async fn fetch_identity_by_key_hash_with_retries(
+    sdk: &Arc<dash_sdk::Sdk>,
+    key_hash: [u8; 20],
+) -> Option<Identity> {
+    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dash_sdk::platform::Fetch;
+
+    for attempt in 0..IDENTITY_CREATE_FETCH_RETRIES {
+        match Identity::fetch(sdk, PublicKeyHash(key_hash)).await {
+            Ok(Some(identity)) => return Some(identity),
+            Ok(None) => {
+                trace!(
+                    key_hash = %hex::encode(key_hash),
+                    attempt,
+                    "IdentityCreateFromOneTimeKey recovery: identity not found by key hash yet"
+                );
+            }
+            Err(e) => {
+                trace!(
+                    key_hash = %hex::encode(key_hash),
+                    attempt,
+                    error = %e,
+                    "IdentityCreateFromOneTimeKey recovery: key-hash lookup errored; will retry"
+                );
+            }
+        }
+        if attempt + 1 < IDENTITY_CREATE_FETCH_RETRIES {
+            tokio::time::sleep(IDENTITY_CREATE_FETCH_RETRY_DELAY).await;
+        }
+    }
+    None
+}
+
+/// The one-time-key claim already executed on chain (its note's nullifier is
+/// spent / the broadcast returned `NullifierAlreadySpent`). Recover the created
+/// identity so a retry returns success instead of a stranding error.
+///
+/// Recovery reuses two existing, re-derivable-from-the-invite handles, each with
+/// bounded retries for DAPI indexing lag:
+/// 1. the invitee's MASTER auth key hash (`discover_inner`'s unique-hash probe),
+/// 2. the deterministically-derived identity id (`fetch_identity_with_retries`).
+///
+/// If neither resolves yet, surface `ShieldedBroadcastUnconfirmed` carrying the
+/// derived id — unchanged behavior for the app (which already writes that id out
+/// and can retry), and a further retry reconciles once indexing catches up.
+async fn recover_executed_one_time_claim(
+    sdk: &Arc<dash_sdk::Sdk>,
+    master_key_hash: Option<[u8; 20]>,
+    identity_id: Identifier,
+    submitted_public_keys: &BTreeMap<u32, IdentityPublicKey>,
+    evidence: &dash_sdk::Error,
+) -> Result<(Identifier, Identity), PlatformWalletError> {
+    warn!(
+        derived_id = %identity_id,
+        error = %evidence,
+        "IdentityCreateFromOneTimeKey: claim already executed on chain (nullifier spent); \
+         recovering the previously-created identity instead of failing"
+    );
+
+    if let Some(key_hash) = master_key_hash {
+        if let Some(mut identity) = fetch_identity_by_key_hash_with_retries(sdk, key_hash).await {
+            info!(
+                identity_id = %identity.id(),
+                "IdentityCreateFromOneTimeKey: recovered the executed claim's identity by its \
+                 master auth key hash"
+            );
+            if identity.public_keys().is_empty() {
+                identity.set_public_keys(submitted_public_keys.clone());
+            }
+            return Ok((identity.id(), identity));
+        }
+    }
+
+    if let Some(mut identity) = fetch_identity_with_retries(sdk, identity_id).await {
+        info!(
+            derived_id = %identity_id,
+            "IdentityCreateFromOneTimeKey: recovered the executed claim's identity by its derived id"
+        );
+        if identity.public_keys().is_empty() {
+            identity.set_public_keys(submitted_public_keys.clone());
+        }
+        return Ok((identity.id(), identity));
+    }
+
+    Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+        identity_id,
+        reason: format!(
+            "one-time-key claim executed (nullifier already spent) but the identity is not yet \
+             resolvable by key hash or derived id: {evidence}"
+        ),
+    })
 }
 
 /// Classify a `wait_for_response` failure for an already-broadcast
