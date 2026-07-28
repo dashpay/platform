@@ -1163,7 +1163,7 @@ impl PlatformWallet {
             .map_err(|e| {
                 PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}"))
             })?;
-        super::shielded::operations::unshield(
+        let reconciliation = super::shielded::operations::unshield_with_reconciliation(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -1174,7 +1174,19 @@ impl PlatformWallet {
             amount,
             &prover,
         )
-        .await
+        .await?;
+
+        if let Some(reconciliation) = reconciliation {
+            self.platform
+                .reconcile_address_infos(
+                    &reconciliation.address_infos,
+                    reconciliation.proof_height,
+                    "shielded unshield",
+                )
+                .await;
+        }
+
+        Ok(())
     }
 
     /// Withdraw from `account`'s notes to a Core L1 address

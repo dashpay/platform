@@ -39,6 +39,8 @@ use std::sync::Arc;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
+use dash_sdk::query_types::AddressInfo;
+use dash_sdk::query_types::AddressInfos;
 use dpp::address_funds::{
     AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, OrchardAddress, PlatformAddress,
 };
@@ -74,6 +76,23 @@ use tracing::{debug, info, trace, warn};
 /// `F = compute_minimum_shielded_fee(actions.len())` from the on-wire action
 /// count, so the wallet's fee reservation must use the same count.
 const SHIELD_NUM_ACTIONS: usize = 2;
+
+/// Proof-attested post-unshield address state together with the height
+/// that pins the absolute balance against later delta replay.
+#[derive(Debug)]
+pub(crate) struct UnshieldReconciliation {
+    pub(crate) address_infos: AddressInfos,
+    pub(crate) proof_height: u64,
+}
+
+/// Successful shielded-spend confirmation retained for operation-specific
+/// post-processing. Transfer and withdrawal only need confirmation; unshield
+/// additionally consumes the address info and its proof height.
+#[derive(Debug)]
+struct ShieldedSpendReceipt {
+    proof_result: StateTransitionProofResult,
+    proof_height: u64,
+}
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
 /// a broadcast error so the shield path can format a diagnostic
@@ -660,6 +679,31 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    unshield_with_reconciliation(
+        sdk, store, persister, wallet_id, keys, account, to_address, amount, prover,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Internal unshield entry point that retains the proof-attested destination
+/// balance for the composite [`crate::wallet::PlatformWallet`] orchestrator.
+///
+/// A confirmed transition with an unexpected or incomplete proof shape still
+/// returns `Ok(None)`: Platform already executed the spend, so failing the call
+/// would invite an unsafe retry. The normal address sync is the fallback.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn unshield_with_reconciliation<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PlatformAddress,
+    amount: u64,
+    prover: &P,
+) -> Result<Option<UnshieldReconciliation>, PlatformWalletError> {
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -762,7 +806,8 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(receipt) => {
+            let reconciliation = extract_unshield_reconciliation(receipt, to_address);
             record_activity_status(
                 store,
                 persister,
@@ -798,7 +843,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
                 );
             }
             info!(account, credits = amount, "Unshield broadcast succeeded");
-            Ok(())
+            Ok(reconciliation)
         }
         // The broadcast was accepted but its execution result couldn't be
         // confirmed: the spend may well have executed, so do NOT release
@@ -830,6 +875,175 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             cancel_pending(store, id, &selected_notes).await;
             Err(e)
         }
+    }
+}
+
+/// Extract the one destination balance authenticated by an unshield proof.
+///
+/// This is deliberately strict about the proof payload even though extraction
+/// failure is non-fatal to the already-confirmed spend: accepting a foreign,
+/// absent, or multi-address payload would let the wallet pin unrelated state.
+fn extract_unshield_reconciliation(
+    receipt: ShieldedSpendReceipt,
+    expected_address: &PlatformAddress,
+) -> Option<UnshieldReconciliation> {
+    let mut proved_address_infos = match receipt.proof_result {
+        StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
+            _nullifiers,
+            address_infos,
+        ) => address_infos,
+        _ => {
+            warn!(
+                expected_address = ?expected_address,
+                "Unshield confirmed with an unexpected proof result; destination balance \
+                 reconciliation deferred to address sync"
+            );
+            return None;
+        }
+    };
+
+    if proved_address_infos.len() != 1 {
+        warn!(
+            expected_address = ?expected_address,
+            returned_address_count = proved_address_infos.len(),
+            "Unshield proof did not contain exactly one destination address; balance \
+             reconciliation deferred to address sync"
+        );
+        return None;
+    }
+
+    let (nonce, balance) = match proved_address_infos.remove(expected_address) {
+        Some(Some(address_info)) => address_info,
+        Some(None) => {
+            warn!(
+                expected_address = ?expected_address,
+                "Unshield proof reported the destination address as absent; balance \
+                 reconciliation deferred to address sync"
+            );
+            return None;
+        }
+        None => {
+            warn!(
+                expected_address = ?expected_address,
+                "Unshield proof contained a different destination address; balance \
+                 reconciliation deferred to address sync"
+            );
+            return None;
+        }
+    };
+
+    let mut address_infos = AddressInfos::new();
+    address_infos.insert(
+        *expected_address,
+        Some(AddressInfo {
+            address: *expected_address,
+            nonce,
+            balance,
+        }),
+    );
+
+    Some(UnshieldReconciliation {
+        address_infos,
+        proof_height: receipt.proof_height,
+    })
+}
+
+#[cfg(test)]
+mod unshield_reconciliation_tests {
+    use super::*;
+
+    fn receipt(
+        proof_result: StateTransitionProofResult,
+        proof_height: u64,
+    ) -> ShieldedSpendReceipt {
+        ShieldedSpendReceipt {
+            proof_result,
+            proof_height,
+        }
+    }
+
+    fn proved_unshield(
+        address_infos: BTreeMap<PlatformAddress, Option<(u32, Credits)>>,
+    ) -> StateTransitionProofResult {
+        StateTransitionProofResult::VerifiedShieldedNullifiersWithAddressInfos(
+            vec![(vec![0xAA; 32], true)],
+            address_infos,
+        )
+    }
+
+    #[test]
+    fn extracts_exact_destination_and_preserves_proof_height() {
+        let destination = PlatformAddress::P2pkh([0x11; 20]);
+        let proof_result = proved_unshield(BTreeMap::from([(destination, Some((7, 42_000)))]));
+
+        let reconciliation =
+            extract_unshield_reconciliation(receipt(proof_result, 123), &destination)
+                .expect("exact destination info should reconcile");
+        assert_eq!(reconciliation.proof_height, 123);
+        assert_eq!(reconciliation.address_infos.len(), 1);
+
+        let info = reconciliation
+            .address_infos
+            .get(&destination)
+            .and_then(Option::as_ref)
+            .expect("destination must be present");
+        assert_eq!(info.address, destination);
+        assert_eq!(info.nonce, 7);
+        assert_eq!(info.balance, 42_000);
+    }
+
+    #[test]
+    fn rejects_unexpected_proof_variant() {
+        let destination = PlatformAddress::P2pkh([0x11; 20]);
+        let proof_result =
+            StateTransitionProofResult::VerifiedShieldedNullifiers(vec![(vec![0xAA; 32], true)]);
+
+        assert!(
+            extract_unshield_reconciliation(receipt(proof_result, 123), &destination).is_none()
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_foreign_destination() {
+        let destination = PlatformAddress::P2pkh([0x11; 20]);
+        let foreign = PlatformAddress::P2pkh([0x22; 20]);
+
+        assert!(extract_unshield_reconciliation(
+            receipt(proved_unshield(BTreeMap::new()), 123),
+            &destination,
+        )
+        .is_none());
+        assert!(extract_unshield_reconciliation(
+            receipt(
+                proved_unshield(BTreeMap::from([(foreign, Some((7, 42_000)))])),
+                123,
+            ),
+            &destination,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn rejects_absent_or_multiple_address_infos() {
+        let destination = PlatformAddress::P2pkh([0x11; 20]);
+        let foreign = PlatformAddress::P2pkh([0x22; 20]);
+
+        assert!(extract_unshield_reconciliation(
+            receipt(proved_unshield(BTreeMap::from([(destination, None)])), 123,),
+            &destination,
+        )
+        .is_none());
+        assert!(extract_unshield_reconciliation(
+            receipt(
+                proved_unshield(BTreeMap::from([
+                    (destination, Some((7, 42_000))),
+                    (foreign, Some((1, 10))),
+                ])),
+                123,
+            ),
+            &destination,
+        )
+        .is_none());
     }
 }
 
@@ -936,6 +1150,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             "transfer",
         )
         .await
+        .map(|_| ())
     }
     .await;
 
@@ -1104,6 +1319,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             "withdraw",
         )
         .await
+        .map(|_| ())
     }
     .await;
 
@@ -2017,7 +2233,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     notes: &[ShieldedNote],
     state_transition: &StateTransition,
     operation: &'static str,
-) -> Result<(), PlatformWalletError> {
+) -> Result<ShieldedSpendReceipt, PlatformWalletError> {
     let result = broadcast_shielded_spend(sdk, state_transition, operation).await;
     if matches!(
         &result,
@@ -2342,13 +2558,14 @@ fn carries_consensus_rejection(err: &dash_sdk::Error) -> bool {
 /// Mirrors the staging in [`identity_create_from_shielded_pool`], minus
 /// its fetch-by-derived-id fallback: a spend leaves no artifact as
 /// cheaply queryable as an identity row, so ambiguity is surfaced
-/// directly and reconciled by the next nullifier sync. The proven
-/// result is discarded; only the confirmation matters.
+/// directly and reconciled by the next nullifier sync. The proven result
+/// and its authenticated height are retained for operation-specific
+/// post-processing (currently unshield destination reconciliation).
 async fn broadcast_shielded_spend(
     sdk: &Arc<dash_sdk::Sdk>,
     state_transition: &StateTransition,
     operation: &'static str,
-) -> Result<(), PlatformWalletError> {
+) -> Result<ShieldedSpendReceipt, PlatformWalletError> {
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
@@ -2366,9 +2583,12 @@ async fn broadcast_shielded_spend(
     }
 
     state_transition
-        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .wait_for_response_with_metadata::<StateTransitionProofResult>(sdk, None)
         .await
-        .map(|_| ())
+        .map(|(proof_result, metadata)| ShieldedSpendReceipt {
+            proof_result,
+            proof_height: metadata.height,
+        })
         .map_err(|wait_err| classify_spend_wait_failure(operation, &wait_err))
 }
 
