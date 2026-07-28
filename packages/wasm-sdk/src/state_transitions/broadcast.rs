@@ -463,7 +463,8 @@ mod tests {
             .await
             .expect("mock contract response should be configured");
 
-        let sdk = WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+        let sdk =
+            WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
         let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
             owner_id: Identifier::new([0x33; 32]),
             transitions: vec![delete_transition(withdrawals_id, 1)],
