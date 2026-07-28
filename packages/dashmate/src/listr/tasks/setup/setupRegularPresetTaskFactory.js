@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 
 import chalk from 'chalk';
 
+import lodash from 'lodash';
 import {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_FULLNODE,
@@ -14,6 +15,8 @@ import {
   isNodeTypeNameHighPerformance,
 } from './nodeTypes.js';
 import generateRandomString from '../../../util/generateRandomString.js';
+
+const { cloneDeep: lodashCloneDeep } = lodash;
 
 /**
  * @param {ConfigFile} configFile
@@ -89,10 +92,14 @@ export default function setupRegularPresetTaskFactory(
             ctx.config.set('platform.drive.tenderdash.mode', 'full');
           }
 
-          Object.values(ctx.config.get('core.rpc.users')).forEach((options) => {
+          // Reads hand back a frozen snapshot, so build the new value and set it
+          // back rather than writing through the object get() returned.
+          const rpcUsers = lodashCloneDeep(ctx.config.get('core.rpc.users'));
+          Object.values(rpcUsers).forEach((options) => {
             // eslint-disable-next-line no-param-reassign
             options.password = generateRandomString(12);
           });
+          ctx.config.set('core.rpc.users', rpcUsers);
 
           // eslint-disable-next-line no-param-reassign
           task.output = ctx.nodeTypeName;

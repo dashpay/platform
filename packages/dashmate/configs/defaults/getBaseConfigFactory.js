@@ -262,7 +262,7 @@ export default function getBaseConfigFactory() {
         dapi: {
           rsDapi: {
             docker: {
-              image: `dashpay/rs-dapi:${dockerImageVersion}`,
+              image: null,
               deploy: {
                 replicas: 1,
               },
@@ -291,7 +291,7 @@ export default function getBaseConfigFactory() {
         drive: {
           abci: {
             docker: {
-              image: `dashpay/drive:${dockerImageVersion}`,
+              image: null,
               build: {
                 enabled: false,
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
