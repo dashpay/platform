@@ -36,7 +36,9 @@ impl WasmSdk {
         self.trusted_context()
             .and_then(|context| {
                 context
-                    .get_data_contract(&contract_id, self.version())
+                    // `WasmSdk::version` is the exported protocol number; the
+                    // platform version comes from the inner SDK.
+                    .get_data_contract(&contract_id, self.as_ref().version())
                     .ok()
                     .flatten()
             })
