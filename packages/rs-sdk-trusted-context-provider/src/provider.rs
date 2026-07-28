@@ -40,7 +40,7 @@ use tracing::{debug, info};
 use url::Url;
 
 #[cfg(target_arch = "wasm32")]
-const WASM_QUORUM_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
@@ -92,12 +92,19 @@ struct MasternodeDiscoveryResponse {
 }
 
 impl TrustedHttpContextProvider {
-    fn quorum_request(&self, url: &str) -> reqwest::RequestBuilder {
+    /// Build a GET request for a trusted endpoint.
+    ///
+    /// Every request to `base_url` goes through here. On wasm32 the client
+    /// carries no timeout, because `ClientBuilder::timeout` is unavailable
+    /// there, so each request sets its own; a slow or hung endpoint would
+    /// otherwise block the caller forever. Cached responses are bypassed so a
+    /// rotated quorum or a changed masternode list is actually observed.
+    fn http_request(&self, url: &str) -> reqwest::RequestBuilder {
         let request = self.client.get(url);
 
         #[cfg(target_arch = "wasm32")]
         let request = request
-            .timeout(WASM_QUORUM_REQUEST_TIMEOUT)
+            .timeout(WASM_HTTP_REQUEST_TIMEOUT)
             .fetch_cache_no_store();
 
         request
@@ -369,7 +376,7 @@ impl TrustedHttpContextProvider {
             url
         );
 
-        let response = self.client.get(&url).send().await?;
+        let response = self.http_request(&url).send().await?;
         if !response.status().is_success() {
             return Err(TrustedContextProviderError::NetworkError(format!(
                 "HTTP {} from {}",
@@ -432,7 +439,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = match self.quorum_request(&url).send().await {
+        let response = match self.http_request(&url).send().await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::error!(error = ?e, url = %url, "HTTP request failed");
@@ -510,7 +517,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/previous", self.base_url);
         debug!("Fetching previous quorums from: {}", url);
 
-        let response = self.quorum_request(&url).send().await?;
+        let response = self.http_request(&url).send().await?;
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
