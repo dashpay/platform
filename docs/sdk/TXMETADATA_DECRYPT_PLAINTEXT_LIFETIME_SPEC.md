@@ -63,7 +63,7 @@ The fetch export signature itself does not change, so there is no C layout chang
 
 ### Host copies and the documented ceiling
 
-JNI installs a nullable sensitive-pointer RAII guard immediately after the FFI call, before result/null/JNI error handling. Because the serializer enforces ASCII with no interior NUL, JNI passes the existing C buffer directly to raw `NewStringUTF` rather than using `JNIEnv::new_string`, whose `JNIString` conversion would create another unsanitized native allocation. The guard invokes `platform_wallet_sensitive_string_free` after the JVM copy or on any early return/unwind. The returned Java/Kotlin `String` remains runtime-managed and unsrubbable.
+JNI installs a nullable sensitive-pointer RAII guard immediately after the FFI call, before result/null/JNI error handling. Because the serializer enforces ASCII with no interior NUL, JNI passes the existing C buffer directly to raw `NewStringUTF` rather than using `JNIEnv::new_string`, whose `JNIString` conversion would create another unsanitized native allocation. The guard invokes `platform_wallet_sensitive_string_free` after the JVM copy or on any early return/unwind. The returned Java/Kotlin `String` remains runtime-managed and unscrubbable.
 
 Swift installs its nullable-pointer `defer` immediately after the FFI call, before `result.check()`, and uses `platform_wallet_sensitive_string_free`. It keeps its current `String(cString:)` copy. The returned Swift `String` remains runtime-managed and may share or copy storage.
 
@@ -87,7 +87,7 @@ flowchart TB
   H --> I[JVM String]
   H --> J[Swift String]
   G --> K[Sensitive free zeroizes native allocation]
-  I --> L[Documented unsrubbable host residual]
+  I --> L[Documented unscrubbable host residual]
   J --> L
 ```
 
