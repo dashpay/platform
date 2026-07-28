@@ -134,8 +134,9 @@ class BlockHeadersReader extends EventEmitter {
          * @param e
          */
         const rejectHeaders = async (e) => {
-          // Don't use cancelStream there because it's going to unsubscribe from events
-          stream.cancel();
+          // Cancel the transport only: the retry below needs the listeners, so
+          // this cannot go through cancelStream, which unsubscribes from events
+          this.cancelStreamTransport(stream);
           stream.retryOnError(e);
         };
 
@@ -296,8 +297,13 @@ class BlockHeadersReader extends EventEmitter {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  cancelStream(stream) {
-    stream.removeAllListeners();
+  /**
+   * Cancels the stream's transport, tolerating one the transport has already
+   * closed. Listeners are left in place for callers that keep using the stream.
+   * @param {ReconnectableStream} stream
+   */
+  // eslint-disable-next-line class-methods-use-this
+  cancelStreamTransport(stream) {
     try {
       stream.cancel();
     } catch (e) {
@@ -305,6 +311,11 @@ class BlockHeadersReader extends EventEmitter {
         throw e;
       }
     }
+  }
+
+  cancelStream(stream) {
+    stream.removeAllListeners();
+    this.cancelStreamTransport(stream);
   }
 }
 

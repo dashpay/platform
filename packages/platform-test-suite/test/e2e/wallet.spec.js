@@ -18,6 +18,12 @@ async function waitForTransaction(account, transactionId) {
     transactions = account.getTransactions();
   }
 
+  if (!transactions[transactionId]) {
+    throw new Error(
+      `Transaction ${transactionId} did not reach the account within ${TRANSACTION_PROPAGATION_TIMEOUT_MS}ms`,
+    );
+  }
+
   return transactions;
 }
 

@@ -138,6 +138,11 @@ describe('DPNS', () => {
 
       const rawDocument = documents[0].toObject();
 
+      // The registering identity is recorded as the creator. The local document
+      // returned by `register` never carries it, so the comparison below drops
+      // it on both sides and it is pinned here instead.
+      expect(Buffer.from(rawDocument.$creatorId)).to.deep.equal(identity.getId().toBuffer());
+
       delete rawDocument.$createdAt;
       delete rawDocument.$createdAtCoreBlockHeight;
       delete rawDocument.$createdAtBlockHeight;
