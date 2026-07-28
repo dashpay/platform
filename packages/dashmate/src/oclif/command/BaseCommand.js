@@ -112,16 +112,19 @@ export default class BaseCommand extends Command {
 
         if (configFile.isChanged()) {
           configFileRepository.write(configFile);
-
-          /**
-           * @var {writeConfigTemplates} writeConfigTemplates
-           */
-          const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
-
-          configFile.getAllConfigs()
-            .filter((config) => config.isChanged())
-            .forEach(writeConfigTemplates);
         }
+
+        // Service templates are rendered artifacts, not persisted state, and are
+        // rewritten on every command regardless of whether the configuration
+        // changed. Rendering only on change would leave a node running templates
+        // from an older Dashmate whenever a release edits a template without
+        // also changing the config format version.
+        /**
+         * @var {writeConfigTemplates} writeConfigTemplates
+         */
+        const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+
+        configFile.getAllConfigs().forEach(writeConfigTemplates);
       }
 
       // Stop all running containers

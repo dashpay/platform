@@ -95,11 +95,11 @@ async function removeOrphanedSslContainers(docker) {
   // Persist config if it was migrated
   if (configFile.isChanged()) {
     await configFileRepository.write(configFile);
-
-    configFile.getAllConfigs()
-      .filter((config) => config.isChanged())
-      .forEach(writeConfigTemplates);
   }
+
+  // Rendered artifacts rather than persisted state - always brought up to date
+  // with this Dashmate's templates, whether or not the configuration changed.
+  configFile.getAllConfigs().forEach(writeConfigTemplates);
 
   const config = configFile.getConfig(configName);
 

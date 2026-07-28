@@ -179,3 +179,52 @@ dashmate config get <option>
 # Enable debug logging
 dashmate config set core.log.debug.enabled true
 ```
+
+## Running Dashmate commands concurrently
+
+Dashmate keeps all configuration in a single `config.json` inside its home directory
+(`~/.dashmate` by default), and a command that changes configuration rewrites that whole
+file when it exits.
+
+To keep two overlapping commands from silently reverting each other, a command refuses to
+save when `config.json` changed on disk after that command loaded it:
+
+```
+'/home/user/.dashmate/config.json' was modified by another process after this command
+loaded it. Refusing to overwrite it. The changes from this command were saved to
+'/home/user/.dashmate/config.json.rejected-2026-07-28T09-14-22-031Z-4711-1' so you can
+reconcile them.
+```
+
+The command exits non-zero and the other process's change is kept. Nothing is lost — the
+configuration this command wanted to save is written to the `.rejected-*` file named in
+the message, so you can compare it and reapply what you need. These files are never
+cleaned up automatically; remove them once you have reconciled them.
+
+How to respond depends on the command:
+
+- `dashmate config set` — reload and run it again. Nothing else happened.
+- `dashmate config create`, `remove`, `default` — re-check your assumptions before
+  retrying. The other process may have created or removed the very configuration you were
+  operating on.
+- `dashmate setup`, `reset`, `start`, `ssl obtain` — **the operational work already
+  happened**; only saving the configuration failed. Containers may be running and
+  certificates may have been issued. Reconcile from the `.rejected-*` file rather than
+  simply re-running the command.
+
+Read-only commands such as `dashmate config get`, `dashmate status` and `dashmate core
+cli` never write configuration and are always safe to run alongside anything else.
+
+### Limits of this guarantee
+
+- **All Dashmate instances must be on a version that has this behaviour.** The
+  coordination is cooperative, so an older Dashmate process — including a long-running
+  helper started before an upgrade — can still overwrite a newer one. After upgrading,
+  restart the node so the helper restarts too.
+- **Local filesystems only.** The guarantee is not claimed for a Dashmate home directory
+  on NFS or another network filesystem.
+- **Only Dashmate processes take part in this.** A hand edit made while a long Dashmate
+  command is running is usually detected and the command refuses rather than discarding it
+  — but a text editor does not take the lock, so an edit saved in the moment between
+  Dashmate re-reading the file and replacing it can still be overwritten. Stop Dashmate
+  commands before editing `config.json` by hand if the edit matters.
