@@ -43,27 +43,6 @@ Dashmate offsets the default metrics port per preset (mainnet 9091, testnet 1909
 
 ### Image versions
 
-`platform.dapi.rsDapi.docker.image` is unset by default, which means "use the rs-dapi image published for
-this dashmate version". Nothing pins it into your config, so upgrading dashmate moves it
-automatically and no config change is needed.
-
-`dashmate config get` shows the image that will actually run, and `dashmate config`
-marks it `(default)`:
-
-```
-$ dashmate config get platform.dapi.rsDapi.docker.image
-dashpay/rs-dapi:4-rc
-$ dashmate config get --raw platform.dapi.rsDapi.docker.image
-null
-```
-
-Setting it pins it, and dashmate will never change it again — including across upgrades:
-
-```
-$ dashmate config set platform.dapi.rsDapi.docker.image registry.example.com/rs-dapi:patched
-```
-
-Set it back to `null` to return to tracking the published image.
-
-
-This timeout controls how long rs-dapi waits for Drive to report the outcome of a state transition before returning a timeout error to the client.
+`platform.dapi.rsDapi.docker.image` is unset by default, which means "use the rs-dapi image published for this
+dashmate version", so upgrading dashmate moves it automatically. Setting it pins it
+permanently. See [Options with dynamic defaults](./index.md#options-with-dynamic-defaults).
