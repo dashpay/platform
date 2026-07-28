@@ -74,6 +74,22 @@ interface AssetLockDao {
     @Query("SELECT * FROM asset_locks WHERE outPointHex = :outPointHex")
     suspend fun getByOutPointHex(outPointHex: String): AssetLockEntity?
 
+    /**
+     * Transaction-label resolver probe: the `fundingTypeRaw` of the asset
+     * lock whose outpoint belongs to [txidHex]. [txidHex] is the explorer
+     * DISPLAY txid hex (64 lowercase chars, wire order reversed) — the
+     * prefix of the `outPointHex` PK (`<txidDisplayHex>:<vout>`), matched
+     * via `LIKE '<txidHex>:%'`. A txid is a pure-hex string (no `%`/`_`),
+     * so the LIKE pattern carries no wildcards of its own. Returns null
+     * when no asset lock funds this tx (e.g. plain send, or an
+     * AssetUnlock/unshield — see [TransactionDao.transactionKindForTxid]).
+     */
+    @Query(
+        "SELECT fundingTypeRaw FROM asset_locks " +
+            "WHERE outPointHex LIKE :txidHex || ':%' LIMIT 1"
+    )
+    suspend fun fundingTypeForTxid(txidHex: String): Int?
+
     @Upsert
     suspend fun upsert(assetLock: AssetLockEntity)
 
