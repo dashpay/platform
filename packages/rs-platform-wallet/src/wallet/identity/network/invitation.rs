@@ -36,7 +36,8 @@ use crate::changeset::{
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::error::PlatformWalletError;
+use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
+use crate::wallet::asset_lock::orchestration::submit_with_cl_height_retry;
 use crate::wallet::identity::crypto::{
     encode_invitation_uri, voucher_output_index, wif_network_matches,
 };
@@ -442,8 +443,18 @@ impl IdentityWallet {
     /// 2. Fail-fast that the fetched tx is really the funding tx, and (if an
     ///    islock is present) that the islock locks it.
     /// 3. Select the funded credit output by pk↔script match (not index 0).
-    /// 4. Build an `InstantAssetLockProof` when an islock is present, else a
-    ///    `ChainAssetLockProof` once the funding tx is chain-locked.
+    /// 4. Build an `InstantAssetLockProof` when an islock is present (the fast
+    ///    path), else a `ChainAssetLockProof` once the funding tx is chain-locked.
+    ///
+    /// The IS proof is the *fast* path only: a voucher islock is signed at
+    /// creation, so by the time the invitee claims (minutes-to-hours later, and on
+    /// testnet possibly across a platform-4.1 quorum rotation) Drive may reject the
+    /// islock as stale with `InvalidInstantAssetLockProofSignatureError` — its own
+    /// message asks to "try chain asset lock proof instead". When the funding tx is
+    /// already chain-locked (the usual case by claim time), this resubmits a
+    /// `ChainAssetLockProof` over the SAME credit output, mirroring the IS→CL
+    /// fallback the register/top-up paths use. If the tx is not yet chain-locked no
+    /// fallback is possible and the claim surfaces a retry signal.
     ///
     /// The invitee's own identity keys (`keys_map`, derived from the invitee's
     /// seed) are signed by `identity_signer`; the asset-lock's outer
@@ -482,7 +493,16 @@ impl IdentityWallet {
         // enforces pk↔output, islock↔tx, and identity_id↔outpoint, so the local
         // guards below are for fast-fail + correct-index selection, not theft
         // prevention (a crafted link at worst yields a failed claim).
-        let asset_lock = self.reconstruct_asset_lock_proof(&invitation).await?;
+        //
+        // `primary` is submitted first: an InstantSend proof when the link carried
+        // an islock (the fast path), or a ChainLock proof when it did not.
+        // `chain_fallback` is a ChainLock proof over the SAME credit output,
+        // populated only when `primary` is InstantSend AND the funding tx is
+        // already chain-locked — the stale-islock recovery below resubmits it.
+        let ReconstructedProof {
+            primary,
+            chain_fallback,
+        } = self.reconstruct_asset_lock_proof(&invitation).await?;
 
         // The voucher key signs the asset lock's outer ST signature (ECDSA over
         // the credit-output pubkey hash). Convert to the SDK's `PrivateKey`,
@@ -490,6 +510,8 @@ impl IdentityWallet {
         let network = self.sdk.network;
         let voucher_priv = WipingPrivateKey(PrivateKey::new(invitation.voucher_key, network));
 
+        // Build the placeholder identity ONCE so both the primary attempt and the
+        // IS→CL fallback submit the same key set without a `keys_map` clone.
         let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys: keys_map,
@@ -497,19 +519,62 @@ impl IdentityWallet {
             revision: 0,
         });
 
-        // Submit directly. An InstantSend or ChainLock proof both prove finality;
-        // a proof that no longer applies (e.g. the invite was already claimed) is
-        // rejected by consensus and surfaced to the caller.
-        let identity = placeholder
-            .put_to_platform_and_wait_for_response_with_private_key(
+        // Submit the primary proof, wrapped in the shared CL-height-too-low retry
+        // (Platform's observed Core tip briefly behind the proof's chain-locked
+        // height — the same transient the register/top-up paths absorb; harmless
+        // for an IS proof, which never triggers it).
+        //
+        // If Platform rejects the primary IS proof with
+        // `InvalidInstantAssetLockProofSignatureError` (the islock is stale — its
+        // signing quorum rotated out, or it is no longer "recent"; Platform's own
+        // message asks us to "try chain asset lock proof instead"), resubmit the
+        // ChainLock proof over the SAME credit output. This mirrors
+        // `register_identity_with_funding`'s IS→CL fallback, except the CL proof is
+        // rebuilt from the refetched tx: the invitee tracks no asset lock of its
+        // own, so there is no `upgrade_to_chain_lock_proof` to call.
+        let identity = match submit_with_cl_height_retry(settings, |s| {
+            placeholder.put_to_platform_and_wait_for_response_with_private_key(
                 &self.sdk,
-                asset_lock,
+                primary.clone(),
                 &voucher_priv.0,
                 identity_signer,
-                settings,
+                s,
             )
-            .await
-            .map_err(PlatformWalletError::Sdk)?;
+        })
+        .await
+        {
+            Ok(identity) => identity,
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let Some(chain_proof) = chain_fallback else {
+                    // The islock was rejected but the funding tx is not yet
+                    // chain-locked, so no ChainLock proof can be built. Surface a
+                    // clear retry signal rather than the raw consensus error.
+                    return Err(PlatformWalletError::AssetLockNotChainLocked(
+                        "invitation islock proof was rejected by Platform (stale — quorum \
+                         rotated or no longer recent) and the funding transaction is not yet \
+                         chain-locked, so no ChainLock fallback is possible; retry once the \
+                         funding block is chain-locked"
+                            .to_string(),
+                    ));
+                };
+                tracing::warn!(
+                    "invitation IS-lock proof rejected by Platform on claim; retrying with a \
+                     ChainLock proof over the same funding outpoint"
+                );
+                submit_with_cl_height_retry(settings, |s| {
+                    placeholder.put_to_platform_and_wait_for_response_with_private_key(
+                        &self.sdk,
+                        chain_proof.clone(),
+                        &voucher_priv.0,
+                        identity_signer,
+                        s,
+                    )
+                })
+                .await
+                .map_err(PlatformWalletError::Sdk)?
+            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+        };
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
@@ -582,10 +647,15 @@ impl IdentityWallet {
     /// tx, select the voucher's credit output, and assemble an InstantSend proof
     /// (when the link carried an islock) or a ChainLock proof (islock absent /
     /// `"null"` — a chainlock-confirmed invite).
+    ///
+    /// Returns a [`ReconstructedProof`]: the `primary` proof to submit plus an
+    /// optional `chain_fallback` ChainLock proof used by the caller's stale-islock
+    /// recovery (populated only when the primary is InstantSend and the funding tx
+    /// is already chain-locked).
     async fn reconstruct_asset_lock_proof(
         &self,
         invitation: &ParsedInvitation,
-    ) -> Result<AssetLockProof, PlatformWalletError> {
+    ) -> Result<ReconstructedProof, PlatformWalletError> {
         let sdk = &self.sdk;
         let fetched = fetch_funding_tx_with_retry(
             &invitation.funding_txid,
@@ -661,18 +731,41 @@ where
     Ok(None)
 }
 
+/// The claim's reconstructed funding proof, plus an optional ChainLock fallback.
+///
+/// `primary` is submitted first: an [`AssetLockProof::Instant`] when the link
+/// carried an islock (the fast path), or an [`AssetLockProof::Chain`] when it did
+/// not. `chain_fallback` is a ChainLock proof over the SAME credit output,
+/// populated ONLY when `primary` is InstantSend AND the funding tx is already
+/// chain-locked — [`IdentityWallet::claim_invitation`]'s stale-islock recovery
+/// resubmits it if Platform rejects the primary IS proof with
+/// `InvalidInstantAssetLockProofSignatureError`. It is `None` when the primary is
+/// already a ChainLock proof (nothing to fall back to) or when the funding tx is
+/// not yet chain-locked (no ChainLock proof can be built — the claim must be
+/// retried once the block confirms).
+#[derive(Debug)]
+struct ReconstructedProof {
+    primary: AssetLockProof,
+    chain_fallback: Option<AssetLockProof>,
+}
+
 /// Assemble the asset-lock proof from an already-fetched funding transaction — the
 /// pure, testable core of the claim reconstruction (the fetch/retry lives in
 /// `reconstruct_asset_lock_proof`). Validates the tx is the funding tx (either byte
 /// order), selects the voucher's credit output, and builds an InstantSend proof
 /// (link carried an islock) or a ChainLock proof (islock absent), requiring
 /// chain-lock finality for the latter.
+///
+/// When an islock is present AND the funding tx is already chain-locked, the
+/// returned [`ReconstructedProof`] also carries a `chain_fallback` ChainLock proof
+/// over the same credit output, so the caller can recover from a stale islock that
+/// Platform rejects without refetching the tx.
 fn assemble_asset_lock_proof(
     transaction: Transaction,
     is_chain_locked: bool,
     height: u32,
     invitation: &ParsedInvitation,
-) -> Result<AssetLockProof, PlatformWalletError> {
+) -> Result<ReconstructedProof, PlatformWalletError> {
     // Fail-fast: the fetched tx must actually be the funding tx (either byte
     // order). DAPI returns whatever tx matches the id we asked for, so this
     // guards a backend that answers with an unrelated tx.
@@ -689,6 +782,16 @@ fn assemble_asset_lock_proof(
     // Select the funded credit output the voucher key controls (not index 0
     // — a legacy invite's credit output need not be first).
     let output_index = voucher_output_index(&transaction, &invitation.voucher_key)?;
+
+    // A ChainLock proof over the selected credit output. Buildable only once the
+    // funding block is chain-locked; `height` is the tx's mined height (the
+    // `ChainAssetLockProof`'s `core_chain_locked_height`). Reused both as the
+    // primary for an islock-less invite and as the stale-islock fallback.
+    let chain_lock_proof = |txid| -> AssetLockProof {
+        let out_point = OutPoint::new(txid, output_index);
+        let out_point_bytes: [u8; 36] = out_point.into();
+        AssetLockProof::Chain(ChainAssetLockProof::new(height, out_point_bytes))
+    };
 
     match &invitation.islock_hex {
         Some(islock_hex) => {
@@ -711,17 +814,29 @@ fn assemble_asset_lock_proof(
                     "invitation islock does not lock the funding transaction".to_string(),
                 ));
             }
-            Ok(AssetLockProof::Instant(InstantAssetLockProof::new(
+            // Fast path: submit the InstantSend proof. If the islock is stale
+            // (quorum rotated / no longer "recent") Platform rejects it, and the
+            // claim falls back to `chain_fallback` — available only when the
+            // funding tx is already chain-locked (the usual case by claim time,
+            // since the voucher was funded minutes-to-hours earlier). Computed
+            // from `&transaction` BEFORE it is moved into the IS proof below.
+            let chain_fallback = is_chain_locked.then(|| chain_lock_proof(transaction.txid()));
+            let primary = AssetLockProof::Instant(InstantAssetLockProof::new(
                 instant_lock,
                 transaction,
                 output_index,
-            )))
+            ));
+            Ok(ReconstructedProof {
+                primary,
+                chain_fallback,
+            })
         }
         None => {
             // ChainLock invite: the proof references the outpoint + a chain-locked
             // core height. Require the funding tx to be chain-locked so the proof
             // proves finality; the inviter/invitee retries once the block is
-            // chain-locked otherwise.
+            // chain-locked otherwise. There is no separate fallback — this IS the
+            // ChainLock proof.
             if !is_chain_locked {
                 return Err(PlatformWalletError::InvalidIdentityData(
                     "chainlock invitation funding transaction is not yet chain-locked; \
@@ -729,12 +844,10 @@ fn assemble_asset_lock_proof(
                         .to_string(),
                 ));
             }
-            let out_point = OutPoint::new(transaction.txid(), output_index);
-            let out_point_bytes: [u8; 36] = out_point.into();
-            Ok(AssetLockProof::Chain(ChainAssetLockProof::new(
-                height,
-                out_point_bytes,
-            )))
+            Ok(ReconstructedProof {
+                primary: chain_lock_proof(transaction.txid()),
+                chain_fallback: None,
+            })
         }
     }
 }
@@ -854,16 +967,68 @@ mod tests {
         assert!(format!("{err}").contains("not yet chain-locked"));
     }
 
-    /// A chain-locked ChainLock invite assembles a ChainLock proof at the tx's
-    /// voucher output.
+    /// A chain-locked ChainLock invite (no islock) assembles a ChainLock proof at
+    /// the tx's voucher output, with no separate fallback (the primary IS the CL
+    /// proof).
     #[test]
     fn assemble_chainlock_ok_when_locked() {
         let key = voucher_secret();
         let tx = funding_tx(&key);
         let txid = tx.txid().to_string();
         let inv = parsed(key, txid, None);
-        let proof = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
-        assert!(matches!(proof, AssetLockProof::Chain(_)));
+        let reconstructed = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
+        assert!(matches!(reconstructed.primary, AssetLockProof::Chain(_)));
+        assert!(
+            reconstructed.chain_fallback.is_none(),
+            "an islock-less chainlock invite has no separate fallback"
+        );
+    }
+
+    /// An islock that locks the funding tx, with the tx already chain-locked,
+    /// yields an InstantSend primary (fast path) PLUS a ChainLock fallback over the
+    /// same credit output — the stale-islock recovery the claim path submits if
+    /// Platform rejects the IS proof with `InvalidInstantAssetLockProofSignatureError`.
+    #[test]
+    fn assemble_islock_present_and_chainlocked_carries_chain_fallback() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid().to_string();
+        let mut islock = InstantLock::default();
+        islock.txid = tx.txid();
+        let mut islock_bytes = Vec::new();
+        islock.consensus_encode(&mut islock_bytes).unwrap();
+        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
+        let reconstructed = assemble_asset_lock_proof(tx, true, 100, &inv).unwrap();
+        assert!(
+            matches!(reconstructed.primary, AssetLockProof::Instant(_)),
+            "the islock fast path must be tried first"
+        );
+        assert!(
+            matches!(reconstructed.chain_fallback, Some(AssetLockProof::Chain(_))),
+            "a chain-locked funding tx must carry a ChainLock fallback for stale-islock recovery"
+        );
+    }
+
+    /// An islock that locks the funding tx, but the tx NOT yet chain-locked, yields
+    /// the IS primary with NO fallback: if that islock is later rejected there is
+    /// no ChainLock proof to fall back to, and the claim must be retried once the
+    /// block confirms.
+    #[test]
+    fn assemble_islock_present_not_chainlocked_has_no_fallback() {
+        let key = voucher_secret();
+        let tx = funding_tx(&key);
+        let txid = tx.txid().to_string();
+        let mut islock = InstantLock::default();
+        islock.txid = tx.txid();
+        let mut islock_bytes = Vec::new();
+        islock.consensus_encode(&mut islock_bytes).unwrap();
+        let inv = parsed(key, txid, Some(hex::encode(islock_bytes)));
+        let reconstructed = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap();
+        assert!(matches!(reconstructed.primary, AssetLockProof::Instant(_)));
+        assert!(
+            reconstructed.chain_fallback.is_none(),
+            "an un-chain-locked funding tx cannot produce a ChainLock fallback"
+        );
     }
 
     /// The prospective identity id is derived from the *selected* credit
