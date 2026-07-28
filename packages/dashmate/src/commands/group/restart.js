@@ -42,6 +42,21 @@ export default class GroupRestartCommand extends GroupBaseCommand {
         task: async () => (
           new Listr([
             {
+              // Every node's images must be fetched before the first node is
+              // stopped, otherwise a failed pull leaves the group stopped
+              title: 'Pull missing images',
+              task: () => (
+                new Listr(configGroup.map((config) => ({
+                  task: (ctx, task) => dockerCompose.pullMissingImages(config, {
+                    onProgress: (message) => {
+                      // eslint-disable-next-line no-param-reassign
+                      task.output = message;
+                    },
+                  }),
+                })))
+              ),
+            },
+            {
               title: 'Stop nodes',
               task: () => (
                 // So we stop the miner first, as there's a chance that MNs will get banned

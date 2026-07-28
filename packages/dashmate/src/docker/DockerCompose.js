@@ -62,18 +62,25 @@ export default class DockerCompose {
   #getServiceList;
 
   /**
+   * @type {dockerPull}
+   */
+  #dockerPull;
+
+  /**
    * @param {Docker} docker
    * @param {StartedContainers} startedContainers
    * @param {HomeDir} homeDir
    * @param {generateEnvs} generateEnvs
    * @param {getServiceList} getServiceList
+   * @param {dockerPull} dockerPull
    */
-  constructor(docker, startedContainers, homeDir, generateEnvs, getServiceList) {
+  constructor(docker, startedContainers, homeDir, generateEnvs, getServiceList, dockerPull) {
     this.#docker = docker;
     this.#startedContainers = startedContainers;
     this.#homeDir = homeDir;
     this.#generateEnvs = generateEnvs;
     this.#getServiceList = getServiceList;
+    this.#dockerPull = dockerPull;
   }
 
   /**
@@ -495,6 +502,87 @@ export default class DockerCompose {
       });
     } catch (e) {
       throw new DockerComposeError(e);
+    }
+  }
+
+  /**
+   * Pull images required by the config that are not present on the host
+   *
+   * Docker Compose pulls a missing image only when it creates the container,
+   * which during a restart happens after the node has already been stopped.
+   * A failed pull would then leave the node down, so images are fetched
+   * upfront and the caller can abort while the node is still running.
+   *
+   * @param {Config} config
+   * @param {Object} [options]
+   * @param {string[]} [options.profiles] - Filter by profiles
+   * @param {function} [options.onProgress] - Called with pull progress messages
+   * @return {Promise<string[]>} images that have been pulled
+   */
+  async pullMissingImages(config, { profiles = [], onProgress = undefined } = {}) {
+    await this.throwErrorIfNotInstalled();
+
+    let serviceList = this.#getServiceList(config);
+
+    if (profiles.length > 0) {
+      // Compose creates a service when one of its profiles is enabled, and
+      // always creates a service that declares no profiles at all
+      serviceList = serviceList.filter((service) => service.profiles.length === 0
+        || service.profiles.some((profile) => profiles.includes(profile)));
+    }
+
+    const images = serviceList
+      // Images built from sources on this host are not available in a registry
+      .filter((service) => !service.isBuiltLocally)
+      .map((service) => service.image);
+
+    const pulledImages = [];
+
+    for (const image of new Set(images)) {
+      if (await this.#isImagePresent(image)) {
+        continue;
+      }
+
+      try {
+        await this.#dockerPull(image, (message) => {
+          if (onProgress && message?.status) {
+            const progress = message.progress ? ` ${message.progress}` : '';
+
+            onProgress(`${image}: ${message.status}${progress}`);
+          }
+        });
+      } catch (e) {
+        throw new Error(`Failed to pull image ${image}: ${e.message}`);
+      }
+
+      // Docker can report a successful pull without producing the image,
+      // and the whole point of pulling here is to know the image is on the host
+      if (!await this.#isImagePresent(image)) {
+        throw new Error(`Failed to pull image ${image}: it is still not present on the host`);
+      }
+
+      pulledImages.push(image);
+    }
+
+    return pulledImages;
+  }
+
+  /**
+   * @private
+   * @param {string} image
+   * @return {Promise<boolean>}
+   */
+  async #isImagePresent(image) {
+    try {
+      await this.#docker.getImage(image).inspect();
+
+      return true;
+    } catch (e) {
+      if (e.statusCode === 404) {
+        return false;
+      }
+
+      throw new Error(`Failed to check image ${image}: ${e.message}`);
     }
   }
 
