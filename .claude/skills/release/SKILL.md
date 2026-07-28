@@ -117,6 +117,12 @@ curl -s https://registry.npmjs.org/@dashevo/<pkg>/<version> | python3 -c "import
 
 **Permanent fix (a human with owner rights on the package, via the npm web UI):** configure the trusted publisher, then re-run the failed job.
 
+**Bootstrap first if the package was _never published_.** Trusted-publisher configuration needs an existing package page — a `404` package has no **Access** settings to configure. So you must create the package before you can wire up OIDC:
+
+0. Publish one version with a token (`npm publish --access public` from the package dir, or the Stopgap command below). This creates the package on npm.
+
+Then, for **both** cases (never-published-now-bootstrapped, and exists-without-a-publisher):
+
 1. npmjs.com → the package → **Access** → **Trusted Publisher** → **GitHub Actions**: organization/user `dashpay`, repository `platform`, workflow filename `release.yml`, environment **blank** (the `release-npm` job uses no environment). Save.
 2. Re-run the failed job — OIDC now publishes the missing version and `--tolerate-republish` skips the rest → green:
 
@@ -126,7 +132,7 @@ gh run rerun <release-run-id> --repo dashpay/platform --failed
 
 **Stopgap only (does not stop the recurrence):** publish the exact release version once with a token, then re-run the failed job (`--tolerate-republish` skips it). The dist-tag matches CI's — prerelease `<major>.<minor>-<suffix>` (e.g. `4.1-rc`), stable `latest` (`npm view @dashevo/dpns-contract dist-tags`). This unblocks the current release but the next one fails the same way until the trusted publisher is configured.
 
-**Prevention:** whenever you add a new publishable npm package, configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) **before** cutting the release that ships it. `release.sh` prints this reminder after opening the release PR.
+**Prevention:** whenever you add a new publishable npm package, bootstrap it **before** cutting the release that ships it — publish one version with a token so the package exists, then configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) on the freshly created package. The publisher cannot be configured until the package exists, so the token publish is the required first step, not an optional stopgap. `release.sh` prints this reminder after opening the release PR.
 
 ## Post-stable-release: graduate the dev branch
 

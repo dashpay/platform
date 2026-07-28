@@ -105,7 +105,10 @@ if (require.main === module) {
   }
 
   (async () => {
-    const rawTags = await execute('git tag -l --sort=-creatordate');
+    // --merged HEAD restricts candidates to tags reachable from the release branch,
+    // excluding prereleases created on divergent PR branches (e.g. vX.Y.0-pr.NNNN.M)
+    // that would otherwise be picked as a bogus base by the creation-ordered fallback.
+    const rawTags = await execute('git tag -l --merged HEAD --sort=-creatordate');
     const tags = rawTags.split('\n').map((tag) => tag.trim()).filter(Boolean);
 
     const result = findLatestTag(version, tags);
