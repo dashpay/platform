@@ -10,7 +10,6 @@ use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
-use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::ContextProvider;
 use std::collections::BTreeSet;
@@ -250,7 +249,7 @@ mod tests {
     };
     use dash_sdk::dpp::platform_value::BinaryData;
     use dash_sdk::dpp::prelude::DataContract;
-    use dash_sdk::dpp::system_data_contracts::load_system_data_contract;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dash_sdk::dpp::version::PlatformVersion;
     use dash_sdk::Sdk;
     use std::io::{BufRead, BufReader, Write};
