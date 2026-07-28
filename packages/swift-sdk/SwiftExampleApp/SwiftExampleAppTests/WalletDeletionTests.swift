@@ -4,7 +4,65 @@ import XCTest
 
 final class WalletDeletionTests: XCTestCase {
 
-    func testDeleteWalletDataRemovesWalletFootprintAndLastNetworkSyncState() throws {
+    func testDeleteWalletDataRemovesWalletAndIsIdempotent() async throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let walletId = Data(repeating: 0x31, count: 32)
+        let identityId = Data(repeating: 0x32, count: 32)
+
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        let identity = PersistentIdentity(identityId: identityId, network: .testnet)
+        identity.wallet = wallet
+        wallet.identities.append(identity)
+        context.insert(wallet)
+        context.insert(identity)
+        try context.save()
+
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container,
+            network: .testnet)
+        try await handler.deleteWalletData(walletId: walletId)
+        try await handler.deleteWalletData(walletId: walletId)
+
+        XCTAssertTrue(try fetch(PersistentWallet.self, in: container).isEmpty)
+        XCTAssertTrue(try fetch(PersistentIdentity.self, in: container).isEmpty)
+    }
+
+    func testDeleteWalletDataDoesNotBlockMainActor() async throws {
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container,
+            network: .testnet)
+        let blockerStarted = expectation(description: "persistence blocker started")
+        let heartbeatRan = expectation(description: "main actor heartbeat ran")
+        let releaseBlocker = DispatchSemaphore(value: 0)
+
+        handler.enqueuePersistenceOperationForTesting {
+            blockerStarted.fulfill()
+            releaseBlocker.wait()
+        }
+        await fulfillment(of: [blockerStarted], timeout: 1)
+
+        let deletion = Task { @MainActor in
+            try await handler.deleteWalletData(
+                walletId: Data(repeating: 0x33, count: 32))
+        }
+        await Task.yield()
+        Task { @MainActor in
+            heartbeatRan.fulfill()
+        }
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+            // Safety release prevents a failed liveness assertion from leaving
+            // the persistence queue (and the test process) deadlocked.
+            releaseBlocker.signal()
+        }
+        await fulfillment(of: [heartbeatRan], timeout: 0.5)
+        releaseBlocker.signal()
+        try await deletion.value
+    }
+
+    func testDeleteWalletDataRemovesWalletFootprintAndLastNetworkSyncState() async throws {
         let container = try DashModelContainer.createInMemory()
         let context = ModelContext(container)
         let walletId = Data(repeating: 0x44, count: 32)
@@ -74,8 +132,8 @@ final class WalletDeletionTests: XCTestCase {
         try context.save()
 
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-        try handler.deleteWalletData(walletId: walletId)
-        try handler.deleteWalletData(walletId: walletId)
+        try await handler.deleteWalletData(walletId: walletId)
+        try await handler.deleteWalletData(walletId: walletId)
 
         XCTAssertTrue(try fetch(PersistentWallet.self, in: container).isEmpty)
         XCTAssertTrue(try fetch(PersistentIdentity.self, in: container).isEmpty)
@@ -88,7 +146,7 @@ final class WalletDeletionTests: XCTestCase {
         XCTAssertEqual(transactions.first?.txid, liveTx.txid)
     }
 
-    func testDeleteWalletDataRemovesAssetLockRowsAndPreservesOtherWallets() throws {
+    func testDeleteWalletDataRemovesAssetLockRowsAndPreservesOtherWallets() async throws {
         // Regression test for the Codex P2 wallet-deletion finding on
         // dashpay/platform#3634: `deleteWalletData` previously left
         // `PersistentAssetLock` rows behind, so the wallet-load path
@@ -128,7 +186,7 @@ final class WalletDeletionTests: XCTestCase {
         try context.save()
 
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-        try handler.deleteWalletData(walletId: walletId)
+        try await handler.deleteWalletData(walletId: walletId)
 
         let remaining = try fetch(PersistentAssetLock.self, in: container)
         XCTAssertEqual(remaining.count, 1)
@@ -136,7 +194,7 @@ final class WalletDeletionTests: XCTestCase {
         XCTAssertEqual(remaining.first?.outPointHex, "cafebabe:1")
     }
 
-    func testDeleteWalletDataPreservesSiblingPayloadOnlyTransactions() throws {
+    func testDeleteWalletDataPreservesSiblingPayloadOnlyTransactions() async throws {
         // Regression test for the thepastaclaw blocking finding on
         // dashpay/platform#4108: the post-delete orphan sweep matched
         // any `PersistentTransaction` with empty outputs / inputs /
@@ -190,7 +248,7 @@ final class WalletDeletionTests: XCTestCase {
         try context.save()
 
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-        try handler.deleteWalletData(walletId: doomedId)
+        try await handler.deleteWalletData(walletId: doomedId)
 
         // The sibling's payload-only tx survives with its join intact;
         // the deleted wallet's own payload-only tx is swept.
@@ -202,7 +260,7 @@ final class WalletDeletionTests: XCTestCase {
         )
     }
 
-    func testDeleteWalletDataKeepsNetworkSyncStateWhenSiblingWalletRemains() throws {
+    func testDeleteWalletDataKeepsNetworkSyncStateWhenSiblingWalletRemains() async throws {
         let container = try DashModelContainer.createInMemory()
         let context = ModelContext(container)
         let walletId = Data(repeating: 0x99, count: 32)
@@ -222,7 +280,7 @@ final class WalletDeletionTests: XCTestCase {
         try context.save()
 
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-        try handler.deleteWalletData(walletId: walletId)
+        try await handler.deleteWalletData(walletId: walletId)
 
         let wallets = try fetch(PersistentWallet.self, in: container)
         XCTAssertEqual(wallets.map(\.walletId), [siblingId])
