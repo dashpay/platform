@@ -194,7 +194,16 @@ export default class ConfigFileJsonRepository {
       configFile.markAsSaved();
       configFile.getAllConfigs().forEach((config) => config.markAsSaved());
     } finally {
-      release();
+      try {
+        release();
+      } catch {
+        // Releasing reports ERELEASED/ENOTACQUIRED when the lock was already
+        // gone. Nothing thrown from here may escape: it would replace the
+        // outcome the caller actually needs - including the conflict error
+        // naming where their configuration was parked - with a message about
+        // lock bookkeeping. A lock that cannot be released goes stale and is
+        // reclaimed by the next writer anyway.
+      }
     }
   }
 
@@ -218,6 +227,13 @@ export default class ConfigFileJsonRepository {
           // realpath resolution would fail on it.
           realpath: false,
           stale: LOCK_STALE_MS,
+          // The library's default handler rethrows, and it runs from a refresh
+          // timer rather than this call stack, so a lock compromised mid-write
+          // would take the whole process down. There is nothing useful to do
+          // about it here: the critical section lasts milliseconds, and the
+          // byte comparison against the baseline is what actually prevents a
+          // lost update - the lock only narrows the window it runs in.
+          onCompromised: () => {},
         });
       } catch (e) {
         if (e.code !== 'ELOCKED' || Date.now() >= deadline) {

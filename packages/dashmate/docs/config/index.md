@@ -189,7 +189,7 @@ file when it exits.
 To keep two overlapping commands from silently reverting each other, a command refuses to
 save when `config.json` changed on disk after that command loaded it:
 
-```
+```text
 '/home/user/.dashmate/config.json' was modified by another process after this command
 loaded it. Refusing to overwrite it. The changes from this command were saved to
 '/home/user/.dashmate/config.json.rejected-2026-07-28T09-14-22-031Z-4711-1' so you can
