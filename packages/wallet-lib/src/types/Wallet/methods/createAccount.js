@@ -52,7 +52,13 @@ async function createAccount(accountOpts) {
           resumeContext.blockHeaders,
           resumeContext.firstHeaderHeight,
         );
-      })();
+      })().catch((error) => {
+        // Forget a failed attempt so the next account creation retries. Keeping
+        // the rejected promise would replay the same failure for the lifetime
+        // of the wallet.
+        this.blockHeadersProviderInitializationPromise = null;
+        throw error;
+      });
     }
 
     if (this.blockHeadersProviderInitializationPromise) {

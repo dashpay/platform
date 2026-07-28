@@ -434,6 +434,31 @@ describe('Wallet#createAccount', function suite() {
     expect(wallet.accounts).to.deep.equal([]);
   });
 
+  it('should retry provider initialization after a failed attempt', async function shouldRetryInitialization() {
+    const initializationError = new Error('SPV initialization failed');
+    const initializeChainWith = this.sinon.stub();
+    initializeChainWith.onFirstCall().rejects(initializationError);
+    initializeChainWith.onSecondCall().resolves();
+    wallet = new Wallet({
+      mnemonic: null,
+      network: 'regtest',
+      transport: new TestTransport({ initializeChainWith }),
+    });
+
+    await expect(wallet.createAccount({
+      injectDefaultPlugins: false,
+      synchronize: false,
+    })).to.be.rejectedWith(initializationError);
+
+    const account = await wallet.createAccount({
+      injectDefaultPlugins: false,
+      synchronize: false,
+    });
+
+    expect(account).to.exist();
+    expect(initializeChainWith).to.have.been.calledTwice();
+  });
+
   it('should preserve online custom transports without a block headers provider', async () => {
     wallet = new Wallet({
       mnemonic: null,

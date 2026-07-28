@@ -215,6 +215,20 @@ class BlockHeadersSyncWorker extends Worker {
     const chainStore = this.storage.getDefaultChainStore();
     const resumeContext = deriveBlockHeadersResumeContext(chainStore.state);
 
+    const {
+      skipSynchronization,
+      skipSynchronizationBeforeHeight,
+    } = (this.storage.application.syncOptions || {});
+
+    // Headers are validated as a chain from an authenticated root, so a
+    // mid-chain start cannot be verified and these options cannot be honoured
+    // here. They still apply to transaction synchronization, so say so rather
+    // than let a caller assume header sync was skipped too.
+    if (skipSynchronization || skipSynchronizationBeforeHeight) {
+      this.logger.warn('[BlockHeadersSyncWorker] Header synchronization starts from the last authenticated header and ignores '
+        + `${skipSynchronization ? 'skipSynchronization' : 'skipSynchronizationBeforeHeight'}; transaction synchronization still honours it`);
+    }
+
     if (resumeContext.startBlockHeight > 1) {
       this.logger.debug(`[BlockHeadersSyncWorker] Last resumable header height is ${resumeContext.startBlockHeight}`);
     }
