@@ -25,7 +25,7 @@ mod error;
 
 pub use account_label::{decrypt_account_label, encrypt_account_label};
 pub use account_reference::{calculate_account_reference, unmask_account_reference};
-pub use aes::{decrypt_aes_256_cbc, encrypt_aes_256_cbc};
+pub use aes::{decrypt_aes_256_cbc, decrypt_aes_256_cbc_zeroizing, encrypt_aes_256_cbc};
 pub use compact_xpub::{
     compact_xpub_bytes, decrypt_extended_public_key, encrypt_extended_public_key,
     parse_compact_xpub, CompactXpub, COMPACT_XPUB_LEN,

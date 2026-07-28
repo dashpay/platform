@@ -1,5 +1,7 @@
 use std::os::raw::c_char;
 
+use zeroize::Zeroize;
+
 // Single source of truth for the network type across the Rust-side
 // wallet stack and the FFI boundary. `Network` is the typed enum;
 // `FFINetwork` is the `#[repr(C)]` mirror cbindgen emits for callers.
@@ -169,6 +171,44 @@ pub unsafe extern "C" fn platform_wallet_string_free(s: *mut c_char) {
     }
 }
 
+pub(crate) fn zeroize_sensitive_bytes(bytes: &mut [u8]) {
+    bytes.zeroize();
+}
+
+fn zeroize_cstring_into_bytes(string: std::ffi::CString) -> Vec<u8> {
+    let mut bytes = string.into_bytes_with_nul();
+    zeroize_sensitive_bytes(&mut bytes);
+    bytes
+}
+
+/// Reclaim and zeroize an owned sensitive C string while leaving its bytes live.
+///
+/// # Safety
+/// `s` must be a non-null pointer produced by [`std::ffi::CString::into_raw`].
+/// Ownership must not already have been reclaimed, and the C-string length and
+/// terminating NUL must be unchanged.
+pub(crate) unsafe fn zeroize_sensitive_string_into_bytes(s: *mut c_char) -> Vec<u8> {
+    let string = unsafe { std::ffi::CString::from_raw(s) };
+    zeroize_cstring_into_bytes(string)
+}
+
+/// Free a C string containing plaintext-equivalent sensitive data.
+///
+/// The complete NUL-terminated allocation is zeroized before deallocation.
+/// Null is a no-op.
+///
+/// # Safety
+/// `s` must be null or a pointer returned by an API that explicitly names
+/// `platform_wallet_sensitive_string_free` as its release function. Callers
+/// must pass the original pointer without modifying the allocation, including
+/// its terminating NUL, and must not already have freed it.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_sensitive_string_free(s: *mut c_char) {
+    if !s.is_null() {
+        drop(unsafe { zeroize_sensitive_string_into_bytes(s) });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +270,22 @@ mod tests {
         unsafe {
             let res = read_identifier(std::ptr::null());
             assert!(res.is_err());
+        }
+    }
+
+    #[test]
+    fn should_clear_sensitive_string_bytes_including_terminator() {
+        let mut bytes = *b"plaintext\0";
+
+        zeroize_sensitive_bytes(&mut bytes);
+
+        assert_eq!(bytes, [0; 10]);
+    }
+
+    #[test]
+    fn should_accept_null_sensitive_string_free() {
+        unsafe {
+            platform_wallet_sensitive_string_free(std::ptr::null_mut());
         }
     }
 }

@@ -323,7 +323,7 @@ pub struct OpenedTxMetadata {
     /// dispatches its payload parse on this.
     pub version: u8,
     /// The decrypted, PKCS7-unpadded payload bytes — opaque to this crate.
-    pub payload: Vec<u8>,
+    pub payload: Zeroizing<Vec<u8>>,
 }
 
 impl std::fmt::Debug for OpenedTxMetadata {
@@ -331,7 +331,10 @@ impl std::fmt::Debug for OpenedTxMetadata {
         f.debug_struct("OpenedTxMetadata")
             .field("version", &self.version)
             // Redacted: never render the decrypted plaintext.
-            .field("payload", &format_args!("<{} bytes redacted>", self.payload.len()))
+            .field(
+                "payload",
+                &format_args!("<{} bytes redacted>", self.payload.len()),
+            )
             .finish()
     }
 }
@@ -368,9 +371,10 @@ pub fn open_tx_metadata(
         .try_into()
         .expect("slice [1..17) is exactly 16 bytes");
 
-    let payload = platform_encryption::decrypt_aes_256_cbc(key, &iv, ciphertext).map_err(|e| {
-        PlatformWalletError::InvalidIdentityData(format!("txMetadata decrypt failed: {e}"))
-    })?;
+    let payload = platform_encryption::decrypt_aes_256_cbc_zeroizing(key, &iv, ciphertext)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!("txMetadata decrypt failed: {e}"))
+        })?;
 
     Ok(OpenedTxMetadata { version, payload })
 }
@@ -417,8 +421,10 @@ mod tests {
             assert_eq!(blob[0], version);
             assert_eq!(&blob[1..17], &iv);
             let opened = open_tx_metadata(&key, &blob).expect("open");
+            fn assert_zeroizing(_: &Zeroizing<Vec<u8>>) {}
+            assert_zeroizing(&opened.payload);
             assert_eq!(opened.version, version);
-            assert_eq!(opened.payload, payload);
+            assert_eq!(opened.payload.as_slice(), payload.as_slice());
         }
     }
 
@@ -477,7 +483,7 @@ mod tests {
             "the max-payload blob must fit the encryptedMetadata field"
         );
         let opened = open_tx_metadata(&key, &blob).expect("max-size blob round-trips");
-        assert_eq!(opened.payload, max_payload);
+        assert_eq!(opened.payload.as_slice(), max_payload.as_slice());
 
         // 4064 bytes: rejected up front with the typed error, before any cipher
         // work — it would frame to a 4097-byte blob and be refused at broadcast.
@@ -530,7 +536,8 @@ mod tests {
         match open_tx_metadata(&wrong, &blob) {
             Err(_) => {}
             Ok(opened) => assert_ne!(
-                opened.payload, payload,
+                opened.payload.as_slice(),
+                payload.as_slice(),
                 "a wrong key must not recover the original plaintext"
             ),
         }
@@ -668,13 +675,13 @@ mod tests {
             seal_tx_metadata(&resident_key, VERSION_PROTOBUF, &iv, &payload).expect("valid version");
         let opened_by_master =
             open_tx_metadata(&master_key, &sealed_by_resident).expect("master key opens");
-        assert_eq!(opened_by_master.payload, payload);
+        assert_eq!(opened_by_master.payload.as_slice(), payload.as_slice());
 
         let sealed_by_master =
             seal_tx_metadata(&master_key, VERSION_PROTOBUF, &iv, &payload).expect("valid version");
         let opened_by_resident =
             open_tx_metadata(&resident_key, &sealed_by_master).expect("resident key opens");
-        assert_eq!(opened_by_resident.payload, payload);
+        assert_eq!(opened_by_resident.payload.as_slice(), payload.as_slice());
     }
 
     /// Secondary cross-stack check of the AES-256-CBC core + blob framing,
@@ -715,7 +722,7 @@ mod tests {
         // And the framing round-trips back to the original block.
         let opened = open_tx_metadata(&key, &blob).expect("open");
         assert_eq!(opened.version, VERSION_PROTOBUF);
-        assert_eq!(opened.payload, plaintext_block);
+        assert_eq!(opened.payload.as_slice(), plaintext_block.as_slice());
     }
 
     /// Tiny fixed-size hex decoder for the test vectors (no extra dep).
@@ -848,7 +855,8 @@ mod tests {
         let opened = open_tx_metadata(&key, &legacy_blob).expect("open legacy blob");
         assert_eq!(opened.version, VERSION_PROTOBUF, "version byte");
         assert_eq!(
-            opened.payload, expected_plaintext,
+            opened.payload.as_slice(),
+            expected_plaintext.as_slice(),
             "Rust must decrypt a dashj-produced txMetadata blob to the original plaintext"
         );
     }
@@ -973,7 +981,8 @@ mod tests {
             "the legacy install published a protobuf (version 1) txMetadata blob"
         );
         assert_eq!(
-            opened.payload, expected_plaintext,
+            opened.payload.as_slice(),
+            expected_plaintext.as_slice(),
             "the new Rust crypto must decrypt a real dash-wallet 11.9 install's testnet \
              txMetadata blob to its exact published plaintext, byte-for-byte"
         );
@@ -1093,7 +1102,8 @@ mod tests {
         let opened = open_tx_metadata(&key, &slot1_blob).expect("open slot-1 blob");
         assert_eq!(opened.version, VERSION_PROTOBUF, "version byte");
         assert_eq!(
-            opened.payload, expected_plaintext,
+            opened.payload.as_slice(),
+            expected_plaintext.as_slice(),
             "Rust must decrypt a blob sealed at identity_index=1 to the original plaintext"
         );
     }

@@ -74,6 +74,7 @@ pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
 pub mod tokens;
+mod tx_metadata_json;
 pub mod types;
 pub mod utils;
 pub mod wallet;

@@ -5121,6 +5121,7 @@ dependencies = [
  "secp256k1",
  "sha2",
  "thiserror 1.0.69",
+ "zeroize",
 ]
 
 [[package]]

@@ -10,14 +10,15 @@ use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
 use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::{PlatformWalletError, TxMetadataKeySource};
-use zeroize::Zeroizing;
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
+use zeroize::Zeroizing;
 
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::runtime::block_on_worker;
+use crate::tx_metadata_json::serialize_decrypted_documents;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
@@ -91,7 +92,11 @@ unsafe fn tx_metadata_key_master_for_wallet(
             // caller's safety contract guarantees it came from
             // `dash_sdk_mnemonic_resolver_create`.
             let master = unsafe {
-                resolve_master_from_resolver(mnemonic_resolver_handle, &wallet_id, wallet.network())?
+                resolve_master_from_resolver(
+                    mnemonic_resolver_handle,
+                    &wallet_id,
+                    wallet.network(),
+                )?
             };
             Ok(Some(master))
         }
@@ -487,10 +492,9 @@ unsafe fn create_encrypted_document_impl(
         // back into the host mnemonic resolver for external-signable
         // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
         // master is wrapped in a Drop-wiping guard.
-        let master_opt = unsafe {
-            tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle)
-        }?
-        .map(WipingMaster);
+        let master_opt =
+            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
+                .map(WipingMaster);
 
         // Derive the AES key + seal the wire blob SYNCHRONOUSLY, then wipe the
         // master BEFORE any network `.await`: the master xprv never crosses the
@@ -566,8 +570,10 @@ unsafe fn create_encrypted_document_impl(
 /// `tx_metadata_key_master_for_wallet`).
 ///
 /// On success `*out_documents_json` receives an owned NUL-terminated JSON array
-/// (release with `platform_wallet_string_free`; left null on any error). Each
-/// element is
+/// containing decrypted, plaintext-equivalent data (release with
+/// `platform_wallet_sensitive_string_free`; left null on any error). Treat the
+/// allocation as read-only and pass its original, unmodified pointer to that
+/// release function. Each element is
 /// `{ "id": base58, "ownerId": base58, "keyIndex": u32, "encryptionKeyIndex":
 /// u32, "version": u8, "updatedAt": u64|null, "payload": base64 }`, where
 /// `payload` is the decrypted, opaque plaintext the caller parses (a protobuf
@@ -582,8 +588,6 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     since_ms: u64,
     out_documents_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    use base64::Engine;
-
     check_ptr!(document_type_name);
     check_ptr!(out_documents_json);
 
@@ -604,10 +608,9 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
         // back into the host mnemonic resolver for external-signable
         // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
         // master is wrapped in a Drop-wiping guard.
-        let master_opt = unsafe {
-            tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle)
-        }?
-        .map(WipingMaster);
+        let master_opt =
+            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
+                .map(WipingMaster);
 
         let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
             block_on_worker(async move {
@@ -641,24 +644,8 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     let result = unwrap_option_or_return!(option);
     let docs = unwrap_result_or_return!(result);
 
-    let json_array: Vec<serde_json::Value> = docs
-        .iter()
-        .map(|d| {
-            serde_json::json!({
-                "id": bs58::encode(d.document_id.to_buffer()).into_string(),
-                "ownerId": bs58::encode(d.owner_id.to_buffer()).into_string(),
-                "keyIndex": d.key_index,
-                "encryptionKeyIndex": d.encryption_key_index,
-                "version": d.version,
-                "updatedAt": d.updated_at_ms,
-                "payload": base64::engine::general_purpose::STANDARD.encode(&d.payload),
-            })
-        })
-        .collect();
-    let json_string =
-        unwrap_result_or_return!(serde_json::to_string(&serde_json::Value::Array(json_array)));
-    let json_cstring = unwrap_result_or_return!(CString::new(json_string));
-    *out_documents_json = json_cstring.into_raw();
+    let sensitive_json = unwrap_result_or_return!(serialize_decrypted_documents(&docs));
+    *out_documents_json = sensitive_json.into_raw();
     PlatformWalletFFIResult::ok()
 }
 

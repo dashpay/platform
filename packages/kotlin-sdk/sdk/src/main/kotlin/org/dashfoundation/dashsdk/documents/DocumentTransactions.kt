@@ -351,6 +351,12 @@ class DocumentTransactions internal constructor(
      *   `version == 1`) and reconciles memo / taxCategory / exchangeRate /
      *   service / giftCard fields into its local store.
      *
+     * SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
+     * deallocation. The returned host `String` is plaintext-equivalent; its
+     * runtime-managed storage, copies, and parsed-object copies cannot be
+     * reliably overwritten by the SDK. Parse it promptly, do not log it, and
+     * do not retain or persist it longer than required.
+     *
      * [mnemonicResolverHandle] is the host mnemonic-resolver handle
      * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]):
      * required for external-signable wallets (the app's shape — the AES key

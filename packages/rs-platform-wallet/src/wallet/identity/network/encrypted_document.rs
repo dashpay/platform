@@ -26,6 +26,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
+use zeroize::Zeroizing;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::crypto::tx_metadata::{
@@ -258,7 +259,7 @@ pub struct DecryptedEncryptedDocument {
     /// this as its since-timestamp high-water mark for the next fetch.
     pub updated_at_ms: Option<u64>,
     /// The decrypted, opaque payload bytes.
-    pub payload: Vec<u8>,
+    pub payload: Zeroizing<Vec<u8>>,
 }
 
 impl std::fmt::Debug for DecryptedEncryptedDocument {
@@ -271,8 +272,32 @@ impl std::fmt::Debug for DecryptedEncryptedDocument {
             .field("version", &self.version)
             .field("updated_at_ms", &self.updated_at_ms)
             // Redacted: never render the decrypted financial plaintext.
-            .field("payload", &format_args!("<{} bytes redacted>", self.payload.len()))
+            .field(
+                "payload",
+                &format_args!("<{} bytes redacted>", self.payload.len()),
+            )
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod decrypted_document_tests {
+    use super::*;
+
+    #[test]
+    fn should_use_zeroizing_storage_for_decrypted_payload() {
+        let document = DecryptedEncryptedDocument {
+            document_id: Identifier::from([1; 32]),
+            owner_id: Identifier::from([2; 32]),
+            key_index: 3,
+            encryption_key_index: 4,
+            version: 1,
+            updated_at_ms: Some(5),
+            payload: b"txMetadata plaintext".to_vec().into(),
+        };
+
+        fn assert_zeroizing(_: &Zeroizing<Vec<u8>>) {}
+        assert_zeroizing(&document.payload);
     }
 }
 

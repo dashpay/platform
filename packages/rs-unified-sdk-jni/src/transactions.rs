@@ -50,6 +50,65 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
+/// Nullable owner for plaintext-equivalent strings returned by
+/// `platform_wallet_fetch_encrypted_documents`.
+///
+/// Install this immediately after the FFI call so every later result, JNI
+/// allocation, and unwind path releases the allocation through the sensitive
+/// zeroizing contract.
+struct SensitivePlatformWalletString(*mut c_char);
+
+impl SensitivePlatformWalletString {
+    fn as_c_str(&self) -> Option<&CStr> {
+        if self.0.is_null() {
+            None
+        } else {
+            // SAFETY: a non-null pointer came from the platform-wallet FFI
+            // CString result and remains owned by this guard.
+            Some(unsafe { CStr::from_ptr(self.0) })
+        }
+    }
+}
+
+impl Drop for SensitivePlatformWalletString {
+    fn drop(&mut self) {
+        // SAFETY: this guard is the sole owner of the nullable pointer, and the
+        // fetch contract names the sensitive free as its release function.
+        unsafe {
+            platform_wallet_ffi::platform_wallet_sensitive_string_free(self.0);
+        }
+    }
+}
+
+/// Copy an ASCII C string directly into a JVM string without constructing
+/// jni-rs's intermediate owned `JNIString`.
+///
+/// `JNIEnv::new_string` re-encodes through a native allocation. The encrypted
+/// document serializer instead guarantees ASCII JSON with no interior NUL, so
+/// it is already valid modified UTF-8 for `NewStringUTF`.
+///
+/// Returns null if the JNI interface/table is unavailable or the JVM cannot
+/// allocate the string. The JVM normally leaves an exception pending for the
+/// allocation-failure case.
+unsafe fn new_string_utf_from_ascii(env: &JNIEnv, ascii: &CStr) -> jstring {
+    let raw_env = env.get_native_interface();
+    if raw_env.is_null() {
+        log::error!("documentFetchEncrypted: JNI environment pointer is null");
+        return ptr::null_mut();
+    }
+    let function_table = unsafe { *raw_env };
+    if function_table.is_null() {
+        log::error!("documentFetchEncrypted: JNI function table is null");
+        return ptr::null_mut();
+    }
+    let Some(new_string_utf) = (unsafe { (*function_table).NewStringUTF }) else {
+        log::error!("documentFetchEncrypted: JNI NewStringUTF function is unavailable");
+        return ptr::null_mut();
+    };
+
+    unsafe { new_string_utf(raw_env, ascii.as_ptr()) }
+}
+
 /// Read a required 32-byte id from a Java `byte[]`; throws + returns None
 /// on the wrong length or a JNI error. Mirrors `identity::read_id32` — kept
 /// local so this module stays a self-contained marshaling unit.
@@ -912,6 +971,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// "updatedAt" (u64|null), "payload" (base64 of the decrypted opaque plaintext)}`.
 /// The caller parses each `payload` itself (a protobuf `TxMetadataBatch` for
 /// `version == 1`). Documents that can't be decrypted are skipped Rust-side.
+/// SDK-owned native plaintext allocations are zeroized before release; the
+/// returned JVM string remains runtime-managed and cannot be reliably wiped.
 /// Null after throwing on error.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentFetchEncrypted(
@@ -976,10 +1037,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 &mut out_json as *mut *mut c_char,
             )
         };
+        let out_json = SensitivePlatformWalletString(out_json);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        if out_json.is_null() {
+        let Some(json) = out_json.as_c_str() else {
             log::warn!("documentFetchEncrypted: success code but null JSON; throwing");
             throw_sdk_exception(
                 env,
@@ -987,19 +1049,25 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 "encrypted document fetch returned success but no JSON",
             );
             return ptr::null_mut();
+        };
+        let json_bytes = json.to_bytes();
+        if !json_bytes.is_ascii() {
+            log::warn!("documentFetchEncrypted: serializer returned non-ASCII JSON; throwing");
+            throw_sdk_exception(env, 99, "encrypted document fetch returned non-ASCII JSON");
+            return ptr::null_mut();
         }
-        let json = unsafe { CStr::from_ptr(out_json) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_json) };
+        let json_len = json_bytes.len();
+        let java_string = unsafe { new_string_utf_from_ascii(env, json) };
+        if java_string.is_null() {
+            log::warn!("documentFetchEncrypted: NewStringUTF returned null");
+            return ptr::null_mut();
+        }
         log::debug!(
             "documentFetchEncrypted: success, returning {} chars of JSON to Kotlin",
-            json.len()
+            json_len
         );
 
-        env.new_string(json)
-            .map(|s| s.into_raw())
-            .unwrap_or(ptr::null_mut())
+        java_string
     })
 }
 

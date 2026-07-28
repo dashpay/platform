@@ -3583,6 +3583,12 @@ extension ManagedPlatformWallet {
     /// the decrypted opaque plaintext the caller parses itself (a protobuf
     /// `TxMetadataBatch` for `version == 1`).
     ///
+    /// SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
+    /// deallocation. The returned host `String` is plaintext-equivalent; its
+    /// runtime-managed storage, copies, and parsed-object copies cannot be
+    /// reliably overwritten by the SDK. Parse it promptly, do not log it, and
+    /// do not retain or persist it longer than required.
+    ///
     /// # Key source: chosen by wallet capability (Rust-side)
     ///
     /// A `MnemonicResolver` is always passed, but Rust consults it only
@@ -3608,7 +3614,7 @@ extension ManagedPlatformWallet {
         }
         return try await Task.detached(priority: .userInitiated) {
             // Receives an owned JSON-array C string on success; freed with
-            // `platform_wallet_string_free` below.
+            // `platform_wallet_sensitive_string_free` below.
             var documentsJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
             // Pin the resolver for the whole FFI call — Rust dereferences
@@ -3631,8 +3637,12 @@ extension ManagedPlatformWallet {
                 }
             }
 
+            defer {
+                if let p = documentsJsonPtr {
+                    platform_wallet_sensitive_string_free(p)
+                }
+            }
             try result.check()
-            defer { if let p = documentsJsonPtr { platform_wallet_string_free(p) } }
             // On success the Rust side always writes a JSON array (even
             // `"[]"`); a null pointer here is an FFI/ABI contract violation.
             guard let jsonPtr = documentsJsonPtr else {

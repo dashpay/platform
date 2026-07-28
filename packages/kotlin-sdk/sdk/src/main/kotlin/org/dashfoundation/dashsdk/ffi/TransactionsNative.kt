@@ -219,6 +219,12 @@ internal object TransactionsNative {
      *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
      *   "payload" (base64 of the decrypted opaque plaintext) }`. Documents that
      *   fail to decrypt are skipped Rust-side.
+     *
+     * SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
+     * deallocation. The returned host `String` is plaintext-equivalent; its
+     * runtime-managed storage, copies, and parsed-object copies cannot be
+     * reliably overwritten by the SDK. Parse it promptly, do not log it, and
+     * do not retain or persist it longer than required.
      */
     external fun documentFetchEncrypted(
         walletHandle: Long,
