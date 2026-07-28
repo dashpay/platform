@@ -22,12 +22,14 @@ import { DASHMATE_HELPER_DOCKER_IMAGE, DASHMATE_VERSION } from '../constants.js'
  * Compose recreates a container whose image reference changed, so a helper running the current
  * package's tag proves the node came up under this binary.
  *
- * Nothing here throws. Both probes run on diagnostic and update paths where a probe failure
- * must not be the reason a command fails, so an unreadable config, an absent docker daemon
- * and a malformed container list all degrade to a labelled unknown.
+ * Nothing here throws, for any input. Both probes run on diagnostic and update paths where a
+ * probe failure must not be the reason a command fails, so an unreadable config, an absent
+ * docker daemon, a malformed container list and a caller passing nonsense all degrade to a
+ * labelled unknown.
  *
- * Three-valued on purpose. A caller must be able to tell "definitely not activated" from
- * "could not determine", because unknown must never be counted as activated.
+ * Three-valued on purpose, and it fails closed. A caller must be able to tell "definitely not
+ * activated" from "could not determine", and anything this module does not positively
+ * recognise as activated is reported as unknown - never as activated.
  *
  * Cost: the migration probe is one file read and is host-wide, so it is cheap enough for any
  * path. The helper probe spawns `docker compose ps` per config, which costs on the order of
@@ -63,15 +65,23 @@ export const ACTIVATION_REASON = {
   PROBE_FAILED: 'probe-failed',
 };
 
+const VALID_STATES = new Set(Object.values(ACTIVATION_STATE));
+
 /**
  * Compose service name of the helper, as declared in docker-compose.yml.
  */
 const HELPER_SERVICE_NAME = 'dashmate_helper';
 
 /**
- * Config option that replaces the released helper image with one built from local sources.
+ * Image the helper runs when it is built from local sources.
+ *
+ * Hardcoded in docker-compose.build.dashmate_helper.yml, which the build override adds to
+ * COMPOSE_FILE. Its name never changes, so it cannot witness an upgrade. It is recognised by
+ * the image the container actually runs rather than by the config option that asks for it,
+ * which keeps this probe answering about the node as it is: the option can be turned on while
+ * a previously released helper is still up, and it is the running container that decides.
  */
-const HELPER_BUILD_ENABLED_OPTION = 'dashmate.helper.docker.build.enabled';
+const LOCALLY_BUILT_HELPER_IMAGE = 'dashmate-helper:local';
 
 /**
  * @param {string} state
@@ -84,6 +94,38 @@ function result(state, reason, message, details = {}) {
   return {
     state, reason, message, ...details,
   };
+}
+
+/**
+ * Describe a caught value without assuming it is an Error.
+ *
+ * A rejected promise carries whatever it was rejected with, including null, a string or a
+ * symbol, and reading `.message` or stringifying it blindly is itself a way to throw out of a
+ * function that promises never to.
+ *
+ * @param {*} caught
+ * @return {string}
+ */
+function describeError(caught) {
+  try {
+    const message = caught?.message;
+
+    if (typeof message === 'string' && message.length > 0) {
+      return message;
+    }
+
+    return String(caught);
+  } catch {
+    return 'unknown error';
+  }
+}
+
+/**
+ * @param {*} value
+ * @return {boolean}
+ */
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
 }
 
 /**
@@ -110,6 +152,9 @@ function defaultReadFile(filePath) {
  * touching it, and no amount of re-running this binary will change that. It is a downgrade to
  * surface, not work to schedule.
  *
+ * Versions are compared by precedence, never as strings: 4.9.0 precedes 4.10.0, a prerelease
+ * precedes the release it leads to, and build metadata does not make two versions differ.
+ *
  * @typedef {Object} ActivationProbeResult
  * @property {string} state - one of ACTIVATION_STATE
  * @property {string} reason - one of ACTIVATION_REASON
@@ -122,18 +167,18 @@ function defaultReadFile(filePath) {
  * @param {function(string): Promise<string>} [options.readFile] - injection seam for tests
  * @return {Promise<ActivationProbeResult>} with `onDiskVersion` and `expectedVersion`
  */
-export async function probeConfigFormatMigrated(options = {}) {
-  const {
-    configFilePath,
-    getConfigFileMigrations,
-    dashmateVersion = DASHMATE_VERSION,
-    readFile = defaultReadFile,
-  } = options;
-
+export async function probeConfigFormatMigrated(options) {
   const details = { onDiskVersion: null, expectedVersion: null };
 
   try {
-    if (typeof configFilePath !== 'string' || configFilePath.length === 0) {
+    const {
+      configFilePath,
+      getConfigFileMigrations,
+      dashmateVersion = DASHMATE_VERSION,
+      readFile = defaultReadFile,
+    } = options ?? {};
+
+    if (!isNonEmptyString(configFilePath)) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.PROBE_FAILED,
@@ -142,23 +187,34 @@ export async function probeConfigFormatMigrated(options = {}) {
       );
     }
 
-    if (typeof getConfigFileMigrations !== 'function') {
+    if (typeof getConfigFileMigrations !== 'function' || typeof readFile !== 'function') {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.PROBE_FAILED,
-        'No config file migrations were given to probe against',
+        'No config file migrations, or no way to read the config file, was given to probe',
         details,
       );
     }
 
-    details.expectedVersion = getConfigFormatVersion(getConfigFileMigrations(), dashmateVersion);
+    const expectedVersion = getConfigFormatVersion(getConfigFileMigrations(), dashmateVersion);
+
+    if (!isNonEmptyString(expectedVersion) || semver.valid(expectedVersion) === null) {
+      return result(
+        ACTIVATION_STATE.UNKNOWN,
+        ACTIVATION_REASON.PROBE_FAILED,
+        `This dashmate reports ${expectedVersion} as the config format it produces, which is not a version`,
+        details,
+      );
+    }
+
+    details.expectedVersion = expectedVersion;
 
     let rawConfigFile;
 
     try {
       rawConfigFile = await readFile(configFilePath);
     } catch (e) {
-      if (e.code === 'ENOENT') {
+      if (e?.code === 'ENOENT') {
         return result(
           ACTIVATION_STATE.UNKNOWN,
           ACTIVATION_REASON.CONFIG_FILE_MISSING,
@@ -170,7 +226,7 @@ export async function probeConfigFormatMigrated(options = {}) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.CONFIG_FILE_UNREADABLE,
-        `Could not read ${configFilePath}: ${e.message}`,
+        `Could not read ${configFilePath}: ${describeError(e)}`,
         details,
       );
     }
@@ -183,14 +239,14 @@ export async function probeConfigFormatMigrated(options = {}) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.CONFIG_FILE_MALFORMED,
-        `Could not parse ${configFilePath}: ${e.message}`,
+        `Could not parse ${configFilePath}: ${describeError(e)}`,
         details,
       );
     }
 
     const onDiskVersion = configFileData?.configFormatVersion;
 
-    if (typeof onDiskVersion !== 'string' || semver.valid(onDiskVersion) === null) {
+    if (!isNonEmptyString(onDiskVersion) || semver.valid(onDiskVersion) === null) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.CONFIG_FORMAT_VERSION_INVALID,
@@ -201,20 +257,20 @@ export async function probeConfigFormatMigrated(options = {}) {
 
     details.onDiskVersion = onDiskVersion;
 
-    if (semver.eq(onDiskVersion, details.expectedVersion)) {
+    if (semver.eq(onDiskVersion, expectedVersion)) {
       return result(
         ACTIVATION_STATE.ACTIVATED,
         ACTIVATION_REASON.CONFIG_FORMAT_CURRENT,
-        `Config file is migrated to ${details.expectedVersion}`,
+        `Config file is migrated to ${expectedVersion}`,
         details,
       );
     }
 
-    if (semver.gt(onDiskVersion, details.expectedVersion)) {
+    if (semver.gt(onDiskVersion, expectedVersion)) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.CONFIG_FORMAT_AHEAD,
-        `Config file is in format ${onDiskVersion}, which is newer than the ${details.expectedVersion} this dashmate produces`,
+        `Config file is in format ${onDiskVersion}, which is newer than the ${expectedVersion} this dashmate produces`,
         details,
       );
     }
@@ -222,14 +278,14 @@ export async function probeConfigFormatMigrated(options = {}) {
     return result(
       ACTIVATION_STATE.PENDING,
       ACTIVATION_REASON.CONFIG_FORMAT_BEHIND,
-      `Config file is in format ${onDiskVersion} and has not been migrated to ${details.expectedVersion}`,
+      `Config file is in format ${onDiskVersion} and has not been migrated to ${expectedVersion}`,
       details,
     );
   } catch (e) {
     return result(
       ACTIVATION_STATE.UNKNOWN,
       ACTIVATION_REASON.PROBE_FAILED,
-      `Could not probe the config format version: ${e.message}`,
+      `Could not probe the config format version: ${describeError(e)}`,
       details,
     );
   }
@@ -240,10 +296,14 @@ export async function probeConfigFormatMigrated(options = {}) {
  *
  * Costs a child process per config. See the note at the top of this module.
  *
- * Skipped when the helper is built from local sources: that compose override replaces the
- * released image with `dashmate-helper:local`, whose name never changes, so it cannot witness
- * an upgrade. Reported as its own unknown so it is never mistaken for pending - there is
- * nothing for the operator to do about it.
+ * Images are compared for exact equality. A tag that merely contains the expected one - a
+ * prerelease of it, or the same tag behind a registry prefix - is a different image and is
+ * reported as a mismatch, because what the probe needs is the image compose would create right
+ * now, not one that resembles it.
+ *
+ * Definite evidence is never discarded in favour of an unknown: a helper left on a known older
+ * tag is a mismatch even when a container alongside it reports no image at all, and a locally
+ * built helper is only reported once no running container contradicts it.
  *
  * A helper that is not running lands on pending rather than unknown: the container list is
  * answering, and what it says is that no helper is up on the expected image. A stopped node
@@ -255,29 +315,26 @@ export async function probeConfigFormatMigrated(options = {}) {
  * @param {string} [options.expectedHelperImage] - injection seam for tests
  * @return {Promise<ActivationProbeResult>} with `expectedImage` and `runningImage`
  */
-export async function probeHelperRestarted(config, options = {}) {
-  const {
-    dockerCompose,
-    expectedHelperImage = DASHMATE_HELPER_DOCKER_IMAGE,
-  } = options;
-
-  const details = { expectedImage: expectedHelperImage, runningImage: null };
+export async function probeHelperRestarted(config, options) {
+  const details = { expectedImage: null, runningImage: null };
 
   try {
-    if (typeof config?.get !== 'function' || typeof dockerCompose?.getContainersList !== 'function') {
+    const {
+      dockerCompose,
+      expectedHelperImage = DASHMATE_HELPER_DOCKER_IMAGE,
+    } = options ?? {};
+
+    if (isNonEmptyString(expectedHelperImage)) {
+      details.expectedImage = expectedHelperImage;
+    }
+
+    if (typeof config?.get !== 'function'
+      || typeof dockerCompose?.getContainersList !== 'function'
+      || !isNonEmptyString(expectedHelperImage)) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.PROBE_FAILED,
-        'No config or docker compose was given to probe',
-        details,
-      );
-    }
-
-    if (config.get(HELPER_BUILD_ENABLED_OPTION) === true) {
-      return result(
-        ACTIVATION_STATE.UNKNOWN,
-        ACTIVATION_REASON.HELPER_BUILT_LOCALLY,
-        'The helper is built from local sources, so its image tag cannot witness an upgrade',
+        'No config, no docker compose or no expected helper image was given to probe',
         details,
       );
     }
@@ -292,7 +349,7 @@ export async function probeHelperRestarted(config, options = {}) {
       return result(
         ACTIVATION_STATE.UNKNOWN,
         ACTIVATION_REASON.DOCKER_UNAVAILABLE,
-        `Could not list containers: ${e.message}`,
+        `Could not list containers: ${describeError(e)}`,
         details,
       );
     }
@@ -320,22 +377,16 @@ export async function probeHelperRestarted(config, options = {}) {
       );
     }
 
-    const images = runningHelpers.map((container) => container.Image);
+    const images = runningHelpers.map((container) => container?.Image);
+    const readableImages = images.filter(isNonEmptyString);
 
-    if (images.some((image) => typeof image !== 'string' || image.length === 0)) {
-      return result(
-        ACTIVATION_STATE.UNKNOWN,
-        ACTIVATION_REASON.HELPER_IMAGE_UNREADABLE,
-        'A running helper container reported no image',
-        details,
-      );
-    }
+    [details.runningImage = null] = readableImages;
 
     // Every running helper must be on the expected image, not merely one of them: a leftover
-    // container on the old tag is exactly the state this probe exists to catch.
-    const mismatched = images.find((image) => image !== expectedHelperImage);
-
-    [details.runningImage] = images;
+    // container on an older tag is exactly the state this probe exists to catch, and it stays
+    // conclusive whatever the containers alongside it report.
+    const mismatched = readableImages
+      .find((image) => image !== expectedHelperImage && image !== LOCALLY_BUILT_HELPER_IMAGE);
 
     if (mismatched !== undefined) {
       details.runningImage = mismatched;
@@ -344,6 +395,28 @@ export async function probeHelperRestarted(config, options = {}) {
         ACTIVATION_STATE.PENDING,
         ACTIVATION_REASON.HELPER_IMAGE_MISMATCH,
         `Helper container is running ${mismatched} instead of ${expectedHelperImage}`,
+        details,
+      );
+    }
+
+    const locallyBuilt = readableImages.find((image) => image === LOCALLY_BUILT_HELPER_IMAGE);
+
+    if (locallyBuilt !== undefined) {
+      details.runningImage = locallyBuilt;
+
+      return result(
+        ACTIVATION_STATE.UNKNOWN,
+        ACTIVATION_REASON.HELPER_BUILT_LOCALLY,
+        `Helper container is running ${LOCALLY_BUILT_HELPER_IMAGE}, a tag that cannot witness an upgrade`,
+        details,
+      );
+    }
+
+    if (readableImages.length !== images.length) {
+      return result(
+        ACTIVATION_STATE.UNKNOWN,
+        ACTIVATION_REASON.HELPER_IMAGE_UNREADABLE,
+        'A running helper container reported no image',
         details,
       );
     }
@@ -358,18 +431,45 @@ export async function probeHelperRestarted(config, options = {}) {
     return result(
       ACTIVATION_STATE.UNKNOWN,
       ACTIVATION_REASON.PROBE_FAILED,
-      `Could not probe the helper container: ${e.message}`,
+      `Could not probe the helper container: ${describeError(e)}`,
       details,
     );
   }
 }
 
 /**
+ * Reduce anything a probe or a caller hands over to a result this module recognises.
+ *
+ * Fails closed. A result whose shape or state is not recognised - a truncated cache, a
+ * hand-built object, a probe result from a future version of this module - becomes unknown,
+ * because the one thing this module must never do is report an unrecognised value as
+ * activated.
+ *
+ * @param {*} probe
+ * @param {string} source
+ * @return {ActivationProbeResult}
+ */
+function normaliseProbeResult(probe, source) {
+  if (probe !== null
+    && typeof probe === 'object'
+    && VALID_STATES.has(probe.state)
+    && isNonEmptyString(probe.reason)) {
+    return probe;
+  }
+
+  return result(
+    ACTIVATION_STATE.UNKNOWN,
+    ACTIVATION_REASON.PROBE_FAILED,
+    `The ${source} probe returned a result this dashmate does not recognise`,
+  );
+}
+
+/**
  * Both probes for one config, combined into a single verdict.
  *
- * Definite negative evidence wins over an unknown: a config file that is provably behind means
- * the node is not activated, whatever the helper probe managed to see. Unknown only survives
- * when no probe found anything definite, and it is never reported as activated.
+ * Activated requires both probes to say so explicitly. Definite negative evidence then wins
+ * over an unknown: a config file that is provably behind means the node is not activated,
+ * whatever the helper probe managed to see.
  *
  * A host loop should run the migration probe once and pass its result in, since one scalar
  * covers the whole file and re-reading it per config buys nothing.
@@ -379,7 +479,7 @@ export async function probeHelperRestarted(config, options = {}) {
  * @param {ActivationProbeResult} [options.migration] - a migration probe result already taken
  * @return {Promise<ActivationState>}
  */
-export default async function probeActivationState(config, options = {}) {
+export default async function probeActivationState(config, options) {
   /**
    * @typedef {Object} ActivationState
    * @property {string} state - one of ACTIVATION_STATE
@@ -388,23 +488,48 @@ export default async function probeActivationState(config, options = {}) {
    * @property {ActivationProbeResult} migration - config format probe
    * @property {ActivationProbeResult} helper - helper container probe
    */
-  const migration = options.migration ?? await probeConfigFormatMigrated(options);
-  const helper = await probeHelperRestarted(config, options);
+  let migration = normaliseProbeResult(undefined, 'config format');
+  let helper = normaliseProbeResult(undefined, 'helper container');
 
-  const probes = [migration, helper];
+  try {
+    const probeOptions = options ?? {};
 
-  const deciding = probes.find((probe) => probe.state === ACTIVATION_STATE.PENDING)
-    ?? probes.find((probe) => probe.state === ACTIVATION_STATE.UNKNOWN);
+    migration = normaliseProbeResult(
+      probeOptions.migration ?? await probeConfigFormatMigrated(probeOptions),
+      'config format',
+    );
 
-  if (deciding === undefined) {
+    helper = normaliseProbeResult(
+      await probeHelperRestarted(config, probeOptions),
+      'helper container',
+    );
+  } catch (e) {
     return {
-      state: ACTIVATION_STATE.ACTIVATED,
-      reason: ACTIVATION_REASON.HELPER_IMAGE_MATCHES,
-      message: `${migration.message}, ${helper.message}`,
+      state: ACTIVATION_STATE.UNKNOWN,
+      reason: ACTIVATION_REASON.PROBE_FAILED,
+      message: `Could not probe activation state: ${describeError(e)}`,
       migration,
       helper,
     };
   }
+
+  const probes = [migration, helper];
+
+  if (probes.every((probe) => probe.state === ACTIVATION_STATE.ACTIVATED)) {
+    const messages = probes.map((probe) => probe.message).filter(isNonEmptyString);
+
+    return {
+      state: ACTIVATION_STATE.ACTIVATED,
+      reason: ACTIVATION_REASON.HELPER_IMAGE_MATCHES,
+      message: messages.length > 0 ? messages.join(', ') : 'Node is activated at this dashmate version',
+      migration,
+      helper,
+    };
+  }
+
+  const deciding = probes.find((probe) => probe.state === ACTIVATION_STATE.PENDING)
+    ?? probes.find((probe) => probe.state === ACTIVATION_STATE.UNKNOWN)
+    ?? normaliseProbeResult(undefined, 'activation');
 
   return {
     state: deciding.state,
