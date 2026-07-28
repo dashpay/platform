@@ -12,6 +12,7 @@ use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::ContextProvider;
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::state_transitions::proof_result::{
@@ -29,26 +30,19 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
     }
 }
 
-/// Whether this id belongs to a contract that is compiled into the SDK.
-///
-/// A system contract that is missing from this list is merely fetched like any
-/// other, so an unlisted future variant degrades to the ordinary path.
-fn is_system_contract_id(contract_id: Identifier) -> bool {
-    const SYSTEM_CONTRACTS: [SystemDataContract; 9] = [
-        SystemDataContract::Withdrawals,
-        SystemDataContract::MasternodeRewards,
-        SystemDataContract::FeatureFlags,
-        SystemDataContract::DPNS,
-        SystemDataContract::Dashpay,
-        SystemDataContract::WalletUtils,
-        SystemDataContract::TokenHistory,
-        SystemDataContract::KeywordSearch,
-        SystemDataContract::DocumentHistory,
-    ];
-
-    SYSTEM_CONTRACTS
-        .iter()
-        .any(|system_contract| system_contract.id() == contract_id)
+impl WasmSdk {
+    /// Whether the context provider can already supply this contract, either
+    /// from its cache or from a definition compiled into the SDK.
+    fn can_resolve_contract(&self, contract_id: Identifier) -> bool {
+        self.trusted_context()
+            .and_then(|context| {
+                context
+                    .get_data_contract(&contract_id, self.version())
+                    .ok()
+                    .flatten()
+            })
+            .is_some()
+    }
 }
 
 impl WasmSdk {
@@ -66,19 +60,22 @@ impl WasmSdk {
         }
 
         for contract_id in referenced_contract_ids(state_transition) {
-            // The compiled-in definition of a system contract is authoritative.
-            // Fetching one lets a node-supplied copy shadow it, which decides
-            // verification when proofs are disabled.
-            if is_system_contract_id(contract_id) {
+            // A contract the provider already resolves is left alone: fetching
+            // it would let a node-supplied copy shadow a cached or compiled-in
+            // definition, which decides verification when proofs are disabled.
+            // Which system contracts are compiled in depends on cargo features
+            // — the withdrawals contract is not among the wasm defaults — so
+            // this asks the provider rather than assuming.
+            if self.can_resolve_contract(contract_id) {
                 continue;
             }
 
-            // A cached contract is used as it stands, so only a cache miss
-            // reaches the network. This runs after the transition is broadcast,
-            // where an unconditional refetch would let one transient failure
-            // discard a result that the network already accepted. A miss that
-            // cannot be fetched stays fatal: the proof needs the contract.
-            self.get_or_fetch_contract(contract_id).await?;
+            // Only an unresolvable contract reaches the network. This runs
+            // after the transition is broadcast, where refetching what we
+            // already hold would let one transient failure discard a result
+            // the network already accepted. A contract that can be neither
+            // resolved nor fetched stays fatal: the proof needs it.
+            self.refresh_contract(contract_id).await?;
         }
 
         Ok(())
@@ -240,7 +237,6 @@ mod tests {
     use super::*;
     use crate::context_provider::WasmTrustedContext;
     use crate::sdk::WasmSdkBuilder;
-    use dash_sdk::platform::ContextProvider;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_base_transition::DocumentBaseTransition;
     use dash_sdk::dpp::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
@@ -444,6 +440,45 @@ mod tests {
         assert_eq!(
             sdk.get_cached_contract(&contract_id)
                 .expect("referenced contract must be cached after preparation")
+                .as_ref(),
+            &expected,
+        );
+    }
+
+    #[tokio::test]
+    async fn should_fetch_a_referenced_system_contract_the_sdk_does_not_compile_in() {
+        // Which system contracts are compiled in is a build-time choice, and
+        // the withdrawals contract is not among the wasm defaults. The provider
+        // cannot serve it, so preparation has to fetch it like any other
+        // contract or document verification fails on an unknown contract.
+        let withdrawals_id = SystemDataContract::Withdrawals.id();
+        let mut expected =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS contract fixture should load");
+        expected.set_id(withdrawals_id);
+
+        let mut inner_sdk = Sdk::new_mock();
+        inner_sdk
+            .mock()
+            .expect_fetch(withdrawals_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+
+        let sdk = WasmSdk::new_for_testing(inner_sdk, Some(WasmTrustedContext::for_testing(vec![])));
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![delete_transition(withdrawals_id, 1)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("preparation must fetch a system contract the SDK cannot resolve");
+        assert_eq!(
+            sdk.get_cached_contract(&withdrawals_id)
+                .expect("fetched system contract must be cached after preparation")
                 .as_ref(),
             &expected,
         );
