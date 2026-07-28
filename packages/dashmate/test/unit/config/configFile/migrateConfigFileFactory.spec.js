@@ -144,6 +144,10 @@ describe('migrateConfigFileFactory', () => {
     const operatorImages = [
       // vendor-patched build under the stock namespace
       ['dashpay/drive:4-patched', 'dashpay/rs-dapi:4-patched'],
+      // a major no release had published when this migration shipped, so it can
+      // only be something the operator built themselves
+      ['dashpay/drive:5', 'dashpay/rs-dapi:5'],
+      ['dashpay/drive:999', 'dashpay/rs-dapi:999'],
       // locally built image, operator's own tag
       ['dashpay/drive:4-local', 'dashpay/rs-dapi:4-local'],
       // pinned to an exact version
@@ -208,7 +212,9 @@ describe('migrateConfigFileFactory', () => {
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
 
-    for (const tag of ['3', '2', '1-dev', '0.25']) {
+    // v1.0.0 and v1.0.1 derived major.minor tags; the derivation changed to the
+    // major alone in v1.0.2, and the 0.x line used major.minor throughout.
+    for (const tag of ['3', '2', '1-dev', '1.0', '1.0-rc', '0.25', '0.24']) {
       const configFileData = createConfigFile().toObject();
       configFileData.configFormatVersion = FROM_VERSION;
       for (const options of Object.values(configFileData.configs)) {

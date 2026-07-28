@@ -86,8 +86,15 @@ runs:
         # through dashmate rather than editing config.json: these options are
         # stored unset by default, meaning "use the line this dashmate build
         # ships", so there is no image string in the file for a pattern to match.
-        yarn dashmate config set --config=local platform.drive.abci.docker.image "${{ inputs.image_org }}/drive:${SHA_TAG}"
-        yarn dashmate config set --config=local platform.dapi.rsDapi.docker.image "${{ inputs.image_org }}/rs-dapi:${SHA_TAG}"
+        #
+        # Every config in the local group, not the standalone `local` template:
+        # `dashmate setup local` puts local_1..N and local_seed in the group, and
+        # `yarn start` runs `dashmate group start`, so the template is never
+        # started and pinning it alone would silently test the published images.
+        while IFS= read -r config_name; do
+          yarn dashmate config set --config="$config_name" platform.drive.abci.docker.image "${{ inputs.image_org }}/drive:${SHA_TAG}"
+          yarn dashmate config set --config="$config_name" platform.dapi.rsDapi.docker.image "${{ inputs.image_org }}/rs-dapi:${SHA_TAG}"
+        done < <(jq -r '.configs | to_entries[] | select(.value.group == "local") | .key' "${HOME}/.dashmate/config.json")
 
 
     - name: Start local network

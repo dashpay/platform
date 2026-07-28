@@ -9,7 +9,7 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
-import { stockImagePattern, stockImagePatternAnyVersion } from '../src/config/stockImages.js';
+import { stockImagePattern, historicalStockImagePattern } from '../src/config/stockImages.js';
 
 /**
  * @param {HomeDir} homeDir
@@ -56,7 +56,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
      * @param {string} image - image to move to
      */
     function repinStockImage(docker, repository, image) {
-      if (docker && stockImagePatternAnyVersion(repository).test(docker.image)) {
+      if (docker && historicalStockImagePattern(repository).test(docker.image)) {
         // eslint-disable-next-line no-param-reassign
         docker.image = image;
       }
@@ -1580,8 +1580,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // config from before this key crosses here, so it has to be the place
         // that distinction is first respected. Tags of every era are recognised
         // because a config reaching this point may carry any of them.
-        const stockDriveImage = stockImagePatternAnyVersion('dashpay/drive');
-        const stockRsDapiImage = stockImagePatternAnyVersion('dashpay/rs-dapi');
+        const stockDriveImage = historicalStockImagePattern('dashpay/drive');
+        const stockRsDapiImage = historicalStockImagePattern('dashpay/rs-dapi');
 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
