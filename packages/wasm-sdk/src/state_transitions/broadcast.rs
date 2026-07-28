@@ -10,6 +10,7 @@ use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::state_transition::StateTransition;
+use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use std::collections::BTreeSet;
 use wasm_bindgen::prelude::*;
@@ -28,6 +29,28 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
     }
 }
 
+/// Whether this id belongs to a contract that is compiled into the SDK.
+///
+/// A system contract that is missing from this list is merely fetched like any
+/// other, so an unlisted future variant degrades to the ordinary path.
+fn is_system_contract_id(contract_id: Identifier) -> bool {
+    const SYSTEM_CONTRACTS: [SystemDataContract; 9] = [
+        SystemDataContract::Withdrawals,
+        SystemDataContract::MasternodeRewards,
+        SystemDataContract::FeatureFlags,
+        SystemDataContract::DPNS,
+        SystemDataContract::Dashpay,
+        SystemDataContract::WalletUtils,
+        SystemDataContract::TokenHistory,
+        SystemDataContract::KeywordSearch,
+        SystemDataContract::DocumentHistory,
+    ];
+
+    SYSTEM_CONTRACTS
+        .iter()
+        .any(|system_contract| system_contract.id() == contract_id)
+}
+
 impl WasmSdk {
     async fn prepare_state_transition_context(
         &self,
@@ -43,7 +66,19 @@ impl WasmSdk {
         }
 
         for contract_id in referenced_contract_ids(state_transition) {
-            self.refresh_contract(contract_id).await?;
+            // The compiled-in definition of a system contract is authoritative.
+            // Fetching one lets a node-supplied copy shadow it, which decides
+            // verification when proofs are disabled.
+            if is_system_contract_id(contract_id) {
+                continue;
+            }
+
+            // A cached contract is used as it stands, so only a cache miss
+            // reaches the network. This runs after the transition is broadcast,
+            // where an unconditional refetch would let one transient failure
+            // discard a result that the network already accepted. A miss that
+            // cannot be fetched stays fatal: the proof needs the contract.
+            self.get_or_fetch_contract(contract_id).await?;
         }
 
         Ok(())
@@ -213,7 +248,14 @@ mod tests {
     use dash_sdk::dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV0};
     use dash_sdk::dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
     use dash_sdk::dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
+    use dash_sdk::dpp::data_contract::accessors::v0::{
+        DataContractV0Getters, DataContractV0Setters,
+    };
     use dash_sdk::dpp::platform_value::BinaryData;
+    use dash_sdk::dpp::prelude::DataContract;
+    use dash_sdk::dpp::system_data_contracts::load_system_data_contract;
+    use dash_sdk::dpp::version::PlatformVersion;
+    use dash_sdk::Sdk;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
@@ -307,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn should_prepare_custom_contracts_before_verifying_document_batch() {
+    fn should_collect_each_referenced_contract_of_a_document_batch_once_in_order() {
         let first_contract_id = Identifier::new([0x11; 32]);
         let second_contract_id = Identifier::new([0x22; 32]);
         let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
@@ -362,5 +404,70 @@ mod tests {
             [0x98; 48]
         );
         server.join().expect("mock quorum server must finish");
+    }
+
+    fn custom_contract(id_byte: u8, version: u32) -> DataContract {
+        let mut contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS contract fixture should load");
+        contract.set_id(Identifier::new([id_byte; 32]));
+        contract.set_version(version);
+        contract
+    }
+
+    #[tokio::test]
+    async fn should_cache_a_referenced_contract_missing_from_the_context() {
+        let expected = custom_contract(0x66, 1);
+        let contract_id = expected.id();
+        let mut inner_sdk = Sdk::new_mock();
+        inner_sdk
+            .mock()
+            .expect_fetch(contract_id, Some(expected.clone()))
+            .await
+            .expect("mock contract response should be configured");
+
+        let context = WasmTrustedContext::for_testing(vec![]);
+        let sdk = WasmSdk::new_for_testing(inner_sdk, Some(context));
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![delete_transition(contract_id, 1)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        assert!(sdk.get_cached_contract(&contract_id).is_none());
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("preparation must fetch the referenced contract");
+        assert_eq!(
+            sdk.get_cached_contract(&contract_id)
+                .expect("referenced contract must be cached after preparation")
+                .as_ref(),
+            &expected,
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_compiled_in_definition_of_a_referenced_system_contract() {
+        let dpns_id = SystemDataContract::DPNS.id();
+        // The mock SDK has no response configured, so any fetch of this id fails
+        // the preparation and proves the system contract was not requested.
+        let sdk = WasmSdk::new_for_testing(
+            Sdk::new_mock(),
+            Some(WasmTrustedContext::for_testing(vec![])),
+        );
+        let state_transition = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id: Identifier::new([0x33; 32]),
+            transitions: vec![delete_transition(dpns_id, 1)],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: BinaryData::default(),
+        }));
+
+        sdk.prepare_state_transition_context(&state_transition)
+            .await
+            .expect("preparation must skip compiled-in system contracts");
+        assert!(sdk.get_cached_contract(&dpns_id).is_none());
     }
 }

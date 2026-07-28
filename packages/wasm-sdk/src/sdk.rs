@@ -474,6 +474,18 @@ impl WasmSdkBuilder {
 }
 
 #[cfg(test)]
+impl WasmSdk {
+    /// Pair a mock `Sdk` with a trusted context so tests in sibling modules can
+    /// drive the paths that read the contract and quorum caches.
+    pub(crate) fn new_for_testing(sdk: Sdk, trusted_context: Option<WasmTrustedContext>) -> Self {
+        Self {
+            sdk,
+            trusted_context,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use dash_sdk::dpp::data_contract::accessors::v0::{
