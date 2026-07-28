@@ -372,9 +372,14 @@ impl IdentityWallet {
         if let Some(provider) = self.sdk.context_provider() {
             provider.register_data_contract(Arc::clone(&contract));
         }
-        let raw =
-            query_owned_encrypted_documents(&self.sdk, contract, owner_identity_id, document_type_name, 0)
-                .await?;
+        let raw = query_owned_encrypted_documents(
+            &self.sdk,
+            contract,
+            owner_identity_id,
+            document_type_name,
+            0,
+        )
+        .await?;
         Ok(u32::try_from(raw.len()).unwrap_or(u32::MAX))
     }
 
@@ -457,7 +462,8 @@ impl IdentityWallet {
     async fn resolve_encryption_context(
         &self,
         owner_identity_id: &Identifier,
-    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError> {
+    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError>
+    {
         let wm = self.wallet_manager.read().await;
         let info = wm
             .get_wallet_info(&self.wallet_id)
@@ -489,7 +495,8 @@ impl IdentityWallet {
     fn resolve_encryption_context_blocking(
         &self,
         owner_identity_id: &Identifier,
-    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError> {
+    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError>
+    {
         let wm = self.wallet_manager.blocking_read();
         let info = wm
             .get_wallet_info(&self.wallet_id)
@@ -908,11 +915,15 @@ mod allocator_tests {
         let must_not_seed =
             || async { unreachable!("must not re-seed once the high-water is established") };
         assert_eq!(
-            reserve_next_index(&alloc, &owner, must_not_seed()).await.unwrap(),
+            reserve_next_index(&alloc, &owner, must_not_seed())
+                .await
+                .unwrap(),
             2
         );
         assert_eq!(
-            reserve_next_index(&alloc, &owner, must_not_seed()).await.unwrap(),
+            reserve_next_index(&alloc, &owner, must_not_seed())
+                .await
+                .unwrap(),
             3
         );
     }
@@ -927,15 +938,19 @@ mod allocator_tests {
 
         // a: 3 existing docs → 4; b: 0 existing → 1; then a again → 5.
         assert_eq!(
-            reserve_next_index(&alloc, &a, async { Ok(next_encryption_key_index_from_count(3)) })
-                .await
-                .unwrap(),
+            reserve_next_index(&alloc, &a, async {
+                Ok(next_encryption_key_index_from_count(3))
+            })
+            .await
+            .unwrap(),
             4
         );
         assert_eq!(
-            reserve_next_index(&alloc, &b, async { Ok(next_encryption_key_index_from_count(0)) })
-                .await
-                .unwrap(),
+            reserve_next_index(&alloc, &b, async {
+                Ok(next_encryption_key_index_from_count(0))
+            })
+            .await
+            .unwrap(),
             1
         );
         assert_eq!(
@@ -969,7 +984,11 @@ mod allocator_tests {
         assert_ne!(i1, i2, "concurrent allocations must not collide");
         let mut got = [i1, i2];
         got.sort_unstable();
-        assert_eq!(got, [1, 2], "the two racing indices must be exactly 1 and 2");
+        assert_eq!(
+            got,
+            [1, 2],
+            "the two racing indices must be exactly 1 and 2"
+        );
     }
 
     /// An oversized payload on the auto-index path fails with the typed
@@ -988,13 +1007,11 @@ mod allocator_tests {
 
         // 4064 bytes (MAX + 1) is the first rejected length. The seed panics if
         // polled — proving the size gate short-circuits before any allocation.
-        let result = reserve_next_index_checked(
-            &alloc,
-            &owner,
-            MAX_TX_METADATA_PLAINTEXT_LEN + 1,
-            async { unreachable!("seed must not run when the payload is oversized") },
-        )
-        .await;
+        let result =
+            reserve_next_index_checked(&alloc, &owner, MAX_TX_METADATA_PLAINTEXT_LEN + 1, async {
+                unreachable!("seed must not run when the payload is oversized")
+            })
+            .await;
         match result {
             Err(PlatformWalletError::TxMetadataPayloadTooLarge { len, max }) => {
                 assert_eq!(len, MAX_TX_METADATA_PLAINTEXT_LEN + 1);

@@ -123,8 +123,8 @@ const ENCRYPTED_METADATA_FIELD_MAX: usize = 4096;
 pub const MAX_TX_METADATA_PLAINTEXT_LEN: usize = {
     // Largest whole ciphertext (a multiple of the AES block) that still fits
     // the field alongside the version+IV header.
-    let max_ciphertext = ((ENCRYPTED_METADATA_FIELD_MAX - BLOB_HEADER_LEN) / AES_BLOCK_LEN)
-        * AES_BLOCK_LEN;
+    let max_ciphertext =
+        ((ENCRYPTED_METADATA_FIELD_MAX - BLOB_HEADER_LEN) / AES_BLOCK_LEN) * AES_BLOCK_LEN;
     // PKCS7 always consumes ≥ 1 byte of the final block for padding, so the
     // plaintext is at most one byte short of that ciphertext length.
     max_ciphertext - 1
@@ -632,11 +632,8 @@ mod tests {
 
         // The device shape: an external-signable wallet with no in-process
         // private keys.
-        let external_wallet = Wallet::new_external_signable(
-            Network::Testnet,
-            [0x42u8; 32],
-            AccountCollection::new(),
-        );
+        let external_wallet =
+            Wallet::new_external_signable(Network::Testnet, [0x42u8; 32], AccountCollection::new());
         let err = derive_tx_metadata_key(&external_wallet, Network::Testnet, 0, 2, 1)
             .expect_err("an external-signable wallet has no in-process key to derive from");
         assert!(
@@ -671,8 +668,8 @@ mod tests {
         let payload = b"external-signable round-trip".to_vec();
         let iv = [0x66u8; 16];
 
-        let sealed_by_resident =
-            seal_tx_metadata(&resident_key, VERSION_PROTOBUF, &iv, &payload).expect("valid version");
+        let sealed_by_resident = seal_tx_metadata(&resident_key, VERSION_PROTOBUF, &iv, &payload)
+            .expect("valid version");
         let opened_by_master =
             open_tx_metadata(&master_key, &sealed_by_resident).expect("master key opens");
         assert_eq!(opened_by_master.payload.as_slice(), payload.as_slice());
@@ -804,8 +801,12 @@ mod tests {
             Language::English,
         )
         .expect("valid test mnemonic");
-        let wallet = Wallet::from_mnemonic(mnemonic, Network::Testnet, WalletAccountCreationOptions::None)
-            .expect("wallet from mnemonic");
+        let wallet = Wallet::from_mnemonic(
+            mnemonic,
+            Network::Testnet,
+            WalletAccountCreationOptions::None,
+        )
+        .expect("wallet from mnemonic");
 
         // identity_index 0 (the wallet's single identity), key_index 2 (the
         // ENCRYPTION/MEDIUM key id), encryptionKeyIndex 1 (first document).
@@ -833,9 +834,8 @@ mod tests {
             .to_seed(""),
         )
         .expect("master from seed");
-        let key_via_master =
-            derive_tx_metadata_key_from_master(&master, Network::Testnet, 0, 2, 1)
-                .expect("master derive");
+        let key_via_master = derive_tx_metadata_key_from_master(&master, Network::Testnet, 0, 2, 1)
+            .expect("master derive");
         assert_eq!(
             *key_via_master, legacy_key,
             "resolver-master tx-metadata derivation must match the legacy dashj stack too"
@@ -944,9 +944,8 @@ mod tests {
                 .to_seed(""),
         )
         .expect("master from seed");
-        let key_via_master =
-            derive_tx_metadata_key_from_master(&master, Network::Testnet, 0, 2, 1)
-                .expect("master derive");
+        let key_via_master = derive_tx_metadata_key_from_master(&master, Network::Testnet, 0, 2, 1)
+            .expect("master derive");
         assert_eq!(
             *key, *key_via_master,
             "resident and resolver-master derivation must agree for the legacy-install document"
@@ -1081,9 +1080,8 @@ mod tests {
                 .to_seed(""),
         )
         .expect("master from seed");
-        let key_via_master =
-            derive_tx_metadata_key_from_master(&master, Network::Testnet, 1, 2, 1)
-                .expect("master derive");
+        let key_via_master = derive_tx_metadata_key_from_master(&master, Network::Testnet, 1, 2, 1)
+            .expect("master derive");
         assert_eq!(
             *key_via_master, slot1_key,
             "resolver-master derivation must match the resident derivation at identity_index=1"
