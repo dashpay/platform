@@ -1,10 +1,6 @@
 import SwiftData
 import XCTest
 
-#if os(macOS)
-import Security
-#endif
-
 @testable import SwiftDashSDK
 
 /// End-to-end coverage of the load-bearing path the funded sim UAT was meant to
@@ -20,31 +16,6 @@ final class IdentityResolverSignIntegrationTests: XCTestCase {
     // Canonical BIP-39 test vector (all-zero entropy).
     private let mnemonic =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-
-    #if os(macOS)
-    @available(macOS, deprecated: 10.10, message: "Exercises macOS file-keychain preference domains in CI")
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-
-        var originalDomain: SecPreferencesDomain = .user
-        let getStatus = SecKeychainGetPreferenceDomain(&originalDomain)
-        guard getStatus == errSecSuccess else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(getStatus))
-        }
-
-        addTeardownBlock {
-            let restoreStatus = SecKeychainSetPreferenceDomain(originalDomain)
-            guard restoreStatus == errSecSuccess else {
-                throw NSError(domain: NSOSStatusErrorDomain, code: Int(restoreStatus))
-            }
-        }
-
-        let setStatus = SecKeychainSetPreferenceDomain(.user)
-        guard setStatus == errSecSuccess else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(setStatus))
-        }
-    }
-    #endif
 
     /// A consistent breadcrumb (the path derives to the row's pubkey) signs via
     /// the resolver: the seed is read from the Keychain, the key is derived on
