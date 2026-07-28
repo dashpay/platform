@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -37,6 +38,8 @@ impl<C> Platform<C> {
     ///
     /// - If the version is `0`, it calls the `perform_events_on_first_block_of_protocol_change_v0` function,
     ///   which contains the logic for version `0`.
+    /// - If the version is `1`, it calls `perform_events_on_first_block_of_protocol_change_v1`, which runs
+    ///   the same transitions and then refreshes the cached definitions of the contracts they rewrote.
     /// - If no version is specified (`None`), the function does nothing and returns `Ok(())`.
     /// - If a different version is specified, it returns an error indicating an unknown version mismatch.
     ///
@@ -61,10 +64,17 @@ impl<C> Platform<C> {
                 previous_protocol_version,
                 platform_version,
             ),
+            Some(1) => self.perform_events_on_first_block_of_protocol_change_v1(
+                platform_state,
+                block_info,
+                transaction,
+                previous_protocol_version,
+                platform_version,
+            ),
             None => Ok(()),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "perform_events_on_first_block_of_protocol_change".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -155,7 +165,7 @@ mod tests {
                 received,
             })) => {
                 assert_eq!(method, "perform_events_on_first_block_of_protocol_change");
-                assert_eq!(known_versions, vec![0]);
+                assert_eq!(known_versions, vec![0, 1]);
                 assert_eq!(received, 255);
             }
             _ => panic!("expected UnknownVersionMismatch error"),
