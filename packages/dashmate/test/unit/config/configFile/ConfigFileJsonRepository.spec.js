@@ -12,6 +12,9 @@ describe('ConfigFileJsonRepository', () => {
   let homeDir;
   let configFilePath;
   let identityMigration;
+  // Tracked so a failed assertion cannot leave a spawned lock holder behind
+  // still owning the lock directory after the test that created it is gone.
+  let lockHolder;
 
   /**
    * Seed a valid config file on disk, the way a configured node would have one.
@@ -43,6 +46,12 @@ describe('ConfigFileJsonRepository', () => {
   });
 
   afterEach(() => {
+    if (lockHolder && lockHolder.exitCode === null && lockHolder.signalCode === null) {
+      lockHolder.kill();
+    }
+
+    lockHolder = undefined;
+
     homeDir.remove();
   });
 
@@ -283,20 +292,22 @@ describe('ConfigFileJsonRepository', () => {
       const lockPath = homeDir.joinPath('config.json.lock');
       const holdMs = 700;
 
-      const child = spawn(
+      lockHolder = spawn(
         process.execPath,
         ['-e', `require('fs').mkdirSync(${JSON.stringify(lockPath)});`
           + `setTimeout(() => require('fs').rmdirSync(${JSON.stringify(lockPath)}), ${holdMs});`],
         { stdio: 'ignore' },
       );
 
-      child.on('error', done);
+      lockHolder.on('error', done);
 
       // Wait for the other process to actually take the lock. Synchronous on
       // purpose - the write we are about to make is synchronous too.
+      // Polled with a real sleep rather than a tight loop - spinning here would
+      // peg a CI core for the whole timeout whenever the child fails to start.
       const deadline = Date.now() + 10000;
       while (!fs.existsSync(lockPath) && Date.now() < deadline) {
-        // busy-wait
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
       }
 
       expect(fs.existsSync(lockPath), 'other process should hold the lock').to.be.true();
@@ -315,7 +326,7 @@ describe('ConfigFileJsonRepository', () => {
 
       expect(reread.getConfig('base').get('description')).to.equal('written-after-waiting');
 
-      child.on('exit', () => done());
+      lockHolder.on('exit', () => done());
     });
 
     it('should succeed after reloading following a conflict', () => {
