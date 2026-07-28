@@ -133,12 +133,13 @@ impl WasmSdk {
         let put_settings = parse_put_settings(settings)?;
         self.prepare_state_transition_context(&st).await?;
 
+        // Preserve the error kind: callers distinguish `ExecutionNotProved`,
+        // which reports that this transition family has no execution proof
+        // rather than that anything went wrong, from a genuine failure.
         let result = st
             .wait_for_response::<StateTransitionProofResult>(self.as_ref(), put_settings)
             .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
-            })?;
+            .map_err(WasmSdkError::from)?;
 
         convert_proof_result(result).map_err(WasmSdkError::from)
     }

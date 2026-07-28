@@ -6,6 +6,7 @@
   "scripts": {
     "test": "yarn exec bin/test.sh",
     "lint": "eslint .",
+    "test:unit": "NODE_ENV=test mocha --no-config 'test/unit/**/*.spec.js'",
     "test:e2e": "NODE_ENV=test mocha 'test/e2e/**/*.spec.js'",
     "test:functional": "NODE_ENV=test mocha 'test/functional/**/*.spec.js'",
     "test:browsers": "karma start ./karma.conf.js"

@@ -408,8 +408,9 @@ jobs:
     uses: ./.github/workflows/tests-js-package.yml
     with:
       package: ${{ matrix.js-package }}
-      test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
-      skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
+      # The platform test suite's default command drives a live network, so it
+      # runs from the E2E jobs. Its unit tests need nothing and run here.
+      test-command: ${{ (matrix.js-package == 'dashmate' || contains(matrix.js-package, 'platform-test-suite')) && 'test:unit' || 'test' }}
       direct-packages: ${{ needs.changes.outputs.js-packages-direct }}
 
   js-deps-versions:

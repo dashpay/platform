@@ -1,6 +1,14 @@
 const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress');
 
 /**
+ * `WasmSdkError.name` for a transition family whose proof cannot bind the
+ * execution of one specific transition.
+ *
+ * @type {string}
+ */
+const EXECUTION_NOT_PROVED = 'ExecutionNotProved';
+
+/**
  * Shared EvoSDK instance. One per process: the verifier is stateless and the
  * underlying WASM SDK multiplexes concurrent requests.
  *
@@ -139,15 +147,20 @@ async function getEvoSdkForNetwork(callNetwork) {
  * Tenderdash quorum signature over the root hash.
  *
  * Verification re-queries Platform through the WASM SDK's proved paths rather
- * than re-checking the exact bytes the JS transport received. Depending on the
- * transition family, the proof authenticates either the execution result or a
- * height-pinned snapshot of the affected state. A snapshot is not evidence
- * that this exact transition executed; the caller handles consensus errors
- * from the original response before invoking this verifier.
+ * than re-checking the exact bytes the JS transport received. Execution proof
+ * is required wherever the transition family can produce one. The families
+ * that cannot fall back to a height-pinned snapshot of the affected state,
+ * which is not evidence that this exact transition executed; the caller
+ * handles consensus errors from the original response before invoking this
+ * verifier.
  *
+ * @param {Object} [dependencies]
+ * @param {Function} [dependencies.getEvoSdkForNetwork]
  * @returns {Object} IPlatformProofVerifier
  */
-function createPlatformProofVerifier() {
+function createPlatformProofVerifier({
+  getEvoSdkForNetwork: loadEvoSdkForNetwork = getEvoSdkForNetwork,
+} = {}) {
   return {
     /**
      * @param {Object} input
@@ -156,15 +169,27 @@ function createPlatformProofVerifier() {
      * @returns {Promise<void>}
      */
     async verifyStateTransitionResult({ serializedStateTransition, network }) {
-      const { evo, sdk } = await getEvoSdkForNetwork(network);
+      const { evo, sdk } = await loadEvoSdkForNetwork(network);
 
       const stateTransition = evo.StateTransition.fromBytes(
         new Uint8Array(serializedStateTransition),
       );
 
-      // Verify either the execution result or the affected-state snapshot,
-      // depending on the proof shape supported by the transition family.
-      await sdk.stateTransitions.waitForAffectedState(stateTransition);
+      try {
+        await sdk.stateTransitions.waitForResponse(stateTransition);
+      } catch (error) {
+        // Balance top-ups, credit transfers and withdrawals, address funds
+        // movements, shields and no-history token operations have no proof
+        // that binds one specific transition, so the SDK reports that the
+        // execution was not proved rather than that anything failed. Their
+        // authenticated affected-state snapshot is the strongest result
+        // available; every other family keeps failing closed here.
+        if (error.name !== EXECUTION_NOT_PROVED) {
+          throw error;
+        }
+
+        await sdk.stateTransitions.waitForAffectedState(stateTransition);
+      }
     },
 
     /**
@@ -185,7 +210,7 @@ function createPlatformProofVerifier() {
         );
       }
 
-      const { sdk } = await getEvoSdkForNetwork(network);
+      const { sdk } = await loadEvoSdkForNetwork(network);
 
       const history = await sdk.contracts.getHistory({
         dataContractId: new Uint8Array(contractId),
