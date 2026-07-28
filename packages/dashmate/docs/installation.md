@@ -20,22 +20,26 @@ Installing the Linux, MacOS, or Windows packages from the [GitHub releases page]
 
 ### Debian package
 
-Download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest):
+Download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest).
+The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on:
 
 ```bash
-wget https://github.com/dashpay/platform/releases/download/v1.8.0/dashmate_1.8.0.e4e156c86-1_amd64.deb
+curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
+  | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
+  | head -n 1 \
+  | xargs curl -fLO
 ```
 
 Install dashmate using apt:
 
 ```bash
 sudo apt update
-sudo apt install ./dashmate_1.8.0.e4e156c86-1_amd64.deb
+sudo apt install ./dashmate_*.deb
 ```
 
 > **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
 > You can ignore this error message:
-> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_1.8.0.e4e156c86-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_4.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 
 ### Node package
 
