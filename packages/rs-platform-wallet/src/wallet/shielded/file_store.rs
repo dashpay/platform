@@ -647,6 +647,25 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
+    fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
+        // Durable redrive rows are scoped by (wallet_id, account_index);
+        // delete this subwallet's before the in-memory drop, same
+        // SQL-before-memory fail-atomic ordering as `purge_wallet`.
+        {
+            let conn = self.pending_conn.lock().expect("pending_conn mutex");
+            conn.execute(
+                "DELETE FROM shielded_pending_spends \
+                 WHERE wallet_id = ?1 AND account_index = ?2",
+                rusqlite::params![id.wallet_id.as_slice(), id.account_index],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError(format!("purge pending spends for subwallet: {e}"))
+            })?;
+        }
+        self.subwallets.remove(&id);
+        Ok(())
+    }
+
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
         // Durable redrive rows for every wallet go with the in-memory
         // purge; SQL first for the same fail-atomic reason as

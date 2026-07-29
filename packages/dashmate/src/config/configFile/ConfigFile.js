@@ -186,7 +186,7 @@ export default class ConfigFile {
 
     const fromConfig = this.getConfig(fromConfigName);
 
-    this.configsMap[name] = new Config(name, fromConfig.getOptions());
+    this.configsMap[name] = new Config(name, fromConfig.getStoredOptions());
     this.configsMap[name].markAsChanged();
 
     this.changed = true;
@@ -308,7 +308,7 @@ export default class ConfigFile {
       defaultGroupName: this.getDefaultGroupName(),
       configs: this.getAllConfigs().reduce((configsMap, config) => {
         // eslint-disable-next-line no-param-reassign
-        configsMap[config.getName()] = config.getOptions();
+        configsMap[config.getName()] = config.getStoredOptions();
 
         return configsMap;
       }, {}),

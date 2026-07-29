@@ -20,7 +20,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<Document>, Error> {
-        let withdrawals_contract = self.cache.system_data_contracts.load_withdrawals();
+        let withdrawals_contract = self
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)?;
 
         let document_type = withdrawals_contract.document_type_for_name(withdrawal::NAME)?;
 
@@ -81,7 +84,10 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<u8, Vec<Document>>, Error> {
-        let withdrawals_contract = self.cache.system_data_contracts.load_withdrawals();
+        let withdrawals_contract = self
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)?;
 
         let document_type = withdrawals_contract.document_type_for_name(withdrawal::NAME)?;
 

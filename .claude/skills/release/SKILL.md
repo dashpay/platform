@@ -95,3 +95,30 @@ gh release create v<version> --target <merge-commit-sha> \
 Changelog link for the notes: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
 
 4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release.
+
+## Known gotcha: a brand-new npm package breaks the publish
+
+`release.yml`'s **Release NPM packages** job publishes with `yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public` over **npm trusted-publishers OIDC**. OIDC trusted publishing can **only publish to a package that already exists** on npm with a trusted publisher configured — it **cannot create (bootstrap) a brand-new package**. So the first release after someone adds a new `@dashevo/*` package fails: the job publishes every existing package fine, then exits 1 on the new one (which is `404 Not Found` on the registry). `--access public` and `--tolerate-republish` are already set — they are **not** the fix.
+
+**Symptom:** the release run's "Release NPM packages" job fails; `yarn` reports `The command failed in workspace @dashevo/<new-pkg> ... exit code 1`; `npm view @dashevo/<new-pkg>` → `E404`, while the other contracts show the release version.
+
+**Fix (needs `@dashevo` publish rights + a 2FA OTP — a human with npm access must do it):**
+
+1. Check out the package at the released version and publish it once with a token (not OIDC). The npm dist-tag matches CI's: for a prerelease it is `<major>.<minor>-<suffix>` (e.g. `4.1-beta`); for a stable release it is `latest`. Read it from an already-published package: `npm view @dashevo/dpns-contract dist-tags`.
+
+```sh
+git checkout origin/<dev-branch> -- packages/<new-pkg>          # get the released version
+cd packages/<new-pkg>
+npm publish --access public --tag <major.minor-suffix> --otp=<code>
+git checkout HEAD -- packages/<new-pkg>                          # restore working tree
+```
+
+2. Re-run the failed job — `--tolerate-republish` now skips every package (all already at the release version) → green:
+
+```sh
+gh run rerun <release-run-id> --repo dashpay/platform --failed
+```
+
+After this first publish the package exists on npm, so **every later release publishes it automatically**. Note: right after publishing, `npm view` may still `404` for a few minutes (npm CDN negative-cache); the `http fetch PUT 200` line in `~/.npm/_logs/…` confirms the publish landed.
+
+**Prevention:** whenever you add a new publishable npm package to the monorepo, first-publish it manually (or set up its trusted publisher on npm) **before** cutting the release that would ship it.

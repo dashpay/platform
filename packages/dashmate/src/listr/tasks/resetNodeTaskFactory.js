@@ -187,10 +187,10 @@ export default function resetNodeTaskFactory(
           if (defaultConfigs.has(defaultConfigName)) {
             // Reset config if the corresponding default config exists
             if (ctx.isPlatformOnlyReset) {
-              const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).get('platform');
+              const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).getStored('platform');
               config.set('platform', defaultPlatformConfig);
             } else {
-              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getOptions();
+              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getStoredOptions();
 
               config.setOptions(defaultConfigOptions);
             }

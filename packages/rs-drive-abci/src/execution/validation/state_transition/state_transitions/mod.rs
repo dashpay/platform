@@ -1131,7 +1131,12 @@ pub(in crate::execution) mod tests {
 
         let (identity_2, signer_2, key_2) = identity_2;
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -1717,7 +1722,12 @@ pub(in crate::execution) mod tests {
         let (identity_1, signer_1, key_1) =
             setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
