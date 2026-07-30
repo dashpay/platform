@@ -245,6 +245,65 @@ describe('ConfigFileJsonRepository', () => {
       expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
     });
 
+    // A command that reconfigures a node holds the lock for its whole run and
+    // still saves through the ordinary paths. Taking the lock again for each of
+    // those saves would leave it waiting on itself until the acquire timeout.
+    it('should let a held lock be used by update() and write() without deadlocking', function it1() {
+      this.timeout(10000);
+
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+
+      repository.acquire();
+
+      try {
+        repository.update((configFile) => {
+          configFile.getConfig('base').set('description', 'via-update');
+        });
+
+        const configFile = repository.read();
+        configFile.getConfig('base').set('description', 'via-write');
+        repository.write(configFile);
+      } finally {
+        repository.release();
+      }
+
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+
+      expect(reread.getConfig('base').get('description')).to.equal('via-write');
+    });
+
+    it('should hold the lock between acquire and release, and free it after', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const lockPath = homeDir.joinPath('config.json.lock');
+
+      repository.acquire();
+
+      expect(fs.existsSync(lockPath)).to.be.true();
+
+      repository.release();
+
+      expect(fs.existsSync(lockPath)).to.be.false();
+    });
+
+    // Release runs from several exit paths - normal finish, command failure and
+    // graceful shutdown - so calling it when nothing is held has to be harmless.
+    it('should tolerate release without acquire, and repeated release', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+
+      expect(() => repository.release()).to.not.throw();
+
+      repository.acquire();
+      repository.release();
+
+      expect(() => repository.release()).to.not.throw();
+    });
+
     // Reading fresh inside the lock is only sound if the lock is actually
     // honoured across processes. proper-lockfile represents a held lock as a
     // directory, so another process needs nothing but `fs` to hold it.

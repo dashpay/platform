@@ -12,18 +12,24 @@ import ConfigFile from './ConfigFile.js';
 
 /**
  * How long a lock may go un-refreshed before another process may break it.
- * Comfortably longer than the milliseconds the lock is actually held, so a busy
- * event loop cannot get its live lock stolen, but short enough that a process
- * killed while holding it does not block the next command for long.
+ *
+ * A command that reconfigures a node holds this across its whole run, and the
+ * refresh that keeps it alive cannot happen while the event loop is busy - so
+ * this has to comfortably outlast the longest synchronous stretch such a command
+ * has, or its live lock gets stolen and two processes write. The cost of the
+ * generous value is that a process killed while holding the lock blocks the next
+ * writer for this long.
  */
-const LOCK_STALE_MS = 10000;
+const LOCK_STALE_MS = 60000;
 
 /**
- * Waiting is synchronous, which means signal handlers do not run while it is in
- * progress. Kept just above the stale threshold - long enough to outlast a dead
- * holder's lock, short enough that Ctrl-C is never ignored for long.
+ * How long to wait for someone else's lock before giving up.
+ *
+ * Deliberately much shorter than the stale threshold: waiting is synchronous, so
+ * signal handlers do not run meanwhile, and an operator is better served by a
+ * quick "something else is changing configuration" than by a long silent stall.
  */
-const LOCK_ACQUIRE_TIMEOUT_MS = LOCK_STALE_MS + 2000;
+const LOCK_ACQUIRE_TIMEOUT_MS = 15000;
 
 const LOCK_RETRY_INTERVAL_MS = 50;
 
@@ -38,6 +44,23 @@ function sleepSync(ms) {
 }
 
 export default class ConfigFileJsonRepository {
+  /**
+   * Release function for a lock held across a whole command, or null when this
+   * process is not holding one.
+   *
+   * @type {function|null}
+   */
+  #heldRelease = null;
+
+  /**
+   * Set when the lock was lost while we believed we still held it. Continuing
+   * would mean writing without exclusivity, which is the lost update this exists
+   * to prevent, so the next save refuses instead.
+   *
+   * @type {boolean}
+   */
+  #compromised = false;
+
   /**
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
@@ -133,9 +156,7 @@ export default class ConfigFileJsonRepository {
    * @returns {ConfigFile} the state that was saved
    */
   update(mutate, options = {}) {
-    const release = this.#acquireLock();
-
-    try {
+    return this.#locked(() => {
       const configFile = this.read(options);
 
       mutate(configFile);
@@ -143,6 +164,65 @@ export default class ConfigFileJsonRepository {
       this.#save(configFile);
 
       return configFile;
+    });
+  }
+
+  /**
+   * Hold the lock for as long as this process is changing configuration.
+   *
+   * For a command that reconfigures a node over minutes, taking the lock before
+   * it reads is what makes its state current: there is no window between reading
+   * and saving for another process to write into. Short changes should use
+   * update() instead - this blocks every other writer until release() is called.
+   *
+   * Calling it again while already held does nothing, so a command holding the
+   * lock can still call update() and write() normally.
+   *
+   * @returns {void}
+   */
+  acquire() {
+    if (this.#heldRelease !== null) {
+      return;
+    }
+
+    this.#compromised = false;
+    this.#heldRelease = this.#acquireLock();
+  }
+
+  /**
+   * Give up a lock taken with acquire(). Safe to call when not holding one, so
+   * it can be used from every exit path without checking first.
+   *
+   * @returns {void}
+   */
+  release() {
+    if (this.#heldRelease === null) {
+      return;
+    }
+
+    const release = this.#heldRelease;
+
+    this.#heldRelease = null;
+
+    this.#release(release);
+  }
+
+  /**
+   * Run fn with the lock held, taking it only if this process is not already
+   * holding one across a command.
+   *
+   * @param {function(): *} fn
+   * @returns {*}
+   */
+  #locked(fn) {
+    if (this.#heldRelease !== null) {
+      return fn();
+    }
+
+    const release = this.#acquireLock();
+
+    try {
+      return fn();
     } finally {
       this.#release(release);
     }
@@ -160,13 +240,7 @@ export default class ConfigFileJsonRepository {
    * @returns {void}
    */
   write(configFile) {
-    const release = this.#acquireLock();
-
-    try {
-      this.#save(configFile);
-    } finally {
-      this.#release(release);
-    }
+    this.#locked(() => this.#save(configFile));
   }
 
   /**
@@ -177,6 +251,12 @@ export default class ConfigFileJsonRepository {
    * @param {ConfigFile} configFile
    */
   #save(configFile) {
+    if (this.#compromised) {
+      throw new Error(`Lost the lock on '${this.configFilePath}' while changing it,`
+        + ' so saving now could overwrite another process. Nothing was written -'
+        + ' re-run the command.');
+    }
+
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
 
     writeFileAtomic.sync(this.configFilePath, configFileJSON, 'utf8');
@@ -223,12 +303,13 @@ export default class ConfigFileJsonRepository {
           // realpath resolution would fail on it.
           realpath: false,
           stale: LOCK_STALE_MS,
-          // The library's default handler rethrows from a refresh timer rather
-          // than this call stack, which would take the whole process down. The
-          // critical section is a read, a mutation and a rename, so it finishes
-          // well inside the stale threshold and a compromised lock is not a
-          // condition this can act on.
-          onCompromised: () => {},
+          // Rethrowing here would kill the process - the handler runs from a
+          // refresh timer, not this call stack. Recording it instead lets the
+          // next save refuse, which matters because a command holding the lock
+          // across its run relies on it for exclusivity.
+          onCompromised: () => {
+            this.#compromised = true;
+          },
         });
       } catch (e) {
         if (e.code !== 'ELOCKED' || Date.now() >= deadline) {

@@ -5,6 +5,10 @@ import ConfigBaseCommand from '../oclif/command/ConfigBaseCommand.js';
 import MuteOneLineError from '../oclif/errors/MuteOneLineError.js';
 
 export default class ResetCommand extends ConfigBaseCommand {
+  // Reconfigures the node: changes configuration repeatedly while doing long,
+  // partly irreversible work, so it holds the config lock for its whole run.
+  static mutatesConfig = true;
+
   static description = 'Reset node data';
 
   static flags = {

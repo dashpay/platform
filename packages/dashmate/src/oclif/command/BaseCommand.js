@@ -38,6 +38,15 @@ export default class BaseCommand extends Command {
      */
     const configFileRepository = this.container.resolve('configFileRepository');
 
+    // A command that reconfigures a node changes config repeatedly while doing
+    // long work, so it takes the lock before reading: its state is then current
+    // for the whole run and no other writer can get in between. Everything else
+    // changes config through configFileRepository.update() and needs nothing
+    // here.
+    if (this.constructor.mutatesConfig) {
+      configFileRepository.acquire();
+    }
+
     let configFile;
     try {
       // Load config collection from config file
@@ -81,6 +90,12 @@ export default class BaseCommand extends Command {
 
       // stop and remove all started containers
       await stopAllContainers(startedContainers.getContainers());
+
+      // A lock held across this command would otherwise survive until it goes
+      // stale, blocking the next writer for no reason.
+      if (this.constructor.mutatesConfig) {
+        this.container.resolve('configFileRepository').release();
+      }
     });
   }
 
@@ -97,6 +112,23 @@ export default class BaseCommand extends Command {
   }
 
   async finally(err) {
+    try {
+      await this.saveConfigAndStopContainers(err);
+    } finally {
+      // Whether the command succeeded, failed, or failed before it started, the
+      // lock must not outlive it.
+      if (this.container && this.constructor.mutatesConfig) {
+        this.container.resolve('configFileRepository').release();
+      }
+    }
+
+    return super.finally(err);
+  }
+
+  /**
+   * @param {Error|undefined} err
+   */
+  async saveConfigAndStopContainers(err) {
     // Save configs collection
     if (this.container) {
       /**
@@ -142,7 +174,5 @@ export default class BaseCommand extends Command {
         },
       );
     }
-
-    return super.finally(err);
   }
 }

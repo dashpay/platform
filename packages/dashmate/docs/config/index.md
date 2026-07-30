@@ -194,10 +194,16 @@ held for a read and a write.
 Read-only commands such as `dashmate config get`, `dashmate status` and `dashmate core cli`
 never write configuration at all, so they are always safe to run alongside anything else.
 
-### Limits
+### While a node is being reconfigured
 
-Long-running commands that reconfigure a node — `dashmate setup`, `dashmate reset` and
-`dashmate ssl obtain` — still load the configuration when they start and save it when they
-finish. Do not change configuration with `dashmate config set` while one of those is
-running: the long-running command saves the state it loaded, and an option changed in the
-meantime is lost.
+`dashmate setup`, `dashmate reset` and `dashmate ssl obtain` change configuration
+repeatedly while doing long work, so they take the lock for their whole run. Another
+command that changes configuration waits briefly and then reports that something else is
+modifying it — nothing is lost, and running it again once the first command finishes
+works normally.
+
+Reading is never affected: `dashmate status`, `dashmate config get` and `dashmate core cli`
+do not take the lock at all, so a node can still be inspected while it is being set up.
+
+If a command holding the lock is killed, the lock is released. If the machine loses power
+mid-command, the next writer takes over after about a minute.

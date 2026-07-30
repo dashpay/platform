@@ -7,6 +7,10 @@ import LegoCertificate from '../../ssl/letsencrypt/LegoCertificate.js';
 import { SSL_PROVIDERS } from '../../constants.js';
 
 export default class ObtainCommand extends ConfigBaseCommand {
+  // Reconfigures the node: changes configuration repeatedly while doing long,
+  // partly irreversible work, so it holds the config lock for its whole run.
+  static mutatesConfig = true;
+
   static description = `Obtain SSL certificate
 
 Create a new SSL certificate or download an already existing one using ZeroSSL or Let's Encrypt as provider
