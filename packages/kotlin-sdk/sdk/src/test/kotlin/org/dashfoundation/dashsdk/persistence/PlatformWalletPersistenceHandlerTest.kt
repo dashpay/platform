@@ -65,10 +65,11 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        assertEquals(0xbdL, handler.persistenceCapabilitiesBits())
-        // Android has no invitation or pending-contact-crypto callback, so it
-        // must not attest either semantic contract.
-        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x02L)
+        assertEquals(0xbfL, handler.persistenceCapabilitiesBits())
+        // Android now owns invitation persistence (INVITATIONS, 0x02, is set via
+        // onPersistInvitationUpsert/Removal). It still has no pending-contact-crypto
+        // callback, so it must not attest that contract (0x40).
+        assertEquals(0x02L, handler.persistenceCapabilitiesBits() and 0x02L)
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
@@ -76,7 +77,7 @@ class PlatformWalletPersistenceHandlerTest {
             handler.persistenceCapabilitiesBits(),
         )
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ATOMIC_CHANGESETS))
-        assertFalse(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.INVITATIONS))
     }
 
     // ── Standalone (non-bracketed) writes ─────────────────────────────
