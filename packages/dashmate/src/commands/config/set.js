@@ -39,6 +39,8 @@ Sets a configuration option in the default config
     },
     flags,
     config,
+    configFileRepository,
+    writeConfigTemplates,
   ) {
     // Validate the path against the schema, not against the currently-set
     // value. `config.get(...)` would throw `InvalidOptionPathError` for any
@@ -59,7 +61,18 @@ Sets a configuration option in the default config
       value = optionValue;
     }
 
-    config.set(optionPath, value);
+    // Read, change and save in one locked step, against the config name resolved
+    // for this command rather than re-resolving the default, which another
+    // process may have changed. Mutating the copy loaded at startup and saving it
+    // on exit would write a snapshot that is already out of date, reverting
+    // anything saved in between.
+    const configName = config.getName();
+
+    const configFile = configFileRepository.update((freshConfigFile) => {
+      freshConfigFile.getConfig(configName).set(optionPath, value);
+    });
+
+    writeConfigTemplates(configFile.getConfig(configName));
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${optionValue}`);

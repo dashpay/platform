@@ -147,8 +147,8 @@ describe('ConfigFileJsonRepository', () => {
     });
 
     // The helper daemon reads once at startup and writes on every certificate
-    // renewal for the life of the process. If the staleness baseline is not
-    // refreshed after each write, its second write conflicts with its own first.
+    // renewal for the life of the process, so saving repeatedly from one
+    // instance has to keep working.
     it('should allow repeated writes from one long-lived instance', () => {
       seedConfigFile();
 
@@ -168,127 +168,92 @@ describe('ConfigFileJsonRepository', () => {
     });
   });
 
-  describe('#write concurrency', () => {
-    // The reported lost update: a process loads the config, another process
-    // changes and saves it, and the first process writes its stale snapshot
-    // last. Asserting only "the second value survived" would also pass if the
-    // stale write silently did nothing, so the contract itself is pinned:
-    // it refuses loudly, leaves the file alone, and keeps the rejected state.
-    it('should refuse a stale write instead of clobbering a concurrent update', () => {
+  describe('#update', () => {
+    // The reported bug, stated as the outcome operators want rather than as a
+    // failure they have to recover from: one process loads the config, another
+    // changes and saves a different option, and both edits survive. Mutating a
+    // snapshot loaded earlier and saving it at exit loses one of them.
+    it('should keep concurrent edits to different options', () => {
       seedConfigFile();
 
-      const slowReader = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const staleConfigFile = slowReader.read();
+      const slowCommand = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const otherCommand = new ConfigFileJsonRepository(identityMigration, homeDir);
 
-      // A concurrent `dashmate config set` lands and exits successfully
-      const writer = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const freshConfigFile = writer.read();
-      freshConfigFile.getConfig('base').set('description', 'set-by-concurrent-writer');
-      writer.write(freshConfigFile);
+      // Both load the same starting state, as two overlapping commands would
+      slowCommand.read();
+      otherCommand.read();
 
-      const onDisk = fs.readFileSync(configFilePath, 'utf8');
+      otherCommand.update((configFile) => {
+        configFile.getConfig('base').set('description', 'set-by-other-command');
+      });
 
-      staleConfigFile.getConfig('base').set('description', 'stale-snapshot');
+      slowCommand.update((configFile) => {
+        configFile.getConfig('base').set('core.rpc.port', 30000);
+      });
 
-      let thrown;
-      try {
-        slowReader.write(staleConfigFile);
-      } catch (e) {
-        thrown = e;
-      }
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
 
-      expect(thrown, 'stale write must not succeed').to.exist();
-      expect(thrown.code).to.equal('DASHMATE_CONFIG_FILE_CONFLICT');
-
-      // the concurrent writer's value survives, byte for byte
-      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(onDisk);
-
-      // nothing generated in memory is lost - it is parked for the operator
-      const rejected = fs.readdirSync(homeDir.getPath())
-        .filter((name) => name.startsWith('config.json.rejected-'));
-
-      expect(rejected).to.have.lengthOf(1);
-      expect(thrown.message).to.contain(rejected[0]);
-
-      const parked = JSON.parse(fs.readFileSync(homeDir.joinPath(rejected[0]), 'utf8'));
-
-      expect(parked.configs.base.description).to.equal('stale-snapshot');
+      expect(reread.getConfig('base').get('description')).to.equal('set-by-other-command');
+      expect(reread.getConfig('base').get('core.rpc.port')).to.equal(30000);
     });
 
-    // Two nodes being set up at once both find no config file. "I have never
-    // looked" and "I looked and there was nothing there" are different claims,
-    // and only the second can detect that someone else created the file first.
-    it('should refuse a first-run write when another process created the file first', () => {
-      const first = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const second = new ConfigFileJsonRepository(identityMigration, homeDir);
-
-      // both observe an absent config file
-      expect(() => first.read()).to.throw();
-      expect(() => second.read()).to.throw();
-
-      const configFile = new ConfigFile(
-        [getBaseConfigFactory(homeDir)()],
-        CURRENT_FORMAT_VERSION,
-        'abcdef12',
-        'base',
-        null,
-      );
-
-      first.write(configFile);
-
-      const onDisk = fs.readFileSync(configFilePath, 'utf8');
-
-      let thrown;
-      try {
-        second.write(configFile);
-      } catch (e) {
-        thrown = e;
-      }
-
-      expect(thrown, 'second first-run write must not clobber the first').to.exist();
-      expect(thrown.code).to.equal('DASHMATE_CONFIG_FILE_CONFLICT');
-      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(onDisk);
-    });
-
-    // Present-to-absent is a change like any other. Recreating our old snapshot
-    // over a deliberate removal is the same lost update in the other direction.
-    it('should refuse to recreate a config file that was deleted after it was read', () => {
+    // The mutator must never be handed the state this instance happened to read
+    // earlier - that is the whole point of reading inside the lock.
+    it('should hand the mutator state written since this instance last read', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const configFile = repository.read();
 
-      fs.unlinkSync(configFilePath);
+      repository.read();
 
-      configFile.getConfig('base').set('description', 'stale-snapshot');
+      new ConfigFileJsonRepository(identityMigration, homeDir)
+        .update((configFile) => {
+          configFile.getConfig('base').set('description', 'written-by-someone-else');
+        });
 
-      let thrown;
-      try {
-        repository.write(configFile);
-      } catch (e) {
-        thrown = e;
-      }
+      let seen;
+      repository.update((configFile) => {
+        seen = configFile.getConfig('base').get('description');
+      });
 
-      expect(thrown, 'must not resurrect a deleted config file').to.exist();
-      expect(thrown.code).to.equal('DASHMATE_CONFIG_FILE_CONFLICT');
-      expect(fs.existsSync(configFilePath)).to.be.false();
+      expect(seen).to.equal('written-by-someone-else');
     });
 
-    // Comparing against the baseline is not enough on its own: two writers can
-    // both read the same bytes, both decide they are current, and both replace
-    // the file. Only a lock closes that window, and only a genuinely separate
-    // process can prove the lock is honoured. proper-lockfile represents a held
-    // lock as a directory, so the other process needs nothing but `fs`.
-    it('should wait for a lock held by another process before writing', function it0(done) {
+    it('should return the state it saved', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+
+      const configFile = repository.update((freshConfigFile) => {
+        freshConfigFile.getConfig('base').set('description', 'returned');
+      });
+
+      expect(configFile.getConfig('base').get('description')).to.equal('returned');
+      expect(configFile.isChanged()).to.be.false();
+    });
+
+    it('should not write when the mutator throws', () => {
+      const before = seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+
+      expect(() => repository.update(() => {
+        throw new Error('mutator failed');
+      })).to.throw('mutator failed');
+
+      expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(before);
+      expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+    });
+
+    // Reading fresh inside the lock is only sound if the lock is actually
+    // honoured across processes. proper-lockfile represents a held lock as a
+    // directory, so another process needs nothing but `fs` to hold it.
+    it('should wait for a lock held by another process', function it0(done) {
       this.timeout(20000);
 
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const configFile = repository.read();
-
-      configFile.getConfig('base').set('description', 'written-after-waiting');
-
       const lockPath = homeDir.joinPath('config.json.lock');
       const holdMs = 700;
 
@@ -301,10 +266,6 @@ describe('ConfigFileJsonRepository', () => {
 
       lockHolder.on('error', done);
 
-      // Wait for the other process to actually take the lock. Synchronous on
-      // purpose - the write we are about to make is synchronous too.
-      // Polled with a real sleep rather than a tight loop - spinning here would
-      // peg a CI core for the whole timeout whenever the child fails to start.
       const deadline = Date.now() + 10000;
       while (!fs.existsSync(lockPath) && Date.now() < deadline) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
@@ -314,40 +275,17 @@ describe('ConfigFileJsonRepository', () => {
 
       const startedAt = Date.now();
 
-      repository.write(configFile);
+      repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'written-after-waiting');
+      });
 
-      const waitedMs = Date.now() - startedAt;
-
-      // It blocked rather than writing straight through the other holder.
-      expect(waitedMs).to.be.at.least(holdMs / 2);
-      expect(fs.existsSync(lockPath), 'lock should be released again').to.be.false();
+      expect(Date.now() - startedAt).to.be.at.least(holdMs / 2);
 
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('written-after-waiting');
 
       lockHolder.on('exit', () => done());
-    });
-
-    it('should succeed after reloading following a conflict', () => {
-      seedConfigFile();
-
-      const slowReader = new ConfigFileJsonRepository(identityMigration, homeDir);
-      slowReader.read();
-
-      const writer = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const freshConfigFile = writer.read();
-      freshConfigFile.getConfig('base').set('description', 'concurrent');
-      writer.write(freshConfigFile);
-
-      const reloaded = slowReader.read();
-      reloaded.getConfig('base').set('description', 'after-reload');
-
-      expect(() => slowReader.write(reloaded)).to.not.throw();
-
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
-
-      expect(reread.getConfig('base').get('description')).to.equal('after-reload');
     });
   });
 });

@@ -7,7 +7,6 @@ import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
 import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
-import ConfigFileConflictError from '../errors/ConfigFileConflictError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
 import ConfigFile from './ConfigFile.js';
 
@@ -40,37 +39,6 @@ function sleepSync(ms) {
 
 export default class ConfigFileJsonRepository {
   /**
-   * What this instance last observed on disk:
-   *
-   * - `undefined` - never looked, so nothing can be claimed about the file
-   * - `null`      - looked, and there was no file
-   * - `string`    - the exact bytes that were there
-   *
-   * "Never looked" and "looked and found nothing" have to stay distinct, or two
-   * nodes being set up concurrently would both write over each other believing
-   * they were creating the file.
-   *
-   * Concurrent writers are detected by comparing against this, so it must be
-   * refreshed on every successful write - the dashmate helper reads once at
-   * startup and then writes on every certificate renewal for the life of the
-   * process, and would otherwise conflict with its own previous write.
-   *
-   * One instance tracks one config file lifecycle: a second read() rebaselines
-   * it, so do not write a ConfigFile obtained from an earlier read afterwards.
-   *
-   * @type {string|null|undefined}
-   */
-  #baseline;
-
-  /**
-   * Distinguishes parked snapshots written by this process within the same
-   * millisecond.
-   *
-   * @type {number}
-   */
-  #rejectedCount = 0;
-
-  /**
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
    */
@@ -93,17 +61,10 @@ export default class ConfigFileJsonRepository {
   read(options = {}) {
     const { skipValidation = false } = options;
     if (!fs.existsSync(this.configFilePath)) {
-      // Record that the file was observed absent. The caller creates a default
-      // config file from here, and that write must still lose to another
-      // process that created one first.
-      this.#baseline = null;
-
       throw new ConfigFileNotFoundError(this.configFilePath);
     }
 
     const configFileJSON = fs.readFileSync(this.configFilePath, 'utf8');
-
-    this.#baseline = configFileJSON;
 
     let configFileData;
     try {
@@ -156,54 +117,89 @@ export default class ConfigFileJsonRepository {
   }
 
   /**
-   * Save configs to file
+   * Read, change and save the config file as one indivisible step.
    *
-   * Refuses to write when the file changed on disk since this instance read it,
-   * rather than reverting whatever the other process saved. The check and the
-   * replacement happen under a lock so two writers cannot both pass the check
-   * and then both write; the lock is held only for that, never for the duration
-   * of a command.
+   * Everything happens while the file is locked, and the state handed to the
+   * mutator is read after taking the lock - so a change made by another process
+   * in between cannot be reverted, and two commands editing different options
+   * both survive. Reading in one place and saving in another is what allowed a
+   * command to write a snapshot that was already out of date.
    *
-   * @param {ConfigFile} configFile
-   * @throws {ConfigFileConflictError} when another process wrote first
-   * @returns {void}
+   * The lock is held for a read, a mutation and a rename - milliseconds - so it
+   * is not a meaningful serialization point for commands that only edit config.
+   *
+   * @param {function(ConfigFile): void} mutate
+   * @param {Object} [options={}] - passed through to read()
+   * @returns {ConfigFile} the state that was saved
    */
-  write(configFile) {
-    const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
-
+  update(mutate, options = {}) {
     const release = this.#acquireLock();
 
     try {
-      const currentJSON = fs.existsSync(this.configFilePath)
-        ? fs.readFileSync(this.configFilePath, 'utf8')
-        : null;
+      const configFile = this.read(options);
 
-      // Any observed change conflicts, including present-to-absent: recreating
-      // a config file somebody deliberately removed is the same lost update in
-      // the other direction.
-      if (this.#baseline !== undefined && currentJSON !== this.#baseline) {
-        throw this.#rejectStaleWrite(configFileJSON);
-      }
+      mutate(configFile);
 
-      writeFileAtomic.sync(this.configFilePath, configFileJSON, 'utf8');
+      this.#save(configFile);
 
-      this.#baseline = configFileJSON;
-
-      // Only now is the state actually on disk. Clearing these before the write
-      // would leave the configs claiming to be saved after a failed one.
-      configFile.markAsSaved();
-      configFile.getAllConfigs().forEach((config) => config.markAsSaved());
+      return configFile;
     } finally {
-      try {
-        release();
-      } catch {
-        // Releasing reports ERELEASED/ENOTACQUIRED when the lock was already
-        // gone. Nothing thrown from here may escape: it would replace the
-        // outcome the caller actually needs - including the conflict error
-        // naming where their configuration was parked - with a message about
-        // lock bookkeeping. A lock that cannot be released goes stale and is
-        // reclaimed by the next writer anyway.
-      }
+      this.#release(release);
+    }
+  }
+
+  /**
+   * Save configs to file
+   *
+   * Prefer update() for changing configuration: it reads the current state under
+   * the same lock, so it cannot save something another process has already
+   * moved on from. This remains for callers that mutate a config file they are
+   * holding and then save it as a separate step.
+   *
+   * @param {ConfigFile} configFile
+   * @returns {void}
+   */
+  write(configFile) {
+    const release = this.#acquireLock();
+
+    try {
+      this.#save(configFile);
+    } finally {
+      this.#release(release);
+    }
+  }
+
+  /**
+   * Serialize and replace the file, then mark the state clean.
+   *
+   * Caller must hold the lock.
+   *
+   * @param {ConfigFile} configFile
+   */
+  #save(configFile) {
+    const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
+
+    writeFileAtomic.sync(this.configFilePath, configFileJSON, 'utf8');
+
+    // Only now is the state actually on disk. Clearing these beforehand would
+    // leave the configs claiming to be saved after a failed write.
+    configFile.markAsSaved();
+    configFile.getAllConfigs().forEach((config) => config.markAsSaved());
+  }
+
+  /**
+   * @param {function} release
+   */
+
+  #release(release) {
+    try {
+      release();
+    } catch {
+      // Releasing reports ERELEASED/ENOTACQUIRED when the lock was already
+      // gone. Nothing thrown from here may escape - it would replace the
+      // outcome the caller actually needs with a message about lock
+      // bookkeeping. A lock that cannot be released goes stale and is reclaimed
+      // by the next writer anyway.
     }
   }
 
@@ -227,12 +223,11 @@ export default class ConfigFileJsonRepository {
           // realpath resolution would fail on it.
           realpath: false,
           stale: LOCK_STALE_MS,
-          // The library's default handler rethrows, and it runs from a refresh
-          // timer rather than this call stack, so a lock compromised mid-write
-          // would take the whole process down. There is nothing useful to do
-          // about it here: the critical section lasts milliseconds, and the
-          // byte comparison against the baseline is what actually prevents a
-          // lost update - the lock only narrows the window it runs in.
+          // The library's default handler rethrows from a refresh timer rather
+          // than this call stack, which would take the whole process down. The
+          // critical section is a read, a mutation and a rename, so it finishes
+          // well inside the stale threshold and a compromised lock is not a
+          // condition this can act on.
           onCompromised: () => {},
         });
       } catch (e) {
@@ -243,31 +238,5 @@ export default class ConfigFileJsonRepository {
         sleepSync(LOCK_RETRY_INTERVAL_MS);
       }
     }
-  }
-
-  /**
-   * Park the state we refused to write, so material generated during the
-   * command is recoverable, and describe where it went.
-   *
-   * @param {string} configFileJSON
-   * @returns {ConfigFileConflictError}
-   */
-  #rejectStaleWrite(configFileJSON) {
-    // Colons are not legal in Windows filenames. The pid separates concurrent
-    // processes and the counter separates two conflicts from this one inside
-    // the same millisecond, so no parked state is ever overwritten by another.
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-    this.#rejectedCount += 1;
-
-    const rejectedPath = `${this.configFilePath}.rejected-${stamp}-${process.pid}-${this.#rejectedCount}`;
-
-    try {
-      writeFileAtomic.sync(rejectedPath, configFileJSON, { encoding: 'utf8', mode: 0o600 });
-    } catch (e) {
-      return new ConfigFileConflictError(this.configFilePath, null, e);
-    }
-
-    return new ConfigFileConflictError(this.configFilePath, rejectedPath);
   }
 }
