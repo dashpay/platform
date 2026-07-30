@@ -52,20 +52,19 @@ members = [
 ]
 
 [workspace.dependencies]
-# TODO(pin): tracks dashpay/rust-dashcore `dash-evo-tool` branch (18c68d4c),
-# a dev-evo-tool integration branch combining PR #909 (out-of-order UTXO
-# spend fix, #649) and PR #818 (address reservation on hand-out) — the two
+# TODO(pin): tracks dashpay/rust-dashcore `dash-evo-tool` branch,
+# a dev-evo-tool integration branch combining PR #909 and #919 — the two
 # PRs are sibling forks off `dev` and neither is a superset of the other, so
 # neither can be pinned alone without dropping the other's fix. Re-pin to
 # `dev` directly once both PRs land there.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "18c68d4c10ed349f11358e0a9f7c8c59eab8e098" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "dash-evo-tool" }
 
 tokio-metrics = "0.5"
 
