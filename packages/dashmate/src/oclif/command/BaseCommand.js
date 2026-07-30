@@ -70,6 +70,20 @@ export default class BaseCommand extends Command {
       configFile = createConfigFile();
     }
 
+    // Migrating produced a new shape that has to reach disk. Saving it here,
+    // rather than carrying it to the end of the command, is what keeps the
+    // registered config file clean - anything still dirty at exit would be a
+    // snapshot from before the command ran.
+    if (configFile.isChanged()) {
+      const changedConfigs = configFile.getAllConfigs().filter((config) => config.isChanged());
+
+      configFileRepository.write(configFile);
+
+      const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+
+      changedConfigs.forEach(writeConfigTemplates);
+    }
+
     // Register config collection in the container
     this.container.register({
       configFile: asValue(configFile),
@@ -136,7 +150,12 @@ export default class BaseCommand extends Command {
        */
       const configFileRepository = this.container.resolve('configFileRepository');
 
-      if (this.container.has('configFile') && err === undefined) {
+      // Only a command that held the lock for its whole run may save the config
+      // file it loaded - it read inside the lock, so its state is current. Any
+      // other command changes configuration through update(), and saving its
+      // startup copy here would write a snapshot from before the command ran.
+      if (this.constructor.mutatesConfig
+        && this.container.has('configFile') && err === undefined) {
         /**
          * @var {ConfigFile} configFile
          */

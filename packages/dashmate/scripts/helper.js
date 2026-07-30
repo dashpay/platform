@@ -92,10 +92,10 @@ async function removeOrphanedSslContainers(docker) {
 
   const configFile = await configFileRepository.read();
 
-  // Persist config if it was migrated
+  // Persist config if it was migrated. Nothing else here ever saves this copy -
+  // it lives for the life of the process, so it goes stale, and the renewal
+  // re-applies its result onto current state instead.
   if (configFile.isChanged()) {
-    // Captured before the write, which clears these flags once the new state is
-    // on disk.
     const changedConfigs = configFile.getAllConfigs()
       .filter((config) => config.isChanged());
 

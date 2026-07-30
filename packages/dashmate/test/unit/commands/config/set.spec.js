@@ -23,7 +23,7 @@ describe('Config set command', () => {
    * @return {*}
    */
   function persisted(path) {
-    return new ConfigFileJsonRepository((data) => data, homeDir)
+    return new ConfigFileJsonRepository((data) => data, homeDir, () => null)
       .read()
       .getConfig('base')
       .get(path);
@@ -42,7 +42,7 @@ describe('Config set command', () => {
       'utf8',
     );
 
-    configFileRepository = new ConfigFileJsonRepository((data) => data, homeDir);
+    configFileRepository = new ConfigFileJsonRepository((data) => data, homeDir, () => null);
     writeConfigTemplates = () => {};
     command = new ConfigSetCommand();
   });

@@ -12,6 +12,7 @@ describe('ConfigFileJsonRepository', () => {
   let homeDir;
   let configFilePath;
   let identityMigration;
+  let createDefaults;
   // Tracked so a failed assertion cannot leave a spawned lock holder behind
   // still owning the lock directory after the test that created it is gone.
   let lockHolder;
@@ -43,6 +44,19 @@ describe('ConfigFileJsonRepository', () => {
     homeDir = HomeDir.createTemp();
     configFilePath = homeDir.joinPath('config.json');
     identityMigration = (data) => data;
+    createDefaults = () => {
+      const configFile = new ConfigFile(
+        [getBaseConfigFactory(homeDir)()],
+        CURRENT_FORMAT_VERSION,
+        'abcdef12',
+        'base',
+        null,
+      );
+
+      configFile.markAsChanged();
+
+      return configFile;
+    };
   });
 
   afterEach(() => {
@@ -62,7 +76,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should return a clean config file when nothing was migrated', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       const configFile = repository.read();
 
@@ -75,7 +89,7 @@ describe('ConfigFileJsonRepository', () => {
 
       const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
 
-      const repository = new ConfigFileJsonRepository(migration, homeDir);
+      const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
 
       const configFile = repository.read();
 
@@ -90,7 +104,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should leave the file untouched when a read-only command exits', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const { mtimeMs, ino } = fs.statSync(configFilePath);
 
       const configFile = repository.read();
@@ -111,7 +125,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should persist changes and mark the config file and its configs saved', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const configFile = repository.read();
 
       configFile.getConfig('base').set('description', 'changed');
@@ -121,7 +135,7 @@ describe('ConfigFileJsonRepository', () => {
       expect(configFile.isChanged()).to.be.false();
       expect(configFile.getAllConfigs().filter((config) => config.isChanged())).to.be.empty();
 
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('changed');
     });
@@ -130,7 +144,7 @@ describe('ConfigFileJsonRepository', () => {
       seedConfigFile();
       fs.chmodSync(configFilePath, 0o600);
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const configFile = repository.read();
 
       configFile.getConfig('base').set('description', 'changed');
@@ -152,7 +166,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should allow repeated writes from one long-lived instance', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const configFile = repository.read();
 
       configFile.getConfig('base').set('description', 'first');
@@ -162,13 +176,31 @@ describe('ConfigFileJsonRepository', () => {
 
       expect(() => repository.write(configFile)).to.not.throw();
 
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('second');
     });
   });
 
   describe('#update', () => {
+    // On a machine with no config file yet, the change still has to land -
+    // reading first and failing would break `config create` on first run.
+    it('should create the config file when there is none yet', () => {
+      expect(fs.existsSync(configFilePath)).to.be.false();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+
+      repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'created-on-first-run');
+      });
+
+      expect(fs.existsSync(configFilePath)).to.be.true();
+
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
+
+      expect(reread.getConfig('base').get('description')).to.equal('created-on-first-run');
+    });
+
     // The reported bug, stated as the outcome operators want rather than as a
     // failure they have to recover from: one process loads the config, another
     // changes and saves a different option, and both edits survive. Mutating a
@@ -176,8 +208,8 @@ describe('ConfigFileJsonRepository', () => {
     it('should keep concurrent edits to different options', () => {
       seedConfigFile();
 
-      const slowCommand = new ConfigFileJsonRepository(identityMigration, homeDir);
-      const otherCommand = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const slowCommand = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+      const otherCommand = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       // Both load the same starting state, as two overlapping commands would
       slowCommand.read();
@@ -191,7 +223,7 @@ describe('ConfigFileJsonRepository', () => {
         configFile.getConfig('base').set('core.rpc.port', 30000);
       });
 
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('set-by-other-command');
       expect(reread.getConfig('base').get('core.rpc.port')).to.equal(30000);
@@ -202,11 +234,11 @@ describe('ConfigFileJsonRepository', () => {
     it('should hand the mutator state written since this instance last read', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       repository.read();
 
-      new ConfigFileJsonRepository(identityMigration, homeDir)
+      new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults)
         .update((configFile) => {
           configFile.getConfig('base').set('description', 'written-by-someone-else');
         });
@@ -222,7 +254,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should return the state it saved', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       const configFile = repository.update((freshConfigFile) => {
         freshConfigFile.getConfig('base').set('description', 'returned');
@@ -235,7 +267,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should not write when the mutator throws', () => {
       const before = seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       expect(() => repository.update(() => {
         throw new Error('mutator failed');
@@ -253,7 +285,7 @@ describe('ConfigFileJsonRepository', () => {
 
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       repository.acquire();
 
@@ -269,7 +301,7 @@ describe('ConfigFileJsonRepository', () => {
         repository.release();
       }
 
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('via-write');
     });
@@ -277,7 +309,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should hold the lock between acquire and release, and free it after', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const lockPath = homeDir.joinPath('config.json.lock');
 
       repository.acquire();
@@ -294,7 +326,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should tolerate release without acquire, and repeated release', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
 
       expect(() => repository.release()).to.not.throw();
 
@@ -315,7 +347,7 @@ describe('ConfigFileJsonRepository', () => {
 
       // proper-lockfile floors `stale` at 2s and the refresh that detects loss at
       // 1s, so this is as fast as the path can be made to happen.
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, {
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, {
         stale: 2000,
       });
 
@@ -333,7 +365,7 @@ describe('ConfigFileJsonRepository', () => {
         repository.release();
       }
 
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.not.equal('must-not-be-saved');
     });
@@ -343,7 +375,7 @@ describe('ConfigFileJsonRepository', () => {
     it('should give up waiting for another holder with an actionable error', () => {
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, {
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, {
         acquireTimeout: 700,
       });
 
@@ -369,7 +401,7 @@ describe('ConfigFileJsonRepository', () => {
 
       seedConfigFile();
 
-      const repository = new ConfigFileJsonRepository(identityMigration, homeDir);
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
       const lockPath = homeDir.joinPath('config.json.lock');
       const holdMs = 700;
 
@@ -397,7 +429,7 @@ describe('ConfigFileJsonRepository', () => {
 
       expect(Date.now() - startedAt).to.be.at.least(holdMs / 2);
 
-      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.equal('written-after-waiting');
 

@@ -64,13 +64,15 @@ export default class ConfigFileJsonRepository {
   /**
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
+   * @param {createConfigFile} createConfigFile
    * @param {Object} [configFileLockOptions={}] - overrides for the lock timings,
    *   so the paths that only happen after seconds of waiting can be exercised
    * @param {number} [configFileLockOptions.stale]
    * @param {number} [configFileLockOptions.acquireTimeout]
    */
-  constructor(migrateConfigFile, homeDir, configFileLockOptions = {}) {
+  constructor(migrateConfigFile, homeDir, createConfigFile, configFileLockOptions = {}) {
     this.migrateConfigFile = migrateConfigFile;
+    this.createConfigFile = createConfigFile;
     this.ajv = new Ajv();
     this.lockStaleMs = configFileLockOptions.stale ?? LOCK_STALE_MS;
     this.lockAcquireTimeoutMs = configFileLockOptions.acquireTimeout ?? LOCK_ACQUIRE_TIMEOUT_MS;
@@ -159,15 +161,29 @@ export default class ConfigFileJsonRepository {
    *
    * @param {function(ConfigFile): void} mutate
    * @param {Object} [options={}] - passed through to read()
+   * @param {function(ConfigFile): void} [options.onSaved] - runs after the save
+   *   and before the lock is released, for effects that must not be reordered
+   *   against it: rendering service files, removing a config's directory
    * @returns {ConfigFile} the state that was saved
    */
   update(mutate, options = {}) {
+    const { onSaved, ...readOptions } = options;
+
     return this.#locked(() => {
-      const configFile = this.read(options);
+      // First run has nothing to read yet, and creating the defaults here rather
+      // than separately keeps that on the same locked path as every other change
+      // - two nodes being set up at once cannot both create the file.
+      const configFile = fs.existsSync(this.configFilePath)
+        ? this.read(readOptions)
+        : this.createConfigFile();
 
       mutate(configFile);
 
       this.#save(configFile);
+
+      if (onSaved) {
+        onSaved(configFile);
+      }
 
       return configFile;
     });

@@ -28,6 +28,7 @@ export default function startGroupNodesTaskFactory(
   waitForNodeToBeReadyTask,
   buildServicesTask,
   getConnectionHost,
+  configFileRepository,
 ) {
   /**
    * @typedef {startGroupNodesTask}
@@ -91,6 +92,13 @@ export default function startGroupNodesTaskFactory(
           if (minerAddress === null) {
             const privateKey = new PrivateKey();
             minerAddress = privateKey.toAddress('regtest').toString();
+
+            // Saved as its own locked step rather than carried to the end of the
+            // command: starting a group runs for many minutes, and the address is
+            // needed by the miner right now.
+            configFileRepository.update((configFile) => {
+              configFile.getConfig(minerConfig.getName()).set('core.miner.address', minerAddress);
+            });
 
             minerConfig.set('core.miner.address', minerAddress);
           }

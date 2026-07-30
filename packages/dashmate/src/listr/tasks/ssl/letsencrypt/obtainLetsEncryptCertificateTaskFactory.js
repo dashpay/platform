@@ -16,6 +16,7 @@ const LEGO_IMAGE = 'goacme/lego:v4.31.0';
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @param {saveCertificateTask} saveCertificateTask
  * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {writeConfigTemplates} writeConfigTemplates
  * @param {ConfigFile} configFile
  * @return {obtainLetsEncryptCertificateTask}
  */
@@ -27,6 +28,7 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   validateLetsEncryptCertificate,
   saveCertificateTask,
   configFileRepository,
+  writeConfigTemplates,
   configFile,
 ) {
   /**
@@ -252,8 +254,11 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           config.set('platform.gateway.ssl.enabled', true);
           config.set('platform.gateway.ssl.provider', 'letsencrypt');
 
-          // Save config file
+          // Save config file. Templates are rendered here too: this command
+          // holds the config lock for its run, and saving marks the configs
+          // clean, so nothing later would know they need re-rendering.
           configFileRepository.write(configFile);
+          writeConfigTemplates(config);
 
           // Save to gateway SSL directory
           return saveCertificateTask(config);

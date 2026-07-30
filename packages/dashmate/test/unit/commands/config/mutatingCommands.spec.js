@@ -23,7 +23,7 @@ describe('Config mutating commands', () => {
   let configFileRepository;
 
   function reread() {
-    return new ConfigFileJsonRepository((data) => data, homeDir).read();
+    return new ConfigFileJsonRepository((data) => data, homeDir, () => null).read();
   }
 
   beforeEach(() => {
@@ -43,7 +43,7 @@ describe('Config mutating commands', () => {
       'utf8',
     );
 
-    configFileRepository = new ConfigFileJsonRepository((data) => data, homeDir);
+    configFileRepository = new ConfigFileJsonRepository((data) => data, homeDir, () => null);
     loadedConfigFile = configFileRepository.read();
   });
 

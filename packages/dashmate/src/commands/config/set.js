@@ -68,11 +68,13 @@ Sets a configuration option in the default config
     // anything saved in between.
     const configName = config.getName();
 
-    const configFile = configFileRepository.update((freshConfigFile) => {
+    configFileRepository.update((freshConfigFile) => {
       freshConfigFile.getConfig(configName).set(optionPath, value);
+    }, {
+      // Rendered inside the lock, so two commands changing the same config
+      // cannot save in one order and render in the other.
+      onSaved: (savedConfigFile) => writeConfigTemplates(savedConfigFile.getConfig(configName)),
     });
-
-    writeConfigTemplates(configFile.getConfig(configName));
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${optionValue}`);

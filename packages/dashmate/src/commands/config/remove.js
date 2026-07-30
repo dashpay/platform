@@ -46,13 +46,12 @@ export default class ConfigRemoveCommand extends BaseCommand {
     // instead of writing.
     configFileRepository.update((freshConfigFile) => {
       freshConfigFile.removeConfig(configName);
-    });
-
-    // Only once the removal is saved. Deleting first would leave the service
-    // files gone while config.json still listed the config if saving failed.
-    fs.rmSync(serviceConfigsPath, {
-      recursive: true,
-      force: true,
+    }, {
+      // Only once the removal is saved, and while the lock is still held:
+      // deleting first would leave the service files gone while config.json
+      // still listed the config if saving failed, and deleting after releasing
+      // could remove files a concurrent re-creation had just written.
+      onSaved: () => fs.rmSync(serviceConfigsPath, { recursive: true, force: true }),
     });
 
     // eslint-disable-next-line no-console
