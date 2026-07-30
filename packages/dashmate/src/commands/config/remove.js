@@ -32,6 +32,7 @@ export default class ConfigRemoveCommand extends BaseCommand {
     configFile,
     defaultConfigs,
     homeDir,
+    configFileRepository,
   ) {
     if (defaultConfigs.has(configName)) {
       throw new Error(`system config ${configName} can't be removed.\nPlease use 'dashmate reset --hard --config=${configName}' command to reset the configuration`);
@@ -39,8 +40,16 @@ export default class ConfigRemoveCommand extends BaseCommand {
 
     const serviceConfigsPath = resolveConfigDirectory(homeDir, configName);
 
-    configFile.removeConfig(configName);
+    // Read, change and save in one locked step. Removing from the state loaded
+    // at startup would revert anything another command saved in the meantime,
+    // and removing a config another command already removed now fails here
+    // instead of writing.
+    configFileRepository.update((freshConfigFile) => {
+      freshConfigFile.removeConfig(configName);
+    });
 
+    // Only once the removal is saved. Deleting first would leave the service
+    // files gone while config.json still listed the config if saving failed.
     fs.rmSync(serviceConfigsPath, {
       recursive: true,
       force: true,

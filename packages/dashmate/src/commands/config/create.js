@@ -31,8 +31,18 @@ export default class ConfigCreateCommand extends BaseCommand {
     },
     flags,
     configFile,
+    configFileRepository,
+    writeConfigTemplates,
   ) {
-    configFile.createConfig(configName, fromConfigName);
+    // Read, change and save in one locked step, so a config created here cannot
+    // revert a change another command saved in the meantime.
+    const freshConfigFile = configFileRepository.update((updatedConfigFile) => {
+      updatedConfigFile.createConfig(configName, fromConfigName);
+    });
+
+    // The new config needs its service files rendered, and the config file this
+    // command was handed at startup is deliberately not the one that changed.
+    writeConfigTemplates(freshConfigFile.getConfig(configName));
 
     // eslint-disable-next-line no-console
     console.log(`${configName} created`);
