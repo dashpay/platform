@@ -304,6 +304,63 @@ describe('ConfigFileJsonRepository', () => {
       expect(() => repository.release()).to.not.throw();
     });
 
+    // Exclusivity is the whole guarantee for a command that holds the lock across
+    // its run, so losing it has to stop the save rather than pass unnoticed.
+    // Reproduced by removing the lock directory out from under a live holder and
+    // letting its refresh discover that, which is what a stolen lock looks like.
+    it('should refuse to save after losing a lock it believed it held', async function it2() {
+      this.timeout(10000);
+
+      seedConfigFile();
+
+      // proper-lockfile floors `stale` at 2s and the refresh that detects loss at
+      // 1s, so this is as fast as the path can be made to happen.
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, {
+        stale: 2000,
+      });
+
+      repository.acquire();
+
+      try {
+        fs.rmdirSync(homeDir.joinPath('config.json.lock'));
+
+        await new Promise((resolve) => { setTimeout(resolve, 1500); });
+
+        expect(() => repository.update((configFile) => {
+          configFile.getConfig('base').set('description', 'must-not-be-saved');
+        })).to.throw('Lost the lock');
+      } finally {
+        repository.release();
+      }
+
+      const reread = new ConfigFileJsonRepository(identityMigration, homeDir).read();
+
+      expect(reread.getConfig('base').get('description')).to.not.equal('must-not-be-saved');
+    });
+
+    // A waiter should be told what is happening in dashmate's terms, and only
+    // after actually waiting - not handed the locking library's wording.
+    it('should give up waiting for another holder with an actionable error', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, {
+        acquireTimeout: 700,
+      });
+
+      // Someone else holds it, exactly as proper-lockfile represents it
+      fs.mkdirSync(homeDir.joinPath('config.json.lock'));
+
+      const startedAt = Date.now();
+
+      expect(() => repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'never-applied');
+      })).to.throw('Another dashmate command is modifying configuration');
+
+      expect(Date.now() - startedAt).to.be.at.least(600);
+
+      fs.rmdirSync(homeDir.joinPath('config.json.lock'));
+    });
+
     // Reading fresh inside the lock is only sound if the lock is actually
     // honoured across processes. proper-lockfile represents a held lock as a
     // directory, so another process needs nothing but `fs` to hold it.

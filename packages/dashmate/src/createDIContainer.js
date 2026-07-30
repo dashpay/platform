@@ -149,6 +149,7 @@ export default async function createDIContainer(options = {}) {
       HomeDir.createWithPathOrDefault(options.DASHMATE_HOME_DIR)
     )).singleton(),
     getServiceList: asFunction(getServiceListFactory).singleton(),
+    configFileLockOptions: asValue({}),
     configFileRepository: asClass(ConfigFileJsonRepository).singleton(),
     getBaseConfig: asFunction(getBaseConfigFactory).singleton(),
     getLocalConfig: asFunction(getLocalConfigFactory).singleton(),

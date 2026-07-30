@@ -64,10 +64,16 @@ export default class ConfigFileJsonRepository {
   /**
    * @param {migrateConfigFile} migrateConfigFile
    * @param {HomeDir} homeDir
+   * @param {Object} [configFileLockOptions={}] - overrides for the lock timings,
+   *   so the paths that only happen after seconds of waiting can be exercised
+   * @param {number} [configFileLockOptions.stale]
+   * @param {number} [configFileLockOptions.acquireTimeout]
    */
-  constructor(migrateConfigFile, homeDir) {
+  constructor(migrateConfigFile, homeDir, configFileLockOptions = {}) {
     this.migrateConfigFile = migrateConfigFile;
     this.ajv = new Ajv();
+    this.lockStaleMs = configFileLockOptions.stale ?? LOCK_STALE_MS;
+    this.lockAcquireTimeoutMs = configFileLockOptions.acquireTimeout ?? LOCK_ACQUIRE_TIMEOUT_MS;
     this.configFilePath = homeDir.joinPath('config.json');
     // Locking a sibling rather than the config file itself keeps first run
     // working, where there is no config file to lock yet.
@@ -293,7 +299,7 @@ export default class ConfigFileJsonRepository {
    * @returns {function} release
    */
   #acquireLock() {
-    const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS;
+    const deadline = Date.now() + this.lockAcquireTimeoutMs;
 
     for (;;) {
       try {
@@ -302,7 +308,7 @@ export default class ConfigFileJsonRepository {
           // The config file legitimately does not exist on first run, and
           // realpath resolution would fail on it.
           realpath: false,
-          stale: LOCK_STALE_MS,
+          stale: this.lockStaleMs,
           // Rethrowing here would kill the process - the handler runs from a
           // refresh timer, not this call stack. Recording it instead lets the
           // next save refuse, which matters because a command holding the lock
@@ -312,8 +318,14 @@ export default class ConfigFileJsonRepository {
           },
         });
       } catch (e) {
-        if (e.code !== 'ELOCKED' || Date.now() >= deadline) {
+        if (e.code !== 'ELOCKED') {
           throw e;
+        }
+
+        if (Date.now() >= deadline) {
+          throw new Error(`Timed out waiting to change '${this.configFilePath}'.`
+            + ' Another dashmate command is modifying configuration - wait for it'
+            + ' to finish and run this again.');
         }
 
         sleepSync(LOCK_RETRY_INTERVAL_MS);
