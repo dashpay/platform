@@ -13,7 +13,7 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
-    AssetLockFundingType, CreditOutputFunding,
+    AssetLockFundingAccount, AssetLockFundingType, CreditOutputFunding,
 };
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -107,13 +107,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         // 3. Delegate to the key-wallet signer-driven builder.
+        //
+        // We only ever fund from a standard BIP44 account here — CoinJoin
+        // funding accounts and drain-mode (spend-entire-account) selection
+        // are upstream key-wallet features platform-wallet doesn't expose
+        // yet, so `drain` stays `false` to preserve prior UTXO-selection
+        // behavior.
         let result = info
             .core_wallet
             .build_asset_lock_with_signer(
                 wallet,
-                account_index,
+                AssetLockFundingAccount::Bip44 { account_index },
                 vec![funding],
                 DEFAULT_FEE_PER_KB,
+                false,
                 signer,
             )
             .await
