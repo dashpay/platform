@@ -444,7 +444,17 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
             }
-            PlatformWalletError::CoreInsufficientFunds { .. } => {
+            // Both Core-send selector shortfalls share code 22: the atomic
+            // builder's (`CoreInsufficientFunds`) and the one-shot signed-payment
+            // primitive's (`PaymentInsufficientFunds`). Without this second arm
+            // the payment shortfall flattened to `ErrorUnknown`, so the typed
+            // `available`/`required` amounts `build_signed_payment` computes
+            // never reached the host as an actionable code — and after the
+            // dashpay/platform#4184 re-scope those amounts are SINGLE-ACCOUNT
+            // figures the host must be able to act on (the signal is "pick a
+            // different funding account", not "retry the same one").
+            PlatformWalletError::CoreInsufficientFunds { .. }
+            | PlatformWalletError::PaymentInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
             }
             PlatformWalletError::AssetLockNotTracked(..) => {

@@ -216,13 +216,19 @@ internal object WalletManagerNative {
 
     /**
      * `core_wallet_build_signed_payment` — build + sign a standard L1 payment
-     * funded from the UNION of the wallet's signable funds accounts (watch-only
-     * DashPay external accounts excluded), WITHOUT broadcasting.
+     * funded from ONE of the wallet's signable funds accounts, WITHOUT
+     * broadcasting.
      *
      * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
      * [outputsBlob] encodes the recipients big-endian as `u32 count` then per
      * row `u32 addrLen, addr utf8, u64 amount`. [feePerKb] is duffs/kB (0 =
      * default). [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     * [fundingPath] is an optional UTF-8 BIP32 derivation-path string
+     * (dashpay/platform#4184) naming the single funds account whose UTXOs fund
+     * the payment: null (the default) funds from the unmixed BIP44 account; an
+     * explicit account-level path (e.g. the DIP-9 CoinJoin account path) funds
+     * strictly from that one account, with no union across accounts and no
+     * consent gate.
      *
      * Returns a `byte[]` packed big-endian as `u64 fee, u64 change,` then the
      * consensus-serialized signed transaction bytes (0-length / null after
@@ -233,6 +239,7 @@ internal object WalletManagerNative {
         outputsBlob: ByteArray,
         feePerKb: Long,
         coreSignerHandle: Long,
+        fundingPath: String?,
     ): ByteArray
 
     /**

@@ -333,6 +333,94 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
+/// Builds a testnet wallet manager whose balance is split across TWO privacy
+/// domains: `bip44_duffs` on BIP44 account 0 and `coinjoin_duffs` on the DIP-9
+/// CoinJoin account 0. Lets the funding-domain tests prove that coin selection
+/// never crosses from one account into the other.
+///
+/// Returns the manager, the wallet id, and a soft signer over the wallet's seed
+/// (which can derive keys for BOTH accounts, so per-account signing can be
+/// exercised end-to-end).
+#[cfg(test)]
+pub(crate) async fn split_funded_wallet_manager(
+    bip44_duffs: u64,
+    coinjoin_duffs: u64,
+) -> (
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    WalletSigner,
+) {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait as _;
+
+    let mut ctx = TestWalletContext::new_random();
+
+    // Fund BIP44 account 0 (the default funding account) at its pre-derived
+    // receive address.
+    let bip44_tx = Transaction::dummy(&ctx.receive_address, 0..1, &[bip44_duffs]);
+    let bip44_result = ctx
+        .check_transaction(
+            &bip44_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                1,
+                BlockHash::all_zeros(),
+                1_700_000_000,
+            )),
+        )
+        .await;
+    assert!(
+        bip44_result.is_relevant && bip44_result.is_new_transaction,
+        "BIP44 funding tx should be recognized"
+    );
+
+    // Derive a fresh CoinJoin receive address (registering it in the CoinJoin
+    // pool so the checker recognizes the funding), then fund CoinJoin account 0.
+    let coinjoin_xpub = ctx
+        .wallet
+        .get_coinjoin_account(0)
+        .expect("default wallet has CoinJoin account 0")
+        .account_xpub;
+    // CoinJoin is a single-pool (non-standard) account, so it derives via
+    // `next_address` rather than `next_receive_address`.
+    let coinjoin_address = ctx
+        .managed_wallet
+        .first_coinjoin_managed_account_mut()
+        .expect("default wallet has a managed CoinJoin account 0")
+        .next_address(Some(&coinjoin_xpub), true)
+        .expect("CoinJoin receive address");
+    let coinjoin_tx = Transaction::dummy(&coinjoin_address, 0..1, &[coinjoin_duffs]);
+    let coinjoin_result = ctx
+        .check_transaction(
+            &coinjoin_tx,
+            TransactionContext::InChainLockedBlock(BlockInfo::new(
+                2,
+                BlockHash::all_zeros(),
+                1_700_000_100,
+            )),
+        )
+        .await;
+    assert!(
+        coinjoin_result.is_relevant && coinjoin_result.is_new_transaction,
+        "CoinJoin funding tx should be recognized"
+    );
+
+    let signer = WalletSigner {
+        wallet: ctx.wallet.clone(),
+    };
+
+    let balance = Arc::new(WalletBalance::new());
+    let info = PlatformWalletInfo {
+        core_wallet: ctx.managed_wallet,
+        balance,
+        identity_manager: IdentityManager::new(),
+        tracked_asset_locks: BTreeMap::new(),
+    };
+
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
+    let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+
+    (Arc::new(RwLock::new(wm)), wallet_id, signer)
+}
+
 /// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
 /// runtime is intentionally not started; abandon/free only need wallet state.
 pub async fn funded_spv_core_wallet(

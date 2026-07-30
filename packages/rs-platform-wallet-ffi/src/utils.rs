@@ -2,6 +2,44 @@ use crate::error::*;
 use crate::{check_ptr, unwrap_result_or_return};
 use std::os::raw::{c_char, c_uchar};
 
+/// Decode an OPTIONAL BIP32 derivation-path string from a raw `(ptr, len)` pair
+/// over the C ABI — the shared `funding_path` decoder for every entry point
+/// that names a SINGLE funding account (dashpay/platform#4184).
+///
+/// A null pointer or zero length is `None` (the default: fund from the unmixed
+/// BIP44 account). Otherwise the bytes are parsed as a UTF-8 BIP32 path (e.g.
+/// `"m/44'/5'/0'"`); invalid UTF-8 or a malformed path is a hard
+/// `ErrorInvalidParameter` — never a silent fallback to the default account,
+/// which would fund the transaction from coins the caller did not choose.
+///
+/// # Safety
+/// `ptr`, when non-null, must point to `len` readable bytes for the duration of
+/// the call.
+pub(crate) unsafe fn parse_optional_derivation_path(
+    ptr: *const u8,
+    len: usize,
+) -> Result<Option<key_wallet::bip32::DerivationPath>, PlatformWalletFFIResult> {
+    use std::str::FromStr;
+    if ptr.is_null() || len == 0 {
+        return Ok(None);
+    }
+    let bytes = std::slice::from_raw_parts(ptr, len);
+    let text = std::str::from_utf8(bytes).map_err(|e| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("funding_path is not valid UTF-8: {e}"),
+        )
+    })?;
+    key_wallet::bip32::DerivationPath::from_str(text)
+        .map(Some)
+        .map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invalid funding_path derivation path {text:?}: {e}"),
+            )
+        })
+}
+
 /// RAII guard that scrubs a `secp256k1::SecretKey`'s scalar on drop. `from_slice`
 /// allocates a 32-byte scalar copy of the caller's private key, and `SecretKey`
 /// has no `Drop` wipe of its own — so without this the copy would survive on the
