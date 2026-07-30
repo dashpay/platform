@@ -79,20 +79,9 @@ export default function scheduleRenewZeroSslCertificateFactory(
           noRetry: true,
         });
 
-        // This process has held its copy of the config file since it started,
-        // possibly for months, so saving that copy would revert everything
-        // changed on the node since. Re-apply just what the renewal produced
-        // onto the current state instead.
-        const renewedOptions = config.get('platform.gateway.ssl');
-
-        configFileRepository.update((freshConfigFile) => {
-          freshConfigFile.getConfig(config.getName())
-            .set('platform.gateway.ssl', renewedOptions);
-        }, {
-          onSaved: (savedConfigFile) => writeConfigTemplates(
-            savedConfigFile.getConfig(config.getName()),
-          ),
-        });
+        // Write config files
+        configFileRepository.write(configFile);
+        writeConfigTemplates(config);
 
         // TODO: We can use https://www.envoyproxy.io/docs/envoy/v1.30.1/start/quick-start/configuration-dynamic-filesystem.html#start-quick-start-dynamic-fs-dynamic-lds
         //  to dynamically update envoy configuration without restarting it

@@ -48,12 +48,15 @@ export default class BaseCommand extends Command {
     }
 
     let configFile;
+    let migratedConfigs = [];
     try {
-      // Load config collection from config file
+      // Load config collection from config file, saving it again if loading
+      // migrated it - under one lock, so the migrated shape cannot revert a
+      // change saved in between.
       // Skip per-config validation when --force flag is passed (e.g., for reset command)
-      configFile = configFileRepository.read({
+      ({ configFile, migrated: migratedConfigs } = configFileRepository.readAndMigrate({
         skipValidation: Boolean(this.parsedFlags.force),
-      });
+      }));
     } catch (e) {
       // Create default config collection if config file is not present
       // on the first start for example
@@ -70,18 +73,12 @@ export default class BaseCommand extends Command {
       configFile = createConfigFile();
     }
 
-    // Migrating produced a new shape that has to reach disk. Saving it here,
-    // rather than carrying it to the end of the command, is what keeps the
-    // registered config file clean - anything still dirty at exit would be a
-    // snapshot from before the command ran.
-    if (configFile.isChanged()) {
-      const changedConfigs = configFile.getAllConfigs().filter((config) => config.isChanged());
-
-      configFileRepository.write(configFile);
-
+    // A migration changes what the services should be running with, so their
+    // files are re-rendered. The config file itself was already saved with it.
+    if (migratedConfigs.length > 0) {
       const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
 
-      changedConfigs.forEach(writeConfigTemplates);
+      migratedConfigs.forEach(writeConfigTemplates);
     }
 
     // Register config collection in the container

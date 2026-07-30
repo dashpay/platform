@@ -190,6 +190,31 @@ export default class ConfigFileJsonRepository {
   }
 
   /**
+   * Read the config file, saving the result when reading migrated it.
+   *
+   * Migrating produces a new shape that has to reach disk. Doing both under one
+   * lock is what keeps it from reverting anything saved between the read and the
+   * save - the same split that made a command's startup copy dangerous.
+   *
+   * @param {Object} [options={}] - passed through to read()
+   * @returns {{configFile: ConfigFile, migrated: Config[]}} migrated is the
+   *   configs whose shape changed, so their service files can be re-rendered
+   */
+  readAndMigrate(options = {}) {
+    return this.#locked(() => {
+      const configFile = this.read(options);
+
+      const migrated = configFile.getAllConfigs().filter((config) => config.isChanged());
+
+      if (configFile.isChanged()) {
+        this.#save(configFile);
+      }
+
+      return { configFile, migrated };
+    });
+  }
+
+  /**
    * Hold the lock for as long as this process is changing configuration.
    *
    * For a command that reconfigures a node over minutes, taking the lock before

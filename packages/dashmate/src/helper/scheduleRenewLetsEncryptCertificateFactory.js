@@ -75,20 +75,9 @@ export default function scheduleRenewLetsEncryptCertificateFactory(
           noRetry: true,
         });
 
-        // This process has held its copy of the config file since it started,
-        // possibly for months, so saving that copy would revert everything
-        // changed on the node since. Re-apply just what the renewal produced
-        // onto the current state instead.
-        const renewedOptions = config.get('platform.gateway.ssl');
-
-        configFileRepository.update((freshConfigFile) => {
-          freshConfigFile.getConfig(config.getName())
-            .set('platform.gateway.ssl', renewedOptions);
-        }, {
-          onSaved: (savedConfigFile) => writeConfigTemplates(
-            savedConfigFile.getConfig(config.getName()),
-          ),
-        });
+        // Write config files
+        configFileRepository.write(configFile);
+        writeConfigTemplates(config);
 
         // Restart Gateway to catch up new SSL certificates
         await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');

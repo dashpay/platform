@@ -183,6 +183,59 @@ describe('ConfigFileJsonRepository', () => {
   });
 
   describe('#update', () => {
+    // The generic save-on-exit used to persist migration, and a migrated startup
+    // copy saved afterwards would revert whatever the command itself changed.
+    // Migration is now saved where it happens, so the two cannot fight.
+    it('should not let a migrated startup copy overwrite a later change', () => {
+      seedConfigFile();
+
+      const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
+      const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
+
+      // What BaseCommand.init() does: migration reached disk, nothing left pending
+      const migrated = repository.read();
+
+      expect(migrated.isChanged()).to.be.true();
+
+      repository.write(migrated);
+
+      expect(migrated.isChanged()).to.be.false();
+      expect(migrated.getAllConfigs().filter((config) => config.isChanged())).to.be.empty();
+
+      // and the command's own change lands on top of it
+      repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'changed-by-command');
+      });
+
+      const reread = new ConfigFileJsonRepository(migration, homeDir, createDefaults).read();
+
+      expect(reread.getConfig('base').get('description')).to.equal('changed-by-command');
+    });
+
+    // Effects registered by the caller run before the lock is released, so a
+    // concurrent command cannot slip between the save and them.
+    it('should run onSaved after saving and while still holding the lock', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+
+      let sawOnDisk;
+      let heldLock;
+
+      repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'saved-then-observed');
+      }, {
+        onSaved: () => {
+          sawOnDisk = JSON.parse(fs.readFileSync(configFilePath, 'utf8'))
+            .configs.base.description;
+          heldLock = fs.existsSync(homeDir.joinPath('config.json.lock'));
+        },
+      });
+
+      expect(sawOnDisk).to.equal('saved-then-observed');
+      expect(heldLock, 'lock should still be held while onSaved runs').to.be.true();
+    });
+
     // On a machine with no config file yet, the change still has to land -
     // reading first and failing would break `config create` on first run.
     it('should create the config file when there is none yet', () => {

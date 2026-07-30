@@ -68,15 +68,28 @@ describe('Config mutating commands', () => {
   });
 
   describe('config default', () => {
+    // Pointed at a config that is NOT already the default, so deleting the save
+    // would fail this rather than passing on the starting state.
     it('should save the new default without touching the config file loaded at startup', async () => {
+      await new ConfigCreateCommand().runWithDependencies(
+        { config: 'node1', from: 'base' },
+        flags,
+        loadedConfigFile,
+        configFileRepository,
+        noTemplates,
+      );
+
+      expect(reread().getDefaultConfigName()).to.equal('base');
+
       await new ConfigDefaultCommand().runWithDependencies(
-        { config: 'base' },
+        { config: 'node1' },
         flags,
         loadedConfigFile,
         configFileRepository,
       );
 
-      expect(reread().getDefaultConfigName()).to.equal('base');
+      expect(reread().getDefaultConfigName()).to.equal('node1');
+      expect(loadedConfigFile.getDefaultConfigName()).to.equal('base');
       expect(loadedConfigFile.isChanged()).to.be.false();
     });
   });

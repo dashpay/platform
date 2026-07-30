@@ -19,7 +19,6 @@ import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactor
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
  * @param {ConfigFileJsonRepository} configFileRepository
- * @param {writeConfigTemplates} writeConfigTemplates
  * @param {ConfigFile} configFile
  * @return {obtainZeroSSLCertificateTask}
  */
@@ -36,7 +35,6 @@ export default function obtainZeroSSLCertificateTaskFactory(
   homeDir,
   validateZeroSslCertificate,
   configFileRepository,
-  writeConfigTemplates,
   configFile,
 ) {
   /**
@@ -148,11 +146,8 @@ export default function obtainZeroSSLCertificateTaskFactory(
           config.set('platform.gateway.ssl.provider', 'zerossl');
           config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
 
-          // Save config file. Templates are rendered here too: this command
-          // holds the config lock for its run, and saving marks the configs
-          // clean, so nothing later would know they need re-rendering.
+          // Save config file
           configFileRepository.write(configFile);
-          writeConfigTemplates(config);
         },
       },
       {
