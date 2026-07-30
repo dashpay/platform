@@ -258,6 +258,40 @@ fn read_cstring_opt(
     }
 }
 
+/// Strict variant of [`read_cstring_opt`] for parameters where a JNI read
+/// failure must be surfaced rather than silently degraded. JVM null (or an
+/// empty string) is still `Ok(None)` (the natural "unset" default), but a
+/// genuine `get_string` error THROWS and returns `Err(())` instead of falling
+/// back to `None`. Used for money-source parameters such as `fundingPath`,
+/// where degrading to the default account would spend the wrong coins.
+pub(crate) fn read_cstring_opt_strict(
+    env: &mut JNIEnv,
+    s: &JString,
+    field: &str,
+) -> Result<Option<std::ffi::CString>, ()> {
+    if s.is_null() {
+        return Ok(None);
+    }
+    let owned: String = match env.get_string(s) {
+        Ok(v) => v.into(),
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
+            return Err(());
+        }
+    };
+    if owned.is_empty() {
+        return Ok(None);
+    }
+    match std::ffi::CString::new(owned) {
+        Ok(c) => Ok(Some(c)),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            Err(())
+        }
+    }
+}
+
 /// The default Orchard payment address for `account` on the wallet's bound
 /// shielded sub-wallet — bridges `platform_wallet_manager_shielded_default_address`.
 /// Returns the 43 raw bytes (11-byte diversifier + 32-byte pk_d) as a

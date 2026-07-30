@@ -2,6 +2,7 @@ pub mod apply;
 pub mod asset_lock;
 pub mod core;
 pub mod core_address_key;
+pub mod funding_privacy;
 pub mod identity;
 pub mod persister;
 pub mod platform_addresses;

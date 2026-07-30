@@ -1007,16 +1007,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 /// `core_wallet_build_signed_payment` — build + sign a standard L1 payment
-/// funded from the UNION of the wallet's signable funds accounts (BIP44 +
-/// BIP32 + CoinJoin + DashPay receiving; watch-only DashPay external accounts
-/// excluded), and return the result WITHOUT broadcasting.
+/// funded from ONE of the wallet's signable funds accounts, and return the
+/// result WITHOUT broadcasting.
 ///
 /// `core_handle` is the transient core-wallet `Handle` from
 /// [platformWalletGetCore]. `outputs_blob` is the recipients, encoded
 /// big-endian as `u32 count` then per row `u32 addrLen, addr utf8, u64 amount`
 /// (`ManagedPlatformWallet.encodePaymentOutputs`). `fee_per_kb` is duffs/kB, or
 /// 0 for the default. `core_signer_handle` is the manager's
-/// `MnemonicResolverHandle`.
+/// `MnemonicResolverHandle`. `funding_path` is an optional UTF-8 BIP32
+/// derivation-path string (dashpay/platform#4184) naming the SINGLE funds
+/// account whose UTXOs fund the payment: null (the default) funds from the
+/// unmixed BIP44 account; an explicit account-level path (e.g. the DIP-9
+/// CoinJoin account path) funds strictly from that one account, with no union
+/// across accounts and no consent gate.
 ///
 /// Returns a `byte[]` packed big-endian as `u64 fee, u64 change,` then the
 /// consensus-serialized signed transaction bytes (`fee` and `change` in duffs),
@@ -1031,6 +1035,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     outputs_blob: JByteArray,
     fee_per_kb: jlong,
     core_signer_handle: jlong,
+    funding_path: JString,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         if core_handle == 0 {
@@ -1053,6 +1058,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 return ptr::null_mut();
             }
         };
+        // Optional BIP32 derivation-path string naming the single funds account
+        // (null = the unmixed BIP44 account). Passed to the FFI as UTF-8 bytes
+        // (without the trailing NUL) + length. Uses the STRICT reader: a genuine
+        // read error must throw, not silently degrade this money-source param to
+        // the default BIP44 account (which would spend the wrong coins).
+        let funding_path =
+            match crate::funding::read_cstring_opt_strict(env, &funding_path, "fundingPath") {
+                Ok(v) => v,
+                Err(()) => return ptr::null_mut(),
+            };
+        let (funding_path_ptr, funding_path_len) =
+            funding_path.as_ref().map_or((ptr::null(), 0usize), |c| {
+                let b = c.as_bytes();
+                (b.as_ptr(), b.len())
+            });
 
         let mut out_tx_bytes: *mut u8 = ptr::null_mut();
         let mut out_tx_len: usize = 0;
@@ -1065,6 +1085,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 blob.len(),
                 fee_per_kb as u64,
                 core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                funding_path_ptr,
+                funding_path_len,
                 &mut out_tx_bytes,
                 &mut out_tx_len,
                 &mut out_fee,

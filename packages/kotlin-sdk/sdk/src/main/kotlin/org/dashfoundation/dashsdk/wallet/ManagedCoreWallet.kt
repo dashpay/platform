@@ -69,7 +69,7 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         WalletManagerNative.coreWalletBroadcastSignedPayment(handle, token)
 
     /**
-     * Build + sign a standard L1 payment funded from the UNION of the wallet's
+     * Build + sign a standard L1 payment funded from ONE of the wallet's
      * signable funds accounts, WITHOUT broadcasting. Returns the packed native
      * result (`u64 fee, u64 change,` then the signed tx bytes, big-endian) —
      * decoded by [ManagedPlatformWallet.buildSignedPayment]. See that method
@@ -80,12 +80,14 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         outputsBlob: ByteArray,
         feePerKb: Long,
         coreSignerHandle: Long,
+        fundingPath: String?,
     ): ByteArray =
         WalletManagerNative.coreWalletBuildSignedPayment(
             handle,
             outputsBlob,
             feePerKb,
             coreSignerHandle,
+            fundingPath,
         )
 
     override fun close() {

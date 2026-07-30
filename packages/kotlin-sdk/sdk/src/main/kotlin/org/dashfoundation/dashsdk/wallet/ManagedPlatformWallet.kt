@@ -383,11 +383,9 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
-     * Build and sign a Core L1 payment to [recipients], funding it from the
-     * UNION of this wallet's signable funds accounts (BIP44 + BIP32 + CoinJoin
-     * + DashPay receiving; watch-only DashPay external accounts excluded), and
-     * return the signed raw transaction bytes plus the fee and change —
-     * **WITHOUT broadcasting**.
+     * Build and sign a Core L1 payment to [recipients], funding it from a
+     * **single** funds account, and return the signed raw transaction bytes
+     * plus the fee and change — **WITHOUT broadcasting**.
      *
      * This is the transition-era "give me signed bytes" primitive: the Android
      * wallet hands [SignedCorePayment.txBytes] to dashj for commit + broadcast
@@ -395,9 +393,20 @@ class ManagedPlatformWallet internal constructor(
      * confidence listeners), while the SDK owns coin selection and signing. It
      * does not broadcast and does not persist a debit; the selected inputs are
      * only reserved in memory (released when the spend is later observed by sync
-     * or by the reservation-TTL backstop). Coin selection auto-spans every
-     * signable account, so — unlike [sendToAddresses] — the caller does not
-     * pick a funding account.
+     * or by the reservation-TTL backstop).
+     *
+     * **Funding-domain isolation (dashpay/platform#4184).** Coin selection never
+     * spans accounts. [fundingPath] names the one funds account to draw from;
+     * `null` (the default) draws from the unmixed BIP44 account. Passing an
+     * explicit account-level path — e.g. the DIP-9 CoinJoin account path — spends
+     * previously-mixed coins deliberately, and only those. Unioning ordinary,
+     * CoinJoin, and DashPay-receiving coins into one transaction would
+     * irreversibly link those privacy domains on chain, so it is never done
+     * implicitly: if the named account cannot cover the payment this throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.CoreInsufficientFunds]
+     * rather than reaching into another account — whose `available` figure is
+     * that ONE account's balance, so the actionable response is to pick a
+     * different [fundingPath], not to retry the same one.
      *
      * Runs through the manager's [TeardownGate] like every other native op.
      * A concurrent build cannot select the same UTXO because the underlying
@@ -411,11 +420,14 @@ class ManagedPlatformWallet internal constructor(
      *   (`PlatformWalletManager.mnemonicResolverHandle`); no private key crosses
      *   the boundary.
      * @param feePerKb fee rate in duffs/kB, or 0 for the SDK default.
+     * @param fundingPath optional UTF-8 BIP32 derivation-path string naming the
+     *   single funds account to fund from; `null` = the unmixed BIP44 account.
      */
     suspend fun buildSignedPayment(
         recipients: List<Pair<String, Long>>,
         coreSignerHandle: Long,
         feePerKb: Long = 0,
+        fundingPath: String? = null,
     ): SignedCorePayment = gate.op {
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) { "every recipient amount must be positive" }
@@ -425,7 +437,7 @@ class ManagedPlatformWallet internal constructor(
         mapNativeErrors {
             coreWallet().use { core ->
                 decodeSignedPayment(
-                    core.buildSignedPayment(outputsBlob, feePerKb, coreSignerHandle),
+                    core.buildSignedPayment(outputsBlob, feePerKb, coreSignerHandle, fundingPath),
                 )
             }
         }
