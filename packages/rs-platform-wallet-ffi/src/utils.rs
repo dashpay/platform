@@ -263,6 +263,60 @@ pub unsafe extern "C" fn platform_wallet_pubkey_hash_from_private_key(
 mod tests {
     use super::*;
 
+    /// `parse_optional_derivation_path` turns the caller's optional
+    /// `funding_path` bytes into the single-account selector the send primitive
+    /// funds from (dashpay/platform#4184). Null/empty means "the default
+    /// account", so the null case must stay distinguishable from a parse
+    /// failure — mapping a malformed path to `None` would silently fund from
+    /// BIP44 instead of the account the caller named.
+    #[test]
+    fn optional_derivation_path_treats_null_and_empty_as_default() {
+        for (ptr, len) in [
+            (std::ptr::null::<u8>(), 0usize),
+            (std::ptr::null::<u8>(), 12usize),
+            (b"m/44'/5'/0'".as_ptr(), 0usize),
+        ] {
+            let parsed = unsafe { parse_optional_derivation_path(ptr, len) }
+                .expect("null/empty is not an error");
+            assert!(parsed.is_none(), "null/empty must mean the default account");
+        }
+    }
+
+    #[test]
+    fn optional_derivation_path_parses_account_level_paths() {
+        use std::str::FromStr;
+
+        for text in ["m/44'/5'/0'", "m/9'/5'/4'/0'", "m/44'/1'/7'"] {
+            let parsed = unsafe { parse_optional_derivation_path(text.as_ptr(), text.len()) }
+                .expect("a valid BIP32 path parses");
+            assert_eq!(
+                parsed,
+                Some(key_wallet::bip32::DerivationPath::from_str(text).expect("valid")),
+                "{text} must round-trip verbatim"
+            );
+        }
+    }
+
+    /// A malformed path is an error, never a silent `None`.
+    #[test]
+    fn optional_derivation_path_rejects_garbage() {
+        for text in ["not a path", "m/44'/5'/zzz", "///"] {
+            let err = unsafe { parse_optional_derivation_path(text.as_ptr(), text.len()) }
+                .expect_err("garbage must not parse");
+            assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        }
+    }
+
+    #[test]
+    fn optional_derivation_path_rejects_non_utf8() {
+        let bytes = [0xffu8, 0xfe, 0xfd];
+        let err = unsafe { parse_optional_derivation_path(bytes.as_ptr(), bytes.len()) }
+            .expect_err("invalid UTF-8 must not parse");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        let msg = unsafe { std::ffi::CStr::from_ptr(err.message) }.to_string_lossy();
+        assert!(msg.contains("UTF-8"), "got {msg}");
+    }
+
     #[test]
     fn test_hash160_matches_known_vector() {
         use dashcore::hashes::Hash;

@@ -274,14 +274,27 @@ mod outcome_tests {
         );
     }
 
+    /// An error raised BEFORE the transaction reached the network must not
+    /// report a txid — the caller would otherwise track a transaction that was
+    /// never broadcast. The code itself is whatever the blanket `From` impl
+    /// maps the variant to; `TransactionBuild` gained a dedicated
+    /// `ErrorTransactionBuild` code (dashpay/platform#4247 review) instead of
+    /// flattening to `ErrorUnknown`, and the txid contract is unchanged by
+    /// that.
     #[test]
     fn operational_error_does_not_carry_a_txid() {
         let outcome = classify_broadcast_result(
             Err(PlatformWalletError::TransactionBuild("invalid".to_string())),
             txid(4),
         );
-        assert_eq!(outcome.0, None);
-        assert_eq!(outcome.1.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(
+            outcome.0, None,
+            "a pre-broadcast failure must report no txid"
+        );
+        assert_eq!(
+            outcome.1.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBuild
+        );
     }
 }
 
