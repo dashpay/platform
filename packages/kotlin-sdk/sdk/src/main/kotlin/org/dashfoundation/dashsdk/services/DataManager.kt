@@ -47,6 +47,11 @@ class DataManager(private val db: DashDatabase) {
         when (category) {
             Category.WALLETS -> {
                 // Children first; wallets cascade accounts but be explicit.
+                // `invitations` carries no FK to `wallets`, so it must be
+                // cleared explicitly or sent-invitation metadata survives
+                // both this category clear and clearAll(), resurfacing if
+                // the same wallet id is ever imported again.
+                db.invitationDao().deleteAll()
                 db.accountDao().deleteAll()
                 db.walletDao().deleteAll()
                 db.walletManagerMetadataDao().deleteAll()

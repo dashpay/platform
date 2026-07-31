@@ -4,6 +4,9 @@ import org.dashfoundation.dashsdk.wallet.op
 import org.dashfoundation.dashsdk.wallet.opWithCleanupOnCancellation
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.credits.FundingInput
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
@@ -320,10 +323,21 @@ class IdentityRegistration internal constructor(
      *
      * @param amountDuffs voucher amount in duffs (must be positive).
      * @param fundingAccountIndex BIP-44 account the voucher is funded from.
+     * Cancellation contract: the caller's cancellation is honored BEFORE the
+     * native call starts, but once it begins the operation runs to completion
+     * under [NonCancellable] and the result is always delivered. The native op
+     * may have broadcast the asset lock and generated the bearer URI by the
+     * time cancellation is observed; JNI cannot see Kotlin cancellation, Room
+     * intentionally stores no URI or voucher key, and no regeneration API
+     * exists — so a discarded `withContext` result would lose the only
+     * shareable credential after funds have moved.
+     *
      * @param inviterIdentityId optional 32-byte inviter id enabling the
      *   contact-bootstrap opt-in; `null` for a pure funding voucher. When
      *   non-null, [inviterUsername] is required.
-     * @param inviterUsername inviter DPNS username carried in the link.
+     * @param inviterUsername inviter DPNS username carried in the link. Only
+     *   used when [inviterIdentityId] is non-null; passing it alone is
+     *   rejected rather than silently discarded.
      * @param nowUnix current unix time in seconds (must be > 0).
      * @param coreSignerHandle `MnemonicResolverHandle` for the funding-spend
      *   signature (the SAME handle [registerWithWalletFunding] takes).
@@ -337,7 +351,7 @@ class IdentityRegistration internal constructor(
         inviterUsername: String? = null,
         nowUnix: Long,
         coreSignerHandle: Long,
-    ): CreatedInvitation = gate.op {
+    ): CreatedInvitation {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {
             "fundingAccountIndex must be non-negative, got $fundingAccountIndex"
@@ -349,26 +363,37 @@ class IdentityRegistration internal constructor(
                 "inviterUsername is required when inviterIdentityId is provided"
             }
         }
-        val blob = mapNativeErrors {
-            IdentityNative.createInvitation(
-                walletHandle,
-                amountDuffs,
-                fundingAccountIndex,
-                inviterIdentityId,
-                inviterUsername,
-                nowUnix,
-                coreSignerHandle,
-            )
+        require(inviterIdentityId != null || inviterUsername == null) {
+            "inviterIdentityId is required when inviterUsername is provided " +
+                "(the username is otherwise silently ignored by the native layer)"
         }
-        // Blob layout (fixed by the JNI): outpoint[36] (txid[32] || vout_le[4])
-        // then the UTF-8 URI. Anything shorter is a contract violation.
-        require(blob.size >= 36) {
-            "createInvitation returned a ${blob.size}-byte blob; expected >= 36"
+        // Honor cancellation up to here; past this point the operation is
+        // non-cancellable (see the KDoc cancellation contract above).
+        currentCoroutineContext().ensureActive()
+        return withContext(NonCancellable) {
+            gate.op {
+                val blob = mapNativeErrors {
+                    IdentityNative.createInvitation(
+                        walletHandle,
+                        amountDuffs,
+                        fundingAccountIndex,
+                        inviterIdentityId,
+                        inviterUsername,
+                        nowUnix,
+                        coreSignerHandle,
+                    )
+                }
+                // Blob layout (fixed by the JNI): outpoint[36] (txid[32] || vout_le[4])
+                // then the UTF-8 URI. Anything shorter is a contract violation.
+                require(blob.size >= 36) {
+                    "createInvitation returned a ${blob.size}-byte blob; expected >= 36"
+                }
+                CreatedInvitation(
+                    outPoint = blob.copyOfRange(0, 36),
+                    uri = String(blob.copyOfRange(36, blob.size), Charsets.UTF_8),
+                )
+            }
         }
-        CreatedInvitation(
-            outPoint = blob.copyOfRange(0, 36),
-            uri = String(blob.copyOfRange(36, blob.size), Charsets.UTF_8),
-        )
     }
 
     /**

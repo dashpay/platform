@@ -589,7 +589,24 @@ class PlatformWalletPersistenceHandler(
                 db, walletId, accountTypeTag.toInt() and 0xFF, accountIndex,
                 accountStandardTag.toInt() and 0xFF, accountRegistrationIndex,
                 accountKeyClass, accountUserIdentityId, accountFriendIdentityId,
-            ) ?: return@stage
+            ) ?: run {
+                // Mirror Swift `persistAccountAddresses`: a missing account is
+                // tolerated for every type EXCEPT `IdentityInvitation` (type
+                // tag 5). That account is registered at wallet setup and its
+                // address pool is the ONLY state restored after a restart that
+                // marks a voucher funding index as used (the invitation
+                // metadata row stores the index but never rebuilds the pool) —
+                // silently dropping the write would let the same bearer
+                // voucher key be selected again. Throwing fails the staged
+                // round, so `onChangesetEnd` (or the standalone `guarded`
+                // path) returns nonzero and the Rust pre-broadcast durability
+                // gate aborts invitation creation before funds move.
+                check((accountTypeTag.toInt() and 0xFF) != ACCOUNT_TYPE_IDENTITY_INVITATION) {
+                    "IdentityInvitation account missing for wallet ${walletId.toHex()}; " +
+                        "refusing to drop the voucher funding-index address-pool write"
+                }
+                return@stage
+            }
             if ((accountTypeTag.toInt() and 0xFF) == ACCOUNT_TYPE_PLATFORM_PAYMENT) {
                 // DIP-17 PlatformPayment pool → PlatformAddressEntity
                 // (mirror of Swift `persistPlatformPaymentAddresses`). Rust
@@ -3058,6 +3075,15 @@ class PlatformWalletPersistenceHandler(
 
         /** DIP-17 PlatformPayment account type tag (`accountTypeName` 14). */
         private const val ACCOUNT_TYPE_PLATFORM_PAYMENT = 14
+
+        /**
+         * `AccountTypeTagFFI::IdentityInvitation` discriminant — the DIP-13
+         * invitation funding account (mirrors Swift's
+         * `identityInvitationTypeTag`). A missing account of this type in
+         * [onPersistAccountAddressPoolEntry] is a hard failure, not a
+         * tolerated skip.
+         */
+        private const val ACCOUNT_TYPE_IDENTITY_INVITATION = 5
 
         private val HEX = "0123456789abcdef".toCharArray()
     }
