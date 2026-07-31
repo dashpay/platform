@@ -396,7 +396,12 @@ mod tests {
         let (mut identity, mut signer, _, master_key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let key = setup_add_key_to_identity(
             &mut platform,
