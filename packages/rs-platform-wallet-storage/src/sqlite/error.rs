@@ -214,6 +214,25 @@ pub enum WalletStorageError {
     #[error("identity key entry fields disagree with its map key / wallet scope")]
     IdentityKeyEntryMismatch,
 
+    /// An `identity_keys` write named an identity the flush-scoped wallet does
+    /// not own. The compound FK to `identities(wallet_id, identity_id)` rejects
+    /// it: a key filed under a non-owning wallet is unreadable by every
+    /// per-wallet loader and surfaces later as a fatal orphan.
+    #[error(
+        "identity key rejected: wallet {} has no owning identities row for identity {}",
+        hex::encode(wallet_id),
+        hex::encode(identity_id)
+    )]
+    IdentityKeyWalletMismatch {
+        wallet_id: [u8; 32],
+        identity_id: [u8; 32],
+        /// The driver's own FK violation, kept walkable so callers can
+        /// still reach the raw constraint text. Boxed so this variant
+        /// doesn't inflate every `Result` in the crate.
+        #[source]
+        source: Box<rusqlite::Error>,
+    },
+
     /// An `identities` upsert entry's `id` disagreed with the map key the
     /// `identity_id` column is bound from — persisting it would leave the
     /// typed id column and the serialized blob naming different
@@ -494,6 +513,7 @@ impl WalletStorageError {
             | Self::NotAWalletDb { .. }
             | Self::AlreadyOpen { .. }
             | Self::IdentityKeyEntryMismatch
+            | Self::IdentityKeyWalletMismatch { .. }
             | Self::IdentityEntryIdMismatch
             | Self::OrphanedIdentityEntry { .. }
             | Self::AccountRegistrationEntryMismatch
@@ -531,6 +551,9 @@ impl WalletStorageError {
             {
                 PersistenceErrorKind::Constraint
             }
+            // Typed re-mapping of an FK violation — same class as the raw
+            // `ConstraintViolation` above, so it reports the same kind.
+            Self::IdentityKeyWalletMismatch { .. } => PersistenceErrorKind::Constraint,
             // A migration failure (`Self::Migration`) isn't a caller bug,
             // so it stays `Fatal` rather than `Constraint`.
             _ => PersistenceErrorKind::Fatal,
@@ -583,6 +606,7 @@ impl WalletStorageError {
             Self::NotAWalletDb { .. } => "not_a_wallet_db",
             Self::AlreadyOpen { .. } => "already_open",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
+            Self::IdentityKeyWalletMismatch { .. } => "identity_key_wallet_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
             Self::OrphanedIdentityEntry { .. } => "orphaned_identity_entry",
             Self::AccountRecordInvalid { .. } => "account_record_invalid",

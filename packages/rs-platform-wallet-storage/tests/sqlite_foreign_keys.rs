@@ -66,7 +66,7 @@ fn tc047_delete_wallet_cascade() {
 }
 
 /// TC-049: `identity_keys` rows carry TWO `ON DELETE CASCADE` parents
-/// (`wallet_id -> wallets`, `identity_id -> identities`).
+/// (`wallet_id -> wallets`, `(wallet_id, identity_id) -> identities`).
 /// Deleting the wallet must purge the child via that dual-cascade — both
 /// paths firing on one row is idempotent, not a double-free error.
 #[test]

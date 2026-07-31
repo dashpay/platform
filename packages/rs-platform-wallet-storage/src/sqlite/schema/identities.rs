@@ -674,13 +674,12 @@ mod tests {
         }
     }
 
-    /// `load_prekeyed` hard-errors when a persisted `identity_keys` entry's
-    /// owner is absent from the load for a reason other than a tombstone
-    /// (here: the identity is parented to a different wallet). Live public
-    /// keys must never vanish silently — only a known-tombstoned owner's
-    /// orphaned rows are safe to skip.
+    /// An `identity_keys` write naming an identity owned by a DIFFERENT
+    /// wallet is rejected at write time by the compound FK. This is where
+    /// the guarantee now lives: the unreadable row never reaches disk, so
+    /// the load-time orphan check can't be reached by this route.
     #[test]
-    fn load_prekeyed_hard_errors_on_orphaned_non_tombstoned_owner() {
+    fn identity_key_write_is_rejected_for_a_non_owning_wallet() {
         use platform_wallet::changeset::IdentityKeysChangeSet;
 
         let mut conn = migrated_conn();
@@ -689,9 +688,7 @@ mod tests {
         insert_wallet(&conn, &a);
         insert_wallet(&conn, &b);
 
-        // Identity X exists but is parented to wallet B, so load_prekeyed(A)
-        // neither loads it nor sees it tombstoned in A's scope — a genuine
-        // orphan, not a logical delete.
+        // Identity X is parented to wallet B.
         let x = Identifier::from([0x33u8; 32]);
         let mut ids_b = IdentityChangeSet::default();
         ids_b
@@ -699,21 +696,88 @@ mod tests {
             .insert(x, entry([0x33; 32], Some(b), 100, Some(0)));
         apply_in_tx(&mut conn, &b, &ids_b);
 
-        // A public key for X is filed under wallet A (owner absent from A).
+        // Filing X's key under wallet A must fail — A does not own X.
         let mut keys = IdentityKeysChangeSet::default();
         keys.upserts.insert((x, 0), sample_key_entry(x, 0xC3));
         {
             let tx = conn.transaction().unwrap();
-            crate::sqlite::schema::identity_keys::apply(&tx, &a, &keys).unwrap();
+            let err = crate::sqlite::schema::identity_keys::apply(&tx, &a, &keys)
+                .expect_err("a key for a non-owning wallet must be rejected");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::IdentityKeyWalletMismatch {
+                        wallet_id, identity_id, ..
+                    } if wallet_id == a && identity_id == x.to_buffer()
+                ),
+                "expected IdentityKeyWalletMismatch naming wallet A and identity X, got {err:?}"
+            );
+        }
+
+        // Nothing was written: A's load is clean rather than fatally orphaned.
+        let state = load_prekeyed(&conn, &a).expect("no orphan row was ever created");
+        assert!(state
+            .wallet_identities
+            .get(&a)
+            .is_none_or(|inner| inner.is_empty()));
+    }
+
+    /// The reported top-up corruption, at the storage seam: identity owned
+    /// by wallet A, its keys flushed under wallet B's scope. Before the
+    /// compound FK these rows landed silently and bricked the next load;
+    /// now the write is refused and the file stays loadable.
+    #[test]
+    fn cross_wallet_key_flush_cannot_brick_a_wallet_file() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let owner = [0xFAu8; 32];
+        let payer = [0xC5u8; 32];
+        insert_wallet(&conn, &owner);
+        insert_wallet(&conn, &payer);
+
+        let identity = Identifier::from([0xA7u8; 32]);
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(identity, entry([0xA7; 32], Some(owner), 500, Some(0)));
+        let mut owner_keys = IdentityKeysChangeSet::default();
+        owner_keys
+            .upserts
+            .insert((identity, 0), sample_key_entry(identity, 0x11));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &owner, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &owner, &owner_keys).unwrap();
             tx.commit().unwrap();
         }
 
-        let err =
-            load_prekeyed(&conn, &a).expect_err("orphaned non-tombstoned owner must hard-error");
-        assert!(
-            matches!(err, WalletStorageError::OrphanedIdentityEntry { .. }),
-            "expected OrphanedIdentityEntry, got {err:?}"
+        // The payer wallet re-files the same keys under its own scope.
+        let mut payer_keys = IdentityKeysChangeSet::default();
+        payer_keys
+            .upserts
+            .insert((identity, 0), sample_key_entry(identity, 0x11));
+        {
+            let tx = conn.transaction().unwrap();
+            let err = crate::sqlite::schema::identity_keys::apply(&tx, &payer, &payer_keys)
+                .expect_err("the paying wallet does not own the identity");
+            assert!(
+                matches!(err, WalletStorageError::IdentityKeyWalletMismatch { .. }),
+                "expected IdentityKeyWalletMismatch, got {err:?}"
+            );
+        }
+
+        // Both wallets still load; the owner keeps its key.
+        let owner_state = load_prekeyed(&conn, &owner).expect("owner wallet still loads");
+        assert_eq!(
+            owner_state.wallet_identities[&owner][&0]
+                .identity
+                .public_keys()[&0]
+                .data()
+                .as_slice(),
+            &[0x11; 33]
         );
+        load_prekeyed(&conn, &payer).expect("payer wallet still loads");
     }
 
     /// `load_prekeyed` skips — never hard-errors on — an `identity_keys`

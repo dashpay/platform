@@ -140,6 +140,17 @@ fn samples() -> Vec<WalletStorageError> {
             found: [2u8; 32],
         },
         WalletStorageError::IdentityKeyEntryMismatch,
+        WalletStorageError::IdentityKeyWalletMismatch {
+            wallet_id: [3u8; 32],
+            identity_id: [4u8; 32],
+            source: Box::new(SqlErr::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: ErrorCode::ConstraintViolation,
+                    extended_code: 787,
+                },
+                Some("FOREIGN KEY constraint failed".into()),
+            )),
+        },
         WalletStorageError::AssetLockEntryMismatch {
             typed_outpoint: "txid:0".into(),
             blob_outpoint: "txid:1".into(),
@@ -295,6 +306,9 @@ fn tc_p2_005_is_transient_table() {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::IdentityKeyWalletMismatch { .. } => {
+                (false, "identity_key_wallet_mismatch")
+            }
             WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
             WalletStorageError::OrphanedIdentityEntry { .. } => (false, "orphaned_identity_entry"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {

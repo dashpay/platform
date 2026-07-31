@@ -14,10 +14,15 @@
 //! identities → child` through the nullable `identities.wallet_id`
 //! link. `identity_keys` additionally carries its own `wallet_id`
 //! column (so per-wallet reads stay a direct `WHERE wallet_id = ?`)
-//! and keeps the `identity_id` FK for the identity-delete cascade.
+//! and its FK is compound — `(wallet_id, identity_id)` — so a key can
+//! only be filed under the wallet that owns the identity.
 //! `identities.wallet_id` is NULL-allowed so identity-only flows (no
 //! parent wallet, e.g. the identity-sync manager populating rows
 //! before any wallet is registered) work without a placeholder.
+//! A NULL-owned identity therefore holds no keys: `identity_keys.wallet_id`
+//! is NOT NULL and no non-NULL value matches a NULL parent. An identity
+//! observed rather than owned is represented out-of-wallet instead —
+//! `identity_index` NULL with `wallet_id` set to the discovering wallet.
 //!
 //! The one relationship that stays a trigger is
 //! `core_utxos.spent_in_txid` clearing to NULL on transaction delete —
@@ -172,6 +177,12 @@ CREATE TABLE identities (
 
 CREATE INDEX idx_identities_wallet ON identities(wallet_id);
 
+-- Parent key for `identity_keys`' compound FK. SQLite requires the
+-- referenced columns to carry a UNIQUE index. Adds no new restriction:
+-- `identity_id` is already PRIMARY KEY, so `(wallet_id, identity_id)`
+-- is unique for free.
+CREATE UNIQUE INDEX idx_identities_wallet_identity ON identities(wallet_id, identity_id);
+
 CREATE TABLE identity_keys (
     wallet_id BLOB NOT NULL,
     identity_id BLOB NOT NULL,
@@ -183,8 +194,17 @@ CREATE TABLE identity_keys (
     -- IdentityKeyWire blob is the single source of truth).
     derivation_blob BLOB,
     PRIMARY KEY (wallet_id, identity_id, key_id),
+    -- Belt-and-braces: the compound FK below already implies a live
+    -- `wallets` row (the matched `identities` row carries this same
+    -- non-NULL wallet_id and is itself FK'd to `wallets`). Kept as an
+    -- explicit statement of intent and a second cascade path.
     FOREIGN KEY (wallet_id) REFERENCES wallets(wallet_id) ON DELETE CASCADE,
-    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
+    -- Compound: a key may only be filed under the wallet that OWNS the
+    -- identity. The single-column form allowed a key to name an identity
+    -- parented to a different wallet — a row the per-wallet reader can
+    -- never resolve, surfacing much later as a fatal OrphanedIdentityEntry.
+    FOREIGN KEY (wallet_id, identity_id)
+        REFERENCES identities(wallet_id, identity_id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_identity_keys_wallet_identity ON identity_keys(wallet_id, identity_id);

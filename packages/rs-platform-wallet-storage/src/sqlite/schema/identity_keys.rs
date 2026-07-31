@@ -71,10 +71,45 @@ impl IdentityKeyWire {
     }
 }
 
-/// Keyed by `(wallet_id, identity_id, key_id)` with FKs to `wallets` and
-/// `identities`. The typed `wallet_id` column comes from the flush scope; the
-/// entry's own `wallet_id` (when set) is cross-checked against it so the typed
-/// columns and the blob stay aligned.
+/// SQLite's extended result code for a foreign-key constraint failure
+/// (`SQLITE_CONSTRAINT_FOREIGNKEY`). Discriminated numerically — never by
+/// matching the driver's message text.
+const SQLITE_CONSTRAINT_FOREIGNKEY: i32 = 787;
+
+/// Re-map an FK violation on the `identity_keys` upsert to a typed error
+/// naming the wallet and identity involved.
+///
+/// The table has two FK parents, so a violation could in principle be the
+/// missing-`wallets` one; the compound `identities(wallet_id, identity_id)`
+/// parent is by far the likelier cause and the one worth naming, since a
+/// cross-wallet key write is the failure this guard exists to catch.
+fn map_fk_violation(
+    err: rusqlite::Error,
+    wallet_id: &WalletId,
+    identity_id: &Identifier,
+) -> WalletStorageError {
+    match &err {
+        rusqlite::Error::SqliteFailure(e, _)
+            if e.code == rusqlite::ErrorCode::ConstraintViolation
+                && e.extended_code == SQLITE_CONSTRAINT_FOREIGNKEY =>
+        {
+            WalletStorageError::IdentityKeyWalletMismatch {
+                wallet_id: *wallet_id,
+                identity_id: identity_id.to_buffer(),
+                source: Box::new(err),
+            }
+        }
+        _ => WalletStorageError::from(err),
+    }
+}
+
+/// Keyed by `(wallet_id, identity_id, key_id)`, with an FK to `wallets` and a
+/// compound FK to `identities(wallet_id, identity_id)` — so a key can only be
+/// filed under the wallet that owns the identity. The typed `wallet_id` column
+/// comes from the flush scope; the entry's own `wallet_id` (when set) is
+/// cross-checked against it so the typed columns and the blob stay aligned.
+/// A cross-wallet write is refused with
+/// [`WalletStorageError::IdentityKeyWalletMismatch`].
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -111,7 +146,8 @@ pub fn apply(
                 i64::from(*key_id),
                 entry_blob,
                 &entry.public_key_hash[..],
-            ])?;
+            ])
+            .map_err(|e| map_fk_violation(e, wallet_id, identity_id))?;
         }
     }
     if !cs.removed.is_empty() {
