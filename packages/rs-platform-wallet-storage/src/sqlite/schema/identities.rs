@@ -1,6 +1,6 @@
 //! `identities` table writer.
 
-use std::collections::{btree_map, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -139,14 +139,6 @@ pub fn fetch(
 /// a hard error (corruption is never silently dropped). Rows with
 /// `identity_index = Some(_)` bucket into `wallet_identities`, `None` into
 /// `out_of_wallet_identities`.
-///
-/// Nothing in the schema keeps two identities off one `(wallet_id,
-/// identity_index)`, and discovery can legitimately reach that state. Since
-/// `wallet_identities` is keyed by index, the lower `identity_id` keeps the
-/// slot and the other is parked in `out_of_wallet_identities` with a warning
-/// — retaining its `wallet_id` / `identity_index` so no key, contact, or
-/// on-disk column is lost. Choosing by id rather than by row arrival keeps the
-/// outcome identical on every load, which an unordered SELECT would not.
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -195,41 +187,11 @@ pub fn load_state(
         let managed = managed_identity_from_entry(&entry, wallet_id, ignored);
         match entry.identity_index {
             Some(idx) => {
-                let bucket = state.wallet_identities.entry(*wallet_id).or_default();
-                let displaced = match bucket.entry(idx) {
-                    btree_map::Entry::Vacant(slot) => {
-                        slot.insert(managed);
-                        None
-                    }
-                    btree_map::Entry::Occupied(mut slot) => {
-                        // Nothing on disk stops two identities claiming one HD
-                        // index, but the bucket is keyed by index and holds
-                        // one. Pick by id, not by arrival: the SELECT is
-                        // unordered, so an arrival-order rule would let SQLite
-                        // decide which identity a wallet shows.
-                        let displaced = if managed.identity.id() < slot.get().identity.id() {
-                            slot.insert(managed)
-                        } else {
-                            managed
-                        };
-                        Some((displaced, slot.get().identity.id()))
-                    }
-                };
-                // Park rather than drop: the loser keeps its `wallet_id` /
-                // `identity_index`, so its keys and contacts still merge and a
-                // later flush rewrites the same row. See the crate docs on
-                // `ManagedIdentity` for how placement is read back.
-                if let Some((displaced, resident)) = displaced {
-                    tracing::warn!(
-                        displaced = %displaced.identity.id(),
-                        %resident,
-                        identity_index = idx,
-                        "two identities claim one HD identity index; keeping the lower id in the wallet and parking the other as out-of-wallet"
-                    );
-                    state
-                        .out_of_wallet_identities
-                        .insert(displaced.identity.id(), displaced);
-                }
+                state
+                    .wallet_identities
+                    .entry(*wallet_id)
+                    .or_default()
+                    .insert(idx, managed);
             }
             None => {
                 state.out_of_wallet_identities.insert(entry.id, managed);
@@ -791,128 +753,6 @@ mod tests {
                 .map(|m| m.is_empty())
                 .unwrap_or(true),
             "tombstoned identity must not surface in the loaded state"
-        );
-    }
-
-    /// Two identities persisted at the same `(wallet_id, identity_index)`
-    /// must BOTH survive the load: the lower `identity_id` keeps the wallet
-    /// slot, the other parks in `out_of_wallet_identities` carrying its own
-    /// keys. Neither identity's live key state is orphaned, so the wallet
-    /// still loads instead of failing whole.
-    #[test]
-    fn load_prekeyed_parks_colliding_identity_instead_of_failing() {
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-        use platform_wallet::changeset::IdentityKeysChangeSet;
-
-        let mut conn = migrated_conn();
-        let w = [0x0Cu8; 32];
-        insert_wallet(&conn, &w);
-
-        // Both claim SLOT; `low` sorts before `high`.
-        const SLOT: u32 = 7;
-        let low = Identifier::from([0x11u8; 32]);
-        let high = Identifier::from([0x99u8; 32]);
-
-        let mut ids = IdentityChangeSet::default();
-        ids.identities
-            .insert(low, entry([0x11; 32], Some(w), 100, Some(SLOT)));
-        ids.identities
-            .insert(high, entry([0x99; 32], Some(w), 200, Some(SLOT)));
-
-        let mut keys = IdentityKeysChangeSet::default();
-        keys.upserts.insert((low, 0), sample_key_entry(low, 0xA1));
-        keys.upserts.insert((high, 0), sample_key_entry(high, 0xB2));
-
-        let tx = conn.transaction().unwrap();
-        apply(&tx, &w, &ids).unwrap();
-        crate::sqlite::schema::identity_keys::apply(&tx, &w, &keys).unwrap();
-        tx.commit().unwrap();
-
-        let state =
-            load_prekeyed(&conn, &w).expect("a duplicate identity index must not fail the load");
-
-        let resident = state.wallet_identities[&w]
-            .get(&SLOT)
-            .expect("the contested slot is occupied");
-        assert_eq!(
-            resident.identity.id(),
-            low,
-            "lowest identity_id keeps the wallet slot"
-        );
-        assert_eq!(
-            resident.identity.public_keys()[&0].data().as_slice(),
-            &[0xA1; 33],
-            "resident identity carries its own key"
-        );
-
-        let parked = state
-            .out_of_wallet_identities
-            .get(&high)
-            .expect("the displaced identity is parked, never dropped");
-        assert_eq!(
-            parked.identity.public_keys()[&0].data().as_slice(),
-            &[0xB2; 33],
-            "parked identity carries its own key, not the resident's"
-        );
-        assert_eq!(
-            parked.identity_index,
-            Some(SLOT),
-            "parked identity keeps its on-disk index so a later flush can't erase it"
-        );
-        assert_eq!(
-            parked.wallet_id,
-            Some(w),
-            "parked identity keeps its owning wallet"
-        );
-    }
-
-    /// Which identity keeps a contested slot is decided by `identity_id`, not
-    /// by the order the rows were written: an unordered SELECT hands rows back
-    /// in rowid (write) order, so a write-order-sensitive rule would silently
-    /// change a wallet's shape.
-    #[test]
-    fn load_state_collision_winner_is_independent_of_write_order() {
-        const SLOT: u32 = 3;
-        let low = [0x21u8; 32];
-        let high = [0x8Fu8; 32];
-
-        // `first` is written first and so takes the lower rowid.
-        let load_with_write_order = |first: [u8; 32], second: [u8; 32]| {
-            let mut conn = migrated_conn();
-            let w = [0x0Du8; 32];
-            insert_wallet(&conn, &w);
-            for id in [first, second] {
-                let mut cs = IdentityChangeSet::default();
-                cs.identities
-                    .insert(Identifier::from(id), entry(id, Some(w), 10, Some(SLOT)));
-                apply_in_tx(&mut conn, &w, &cs);
-            }
-            let state = load_state(&conn, &w).expect("a duplicate identity index must load");
-            let resident = state.wallet_identities[&w][&SLOT].identity.id();
-            let parked: Vec<Identifier> = state.out_of_wallet_identities.keys().copied().collect();
-            (resident, parked)
-        };
-
-        let (resident_low_first, parked_low_first) = load_with_write_order(low, high);
-        let (resident_high_first, parked_high_first) = load_with_write_order(high, low);
-
-        assert_eq!(
-            resident_low_first,
-            Identifier::from(low),
-            "lowest identity_id keeps the contested slot"
-        );
-        assert_eq!(
-            resident_low_first, resident_high_first,
-            "the surviving identity must not depend on write order"
-        );
-        assert_eq!(
-            parked_low_first,
-            vec![Identifier::from(high)],
-            "the displaced identity is parked out-of-wallet, never dropped"
-        );
-        assert_eq!(
-            parked_low_first, parked_high_first,
-            "parking must not depend on write order"
         );
     }
 
