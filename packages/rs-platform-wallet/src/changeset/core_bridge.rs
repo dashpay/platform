@@ -29,7 +29,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
-use dashcore::ScriptBuf;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
@@ -687,15 +686,22 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// Derive the "ours" UTXOs spent by a transaction's inputs.
 ///
 /// Walks `record.input_details` (the entries keyed to inputs that spent
-/// our outpoints) and synthesizes a `Utxo` per entry using the data we
-/// have: the outpoint from `transaction.input[index].previous_output`,
-/// the value and address from `InputDetail`. The script_pubkey, height,
-/// and confirmation flags belong to the *previous* transaction's
-/// output and aren't carried in `InputDetail`; they're filled with
-/// defaults (`ScriptBuf::default()`, height 0, all flags false). The
-/// persister deletes by `outpoint` so the missing fields are
-/// informational only — they never affect correctness of the spent-set
-/// removal, only the audit-trail richness on the way out.
+/// our outpoints) and synthesizes a `Utxo` per entry: the outpoint from
+/// `transaction.input[index].previous_output`, the value and address from
+/// `InputDetail`, and the locking script rebuilt from that address.
+///
+/// The script is an exact reconstruction, not a guess. `InputDetail.address`
+/// is cloned from the wallet's own `Utxo.address`, which key-wallet derived
+/// from the spent output's `script_pubkey` via `Address::from_script`; that
+/// decoder accepts only canonical P2PKH/P2SH forms, so re-encoding the
+/// address reproduces the original bytes. Note the pairing is a caller
+/// convention rather than a type invariant — `Utxo::new` takes the script
+/// and the address as independent parameters and validates neither.
+///
+/// Height and the confirmation flags describe the *previous* transaction and
+/// genuinely aren't recoverable here, so they stay defaulted (height 0, all
+/// flags false); unlike `script_pubkey`, those fields are read as "not yet
+/// known" and re-warm on the next sync.
 fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     record
         .input_details
@@ -706,7 +712,7 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 outpoint: input.previous_output,
                 txout: TxOut {
                     value: detail.value,
-                    script_pubkey: ScriptBuf::default(),
+                    script_pubkey: detail.address.script_pubkey(),
                 },
                 address: detail.address.clone(),
                 height: 0,
@@ -925,6 +931,105 @@ mod usage_delta_tests {
 mod tests {
     use super::freeze_synced_height_if_faulted;
     use crate::changeset::changeset::CoreChangeSet;
+
+    /// A spent UTXO must carry the real locking script of the output it
+    /// spends, reconstructed from the address the input detail already
+    /// carries. `TxOut::script_pubkey` has no encoding for "unknown", so a
+    /// default-filled script is a claim about the chain that was never
+    /// observed, and any consumer reading stored scripts sees an unusable row.
+    ///
+    /// The reconstruction is exact: `InputDetail.address` is cloned from the
+    /// wallet's own `Utxo.address`, which key-wallet derived from that
+    /// output's script via `Address::from_script`, and `is_p2pkh`/`is_p2sh`
+    /// accept only the canonical form — so `script_pubkey()` rebuilds the same
+    /// bytes. This test is what keeps that true, since `Utxo::new` does not
+    /// enforce the address/script pairing.
+    #[test]
+    fn spent_utxos_carry_the_real_script_of_the_address_they_spend() {
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, Transaction, TxIn, Txid};
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+
+        let addresses = [
+            dashcore::Address::new(
+                dashcore::Network::Testnet,
+                dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
+                    [0x11u8; 20],
+                )),
+            ),
+            dashcore::Address::new(
+                dashcore::Network::Testnet,
+                dashcore::address::Payload::ScriptHash(dashcore::ScriptHash::from_byte_array(
+                    [0x22u8; 20],
+                )),
+            ),
+        ];
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: addresses
+                .iter()
+                .enumerate()
+                .map(|(index, _)| TxIn {
+                    previous_output: OutPoint {
+                        txid: Txid::from_byte_array([index as u8 + 1; 32]),
+                        vout: index as u32,
+                    },
+                    ..Default::default()
+                })
+                .collect(),
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let record = TransactionRecord::new(
+            transaction,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            TransactionContext::Mempool,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            addresses
+                .iter()
+                .enumerate()
+                .map(|(index, address)| InputDetail {
+                    index: index as u32,
+                    value: 1_000 * (index as u64 + 1),
+                    address: address.clone(),
+                })
+                .collect(),
+            Vec::new(),
+            -2_000,
+        );
+
+        let spent = super::derive_spent_utxos(&record);
+        assert_eq!(spent.len(), addresses.len());
+        for (utxo, address) in spent.iter().zip(addresses.iter()) {
+            assert!(
+                !utxo.txout.script_pubkey.is_empty(),
+                "a spent UTXO must never carry a fabricated empty script"
+            );
+            assert_eq!(
+                utxo.txout.script_pubkey,
+                address.script_pubkey(),
+                "the script must be the address's own locking script"
+            );
+            assert_eq!(
+                dashcore::Address::from_script(
+                    &utxo.txout.script_pubkey,
+                    dashcore::Network::Testnet
+                )
+                .expect("the emitted script must decode as an address"),
+                *address,
+                "the script must round-trip back to the input's own address"
+            );
+        }
+    }
 
     /// dashpay/platform#4069: while persistence is healthy the sync
     /// watermark flows through untouched.
