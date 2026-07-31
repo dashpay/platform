@@ -29,7 +29,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
-use dashcore::ScriptBuf;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, AddressState};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
@@ -692,7 +691,7 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
 /// the value and address from `InputDetail`. The script_pubkey, height,
 /// and confirmation flags belong to the *previous* transaction's
 /// output and aren't carried in `InputDetail`; they're filled with
-/// defaults (`ScriptBuf::default()`, height 0, all flags false). The
+/// defaults (height 0, all flags false). The
 /// persister deletes by `outpoint` so the missing fields are
 /// informational only — they never affect correctness of the spent-set
 /// removal, only the audit-trail richness on the way out.
@@ -706,7 +705,7 @@ fn derive_spent_utxos(record: &TransactionRecord) -> Vec<Utxo> {
                 outpoint: input.previous_output,
                 txout: TxOut {
                     value: detail.value,
-                    script_pubkey: ScriptBuf::default(),
+                    script_pubkey: detail.address.script_pubkey(),
                 },
                 address: detail.address.clone(),
                 height: 0,
