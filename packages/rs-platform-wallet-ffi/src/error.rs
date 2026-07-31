@@ -228,6 +228,33 @@ pub enum PlatformWalletFFIResultCode {
     /// wallet-operation failure. Not retryable as-is — the key must be
     /// (re-)derived first.
     ErrorSigningKeyUnavailable = 31,
+    /// Maps `PlatformWalletError::TransactionBuild`. A Core transaction could
+    /// not be assembled from the request — the request itself is at fault, and
+    /// the host must change it rather than retry it verbatim. It is the code
+    /// every `build_signed_payment` rejection lands on:
+    ///
+    /// * the named `funding_path` matches no spendable funds account, or names
+    ///   a watch-only one whose coins the local mnemonic cannot sign — the two
+    ///   failure modes the single-account design rests on
+    ///   (dashpay/platform#4184);
+    /// * the request violates a monetary bound (`MAX_MONEY` output total,
+    ///   `MAX_FEE_PER_KB` fee rate, a below-dust recipient output, or an
+    ///   over-`MAX_STANDARD_TX_SIZE` recipient list);
+    /// * the recipients blob failed to decode.
+    ///
+    /// These previously flattened to `ErrorUnknown` (99), reaching Kotlin as
+    /// `DashSdkError.PlatformWallet.Generic` and leaving the host to
+    /// string-match the message to tell a bad funding path from a bad amount
+    /// (dashpay/platform#4247 review). The specific cause still travels in the
+    /// result `message` via the typed `Display`.
+    ///
+    /// Numbering: 27–31 are claimed by sibling v4.1 stack PRs
+    /// (`ErrorStaleReservationToken`/`ErrorReservationTokenConsumed` #4185,
+    /// `ErrorAssetLockInsufficientFunds` #4184,
+    /// `ErrorReservationWalletMismatch`, `ErrorSigningKeyUnavailable`), so this
+    /// takes the first slot free on every branch of that stack and needs no
+    /// renumbering whatever order they land in.
+    ErrorTransactionBuild = 32,
 
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
     // The deferred-token trio below therefore occupies the contiguous block
@@ -456,6 +483,18 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::CoreInsufficientFunds { .. }
             | PlatformWalletError::PaymentInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
+            }
+            // Every `build_signed_payment` rejection that is not a shortfall
+            // arrives here: an unmatched or watch-only `funding_path`, a
+            // monetary-bound violation (MAX_MONEY / MAX_FEE_PER_KB / dust /
+            // MAX_STANDARD_TX_SIZE), or a recipients-blob decode failure.
+            // Without this arm they all flattened to `ErrorUnknown` (99), so
+            // the two failure modes the single-account design rests on —
+            // "that path names no spendable account" and "that path is
+            // watch-only" — were distinguishable only by string-matching the
+            // message (dashpay/platform#4247 review).
+            PlatformWalletError::TransactionBuild(..) => {
+                PlatformWalletFFIResultCode::ErrorTransactionBuild
             }
             PlatformWalletError::AssetLockNotTracked(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
@@ -804,6 +843,71 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
             );
         }
+    }
+
+    /// The one-shot payment primitive's shortfall shares code 22 with the
+    /// atomic builder's. Pinned separately from
+    /// `atomic_core_insufficient_funds_maps_to_dedicated_code`, which only ever
+    /// constructs `CoreInsufficientFunds`: if a cleanup dropped
+    /// `PaymentInsufficientFunds` from that arm it would silently fall through
+    /// to `ErrorUnknown` and no existing test would notice.
+    #[test]
+    fn payment_insufficient_funds_shares_the_core_shortfall_code() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::PaymentInsufficientFunds {
+            available: 9_000_000,
+            required: 15_000_000,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
+        );
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
+        assert!(
+            msg.contains("9000000") && msg.contains("15000000"),
+            "the single-account available/required duffs must survive in the \
+             message: {msg}"
+        );
+    }
+
+    /// Every `build_signed_payment` rejection that is not a shortfall is a
+    /// `TransactionBuild`, and must reach the host as its own code rather than
+    /// `ErrorUnknown` (99) — otherwise "that funding path names no spendable
+    /// account" and "that funding path is watch-only", the two failure modes
+    /// the single-account design rests on, are distinguishable only by
+    /// string-matching (dashpay/platform#4247 review).
+    #[test]
+    fn transaction_build_failures_map_to_a_dedicated_code() {
+        for message in [
+            "no spendable funds account matches funding derivation path m/44'/5'/7'",
+            "funding derivation path m/9'/5'/4'/0' names a watch-only account",
+            "output amounts overflow or exceed MAX_MONEY",
+            "fee rate 99999999999 duffs/kB exceeds the maximum",
+            "recipients blob declares 4294967295 outputs but holds at most 0",
+        ] {
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::TransactionBuild(message.to_string()).into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorTransactionBuild,
+                "{message:?} must not flatten to ErrorUnknown"
+            );
+            let rendered = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
+            assert!(
+                rendered.contains(message),
+                "the specific cause must survive in the message: {rendered}"
+            );
+        }
+    }
+
+    /// The new code must not silently collide with a sibling v4.1 stack PR's
+    /// (27–31 are claimed; see the variant's doc comment).
+    #[test]
+    fn transaction_build_code_is_thirty_two() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorTransactionBuild as i32,
+            32
+        );
     }
 
     #[test]

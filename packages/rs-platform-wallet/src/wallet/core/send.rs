@@ -55,7 +55,9 @@ use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::signer::Signer;
 use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
-use key_wallet::wallet::managed_wallet_info::transaction_builder::{BuilderError, TransactionBuilder};
+use key_wallet::wallet::managed_wallet_info::transaction_builder::{
+    BuilderError, TransactionBuilder,
+};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -70,14 +72,50 @@ const DEFAULT_FEE_PER_KB: u64 = 1000;
 /// Consensus cap on any single amount this primitive will accept or aggregate.
 const MAX_MONEY: u64 = dashcore::blockdata::constants::MAX_MONEY;
 
+/// Dash's standard-transaction size limit, in bytes. A transaction above this
+/// is non-standard and will not relay, so building one is never useful.
+///
+/// Derived from `dashcore::policy::MAX_STANDARD_TX_WEIGHT` (400_000 weight
+/// units) rather than hard-coded: Dash has no segwit, so weight is exactly
+/// 4× size and the byte limit is `MAX_STANDARD_TX_WEIGHT / 4` = 100_000.
+const MAX_STANDARD_TX_SIZE: usize = (dashcore::policy::MAX_STANDARD_TX_WEIGHT / 4) as usize;
+
+/// Encoded size of one P2PKH output, matching key-wallet's `TX_OUTPUT_SIZE`.
+const TX_OUTPUT_SIZE: usize = 34;
+
+/// Encoded size of one signed P2PKH input, matching the `148` key-wallet passes
+/// to `select_coins_with_size`.
+const TX_INPUT_SIZE: usize = 148;
+
+/// Largest a Bitcoin/Dash varint can encode to. Used instead of the exact
+/// varint width so the size estimate never comes in under key-wallet's.
+const MAX_VARINT_SIZE: usize = 9;
+
 /// Upper bound on the caller-supplied fee rate, in duffs/kB.
 ///
-/// Derived so that even a maximum-size standard transaction cannot produce a
-/// fee above [`MAX_MONEY`]: Dash's standard-transaction limit is 100_000 bytes,
-/// i.e. 100 kB, and `FeeRate::calculate_fee` computes
-/// `sat_per_kb * size_bytes / 1000` — so `MAX_MONEY / 100` also keeps the
-/// intermediate `sat_per_kb * size_bytes` product (≤ 2.1e18) inside `u64`.
-const MAX_FEE_PER_KB: u64 = MAX_MONEY / 100;
+/// `FeeRate::calculate_fee` computes `sat_per_kb * size_bytes` with **unchecked**
+/// `u64` multiplication (key-wallet `managed_wallet_info/fee.rs`), and the public
+/// Kotlin/FFI APIs accept any non-negative `Long` — so an unbounded rate panics
+/// in an overflow-checking Android build, or wraps in release, silently turning
+/// an astronomical requested rate into a tiny fee.
+///
+/// The bound is derived so the product cannot overflow **for any transaction
+/// size expressible in a `u32`** (~4.3 GB): with `sat_per_kb ≤ u64::MAX /
+/// u32::MAX`, `sat_per_kb * size_bytes ≤ u64::MAX` whenever
+/// `size_bytes ≤ u32::MAX`. That deliberately does NOT depend on the input
+/// count. An earlier `MAX_MONEY / 100` bound assumed the transaction stayed
+/// under [`MAX_STANDARD_TX_SIZE`], which this method never enforced — leaving
+/// the product to overflow at ~878 kB, reachable both by an oversized recipient
+/// list and by a CoinJoin account with a few thousand small denominations
+/// (dashpay/platform#4247 and #4256 review). Since size is bounded by `u32`
+/// long before it is bounded by policy, tying the bound to `u32::MAX` closes
+/// the overflow unconditionally.
+///
+/// ~4.29e9 duffs/kB is ~43 DASH/kB — three orders of magnitude above any
+/// legitimate rate (the default is 1_000), so nothing real is rejected. The
+/// maximum fee this permits on a standard-size transaction is
+/// `MAX_FEE_PER_KB * 100` ≈ 4_295 DASH, still far below [`MAX_MONEY`].
+const MAX_FEE_PER_KB: u64 = u64::MAX / u32::MAX as u64;
 
 /// The unmixed BIP44 account this primitive is pinned to, in both of its roles:
 ///
@@ -176,6 +214,64 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             return Err(PlatformWalletError::TransactionBuild(
                 "every output amount must be greater than zero".to_string(),
             ));
+        }
+
+        // Bound the recipient count so the transaction stays relayable AND so
+        // key-wallet's unchecked `sat_per_kb * size_bytes` fee arithmetic cannot
+        // be driven to overflow from the output side. `outputs.len()` is the one
+        // caller-controlled size dimension (~25.8k recipients still fits in a
+        // practical JNI blob); the input count is wallet-owned and key-wallet
+        // caps it separately.
+        //
+        // Mirrors key-wallet's own base-size formula so the estimate is the one
+        // the builder will actually use: 8 bytes of version/type/locktime, a
+        // 1-byte input-count varint, the output-count varint (≤ 9, taken at its
+        // maximum so this never under-estimates), 34 bytes per P2PKH output,
+        // and 34 for the change output. Every step is checked —
+        // `outputs.len() * 34` is an unchecked `usize` multiply inside
+        // key-wallet. Room for at least one 148-byte input is required, since a
+        // transaction with no inputs cannot be funded.
+        let outputs_count = outputs.len();
+        let base_size = outputs_count
+            .checked_mul(TX_OUTPUT_SIZE)
+            .and_then(|s| s.checked_add(8 + 1 + MAX_VARINT_SIZE + TX_OUTPUT_SIZE))
+            .ok_or_else(|| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "{outputs_count} recipients overflow the transaction size calculation"
+                ))
+            })?;
+        if base_size.saturating_add(TX_INPUT_SIZE) > MAX_STANDARD_TX_SIZE {
+            return Err(PlatformWalletError::TransactionBuild(format!(
+                "{outputs_count} recipients need {base_size} bytes of outputs, leaving no \
+                 room for inputs within the {MAX_STANDARD_TX_SIZE}-byte standard \
+                 transaction limit"
+            )));
+        }
+
+        // Reject below-dust recipients. `TransactionBuilder::add_output` applies
+        // no relay policy at all — it copies the requested amount straight into
+        // the `TxOut` — so without this a one-duff recipient produced a fully
+        // signed transaction that every standard node rejects as nonstandard,
+        // from a primitive documented as building a *standard* payment for
+        // later broadcast (dashpay/platform#4247 review). Checked per output
+        // against its OWN destination script, not a shared constant: the
+        // threshold is script-shaped (546 duffs for P2PKH, less for P2SH),
+        // which is also why key-wallet's hard-coded 546 change-dust literal is
+        // not reusable here.
+        //
+        // After the count bound so an absurd recipient list is rejected before
+        // this loop runs a script serialization per output, and before the
+        // wallet lock is taken, before any input is reserved, and before the
+        // signer is called — a request that can never relay must not tie up
+        // coins or prompt the user for a keystore signature.
+        for (address, amount) in &outputs {
+            let dust = address.script_pubkey().dust_value().to_sat();
+            if *amount < dust {
+                return Err(PlatformWalletError::TransactionBuild(format!(
+                    "output {amount} duffs to {address} is below the {dust}-duff dust \
+                     threshold for its script type; such a transaction cannot be relayed"
+                )));
+            }
         }
 
         // Checked aggregation, bounded by MAX_MONEY. key-wallet sums the same
@@ -420,8 +516,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // a plain payment (no special payload) can carry is the single change
         // output back to the BIP44 sink, so `change = total_out − outputs`.
         // Any selected input we somehow can't price (impossible — every
-        // spendable UTXO was recorded above) counts as 0, so `fee` is over-
-        // rather than under-reported.
+        // spendable UTXO was recorded above) counts as 0, which LOWERS
+        // `selected_input_value` and therefore lowers the `saturating_sub`
+        // result: `fee` would be UNDER-reported, not over-.
         let selected_input_value: u64 = transaction
             .input
             .iter()
@@ -430,6 +527,22 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let total_out: u64 = transaction.output.iter().map(|o| o.value).sum();
         let fee = selected_input_value.saturating_sub(total_out);
         let change_amount = total_out.saturating_sub(outputs_total);
+
+        // Belt-and-braces: the pre-build check bounded only the output side,
+        // because the input count is not knowable until coin selection has run.
+        // Measure the transaction we actually built and refuse to hand back
+        // bytes that cannot relay. In practice this fires only for a request
+        // whose recipient list already passed the output-side bound but whose
+        // funding account then contributed enough small inputs to push the
+        // whole transaction over the limit.
+        let signed_size = transaction.size();
+        if signed_size > MAX_STANDARD_TX_SIZE {
+            return Err(PlatformWalletError::TransactionBuild(format!(
+                "the signed transaction is {signed_size} bytes, over the \
+                 {MAX_STANDARD_TX_SIZE}-byte standard transaction limit; it would not relay. \
+                 Send a smaller amount (fewer inputs) or fewer recipients"
+            )));
+        }
 
         Ok(SignedCorePayment {
             transaction,
@@ -505,7 +618,13 @@ mod tests {
     /// so the broadcaster is irrelevant (and the balance handle is unused by
     /// build — a fresh one is fine for the split fixtures that don't return it).
     fn core_wallet(
-        wallet_manager: Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
+        wallet_manager: Arc<
+            tokio::sync::RwLock<
+                key_wallet_manager::WalletManager<
+                    crate::wallet::platform_wallet::PlatformWalletInfo,
+                >,
+            >,
+        >,
         wallet_id: WalletId,
         balance: Arc<WalletBalance>,
     ) -> CoreWallet<AlwaysRejectedBroadcaster> {
@@ -538,13 +657,21 @@ mod tests {
     /// CoinJoin account's account-level derivation path (the `funding_path` a
     /// caller passes to spend previously-mixed coins deliberately).
     async fn split_account_outpoints_and_coinjoin_path(
-        wm: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
+        wm: &Arc<
+            tokio::sync::RwLock<
+                key_wallet_manager::WalletManager<
+                    crate::wallet::platform_wallet::PlatformWalletInfo,
+                >,
+            >,
+        >,
         wallet_id: &WalletId,
     ) -> (HashSet<OutPoint>, HashSet<OutPoint>, DerivationPath) {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
         let guard = wm.read().await;
-        let (_, info) = guard.get_wallet_and_info(wallet_id).expect("wallet present");
+        let (_, info) = guard
+            .get_wallet_and_info(wallet_id)
+            .expect("wallet present");
         let network = info.core_wallet.network();
         let bip44 = info
             .core_wallet
@@ -911,11 +1038,244 @@ mod tests {
         let core = core_wallet(wm, wallet_id, balance);
 
         let empty = core.build_signed_payment(vec![], None, &signer, None).await;
-        assert!(matches!(empty, Err(PlatformWalletError::TransactionBuild(_))));
+        assert!(matches!(
+            empty,
+            Err(PlatformWalletError::TransactionBuild(_))
+        ));
 
         let zero = core
             .build_signed_payment(vec![(recipient(7), 0)], None, &signer, None)
             .await;
-        assert!(matches!(zero, Err(PlatformWalletError::TransactionBuild(_))));
+        assert!(matches!(
+            zero,
+            Err(PlatformWalletError::TransactionBuild(_))
+        ));
+    }
+
+    /// A positive-but-below-dust recipient must be refused. `add_output` applies
+    /// no relay policy, so before this check the primitive happily returned
+    /// fully signed bytes for a transaction every standard node rejects as
+    /// nonstandard (dashpay/platform#4247 review). 546 duffs is the P2PKH
+    /// threshold `Script::dust_value()` computes.
+    #[tokio::test]
+    async fn below_dust_outputs_are_rejected() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        let to = recipient(42);
+        let dust = to.script_pubkey().dust_value().to_sat();
+        assert_eq!(dust, 546, "P2PKH dust threshold");
+
+        for amount in [1u64, dust - 1] {
+            let result = core
+                .build_signed_payment(vec![(to.clone(), amount)], None, &signer, None)
+                .await;
+            match result {
+                Err(PlatformWalletError::TransactionBuild(m)) => assert!(
+                    m.contains("dust"),
+                    "the rejection must name dust as the cause, got {m:?}"
+                ),
+                other => panic!("{amount} duffs is below dust and must be refused, got {other:?}"),
+            }
+        }
+
+        // A dust-sized output hidden among valid ones is caught too — the check
+        // is per output, not just on the first.
+        let mixed = core
+            .build_signed_payment(
+                vec![
+                    (recipient(1), 1_000_000),
+                    (recipient(2), 5),
+                    (recipient(3), 1_000_000),
+                ],
+                None,
+                &signer,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(mixed, Err(PlatformWalletError::TransactionBuild(ref m)) if m.contains("dust")),
+            "a below-dust output among valid ones must still be refused, got {mixed:?}"
+        );
+
+        // Exactly at the threshold is valid and still builds.
+        let at_threshold = core
+            .build_signed_payment(vec![(to, dust)], None, &signer, None)
+            .await
+            .expect("an output exactly at the dust threshold is standard");
+        assert_all_inputs_signed(&at_threshold);
+    }
+
+    /// Rejecting a below-dust request must not cost the caller anything: it
+    /// happens before the wallet lock, so no input is reserved and the very
+    /// next legitimate build still finds the account's coins selectable.
+    #[tokio::test]
+    async fn a_rejected_dust_request_reserves_nothing() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        for _ in 0..3 {
+            assert!(core
+                .build_signed_payment(vec![(recipient(9), 100)], None, &signer, None)
+                .await
+                .is_err());
+        }
+
+        let payment = core
+            .build_signed_payment(vec![(recipient(9), 1_000_000)], None, &signer, None)
+            .await
+            .expect("refused dust requests must not have reserved the account's UTXOs");
+        assert_all_inputs_signed(&payment);
+    }
+
+    /// The output total is aggregated with checked arithmetic and bounded by
+    /// `MAX_MONEY`. Four outputs of `1 << 62` sum to exactly 2^64: unchecked,
+    /// that wraps to zero in release builds and lets selection fund only the
+    /// fee while retaining four enormous outputs — a signed transaction
+    /// consensus rejects, with meaningless fee/change metadata.
+    #[tokio::test]
+    async fn output_total_overflow_and_max_money_are_rejected() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        let wrapping = vec![
+            (recipient(1), 1u64 << 62),
+            (recipient(2), 1u64 << 62),
+            (recipient(3), 1u64 << 62),
+            (recipient(4), 1u64 << 62),
+        ];
+        match core
+            .build_signed_payment(wrapping, None, &signer, None)
+            .await
+        {
+            Err(PlatformWalletError::TransactionBuild(m)) => assert!(
+                m.contains("MAX_MONEY"),
+                "a wrapping total must be refused as a monetary-bound breach, got {m:?}"
+            ),
+            other => panic!("4 × (1 << 62) wraps to zero and must be refused, got {other:?}"),
+        }
+
+        // A single in-range-but-over-MAX_MONEY amount is refused as well.
+        let over = core
+            .build_signed_payment(
+                vec![(recipient(1), super::MAX_MONEY + 1)],
+                None,
+                &signer,
+                None,
+            )
+            .await;
+        assert!(
+            matches!(over, Err(PlatformWalletError::TransactionBuild(ref m)) if m.contains("MAX_MONEY")),
+            "an amount over MAX_MONEY must be refused, got {over:?}"
+        );
+
+        // MAX_MONEY itself is within bounds, so it passes validation and fails
+        // later on funds — proving the bound is inclusive, not off by one.
+        let at_max = core
+            .build_signed_payment(vec![(recipient(1), super::MAX_MONEY)], None, &signer, None)
+            .await;
+        assert!(
+            matches!(
+                at_max,
+                Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+            ),
+            "MAX_MONEY exactly must pass the bound and fail on funds, got {at_max:?}"
+        );
+    }
+
+    /// The fee rate is bounded before it reaches key-wallet, whose
+    /// `calculate_fee` multiplies `sat_per_kb * size_bytes` unchecked — a rate
+    /// near `u64::MAX` (the Kotlin/FFI APIs accept any non-negative `Long`)
+    /// panics in an overflow-checking build or wraps in release.
+    #[tokio::test]
+    async fn excessive_fee_rates_are_rejected() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        for rate in [u64::MAX, u64::MAX / 2, super::MAX_FEE_PER_KB + 1] {
+            let result = core
+                .build_signed_payment(vec![(recipient(7), 1_000_000)], Some(rate), &signer, None)
+                .await;
+            match result {
+                Err(PlatformWalletError::TransactionBuild(m)) => assert!(
+                    m.contains("fee rate"),
+                    "the rejection must name the fee rate, got {m:?}"
+                ),
+                other => panic!("fee rate {rate} must be refused, got {other:?}"),
+            }
+        }
+
+        // A sane rate still works, so the bound isn't rejecting real traffic.
+        let ok = core
+            .build_signed_payment(vec![(recipient(7), 1_000_000)], Some(5_000), &signer, None)
+            .await
+            .expect("5000 duffs/kB is an ordinary rate");
+        assert!(ok.fee > 0);
+    }
+
+    /// The fee-rate bound must make key-wallet's unchecked
+    /// `sat_per_kb * size_bytes` product unrepresentable-free for ANY
+    /// transaction size a `u32` can express — which is the point of deriving it
+    /// from `u32::MAX` rather than from the standard size limit. A cleanup that
+    /// loosened it back to `MAX_MONEY / 100` would overflow at ~878 kB, which a
+    /// funding account with a few thousand small denominations can reach.
+    #[test]
+    fn max_fee_rate_cannot_overflow_key_wallets_fee_product() {
+        for size in [super::MAX_STANDARD_TX_SIZE as u64, 878_434, u32::MAX as u64] {
+            assert!(
+                super::MAX_FEE_PER_KB.checked_mul(size).is_some(),
+                "MAX_FEE_PER_KB * {size} must not overflow u64"
+            );
+        }
+        // And it stays permissive enough to be irrelevant in practice.
+        assert!(
+            super::MAX_FEE_PER_KB > 1_000_000,
+            "the bound must sit far above any legitimate duffs/kB rate"
+        );
+    }
+
+    /// An oversized recipient list is refused before any wallet work. ~25.8k
+    /// recipients fit in a practical JNI blob and would drive key-wallet's
+    /// estimated size past the point where the fee product overflows, as well
+    /// as producing a transaction far too large to relay.
+    #[tokio::test]
+    async fn oversized_recipient_lists_are_rejected() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        // Smallest count whose outputs alone leave no room for a single input
+        // within the 100 kB standard limit.
+        let over = (super::MAX_STANDARD_TX_SIZE - super::TX_INPUT_SIZE) / super::TX_OUTPUT_SIZE;
+        let outputs: Vec<_> = (0..over)
+            .map(|i| (recipient((i % 250) as u8), 1_000u64))
+            .collect();
+        let result = core
+            .build_signed_payment(outputs, None, &signer, None)
+            .await;
+        match result {
+            Err(PlatformWalletError::TransactionBuild(m)) => assert!(
+                m.contains("standard") && m.contains("recipients"),
+                "the rejection must cite the standard size limit, got {m:?}"
+            ),
+            other => panic!("{over} recipients must be refused, got {other:?}"),
+        }
+
+        // The 25.8k figure from the review is refused by the same bound.
+        let huge: Vec<_> = (0..25_835)
+            .map(|i| (recipient((i % 250) as u8), 1_000u64))
+            .collect();
+        assert!(
+            matches!(
+                core.build_signed_payment(huge, Some(super::MAX_FEE_PER_KB), &signer, None)
+                    .await,
+                Err(PlatformWalletError::TransactionBuild(_))
+            ),
+            "the review's 25,835-recipient overflow case must be refused"
+        );
     }
 }

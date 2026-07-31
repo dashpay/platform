@@ -72,12 +72,19 @@ pub enum PlatformWalletError {
     AssetLockTransaction(String),
 
     /// A general Core L1 payment build (`CoreWallet::build_signed_payment`)
-    /// could not cover the requested outputs plus fee from the union of the
-    /// wallet's *signable* funds accounts (BIP44 + BIP32 + CoinJoin + DashPay
-    /// receiving; watch-only DashPay external accounts are excluded). `available`
-    /// is the total selectable value across those accounts, `required` the
-    /// outputs-plus-fee target — carried as exact duff amounts (instead of being
-    /// flattened into a string) so callers can render a precise shortfall.
+    /// could not cover the requested outputs plus fee from the **one** funds
+    /// account named by `funding_path` (defaulting to the unmixed BIP44
+    /// account). `available` is that single selected account's spendable total
+    /// and `required` its outputs-plus-fee target — carried as exact duff
+    /// amounts (instead of being flattened into a string) so callers can render
+    /// a precise shortfall.
+    ///
+    /// Both figures are deliberately SINGLE-ACCOUNT, never a wallet-wide union:
+    /// reporting a cross-account total against a single-account shortfall would
+    /// invite a retry that can only succeed by linking privacy domains, which
+    /// this primitive will not do. The actionable signal is "fund from a
+    /// different account", not "retry the same one with a smaller amount"
+    /// (dashpay/platform#4073 → #4184; see `crate::wallet::funding_privacy`).
     #[error(
         "payment coin selection is short: available {available} duffs, \
          required {required} duffs"
