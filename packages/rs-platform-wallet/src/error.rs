@@ -108,6 +108,55 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
+    /// target at all: unparseable, encoded for a different network than the
+    /// wallet's, or not P2PKH. A caller-input error — the classic Dash
+    /// signed-message format recovers a public key and compares its
+    /// `PubkeyHash` payload, so P2SH / SegWit payloads have no defined
+    /// verification and are refused rather than signed into something no
+    /// verifier accepts. `reason` names which of the three it was.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error("message-signing address {address:?} is unusable: {reason}")]
+    MessageSigningAddressInvalid { address: String, reason: String },
+
+    /// [`CoreWallet::sign_message`] was given a well-formed P2PKH address for
+    /// the right network that this wallet holds no signing key for: it belongs
+    /// to no *signable* funds account (BIP44 / BIP32 / CoinJoin /
+    /// DashPay-receiving), or it belongs to a watch-only DashPay **external**
+    /// account — a contact's receiving address, whose keys we never had.
+    ///
+    /// Distinct from a signer *failure*: nothing was attempted, because no
+    /// derivation path resolves the address. Carries no retry value as-is; the
+    /// caller must supply an address the wallet owns.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error(
+        "no signing key for message-signing address {address}: it belongs to no \
+         signable funds account of this wallet"
+    )]
+    MessageSigningKeyUnavailable { address: String },
+
+    /// [`CoreWallet::sign_message`] resolved a derivation path for the address
+    /// but could not produce a signature over it. Three causes, all carried in
+    /// `reason`: the [`Signer`] itself failed (Keystore/Keychain round-trip);
+    /// the public key it returned does not hash to the target address (a
+    /// path-resolution bug — the guard exists so a wrong-key signature can
+    /// never be handed out as if it were the address owner's); or no recovery
+    /// id in `0..=3` recovers that public key.
+    ///
+    /// Deliberately NOT given a dedicated FFI code: a signer that reports its
+    /// typed key-unavailable completion carries the stable machine prefix in
+    /// its `Display`, which the FFI conversion's catch-all promotes to
+    /// `ErrorSigningKeyUnavailable`. The remaining causes are genuine internal
+    /// invariant breaks and should surface as unknown rather than as a
+    /// key-repair prompt.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    /// [`Signer`]: key_wallet::signer::Signer
+    #[error("message signing failed for address {address}: {reason}")]
+    MessageSigningFailed { address: String, reason: String },
+
     /// Atomic Core finalization could not select enough unreserved funds.
     #[error(
         "insufficient unreserved Core funds on {account_type:?} account {account_index}: \
