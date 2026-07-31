@@ -408,8 +408,22 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // `set_change_address` override, so `acc` must be the funding account —
         // passing the BIP44 xpub for an explicitly-selected BIP32 account would
         // record a change entry derived from the wrong xpub into that account's
-        // pool (dashpay/platform#4184 review). Falls back to `bip44_acc` when no
-        // wallet-level account matches, preserving the default behavior.
+        // pool (dashpay/platform#4184 review).
+        //
+        // FAILS CLOSED. This previously fell back to `bip44_acc` when no
+        // wallet-level account matched, which is the same silent-fallback shape
+        // #4184 removed from the selector: the managed-account lookup below can
+        // still resolve a CoinJoin or DashPay receival account, so the fallback
+        // would hand `set_funding` another account's xpub and record a change
+        // entry derived from it into the funding account's pool. Refusing is the
+        // only safe answer — the two lookups disagreeing is a wallet-state bug,
+        // not something to paper over with BIP44 (dashpay/platform#4247 and
+        // #4256 review).
+        //
+        // Verified not to narrow any real path: `all_accounts()` does enumerate
+        // CoinJoin and DashPay receiving-funds accounts, so every send test —
+        // including the explicit-CoinJoin one — passes with the fallback
+        // removed. It was dead code on every exercised path.
         let funding_wallet_acc = wallet
             .all_accounts()
             .into_iter()
@@ -418,7 +432,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     .map(|p| p == funding_path)
                     .unwrap_or(false)
             })
-            .unwrap_or(&bip44_acc);
+            .ok_or_else(|| {
+                PlatformWalletError::TransactionBuild(format!(
+                    "no wallet-level account matches funding derivation path                      {funding_path}; refusing to fund with another account's xpub"
+                ))
+            })?;
 
         // Locate the ONE managed funds account whose account-level path equals
         // `funding_path`, MUTABLY, so `set_funding` reserves the selected inputs
