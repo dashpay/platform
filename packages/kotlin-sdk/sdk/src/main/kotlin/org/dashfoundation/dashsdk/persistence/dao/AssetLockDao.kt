@@ -77,16 +77,28 @@ interface AssetLockDao {
     /**
      * Transaction-label resolver probe: the `fundingTypeRaw` of the asset
      * lock whose outpoint belongs to [txidHex]. [txidHex] is the explorer
-     * DISPLAY txid hex (64 lowercase chars, wire order reversed) — the
-     * prefix of the `outPointHex` PK (`<txidDisplayHex>:<vout>`), matched
-     * via `LIKE '<txidHex>:%'`. A txid is a pure-hex string (no `%`/`_`),
-     * so the LIKE pattern carries no wildcards of its own. Returns null
-     * when no asset lock funds this tx (e.g. plain send, or an
-     * AssetUnlock/unshield — see [TransactionDao.transactionKindForTxid]).
+     * DISPLAY txid hex (64 chars, wire order reversed; uppercase input is
+     * canonicalized via `lower()`) — the prefix of the `outPointHex` PK
+     * (`<txidDisplayHex>:<vout>`). The query enforces the 64-hex input
+     * contract itself (length + hex-only GLOB, matching the
+     * null-on-malformed behavior of
+     * [TransactionDao.transactionKindForDisplayTxid]) and compares the
+     * exact 65-char `<txid>:` prefix rather than a LIKE pattern, so
+     * `%`/`_` in malformed input can never match arbitrary rows. Returns
+     * null for malformed input or when no asset lock funds this tx (e.g.
+     * plain send, or an AssetUnlock/unshield — see
+     * [TransactionDao.transactionKindForTxid]).
+     *
+     * DIP-0027 permits several asset-lock outputs in one transaction;
+     * those rows are created by the same funding flow and share a
+     * `fundingTypeRaw`, so the unordered `LIMIT 1` pick is value-stable.
      */
     @Query(
         "SELECT fundingTypeRaw FROM asset_locks " +
-            "WHERE outPointHex LIKE :txidHex || ':%' LIMIT 1"
+            "WHERE length(:txidHex) = 64 " +
+            "AND lower(:txidHex) NOT GLOB '*[^0-9a-f]*' " +
+            "AND substr(outPointHex, 1, 65) = lower(:txidHex) || ':' " +
+            "LIMIT 1"
     )
     suspend fun fundingTypeForTxid(txidHex: String): Int?
 
