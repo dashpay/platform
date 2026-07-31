@@ -77,12 +77,23 @@ pub struct PlatformAddressSyncConfigSnapshot {
 /// rather than a positional tuple so adding the next field
 /// (`pool_count`, `last_used_height`, …) doesn't ripple through every
 /// destructuring site.
-#[derive(Debug, Clone, Copy)]
+///
+/// `derivation_path` is the account-level derivation path STRING (e.g.
+/// the DIP-15 `m/9'/coinType'/15'/{index}'/0x<user 64hex>/0x<friend
+/// 64hex>` for a DashPay receiving-funds account), produced by the SAME
+/// `AccountType::derivation_path(network)` call that
+/// [`CoreWallet::build_signed_payment`](crate::wallet::core::CoreWallet::build_signed_payment)'s
+/// funds-account selector compares against — so a caller can round-trip
+/// this exact string back in as `funding_path` to spend from this single
+/// account with no divergence risk. `None` for account types that have
+/// no derivable account-level path.
+#[derive(Debug, Clone)]
 pub struct AccountBalanceRow {
     pub account_type: AccountType,
     pub balance: WalletCoreBalance,
     pub keys_used: u32,
     pub keys_total: u32,
+    pub derivation_path: Option<String>,
 }
 
 /// Snapshot of [`IdentitySyncManager`] tunables / queue depth, returned
@@ -385,6 +396,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let Some(info) = wm.get_wallet_info(wallet_id) else {
             return Vec::new();
         };
+        // Same `Network` the funds-account selector in
+        // `CoreWallet::build_signed_payment` derives paths under, so the
+        // emitted `derivation_path` string is byte-identical to what the
+        // selector compares against (see `AccountBalanceRow` docs).
+        let network = info.core_wallet.network();
         info.core_wallet
             .accounts
             .all_accounts()
@@ -412,11 +428,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
                     });
+                let account_type = account.managed_account_type().to_account_type();
+                // The single source of truth: the identical call the
+                // spend-selector uses. `Ok(path)` for account types with
+                // a derivable account-level path (Standard/BIP44,
+                // CoinJoin, DashPay receiving-funds, …); `Err` (→ `None`)
+                // for the ones that have none.
+                let derivation_path =
+                    account_type.derivation_path(network).ok().map(|p| p.to_string());
                 AccountBalanceRow {
-                    account_type: account.managed_account_type().to_account_type(),
+                    account_type,
                     balance,
                     keys_used,
                     keys_total,
+                    derivation_path,
                 }
             })
             .collect()

@@ -361,12 +361,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_walletM
         if !entries.is_null() && count > 0 {
             let items = unsafe { std::slice::from_raw_parts(entries, count) };
             for e in items {
+                // Account-level derivation-path string (the value a caller
+                // hands back to `build_signed_payment` as `funding_path`
+                // to spend this single account). Null C-string → JSON
+                // `null`; a present path is JSON-escaped.
+                let derivation_path_json = unsafe { opt_cstr(e.derivation_path) }
+                    .map(|s| json_string(&s))
+                    .unwrap_or_else(|| "null".to_string());
                 rows.push(format!(
                     "{{\"typeTag\":{},\"standardTag\":{},\"index\":{},\
                      \"registrationIndex\":{},\"keyClass\":{},\
                      \"userIdentityId\":{},\"friendIdentityId\":{},\
                      \"confirmed\":{},\"unconfirmed\":{},\"immature\":{},\
-                     \"locked\":{},\"keysUsed\":{},\"keysTotal\":{}}}",
+                     \"locked\":{},\"keysUsed\":{},\"keysTotal\":{},\
+                     \"derivationPath\":{}}}",
                     e.type_tag as u8,
                     e.standard_tag as u8,
                     e.index,
@@ -380,6 +388,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_walletM
                     e.locked,
                     e.keys_used,
                     e.keys_total,
+                    derivation_path_json,
                 ));
             }
         }
