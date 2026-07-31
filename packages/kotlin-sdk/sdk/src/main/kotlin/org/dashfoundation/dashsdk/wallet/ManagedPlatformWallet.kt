@@ -201,12 +201,17 @@ class ManagedPlatformWallet internal constructor(
      * @property reservationToken the opaque token for [broadcastSigned] /
      *   [releaseReservation]. Valid only for this wallet instance and only until
      *   consumed by one of those calls (or released by [close] / GC).
+     * @property changeDuffs duffs returned to the wallet's BIP44 change address,
+     *   0 when the build produced no change output. Reported only by
+     *   [buildSignedPaymentWithToken]; the builder-driven [buildSignedPayment]
+     *   path leaves it 0 because its native call returns no change figure.
      */
     class SignedCoreTransaction internal constructor(
         val txidHex: String,
         val rawTxBytes: ByteArray,
         val feeDuffs: Long,
         val reservationToken: Long,
+        val changeDuffs: Long = 0,
     ) : AutoCloseable {
 
         // GC backstop: releases the token if it was neither broadcast nor
@@ -228,19 +233,22 @@ class ManagedPlatformWallet internal constructor(
                 txidHex == other.txidHex &&
                 rawTxBytes.contentEquals(other.rawTxBytes) &&
                 feeDuffs == other.feeDuffs &&
-                reservationToken == other.reservationToken
+                reservationToken == other.reservationToken &&
+                changeDuffs == other.changeDuffs
 
         override fun hashCode(): Int {
             var result = txidHex.hashCode()
             result = 31 * result + rawTxBytes.contentHashCode()
             result = 31 * result + feeDuffs.hashCode()
             result = 31 * result + reservationToken.hashCode()
+            result = 31 * result + changeDuffs.hashCode()
             return result
         }
 
         override fun toString(): String =
             "SignedCoreTransaction(txidHex=$txidHex, feeDuffs=$feeDuffs, " +
-                "reservationToken=$reservationToken, rawTxBytes=${rawTxBytes.size} bytes)"
+                "changeDuffs=$changeDuffs, reservationToken=$reservationToken, " +
+                "rawTxBytes=${rawTxBytes.size} bytes)"
 
         /** Releases the reservation token exactly once, on [close] or GC. */
         private class TokenRelease(private val token: Long) : Runnable {
@@ -284,6 +292,36 @@ class ManagedPlatformWallet internal constructor(
                     rawTxBytes = rawTxBytes,
                     feeDuffs = feeDuffs,
                     reservationToken = token,
+                )
+            }
+
+            /**
+             * Decode the big-endian native BLOB the funding-path build-and-
+             * register FFI returns: `u64 token, u64 feeDuffs, u64 changeDuffs,
+             * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+             *
+             * A distinct decoder from [fromRegisterBlob], not an extension of
+             * it: the change field sits between the fee and the txid, so the two
+             * layouts diverge from byte 16 onward and reading one with the
+             * other's decoder would silently mis-frame the txid and tx bytes.
+             */
+            internal fun fromPaymentRegisterBlob(blob: ByteArray): SignedCoreTransaction {
+                val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
+                val token = buffer.long
+                val feeDuffs = buffer.long
+                val changeDuffs = buffer.long
+                val txidLen = buffer.int
+                val txidBytes = ByteArray(txidLen)
+                buffer.get(txidBytes)
+                val txBytesLen = buffer.int
+                val rawTxBytes = ByteArray(txBytesLen)
+                buffer.get(rawTxBytes)
+                return SignedCoreTransaction(
+                    txidHex = String(txidBytes, Charsets.UTF_8),
+                    rawTxBytes = rawTxBytes,
+                    feeDuffs = feeDuffs,
+                    reservationToken = token,
+                    changeDuffs = changeDuffs,
                 )
             }
         }
@@ -531,6 +569,81 @@ class ManagedPlatformWallet internal constructor(
                     "its inputs stay reserved until the TTL backstop",
                 t,
             )
+        }
+    }
+
+    /**
+     * Build and sign a Core L1 payment to [recipients] from a **single** funds
+     * account named by [fundingPath], reserve the funding UTXOs, and return a
+     * [SignedCoreTransaction] whose [SignedCoreTransaction.reservationToken]
+     * later drives [broadcastSigned] (send it) or [releaseReservation] (abandon
+     * it).
+     *
+     * The bridge between the SDK's two previously-disconnected send flows:
+     *
+     * * [buildSignedPayment] selects by derivation path — the only selector that
+     *   can reach a **DashPay receiving-funds** account — but returns raw bytes
+     *   with no token and never broadcasts.
+     * * The [buildSignedPayment] overload taking an `accountType` mints a token
+     *   and can broadcast, but its selector only knows BIP44 / BIP32 / CoinJoin,
+     *   so it cannot spend a receival balance at all.
+     *
+     * This method is the first with both halves: pass the receival account's
+     * account-level derivation path (the `derivationPath` the account-balance
+     * enumeration reports for that account, which is produced by the very same
+     * Rust call the selector compares against) and then broadcast the token.
+     *
+     * **The returned object OWNS the reservation.** It is [AutoCloseable] with a
+     * [NativeCleaner] GC backstop, so a token that is neither broadcast nor
+     * released is never orphaned. Prefer the object-taking
+     * [broadcastSigned]/[releaseReservation] overloads over passing the bare
+     * `Long`: extracting the token and dropping the object races GC, which can
+     * release the reservation mid-broadcast.
+     *
+     * Funding-domain isolation is unchanged from [buildSignedPayment] and is
+     * enforced by the same Rust selector: exactly ONE account funds the payment,
+     * never a union; change routes to the unmixed BIP44 account (structural —
+     * key-wallet derives change only for Standard accounts); watch-only DashPay
+     * *external* accounts (a contact's coins) are refused even when named
+     * explicitly; and a shortfall throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.CoreInsufficientFunds]
+     * with the ONE account's balance as `available` rather than reaching into
+     * another domain.
+     *
+     * Process-death note: the reservation is in-memory, so an app crash between
+     * this call and [broadcastSigned] returns the UTXOs to spendable on restart
+     * — the same property dashj has.
+     *
+     * @param recipients `(address, amountDuffs)` pairs; must be non-empty and
+     *   every amount positive.
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle`; no private
+     *   key crosses the boundary.
+     * @param feePerKb fee rate in duffs/kB, or 0 for the SDK default.
+     * @param fundingPath account-level BIP32 derivation-path string naming the
+     *   single funds account to spend from; `null` = the unmixed BIP44 account.
+     */
+    suspend fun buildSignedPaymentWithToken(
+        recipients: List<Pair<String, Long>>,
+        coreSignerHandle: Long,
+        feePerKb: Long = 0,
+        fundingPath: String? = null,
+    ): SignedCoreTransaction = gate.op {
+        require(recipients.isNotEmpty()) { "recipients must not be empty" }
+        require(recipients.all { it.second > 0 }) { "every recipient amount must be positive" }
+        require(feePerKb >= 0) { "feePerKb must be non-negative, got $feePerKb" }
+
+        val outputsBlob = encodePaymentOutputs(recipients)
+        mapNativeErrors {
+            coreWallet().use { core ->
+                SignedCoreTransaction.fromPaymentRegisterBlob(
+                    core.buildSignedPaymentWithToken(
+                        outputsBlob,
+                        feePerKb,
+                        coreSignerHandle,
+                        fundingPath,
+                    ),
+                )
+            }
         }
     }
 

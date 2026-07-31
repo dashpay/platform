@@ -25,6 +25,8 @@ use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 use dashcore::Address as DashAddress;
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
+use std::ffi::CString;
+use std::os::raw::c_char;
 use std::str::FromStr;
 
 /// Smallest number of bytes one encoded output row can occupy: `u32 addr_len`
@@ -217,6 +219,139 @@ pub unsafe extern "C" fn core_wallet_build_signed_payment(
     *out_reservation_handle = PAYMENT_RESERVATIONS
         .stash(payment.reservation_token)
         .as_u64();
+
+    PlatformWalletFFIResult::ok()
+}
+
+/// Build and sign a standard L1 payment from ONE of the wallet's signable funds
+/// accounts — named by derivation path, so a **DashPay receiving-funds** account
+/// is reachable — and REGISTER it for deferred submission, returning a
+/// reservation token alongside the signed bytes.
+///
+/// This is [`core_wallet_build_signed_payment`] joined to the deferred
+/// broadcast/release lifecycle. The two were disconnected: that function selects
+/// by derivation path (the only selector that reaches a receival account) but
+/// hands back raw bytes with no token and no broadcast, while
+/// [`core_wallet_signed_payment_finalize`](super::transaction_builder::core_wallet_signed_payment_finalize)
+/// mints a token but selects only BIP44 / BIP32 / CoinJoin. Coin selection,
+/// change routing, and the funding-domain invariant are unchanged — this shares
+/// the exact selector, it does not add a second one.
+///
+/// On success the funding UTXOs are RESERVED and owned by `out_token`: broadcast
+/// it with
+/// [`core_wallet_signed_payment_broadcast`](super::signed_payment::core_wallet_signed_payment_broadcast)
+/// or release it with
+/// [`core_wallet_signed_payment_release`](super::signed_payment::core_wallet_signed_payment_release).
+/// Dropping the token strands the reservation until key-wallet's TTL.
+///
+/// Parameters match [`core_wallet_build_signed_payment`], plus:
+/// * `out_token` — the reservation token for the later broadcast/release.
+/// * `out_txid` — a heap C string (lowercase hex) freed with
+///   `core_wallet_free_address`.
+///
+/// # Safety
+/// As [`core_wallet_build_signed_payment`]; additionally every new out-pointer
+/// must be writable.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn core_wallet_build_signed_payment_with_token(
+    handle: Handle,
+    outputs_blob: *const u8,
+    outputs_blob_len: usize,
+    fee_per_kb: u64,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    funding_path_ptr: *const u8,
+    funding_path_len: usize,
+    out_token: *mut u64,
+    out_txid: *mut *mut c_char,
+    out_tx_bytes: *mut *mut u8,
+    out_tx_len: *mut usize,
+    out_fee: *mut u64,
+    out_change: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(outputs_blob);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_token);
+    check_ptr!(out_txid);
+    check_ptr!(out_tx_bytes);
+    check_ptr!(out_tx_len);
+    check_ptr!(out_fee);
+    check_ptr!(out_change);
+    *out_token = 0;
+
+    let funding_path = match parse_optional_derivation_path(funding_path_ptr, funding_path_len) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    let blob = std::slice::from_raw_parts(outputs_blob, outputs_blob_len);
+    let fee = if fee_per_kb == 0 {
+        None
+    } else {
+        Some(fee_per_kb)
+    };
+
+    // Clone the wallet out of storage rather than working inside `with_item`:
+    // registering the payment needs an owned `CoreWallet` (the registry captures
+    // the exact generation whose ReservationSet holds the inputs), exactly as
+    // `core_wallet_signed_payment_broadcast` does.
+    let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(handle, |w| w.clone()));
+    let network = core.network();
+    let outputs = unwrap_result_or_return!(decode_payment_outputs(blob, network));
+
+    // SAFETY: the caller pinned `core_signer_handle` alive for this call; the
+    // signer lives only on this stack frame and is dropped before returning.
+    let signer = MnemonicResolverCoreSigner::new(core_signer_handle, core.wallet_id(), network);
+
+    let payment = unwrap_result_or_return!(runtime().block_on(
+        core.finalize_signed_payment_from_funding_path(outputs, fee, &signer, funding_path)
+    ));
+
+    // From here the inputs are RESERVED and nothing owns that reservation yet.
+    // Do the one fallible marshalling step BEFORE registering, and release on
+    // failure — after `register` there is a token to release with, but before it
+    // a failure would strand the reservation until the TTL backstop. Mirrors
+    // `core_wallet_signed_payment_finalize`. A txid hex never contains a NUL, but
+    // the impossible case is still handled rather than leaked.
+    let c_txid = match CString::new(payment.transaction.txid().to_string()) {
+        Ok(s) => s,
+        Err(_) => {
+            runtime().block_on(core.abandon_payment(&payment));
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                "txid string contained an interior NUL".to_string(),
+            );
+        }
+    };
+
+    let serialized = dashcore::consensus::serialize(&payment.transaction);
+    let len = serialized.len();
+
+    // Register the reserved+signed payment. `register_funded_by` — not
+    // `register` — because the funding account is named by derivation path: a
+    // DashPay receiving-funds account has no `AccountTypePreference`, and
+    // registering it as BIP44 would make a later release free BIP44's inputs
+    // instead of the receival account's.
+    let token = runtime().block_on(
+        crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.register_funded_by(
+            core.clone(),
+            payment.transaction.clone(),
+            payment.funding.clone(),
+            // The height sampled inside the funding critical section, mandatory
+            // since #4185: the age guard must baseline off the build's own clock.
+            payment.reservation_height,
+            payment.reservation_token,
+        ),
+    );
+
+    *out_tx_bytes = Box::into_raw(serialized.into_boxed_slice()) as *mut u8;
+    *out_tx_len = len;
+    // `ReservationToken` is a newtype since #4185; `as_u64` is the one
+    // conversion, applied here at the C ABI boundary.
+    *out_token = token.as_u64();
+    *out_fee = payment.fee;
+    *out_change = payment.change_amount;
+    *out_txid = c_txid.into_raw();
 
     PlatformWalletFFIResult::ok()
 }

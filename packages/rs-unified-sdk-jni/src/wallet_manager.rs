@@ -1248,6 +1248,143 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_build_signed_payment_with_token` — build + sign a standard L1
+/// payment funded from ONE of the wallet's signable funds accounts (named by
+/// derivation path, so a **DashPay receiving-funds** account is reachable) AND
+/// register it for deferred submission, returning a reservation token.
+///
+/// The bridge between [coreWalletBuildSignedPayment] (path-selected but
+/// tokenless and never broadcast) and [coreWalletFinalizeSignedPayment]
+/// (tokened + broadcastable but limited to BIP44/BIP32/CoinJoin). Parameters are
+/// exactly [coreWalletBuildSignedPayment]'s.
+///
+/// On success the funding UTXOs are RESERVED and owned by the returned token:
+/// consume it with [coreWalletBroadcastSignedPayment] or
+/// [coreWalletReleaseSignedPayment].
+///
+/// Returns a big-endian BLOB: `u64 token, u64 feeDuffs, u64 changeDuffs,
+/// u32 txidLen, txid utf8, u32 txBytesLen, txBytes` (null after throwing).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBuildSignedPaymentWithToken(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    outputs_blob: JByteArray,
+    fee_per_kb: jlong,
+    core_signer_handle: jlong,
+    funding_path: JString,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core handle is 0");
+            return ptr::null_mut();
+        }
+        if core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "coreSignerHandle is 0");
+            return ptr::null_mut();
+        }
+        if fee_per_kb < 0 {
+            throw_sdk_exception(env, 1, "feePerKb must be non-negative");
+            return ptr::null_mut();
+        }
+        let blob = match env.convert_byte_array(&outputs_blob) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "outputs byte[] was invalid");
+                return ptr::null_mut();
+            }
+        };
+        // STRICT reader, as in [coreWalletBuildSignedPayment]: a genuine read
+        // error must throw, never silently degrade this money-source parameter
+        // to the default BIP44 account (which would spend the wrong coins).
+        let funding_path =
+            match crate::funding::read_cstring_opt_strict(env, &funding_path, "fundingPath") {
+                Ok(v) => v,
+                Err(()) => return ptr::null_mut(),
+            };
+        let (funding_path_ptr, funding_path_len) =
+            funding_path.as_ref().map_or((ptr::null(), 0usize), |c| {
+                let b = c.as_bytes();
+                (b.as_ptr(), b.len())
+            });
+
+        let mut token: u64 = 0;
+        let mut out_txid: *mut c_char = ptr::null_mut();
+        let mut out_tx_bytes: *mut u8 = ptr::null_mut();
+        let mut out_tx_len: usize = 0;
+        let mut out_fee: u64 = 0;
+        let mut out_change: u64 = 0;
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_build_signed_payment_with_token(
+                core_handle as Handle,
+                blob.as_ptr(),
+                blob.len(),
+                fee_per_kb as u64,
+                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                funding_path_ptr,
+                funding_path_len,
+                &mut token as *mut u64,
+                &mut out_txid as *mut *mut c_char,
+                &mut out_tx_bytes as *mut *mut u8,
+                &mut out_tx_len as *mut usize,
+                &mut out_fee as *mut u64,
+                &mut out_change as *mut u64,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        // Past this point the registration has committed and is holding the
+        // funding reservation, so EVERY failure path below must release the
+        // token — otherwise Kotlin never receives it and the reservation is
+        // stranded until key-wallet's TTL backstop.
+        if out_txid.is_null() {
+            unsafe {
+                platform_wallet_ffi::core_wallet_free_payment_bytes(out_tx_bytes, out_tx_len);
+                platform_wallet_ffi::core_wallet_signed_payment_release(token);
+            };
+            throw_sdk_exception(env, 1, "build-with-token returned a NULL txid");
+            return ptr::null_mut();
+        }
+
+        // Copy the txid out, then free the Rust-owned C string.
+        let txid = unsafe { CStr::from_ptr(out_txid) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
+
+        let tx_bytes: &[u8] = if out_tx_bytes.is_null() || out_tx_len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(out_tx_bytes, out_tx_len) }
+        };
+
+        let txid_bytes = txid.into_bytes();
+        let mut packed = Vec::with_capacity(8 + 8 + 8 + 4 + txid_bytes.len() + 4 + tx_bytes.len());
+        packed.extend_from_slice(&token.to_be_bytes());
+        packed.extend_from_slice(&out_fee.to_be_bytes());
+        packed.extend_from_slice(&out_change.to_be_bytes());
+        packed.extend_from_slice(&(txid_bytes.len() as u32).to_be_bytes());
+        packed.extend_from_slice(&txid_bytes);
+        packed.extend_from_slice(&(tx_bytes.len() as u32).to_be_bytes());
+        packed.extend_from_slice(tx_bytes);
+        unsafe {
+            platform_wallet_ffi::core_wallet_free_payment_bytes(out_tx_bytes, out_tx_len);
+        }
+
+        match env.byte_array_from_slice(&packed) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                // Kotlin will never see the token; release it here.
+                unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
 /// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.

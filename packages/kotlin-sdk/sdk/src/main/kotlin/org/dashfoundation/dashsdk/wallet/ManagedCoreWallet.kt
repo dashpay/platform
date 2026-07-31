@@ -110,6 +110,28 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         reservationHandle,
     )
 
+    /**
+     * Build + sign a payment from ONE signable funds account AND register it for
+     * deferred submission. Returns the packed native result (`u64 token,
+     * u64 fee, u64 change, u32 txidLen, txid, u32 txLen, txBytes`, big-endian) —
+     * decoded by [ManagedPlatformWallet.buildSignedPaymentWithToken]. See that
+     * method for the full contract, including the reservation the returned token
+     * owns; drive this through it, not directly.
+     */
+    internal fun buildSignedPaymentWithToken(
+        outputsBlob: ByteArray,
+        feePerKb: Long,
+        coreSignerHandle: Long,
+        fundingPath: String?,
+    ): ByteArray =
+        WalletManagerNative.coreWalletBuildSignedPaymentWithToken(
+            handle,
+            outputsBlob,
+            feePerKb,
+            coreSignerHandle,
+            fundingPath,
+        )
+
     override fun close() {
         cleanable.clean()
     }

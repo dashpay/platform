@@ -83,9 +83,14 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 // reserved **inputs**, and is the proof of ownership an owner-guarded release
 // presents.
 use key_wallet::ReservationToken as FundingReservationToken;
+// Same key-wallet type under the name the funding-path finalize path uses.
+// Unified onto `FundingReservationToken` below; kept during the #4247 restack so
+// both call sites read against the alias their own review thread cites.
+use key_wallet::ReservationToken as KeyWalletReservationToken;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::transaction::FundingAccountRef;
 use crate::wallet::core::CoreWallet;
 use crate::wallet::funding_privacy::is_signable_funding_account;
 
@@ -153,6 +158,52 @@ const MAX_FEE_PER_KB: u64 = u64::MAX / u32::MAX as u64;
 /// has exactly one BIP44 account, and the asset-lock builder's `account_index`
 /// serves the same pinned role there.
 const BIP44_ACCOUNT_INDEX: u32 = 0;
+
+/// A built-and-signed Core L1 payment that ALSO carries the bookkeeping a
+/// deferred (BIP70/BIP270-style) submission needs: which single account funded
+/// it, the height its reservation was stamped at, and the key-wallet token
+/// stamped onto the reserved inputs.
+///
+/// This is the shape [`CoreWallet::finalize_signed_payment_from_funding_path`]
+/// returns, and the bridge between the two previously-disconnected send flows:
+/// the funding-path selector (the only one that can reach a
+/// `DashpayReceivingFunds` account) and the reservation registry that mints
+/// broadcast/release tokens.
+///
+/// Holding one of these means the selected inputs are **reserved**. Either
+/// register it with [`SignedPaymentRegistry::register_funded_by`] — which takes
+/// over that responsibility and returns a token — or release it with
+/// [`CoreWallet::abandon_payment`]. Dropping it without doing either strands the
+/// reservation until key-wallet's TTL backstop reclaims it.
+///
+/// [`SignedPaymentRegistry::register_funded_by`]:
+///     crate::SignedPaymentRegistry::register_funded_by
+#[derive(Debug, Clone)]
+pub struct FinalizedCorePayment {
+    /// The signed transaction.
+    pub transaction: Transaction,
+    /// The fee paid, in duffs — derived from the transaction itself
+    /// (`inputs − outputs`), the same ground truth [`SignedCorePayment::fee`]
+    /// uses.
+    pub fee: u64,
+    /// Duffs returned to the wallet's BIP44 change address (0 when the build
+    /// produced no change output).
+    pub change_amount: u64,
+    /// The ONE account the inputs were selected from and reserved in, as its
+    /// RESOLVED account-level derivation path — never the caller's `None`. A
+    /// later release must name this account, not the default BIP44 one.
+    pub funding: FundingAccountRef,
+    /// The wallet's `last_processed_height` captured in the funding critical
+    /// section, i.e. the exact clock `set_current_height` stamped the
+    /// reservation with. The registry's age guard must baseline off this — see
+    /// [`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height).
+    pub reservation_height: u32,
+    /// The key-wallet [`ReservationToken`](key_wallet::ReservationToken) stamped
+    /// onto the selected inputs, so a later release is *owner-guarded* and frees
+    /// only inputs this build still owns (`dashpay/platform#4185`). `None` only
+    /// if the build reserved nothing, which the funded path never does.
+    pub reservation_token: Option<KeyWalletReservationToken>,
+}
 
 /// A built-and-signed Core L1 payment, ready to be committed/broadcast by the
 /// caller (dashj during the transition, or a later SDK-broadcast mode).
@@ -244,6 +295,60 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         signer: &S,
         funding_path: Option<DerivationPath>,
     ) -> Result<SignedCorePayment, PlatformWalletError> {
+        let finalized = self
+            .finalize_signed_payment_from_funding_path(outputs, fee_per_kb, signer, funding_path)
+            .await?;
+        // The projection drops the deferred-registry bookkeeping (the funding
+        // account ref and the reservation height) but MUST carry the reservation
+        // token: it is this caller's proof of ownership for
+        // `release_payment_reservation`, and dropping it here would silently
+        // reinstate the unguarded by-outpoint release #4247 removed.
+        Ok(SignedCorePayment {
+            transaction: finalized.transaction,
+            fee: finalized.fee,
+            change_amount: finalized.change_amount,
+            reservation_token: finalized.reservation_token,
+        })
+    }
+
+    /// [`build_signed_payment`](Self::build_signed_payment) with the deferred
+    /// submission bookkeeping retained: identical selection, change routing,
+    /// signing, and fee/change accounting, but the result also carries the ONE
+    /// account the build reserved into, the height its reservation was stamped
+    /// at, and key-wallet's owner token for those inputs.
+    ///
+    /// This is the bridge that lets a **DashPay receiving-funds** balance reach
+    /// the reservation/broadcast lifecycle. That lifecycle's other entry point,
+    /// [`finalize_transaction`](Self::finalize_transaction), selects accounts by
+    /// key-wallet's `AccountTypePreference` (BIP44 / BIP32 / CoinJoin), which has
+    /// no variant for a receival account — so before this method a receival
+    /// balance could be *signed* (here) or *broadcast with a token* (there), but
+    /// never both. Register the result with
+    /// [`SignedPaymentRegistry::register_funded_by`](crate::SignedPaymentRegistry::register_funded_by)
+    /// to mint the token the broadcast/release pair consumes.
+    ///
+    /// ## Reservation ownership — the caller MUST discharge it
+    ///
+    /// On success the selected inputs are reserved in the funding account's own
+    /// ledger. Exactly one of these must follow, or the reservation is stranded
+    /// until key-wallet's TTL backstop reclaims it (the funds are not lost, but
+    /// they are unspendable meanwhile):
+    ///
+    /// * register it — the registry then owns the release; or
+    /// * [`abandon_payment`](Self::abandon_payment) it.
+    ///
+    /// Every invariant [`build_signed_payment`](Self::build_signed_payment)
+    /// documents holds unchanged, because that method is now a projection of
+    /// this one: exactly one funding account (never a union), change to the
+    /// unmixed BIP44 account, watch-only accounts refused even when named
+    /// explicitly, and a shortfall reported against the SELECTED account alone.
+    pub async fn finalize_signed_payment_from_funding_path<S: Signer>(
+        &self,
+        outputs: Vec<(DashAddress, u64)>,
+        fee_per_kb: Option<u64>,
+        signer: &S,
+        funding_path: Option<DerivationPath>,
+    ) -> Result<FinalizedCorePayment, PlatformWalletError> {
         if outputs.is_empty() {
             return Err(PlatformWalletError::TransactionBuild(
                 "at least one output is required".to_string(),
@@ -539,13 +644,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             builder
         };
 
-        // `build_signed_reserved`, not `build_signed`: the latter drops the
-        // `ReservationToken` it was handed, and this build must keep it. The
-        // token is both the abandon path's proof of ownership
-        // (`SignedCorePayment::reservation_token`) and what lets the
-        // size-rejection path below free exactly its own inputs. key-wallet
-        // already releases owner-guarded if the signer itself fails, so the only
-        // post-reservation failure left to handle here is that size check.
+        // `build_signed_reserved`, not `build_signed`: identical build, but it
+        // also hands back the key-wallet ReservationToken it stamped onto the
+        // selected inputs. `build_signed` is literally this call with the token
+        // discarded — which is exactly what left a deferred payment unable to
+        // release owner-guarded. Keeping the token is what makes a registered
+        // (tokened) payment releasable without risking a TTL-swept, re-reserved
+        // input belonging to another build (`dashpay/platform#4185`).
+        //
+        // The token has a second consumer on this path: it is what the
+        // size-rejection branch below presents to free exactly its own inputs,
+        // and what `SignedCorePayment::reservation_token` carries out to the
+        // abandon path (`dashpay/platform#4247`). key-wallet already releases
+        // owner-guarded if the signer itself fails, so that size check is the
+        // only post-reservation failure left to handle here.
         let (transaction, _estimated_fee, reservation_token) = builder
             .build_signed_reserved(signer, move |addr| path_map.get(&addr).cloned())
             .await
@@ -575,6 +687,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let fee = selected_input_value.saturating_sub(total_out);
         let change_amount = total_out.saturating_sub(outputs_total);
 
+        let payment = FinalizedCorePayment {
+            transaction,
+            fee,
+            change_amount,
+            // The RESOLVED path, never the caller's `None`: a release must name
+            // the account the inputs are actually reserved in. For a default
+            // build that is the unmixed BIP44 account's own path, so the release
+            // still lands on BIP44 — but by the same identity the selector used,
+            // not by a separate assumption that could drift.
+            funding: FundingAccountRef::Path(funding_path),
+            reservation_height: height,
+            reservation_token,
+        };
+
         // Belt-and-braces: the pre-build check bounded only the output side,
         // because the input count is not knowable until coin selection has run.
         // Measure the transaction we actually built and refuse to hand back
@@ -582,49 +708,27 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // whose recipient list already passed the output-side bound but whose
         // funding account then contributed enough small inputs to push the
         // whole transaction over the limit.
-        let signed_size = transaction.size();
+        //
+        // RELEASE BEFORE RETURNING (dashpay/platform#4247 + #4256 review).
+        //
+        // The reservation is discharged before returning: this is a failure
+        // between the build and a successful `register_funded_by`, exactly the
+        // case `abandon_payment` documents. The inputs are already reserved by
+        // the time this check runs and this is the one error path that can reach
+        // it, so returning bare would strand them twice over: the caller never
+        // receives the transaction, so it has nothing to hand
+        // `release_payment_reservation`, and the TTL backstop is not a fallback
+        // — `ReservationSet::sweep` early-returns at height 0, so on a freshly
+        // restored wallet the coins would sit unselectable for the life of the
+        // process. Since the failure is "too many small inputs", the stranded
+        // amount is typically the whole account.
+        //
+        // `abandon_payment` is the owner-guarded discharge: it presents this
+        // build's own `reservation_token`, so it frees exactly these inputs even
+        // if a TTL sweep and an unrelated re-reservation had interleaved.
+        let signed_size = payment.transaction.size();
         if signed_size > MAX_STANDARD_TX_SIZE {
-            // RELEASE BEFORE RETURNING (dashpay/platform#4247 review).
-            //
-            // The inputs are already reserved by the time this check runs, and
-            // this is the one error path that can reach it. Returning bare would
-            // strand them twice over: the caller never receives the transaction,
-            // so it has nothing to hand `release_payment_reservation`, and the
-            // TTL backstop is not a fallback — `ReservationSet::sweep`
-            // early-returns at height 0, so on a freshly restored wallet the
-            // coins would sit unselectable for the life of the process. Since
-            // the failure is "too many small inputs", the stranded amount is
-            // typically the whole account.
-            //
-            // Owner-guarded even though nothing can have interleaved (the
-            // manager write lock has been held continuously since selection, and
-            // both the TTL sweep and any re-reservation need it): the guard costs
-            // nothing and keeps this path correct by construction rather than by
-            // an argument about the current locking, which is exactly the
-            // reasoning that failed review elsewhere in this module. A failure to
-            // resolve the account is logged, not propagated — it must not mask
-            // the size error the caller actually needs to see.
-            match release_in_funding_account(
-                info,
-                network,
-                &funding_path,
-                &transaction,
-                reservation_token,
-            ) {
-                Ok(true) => {}
-                Ok(false) => tracing::warn!(
-                    wallet_id = %hex::encode(self.wallet_id),
-                    %funding_path,
-                    "oversized-payment cleanup could not find the funding account to \
-                     release into; its inputs stay reserved until the TTL backstop"
-                ),
-                Err(e) => tracing::warn!(
-                    wallet_id = %hex::encode(self.wallet_id),
-                    %funding_path,
-                    "oversized-payment cleanup failed to release the reservation: {e}"
-                ),
-            }
-
+            self.abandon_payment(&payment).await;
             return Err(PlatformWalletError::TransactionBuild(format!(
                 "the signed transaction is {signed_size} bytes, over the \
                  {MAX_STANDARD_TX_SIZE}-byte standard transaction limit; it would not relay. \
@@ -632,12 +736,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             )));
         }
 
-        Ok(SignedCorePayment {
-            transaction,
-            fee,
-            change_amount,
-            reservation_token,
-        })
+        Ok(payment)
     }
 
     /// Release the UTXO reservation that a previous [`build_signed_payment`]
@@ -786,6 +885,24 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
              the build to abandon must be released against the account that funded it"
         )))
     }
+
+    /// Release the funding reservation of a
+    /// [`FinalizedCorePayment`] the caller has decided not to submit — the
+    /// path-funded counterpart of
+    /// [`abandon_transaction`](Self::abandon_transaction).
+    ///
+    /// Owner-guarded and generation-bound, like every other release here. Use it
+    /// on any failure between the build and a successful
+    /// [`register_funded_by`](crate::SignedPaymentRegistry::register_funded_by);
+    /// once registered, the registry owns the release instead.
+    pub async fn abandon_payment(&self, payment: &FinalizedCorePayment) {
+        self.release_reservation_for(
+            &payment.funding,
+            &payment.transaction,
+            payment.reservation_token,
+        )
+        .await;
+    }
 }
 
 /// Release `transaction`'s input reservation inside the ONE funds account whose
@@ -916,13 +1033,14 @@ mod tests {
     use key_wallet::Utxo;
 
     use crate::test_support::{
-        funded_wallet_manager, split_funded_wallet_manager, AlwaysRejectedBroadcaster,
+        funded_wallet_manager, split_funded_wallet_manager, split_funded_wallet_manager_dashpay,
+        AlwaysRejectedBroadcaster, DashpayLeg,
     };
     use crate::wallet::core::{CoreWallet, WalletGeneration};
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletError;
 
-    use super::SignedCorePayment;
+    use super::{FundingAccountRef, SignedCorePayment};
 
     /// A `CoreWallet` over a manager fixture. The send path never broadcasts,
     /// so the broadcaster is irrelevant.
@@ -1347,6 +1465,341 @@ mod tests {
             "the watch-only UTXO must never be selected as an input"
         );
         assert_all_inputs_signed(&payment);
+    }
+
+    /// The wallet's OWN per-generation balance handle.
+    ///
+    /// Every reservation release is generation-bound: it acts only if the
+    /// `CoreWallet`'s balance `Arc` is pointer-equal to the one registered under
+    /// the wallet id (`Arc::ptr_eq` in `release_reservation_for`). The split
+    /// fixtures don't hand their balance back, so a `CoreWallet` built with a
+    /// fresh `WalletBalance::new()` is — correctly — treated as a *different*
+    /// generation and every release is skipped. Tests that assert release
+    /// behaviour must therefore build on this handle, not a fresh one.
+    async fn wallet_generation(
+        wm: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
+        wallet_id: &WalletId,
+    ) -> Arc<WalletBalance> {
+        let guard = wm.read().await;
+        let (_, info) = guard.get_wallet_and_info(wallet_id).expect("wallet present");
+        Arc::clone(&info.balance)
+    }
+
+    /// Snapshot a DashPay fixture's BIP44 outpoints, its DashPay
+    /// receiving-funds outpoints, and that receival account's account-level
+    /// derivation path — the `funding_path` a caller round-trips from the
+    /// account-balance enumeration to spend a receival balance.
+    async fn dashpay_outpoints_and_receival_path(
+        wm: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
+        wallet_id: &WalletId,
+    ) -> (HashSet<OutPoint>, HashSet<OutPoint>, DerivationPath) {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let guard = wm.read().await;
+        let (_, info) = guard.get_wallet_and_info(wallet_id).expect("wallet present");
+        let network = info.core_wallet.network();
+        let bip44 = info
+            .core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .map(|a| a.utxos.keys().copied().collect())
+            .unwrap_or_default();
+        let receival_acc = info
+            .core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .values()
+            .next()
+            .expect("DashPay receiving-funds account present");
+        let receival = receival_acc.utxos.keys().copied().collect();
+        let path = receival_acc
+            .managed_account_type()
+            .to_account_type()
+            .derivation_path(network)
+            .expect("DashPay receiving-funds account-level path");
+        (bip44, receival, path)
+    }
+
+    /// **The DashPay receival-spend bridge.** A payment finalized from a DashPay
+    /// receiving-funds account must (a) select strictly within that account,
+    /// (b) sign every input, (c) route change to the BIP44 sink, and (d) come
+    /// back with the reservation bookkeeping a deferred broadcast needs — the
+    /// resolved funding account and key-wallet's owner token.
+    ///
+    /// Before this path existed the two halves were disconnected:
+    /// `finalize_transaction` mints reservation tokens but selects by
+    /// `AccountTypePreference`, which has NO variant for a receival account, so a
+    /// receival balance could be signed or tokened but never both.
+    #[tokio::test]
+    async fn receival_funding_path_selects_signs_and_reserves_in_that_account() {
+        // 0.09 DASH on BIP44 (cannot cover 0.15), 0.2 on the receival account.
+        let (wm, wallet_id, signer) =
+            split_funded_wallet_manager_dashpay(9_000_000, 20_000_000, DashpayLeg::ReceivingFunds)
+                .await;
+        let (bip44_ops, receival_ops, receival_path) =
+            dashpay_outpoints_and_receival_path(&wm, &wallet_id).await;
+
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let payment = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(7), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await
+            .expect("the named DashPay receival account covers 0.15 DASH");
+
+        // (a) Single-account selection: only receival inputs, never BIP44's.
+        let spent: HashSet<OutPoint> = payment
+            .transaction
+            .input
+            .iter()
+            .map(|i| i.previous_output)
+            .collect();
+        assert!(!spent.is_empty(), "the payment must have selected inputs");
+        assert!(
+            spent.iter().all(|op| receival_ops.contains(op)),
+            "every input must come from the named receival account, spent {spent:?}"
+        );
+        assert!(
+            !spent.iter().any(|op| bip44_ops.contains(op)),
+            "a receival-funded payment must not pull BIP44 inputs, spent {spent:?}"
+        );
+
+        // (b) Every input signed by the receival account's own derivation path.
+        for (i, txin) in payment.transaction.input.iter().enumerate() {
+            assert!(
+                !txin.script_sig.is_empty(),
+                "input {i} was left unsigned (empty scriptSig)"
+            );
+        }
+
+        // (c) Change lands on the BIP44 sink — key-wallet derives change only
+        // for Standard accounts, so this is structural, not a co-spend.
+        assert!(
+            payment.change_amount > 0,
+            "spending a 0.2 DASH UTXO for 0.15 DASH must leave change"
+        );
+        assert!(
+            payment
+                .transaction
+                .output
+                .iter()
+                .any(|o| o.value == payment.change_amount),
+            "a change output equal to change_amount should exist"
+        );
+
+        // (d) The deferred bookkeeping: the RESOLVED receival path (never the
+        // caller's `None`, never a BIP44 default) and key-wallet's owner token.
+        match &payment.funding {
+            FundingAccountRef::Path(path) => assert_eq!(
+                *path, receival_path,
+                "the funding account must be recorded as the receival path it \
+                 actually selected from"
+            ),
+            other => panic!("expected a path-named funding account, got {other:?}"),
+        }
+        assert!(
+            payment.reservation_token.is_some(),
+            "a funded build must stamp a key-wallet reservation token so a later \
+             release is owner-guarded"
+        );
+    }
+
+    /// The reservation a receival-funded payment takes must be recorded against
+    /// the RECEIVAL account — and releasing the registry token must give those
+    /// exact inputs back.
+    ///
+    /// This is the funds-critical half: if the registry recorded the funding
+    /// account as BIP44 (the only thing an `AccountTypePreference` could say
+    /// about a receival account), the release would free BIP44's reservation and
+    /// leave the receival coins locked until key-wallet's TTL — while an
+    /// unrelated BIP44 build lost its inputs.
+    #[tokio::test]
+    async fn receival_reservation_is_held_and_released_against_the_receival_account() {
+        use crate::wallet::signed_payment_registry::SignedPaymentRegistry;
+
+        let (wm, wallet_id, signer) =
+            split_funded_wallet_manager_dashpay(9_000_000, 20_000_000, DashpayLeg::ReceivingFunds)
+                .await;
+        let (_, _, receival_path) = dashpay_outpoints_and_receival_path(&wm, &wallet_id).await;
+        // The wallet's OWN generation handle — releases are generation-bound and
+        // are (correctly) skipped for a foreign one. See [`wallet_generation`].
+        let generation = wallet_generation(&wm, &wallet_id).await;
+        let core = core_wallet(wm, wallet_id, generation);
+
+        let payment = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(7), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await
+            .expect("first receival build succeeds");
+
+        let registry: SignedPaymentRegistry<AlwaysRejectedBroadcaster> =
+            SignedPaymentRegistry::new();
+        let token = registry
+            .register_funded_by(
+                core.clone(),
+                payment.transaction.clone(),
+                payment.funding.clone(),
+                Some(payment.reservation_height),
+                payment.reservation_token,
+            )
+            .await;
+        assert_eq!(registry.outstanding(), 1, "the token must be registered");
+
+        // The reservation is HELD: the receival account has a single UTXO, so a
+        // second build from it cannot re-select the reserved input.
+        let blocked = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(8), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await;
+        assert!(
+            matches!(
+                blocked,
+                Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+            ),
+            "the reserved receival input must not be re-selectable while the \
+             token is outstanding, got {blocked:?}"
+        );
+
+        // Releasing the token returns those exact inputs to the receival
+        // account's own selectable pool.
+        registry.release(token).await;
+        assert_eq!(registry.outstanding(), 0, "release must drop the token");
+        let after_release = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(9), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await;
+        assert!(
+            after_release.is_ok(),
+            "releasing the token must return the receival inputs to spendable, \
+             got {after_release:?}"
+        );
+
+        // And the same reconciliation runs on a definitively rejected broadcast:
+        // register the rebuilt payment, broadcast it through the always-rejecting
+        // broadcaster, and confirm the reservation was released for an immediate
+        // rebuild rather than stranded until the TTL backstop.
+        let rebuilt = after_release.expect("rebuilt payment");
+        let token = registry
+            .register_funded_by(
+                core.clone(),
+                rebuilt.transaction.clone(),
+                rebuilt.funding.clone(),
+                Some(rebuilt.reservation_height),
+                rebuilt.reservation_token,
+            )
+            .await;
+        let broadcast = registry.broadcast(token, &core).await;
+        assert!(
+            broadcast.is_err(),
+            "the always-rejecting broadcaster must surface a failure"
+        );
+        assert_eq!(
+            registry.outstanding(),
+            0,
+            "a consumed token must not remain registered"
+        );
+        assert!(
+            core.finalize_signed_payment_from_funding_path(
+                vec![(recipient(10), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path),
+            )
+            .await
+            .is_ok(),
+            "a definitively rejected broadcast must release the receival \
+             reservation for an immediate rebuild"
+        );
+    }
+
+    /// The DEFAULT (`funding_path: None`) build must record and release its
+    /// reservation against the unmixed BIP44 account too.
+    ///
+    /// `None` resolves to BIP44's own account-level path, so the release goes
+    /// through the by-path lookup rather than the `AccountTypePreference` one —
+    /// a different code path from every pre-existing release test, and the one
+    /// the Kotlin default (`fundingPath = null`) will take on every ordinary
+    /// send. If the two lookups disagreed about which account BIP44's path
+    /// names, an ordinary send's reservation would never be released.
+    #[tokio::test]
+    async fn default_funding_reservation_is_held_and_released_on_bip44() {
+        use crate::wallet::signed_payment_registry::SignedPaymentRegistry;
+
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        let payment = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(7), 1_000_000)],
+                None,
+                &signer,
+                None,
+            )
+            .await
+            .expect("0.01 DASH is fundable from the 0.1 DASH BIP44 account");
+        assert!(
+            matches!(payment.funding, FundingAccountRef::Path(_)),
+            "the default build must record the RESOLVED BIP44 path, got {:?}",
+            payment.funding
+        );
+
+        let registry: SignedPaymentRegistry<AlwaysRejectedBroadcaster> =
+            SignedPaymentRegistry::new();
+        let token = registry
+            .register_funded_by(
+                core.clone(),
+                payment.transaction.clone(),
+                payment.funding.clone(),
+                Some(payment.reservation_height),
+                payment.reservation_token,
+            )
+            .await;
+
+        // Held: the fixture's single BIP44 UTXO is reserved.
+        assert!(
+            core.finalize_signed_payment_from_funding_path(
+                vec![(recipient(8), 1_000_000)],
+                None,
+                &signer,
+                None,
+            )
+            .await
+            .is_err(),
+            "the reserved BIP44 input must not be re-selectable while the token \
+             is outstanding"
+        );
+
+        // Released: the by-path lookup found the same BIP44 account the
+        // selector funded from.
+        registry.release(token).await;
+        assert!(
+            core.finalize_signed_payment_from_funding_path(
+                vec![(recipient(9), 1_000_000)],
+                None,
+                &signer,
+                None,
+            )
+            .await
+            .is_ok(),
+            "releasing the token must return the BIP44 input to spendable"
+        );
     }
 
     /// Input validation: empty outputs and zero-amount outputs are rejected
