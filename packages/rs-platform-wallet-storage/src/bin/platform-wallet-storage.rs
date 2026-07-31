@@ -74,7 +74,7 @@ struct RestoreArgs {
     #[arg(long)]
     yes: bool,
     /// Skip the pre-restore auto-backup of the live destination DB.
-    /// Without this, the persister writes `pre-restore-<ts>.db` to
+    /// Without this, the persister writes `pre-restore-<db>-<ts>.db` to
     /// `--auto-backup-dir` before clobbering the destination.
     #[arg(long)]
     no_auto_backup: bool,

@@ -262,10 +262,15 @@ impl SqlitePersister {
         if pending_count > 0 && had_schema_history {
             let from = current_schema_version(&conn)?.unwrap_or(0);
             let to = pending.iter().map(|(v, _)| *v).max().unwrap_or(from);
+            let db_stem = backup::sanitize_db_stem(&config.path);
             run_auto_backup(
                 &conn,
                 config.auto_backup_dir.as_deref(),
-                BackupKind::PreMigration { from, to },
+                BackupKind::PreMigration {
+                    db_stem: &db_stem,
+                    from,
+                    to,
+                },
                 AutoBackupOperation::OpenMigration,
             )?;
         }
@@ -400,10 +405,11 @@ impl SqlitePersister {
                 dest_db_path,
                 crate::sqlite::conn::Access::ReadOnly,
             )?;
+            let db_stem = backup::sanitize_db_stem(dest_db_path);
             run_auto_backup(
                 &dest_conn,
                 Some(dir),
-                BackupKind::PreRestore,
+                BackupKind::PreRestore { db_stem: &db_stem },
                 AutoBackupOperation::Restore,
             )?;
             drop(dest_conn);
@@ -1391,7 +1397,7 @@ fn apply_changeset_to_tx(
 pub(crate) fn run_auto_backup(
     src_conn: &Connection,
     auto_backup_dir: Option<&Path>,
-    kind: BackupKind,
+    kind: BackupKind<'_>,
     operation: AutoBackupOperation,
 ) -> Result<Option<PathBuf>, WalletStorageError> {
     let Some(dir) = auto_backup_dir else {

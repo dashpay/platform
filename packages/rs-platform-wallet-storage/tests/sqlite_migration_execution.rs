@@ -61,9 +61,27 @@ fn fixture_src() -> PathBuf {
 /// Copy the committed V001 fixture into `dir` so migration runs on a
 /// throwaway copy, never the committed file.
 fn copy_fixture(dir: &Path) -> PathBuf {
-    let dst = dir.join("wallet.db");
+    copy_fixture_as(dir, "wallet.db")
+}
+
+/// [`copy_fixture`] under a caller-chosen filename, for tests that need
+/// several distinctly-named databases side by side.
+fn copy_fixture_as(dir: &Path, file_name: &str) -> PathBuf {
+    let dst = dir.join(file_name);
     std::fs::copy(fixture_src(), &dst).expect("copy fixture");
     dst
+}
+
+/// Names of the `pre-migration-*` backups sitting in `dir`.
+fn pre_migration_backup_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .expect("read backup dir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("pre-migration-") && n.ends_with(".db"))
+        .collect();
+    names.sort();
+    names
 }
 
 fn schema_version(conn: &Connection) -> i64 {
@@ -330,7 +348,7 @@ fn tc_b_032_pre_migration_backup_created() {
         .find(|p| {
             p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
                 n.starts_with(&format!(
-                    "pre-migration-1-to-{}-",
+                    "pre-migration-wallet-1-to-{}-",
                     mig::max_supported_version()
                 )) && n.ends_with(".db")
             })
@@ -358,6 +376,37 @@ fn tc_b_032_pre_migration_backup_created() {
     );
 }
 
+/// Sibling databases in one directory share the default auto-backup dir, so
+/// a schema-bump boot that migrates several of them must give each its own
+/// backup filename. Before the source stem was embedded, two migrations
+/// landing in the same one-second timestamp produced the same name and the
+/// second `open` failed with `BackupDestinationExists`.
+#[test]
+fn sibling_dbs_get_distinct_pre_migration_backup_names() {
+    let tmp = common::secure_tempdir().unwrap();
+    let backup_dir = tmp.path().join("backups");
+    for db_name in ["det-mainnet.sqlite", "det-testnet.sqlite"] {
+        let db = copy_fixture_as(tmp.path(), db_name);
+        SqlitePersister::open(
+            SqlitePersisterConfig::new(&db).with_auto_backup_dir(Some(backup_dir.clone())),
+        )
+        .unwrap_or_else(|e| panic!("{db_name} must not collide with its sibling's backup: {e}"));
+    }
+
+    let names = pre_migration_backup_names(&backup_dir);
+    assert_eq!(
+        names.len(),
+        2,
+        "one backup per migrated database: {names:?}"
+    );
+    for stem in ["det-mainnet", "det-testnet"] {
+        assert!(
+            names.iter().any(|n| n.contains(stem)),
+            "no backup names {stem} among {names:?}"
+        );
+    }
+}
+
 /// TC-B-033 — the pre-migration backup restores cleanly and re-migrating it
 /// reaches the identical end state as a direct migration (determinism).
 #[test]
@@ -378,7 +427,7 @@ fn tc_b_033_backup_restorable_and_remigration_deterministic() {
         .find(|p| {
             p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
                 n.starts_with(&format!(
-                    "pre-migration-1-to-{}-",
+                    "pre-migration-wallet-1-to-{}-",
                     mig::max_supported_version()
                 ))
             })

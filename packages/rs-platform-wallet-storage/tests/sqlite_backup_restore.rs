@@ -101,6 +101,57 @@ fn tc035_restore_roundtrip() {
     assert_eq!(h, 5);
 }
 
+/// Sibling databases restored into one shared auto-backup dir must each get
+/// their own pre-restore backup filename. Before the source stem was
+/// embedded, `pre-restore-<ts>.db` collided whenever two restores landed in
+/// the same one-second timestamp and the second one failed.
+#[test]
+fn sibling_dbs_get_distinct_pre_restore_backup_names() {
+    let tmp = common::secure_tempdir().unwrap();
+    let backup_dir = tmp.path().join("backups");
+    let source_dir = tmp.path().join("source");
+    fs::create_dir(&source_dir).unwrap();
+
+    let mut dests = Vec::new();
+    let mut restore_src = None;
+    for db_name in ["det-mainnet.sqlite", "det-testnet.sqlite"] {
+        let path = tmp.path().join(db_name);
+        let persister =
+            SqlitePersister::open(platform_wallet_storage::SqlitePersisterConfig::new(&path))
+                .unwrap();
+        seed_one_row(&persister, &wid(0xD7));
+        if restore_src.is_none() {
+            restore_src = Some(persister.backup_to(&source_dir).unwrap());
+        }
+        dests.push(path);
+    }
+    let restore_src = restore_src.expect("one destination seeded the restore source");
+
+    for dest in &dests {
+        SqlitePersister::restore_from(dest, &restore_src, Some(&backup_dir))
+            .unwrap_or_else(|e| panic!("restore into {} must not collide: {e}", dest.display()));
+    }
+
+    let mut names: Vec<String> = fs::read_dir(&backup_dir)
+        .expect("read backup dir")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("pre-restore-") && n.ends_with(".db"))
+        .collect();
+    names.sort();
+    assert_eq!(
+        names.len(),
+        2,
+        "one pre-restore backup per destination: {names:?}"
+    );
+    for stem in ["det-mainnet", "det-testnet"] {
+        assert!(
+            names.iter().any(|n| n.contains(stem)),
+            "no backup names {stem} among {names:?}"
+        );
+    }
+}
+
 /// TC-036: restore source missing schema_history is rejected.
 #[test]
 fn tc036_restore_missing_schema_history() {

@@ -73,27 +73,90 @@ fn map_source_open_err(err: WalletStorageError) -> WalletStorageError {
 }
 
 /// Distinguishes auto-backup filenames.
+///
+/// `PreMigration` and `PreRestore` carry `db_stem` — the source database's
+/// sanitized filename stem (see [`sanitize_db_stem`]). Sibling databases
+/// share one auto-backup directory by default (`<db_dir>/backups/auto/`),
+/// and the second-resolution timestamp alone cannot separate two of them
+/// backed up within the same second. `PreDelete` is discriminated by its
+/// wallet id instead.
 #[derive(Debug, Clone, Copy)]
-pub enum BackupKind {
-    PreMigration { from: i32, to: i32 },
-    PreDelete { wallet_id: WalletId },
-    PreRestore,
+pub enum BackupKind<'a> {
+    PreMigration {
+        db_stem: &'a str,
+        from: i32,
+        to: i32,
+    },
+    PreDelete {
+        wallet_id: WalletId,
+    },
+    PreRestore {
+        db_stem: &'a str,
+    },
 }
+
+/// Longest database filename stem embedded in a backup filename.
+const MAX_DB_STEM_LEN: usize = 32;
+/// Stand-in for a database path with no usable filename stem.
+const FALLBACK_DB_STEM: &str = "db";
 
 /// Filename for `backup_to(directory)`.
 pub fn manual_backup_filename() -> String {
     format!("wallet-{}.db", utc_timestamp())
 }
 
-/// Filename for an auto-backup.
-pub fn auto_backup_filename(kind: BackupKind) -> String {
-    let ts = utc_timestamp();
+/// Filename for an auto-backup, stamped with the current UTC time.
+pub fn auto_backup_filename(kind: BackupKind<'_>) -> String {
+    auto_backup_filename_at(kind, &utc_timestamp())
+}
+
+/// [`auto_backup_filename`] with the timestamp supplied, so tests can pin it.
+///
+/// Every kind's discriminator precedes `ts`, keeping `ts` the last
+/// `-`-delimited token that [`backup_timestamp`] reads back.
+fn auto_backup_filename_at(kind: BackupKind<'_>, ts: &str) -> String {
     match kind {
-        BackupKind::PreMigration { from, to } => format!("pre-migration-{from}-to-{to}-{ts}.db"),
+        BackupKind::PreMigration { db_stem, from, to } => {
+            format!("pre-migration-{db_stem}-{from}-to-{to}-{ts}.db")
+        }
         BackupKind::PreDelete { wallet_id } => {
             format!("pre-delete-{}-{ts}.db", hex::encode(wallet_id))
         }
-        BackupKind::PreRestore => format!("pre-restore-{ts}.db"),
+        BackupKind::PreRestore { db_stem } => format!("pre-restore-{db_stem}-{ts}.db"),
+    }
+}
+
+/// Sanitize `db_path`'s filename stem for embedding in a backup filename.
+///
+/// Keeps `[A-Za-z0-9_-]` from `Path::file_stem` (lossy UTF-8), maps every
+/// other character to `_`, truncates to 32 characters, and falls back to
+/// `"db"` when the path has no stem. The allowlist leaves a plain ASCII
+/// filename component — no separators, no `.` (so `..` becomes `__`), no
+/// NUL, control, or non-ASCII bytes — that cannot escape the backup
+/// directory. `-` survives for readability and is parse-safe because the
+/// stem precedes the timestamp.
+///
+/// The mapping is deliberately lossy: two stems differing only outside the
+/// allowlist, or sharing their first 32 characters, yield the same token.
+/// That degrades to a refused overwrite
+/// ([`WalletStorageError::BackupDestinationExists`]), never to a silently
+/// replaced backup.
+pub fn sanitize_db_stem(db_path: &Path) -> String {
+    let sanitized: String = db_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .chars()
+        .take(MAX_DB_STEM_LEN)
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' => c,
+            _ => '_',
+        })
+        .collect();
+    if sanitized.is_empty() {
+        FALLBACK_DB_STEM.to_string()
+    } else {
+        sanitized
     }
 }
 
@@ -585,12 +648,12 @@ mod tests {
         let real_wallet_id = hex::encode([0xABu8; 32]);
         let names = [
             "wallet-20260101T000000Z.db".to_string(),
-            // Multiple `-` from the from/to version segments.
-            "pre-migration-1-to-2-20260101T000000Z.db".to_string(),
+            // Multiple `-` from the db stem and the from/to version segments.
+            "pre-migration-det-mainnet-1-to-2-20260101T000000Z.db".to_string(),
             // 64 lowercase hex chars: hex::encode never emits `-`, so the
             // timestamp stays the last `-`-delimited token.
             format!("pre-delete-{real_wallet_id}-20260101T000000Z.db"),
-            "pre-restore-20260101T000000Z.db".to_string(),
+            "pre-restore-det-mainnet-20260101T000000Z.db".to_string(),
         ];
         for name in names {
             let got = backup_timestamp(Path::new(&name));
@@ -613,6 +676,128 @@ mod tests {
             None,
             "a trailing non-timestamp segment must not parse as a timestamp"
         );
+    }
+
+    /// Two databases in one directory backed up within the same
+    /// second-resolution timestamp must still get distinct filenames — the
+    /// timestamp is pinned here so the collision is deterministic rather
+    /// than dependent on both calls landing in the same wall-clock second.
+    #[test]
+    fn auto_backup_filename_separates_sibling_dbs_sharing_a_timestamp() {
+        let ts = "20260101T000000Z";
+        let mainnet = sanitize_db_stem(Path::new("/data/det-mainnet.sqlite"));
+        let testnet = sanitize_db_stem(Path::new("/data/det-testnet.sqlite"));
+        let cases = [
+            (
+                auto_backup_filename_at(
+                    BackupKind::PreMigration {
+                        db_stem: &mainnet,
+                        from: 1,
+                        to: 9,
+                    },
+                    ts,
+                ),
+                auto_backup_filename_at(
+                    BackupKind::PreMigration {
+                        db_stem: &testnet,
+                        from: 1,
+                        to: 9,
+                    },
+                    ts,
+                ),
+            ),
+            (
+                auto_backup_filename_at(BackupKind::PreRestore { db_stem: &mainnet }, ts),
+                auto_backup_filename_at(BackupKind::PreRestore { db_stem: &testnet }, ts),
+            ),
+        ];
+        for (first, second) in cases {
+            assert_ne!(
+                first, second,
+                "sibling databases must not share a backup filename"
+            );
+            assert!(first.contains(&mainnet), "{first} must name its source DB");
+            assert!(
+                second.contains(&testnet),
+                "{second} must name its source DB"
+            );
+        }
+    }
+
+    /// The embedded stem must not shift the trailing timestamp token that
+    /// `prune` reads back, nor break prefix-based backup recognition —
+    /// including when the stem itself contains `-`.
+    #[test]
+    fn auto_backup_filename_with_db_stem_stays_parseable() {
+        let ts = "20260101T000000Z";
+        let want = parse_compact_timestamp(ts).unwrap();
+        let stem = sanitize_db_stem(Path::new("/data/det-mainnet.sqlite"));
+        assert_eq!(stem, "det-mainnet", "`-` survives sanitization");
+        for name in [
+            auto_backup_filename_at(
+                BackupKind::PreMigration {
+                    db_stem: &stem,
+                    from: 1,
+                    to: 9,
+                },
+                ts,
+            ),
+            auto_backup_filename_at(BackupKind::PreRestore { db_stem: &stem }, ts),
+        ] {
+            let path = Path::new(&name);
+            assert!(is_backup_file(path), "{name} must stay a recognised backup");
+            assert_eq!(
+                backup_timestamp(path),
+                Some(want),
+                "{name} must keep the timestamp as its last `-` token"
+            );
+        }
+    }
+
+    /// The stem is derived from a filesystem path, so it must never carry a
+    /// path separator, a `.` that could form `..`, or a non-ASCII byte into
+    /// the backup directory.
+    #[test]
+    fn sanitize_db_stem_maps_every_character_outside_the_allowlist() {
+        for (path, want) in [
+            ("/data/det-mainnet.sqlite", "det-mainnet"),
+            ("/data/det_app.sqlite", "det_app"),
+            // A `.` inside the stem cannot survive to form a `..` component.
+            ("/data/a.b.db", "a_b"),
+            ("/data/a b.db", "a_b"),
+            // Separators of either flavour, and a leading-dot stem.
+            ("/data/a\\b.db", "a_b"),
+            ("/data/.hidden.db", "_hidden"),
+            ("/data/wället.db", "w_llet"),
+        ] {
+            assert_eq!(sanitize_db_stem(Path::new(path)), want, "stem of {path}");
+        }
+    }
+
+    /// Non-UTF-8 filename bytes are legal on Unix; they must degrade to `_`
+    /// rather than panic or leak raw bytes into the filename.
+    #[cfg(unix)]
+    #[test]
+    fn sanitize_db_stem_handles_non_utf8_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = std::ffi::OsStr::from_bytes(b"a\xffb.db");
+        assert_eq!(sanitize_db_stem(Path::new(raw)), "a_b");
+    }
+
+    /// An absurdly long stem is truncated, and a path with no stem at all
+    /// still yields a usable, non-empty token.
+    #[test]
+    fn sanitize_db_stem_bounds_length_and_fills_in_missing_stems() {
+        let long = format!("/data/{}.db", "x".repeat(500));
+        let stem = sanitize_db_stem(Path::new(&long));
+        assert_eq!(stem.len(), MAX_DB_STEM_LEN, "stem must be bounded");
+        for path in ["..", "/", ""] {
+            assert_eq!(
+                sanitize_db_stem(Path::new(path)),
+                FALLBACK_DB_STEM,
+                "{path} has no usable stem"
+            );
+        }
     }
 
     #[test]
