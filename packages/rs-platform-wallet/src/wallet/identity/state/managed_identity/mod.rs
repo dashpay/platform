@@ -33,6 +33,17 @@ use dpp::identity::Identity;
 ///   observed read-only. `wallet_id == None`, `identity_index == None`.
 ///   Cannot sign — not because of an explicit "watched" flag, but because
 ///   there's no wallet to derive private keys from.
+///
+/// One case breaks that field pairing: when two persisted identities claim
+/// the same `(wallet_id, identity_index)`, `load_state` in
+/// `platform-wallet-storage` (`sqlite::schema::identities`) keeps the lower
+/// id in the wallet bucket and parks the other out-of-wallet with both
+/// fields still `Some(_)`, so its keys, contacts, and on-disk row survive.
+/// The fields are therefore a record of provenance, NOT authoritative for
+/// placement: which bucket an identity is in — and so whether it can sign —
+/// is answered only by [`IdentityManager::identity_index`] and the location
+/// index behind it, which correctly report a parked identity as
+/// out-of-wallet.
 #[derive(Debug, Clone)]
 pub struct ManagedIdentity {
     /// The Platform identity
@@ -46,8 +57,9 @@ pub struct ManagedIdentity {
     /// subsequent operations (signing, ECDH) can derive the correct keys.
     ///
     /// `Some(idx)` when this identity lives in a wallet's bucket — `idx` is
-    /// the inner BTreeMap key. `None` for out-of-wallet identities (formerly
-    /// "watched"); they have no HD-derivation context.
+    /// the inner BTreeMap key — or when it was parked out-of-wallet by an
+    /// index collision (see the type docs). `None` for out-of-wallet
+    /// identities (formerly "watched"); they have no HD-derivation context.
     pub identity_index: Option<u32>,
 
     /// Last block time when balance was updated for this identity
@@ -81,7 +93,8 @@ pub struct ManagedIdentity {
     ///
     /// Denormalized — when the identity lives in the wallet bucket
     /// this is also the outer `BTreeMap` key. `None` means the identity
-    /// lives in the out-of-wallet bucket (observed only).
+    /// lives in the out-of-wallet bucket (observed only); the converse
+    /// does not hold for a parked identity (see the type docs).
     pub wallet_id: Option<[u8; 32]>,
 
     /// DashPay social state layered on this identity: contacts, contact
