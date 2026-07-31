@@ -358,14 +358,9 @@ pub(crate) fn owning_account_for_script(
 /// marked used. An unused row can therefore own a UTXO while a different used
 /// row supplies the reuse guard, which preserves each resolver's distinct
 /// source contract. `network` turns each stored `script` back into an
-/// [`Address`](dashcore::Address).
-///
-/// A script that isn't a valid address is skipped with a `tracing::warn` rather
-/// than rejecting the load of every wallet in the file, matching
-/// [`crate::sqlite::schema::core_state::load_used_addresses`]. The cost is one
-/// address missing from the reuse guard — it may be re-issued as a fresh
-/// receive address (privacy), never a balance error: this reader feeds only the
-/// guard.
+/// [`Address`](dashcore::Address); a script that isn't a valid address is a
+/// hard error — corruption is never silently dropped, matching
+/// [`crate::sqlite::schema::core_state::load_used_addresses`].
 pub fn load_used_addresses(
     conn: &rusqlite::Connection,
     wallet_id: &WalletId,
@@ -418,22 +413,7 @@ pub fn load_used_addresses(
             continue;
         }
         let script = dashcore::ScriptBuf::from_bytes(raw_script);
-        let address = match dashcore::Address::from_script(&script, network) {
-            Ok(address) => address,
-            Err(error) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    script = %hex::encode(script.as_bytes()),
-                    %account_type,
-                    account_index = index,
-                    %error,
-                    "core_address_pool row holds a script that is not an address; skipped for \
-                     the address-reuse guard — that address may be re-issued as a fresh receive \
-                     address until the next full sync"
-                );
-                continue;
-            }
-        };
+        let address = dashcore::Address::from_script(&script, network)?;
         let account_index =
             crate::sqlite::util::safe_cast::i64_to_u32("core_address_pool.account_index", index)?;
         let user_identity_id = super::id32("core_address_pool.user_identity_id", &user)?;
@@ -520,13 +500,12 @@ mod tests {
         assert_eq!(used[0].1.account_index, 9);
     }
 
-    /// A stored `script` that parses as bytes but not as an address is skipped
-    /// so one unusable pool row cannot reject the load of an entire wallet
-    /// file; the remaining used rows still resolve.
+    /// A stored `script` that parses as bytes but not as an address must
+    /// surface `AddressDecode` — carrying the upstream
+    /// `dashcore::address::Error` — not the context-free `BlobDecode` that
+    /// discards *why* the script failed.
     #[test]
-    fn load_used_addresses_skips_undecodable_script_rows() {
-        use dashcore::hashes::Hash;
-
+    fn load_used_addresses_wraps_address_error_as_address_decode() {
         let conn = migrated_conn();
         let w = [0x88u8; 32];
         conn.execute(
@@ -545,27 +524,12 @@ mod tests {
             params![&w[..], &bad_script[..]],
         )
         .unwrap();
-        let good = dashcore::Address::new(
-            dashcore::Network::Testnet,
-            dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array(
-                [0x37u8; 20],
-            )),
-        );
-        conn.execute(
-            "INSERT INTO core_address_pool \
-                (wallet_id, account_type, account_index, key_class, pool_type, \
-                 address_index, script, used) \
-             VALUES (?1, 'coinjoin', 0, 0, 0, 1, ?2, 1)",
-            params![&w[..], good.script_pubkey().as_bytes()],
-        )
-        .unwrap();
 
-        let used = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-            .expect("an unusable script must be skipped, not fail the whole read");
-        assert_eq!(
-            used.iter().map(|(a, _)| a.clone()).collect::<Vec<_>>(),
-            vec![good],
-            "every decodable address survives; only the unusable row drops out"
+        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+            .expect_err("an unparseable script must be a hard error");
+        assert!(
+            matches!(err, WalletStorageError::AddressDecode { .. }),
+            "expected AddressDecode carrying the upstream error, got {err:?}"
         );
     }
 
