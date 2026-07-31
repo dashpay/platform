@@ -155,6 +155,18 @@ pub fn apply(
                 .unwrap_or(false);
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
+            } else if utxo.txout.script_pubkey.is_empty() {
+                // A spend of an output we never recorded arrives without the
+                // previous transaction's script. The only consumer of a
+                // spent-only row is `load_used_addresses`, which needs a
+                // decodable script, so persisting an empty one buys nothing and
+                // costs the whole file: that read scans every stored script.
+                tracing::debug!(
+                    wallet_id = %hex::encode(wallet_id),
+                    outpoint = %utxo.outpoint,
+                    "spend of an unrecorded output carries no script; not persisting a \
+                     placeholder — the address re-warms on the next full sync"
+                );
             } else {
                 execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
             }
@@ -486,9 +498,15 @@ pub fn load_state(
 /// resolved per script via [`owning_account_for_script`]; the result is
 /// `None` when the script matches no pool row (the caller then routes to the
 /// first funds account). `network` turns each persisted `script` back into an
-/// [`Address`](dashcore::Address); a script that isn't a valid address is a
-/// hard error (corruption is never silently dropped), matching [`load_state`]'s
-/// unspent-UTXO handling.
+/// [`Address`](dashcore::Address).
+///
+/// A script that isn't a valid address is skipped with a `tracing::warn`, not
+/// propagated: this read scans the whole table, so failing it would reject the
+/// load of every wallet in the file over one unusable row. The cost of a skip
+/// is one address missing from the reuse guard — it may be handed out again as
+/// a fresh receive address, which is an address-reuse (privacy) regression, not
+/// a balance one. Balance is safe by construction: it comes from [`load_state`],
+/// which reads only `spent = 0` rows, runs first, and stays fail-hard.
 pub fn load_used_addresses(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -522,9 +540,22 @@ pub fn load_used_addresses(
     };
     let mut out = Vec::with_capacity(scripts.len());
     for raw in scripts {
-        let owner = owning_account_for_script(conn, wallet_id, &raw)?;
         let script = dashcore::ScriptBuf::from_bytes(raw);
-        let address = dashcore::Address::from_script(&script, network)?;
+        let address = match dashcore::Address::from_script(&script, network) {
+            Ok(address) => address,
+            Err(error) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    script = %hex::encode(script.as_bytes()),
+                    %error,
+                    "core_utxos row holds a script that is not an address; skipped for the \
+                     address-reuse guard — that address may be re-issued as a fresh receive \
+                     address until the next full sync"
+                );
+                continue;
+            }
+        };
+        let owner = owning_account_for_script(conn, wallet_id, script.as_bytes())?;
         out.push((address, owner));
     }
     Ok(out)
@@ -1351,12 +1382,57 @@ mod tests {
         assert_eq!(repaired, Some(600));
     }
 
-    /// `load_used_addresses` (the address-reuse-guard rehydration path called
-    /// from `persister.rs`) must surface `AddressDecode` — carrying the
-    /// upstream `dashcore::address::Error` — when a stored `core_utxos.script`
-    /// parses as bytes but not as an address, not the context-free `BlobDecode`.
+    /// A spent-only placeholder whose script was never captured — the
+    /// `derive_spent_utxos` shape: real address, `ScriptBuf::default()` — must
+    /// not be written. Its only consumer is the address-reuse guard, which
+    /// needs a decodable script, so the row is useless on the way in and fatal
+    /// on the way out. A placeholder carrying a genuine script still persists:
+    /// the skip is keyed on emptiness, not on being a placeholder.
     #[test]
-    fn load_used_addresses_wraps_address_error_as_address_decode() {
+    fn apply_skips_spent_only_row_with_empty_script() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let w = [0x71u8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
+
+        let mut fabricated = sample_utxo(Txid::from_byte_array([0x51u8; 32]), 0, false);
+        fabricated.txout.script_pubkey = dashcore::ScriptBuf::default();
+        let genuine = sample_utxo(Txid::from_byte_array([0x52u8; 32]), 0, false);
+        let cs = CoreChangeSet {
+            spent_utxos: vec![fabricated, genuine.clone()],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &w, &cs).unwrap();
+        tx.commit().unwrap();
+
+        // `group_concat` keeps this a single scalar read: every surviving
+        // script, comma-joined, so an extra fabricated row shows up as a
+        // difference rather than passing a count-only check.
+        let persisted: String = conn
+            .query_row(
+                "SELECT group_concat(hex(script), ',') FROM core_utxos WHERE wallet_id = ?1",
+                params![&w[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            persisted,
+            hex::encode_upper(genuine.txout.script_pubkey.as_bytes()),
+            "only the placeholder carrying a genuine script may be persisted"
+        );
+    }
+
+    /// `load_used_addresses` (the address-reuse-guard rehydration path called
+    /// from `persister.rs`) reads every `core_utxos` row, spent included, so a
+    /// single unusable script must be skipped rather than reject the load of an
+    /// entire wallet file. The remaining rows still resolve.
+    #[test]
+    fn load_used_addresses_skips_undecodable_script_rows() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::sqlite::migrations::run(&mut conn).unwrap();
         let w = [0x99u8; 32];
@@ -1366,18 +1442,71 @@ mod tests {
         )
         .unwrap();
         // A bare OP_RETURN script is well-formed bytes but not any address
-        // type, so `Address::from_script` returns `UnrecognizedScript`.
+        // type, so `Address::from_script` returns `UnrecognizedScript`. The
+        // empty script is the shape a fabricated spent-only row leaves behind.
+        for (vout, script) in [(0u8, vec![0x6au8]), (1, Vec::new())] {
+            let mut outpoint = [0u8; 36];
+            outpoint[35] = vout;
+            conn.execute(
+                "INSERT INTO core_utxos \
+                    (wallet_id, outpoint, value, script, spent) \
+                 VALUES (?1, ?2, 0, ?3, 1)",
+                params![&w[..], &outpoint[..], script.as_slice()],
+            )
+            .unwrap();
+        }
+        let good = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x37u8; 20])),
+        );
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 0, ?3, 1)",
+            params![&w[..], &[2u8; 36][..], good.script_pubkey().as_bytes()],
+        )
+        .unwrap();
+
+        let used = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
+            .expect("unusable scripts must be skipped, not fail the whole read");
+        assert_eq!(
+            used.iter().map(|(a, _)| a.clone()).collect::<Vec<_>>(),
+            vec![good],
+            "every decodable address survives; only the unusable rows drop out"
+        );
+    }
+
+    /// The invariant that makes the reuse-guard skip safe: an **unspent** row
+    /// with an undecodable script still aborts the load. Unspent rows are the
+    /// balance source, and `load_state` runs before `load_used_addresses`, so a
+    /// loud failure here is what keeps a per-row skip from ever degrading into
+    /// a silently under-reported balance. Do not soften this to a skip.
+    #[test]
+    fn load_state_fails_hard_on_undecodable_unspent_script() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::sqlite::migrations::run(&mut conn).unwrap();
+        let w = [0x9Au8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&w[..]],
+        )
+        .unwrap();
         let bad_script = [0x6au8];
+        let outpoint = blob::encode_outpoint(&OutPoint {
+            txid: Txid::from_byte_array([0x61u8; 32]),
+            vout: 0,
+        })
+        .unwrap();
         conn.execute(
             "INSERT INTO core_utxos \
                 (wallet_id, outpoint, value, script, spent) \
              VALUES (?1, ?2, 0, ?3, 0)",
-            params![&w[..], &[0u8; 36][..], &bad_script[..]],
+            params![&w[..], &outpoint[..], &bad_script[..]],
         )
         .unwrap();
 
-        let err = load_used_addresses(&conn, &w, dashcore::Network::Testnet)
-            .expect_err("an unparseable script must be a hard error");
+        let err = load_state(&conn, &w, dashcore::Network::Testnet)
+            .expect_err("an unparseable script on a balance-bearing row is a hard error");
         assert!(
             matches!(err, WalletStorageError::AddressDecode { .. }),
             "expected AddressDecode carrying the upstream error, got {err:?}"
