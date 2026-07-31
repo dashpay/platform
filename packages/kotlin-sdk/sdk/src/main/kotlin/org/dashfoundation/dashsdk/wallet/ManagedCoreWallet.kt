@@ -55,6 +55,24 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         )
     }
 
+    /**
+     * Sign [message] with the private key behind [address] and return the base64
+     * signature — a classic Dash signed message. See
+     * [ManagedPlatformWallet.signMessage] for the full contract; drive this
+     * through it, not directly.
+     */
+    internal fun signMessage(
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String =
+        WalletManagerNative.coreWalletSignMessage(
+            handle,
+            address,
+            message,
+            coreSignerHandle,
+        )
+
     override fun close() {
         cleanable.clean()
     }

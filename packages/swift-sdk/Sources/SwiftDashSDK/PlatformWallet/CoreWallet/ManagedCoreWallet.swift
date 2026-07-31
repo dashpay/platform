@@ -134,6 +134,107 @@ public class ManagedCoreWallet {
         try core_wallet_set_gap_limit(handle, accountType.ffi, accountIndex, gapLimit).check()
     }
 
+    // MARK: - Message Signing
+
+    /// Sign `message` with the private key behind `address` and return the
+    /// signature as base64 — a **classic Dash signed message**, byte-for-byte
+    /// compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
+    /// RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
+    /// CrowdNode's server-side check.
+    ///
+    /// The signed digest is `SHA256d(prefix ‖ varint(message.count) ‖ message)`,
+    /// where the prefix is the historical `"\u{19}DarkCoin Signed Message:\n"` —
+    /// *not* `"Dash"`. Dash inherited that string from before the rename and
+    /// every existing verifier depends on it, so it can never change. The
+    /// returned signature is the 65-byte BIP-137-style recoverable form
+    /// (`header ‖ r ‖ s`, with `header = 27 + recoveryId + 4`, the `+ 4` marking
+    /// a compressed public key), base64-encoded. A verifier recovers the public
+    /// key from the digest and compares its hash to `address` — which is why
+    /// only P2PKH addresses can sign: no other payload has a defined recovery
+    /// comparison.
+    ///
+    /// This is a **proof of address ownership, not a spend** — the shape
+    /// CrowdNode needs, where short strings (a withdrawal amount, the account
+    /// email) are signed with the key behind the address that funded the
+    /// account. No UTXO is selected, reserved, spent, or broadcast, no balance
+    /// changes, and nothing is persisted, so calling it repeatedly is free and
+    /// side-effect-free.
+    ///
+    /// `address` must be a P2PKH address of *this* wallet, on this wallet's
+    /// network, already derived into one of its address pools, and belonging to
+    /// a **signable funds account** (BIP44 / BIP32 / CoinJoin /
+    /// DashPay-*receiving*). A watch-only DashPay **external** account holds a
+    /// contact's receiving addresses whose private keys we never had, so those
+    /// are refused exactly like any other address the wallet does not own.
+    ///
+    /// Signing is RFC6979 deterministic and low-s normalized, so the same
+    /// (`address`, `message`) pair on the same seed always returns the same
+    /// string.
+    ///
+    /// The key is derived through the Keychain mnemonic resolver Rust-side, like
+    /// every other seed-backed path here, so no private key crosses the boundary
+    /// and no resident seed is needed.
+    ///
+    /// - Parameters:
+    ///   - address: the P2PKH address whose key signs; must be one this wallet
+    ///     owns and has derived.
+    ///   - message: the string to sign, **verbatim**. It is length-prefixed into
+    ///     the digest, so trailing whitespace and newlines are significant and
+    ///     the verifier must receive the identical bytes. An empty string is
+    ///     valid and signable.
+    /// - Returns: the base64 signature (88 characters for the 65-byte payload).
+    /// - Throws: `PlatformWalletError.signingKeyUnavailable` when `address`
+    ///   belongs to no signable funds account of this wallet;
+    ///   `PlatformWalletError.invalidParameter` when it is unparseable, encoded
+    ///   for another network, or not P2PKH.
+    public func signMessage(address: String, message: String) throws -> String {
+        guard !address.isEmpty else {
+            throw PlatformWalletError.invalidParameter("address must not be empty")
+        }
+
+        // Resolver-backed core signer, as on every other seed-backed path.
+        let coreSigner = MnemonicResolver()
+        // Both arguments cross as raw UTF-8 bytes with an explicit length (no NUL
+        // terminator), so an embedded NUL cannot truncate what actually gets
+        // signed. `address` is non-empty per the guard above, so its
+        // `baseAddress` is non-nil; an empty `message` yields a nil
+        // `baseAddress`, which the FFI reads as the empty message at length 0 —
+        // the one case where it accepts a null pointer.
+        let addressBytes = Array(address.utf8)
+        let messageBytes = Array(message.utf8)
+
+        var signaturePtr: UnsafeMutablePointer<CChar>? = nil
+        // `withExtendedLifetime` keeps the resolver alive across the synchronous
+        // FFI call — the optimizer can otherwise drop it mid-call and a vtable
+        // callback would use-after-free.
+        let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
+            addressBytes.withUnsafeBufferPointer {
+                addressBuf -> PlatformWalletFFIResult in
+                messageBytes.withUnsafeBufferPointer {
+                    messageBuf -> PlatformWalletFFIResult in
+                    core_wallet_sign_message(
+                        handle,
+                        addressBuf.baseAddress,
+                        UInt(addressBuf.count),
+                        messageBuf.baseAddress,
+                        UInt(messageBuf.count),
+                        coreSigner.handle,
+                        &signaturePtr
+                    )
+                }
+            }
+        }
+        try result.check()
+
+        guard let ptr = signaturePtr else {
+            throw PlatformWalletError.nullPointer(
+                "core_wallet_sign_message returned a NULL signature pointer"
+            )
+        }
+        defer { core_wallet_free_address(ptr) }
+        return String(cString: ptr)
+    }
+
     // MARK: - Transactions
 
     /// Broadcast a transaction built by `CoreTransactionBuilder.buildSigned`.

@@ -174,6 +174,79 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * Sign [message] with the private key behind [address] and return the
+     * signature as base64 — a **classic Dash signed message**, byte-for-byte
+     * compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
+     * RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
+     * CrowdNode's server-side check.
+     *
+     * **The format.** The signed digest is
+     * `SHA256d(prefix ‖ varint(message.length) ‖ message)`, where the prefix is
+     * the historical `"\x19DarkCoin Signed Message:\n"` — *not* `"Dash"`. Dash
+     * inherited that string from before the rename and every existing verifier
+     * depends on it, so it can never change. The returned signature is the
+     * 65-byte BIP-137-style recoverable form (`header ‖ r ‖ s`, with
+     * `header = 27 + recoveryId + 4`, the `+ 4` marking a compressed public
+     * key), base64-encoded. A verifier recovers the public key from the digest
+     * and compares its hash to [address] — which is why only P2PKH addresses
+     * can sign: no other payload has a defined recovery comparison.
+     *
+     * **The CrowdNode use case.** This is the primitive the Android wallet's
+     * CrowdNode integration needs: it signs short strings — a withdrawal amount,
+     * the account email — which CrowdNode verifies against the address that
+     * funded the account. It is a **proof of address ownership, not a spend**:
+     * no UTXO is selected, reserved, spent, or broadcast, no balance changes, and
+     * nothing is persisted. Calling it repeatedly is free and side-effect-free.
+     *
+     * **Which addresses can sign.** [address] must be a P2PKH address of *this*
+     * wallet, on this wallet's network, already derived into one of its address
+     * pools, and belonging to a **signable funds account** (BIP44 / BIP32 /
+     * CoinJoin / DashPay-*receiving*). A watch-only DashPay **external** account
+     * holds a contact's receiving addresses whose private keys we never had, so
+     * those are refused exactly like any other address the wallet does not own:
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.SigningKeyUnavailable].
+     *
+     * An unparseable, wrong-network, or non-P2PKH address is caller input and
+     * surfaces natively as `ErrorInvalidParameter` (2), which has no dedicated
+     * Kotlin arm today and therefore arrives as
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.Generic]
+     * with `code == 2`; the message names which of the three it was. Branch on
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.SigningKeyUnavailable]
+     * to tell "wallet does not own this address" apart from "this is not a
+     * usable address".
+     *
+     * **Determinism.** Signing is RFC6979 deterministic and low-s normalized, so
+     * the same ([address], [message]) pair on the same seed always returns the
+     * same string. Two calls yielding different signatures means the key or the
+     * message differed.
+     *
+     * Runs through the manager's [TeardownGate] like every other native op.
+     *
+     * @param address the P2PKH address whose key signs; must be one this wallet
+     *   owns and has derived.
+     * @param message the string to sign, **verbatim**. It is length-prefixed
+     *   into the digest, so trailing whitespace and newlines are significant and
+     *   the verifier must receive the identical bytes. An empty string is valid.
+     * @param coreSignerHandle the manager's `MnemonicResolverHandle`
+     *   (`PlatformWalletManager.mnemonicResolverHandle`); no private key crosses
+     *   the boundary.
+     * @return the base64 signature (88 characters for the 65-byte payload).
+     */
+    suspend fun signMessage(
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String = gate.op {
+        require(address.isNotEmpty()) { "address must not be empty" }
+
+        mapNativeErrors {
+            coreWallet().use { core ->
+                core.signMessage(address, message, coreSignerHandle)
+            }
+        }
+    }
+
+    /**
      * The wallet's Platform-payment addresses that currently hold credits,
      * each as a [FundingInput] whose `credits` is the full cached balance —
      * the funding-input candidates for an identity top-up. Port of the
