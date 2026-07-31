@@ -89,6 +89,24 @@ sealed class DashSdkError(
         class CoreInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
+        /**
+         * `ErrorTransactionBuild` (native code 32). A Core transaction could
+         * not be assembled from the request. The REQUEST is at fault, so a
+         * verbatim retry fails identically — the caller must change it.
+         *
+         * It is what every non-shortfall `buildSignedPayment` rejection
+         * surfaces as: a `fundingPath` matching no spendable funds account or
+         * naming a watch-only one (the two failure modes the single-account
+         * send design rests on, dashpay/platform#4184), a request breaching a
+         * monetary bound (MAX_MONEY total, max fee rate, a below-dust
+         * recipient, an over-100 kB recipient list), or a malformed recipients
+         * blob. Before this code existed they all arrived as [Generic] with
+         * native code 99 and could only be told apart by string-matching the
+         * message. The specific cause is still in [message].
+         */
+        class TransactionBuild(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
         class AssetLockNotTracked(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
@@ -421,6 +439,7 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            32 -> PlatformWallet.TransactionBuild(message, cause) // ErrorTransactionBuild
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

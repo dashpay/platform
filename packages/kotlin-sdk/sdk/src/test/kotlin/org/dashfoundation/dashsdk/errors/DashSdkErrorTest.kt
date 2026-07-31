@@ -160,6 +160,31 @@ class DashSdkErrorTest {
         assertEquals("different generation", walletMismatch.message)
     }
 
+    /**
+     * `ErrorTransactionBuild` (32) must reach callers as its own type. Every
+     * non-shortfall `buildSignedPayment` rejection maps to it — including the
+     * two failure modes the single-account send design rests on, an unmatched
+     * `fundingPath` and a watch-only one. They previously arrived as
+     * [DashSdkError.PlatformWallet.Generic] with code 99, distinguishable only
+     * by string-matching the message (dashpay/platform#4247 review).
+     */
+    @Test
+    fun transactionBuildFailuresGetTheirOwnType() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val message = "no spendable funds account matches funding derivation path m/44'/5'/7'"
+
+        val mapped = DashSdkError.fromNative(DashSDKException(offset + 32, message))
+        assertTrue(
+            "code 32 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.TransactionBuild,
+        )
+        assertEquals(message, mapped.message)
+        assertFalse(
+            "the request itself is at fault, so a verbatim retry cannot help",
+            mapped.isRetryable,
+        )
+    }
+
     @Test
     fun unmappedPlatformWalletCodesFallBackToGeneric() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET

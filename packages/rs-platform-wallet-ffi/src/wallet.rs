@@ -207,9 +207,7 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
         let slice = std::slice::from_raw_parts_mut(entries, count);
         for e in slice.iter_mut() {
             if !e.derivation_path.is_null() {
-                let _ = std::ffi::CString::from_raw(
-                    e.derivation_path as *mut std::os::raw::c_char,
-                );
+                let _ = std::ffi::CString::from_raw(e.derivation_path as *mut std::os::raw::c_char);
                 e.derivation_path = std::ptr::null();
             }
         }

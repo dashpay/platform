@@ -299,7 +299,9 @@ mod guardrail {
 
         let (bip44_ops, coinjoin_ops, coinjoin_path) = {
             let guard = wm.read().await;
-            let (_, info) = guard.get_wallet_and_info(&wallet_id).expect("wallet present");
+            let (_, info) = guard
+                .get_wallet_and_info(&wallet_id)
+                .expect("wallet present");
             let network = info.core_wallet.network();
             let bip44: HashSet<OutPoint> = info
                 .core_wallet
@@ -347,6 +349,11 @@ mod guardrail {
             .iter()
             .map(|i| i.previous_output)
             .collect();
+        // `all` is vacuously true on an empty set, so without this the
+        // guardrail would pass while proving nothing. The sibling
+        // `explicit_coinjoin_path_selects_only_coinjoin` in `wallet::core::send`
+        // already asserts it.
+        assert!(!spent.is_empty(), "the payment must have selected inputs");
         assert!(
             spent.iter().all(|op| coinjoin_ops.contains(op)),
             "every input must come from the named CoinJoin account, spent {spent:?}"

@@ -434,8 +434,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // a derivable account-level path (Standard/BIP44,
                 // CoinJoin, DashPay receiving-funds, …); `Err` (→ `None`)
                 // for the ones that have none.
-                let derivation_path =
-                    account_type.derivation_path(network).ok().map(|p| p.to_string());
+                let derivation_path = account_type
+                    .derivation_path(network)
+                    .ok()
+                    .map(|p| p.to_string());
                 AccountBalanceRow {
                     account_type,
                     balance,
