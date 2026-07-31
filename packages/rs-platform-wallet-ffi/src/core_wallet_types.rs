@@ -491,6 +491,17 @@ fn account_index_of(at: &key_wallet::account::AccountType) -> u32 {
 /// account. The pool counts are meaningful for both funds and keys
 /// variants; the explorer surfaces them as the headline number on
 /// keys-only rows where balance reads zero by construction.
+///
+/// `derivation_path` is a heap-owned, NUL-terminated UTF-8 C string
+/// carrying the account-level derivation path (e.g. the DIP-15
+/// `m/9'/coinType'/15'/{index}'/0x<user 64hex>/0x<friend 64hex>` for a
+/// DashPay receiving-funds account). It is `null` for account types that
+/// have no derivable account-level path. Freed by
+/// [`platform_wallet_manager_free_account_balances`]. Appended as the
+/// LAST field so the layout change is purely additive — existing readers
+/// of the earlier fields are byte-compatible, but any consumer that
+/// indexes the array by struct stride (iOS/Android bindings) must be
+/// regenerated against this definition before use.
 #[repr(C)]
 pub struct AccountBalanceEntryFFI {
     pub type_tag: crate::wallet_restore_types::AccountTypeTagFFI,
@@ -506,6 +517,8 @@ pub struct AccountBalanceEntryFFI {
     pub locked: u64,
     pub keys_used: u32,
     pub keys_total: u32,
+    /// Heap-owned NUL-terminated UTF-8 derivation-path string, or `null`.
+    pub derivation_path: *const c_char,
 }
 
 // ---------------------------------------------------------------------------

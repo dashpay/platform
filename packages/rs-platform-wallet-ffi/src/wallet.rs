@@ -167,6 +167,16 @@ pub unsafe extern "C" fn platform_wallet_manager_get_account_balances(
                 locked: row.balance.locked(),
                 keys_used: row.keys_used,
                 keys_total: row.keys_total,
+                // Account-level derivation-path string → heap-owned C
+                // string, or null when the account type has no path.
+                // `CString::new` only fails on an interior NUL, which a
+                // derivation path never contains; `.ok()` degrades that
+                // impossible case to null rather than panicking.
+                derivation_path: row
+                    .derivation_path
+                    .and_then(|s| std::ffi::CString::new(s).ok())
+                    .map(|c| c.into_raw() as *const std::os::raw::c_char)
+                    .unwrap_or(std::ptr::null()),
             }
         })
         .collect();
@@ -191,6 +201,18 @@ pub unsafe extern "C" fn platform_wallet_manager_free_account_balances(
     count: usize,
 ) {
     if !entries.is_null() && count > 0 {
+        // Reclaim each entry's heap-owned derivation-path C string before
+        // dropping the array backing store (mirrors the `into_raw` in the
+        // producer above).
+        let slice = std::slice::from_raw_parts_mut(entries, count);
+        for e in slice.iter_mut() {
+            if !e.derivation_path.is_null() {
+                let _ = std::ffi::CString::from_raw(
+                    e.derivation_path as *mut std::os::raw::c_char,
+                );
+                e.derivation_path = std::ptr::null();
+            }
+        }
         let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(entries, count));
     }
 }
