@@ -202,6 +202,14 @@ command that changes configuration waits briefly and then reports that something
 modifying it — nothing is lost, and running it again once the first command finishes
 works normally.
 
+The Dashmate helper uses the same whole-operation lock while renewing an SSL certificate.
+For ZeroSSL this includes HTTP validation and may take minutes. A configuration-changing
+command started during background renewal can therefore reach its 15-second timeout and
+report that another Dashmate command is modifying configuration. Retry it after renewal
+finishes. Keeping the lock for issuance is intentional: releasing it earlier would require
+replaying selected renewal fields later, which could undo an operator's provider switch or
+SSL disable.
+
 Reading is never affected: `dashmate status`, `dashmate config get` and `dashmate core cli`
 do not take the lock at all, so a node can still be inspected while it is being set up.
 

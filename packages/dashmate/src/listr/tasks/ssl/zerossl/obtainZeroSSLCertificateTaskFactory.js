@@ -18,8 +18,6 @@ import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactor
  * @param {VerificationServer} verificationServer
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
- * @param {ConfigFileJsonRepository} configFileRepository
- * @param {ConfigFile} configFile
  * @return {obtainZeroSSLCertificateTask}
  */
 export default function obtainZeroSSLCertificateTaskFactory(
@@ -34,15 +32,17 @@ export default function obtainZeroSSLCertificateTaskFactory(
   verificationServer,
   homeDir,
   validateZeroSslCertificate,
-  configFileRepository,
-  configFile,
 ) {
   /**
    * @typedef {obtainZeroSSLCertificateTask}
    * @param {Config} config
+   * @param {Object} [options]
+   * @param {function(): void} [options.onCertificateCreated]
    * @return {Listr}
    */
-  function obtainZeroSSLCertificateTask(config) {
+  function obtainZeroSSLCertificateTask(config, options = {}) {
+    const { onCertificateCreated } = options;
+
     const tasks = new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
@@ -141,13 +141,12 @@ export default function obtainZeroSSLCertificateTaskFactory(
             ctx.externalIp,
             ctx.apiKey,
           );
-
-          config.set('platform.gateway.ssl.enabled', true);
-          config.set('platform.gateway.ssl.provider', 'zerossl');
+          ctx.createdCertificate = true;
           config.set('platform.gateway.ssl.providerConfigs.zerossl.id', ctx.certificate.id);
 
-          // Save config file
-          configFileRepository.write(configFile);
+          if (onCertificateCreated) {
+            onCertificateCreated();
+          }
         },
       },
       {
@@ -304,6 +303,14 @@ and all Dash service ports listed above.`);
         task: async () => {
           await verificationServer.stop();
           await verificationServer.destroy();
+        },
+      },
+      {
+        title: 'Update configuration',
+        enabled: (ctx) => ctx.createdCertificate,
+        task: async () => {
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', 'zerossl');
         },
       },
     ], {

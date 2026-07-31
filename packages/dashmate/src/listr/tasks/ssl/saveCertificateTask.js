@@ -27,11 +27,34 @@ export default function saveCertificateTaskFactory(homeDir) {
           fs.mkdirSync(certificatesDir, { recursive: true });
 
           const crtFile = path.join(certificatesDir, 'bundle.crt');
-
-          fs.writeFileSync(crtFile, ctx.certificateFile, 'utf8');
-
           const keyFile = path.join(certificatesDir, 'private.key');
-          fs.writeFileSync(keyFile, ctx.privateKeyFile, 'utf8');
+          const crtTempFile = `${crtFile}.tmp-${process.pid}`;
+          const keyTempFile = `${keyFile}.tmp-${process.pid}`;
+          const previousCertificate = fs.existsSync(crtFile)
+            ? fs.readFileSync(crtFile)
+            : null;
+          let certificateReplaced = false;
+
+          try {
+            fs.writeFileSync(crtTempFile, ctx.certificateFile, 'utf8');
+            fs.writeFileSync(keyTempFile, ctx.privateKeyFile, 'utf8');
+            fs.renameSync(crtTempFile, crtFile);
+            certificateReplaced = true;
+            fs.renameSync(keyTempFile, keyFile);
+          } catch (e) {
+            if (certificateReplaced) {
+              if (previousCertificate === null) {
+                fs.rmSync(crtFile, { force: true });
+              } else {
+                fs.writeFileSync(crtFile, previousCertificate);
+              }
+            }
+
+            throw e;
+          } finally {
+            fs.rmSync(crtTempFile, { force: true });
+            fs.rmSync(keyTempFile, { force: true });
+          }
 
           config.set('platform.gateway.ssl.enabled', true);
         },

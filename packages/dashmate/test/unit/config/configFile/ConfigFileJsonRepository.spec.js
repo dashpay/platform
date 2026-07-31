@@ -155,9 +155,8 @@ describe('ConfigFileJsonRepository', () => {
       expect(fs.readdirSync(homeDir.getPath()).filter((n) => n !== 'config.json')).to.be.empty();
     });
 
-    // The helper daemon reads once at startup and writes on every certificate
-    // renewal for the life of the process, so saving repeatedly from one
-    // instance has to keep working.
+    // A caller holding the command-length lock may save multiple checkpoints
+    // through the same repository instance.
     it('should allow repeated writes from one long-lived instance', () => {
       seedConfigFile();
 

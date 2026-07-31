@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 import { asValue } from 'awilix';
 import graceful from 'node-graceful';
 import createDIContainer from '../src/createDIContainer.js';
+import scheduleRenewCertificate from '../src/helper/scheduleRenewCertificate.js';
+import watchCertificateConfig from '../src/helper/watchCertificateConfig.js';
 
 // The ephemeral containers SSL providers bind to port 80 during issuance.
 // Either can be left orphaned if a previous helper run crashed mid-renewal.
@@ -90,19 +92,10 @@ async function removeOrphanedSslContainers(docker) {
    */
   const writeConfigTemplates = container.resolve('writeConfigTemplates');
 
-  const configFile = await configFileRepository.read();
-
-  // Persist config if it was migrated
-  if (configFile.isChanged()) {
-    // Captured before the write, which clears these flags once the new state is
-    // on disk.
-    const changedConfigs = configFile.getAllConfigs()
-      .filter((config) => config.isChanged());
-
-    await configFileRepository.write(configFile);
-
-    changedConfigs.forEach(writeConfigTemplates);
-  }
+  const { configFile } = configFileRepository.readAndMigrate(
+    {},
+    (migratedConfigs) => migratedConfigs.forEach(writeConfigTemplates),
+  );
 
   const config = configFile.getConfig(configName);
 
@@ -122,17 +115,35 @@ async function removeOrphanedSslContainers(docker) {
     await removeOrphanedSslContainers(docker);
   }
 
-  if (isEnabled && provider === 'zerossl') {
-    const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
-    await scheduleRenewZeroSslCertificate(config);
-  } else if (isEnabled && provider === 'letsencrypt') {
-    const scheduleRenewLetsEncryptCertificate = container.resolve('scheduleRenewLetsEncryptCertificate');
-    await scheduleRenewLetsEncryptCertificate(config);
-  } else {
-    // prevent infinite restarts
-    setInterval(() => {
-    }, 60 * 1000);
-  }
+  const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
+  const scheduleRenewLetsEncryptCertificate = container.resolve('scheduleRenewLetsEncryptCertificate');
+  const watchInactiveConfig = (inactiveConfig, onActivated) => watchCertificateConfig(
+    inactiveConfig.getName(),
+    null,
+    configFileRepository,
+    async (currentConfig) => {
+      if (!currentConfig) {
+        return false;
+      }
+
+      return onActivated(currentConfig);
+    },
+    (e) => {
+      // eslint-disable-next-line no-console
+      console.error(`Failed to check configuration for certificate renewal: ${e.message}`);
+    },
+  );
+  await scheduleRenewCertificate(
+    config,
+    scheduleRenewZeroSslCertificate,
+    scheduleRenewLetsEncryptCertificate,
+    watchInactiveConfig,
+  );
+
+  // Keep the helper alive when renewal is disabled, the config is removed, or
+  // a provider change stops the only scheduled job.
+  setInterval(() => {
+  }, 60 * 1000);
 
   if (config.get('dashmate.helper.api.enable')) {
     const createHttpApiServer = container.resolve('createHttpApiServer');

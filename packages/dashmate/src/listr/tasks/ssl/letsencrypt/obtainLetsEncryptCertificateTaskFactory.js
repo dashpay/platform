@@ -15,8 +15,6 @@ const LEGO_IMAGE = 'goacme/lego:v4.31.0';
  * @param {HomeDir} homeDir
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @param {saveCertificateTask} saveCertificateTask
- * @param {ConfigFileJsonRepository} configFileRepository
- * @param {ConfigFile} configFile
  * @return {obtainLetsEncryptCertificateTask}
  */
 export default function obtainLetsEncryptCertificateTaskFactory(
@@ -26,8 +24,6 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   homeDir,
   validateLetsEncryptCertificate,
   saveCertificateTask,
-  configFileRepository,
-  configFile,
 ) {
   /**
    * @typedef {obtainLetsEncryptCertificateTask}
@@ -44,6 +40,8 @@ export default function obtainLetsEncryptCertificateTaskFactory(
           ctx.externalIp = config.get('externalIp');
           ctx.legoDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'lego');
           ctx.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+          ctx.configurationUpdateRequired = !config.get('platform.gateway.ssl.enabled')
+            || config.get('platform.gateway.ssl.provider') !== 'letsencrypt';
 
           if (!ctx.email) {
             throw new Error("Let's Encrypt email is not set. Please set it in the config file");
@@ -236,27 +234,31 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             throw new Error('Private key file was not created by lego');
           }
 
+          ctx.configurationUpdateRequired = true;
+
           // eslint-disable-next-line no-param-reassign
           task.output = 'Certificate obtained successfully';
         },
       },
       {
         title: 'Save certificate',
-        skip: (ctx) => ctx.certificateValid,
+        skip: (ctx) => ctx.certificateValid && ctx.isCertificatePairInstalled,
         task: async (ctx) => {
           // Read certificate and key from lego output
           ctx.certificateFile = fs.readFileSync(ctx.legoCertPath, 'utf8');
           ctx.privateKeyFile = fs.readFileSync(ctx.legoKeyPath, 'utf8');
-
-          // Update config
-          config.set('platform.gateway.ssl.enabled', true);
-          config.set('platform.gateway.ssl.provider', 'letsencrypt');
-
-          // Save config file
-          configFileRepository.write(configFile);
+          ctx.configurationUpdateRequired = true;
 
           // Save to gateway SSL directory
           return saveCertificateTask(config);
+        },
+      },
+      {
+        title: 'Update configuration',
+        enabled: (ctx) => ctx.configurationUpdateRequired,
+        task: async () => {
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', 'letsencrypt');
         },
       },
     ], {

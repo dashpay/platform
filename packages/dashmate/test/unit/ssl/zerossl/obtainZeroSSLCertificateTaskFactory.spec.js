@@ -43,8 +43,6 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       verificationServer,
       { joinPath: this.sinon.stub() }, // homeDir
       validateZeroSslCertificate,
-      { write: this.sinon.stub() }, // configFileRepository
-      {}, // configFile
     );
   });
 
@@ -68,7 +66,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     expect(verificationServer.destroy).to.have.been.called();
   });
 
-  it('should leave SSL settings dirty for command finalization after the mid-command save', async function it() {
+  it('should defer SSL persistence until command finalization', async function it() {
     const homeDir = HomeDir.createTemp();
 
     try {
@@ -126,15 +124,88 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
         verificationServer,
         homeDir,
         validate,
-        repository,
-        configFile,
       )(realConfig);
 
       await task.run({ expirationDays: 30 });
 
       expect(realConfig.isChanged()).to.be.true();
       expect(repository.read().getConfig(realConfig.getName())
-        .get('platform.gateway.ssl.provider')).to.equal('zerossl');
+        .get('platform.gateway.ssl.enabled')).to.be.false();
+      expect(repository.read().getConfig(realConfig.getName())
+        .get('platform.gateway.ssl.providerConfigs.zerossl.id')).to.equal(null);
+    } finally {
+      homeDir.remove();
+    }
+  });
+
+  it('should not enable SSL when verification fails after creating a certificate', async function it() {
+    const homeDir = HomeDir.createTemp();
+
+    try {
+      const realConfig = getBaseConfigFactory(homeDir)();
+      const configFile = new ConfigFile(
+        [realConfig],
+        '4.1.0',
+        'abcdef12',
+        realConfig.getName(),
+        null,
+      );
+      const repository = new ConfigFileJsonRepository(
+        (data) => data,
+        homeDir,
+        () => null,
+      );
+      repository.write(configFile);
+
+      const validate = this.sinon.stub().resolves({
+        error: ERRORS.CERTIFICATE_ID_IS_NOT_SET,
+        data: {
+          apiKey: 'api-key',
+          bundleFilePath: homeDir.joinPath('bundle.crt'),
+          certificate: null,
+          csrFilePath: homeDir.joinPath('certificate.csr'),
+          externalIp: '127.0.0.1',
+          isBundleFilePresent: false,
+          isCsrFilePresent: false,
+          isPrivateKeyFilePresent: false,
+          privateKeyFilePath: homeDir.joinPath('private.key'),
+          sslConfigDir: homeDir.joinPath('ssl'),
+        },
+      });
+      const verifyDomain = this.sinon.stub().rejects(new Error('verification failed'));
+      const task = obtainZeroSSLCertificateTaskFactory(
+        this.sinon.stub().resolves('certificate-request'),
+        this.sinon.stub().resolves({ privateKey: 'private-key' }),
+        this.sinon.stub().resolves({
+          id: 'certificate-id-000000000000000000',
+          status: 'pending_validation',
+          validation: {
+            other_methods: {
+              '127.0.0.1': {
+                file_validation_url_http: 'http://127.0.0.1/verification',
+                file_validation_content: ['verification'],
+              },
+            },
+          },
+        }),
+        verifyDomain,
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        verificationServer,
+        homeDir,
+        validate,
+      )(realConfig);
+
+      await expect(task.run({ expirationDays: 30, noRetry: true }))
+        .to.be.rejectedWith('verification failed');
+
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.false();
+      expect(realConfig.get('platform.gateway.ssl.providerConfigs.zerossl.id'))
+        .to.equal('certificate-id-000000000000000000');
+      expect(repository.read().getConfig(realConfig.getName())
+        .get('platform.gateway.ssl.enabled')).to.be.false();
     } finally {
       homeDir.remove();
     }

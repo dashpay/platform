@@ -38,6 +38,8 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
    * @param {Config} config
    * @param {obtainZeroSSLCertificateTask} obtainZeroSSLCertificateTask
    * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
+   * @param {ConfigFileJsonRepository} configFileRepository
+   * @param {ConfigFile} configFile
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -52,6 +54,8 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
     config,
     obtainZeroSSLCertificateTask,
     obtainLetsEncryptCertificateTask,
+    configFileRepository,
+    configFile,
   ) {
     const provider = providerFlag || config.get('platform.gateway.ssl.provider');
 
@@ -72,11 +76,17 @@ Certificate will be renewed if it is about to expire (see 'expiration-days' flag
         + `Supported providers: ${SSL_PROVIDERS.ZEROSSL}, ${SSL_PROVIDERS.LETSENCRYPT}`);
     }
 
+    const taskOptions = provider === SSL_PROVIDERS.ZEROSSL
+      ? {
+        onCertificateCreated: () => configFileRepository.write(configFile),
+      }
+      : {};
+
     const tasks = new Listr(
       [
         {
           title: taskTitle,
-          task: () => task(config),
+          task: () => task(config, taskOptions),
         },
       ],
       {
