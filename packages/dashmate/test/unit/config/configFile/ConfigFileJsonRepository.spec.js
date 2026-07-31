@@ -97,11 +97,7 @@ describe('ConfigFileJsonRepository', () => {
       expect(configFile.getAllConfigs().every((config) => config.isChanged())).to.be.true();
     });
 
-    // The symptom operators reported. Asserting on file CONTENT would pass
-    // against the buggy code, because re-serializing an unchanged config is
-    // byte-identical - the defect is that the write happens at all, carrying a
-    // stale snapshot.
-    it('should leave the file untouched when a read-only command exits', () => {
+    it('should not require a write after an unchanged read', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
@@ -109,7 +105,6 @@ describe('ConfigFileJsonRepository', () => {
 
       const configFile = repository.read();
 
-      // What BaseCommand.finally() does
       if (configFile.isChanged()) {
         repository.write(configFile);
       }
@@ -122,7 +117,7 @@ describe('ConfigFileJsonRepository', () => {
   });
 
   describe('#write', () => {
-    it('should persist changes and mark the config file and its configs saved', () => {
+    it('should persist changes while keeping configs dirty until templates are rendered', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
@@ -132,8 +127,8 @@ describe('ConfigFileJsonRepository', () => {
 
       repository.write(configFile);
 
-      expect(configFile.isChanged()).to.be.false();
-      expect(configFile.getAllConfigs().filter((config) => config.isChanged())).to.be.empty();
+      expect(configFile.changed).to.be.false();
+      expect(configFile.getConfig('base').isChanged()).to.be.true();
 
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
@@ -183,33 +178,61 @@ describe('ConfigFileJsonRepository', () => {
   });
 
   describe('#update', () => {
-    // The generic save-on-exit used to persist migration, and a migrated startup
-    // copy saved afterwards would revert whatever the command itself changed.
-    // Migration is now saved where it happens, so the two cannot fight.
-    it('should not let a migrated startup copy overwrite a later change', () => {
+    it('should save and render a migration while holding the lock', () => {
       seedConfigFile();
 
       const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
       const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
+      let renderedWhileLocked = false;
 
-      // What BaseCommand.init() does: migration reached disk, nothing left pending
-      const migrated = repository.read();
-
-      expect(migrated.isChanged()).to.be.true();
-
-      repository.write(migrated);
-
-      expect(migrated.isChanged()).to.be.false();
-      expect(migrated.getAllConfigs().filter((config) => config.isChanged())).to.be.empty();
-
-      // and the command's own change lands on top of it
-      repository.update((configFile) => {
-        configFile.getConfig('base').set('description', 'changed-by-command');
+      const { configFile, migrated } = repository.readAndMigrate({}, () => {
+        renderedWhileLocked = fs.existsSync(homeDir.joinPath('config.json.lock'));
+        expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
+          .to.equal('9.9.9');
       });
 
-      const reread = new ConfigFileJsonRepository(migration, homeDir, createDefaults).read();
+      expect(configFile.getConfigFormatVersion()).to.equal('9.9.9');
+      expect(migrated).to.have.length(1);
+      expect(renderedWhileLocked).to.be.true();
+      expect(JSON.parse(fs.readFileSync(configFilePath, 'utf8')).configFormatVersion)
+        .to.equal('9.9.9');
+    });
 
-      expect(reread.getConfig('base').get('description')).to.equal('changed-by-command');
+    it('should not wait for a lock when reading does not migrate', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, {
+        acquireTimeout: 50,
+      });
+      const lockPath = homeDir.joinPath('config.json.lock');
+
+      fs.mkdirSync(lockPath);
+
+      try {
+        expect(() => repository.readAndMigrate()).to.not.throw();
+      } finally {
+        fs.rmdirSync(lockPath);
+      }
+    });
+
+    it('should reuse a command-held lock when reading and saving a migration', () => {
+      seedConfigFile();
+
+      const migration = (data) => ({ ...data, configFormatVersion: '9.9.9' });
+      const repository = new ConfigFileJsonRepository(migration, homeDir, createDefaults);
+      let renderedWhileLocked = false;
+
+      repository.acquire();
+
+      try {
+        repository.readAndMigrate({}, () => {
+          renderedWhileLocked = fs.existsSync(homeDir.joinPath('config.json.lock'));
+        });
+      } finally {
+        repository.release();
+      }
+
+      expect(renderedWhileLocked).to.be.true();
     });
 
     // Effects registered by the caller run before the lock is released, so a
@@ -234,6 +257,24 @@ describe('ConfigFileJsonRepository', () => {
 
       expect(sawOnDisk).to.equal('saved-then-observed');
       expect(heldLock, 'lock should still be held while onSaved runs').to.be.true();
+    });
+
+    it('should release the lock but keep the saved JSON when onSaved throws', () => {
+      seedConfigFile();
+
+      const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
+
+      expect(() => repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'committed-before-hook');
+      }, {
+        onSaved: () => {
+          throw new Error('template write failed');
+        },
+      })).to.throw('template write failed');
+
+      expect(fs.existsSync(homeDir.joinPath('config.json.lock'))).to.be.false();
+      expect(repository.read().getConfig('base').get('description'))
+        .to.equal('committed-before-hook');
     });
 
     // On a machine with no config file yet, the change still has to land -
@@ -304,7 +345,7 @@ describe('ConfigFileJsonRepository', () => {
       expect(seen).to.equal('written-by-someone-else');
     });
 
-    it('should return the state it saved', () => {
+    it('should return the state it saved with template work still marked pending', () => {
       seedConfigFile();
 
       const repository = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults);
@@ -314,7 +355,8 @@ describe('ConfigFileJsonRepository', () => {
       });
 
       expect(configFile.getConfig('base').get('description')).to.equal('returned');
-      expect(configFile.isChanged()).to.be.false();
+      expect(configFile.changed).to.be.false();
+      expect(configFile.getConfig('base').isChanged()).to.be.true();
     });
 
     it('should not write when the mutator throws', () => {
@@ -421,6 +463,13 @@ describe('ConfigFileJsonRepository', () => {
       const reread = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults).read();
 
       expect(reread.getConfig('base').get('description')).to.not.equal('must-not-be-saved');
+
+      repository.update((configFile) => {
+        configFile.getConfig('base').set('description', 'saved-after-new-lock');
+      });
+
+      expect(repository.read().getConfig('base').get('description'))
+        .to.equal('saved-after-new-lock');
     });
 
     // A waiter should be told what is happening in dashmate's terms, and only

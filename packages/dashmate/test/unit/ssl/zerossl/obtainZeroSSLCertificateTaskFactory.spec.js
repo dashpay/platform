@@ -1,4 +1,10 @@
+import fs from 'fs';
 import obtainZeroSSLCertificateTaskFactory from '../../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
+import HomeDir from '../../../../src/config/HomeDir.js';
+import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
+import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
+import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
+import { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 
 describe('obtainZeroSSLCertificateTaskFactory', () => {
   let config;
@@ -60,5 +66,77 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     // even though the "Stop verification server" task never ran.
     expect(verificationServer.stop).to.have.been.called();
     expect(verificationServer.destroy).to.have.been.called();
+  });
+
+  it('should leave SSL settings dirty for command finalization after the mid-command save', async function it() {
+    const homeDir = HomeDir.createTemp();
+
+    try {
+      const realConfig = getBaseConfigFactory(homeDir)();
+      const configFile = new ConfigFile(
+        [realConfig],
+        '4.1.0',
+        'abcdef12',
+        realConfig.getName(),
+        null,
+      );
+      const configFilePath = homeDir.joinPath('config.json');
+
+      fs.writeFileSync(
+        configFilePath,
+        `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`,
+        'utf8',
+      );
+
+      const repository = new ConfigFileJsonRepository(
+        (data) => data,
+        homeDir,
+        () => null,
+      );
+      const sslConfigDir = homeDir.joinPath('ssl');
+      const validate = this.sinon.stub().resolves({
+        error: ERRORS.CERTIFICATE_ID_IS_NOT_SET,
+        data: {
+          apiKey: 'api-key',
+          bundleFilePath: homeDir.joinPath('bundle.crt'),
+          certificate: null,
+          csr: 'certificate-request',
+          csrFilePath: homeDir.joinPath('certificate.csr'),
+          externalIp: '127.0.0.1',
+          isBundleFilePresent: true,
+          isCsrFilePresent: true,
+          isPrivateKeyFilePresent: true,
+          privateKeyFilePath: homeDir.joinPath('private.key'),
+          sslConfigDir,
+        },
+      });
+      const createCertificate = this.sinon.stub().resolves({
+        id: 'certificate-id-000000000000000000',
+        status: 'issued',
+      });
+      const task = obtainZeroSSLCertificateTaskFactory(
+        this.sinon.stub(),
+        this.sinon.stub(),
+        createCertificate,
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        this.sinon.stub(),
+        verificationServer,
+        homeDir,
+        validate,
+        repository,
+        configFile,
+      )(realConfig);
+
+      await task.run({ expirationDays: 30 });
+
+      expect(realConfig.isChanged()).to.be.true();
+      expect(repository.read().getConfig(realConfig.getName())
+        .get('platform.gateway.ssl.provider')).to.equal('zerossl');
+    } finally {
+      homeDir.remove();
+    }
   });
 });

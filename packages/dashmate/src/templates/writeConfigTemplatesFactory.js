@@ -9,6 +9,8 @@ export default function writeConfigTemplatesFactory(renderServiceTemplates, writ
   function writeConfigTemplates(config) {
     const serviceConfigs = renderServiceTemplates(config);
     writeServiceConfigs(config.getName(), serviceConfigs);
+
+    config.markAsSaved();
   }
 
   return writeConfigTemplates;

@@ -121,19 +121,29 @@ describe('Config mutating commands', () => {
       expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.false();
     });
 
-    // The service files are what a node actually runs from. Deleting them before
-    // the removal is saved would leave a config listed in config.json with
-    // nothing on disk behind it.
     it('should leave the service directory alone when the removal cannot be saved', async () => {
-      await new ConfigRemoveCommand().runWithDependencies(
-        { config: 'does-not-exist' },
-        flags,
-        loadedConfigFile,
-        { has: () => false },
-        homeDir,
-        configFileRepository,
-      ).catch(() => {});
+      const failingRepository = {
+        update: () => {
+          throw new Error('write failed');
+        },
+      };
+      let thrownError;
 
+      try {
+        await new ConfigRemoveCommand().runWithDependencies(
+          { config: 'node1' },
+          flags,
+          loadedConfigFile,
+          { has: () => false },
+          homeDir,
+          failingRepository,
+        );
+      } catch (e) {
+        thrownError = e;
+      }
+
+      expect(thrownError).to.be.an('error');
+      expect(thrownError.message).to.equal('write failed');
       expect(fs.existsSync(homeDir.joinPath('node1'))).to.be.true();
       expect(reread().isConfigExists('node1')).to.be.true();
     });

@@ -48,15 +48,21 @@ export default class BaseCommand extends Command {
     }
 
     let configFile;
-    let migratedConfigs = [];
     try {
       // Load config collection from config file, saving it again if loading
       // migrated it - under one lock, so the migrated shape cannot revert a
       // change saved in between.
       // Skip per-config validation when --force flag is passed (e.g., for reset command)
-      ({ configFile, migrated: migratedConfigs } = configFileRepository.readAndMigrate({
-        skipValidation: Boolean(this.parsedFlags.force),
-      }));
+      ({ configFile } = configFileRepository.readAndMigrate(
+        {
+          skipValidation: Boolean(this.parsedFlags.force),
+        },
+        (migratedConfigs) => {
+          const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
+
+          migratedConfigs.forEach(writeConfigTemplates);
+        },
+      ));
     } catch (e) {
       // Create default config collection if config file is not present
       // on the first start for example
@@ -71,14 +77,6 @@ export default class BaseCommand extends Command {
       const createConfigFile = this.container.resolve('createConfigFile');
 
       configFile = createConfigFile();
-    }
-
-    // A migration changes what the services should be running with, so their
-    // files are re-rendered. The config file itself was already saved with it.
-    if (migratedConfigs.length > 0) {
-      const writeConfigTemplates = this.container.resolve('writeConfigTemplates');
-
-      migratedConfigs.forEach(writeConfigTemplates);
     }
 
     // Register config collection in the container
@@ -159,8 +157,8 @@ export default class BaseCommand extends Command {
         const configFile = this.container.resolve('configFile');
 
         if (configFile.isChanged()) {
-          // Captured before the write, which clears these flags once the new
-          // state is on disk.
+          // Captured before rendering, which clears each flag only after its
+          // service files have been written successfully.
           const changedConfigs = configFile.getAllConfigs()
             .filter((config) => config.isChanged());
 

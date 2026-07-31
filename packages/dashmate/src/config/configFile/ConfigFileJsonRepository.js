@@ -196,21 +196,48 @@ export default class ConfigFileJsonRepository {
    * lock is what keeps it from reverting anything saved between the read and the
    * save - the same split that made a command's startup copy dangerous.
    *
+   * Clean reads do not acquire the lock. When the first read discovers a
+   * migration, the file is read again and migrated under the lock before it is
+   * saved. This keeps ordinary read-only commands available during long-running
+   * configuration changes without letting a migrated snapshot overwrite a newer
+   * write.
+   *
    * @param {Object} [options={}] - passed through to read()
+   * @param {function(Config[]): void} [onMigrated] - runs after the migrated
+   *   config file is saved and before the lock is released
    * @returns {{configFile: ConfigFile, migrated: Config[]}} migrated is the
    *   configs whose shape changed, so their service files can be re-rendered
    */
-  readAndMigrate(options = {}) {
-    return this.#locked(() => {
+  readAndMigrate(options = {}, onMigrated = undefined) {
+    const readResult = () => {
       const configFile = this.read(options);
-
       const migrated = configFile.getAllConfigs().filter((config) => config.isChanged());
+
+      return { configFile, migrated };
+    };
+
+    const initialResult = readResult();
+
+    if (!initialResult.configFile.isChanged()) {
+      return initialResult;
+    }
+
+    return this.#locked(() => {
+      // Another process may have migrated or changed the file while this
+      // process waited, so never save the result of the unlocked probe.
+      const result = readResult();
+
+      const { configFile, migrated } = result;
 
       if (configFile.isChanged()) {
         this.#save(configFile);
+
+        if (onMigrated) {
+          onMigrated(migrated);
+        }
       }
 
-      return { configFile, migrated };
+      return result;
     });
   }
 
@@ -266,6 +293,9 @@ export default class ConfigFileJsonRepository {
       return fn();
     }
 
+    // A compromise belongs to the lock that was lost. A later independent
+    // acquisition restores exclusivity and must not inherit that failure.
+    this.#compromised = false;
     const release = this.#acquireLock();
 
     try {
@@ -291,7 +321,12 @@ export default class ConfigFileJsonRepository {
   }
 
   /**
-   * Serialize and replace the file, then mark the state clean.
+   * Serialize and replace the file, then mark the config collection saved.
+   *
+   * Individual configs remain changed until their service templates are
+   * rendered. A mid-command save may persist JSON before those files should take
+   * effect, so clearing their flags here would make successful command
+   * finalization skip the render.
    *
    * Caller must hold the lock.
    *
@@ -309,9 +344,8 @@ export default class ConfigFileJsonRepository {
     writeFileAtomic.sync(this.configFilePath, configFileJSON, 'utf8');
 
     // Only now is the state actually on disk. Clearing these beforehand would
-    // leave the configs claiming to be saved after a failed write.
+    // leave the config file claiming to be saved after a failed write.
     configFile.markAsSaved();
-    configFile.getAllConfigs().forEach((config) => config.markAsSaved());
   }
 
   /**
