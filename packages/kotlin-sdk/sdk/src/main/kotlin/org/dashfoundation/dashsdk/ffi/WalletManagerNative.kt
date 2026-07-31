@@ -285,6 +285,33 @@ internal object WalletManagerNative {
     )
 
     /**
+     * `core_wallet_build_signed_payment_with_token` — build + sign a standard L1
+     * payment funded from ONE of the wallet's signable funds accounts AND
+     * register it for deferred submission, returning a reservation token.
+     *
+     * The bridge between [coreWalletBuildSignedPayment] (selects by derivation
+     * path, so it can reach a **DashPay receiving-funds** account, but returns
+     * raw bytes with no token and never broadcasts) and
+     * [coreWalletFinalizeSignedPayment] (mints a token and can broadcast, but
+     * selects only BIP44 / BIP32 / CoinJoin). Parameters are exactly
+     * [coreWalletBuildSignedPayment]'s.
+     *
+     * On success the funding UTXOs are RESERVED and owned by the returned token:
+     * consume it with [coreWalletBroadcastSignedPayment] or
+     * [coreWalletReleaseSignedPayment].
+     *
+     * Returns a big-endian BLOB: `u64 token, u64 feeDuffs, u64 changeDuffs,
+     * u32 txidLen, txid utf8, u32 txBytesLen, txBytes`.
+     */
+    external fun coreWalletBuildSignedPaymentWithToken(
+        coreHandle: Long,
+        outputsBlob: ByteArray,
+        feePerKb: Long,
+        coreSignerHandle: Long,
+        fundingPath: String?,
+    ): ByteArray
+
+    /**
      * `core_wallet_broadcast_transaction` — broadcast a transaction built by
      * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
      * funding account so a definitive rejection releases its UTXO

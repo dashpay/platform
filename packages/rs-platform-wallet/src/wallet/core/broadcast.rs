@@ -1,8 +1,8 @@
 use dashcore::Transaction;
 use key_wallet::account::account_type::StandardAccountType;
-use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::ReservationToken;
 
+use super::transaction::FundingAccountRef;
 use super::SignedCoreTransaction;
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::reservations::broadcast_releasing_on_rejection;
@@ -108,11 +108,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// immediate rebuild; an ambiguous `MaybeSent` keeps it. Unlike the
     /// `StandardAccountType`-typed
     /// [`broadcast_transaction_releasing_reservation`](Self::broadcast_transaction_releasing_reservation)
-    /// used by the immediate send path, this takes an [`AccountTypePreference`]
-    /// so it ALSO reconciles a CoinJoin-funded deferred payment — one whose
+    /// used by the immediate send path, this takes a [`FundingAccountRef`] so it
+    /// ALSO reconciles a CoinJoin-funded deferred payment — one whose
     /// `build_signed`/`finalize` reserved the selected inputs but which has no
     /// `StandardAccountType`, and which previously kept its reservation held
-    /// until the TTL backstop.
+    /// until the TTL backstop — and a DashPay-receival-funded one, which has no
+    /// `AccountTypePreference` at all and is reachable only by derivation path.
     ///
     /// The release delegates to
     /// [`release_transaction_reservation`](Self::release_transaction_reservation),
@@ -124,15 +125,17 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// under a new token is a real risk; the owner guard closes the
     /// `dashpay/platform#4185` release/re-reserve race.
     ///
-    /// `account_type`/`account_index` identify the funding account handed to the
-    /// builder when the transaction was finalized; `token` is the
-    /// [`ReservationToken`] that build stamped
-    /// (`SignedCoreTransaction::reservation_token`), `None` only when the build
-    /// reserved nothing.
+    /// `funding` identifies the ONE funding account the build selected from —
+    /// either key-wallet's standard variant + index, or (for a payment built by
+    /// [`build_signed_payment`](Self::build_signed_payment) /
+    /// [`finalize_signed_payment_from_funding_path`](Self::finalize_signed_payment_from_funding_path))
+    /// the account-level derivation path, the only form that can name a DashPay
+    /// receiving-funds account. `token` is the [`ReservationToken`] that build
+    /// stamped (`SignedCoreTransaction::reservation_token`), `None` only when the
+    /// build reserved nothing.
     pub(crate) async fn broadcast_payment_releasing_reservation(
         &self,
-        account_type: AccountTypePreference,
-        account_index: u32,
+        funding: &FundingAccountRef,
         transaction: &Transaction,
         token: Option<ReservationToken>,
     ) -> Result<dashcore::Txid, PlatformWalletError> {
@@ -140,13 +143,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             Ok(txid) => Ok(txid),
             Err(error) => {
                 if matches!(error, BroadcastError::Rejected { .. }) {
-                    self.release_transaction_reservation(
-                        account_type,
-                        account_index,
-                        transaction,
-                        token,
-                    )
-                    .await;
+                    self.release_reservation_for(funding, transaction, token)
+                        .await;
                 }
                 Err(error.into())
             }

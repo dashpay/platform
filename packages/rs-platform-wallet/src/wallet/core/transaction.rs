@@ -51,6 +51,50 @@ fn map_builder_error(
     PlatformWalletError::TransactionBuild(error.to_string())
 }
 
+/// Identifies the **one** funds account whose key-wallet `ReservationSet` holds
+/// a build's selected inputs, so a later release — or a definitively rejected
+/// broadcast — can find that exact account again.
+///
+/// Two shapes, because this crate has two selectors that name accounts
+/// differently:
+///
+/// * [`Standard`](Self::Standard) — [`CoreWallet::finalize_transaction`]'s
+///   selector, which reaches an account by key-wallet's
+///   [`AccountTypePreference`] variant + index. It can only ever name
+///   BIP44 / BIP32 / DIP-9 CoinJoin.
+/// * [`Path`](Self::Path) — [`CoreWallet::build_signed_payment`]'s selector,
+///   which reaches the one funds account whose **account-level derivation
+///   path** equals the caller-named path. This is the only form that can name a
+///   DashPay receiving-funds account: `AccountTypePreference` has no variant for
+///   it, which is exactly why the deferred (tokened) send path could not spend a
+///   DashPay receival balance before this type existed.
+///
+/// Both arms name exactly ONE account. This type cannot express a union, so it
+/// cannot weaken the funding-domain invariant — see
+/// [`crate::wallet::funding_privacy`].
+#[derive(Debug, Clone)]
+pub enum FundingAccountRef {
+    /// A key-wallet standard-shaped account: BIP44 / BIP32 / CoinJoin at
+    /// `account_index`.
+    Standard {
+        account_type: AccountTypePreference,
+        account_index: u32,
+    },
+    /// The single funds account whose account-level derivation path equals this
+    /// one — the only form that can name a DashPay receiving-funds account.
+    Path(DerivationPath),
+}
+
+impl FundingAccountRef {
+    /// The standard-shaped reference for `account_type` at `account_index`.
+    pub fn standard(account_type: AccountTypePreference, account_index: u32) -> Self {
+        Self::Standard {
+            account_type,
+            account_index,
+        }
+    }
+}
+
 /// A signed Core transaction whose selected inputs remain reserved until it is
 /// broadcast, explicitly abandoned, observed by sync, or reclaimed by the
 /// reservation TTL.
@@ -403,6 +447,31 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         transaction: &Transaction,
         token: Option<ReservationToken>,
     ) {
+        self.release_reservation_for(
+            &FundingAccountRef::standard(account_type, account_index),
+            transaction,
+            token,
+        )
+        .await
+    }
+
+    /// The [`FundingAccountRef`]-general form of
+    /// [`release_transaction_reservation`](Self::release_transaction_reservation).
+    ///
+    /// Identical semantics — generation-bound, owner-guarded — but the funding
+    /// account may also be named by its account-level derivation path
+    /// ([`FundingAccountRef::Path`]), which is the only way to reach a DashPay
+    /// receiving-funds account. The path arm resolves the account with the SAME
+    /// `AccountType::derivation_path(network)` comparison
+    /// [`CoreWallet::build_signed_payment`] used to select it, so the release
+    /// lands in the very `ReservationSet` the build reserved into — never BIP44
+    /// by default.
+    pub(crate) async fn release_reservation_for(
+        &self,
+        funding: &FundingAccountRef,
+        transaction: &Transaction,
+        token: Option<ReservationToken>,
+    ) {
         // Validate the generation AND mutate the `ReservationSet` under one
         // manager-lock hold. `ReservationSet::release` removes an outpoint
         // unconditionally, and it is reached via `wallet_id` — an identity that a
@@ -423,8 +492,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         let Some(info) = manager.get_wallet_info(&self.wallet_id) else {
             tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
-                ?account_type,
-                account_index,
+                ?funding,
                 "could not release finalized Core transaction reservation: wallet not found"
             );
             return;
@@ -435,14 +503,41 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // original generation's reservation ceased to exist with it.
             tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
-                ?account_type,
-                account_index,
+                ?funding,
                 "skipping reservation release: wallet was re-created under the same id \
                  (different generation) since the token was minted"
             );
             return;
         }
-        match managed_account(&info.core_wallet.accounts, account_type, account_index) {
+        // Resolve the ONE account the build reserved into. The path arm repeats
+        // `build_signed_payment`'s own account-level-path comparison so the
+        // release cannot drift to a different account than the one that holds
+        // the inputs.
+        //
+        // PRIVACY-DOMAIN-OK: this iterates funds accounts only to LOOK ONE UP by
+        // derivation path, for a reservation release. It selects no coins and
+        // accumulates nothing across accounts.
+        let resolved = match funding {
+            FundingAccountRef::Standard {
+                account_type,
+                account_index,
+            } => managed_account(&info.core_wallet.accounts, *account_type, *account_index),
+            FundingAccountRef::Path(path) => {
+                let network = info.core_wallet.network();
+                info.core_wallet
+                    .accounts
+                    .all_funding_accounts()
+                    .into_iter()
+                    .find(|acc| {
+                        acc.managed_account_type()
+                            .to_account_type()
+                            .derivation_path(network)
+                            .map(|p| p == *path)
+                            .unwrap_or(false)
+                    })
+            }
+        };
+        match resolved {
             // Owner-guarded when the build stamped a token: even within this
             // generation, a TTL sweep between build and release could have
             // re-reserved the same outpoints under a new token, and an
@@ -455,8 +550,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             },
             None => tracing::warn!(
                 wallet_id = %hex::encode(self.wallet_id),
-                ?account_type,
-                account_index,
+                ?funding,
                 "could not release finalized Core transaction reservation: account not found"
             ),
         }

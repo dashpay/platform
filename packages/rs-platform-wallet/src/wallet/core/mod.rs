@@ -3,12 +3,12 @@ pub mod balance_handler;
 mod broadcast;
 pub mod generation;
 mod send;
-mod transaction;
+pub(crate) mod transaction;
 pub mod wallet;
 
 pub use balance::WalletBalance;
 pub use balance_handler::BalanceUpdateHandler;
 pub use generation::WalletGeneration;
-pub use send::SignedCorePayment;
-pub use transaction::SignedCoreTransaction;
+pub use send::{FinalizedCorePayment, SignedCorePayment};
+pub use transaction::{FundingAccountRef, SignedCoreTransaction};
 pub use wallet::CoreWallet;
