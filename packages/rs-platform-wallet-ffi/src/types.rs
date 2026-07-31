@@ -136,6 +136,23 @@ impl IdentifierArray {
 
         Self { items: ptr, count }
     }
+
+    /// Build the array from raw 32-byte rows (e.g. proTxHashes), which are not
+    /// platform `Identifier`s. Same ownership contract as [`Self::new`]: the
+    /// buffer is heap-leaked here and reclaimed by
+    /// [`platform_wallet_identifier_array_free`].
+    pub fn from_hashes(hashes: Vec<[u8; 32]>) -> Self {
+        let count = hashes.len();
+        if count == 0 {
+            return Self::empty();
+        }
+
+        let mut items = hashes;
+        let ptr = items.as_mut_ptr();
+        std::mem::forget(items);
+
+        Self { items: ptr, count }
+    }
 }
 
 /// Free identifier array.

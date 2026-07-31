@@ -2806,6 +2806,30 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 32]> {
     Some(id)
 }
 
+/// Read a required 20-byte `byte[]` (e.g. a voting-key hash160) into `[u8; 20]`;
+/// throws + returns None on a null/invalid array or a wrong length.
+fn read_id20(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 20]> {
+    let bytes = match env.convert_byte_array(arr) {
+        Ok(b) => b,
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "votingKeyId byte[] was null/invalid");
+            return None;
+        }
+    };
+    if bytes.len() != 20 {
+        throw_sdk_exception(
+            env,
+            1,
+            &format!("votingKeyId must be 20 bytes, got {}", bytes.len()),
+        );
+        return None;
+    }
+    let mut id = [0u8; 20];
+    id.copy_from_slice(&bytes);
+    Some(id)
+}
+
 /// Read a required Java `String` into an owned `CString`; throws + returns
 /// None on JVM null, a JNI error, an empty string, or an interior NUL.
 fn read_cstring_required(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
@@ -3124,6 +3148,43 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let result = unsafe {
             platform_wallet_ffi::platform_wallet_list_in_memory_watched_identity_ids(
                 wallet_handle as Handle,
+                &mut out as *mut IdentifierArray,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        identifier_array_to_flat(env, out)
+    })
+}
+
+/// The proTxHashes of every masternode whose voting key hash matches the
+/// 20-byte `votingKeyId`, as a flat `byte[]` (concatenated 32-byte
+/// proTxHashes; Kotlin splits into 32-byte rows). Replaces dashj's
+/// `MasternodeListManager.getMasternodesByVotingKey(votingKeyId)` used by
+/// contested-username voting. Returns an empty `byte[]` when the masternode
+/// list hasn't synced (SPV client not running / DML unavailable) or no
+/// masternode uses the key. Bridges
+/// `platform_wallet_manager_masternodes_by_voting_key`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_masternodesByVotingKey(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    voting_key_id: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(key) = read_id20(env, &voting_key_id) else {
+            return ptr::null_mut();
+        };
+        let mut out = IdentifierArray {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_masternodes_by_voting_key(
+                manager_handle as Handle,
+                key.as_ptr(),
                 &mut out as *mut IdentifierArray,
             )
         };

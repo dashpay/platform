@@ -496,6 +496,25 @@ internal object WalletManagerNative {
     external fun spvIsRunning(managerHandle: Long): Boolean
     external fun spvStop(managerHandle: Long)
 
+    /**
+     * The proTxHashes of every masternode in the current-tip deterministic
+     * masternode list whose voting-key hash matches the 20-byte [votingKeyId]
+     * (hash160 of a voting public key), as a flat `byte[]` of concatenated
+     * 32-byte proTxHashes (internal byte order) — the caller splits into
+     * 32-byte rows. Replaces dashj's
+     * `MasternodeListManager.getMasternodesByVotingKey(votingKeyId)` used by
+     * contested-username voting. Returns an EMPTY (non-null) `byte[]` when the
+     * masternode list hasn't synced (SPV client not running / DML unavailable)
+     * or no masternode uses the key; throws only on a structural FFI error.
+     * JNI symbol:
+     * `Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_masternodesByVotingKey`;
+     * bridges `platform_wallet_manager_masternodes_by_voting_key`.
+     */
+    external fun masternodesByVotingKey(
+        managerHandle: Long,
+        votingKeyId: ByteArray,
+    ): ByteArray
+
     // ── Wallet-memory snapshots (Wave-1B) ─────────────────────────────
 
     /**

@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use dashcore::sml::llmq_type::LLMQType;
-use dashcore::{QuorumHash, Transaction};
+use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::{DiskStorageManager, StorageManager};
@@ -347,6 +347,53 @@ impl SpvRuntime {
             map.insert(pro_tx, entry.is_valid);
         }
         Some(map)
+    }
+
+    /// The proTxHashes of every masternode in the current-tip deterministic
+    /// masternode list whose voting key hash matches `voting_key_id` (the
+    /// 20-byte hash160 of a voting public key).
+    ///
+    /// Replaces dashj's
+    /// `MasternodeListManager.getMasternodesByVotingKey(votingKeyId)`, the
+    /// lookup contested-username voting uses to find which masternode(s) a
+    /// voting key can cast a vote for. The current tip is the highest
+    /// `CoreBlockHeight` held by the engine (`latest_masternode_list`).
+    ///
+    /// Each proTxHash is returned in internal byte order — the same
+    /// `pro_reg_tx_hash.as_ref()` convention as
+    /// [`Self::masternode_validity_snapshot_blocking`]. Returns an empty vec
+    /// when the DML isn't available (SPV client not running, engine not
+    /// initialized, or the masternode list hasn't synced yet). Blocking:
+    /// acquires the client + engine `tokio::RwLock`s via `blocking_read`, so
+    /// it must run off the async runtime (FFI blocking thread), mirroring the
+    /// other `*_blocking` accessors.
+    pub fn masternodes_by_voting_key_blocking(&self, voting_key_id: &PubkeyHash) -> Vec<[u8; 32]> {
+        // Clone the engine `Arc` out while holding the client lock, then drop
+        // it before reading the engine — same ordering as `connected_peers`.
+        let engine = {
+            let client_guard = self.client.blocking_read();
+            let Some(client) = client_guard.as_ref() else {
+                return Vec::new();
+            };
+            match client.masternode_list_engine().ok() {
+                Some(engine) => engine,
+                None => return Vec::new(),
+            }
+        };
+
+        let engine_guard = engine.blocking_read();
+        let Some(list) = engine_guard.latest_masternode_list() else {
+            return Vec::new();
+        };
+
+        list.masternodes_by_voting_key(voting_key_id)
+            .into_iter()
+            .map(|pro_tx| {
+                let mut out = [0u8; 32];
+                out.copy_from_slice(pro_tx.as_ref());
+                out
+            })
+            .collect()
     }
 
     /// Get the current sync progress.

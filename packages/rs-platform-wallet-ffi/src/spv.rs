@@ -3,7 +3,9 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
+use dashcore::PubkeyHash;
 use platform_wallet::spv::{
     ClientConfig, DevnetConfig, ProgressPercentage, SpvPeerNodeType, SyncProgress, SyncState,
 };
@@ -11,7 +13,7 @@ use platform_wallet::spv::{
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
-use crate::types::FFINetwork;
+use crate::types::{FFINetwork, IdentifierArray};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 pub const SPV_SYNC_STATE_WAIT_FOR_EVENTS: u32 = 0;
@@ -149,6 +151,42 @@ pub unsafe extern "C" fn platform_wallet_manager_sync_progress(
         Some(p) => progress_to_ffi(&p),
         None => FFISpvSyncProgress::default(),
     };
+    PlatformWalletFFIResult::ok()
+}
+
+/// The proTxHashes of every masternode in the current-tip deterministic
+/// masternode list whose voting key hash matches the 20-byte `voting_key_id`.
+///
+/// Replaces dashj's `MasternodeListManager.getMasternodesByVotingKey(...)`,
+/// the lookup contested-username voting uses. On success `*out_array` owns a
+/// flat `[[u8; 32]]` of `count` proTxHashes (internal byte order), which the
+/// caller must release via [`crate::platform_wallet_identifier_array_free`].
+/// An unsynced/stopped client (or a voting key no masternode uses) returns
+/// `ok()` with the empty `(null, 0)` sentinel.
+///
+/// # Safety
+/// - `voting_key_id` must point at 20 readable bytes.
+/// - `out_array` must be a valid `*mut IdentifierArray`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_masternodes_by_voting_key(
+    handle: Handle,
+    voting_key_id: *const u8,
+    out_array: *mut IdentifierArray,
+) -> PlatformWalletFFIResult {
+    check_ptr!(voting_key_id);
+    check_ptr!(out_array);
+    // Publish the empty sentinel before any fallible work so an error return
+    // never leaves the out-param holding uninitialized stack bytes.
+    *out_array = IdentifierArray::empty();
+
+    let key_bytes: [u8; 20] = std::ptr::read(voting_key_id as *const [u8; 20]);
+    let voting_key = PubkeyHash::from_byte_array(key_bytes);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        manager.spv().masternodes_by_voting_key_blocking(&voting_key)
+    });
+    let hashes = unwrap_option_or_return!(option);
+    *out_array = IdentifierArray::from_hashes(hashes);
     PlatformWalletFFIResult::ok()
 }
 
