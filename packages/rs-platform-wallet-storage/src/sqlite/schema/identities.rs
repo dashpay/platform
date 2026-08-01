@@ -136,11 +136,14 @@ pub fn load_state(
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     use platform_wallet::changeset::IdentityManagerStartState;
 
-    // Per-wallet loader: match by wallet_id, so orphan rows (NULL wallet_id)
-    // are out of scope.
+    // Per-wallet loader. NULL-safe `IS` so the scope reads exactly the way
+    // it writes: a real wallet id behaves identically to `=` and never sees
+    // unowned rows, while the all-zero sentinel maps to NULL and reads the
+    // unowned bucket. A plain `=` could not express the second case at all.
+    let wallet_id_param = wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
         "SELECT identity_id, length(entry_blob), entry_blob, tombstoned \
-         FROM identities WHERE wallet_id = ?1",
+         FROM identities WHERE wallet_id IS ?1",
     )?;
     // The ignored-senders TABLE is the authoritative ignore record (every
     // ignore/un-ignore maintains it transactionally); the `entry_blob`'s
@@ -148,7 +151,7 @@ pub fn load_state(
     let mut ignored_by_owner =
         crate::sqlite::schema::contacts::load_ignored_senders(conn, wallet_id)?;
     let mut state = IdentityManagerStartState::default();
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut rows = stmt.query(params![wallet_id_param])?;
     while let Some(row) = rows.next()? {
         let identity_id_bytes: Vec<u8> = row.get(0)?;
         blob::check_size(row.get::<_, i64>(1)?)?;
@@ -231,9 +234,13 @@ fn load_tombstoned_ids(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<HashSet<Identifier>, WalletStorageError> {
-    let mut stmt =
-        conn.prepare("SELECT identity_id FROM identities WHERE wallet_id = ?1 AND tombstoned = 1")?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    // NULL-safe `IS`, matching `load_state`: a tombstoned UNOWNED identity
+    // must be recognised as tombstoned too, else its leftover key rows are
+    // treated as inexplicable orphans and hard-error the read.
+    let wallet_id_param = wallet_id_to_param(wallet_id);
+    let mut stmt = conn
+        .prepare("SELECT identity_id FROM identities WHERE wallet_id IS ?1 AND tombstoned = 1")?;
+    let mut rows = stmt.query(params![wallet_id_param])?;
     let mut out = HashSet::new();
     while let Some(row) = rows.next()? {
         let id_bytes: Vec<u8> = row.get(0)?;
@@ -270,7 +277,14 @@ fn managed_identity_from_entry(
     managed.status = entry.status;
     managed.dpns_names = entry.dpns_names.clone();
     managed.contested_dpns_names = entry.contested_dpns_names.clone();
-    managed.wallet_id = entry.wallet_id.or(Some(*wallet_id));
+    // Fall back to the reading scope, EXCEPT for the sentinel: an identity
+    // read from the unowned bucket must come back with `wallet_id: None`,
+    // not `Some([0; 32])`. The sentinel is a storage spelling of "no
+    // wallet", never a wallet id, and handing it out would put a value
+    // that looks like an owner onto an identity that has none.
+    managed.wallet_id = entry
+        .wallet_id
+        .or_else(|| (!wallet_id.iter().all(|b| *b == 0)).then_some(*wallet_id));
     // Scalar-snapshot collections ride the identity `entry_blob`
     // (payments / profile / contact_profiles), so they restore from
     // `entry`. The relational request collections are loaded separately

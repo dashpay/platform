@@ -235,11 +235,16 @@ pub fn load_state(
     wallet_id: &WalletId,
 ) -> Result<IdentityKeysChangeSet, WalletStorageError> {
     let mut cs = IdentityKeysChangeSet::default();
+    // NULL-safe `IS`, the read counterpart of the writer's scope mapping:
+    // a real wallet id behaves exactly as `=` did, and the all-zero
+    // sentinel maps to NULL and reads the unowned keys. With a plain `=`
+    // those keys are unreachable — `wallet_id = NULL` is never true.
+    let wallet_id_param = super::wallet_id_to_param(wallet_id);
     let mut stmt = conn.prepare(
         "SELECT identity_id, key_id, length(public_key_blob), public_key_blob \
-         FROM identity_keys WHERE wallet_id = ?1",
+         FROM identity_keys WHERE wallet_id IS ?1",
     )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut rows = stmt.query(params![wallet_id_param])?;
     while let Some(row) = rows.next()? {
         let identity_id_bytes: Vec<u8> = row.get(0)?;
         let key_id: i64 = row.get(1)?;

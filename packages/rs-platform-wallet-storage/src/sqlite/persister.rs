@@ -1,15 +1,17 @@
 //! [`SqlitePersister`] — the canonical `PlatformWalletPersistence` impl.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension};
 
+use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ClientStartState, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
+use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::backup::{self, BackupKind};
@@ -33,6 +35,11 @@ use crate::sqlite::util::wallet::{
 ///   `dashpay_payments_overlay` tables are a write-only indexed overlay;
 ///   DashPay state rehydrates from the identities blob, not these tables.
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["token_balances", "dashpay::overlay"];
+
+/// The all-zero `WalletId` reserved as the storage spelling of "owned by
+/// no wallet": every scope-aware reader and writer maps it to a NULL
+/// `wallet_id`. It is never a real wallet id.
+const UNOWNED_SCOPE: WalletId = [0u8; 32];
 
 /// Outcome of a `prune_backups` call.
 ///
@@ -429,6 +436,58 @@ impl SqlitePersister {
         policy: RetentionPolicy,
     ) -> Result<PruneReport, WalletStorageError> {
         backup::prune(dir, policy)
+    }
+
+    /// Read every identity that belongs to NO wallet, each already
+    /// carrying its own persisted public keys.
+    ///
+    /// # This is NOT delivered by `load()`
+    ///
+    /// [`load`](platform_wallet::changeset::PlatformWalletPersistence::load)
+    /// enumerates registered wallets and returns per-wallet state, so an
+    /// identity with no owning wallet appears in none of it. A host that
+    /// wants these must call this method explicitly — they are reachable
+    /// only here. On a store with no wallets at all, `load()` returns
+    /// nothing while this may still return identities.
+    ///
+    /// Deliberately inherent rather than part of
+    /// `PlatformWalletPersistence`: unowned identities are not wallet
+    /// state, so they get their own door instead of being folded into
+    /// some wallet's bucket. That also keeps them out of any
+    /// wallet-scoped changeset, which matters — an unowned identity that
+    /// entered a wallet's changeset would be claimed by that wallet on
+    /// the next flush via the `identities` orphan-promotion upsert.
+    ///
+    /// Write these back through a persister scoped to the all-zero
+    /// sentinel, the write counterpart of this read; flushing them under
+    /// a real wallet's scope is what promotes them.
+    ///
+    /// Keys are folded in exactly as `load()` does for wallet-owned
+    /// identities, so a returned `ManagedIdentity` is usable without a
+    /// second call. Tombstoned identities are omitted.
+    pub fn load_unowned_identities(
+        &self,
+    ) -> Result<BTreeMap<Identifier, ManagedIdentity>, WalletStorageError> {
+        let conn = self.conn()?;
+        // The all-zero sentinel is the unowned scope: every reader it
+        // reaches maps it to a NULL `wallet_id` match.
+        let state = schema::identities::load_prekeyed(&conn, &UNOWNED_SCOPE)?;
+        // An unowned identity carries no registration index, so it lands
+        // in `out_of_wallet_identities`. A row that somehow holds one is
+        // self-contradictory (an index is a position WITHIN a wallet);
+        // surface it rather than silently dropping it.
+        use dpp::identity::accessors::IdentityGettersV0;
+        let mut unowned = state.out_of_wallet_identities;
+        if let Some(indexed) = state.wallet_identities.get(&UNOWNED_SCOPE) {
+            for managed in indexed.values() {
+                tracing::warn!(
+                    identity_id = %hex::encode(managed.identity.id().to_buffer()),
+                    "unowned identity carries a registration index; returning it anyway"
+                );
+                unowned.insert(managed.identity.id(), managed.clone());
+            }
+        }
+        Ok(unowned)
     }
 
     /// Cascade-delete every row owned by `wallet_id`. Takes a

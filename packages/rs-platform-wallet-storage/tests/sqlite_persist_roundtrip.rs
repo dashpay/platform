@@ -241,8 +241,8 @@ fn tc007_identity_key_entry_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
-    // Single wallet under test, so (identity_id, key_id) selects the
-    // one row; the full PK is (wallet_id, identity_id, key_id).
+    // `(identity_id, key_id)` IS the primary key, so this selects the
+    // one row outright.
     let blob_bytes: Vec<u8> = conn
         .query_row(
             "SELECT public_key_blob FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2",
