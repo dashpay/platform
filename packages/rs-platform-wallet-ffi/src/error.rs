@@ -231,7 +231,8 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `PlatformWalletError::TransactionBuild`. A Core transaction could
     /// not be assembled from the request — the request itself is at fault, and
     /// the host must change it rather than retry it verbatim. It is the code
-    /// every `build_signed_payment` rejection lands on:
+    /// every `build_signed_payment` rejection lands on EXCEPT a signing
+    /// failure, which is [`Self::ErrorTransactionSigning`] (33):
     ///
     /// * the named `funding_path` matches no spendable funds account, or names
     ///   a watch-only one whose coins the local mnemonic cannot sign — the two
@@ -248,18 +249,50 @@ pub enum PlatformWalletFFIResultCode {
     /// (dashpay/platform#4247 review). The specific cause still travels in the
     /// result `message` via the typed `Display`.
     ///
-    /// Numbering: this code is **32**. The authoritative in-file allocation map
-    /// is the comment block immediately below this variant (and
-    /// `ERROR_CODE_REGISTRY.md`, dashpay/platform#4261); do not restate positions
-    /// here, they drift. In short: 27–33 are claimed across the merged ABI and
-    /// the sibling v4.1 stack (27 `ErrorShutdownIncomplete`, 29
-    /// `ErrorAssetLockInsufficientFunds`, 31 `ErrorSigningKeyUnavailable`, 33
-    /// `ErrorTransactionSigning`), 28 and 30 are vacated-but-reserved, and the
-    /// deferred-token trio `ErrorStaleReservationToken` /
-    /// `ErrorReservationTokenConsumed` / `ErrorReservationWalletMismatch` sits at
-    /// **34–36**, not in the 27–31 window an earlier revision of this comment
-    /// placed it in.
+    /// Numbering: 32, per the registry (dashpay/platform#4261). 27 is
+    /// `ErrorShutdownIncomplete` (merged, #4268), 29 is
+    /// `ErrorAssetLockInsufficientFunds` (#4184) and 31 is
+    /// `ErrorSigningKeyUnavailable` (#4183/#4259); 28 and 30 are
+    /// vacated-but-reserved. The signing sibling
+    /// [`Self::ErrorTransactionSigning`] takes 33 and the deferred-token trio
+    /// sits above at 34-36 — not in the 27–31 window an earlier revision of this
+    /// comment placed it in.
     ErrorTransactionBuild = 32,
+
+    /// Maps `PlatformWalletError::TransactionSigning`. The request was valid
+    /// and the transaction was fully assembled — only the input signatures
+    /// could not be produced. The host should repair the signer (unlock the
+    /// Keychain/Keystore, restore the mnemonic, fix the resolver callback) and
+    /// may then resubmit the IDENTICAL request: key-wallet
+    /// `release_if_owner`-releases this build's owner-stamped input
+    /// reservation before returning, so the coins are selectable again.
+    ///
+    /// Split out of [`Self::ErrorTransactionBuild`] (32), whose contract is the
+    /// opposite — "the request is at fault, a verbatim retry fails
+    /// identically". That was false for the production
+    /// `MnemonicResolverCoreSigner`, where a locked or missing Keychain
+    /// mnemonic surfaces as `BuilderError::SigningFailed`
+    /// (dashpay/platform#4256 review).
+    ///
+    /// Numbering: 33, per the registry (dashpay/platform#4261). 27 is
+    /// `ErrorShutdownIncomplete` (merged, #4268), 29 is
+    /// `ErrorAssetLockInsufficientFunds` (#4184), 31 is
+    /// `ErrorSigningKeyUnavailable` (#4183/#4259) and 32 is the sibling
+    /// [`Self::ErrorTransactionBuild`]; 28 and 30 are vacated-but-reserved. The
+    /// deferred-token trio sits above at 34-36.
+    ///
+    /// The review suggested reusing 31. That code is genuinely reserved, but
+    /// for a *different* contract: #4183's `ErrorSigningKeyUnavailable` is a
+    /// **state-transition** failure asserting that the signer holds no usable
+    /// private key for a requested public key, restored from the typed
+    /// `DashSDKSignerErrorCode::SigningKeyUnavailable` completion code. This
+    /// code is a **Core L1 input** signing failure with no such provenance:
+    /// `BuilderError::SigningFailed` also covers an unresolved input
+    /// derivation path, a sighash computation failure, and a malformed
+    /// signature encoding, so mapping it onto 31 would assert "the key is
+    /// unavailable" for failures that are nothing of the kind. Kept separate
+    /// so neither contract has to be weakened.
+    ErrorTransactionSigning = 33,
 
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
     // The deferred-token trio below therefore occupies the contiguous block
@@ -489,10 +522,18 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::PaymentInsufficientFunds { .. } => {
                 PlatformWalletFFIResultCode::ErrorCoreInsufficientFunds
             }
-            // Every `build_signed_payment` rejection that is not a shortfall
-            // arrives here: an unmatched or watch-only `funding_path`, a
-            // monetary-bound violation (MAX_MONEY / MAX_FEE_PER_KB / dust /
-            // MAX_STANDARD_TX_SIZE), or a recipients-blob decode failure.
+            // A valid request whose signatures could not be produced. Must NOT
+            // share `ErrorTransactionBuild`'s "retrying cannot help" contract:
+            // the reservation was released and unlocking the signer makes the
+            // identical request succeed (dashpay/platform#4256 review).
+            PlatformWalletError::TransactionSigning(..) => {
+                PlatformWalletFFIResultCode::ErrorTransactionSigning
+            }
+            // Every `build_signed_payment` rejection that is neither a shortfall
+            // nor a signing failure arrives here: an unmatched or watch-only
+            // `funding_path`, a monetary-bound violation (MAX_MONEY /
+            // MAX_FEE_PER_KB / dust / MAX_STANDARD_TX_SIZE), or a
+            // recipients-blob decode failure.
             // Without this arm they all flattened to `ErrorUnknown` (99), so
             // the two failure modes the single-account design rests on —
             // "that path names no spendable account" and "that path is
@@ -914,6 +955,55 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorTransactionBuild as i32,
             32
+        );
+    }
+
+    /// A signing failure must NOT arrive as `ErrorTransactionBuild`, whose
+    /// contract promises the request itself is invalid and a verbatim retry
+    /// cannot succeed. A locked or missing Keychain mnemonic is the common
+    /// cause, and key-wallet releases the input reservation on that path, so
+    /// the identical request succeeds after an unlock (dashpay/platform#4256
+    /// review).
+    #[test]
+    fn signing_failures_do_not_share_the_request_invalid_code() {
+        for message in [
+            "payment signing failed: mnemonic unavailable: keychain is locked",
+            "payment signing failed: resolver callback returned 0",
+            "payment signing failed: no derivation path for input address \
+             yWrbmMHFj9xTUJTS7Nb1Y2WJmwLbCzTLDX",
+        ] {
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::TransactionSigning(message.to_string()).into();
+            assert_ne!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorTransactionBuild,
+                "{message:?} is retryable after a signer repair and must not \
+                 claim the request-invalid contract"
+            );
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorTransactionSigning
+            );
+            let rendered = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
+            assert!(
+                rendered.contains(message),
+                "the specific cause must survive in the message: {rendered}"
+            );
+        }
+    }
+
+    /// 27–32 are claimed across the sibling v4.1 stack (see the variant doc),
+    /// so the signing code takes 33. Pinned so a rebase that renumbers the
+    /// range cannot silently move a code the hosts already switch on.
+    #[test]
+    fn transaction_signing_code_is_thirty_three() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorTransactionSigning as i32,
+            33
+        );
+        assert_ne!(
+            PlatformWalletFFIResultCode::ErrorTransactionSigning as i32,
+            PlatformWalletFFIResultCode::ErrorTransactionBuild as i32,
         );
     }
 
