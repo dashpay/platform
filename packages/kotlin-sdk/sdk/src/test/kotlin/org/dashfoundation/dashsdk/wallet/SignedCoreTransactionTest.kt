@@ -49,6 +49,13 @@ class SignedCoreTransactionTest {
         // object can be reclaimed via close() / GC rather than leaking the token.
         @Suppress("UNUSED_VARIABLE")
         val asCloseable: AutoCloseable = signed
+
+        // Disarm the cleaner backstop before `signed` becomes unreachable: this
+        // is a pure-JVM test with no cdylib loaded, so the registered native
+        // release must never fire from the cleaner thread. (NativeCleaner already
+        // contains the resulting UnsatisfiedLinkError in `runCatching`, so this is
+        // determinism/hygiene rather than a crash fix.)
+        signed.close()
     }
 
     @Test
