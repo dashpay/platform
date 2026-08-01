@@ -288,7 +288,7 @@ internal object WalletManagerNative {
      * Rather than double-broadcasting, an unusable token throws one of three
      * sibling codes — `ErrorStaleReservationToken` (27, aged out),
      * `ErrorReservationTokenConsumed` (28, already consumed/unknown), or
-     * `ErrorReservationWalletMismatch` (29, different wallet generation).
+     * `ErrorReservationWalletMismatch` (30, different wallet generation).
      * [coreHandle] must resolve to the wallet the token was minted against.
      * Returns the txid as a lowercase hex string.
      */
