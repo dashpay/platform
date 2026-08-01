@@ -506,6 +506,61 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     PlatformWalletFFIResult::ok()
 }
 
+/// Remove one wallet from the manager, tearing down its generation's deferred
+/// state in the same linearization step.
+///
+/// Generic over the persister so tests can drive the exact production sequence
+/// with the in-crate test fixture (the FFI handle storage is pinned to
+/// [`FFIPersister`](crate::persistence::FFIPersister)). The ordering here is the
+/// invariant under test — see the `remove_wallet_lifecycle_tests` module.
+pub(crate) async fn remove_wallet_and_tear_down_generation<
+    P: platform_wallet::changeset::PlatformWalletPersistence + 'static,
+>(
+    manager: &platform_wallet::PlatformWalletManager<P>,
+    wallet_id: &[u8; 32],
+) -> Result<(), platform_wallet::PlatformWalletError> {
+    // Take the deferred-payment lifecycle gate for the WHOLE teardown, before
+    // touching the manager. Two things follow, and both are load-bearing
+    // (`dashpay/platform#4185`):
+    //
+    //  * The manager removal and the registry sweep below become ONE step. They
+    //    used to be two, with the removal's own `.await`s (shielded-coordinator
+    //    and identity-sync unregistration) sitting in the gap — a concurrent
+    //    `core_wallet_signed_payment_broadcast` on a retained handle would find
+    //    its entry still registered, pass `is_same_generation` (a removed
+    //    generation matches itself), skip the age guard (`last_processed_height`
+    //    is `None` once the wallet is gone, which the guard maps to "not
+    //    expired"), and reach the broadcaster — pushing a removed wallet's
+    //    payment onto the network.
+    //
+    //  * Acquiring it WAITS for in-flight payment operations. A finalize that is
+    //    mid-signature holds the shared side (`finalize_transaction` drops the
+    //    manager write lock before awaiting the signer, so nothing else stops
+    //    it), so it runs to its liveness check and either registers before we
+    //    start — and is swept below — or observes the removal and abandons.
+    //    Either way it can no longer insert a token AFTER the sweep has run.
+    let _teardown = crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+        .lifecycle_write()
+        .await;
+
+    let removed = manager.remove_wallet(wallet_id).await?;
+
+    // Generation teardown: the wallet and its accounts' `ReservationSet`s
+    // are now gone from the manager, so the deferred-payment reservations
+    // cease to exist — there is nothing to reconcile. DROP (do not
+    // release) this generation's registry tokens and its finalized-tx V2
+    // handles. This is the teardown half of the single generation policy
+    // both deferred paths share: it makes any stale handle to the removed
+    // generation inert, so a later destroy/release of a lingering handle
+    // can never release-by-outpoint against a re-created generation's
+    // inputs.
+    let core = removed.core();
+    crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY.remove_entries_for_wallet(core);
+    crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE
+        .remove_matching(|tx| tx.wallet.is_same_generation(core));
+    Ok(())
+}
+
 /// Remove one wallet from the manager. Idempotent on missing wallets.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
@@ -516,27 +571,14 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
     let wallet_id_value = *wallet_id;
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.remove_wallet(&wallet_id_value))
+        runtime().block_on(remove_wallet_and_tear_down_generation(
+            manager,
+            &wallet_id_value,
+        ))
     });
     let result = unwrap_option_or_return!(option);
     match result {
-        Ok(removed) => {
-            // Generation teardown: the wallet and its accounts' `ReservationSet`s
-            // are now gone from the manager, so the deferred-payment reservations
-            // cease to exist — there is nothing to reconcile. DROP (do not
-            // release) this generation's registry tokens and its finalized-tx V2
-            // handles. This is the teardown half of the single generation policy
-            // both deferred paths share: it makes any stale handle to the removed
-            // generation inert, so a later destroy/release of a lingering handle
-            // can never release-by-outpoint against a re-created generation's
-            // inputs.
-            let core = removed.core();
-            crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
-                .remove_entries_for_wallet(core);
-            crate::handle::CORE_SIGNED_TRANSACTION_V2_STORAGE
-                .remove_matching(|tx| tx.wallet.is_same_generation(core));
-            PlatformWalletFFIResult::ok()
-        }
+        Ok(()) => PlatformWalletFFIResult::ok(),
         // Idempotency: a wallet that's already gone is the success
         // state callers want. Everything else is a real failure.
         Err(platform_wallet::PlatformWalletError::WalletNotFound(_)) => {
@@ -820,5 +862,286 @@ mod tests {
 
         let result = unsafe { platform_wallet_manager_destroy(handle) };
         assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+}
+
+/// Wallet-generation teardown vs. the deferred-payment registry
+/// (`dashpay/platform#4185`).
+///
+/// The invariant every test here defends is one sentence: **no deferred-payment
+/// token for a wallet that is not currently registered in the manager is ever
+/// actionable.** Removal and the registry sweep used to be two independent steps
+/// with the removal's own `.await`s in the gap, and `register` could land after
+/// the sweep, so the invariant held only by timing.
+///
+/// These drive [`remove_wallet_and_tear_down_generation`] — the exact sequence
+/// `platform_wallet_manager_remove_wallet` runs — rather than the `extern "C"`
+/// wrapper, because the FFI handle storage is pinned to `FFIPersister` while the
+/// wallet fixture uses the in-crate test persister. The wrapper adds only handle
+/// resolution and error-code mapping on top.
+#[cfg(test)]
+mod remove_wallet_lifecycle_tests {
+    use super::*;
+    use crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY;
+    use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+    use platform_wallet::test_support::test_platform_wallet_manager;
+    use platform_wallet::{
+        CoreWallet, ReservationToken, SignedCoreTransaction, SignedPaymentError,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    fn dummy_tx() -> dashcore::Transaction {
+        dashcore::Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        }
+    }
+
+    /// Mint a token against `core`. The dummy tx reserved nothing (height 0, no
+    /// funding token), so these tests exercise the lifecycle guards rather than
+    /// the age or owner guard.
+    fn register_token(
+        core: &CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
+    ) -> ReservationToken {
+        SIGNED_PAYMENT_REGISTRY
+            .register(
+                core.clone(),
+                SignedCoreTransaction::new_for_test(
+                    dummy_tx(),
+                    0,
+                    AccountTypePreference::BIP44,
+                    0,
+                    0,
+                    None,
+                    core.test_generation_marker(),
+                ),
+            )
+            .expect("register binds to the finalizing generation")
+    }
+
+    /// A token is dead iff broadcasting it reports it as unknown/consumed. Token-
+    /// scoped on purpose: the registry is a process-global shared with every
+    /// other test in the binary, so `outstanding()` deltas are not reliable under
+    /// the default parallel test harness.
+    async fn assert_token_is_gone(
+        token: ReservationToken,
+        core: &CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
+    ) {
+        match SIGNED_PAYMENT_REGISTRY.broadcast(token, core).await {
+            Err(SignedPaymentError::StaleToken(t)) if t == token => {}
+            other => panic!("token {token} should have been swept, got {other:?}"),
+        }
+    }
+
+    /// Requirement: a broadcast must FAIL CLEANLY when the wallet is no longer in
+    /// the manager, rather than silently proceeding to the network.
+    ///
+    /// The setup reproduces the in-flight-finalizer resurrection directly:
+    /// register AFTER teardown has already swept, which is exactly what
+    /// `core_wallet_signed_payment_finalize` used to do when the host removed the
+    /// wallet during the signer await. Before the fix this token was fully
+    /// actionable — `is_same_generation` passes (a removed generation matches
+    /// itself), `last_processed_height` is `None` so the age guard is skipped,
+    /// and `broadcast_payment_releasing_reservation` has no wallet-existence gate
+    /// — so the payment went to the broadcaster.
+    #[test]
+    fn broadcasting_a_token_for_a_removed_wallet_is_refused_before_the_network() {
+        // Shares the process-global registry with `wallet::destroy_tests`,
+        // which asserts on `outstanding()` counts — serialize against it.
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+
+        runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet present");
+            let core = wallet.core().clone();
+
+            remove_wallet_and_tear_down_generation(&manager, &wallet_id)
+                .await
+                .expect("remove succeeds");
+            assert!(
+                !core.is_current_generation().await,
+                "the retained handle must observe its generation as gone"
+            );
+
+            let token = register_token(&core);
+
+            match SIGNED_PAYMENT_REGISTRY.broadcast(token, &core).await {
+                Err(SignedPaymentError::WalletRemoved(t)) if t == token => {}
+                other => panic!(
+                    "a token whose wallet was removed must be refused without a send, got {other:?}"
+                ),
+            }
+
+            // Refusing still CONSUMES the token: the generation is gone, so there
+            // is nothing to reconcile and nothing to retry.
+            assert_token_is_gone(token, &core).await;
+        });
+    }
+
+    /// Requirement: removal and the registry sweep are linearized with respect to
+    /// broadcast. Run repeatedly to shake the interleaving.
+    ///
+    /// Both orderings are legal, so the assertion cannot simply be "the broadcast
+    /// is refused":
+    ///
+    ///  * teardown first → the entry is swept and the broadcast is refused
+    ///    (`StaleToken`), or the wallet is gone and it is refused
+    ///    (`WalletRemoved`);
+    ///  * broadcast first → it holds the shared gate, the wallet is genuinely
+    ///    still live, the payment legitimately goes to the broadcaster, and the
+    ///    teardown waits.
+    ///
+    /// What must be impossible is the combination the pre-fix gap allowed:
+    /// reaching the broadcaster even though teardown had ALREADY completed. That
+    /// is what the completion-order tickets pin down. Because the gate serializes
+    /// the two, a broadcast that reached the broadcaster must have been holding
+    /// the gate, so the teardown cannot have finished before it — i.e. the
+    /// sender's ticket must precede the remover's. Without the gate the remover
+    /// could finish first and the send still go out, which is exactly the
+    /// `dashpay/platform#4185` finding.
+    #[test]
+    fn a_broadcast_never_reaches_the_broadcaster_after_teardown_completed() {
+        // Shares the process-global registry with `wallet::destroy_tests`,
+        // which asserts on `outstanding()` counts — serialize against it.
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+
+        for iteration in 0..25 {
+            runtime().block_on(async {
+                let (manager, wallet_id) = test_platform_wallet_manager().await;
+                let wallet = manager
+                    .get_wallet(&wallet_id)
+                    .await
+                    .expect("wallet present");
+                let core = wallet.core().clone();
+                let token = register_token(&core);
+
+                let barrier = Arc::new(tokio::sync::Barrier::new(2));
+                // Monotonic tickets stamped the instant each operation returns,
+                // giving a total order over the two completions.
+                let ticket = Arc::new(AtomicUsize::new(0));
+
+                let remover = {
+                    let barrier = Arc::clone(&barrier);
+                    let manager = Arc::clone(&manager);
+                    let ticket = Arc::clone(&ticket);
+                    tokio::spawn(async move {
+                        barrier.wait().await;
+                        let outcome =
+                            remove_wallet_and_tear_down_generation(&manager, &wallet_id).await;
+                        (outcome, ticket.fetch_add(1, Ordering::SeqCst))
+                    })
+                };
+                let sender = {
+                    let barrier = Arc::clone(&barrier);
+                    let core = core.clone();
+                    let ticket = Arc::clone(&ticket);
+                    tokio::spawn(async move {
+                        barrier.wait().await;
+                        let outcome = SIGNED_PAYMENT_REGISTRY.broadcast(token, &core).await;
+                        (outcome, ticket.fetch_add(1, Ordering::SeqCst))
+                    })
+                };
+
+                let (removed, remover_ticket) = remover.await.expect("remover task");
+                removed.expect("remove succeeds");
+                let (sent, sender_ticket) = sender.await.expect("sender task");
+
+                // `Ok` is unreachable in-test (the fixture's SPV client is not
+                // started, so the broadcaster errors), but it is the same class
+                // of outcome: the payment was handed to the network layer.
+                let reached_broadcaster =
+                    matches!(sent, Ok(_) | Err(SignedPaymentError::Broadcast(_)));
+                if reached_broadcaster {
+                    assert!(
+                        sender_ticket < remover_ticket,
+                        "iteration {iteration}: a payment reached the broadcaster even though \
+                         wallet teardown had already completed — removal is not linearized with \
+                         broadcast (got {sent:?})"
+                    );
+                } else {
+                    // The only other legal outcomes are the two clean refusals.
+                    assert!(
+                        matches!(
+                            sent,
+                            Err(SignedPaymentError::StaleToken(_))
+                                | Err(SignedPaymentError::WalletRemoved(_))
+                        ),
+                        "iteration {iteration}: unexpected outcome {sent:?}"
+                    );
+                }
+
+                // Whichever way it went, nothing survives teardown.
+                assert!(!core.is_current_generation().await);
+                assert_token_is_gone(token, &core).await;
+            });
+        }
+    }
+
+    /// Requirement: teardown WAITS for an in-flight finalizer, so a late
+    /// `register` cannot resurrect a token for a removed generation.
+    ///
+    /// Deterministic. The held shared guard stands in for
+    /// `core_wallet_signed_payment_finalize` sitting between its liveness check
+    /// and its synchronous `register`. Before the fix nothing connected those two
+    /// operations: the teardown ran to completion — sweep included — while the
+    /// finalizer was signing, and the token it then inserted was permanently
+    /// outside any sweep.
+    #[test]
+    fn teardown_waits_for_an_in_flight_finalizer_and_then_sweeps_its_token() {
+        // Shares the process-global registry with `wallet::destroy_tests`,
+        // which asserts on `outstanding()` counts — serialize against it.
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+
+        runtime().block_on(async {
+            let (manager, wallet_id) = test_platform_wallet_manager().await;
+            let wallet = manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("wallet present");
+            let core = wallet.core().clone();
+
+            // The finalizer enters the gate (as the FFI does after signing).
+            let in_flight = SIGNED_PAYMENT_REGISTRY.lifecycle_read().await;
+
+            let teardown = {
+                let manager = Arc::clone(&manager);
+                tokio::spawn(async move {
+                    remove_wallet_and_tear_down_generation(&manager, &wallet_id).await
+                })
+            };
+
+            // Teardown must block on the exclusive side of the gate.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            assert!(
+                !teardown.is_finished(),
+                "teardown must wait for the in-flight finalizer to leave the gate"
+            );
+
+            // Because teardown is still waiting, the finalizer's liveness check
+            // sees a live wallet and its register is legitimate.
+            assert!(
+                core.is_current_generation().await,
+                "the wallet must still be live while a finalizer holds the gate"
+            );
+            let token = register_token(&core);
+
+            drop(in_flight);
+            teardown
+                .await
+                .expect("teardown task")
+                .expect("remove succeeds");
+
+            // The teardown that was waiting sweeps the token the finalizer
+            // inserted — the invariant the gate exists to restore.
+            assert_token_is_gone(token, &core).await;
+        });
     }
 }

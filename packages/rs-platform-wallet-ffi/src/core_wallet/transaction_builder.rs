@@ -217,6 +217,43 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
+    // `finalize_transaction` drops the wallet-manager write lock before awaiting
+    // the (external, possibly slow) signer, so the host can have removed this
+    // wallet while we were signing — and that removal's registry sweep has then
+    // ALREADY run. Registering now would insert a live token for a removed
+    // generation, which no later sweep would catch, defeating the teardown
+    // invariant that dropping tokens makes stale handles inert
+    // (`dashpay/platform#4185`).
+    //
+    // Take the lifecycle gate (shared — concurrent payments are unaffected) and
+    // hold it across BOTH the liveness check and the synchronous `register`, so
+    // a teardown cannot interleave between them. Deliberately acquired AFTER the
+    // signer await rather than around it: holding it across an open signing
+    // prompt would stall every wallet's teardown for as long as the user takes,
+    // and the check below makes that unnecessary.
+    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+        let gate = crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
+            .lifecycle_read()
+            .await;
+        let live = wallet.core().is_current_generation().await;
+        (gate, live)
+    });
+    if !wallet_is_live {
+        // Nothing was registered, so no token would ever release this build's
+        // reservation. Reconcile it here: the release is generation-bound, so on
+        // a genuine removal it is a logged no-op (the `ReservationSet` died with
+        // the generation), and on a re-create it correctly declines to touch the
+        // new generation's inputs.
+        runtime().block_on(wallet.core().abandon_transaction(&finalized));
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "wallet is no longer registered in the manager (removed or re-created while the \
+             payment was being signed); the payment was not registered and its reservation was \
+             reconciled"
+                .to_string(),
+        );
+    }
+
     let txid = finalized.transaction().txid();
     let fee = finalized.fee();
 
