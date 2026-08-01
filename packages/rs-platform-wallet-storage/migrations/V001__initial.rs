@@ -19,10 +19,13 @@
 //! `identities.wallet_id` is NULL-allowed so identity-only flows (no
 //! parent wallet, e.g. the identity-sync manager populating rows
 //! before any wallet is registered) work without a placeholder.
-//! A NULL-owned identity therefore holds no keys: `identity_keys.wallet_id`
-//! is NOT NULL and no non-NULL value matches a NULL parent. An identity
-//! observed rather than owned is represented out-of-wallet instead —
-//! `identity_index` NULL with `wallet_id` set to the discovering wallet.
+//! A NULL-owned identity CAN hold keys: `identity_keys.wallet_id` is
+//! nullable too, and NULL on both sides spells the same unowned scope.
+//! Such a key is guarded by a trigger pair rather than by the compound
+//! FK, which MATCH SIMPLE leaves dormant once a child key column is
+//! NULL. Note this is distinct from an identity observed rather than
+//! owned, which stays wallet-scoped — `identity_index` NULL with
+//! `wallet_id` set to the discovering wallet.
 //!
 //! The one relationship that stays a trigger is
 //! `core_utxos.spent_in_txid` clearing to NULL on transaction delete —
@@ -184,7 +187,15 @@ CREATE INDEX idx_identities_wallet ON identities(wallet_id);
 CREATE UNIQUE INDEX idx_identities_wallet_identity ON identities(wallet_id, identity_id);
 
 CREATE TABLE identity_keys (
-    wallet_id BLOB NOT NULL,
+    -- NULLABLE: NULL is the canonical `owned by no wallet`, matching
+    -- `identities.wallet_id`. Read the two FKs below with that in mind —
+    -- SQLite's default MATCH SIMPLE skips foreign-key enforcement
+    -- entirely when ANY column of the child key is NULL, so for a
+    -- NULL-scoped row BOTH FKs are dormant and neither constrains which
+    -- identity the key names. The two triggers after this table exist
+    -- precisely to replace that dormancy; the FKs alone are NOT
+    -- sufficient, and a NULL-scoped row is only as safe as the triggers.
+    wallet_id BLOB,
     identity_id BLOB NOT NULL,
     key_id INTEGER NOT NULL,
     public_key_blob BLOB NOT NULL,
@@ -218,6 +229,42 @@ CREATE TABLE identity_keys (
 );
 
 CREATE INDEX idx_identity_keys_wallet_identity ON identity_keys(wallet_id, identity_id);
+
+-- The NULL-scope guard the dormant FKs cannot provide: a key filed as
+-- unowned must name an identity that is itself unowned. Without this a
+-- NULL-scoped key could name a wallet-OWNED identity — a row no
+-- per-wallet reader can resolve, which is the corruption shape the
+-- compound FK was added to stop, re-entering through the NULL door.
+--
+-- The converse (a wallet-scoped key naming an unowned identity) needs no
+-- trigger: that child key is fully non-NULL, so the compound FK is live
+-- and rejects it.
+CREATE TRIGGER identity_keys_null_scope_requires_unowned_identity
+BEFORE INSERT ON identity_keys
+FOR EACH ROW WHEN NEW.wallet_id IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'identity_keys.wallet_id is NULL but the identity is wallet-owned')
+    WHERE EXISTS (
+        SELECT 1 FROM identities i
+        WHERE i.identity_id = NEW.identity_id AND i.wallet_id IS NOT NULL
+    );
+END;
+
+-- Necessary twin, NOT a redundant copy — do not simplify away. The primary
+-- key is (identity_id, key_id), so the writer's upsert resolves an
+-- existing key to DO UPDATE, and an UPDATE never fires a BEFORE INSERT
+-- trigger. Without this one the guard above is bypassed by the ordinary
+-- re-save path, which is the path real writes take.
+CREATE TRIGGER identity_keys_null_scope_requires_unowned_identity_on_update
+BEFORE UPDATE ON identity_keys
+FOR EACH ROW WHEN NEW.wallet_id IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'identity_keys.wallet_id is NULL but the identity is wallet-owned')
+    WHERE EXISTS (
+        SELECT 1 FROM identities i
+        WHERE i.identity_id = NEW.identity_id AND i.wallet_id IS NOT NULL
+    );
+END;
 
 CREATE TABLE contacts (
     wallet_id BLOB NOT NULL,

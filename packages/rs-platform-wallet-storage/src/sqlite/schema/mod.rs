@@ -24,6 +24,23 @@ pub mod token_balances;
 pub mod versions;
 pub mod wallets;
 
+/// Map a `WalletId` to a nullable `wallet_id` column: the all-zero
+/// sentinel becomes NULL, the storage spelling of "owned by no wallet".
+///
+/// Shared by `identities` and `identity_keys` so both spell the unowned
+/// scope the same way — a raw `wallet_id.as_slice()` would store 32 zero
+/// bytes, a value that looks like a wallet id, satisfies nothing, and
+/// silently fails to match the NULL the readers and guards look for.
+pub(crate) fn wallet_id_to_param(
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+) -> Option<&[u8]> {
+    if wallet_id.iter().all(|b| *b == 0) {
+        None
+    } else {
+        Some(wallet_id.as_slice())
+    }
+}
+
 pub(crate) fn id32(
     column: &'static str,
     bytes: &[u8],

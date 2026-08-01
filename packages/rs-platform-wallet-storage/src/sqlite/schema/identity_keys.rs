@@ -76,13 +76,26 @@ impl IdentityKeyWire {
 /// matching the driver's message text.
 const SQLITE_CONSTRAINT_FOREIGNKEY: i32 = 787;
 
-/// Re-map an FK violation on the `identity_keys` upsert to a typed error
-/// naming the wallet and identity involved.
+/// SQLite's extended result code for a `RAISE(ABORT)` raised inside a
+/// trigger (`SQLITE_CONSTRAINT_TRIGGER`). The NULL-scope guard is a
+/// trigger rather than an FK, so it surfaces under this code, not 787.
+const SQLITE_CONSTRAINT_TRIGGER: i32 = 1811;
+
+/// Re-map a co-ownership constraint violation on the `identity_keys`
+/// upsert to a typed error naming the wallet and identity involved.
 ///
 /// The table has two FK parents, so a violation could in principle be the
 /// missing-`wallets` one; the compound `identities(wallet_id, identity_id)`
 /// parent is by far the likelier cause and the one worth naming, since a
 /// cross-wallet key write is the failure this guard exists to catch.
+///
+/// Two extended codes reach the same conclusion. A wallet-scoped write is
+/// caught by the compound FK (`_FOREIGNKEY`); a NULL-scoped write, for
+/// which MATCH SIMPLE leaves that FK dormant, is caught instead by the
+/// `RAISE(ABORT)` trigger pair (`_TRIGGER`). Both mean "this key does not
+/// belong under this scope", so both fold into one variant rather than
+/// splitting a single invariant across two errors an operator would have
+/// to learn to treat identically.
 fn map_fk_violation(
     err: rusqlite::Error,
     wallet_id: &WalletId,
@@ -91,7 +104,8 @@ fn map_fk_violation(
     match &err {
         rusqlite::Error::SqliteFailure(e, _)
             if e.code == rusqlite::ErrorCode::ConstraintViolation
-                && e.extended_code == SQLITE_CONSTRAINT_FOREIGNKEY =>
+                && (e.extended_code == SQLITE_CONSTRAINT_FOREIGNKEY
+                    || e.extended_code == SQLITE_CONSTRAINT_TRIGGER) =>
         {
             WalletStorageError::IdentityKeyWalletMismatch {
                 wallet_id: *wallet_id,
@@ -141,6 +155,11 @@ pub fn apply(
                 derivation_blob = NULL, \
                 wallet_id = excluded.wallet_id",
         )?;
+        // The all-zero sentinel scope stores NULL, the same spelling
+        // `identities` uses for "owned by no wallet". Writing the raw
+        // 32 zero bytes instead would produce a row that matches no
+        // wallet, no NULL-scoped reader, and no guard.
+        let wallet_id_param = super::wallet_id_to_param(wallet_id);
         for ((identity_id, key_id), entry) in &cs.upserts {
             // Typed columns and blob fields must agree so a row can never
             // diverge on disk.
@@ -155,7 +174,7 @@ pub fn apply(
             let wire = IdentityKeyWire::from_entry(entry)?;
             let entry_blob = blob::encode(&wire)?;
             stmt.execute(params![
-                wallet_id.as_slice(),
+                wallet_id_param,
                 identity_id.as_slice(),
                 i64::from(*key_id),
                 entry_blob,
@@ -172,13 +191,23 @@ pub fn apply(
         // wallet's key. Keeping it makes a cross-scope delete a no-op;
         // dropping it would make that delete succeed, which is a
         // destructive way to be permissive.
+        //
+        // NULL-safe `IS` rather than `=` because the column is nullable:
+        // `wallet_id = NULL` is never true, so a plain `=` could never
+        // delete an unowned key — the statement would report success and
+        // remove nothing, which is silent failure, not a guard. `IS` is
+        // the spelling `identities` already uses for the same reason
+        // (and, unlike `IS NOT DISTINCT FROM`, needs no SQLite 3.39
+        // floor). This keeps the guard and makes it NULL-correct; it
+        // does not widen what a wallet may delete.
+        let wallet_id_param = super::wallet_id_to_param(wallet_id);
         let mut stmt = tx.prepare_cached(
             "DELETE FROM identity_keys \
-             WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
+             WHERE wallet_id IS ?1 AND identity_id = ?2 AND key_id = ?3",
         )?;
         for (identity_id, key_id) in &cs.removed {
             stmt.execute(params![
-                wallet_id.as_slice(),
+                wallet_id_param,
                 identity_id.as_slice(),
                 i64::from(*key_id),
             ])?;

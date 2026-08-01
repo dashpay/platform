@@ -12,6 +12,7 @@ use platform_wallet::{changeset::IdentityChangeSet, IdentityManagerStartState};
 
 use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
+use super::wallet_id_to_param;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 use crate::sqlite::schema::blob::impl_persistable_blob;
@@ -91,16 +92,6 @@ pub fn apply(
         }
     }
     Ok(())
-}
-
-/// Map a `WalletId` to the nullable `identities.wallet_id` column: the
-/// all-zero sentinel becomes NULL so the FK doesn't activate.
-fn wallet_id_to_param(wallet_id: &WalletId) -> Option<&[u8]> {
-    if wallet_id.iter().all(|b| *b == 0) {
-        None
-    } else {
-        Some(wallet_id.as_slice())
-    }
 }
 
 /// Decode a single `identities` row into `(entry, tombstoned)`.
@@ -846,6 +837,196 @@ mod tests {
             &[0x11; 33],
             "the owner's key material must survive the payer's upsert"
         );
+    }
+
+    /// The unowned scope round-trips: a key written under the all-zero
+    /// sentinel lands with a genuine SQL NULL `wallet_id` (not 32 zero
+    /// bytes) against an identity that is itself unowned. Both foreign
+    /// keys are dormant here — MATCH SIMPLE skips enforcement once any
+    /// child key column is NULL — so this is the case the guards must
+    /// permit rather than the case they catch.
+    #[test]
+    fn null_scoped_key_is_accepted_for_an_unowned_identity() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let unowned = [0u8; 32];
+
+        // Identity Z exists with no owning wallet.
+        let z = Identifier::from([0x5Au8; 32]);
+        let mut ids = IdentityChangeSet::default();
+        ids.identities.insert(z, entry([0x5A; 32], None, 10, None));
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((z, 0), sample_key_entry(z, 0x5B));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &unowned, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys)
+                .expect("an unowned key on an unowned identity is legitimate");
+            tx.commit().unwrap();
+        }
+
+        // NULL, not a 32-byte zero blob: the distinction the readers and
+        // both guards key on.
+        let is_null: bool = conn
+            .query_row(
+                "SELECT wallet_id IS NULL FROM identity_keys WHERE identity_id = ?1",
+                params![&z.to_buffer()[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(is_null, "the sentinel scope must store SQL NULL");
+
+        // Re-saving the same key exercises the DO UPDATE path, which the
+        // BEFORE UPDATE trigger also inspects — it must stay permitted.
+        let mut resave = IdentityKeysChangeSet::default();
+        resave.upserts.insert((z, 0), sample_key_entry(z, 0x5C));
+        {
+            let tx = conn.transaction().unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &resave)
+                .expect("re-saving an unowned key must stay permitted");
+            tx.commit().unwrap();
+        }
+    }
+
+    /// The NULL door into the corruption the compound FK closed: with a
+    /// NULL `wallet_id` both FKs go dormant, so nothing at the FK level
+    /// stops an unowned key from naming a WALLET-OWNED identity — a row
+    /// no per-wallet reader can resolve. The trigger pair is what rejects
+    /// it, and it must surface as the same typed error as the FK path.
+    ///
+    /// Both statement paths are exercised: the INSERT trigger, and the
+    /// UPDATE trigger reached by an upsert colliding on an existing
+    /// `(identity_id, key_id)`. Only the second catches a re-save, which
+    /// is the shape ordinary writes take.
+    #[test]
+    fn null_scoped_key_is_rejected_for_a_wallet_owned_identity() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let owner = [0xD1u8; 32];
+        let unowned = [0u8; 32];
+        insert_wallet(&conn, &owner);
+
+        // Identity X is owned by a real wallet.
+        let x = Identifier::from([0xD2u8; 32]);
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(x, entry([0xD2; 32], Some(owner), 300, Some(0)));
+        apply_in_tx(&mut conn, &owner, &ids);
+
+        // Both FKs are dormant for a NULL scope, so a rejection here can
+        // only have come from the trigger. Assert that positively via
+        // the extended result code (1811 = SQLITE_CONSTRAINT_TRIGGER)
+        // rather than inferring it, so the test still proves the trigger
+        // fired if some future guard starts rejecting earlier.
+        let assert_raised_by_trigger = |err: &WalletStorageError| match err {
+            WalletStorageError::IdentityKeyWalletMismatch { source, .. } => match source.as_ref() {
+                rusqlite::Error::SqliteFailure(e, _) => assert_eq!(
+                    e.extended_code, 1811,
+                    "rejection must come from the NULL-scope trigger, not an FK"
+                ),
+                other => panic!("expected a SqliteFailure source, got {other:?}"),
+            },
+            other => panic!("expected IdentityKeyWalletMismatch, got {other:?}"),
+        };
+
+        // INSERT path: no row for (X, 0) yet, so this reaches the
+        // BEFORE INSERT trigger.
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((x, 0), sample_key_entry(x, 0xD3));
+        {
+            let tx = conn.transaction().unwrap();
+            let err = crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys)
+                .expect_err("an unowned key may not name a wallet-owned identity");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::IdentityKeyWalletMismatch {
+                        wallet_id, identity_id, ..
+                    } if wallet_id == unowned && identity_id == x.to_buffer()
+                ),
+                "expected IdentityKeyWalletMismatch from the INSERT trigger, got {err:?}"
+            );
+            assert_raised_by_trigger(&err);
+        }
+
+        // UPDATE path: stage the key legitimately under its owner first,
+        // so the unowned write now COLLIDES and resolves to DO UPDATE —
+        // which the BEFORE INSERT trigger never sees.
+        let mut owner_keys = IdentityKeysChangeSet::default();
+        owner_keys.upserts.insert((x, 0), sample_key_entry(x, 0xD4));
+        {
+            let tx = conn.transaction().unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &owner, &owner_keys).unwrap();
+            tx.commit().unwrap();
+        }
+        {
+            let tx = conn.transaction().unwrap();
+            let err = crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys)
+                .expect_err("the UPDATE path must be guarded too");
+            assert!(
+                matches!(err, WalletStorageError::IdentityKeyWalletMismatch { .. }),
+                "expected IdentityKeyWalletMismatch from the UPDATE trigger, got {err:?}"
+            );
+            assert_raised_by_trigger(&err);
+        }
+
+        // The owner's row is untouched: still owned, still its own material.
+        let (scope, blob_head): (Option<Vec<u8>>, Vec<u8>) = conn
+            .query_row(
+                "SELECT wallet_id, public_key_blob FROM identity_keys WHERE identity_id = ?1",
+                params![&x.to_buffer()[..]],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            scope.as_deref(),
+            Some(&owner[..]),
+            "the owner's scope must survive the rejected unowned write"
+        );
+        assert!(!blob_head.is_empty());
+    }
+
+    /// A NULL-scoped key must be deletable. The delete carries a scope
+    /// guard, and with a plain `wallet_id = ?1` that guard can never
+    /// match NULL: the statement would succeed, remove nothing, and
+    /// report `Ok` — an unowned key that no caller can ever erase.
+    #[test]
+    fn null_scoped_key_can_be_deleted() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let unowned = [0u8; 32];
+        let z = Identifier::from([0x6Au8; 32]);
+
+        let mut ids = IdentityChangeSet::default();
+        ids.identities.insert(z, entry([0x6A; 32], None, 20, None));
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((z, 0), sample_key_entry(z, 0x6B));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &unowned, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let mut removal = IdentityKeysChangeSet::default();
+        removal.removed.insert((z, 0));
+        {
+            let tx = conn.transaction().unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &removal).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let remaining: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
+                params![&z.to_buffer()[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 0, "the unowned key must actually be deleted");
     }
 
     /// `load_prekeyed` skips — never hard-errors on — an `identity_keys`
