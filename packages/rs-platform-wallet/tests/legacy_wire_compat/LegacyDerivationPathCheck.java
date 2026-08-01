@@ -12,8 +12,7 @@ import org.bitcoinj.wallet.DerivationPathFactory;
  * REAL `org.bitcoinj.wallet.DerivationPathFactory` (the same class the legacy
  * dash-sdk-kotlin identity-key chain uses) and compares its output to the
  * hand-built path, so a maintainer can confirm the wire-compat anchor without
- * trusting either this repo's prose or an AI agent's word
- * (dashpay/platform#4091).
+ * relying solely on prose.
  *
  * Empirically (dashj-core 22.0.3, Testnet):
  *   noArg  blockchainIdentityECDSADerivationPath()   = m/9'/1'/5'/0'/0'/0'      (6 components)

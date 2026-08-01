@@ -47,6 +47,17 @@ pub enum PlatformWalletError {
     )]
     TxMetadataPayloadTooLarge { len: usize, max: usize },
 
+    /// A caller-supplied txMetadata wire version byte outside the set the
+    /// legacy `decryptTxMetadata` stack can decode. Sealing it would write a
+    /// document no reader could open, so it is rejected before the envelope is
+    /// built. Typed (rather than a generic invalid-data error) so hosts can
+    /// distinguish it at the FFI boundary and need no version list of their own.
+    #[error(
+        "txMetadata wire version {version} is not decodable by the legacy stack; \
+         only 0 (CBOR) and 1 (protobuf) are understood"
+    )]
+    UnsupportedTxMetadataVersion { version: u8 },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing

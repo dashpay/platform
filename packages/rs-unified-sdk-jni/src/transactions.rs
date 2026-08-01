@@ -789,24 +789,31 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
             return ptr::null_mut();
         };
-        if encryption_key_index < 0 {
-            throw_sdk_exception(env, 1, "encryptionKeyIndex must be non-negative");
-            return ptr::null_mut();
-        }
-        // Only 0 (CBOR) and 1 (protobuf) are wire-decodable by the legacy dashj
-        // decryptTxMetadata; anything else seals a document the legacy stack
-        // can't read. Fail fast here with the correct bound instead of the stale
-        // 0..=255 range. The Rust core `seal_tx_metadata` enforces the same
-        // invariant as the last line of defense.
-        if !(0..=1).contains(&version) {
-            throw_sdk_exception(
-                env,
-                1,
-                "version must be 0 (CBOR) or 1 (protobuf) — the only wire-decodable txMetadata versions",
-            );
-            return ptr::null_mut();
-        }
-        // The JNI-owned plaintext copy. Wrapped in `Zeroizing` so it is scrubbed
+        // Narrow the Java-signed arguments to the widths the C ABI takes.
+        // Anything representable is handed to Rust, which owns the protocol
+        // policy; only values with no representation stop here.
+        let validated = match encrypted_create_preflight(encryption_key_index, version) {
+            Ok(validated) => validated,
+            Err(error) => {
+                throw_sdk_exception(env, 1, &error.to_string());
+                return ptr::null_mut();
+            }
+        };
+
+        // Apply the shared size policy to the DECLARED length before the array
+        // is materialized: an over-large batch is rejectable from the length
+        // alone, and copying it first would move plaintext for a request that
+        // cannot succeed. `get_array_length` reads the header only.
+        let payload_len = match env.get_array_length(&payload) {
+            Ok(len) => len as usize,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "payload byte[] was null/invalid");
+                return ptr::null_mut();
+            }
+        };
+        // The JNI-owned plaintext copy, reached only after the size gate
+        // accepts the declared length. Wrapped in `Zeroizing` so it is scrubbed
         // on drop, mirroring the inner FFI copy (`payload_vec` in
         // `rs-platform-wallet-ffi/src/document.rs`). The inner copy is dropped
         // before its broadcast `.await`; from here the whole broadcast happens
@@ -814,7 +821,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         // buffer can be released is the instant that call returns — dropped
         // explicitly there rather than left to linger (unscrubbed) to end of
         // scope. This is the only plaintext copy in this function.
-        let payload_bytes = match env.convert_byte_array(&payload) {
+        let materialized =
+            match size_gated_payload(payload_len, || env.convert_byte_array(&payload)) {
+                Ok(materialized) => materialized,
+                Err(gate) => {
+                    take_pwffi_error(env, gate);
+                    return ptr::null_mut();
+                }
+            };
+        let payload_bytes = match materialized {
             Ok(b) => zeroize::Zeroizing::new(b),
             Err(_) => {
                 let _ = env.exception_clear();
@@ -832,8 +847,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 owner.as_ptr(),
                 contract.as_ptr(),
                 doc_type.as_ptr(),
-                encryption_key_index as u32,
-                version as u8,
+                validated.encryption_key_index,
+                validated.version,
                 payload_bytes.as_ptr(),
                 payload_bytes.len(),
                 signer_handle as *mut SignerHandle,
@@ -891,12 +906,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
         // Informational stage breadcrumbs are DEBUG; only genuine failure paths
-        // are WARN. The `sdkFetched=0` root cause is fixed (external-signable
-        // txMetadata derive), so these no longer need to be loud. Android visibility: `JNI_OnLoad` installs `android_logger` at
-        // `LevelFilter::Info`, so DEBUG lines stay OUT of on-device logcat while
-        // WARN error lines remain visible. NEVER log a raw handle value: only
-        // whether each handle is nonzero — `mnemonic_resolver_handle` is a live
-        // `*mut MnemonicResolverHandle`, so `{:#x}` would leak a heap pointer.
+        // are WARN. `JNI_OnLoad` installs `android_logger` at
+        // `LevelFilter::Info`, so DEBUG lines stay OUT of on-device logcat
+        // while WARN error lines remain visible. NEVER log a raw handle value,
+        // only whether each handle is nonzero: `mnemonic_resolver_handle` is a
+        // live `*mut MnemonicResolverHandle`, so rendering it would publish a
+        // heap address into the log.
         log::debug!(
             "documentFetchEncrypted: entry wallet_handle_nonzero={} \
              mnemonic_resolver_handle_nonzero={} since_ms={}",
@@ -922,11 +937,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             return ptr::null_mut();
         }
         log::debug!(
-            "documentFetchEncrypted: args owner={} contract={} document_type={:?} — \
-             calling platform_wallet_fetch_encrypted_documents",
-            hex32(&owner),
-            hex32(&contract),
-            doc_type
+            "{}",
+            fetch_encrypted_call_breadcrumb(&owner, &contract, doc_type.to_string_lossy().as_ref())
         );
 
         let mut out_json: *mut c_char = ptr::null_mut();
@@ -966,11 +978,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())
     })
-}
-
-/// Lowercase-hex render of a 32-byte id for diagnostic log lines.
-fn hex32(bytes: &[u8; 32]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 // ── Contested-resource vote ───────────────────────────────────────────
@@ -1093,4 +1100,284 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_ca
         // On success there is no data pointer to free (the FFI returns
         // `success(null)`), so nothing else to release here.
     })
+}
+
+/// Java-signed encrypted-create arguments narrowed to the widths the C ABI
+/// takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ValidatedEncryptedCreate {
+    pub(crate) encryption_key_index: u32,
+    pub(crate) version: u8,
+}
+
+/// Why a Java-supplied encrypted-create argument could not be narrowed.
+///
+/// Each cause is its own variant so a caller — and a future change to one of
+/// the conventions — can address exactly one of them without disturbing the
+/// other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EncryptedCreatePreflightError {
+    /// A negative explicit index, which has no `u32` representation.
+    NegativeEncryptionKeyIndex { value: jint },
+    /// A version outside the byte the wire format carries.
+    VersionOutOfByteRange { value: jint },
+}
+
+impl std::fmt::Display for EncryptedCreatePreflightError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EncryptedCreatePreflightError::NegativeEncryptionKeyIndex { value } => {
+                write!(f, "encryptionKeyIndex must be non-negative, got {value}")
+            }
+            EncryptedCreatePreflightError::VersionOutOfByteRange { value } => {
+                write!(f, "version must fit a single byte (0..=255), got {value}")
+            }
+        }
+    }
+}
+
+/// Narrow the Java-signed encrypted-create arguments.
+///
+/// This layer bridges representations; it does not decide protocol. Every value
+/// that fits its target width is passed through for the Rust core to accept or
+/// reject, so there is no second place where the set of meaningful versions is
+/// written down and no way for the two to disagree.
+pub(crate) fn encrypted_create_preflight(
+    encryption_key_index: jint,
+    version: jint,
+) -> Result<ValidatedEncryptedCreate, EncryptedCreatePreflightError> {
+    let encryption_key_index = u32::try_from(encryption_key_index).map_err(|_| {
+        EncryptedCreatePreflightError::NegativeEncryptionKeyIndex {
+            value: encryption_key_index,
+        }
+    })?;
+    let version = u8::try_from(version)
+        .map_err(|_| EncryptedCreatePreflightError::VersionOutOfByteRange { value: version })?;
+
+    Ok(ValidatedEncryptedCreate {
+        encryption_key_index,
+        version,
+    })
+}
+
+/// Apply the shared txMetadata size policy to a declared length, materializing
+/// the payload only if it passes.
+///
+/// Owns the ordering so it cannot drift: the check runs against the length
+/// alone, and `materialize` — the Java array copy — is reached only on success.
+/// A rejected length therefore never moves plaintext into a native buffer for a
+/// request that cannot succeed. Returns the shared FFI result on rejection so
+/// the caller translates it exactly like any other platform-wallet failure.
+fn size_gated_payload<T>(
+    payload_len: usize,
+    materialize: impl FnOnce() -> T,
+) -> Result<T, platform_wallet_ffi::PlatformWalletFFIResult> {
+    let gate = platform_wallet_ffi::tx_metadata_payload_len_result(payload_len);
+    if gate.code != platform_wallet_ffi::PlatformWalletFFIResultCode::Success {
+        return Err(gate);
+    }
+    Ok(materialize())
+}
+
+/// The stage line recorded when the encrypted fetch reaches the native call.
+///
+/// Takes the call's arguments so the seam sits where the call does, and
+/// deliberately renders none of them: a device log is readable by any process
+/// holding the log permission and is captured in bug reports, so an identifier
+/// there correlates a device to an on-chain identity, and caller-supplied text
+/// can embed a newline to forge further log lines.
+pub(crate) fn fetch_encrypted_call_breadcrumb(
+    _owner: &[u8; 32],
+    _contract: &[u8; 32],
+    _document_type: &str,
+) -> String {
+    "documentFetchEncrypted: calling platform_wallet_fetch_encrypted_documents".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Shared payload-size policy ──────────────────────────────────────────
+    //
+    // The limit belongs to the Rust core. This layer must consult it through
+    // the same helper the C export uses, from the declared array length and
+    // before the Java array is copied into a native buffer — an over-large
+    // batch is rejectable from the length alone, and copying it first moves
+    // plaintext for a request that can never succeed.
+
+    /// The maximum plaintext must be accepted by the shared helper, and an
+    /// accepted length must not allocate: this runs on every create, so a
+    /// message on the success path would be a per-call allocation the caller
+    /// then has to free.
+    #[test]
+    fn payload_len_helper_accepts_the_maximum_plaintext() {
+        let result = platform_wallet_ffi::tx_metadata_payload_len_result(
+            platform_wallet_ffi::MAX_TX_METADATA_PLAINTEXT_LEN,
+        );
+        assert_eq!(
+            result.code,
+            platform_wallet_ffi::PlatformWalletFFIResultCode::Success,
+            "the largest plaintext that still frames into the field must be accepted"
+        );
+        assert!(
+            result.message.is_null(),
+            "an accepted length must carry no message"
+        );
+    }
+
+    /// The gate must decide before the payload is materialized.
+    ///
+    /// Ordering is the whole point of consulting the declared length: once the
+    /// Java array has been copied, the plaintext has already been moved into a
+    /// native buffer for a request that cannot succeed. Pinned through the seam
+    /// the real call site uses, so moving the gate after materialization fails
+    /// here rather than silently regressing on device.
+    #[test]
+    fn payload_materialization_is_gated_behind_the_size_check() {
+        let mut materialized = false;
+        let outcome = size_gated_payload(
+            platform_wallet_ffi::MAX_TX_METADATA_PLAINTEXT_LEN + 1,
+            || {
+                materialized = true;
+                Vec::<u8>::new()
+            },
+        );
+
+        match outcome {
+            Err(result) => assert_eq!(
+                result.code,
+                platform_wallet_ffi::PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "an over-large length must be rejected with the shared caller-input code"
+            ),
+            Ok(_) => panic!("an over-large length must not reach materialization"),
+        }
+        assert!(
+            !materialized,
+            "the payload was materialized despite a length the gate rejects"
+        );
+    }
+
+    /// An accepted length still reaches materialization, so the gate cannot be
+    /// satisfied by simply never materializing.
+    #[test]
+    fn accepted_length_reaches_materialization() {
+        let mut materialized = false;
+        let outcome =
+            size_gated_payload(platform_wallet_ffi::MAX_TX_METADATA_PLAINTEXT_LEN, || {
+                materialized = true;
+                vec![0xabu8; 4]
+            });
+
+        assert_eq!(
+            outcome.expect("the maximum length is accepted"),
+            vec![0xabu8; 4]
+        );
+        assert!(materialized, "an accepted length must be materialized");
+    }
+
+    /// One byte over is rejected, mapped exactly as the C export maps it.
+    #[test]
+    fn payload_len_helper_rejects_one_byte_over_the_maximum() {
+        let result = platform_wallet_ffi::tx_metadata_payload_len_result(
+            platform_wallet_ffi::MAX_TX_METADATA_PLAINTEXT_LEN + 1,
+        );
+        assert_eq!(
+            result.code,
+            platform_wallet_ffi::PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "an over-large plaintext is a caller-input error, surfaced with the same \
+             code the C export produces so the host sees one behavior"
+        );
+    }
+
+    // ── Host-thin value preflight ───────────────────────────────────────────
+    //
+    // This layer converts Java's signed values into the widths the C ABI
+    // takes. Anything that fits is handed to Rust, which owns the protocol
+    // policy; the only rejections here are values with no representation.
+
+    /// A negative explicit index has no `u32` representation.
+    ///
+    /// Pinned as its own variant carrying the rejected value: negative indices
+    /// are the one place a future auto-index convention would attach, so it has
+    /// to be a single, deliberately-edited decision point rather than something
+    /// folded in with unrelated range failures.
+    #[test]
+    fn preflight_rejects_a_negative_encryption_key_index() {
+        match encrypted_create_preflight(-1, 1) {
+            Err(EncryptedCreatePreflightError::NegativeEncryptionKeyIndex { value }) => {
+                assert_eq!(value, -1, "the rejection must report the value it rejected");
+            }
+            other => panic!(
+                "a negative explicit index must be rejected as its own variant, got {other:?}"
+            ),
+        }
+    }
+
+    /// An ordinary index and version pass through with their widths narrowed.
+    #[test]
+    fn preflight_narrows_a_representable_index_and_version() {
+        let validated = encrypted_create_preflight(7, 1).expect("both values are representable");
+        assert_eq!(validated.encryption_key_index, 7u32);
+        assert_eq!(validated.version, 1u8);
+    }
+
+    /// Every value a `u8` can hold is passed through, including versions this
+    /// layer knows nothing about. Which versions are meaningful is Rust's
+    /// decision, so a version list here would be a second source of truth that
+    /// silently shadows it.
+    #[test]
+    fn preflight_passes_through_every_representable_version() {
+        for version in [0i32, 1, 2, 255] {
+            let validated = encrypted_create_preflight(0, version)
+                .unwrap_or_else(|_| panic!("version {version} fits a u8 and must pass through"));
+            assert_eq!(validated.version, version as u8);
+        }
+    }
+
+    /// Values outside the byte have no representation, so they stop here —
+    /// under a variant distinct from the index rejection, so a range failure
+    /// can never be mistaken for an index-convention decision.
+    #[test]
+    fn preflight_rejects_versions_that_do_not_fit_a_byte() {
+        for version in [-1i32, 256] {
+            match encrypted_create_preflight(0, version) {
+                Err(EncryptedCreatePreflightError::VersionOutOfByteRange { value }) => {
+                    assert_eq!(
+                        value, version,
+                        "the rejection must report the value it rejected"
+                    );
+                }
+                other => panic!(
+                    "version {version} has no u8 representation and must be rejected as \
+                     VersionOutOfByteRange, got {other:?}"
+                ),
+            }
+        }
+    }
+
+    // ── Breadcrumb seams ────────────────────────────────────────────────────
+    //
+    // Device logs are readable by any process holding the log permission and
+    // are captured in bug reports. A breadcrumb may therefore carry a stage and
+    // stable codes, but never an identifier or caller-supplied text: the latter
+    // both correlates a device to an on-chain identity and lets a caller forge
+    // additional log lines with an embedded newline.
+
+    /// The call breadcrumb is a fixed stage line. Pinning it whole means any
+    /// future identifier or caller-supplied text is an immediate failure, and
+    /// no substring check has to anticipate the shape it might take.
+    #[test]
+    fn fetch_call_breadcrumb_is_a_static_stage_line() {
+        let owner = [0xAAu8; 32];
+        let contract = [0xBBu8; 32];
+        let hostile_type = "txMetadata\nFORGED WARN line s3cr3t-marker-do-not-log";
+
+        assert_eq!(
+            fetch_encrypted_call_breadcrumb(&owner, &contract, hostile_type),
+            "documentFetchEncrypted: calling platform_wallet_fetch_encrypted_documents",
+            "the breadcrumb must record the stage and nothing that varies with the \
+             caller's arguments"
+        );
+    }
 }

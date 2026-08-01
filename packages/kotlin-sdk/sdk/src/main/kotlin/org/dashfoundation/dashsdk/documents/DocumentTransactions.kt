@@ -253,8 +253,8 @@ class DocumentTransactions internal constructor(
      * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
      * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
      * [ownerId] — signed via [signerHandle]. Implements the create half of the
-     * legacy `BlockchainIdentity.publishTxMetaData` retirement
-     * (dashpay/platform#4086): the SDK derives the identity encryption key,
+     * legacy `BlockchainIdentity.publishTxMetaData` retirement: the SDK
+     * derives the identity encryption key,
      * seals [payload] into the legacy `version ‖ IV ‖ AES-256-CBC` blob, and
      * writes `{keyIndex, encryptionKeyIndex, encryptedMetadata}`.
      *
@@ -265,7 +265,9 @@ class DocumentTransactions internal constructor(
      * to match the legacy stack, so the key never crosses the FFI boundary.
      *
      * @param encryptionKeyIndex per-document index; non-negative.
-     * @param version payload version byte (`1` = protobuf, as the wallet writes).
+     * @param version payload version byte. Which values are meaningful is
+     *   decided by the wallet core; an unsupported one is rejected there and
+     *   surfaced as a platform-wallet invalid-parameter error.
      * @param payload already-serialized opaque plaintext; the SDK does not
      *   parse it.
      * [mnemonicResolverHandle] is the host mnemonic-resolver handle
@@ -293,14 +295,6 @@ class DocumentTransactions internal constructor(
         require(encryptionKeyIndex >= 0) {
             "encryptionKeyIndex must be non-negative, got $encryptionKeyIndex"
         }
-        // Only 0 (CBOR) and 1 (protobuf) are wire-meaningful: `seal_tx_metadata`
-        // writes this byte verbatim into the envelope and the legacy dashj stack
-        // (decryptTxMetadata) switches on exactly those two values. Accepting 2..255
-        // would silently seal a document the legacy stack can't decode, breaking the
-        // bidirectional wire-compat guarantee (dashpay/platform#4091).
-        require(version == 0 || version == 1) {
-            "version must be 0 (CBOR) or 1 (protobuf), got $version"
-        }
         mapNativeErrors {
             TransactionsNative.documentCreateEncrypted(
                 walletHandle,
@@ -320,8 +314,8 @@ class DocumentTransactions internal constructor(
      * Fetch + DECRYPT every encrypted wallet-contract document owned by
      * [ownerId] on [contractId]'s [documentType] updated at or after [sinceMs]
      * (epoch-millis). Implements the read half of the legacy
-     * `BlockchainIdentity.getTxMetaData(since, key)` retirement
-     * (dashpay/platform#4087): the SDK fetches the owner-scoped, since-timestamp
+     * `BlockchainIdentity.getTxMetaData(since, key)` retirement: the SDK
+     * fetches the owner-scoped, since-timestamp
      * documents and decrypts each with the identity's derived key. Documents
      * that fail to decrypt are skipped Rust-side (a bad document never aborts
      * the fetch).

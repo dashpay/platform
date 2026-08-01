@@ -149,6 +149,21 @@ pub fn ensure_tx_metadata_payload_fits(payload_len: usize) -> Result<(), Platfor
     Ok(())
 }
 
+/// Reject a `txMetadata` wire version byte the legacy stack cannot decode.
+///
+/// Decidable from the argument alone, so entry points run it before touching a
+/// payload, a wallet, a host key resolver or the network: consulting a device
+/// keychain — which on some hosts prompts the user — for a request that can
+/// never be sealed is work nobody asked for. [`seal_tx_metadata`] keeps the
+/// same check as its choke-point last line of defense, so a caller that skips
+/// the early gate still cannot produce an undecodable document.
+pub fn ensure_tx_metadata_version_supported(version: u8) -> Result<(), PlatformWalletError> {
+    if version != VERSION_CBOR && version != VERSION_PROTOBUF {
+        return Err(PlatformWalletError::UnsupportedTxMetadataVersion { version });
+    }
+    Ok(())
+}
+
 /// Build the full tx-metadata key derivation path
 /// `identity_auth_path(identity_index, key_index) / 32769' / encryption_key_index'`
 /// — the single path both key sources ([`derive_tx_metadata_key`] and
@@ -275,10 +290,10 @@ pub fn derive_tx_metadata_key_from_master(
 /// `version` MUST be [`VERSION_CBOR`] (0) or [`VERSION_PROTOBUF`] (1) — the only
 /// two values the legacy dashj `decryptTxMetadata` switches on. Sealing any
 /// other byte would produce a document that installs fine but the legacy stack
-/// cannot decode, silently breaking the bidirectional wire-compat guarantee, so
-/// it is rejected HERE, at the one choke point every layer (JNI, FFI, resident
-/// wallet) funnels through — not only in the Kotlin `require`
-/// (dashpay/platform#4091).
+/// cannot decode, silently breaking the bidirectional wire-compat guarantee. It
+/// is rejected HERE, at the one choke point every layer funnels through, so no
+/// caller can produce such a document by reaching this function directly; entry
+/// points reject it earlier via [`ensure_tx_metadata_version_supported`].
 ///
 /// `payload` must be at most [`MAX_TX_METADATA_PLAINTEXT_LEN`] bytes: a larger
 /// plaintext seals into a blob that overflows the `encryptedMetadata` field and
@@ -292,16 +307,11 @@ pub fn seal_tx_metadata(
     iv: &[u8; 16],
     payload: &[u8],
 ) -> Result<Vec<u8>, PlatformWalletError> {
-    if version != VERSION_CBOR && version != VERSION_PROTOBUF {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "txMetadata version byte {version} is not wire-decodable; only \
-             {VERSION_CBOR} (CBOR) and {VERSION_PROTOBUF} (protobuf) are understood \
-             by the legacy decryptTxMetadata"
-        )));
-    }
-    // Choke-point size guard: reject a plaintext that would overflow the
-    // encryptedMetadata field once framed (typed error, not an opaque DPP
-    // failure at broadcast).
+    // Choke-point guards. Entry points reject both conditions earlier, from the
+    // arguments alone; repeating them here means a caller that reaches this
+    // function by another route still cannot seal an undecodable or oversized
+    // document.
+    ensure_tx_metadata_version_supported(version)?;
     ensure_tx_metadata_payload_fits(payload.len())?;
     let ciphertext = platform_encryption::encrypt_aes_256_cbc(key, iv, payload);
     let mut blob = Vec::with_capacity(BLOB_HEADER_LEN + ciphertext.len());
@@ -425,11 +435,11 @@ mod tests {
         }
     }
 
-    /// Rust-side wire-version guard (dashpay/platform#4091):
-    /// `seal_tx_metadata` accepts only the two
-    /// versions the legacy `decryptTxMetadata` understands (0 = CBOR, 1 =
-    /// protobuf) and rejects everything else, so the guard holds even when a
-    /// caller bypasses the Kotlin `require` (e.g. through the FFI/JNI directly).
+    /// The choke-point wire-version guard: `seal_tx_metadata` accepts only the
+    /// two versions the legacy `decryptTxMetadata` understands (0 = CBOR,
+    /// 1 = protobuf) and rejects everything else, so the guarantee holds for
+    /// any caller that reaches it directly rather than through an entry point
+    /// that gates the version earlier.
     #[test]
     fn seal_rejects_non_wire_versions() {
         let key = [0x11u8; 32];
@@ -441,16 +451,27 @@ mod tests {
         assert!(seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload).is_ok());
 
         // Every other byte (2..=255) is rejected — none can be produced by
-        // sealing, so a non-decodable document can never reach the wire.
+        // sealing, so a non-decodable document can never reach the wire. The
+        // rejection carries the dedicated typed variant, which is what lets the
+        // FFI boundary surface it as a caller-input error instead of flattening
+        // it into the generic unknown-failure code.
         for version in 2u8..=255 {
-            assert!(
-                seal_tx_metadata(&key, version, &iv, &payload).is_err(),
-                "version {version} must be rejected as non-wire-decodable"
-            );
+            match seal_tx_metadata(&key, version, &iv, &payload) {
+                Err(PlatformWalletError::UnsupportedTxMetadataVersion { version: reported }) => {
+                    assert_eq!(
+                        reported, version,
+                        "the rejection must report the version it rejected"
+                    );
+                }
+                other => panic!(
+                    "version {version} must be rejected as UnsupportedTxMetadataVersion, \
+                     got {other:?}"
+                ),
+            }
         }
     }
 
-    /// Payload-size boundary (dashpay/platform#4091): the largest plaintext the
+    /// Payload-size boundary: the largest plaintext the
     /// `encryptedMetadata` field (`maxItems` 4096) can hold once framed is
     /// [`MAX_TX_METADATA_PLAINTEXT_LEN`] = 4063, and 4064 is the first rejected
     /// length. Pins the REAL PKCS7 envelope math against the code, not the
@@ -748,7 +769,7 @@ mod tests {
     /// (`keyId = 2`, `encryptionKeyIndex = 1`) independently of anything this
     /// crate constructs, and it produced exactly `4a2eaec1…`. So this vector's
     /// path is proven by the legacy library, not merely mirrored back from
-    /// Rust's own `tx_metadata_derivation_path` (dashpay/platform#4091).
+    /// Rust's own `tx_metadata_derivation_path`.
     /// Note the factory has NO identity-index argument — the
     /// legacy tx-metadata path is fixed at the primary identity, which is why
     /// wire-compat is defined here and only here.
@@ -856,39 +877,35 @@ mod tests {
         );
     }
 
-    /// **Independent legacy-INSTALL wire-compat vector (dashpay/platform#4186,
-    /// reviewer shumkov's "one independent check — decrypting a blob produced by
-    /// a real legacy dash-wallet install" ask).**
+    /// **Independent legacy-INSTALL wire-compat vector: one check that decrypts
+    /// a blob produced by a real legacy dash-wallet install.**
     ///
     /// Unlike [`legacy_dashj_wire_compat_vector`] and
     /// [`nonzero_identity_index_derivation_slot_is_internally_consistent`] —
-    /// which this repo generated by driving dashj-core's crypto primitives from a
-    /// JVM scratch program (`tests/legacy_wire_compat/LegacyKeyN.java`) — this
-    /// vector was NOT produced by this repo at all. It is a blob a real
+    /// which are generated by driving dashj-core's crypto primitives from a JVM
+    /// scratch program (`tests/legacy_wire_compat/LegacyKeyN.java`) — this
+    /// vector was not produced by this repo at all. It is a blob a real
     /// **dash-wallet 11.9 Android install** (the shipping dashj crypto path)
-    /// created on TESTNET, encrypted, and published to Dash Platform. It was then
-    /// fetched back off testnet and decrypted here with the NEW Rust crypto,
+    /// created on TESTNET, encrypted, and published to Dash Platform. It was
+    /// fetched back off testnet once and is decrypted here with the Rust crypto,
     /// closing the loop the JVM-generated vectors cannot: those prove Rust ⟷
-    /// dashj-core agree on primitives this repo invokes; THIS proves the new Rust
+    /// dashj-core agree on primitives this repo invokes; THIS proves the Rust
     /// `open` path decrypts a document that a stock legacy app, running end to
     /// end, actually wrote to the network.
     ///
-    /// ## Provenance (how the blob was captured — reproducible)
+    /// ## Provenance
     ///
-    /// The wallet is a DESIGNATED THROWAWAY, testnet-only, provided by the owner
-    /// explicitly for this fixture; its recovery phrase is public by intent. On a
-    /// stock dash-wallet 11.9 testnet install it registered the DPNS username
+    /// The wallet is a DESIGNATED THROWAWAY, testnet-only, provided explicitly
+    /// for this fixture; its recovery phrase is public by intent. On a stock
+    /// dash-wallet 11.9 testnet install it registered the DPNS username
     /// `yabba2`, did a send + a receive, and saved transaction metadata; the app
     /// encrypted that metadata and published one `txMetadata` document to
-    /// Platform. The manual, testnet-gated helper
-    /// `capture_legacy_yabba2_txmetadata_blobs` in `tests/txmetadata_fetch.rs`
-    /// resolves `yabba2` via DPNS to identity
-    /// `ESR1nfF3bj4TR2ZkLmDuSeu6r7VzpTurYi47BV6XwsoP`, runs the exact production
-    /// query ([`super::super::network::query_owned_encrypted_documents`]), and
-    /// prints the blob hex + `keyIndex`/`encryptionKeyIndex` + decrypted
-    /// plaintext hard-coded below. Captured document: `keyIndex = 2`
-    /// (the identity's registered ENCRYPTION/MEDIUM key), `encryptionKeyIndex =
-    /// 1`, `$updatedAt = 1784666696610`, blob version byte `1` (protobuf).
+    /// Platform under identity
+    /// `ESR1nfF3bj4TR2ZkLmDuSeu6r7VzpTurYi47BV6XwsoP`. That document was
+    /// fetched from testnet once and its values hard-coded below, so this test
+    /// needs no network: `keyIndex = 2` (the identity's registered
+    /// ENCRYPTION/MEDIUM key), `encryptionKeyIndex = 1`,
+    /// `$updatedAt = 1784666696610`, blob version byte `1` (protobuf).
     ///
     /// ## What the decrypted plaintext is (real metadata, not a scratch string)
     ///
@@ -901,8 +918,8 @@ mod tests {
     /// does not depend on the protobuf schema (the payload is opaque to this
     /// crate), so it stays green regardless of future proto field changes.
     ///
-    /// The key is derived from the throwaway recovery phrase with THIS branch's
-    /// own [`derive_tx_metadata_key`] at `identity_index = 0` (the only slot a
+    /// The key is derived from the throwaway recovery phrase with
+    /// [`derive_tx_metadata_key`] at `identity_index = 0` (the only slot a
     /// legacy `createTxMetadata` flow writes — see [`derive_tx_metadata_key`]),
     /// using the document's own `keyIndex`/`encryptionKeyIndex`. This is entirely
     /// network-free: the blob is the real captured bytes, and decryption
@@ -982,7 +999,7 @@ mod tests {
     }
 
     /// **Internal derivation-slot consistency at a nonzero `identity_index` —
-    /// NOT a legacy wire-compat claim** (dashpay/platform#4091). This
+    /// NOT a legacy wire-compat claim.** This
     /// exercises that the `identity_index` parameter lands in
     /// the correct path slot and is deterministic across both key sources, so a
     /// refactor that dropped, swapped, or misplaced it would fail loudly. It does

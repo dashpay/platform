@@ -63,10 +63,11 @@ sealed class DashSdkError(
      * rs-sdk-ffi `DashSDKErrorCode` range decoded above.
      *
      * The Android analog of Swift's `PlatformWalletError` enum
-     * (`PlatformWalletResult.swift`). Only the retry-semantics-bearing codes
-     * get dedicated types; everything else falls through to the
-     * [PlatformWallet] catch-all which still carries the native code + Rust
-     * message.
+     * (`PlatformWalletResult.swift`). Selected codes get dedicated types —
+     * those a caller is expected to branch on, such as ones carrying retry
+     * semantics or naming a specific recoverable condition; everything else
+     * falls through to the [PlatformWallet] catch-all which still carries the
+     * native code + Rust message.
      */
     sealed class PlatformWallet(
         message: String,
@@ -76,6 +77,20 @@ sealed class DashSdkError(
         /** `ErrorInvalidHandle` (native code 1). A stale/closed wallet handle. */
         class InvalidHandle(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
+
+        /**
+         * `ErrorInvalidParameter` (native code 2). The wallet core rejected a
+         * caller-supplied argument.
+         *
+         * The core owns which values are acceptable and explains the rejection
+         * in [message]; surface that text rather than restating the rule here,
+         * so the SDK cannot drift out of step with what the core enforces.
+         *
+         * Extends [Generic] so callers that already match the fallback on
+         * native code 2 keep working unchanged.
+         */
+        class InvalidParameter(message: String, cause: Throwable? = null) :
+            Generic(nativeCode = 2, message = message, cause = cause)
 
         /**
          * `ErrorWalletOperation` (native code 6). A generic wallet-operation
@@ -177,11 +192,15 @@ sealed class DashSdkError(
             )
 
         /**
-         * Any other `PlatformWalletFFIResultCode` without a dedicated type.
-         * Carries the platform-wallet [nativeCode] (already de-offset) and
-         * the Rust-supplied message.
+         * Any `PlatformWalletFFIResultCode` without a narrower type. Carries
+         * the platform-wallet [nativeCode] (already de-offset) and the
+         * Rust-supplied message, so callers can branch on the code directly.
+         *
+         * Open because narrower types extend it rather than replacing it: a
+         * code that gains its own type must keep satisfying the callers already
+         * matching this one, and must keep reporting the same [nativeCode].
          */
-        class Generic(
+        open class Generic(
             val nativeCode: Int,
             message: String,
             cause: Throwable? = null,
@@ -232,6 +251,7 @@ sealed class DashSdkError(
         ): DashSdkError = when (code) {
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
+            2 -> PlatformWallet.InvalidParameter(message, cause) // ErrorInvalidParameter
             6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound

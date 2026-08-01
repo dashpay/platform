@@ -345,6 +345,16 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::TxMetadataPayloadTooLarge { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // A txMetadata wire version byte the legacy stack cannot decode.
+            // Like the size cap it is a caller-input error, and it maps to the
+            // already-mirrored ErrorInvalidParameter so no new numeric code
+            // churns the Swift/Kotlin mirror enums. Mapped as its own dedicated
+            // variant — the generic invalid-data error stays on ErrorUnknown, so
+            // this stays distinguishable and hosts need no version list of their
+            // own.
+            PlatformWalletError::UnsupportedTxMetadataVersion { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())

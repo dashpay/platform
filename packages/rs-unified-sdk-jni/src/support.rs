@@ -75,19 +75,44 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
             .to_string_lossy()
             .into_owned()
     };
-    // Diagnostic breadcrumb (warn-level so it provably reaches logcat): the
-    // raw platform-wallet code, the offset code Kotlin will see, and the full
-    // message — visible even when the Kotlin caller contains the exception.
+    // Diagnostic breadcrumb (warn-level so it provably reaches logcat). The
+    // message is NOT logged: it originates below this layer, is unbounded, and
+    // can carry query shapes, contract internals, caller-supplied text and
+    // newlines that forge further log lines. It still reaches the caller intact
+    // through the thrown exception, which is where it can be read deliberately.
     log::warn!(
-        "take_pwffi_error: platform-wallet code {} (thrown as DashSDKException code {}): {}",
-        result.code as i32,
-        result.code as i32 + PWFFI_CODE_OFFSET,
-        message
+        "{}",
+        platform_wallet_error_breadcrumb(result.code as i32, &message)
     );
     throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
     // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
     unsafe { platform_wallet_ffi_result_free(&mut result) };
     true
+}
+
+/// The breadcrumb recorded when a platform-wallet result is converted into a
+/// thrown exception.
+///
+/// Takes the message so the seam sits where the decision is made, and renders
+/// only the two codes: the raw platform-wallet value and the offset value the
+/// caller actually receives. Keeping both makes a device log enough to line a
+/// report up against either side of the mapping without carrying anything
+/// unbounded or caller-derived.
+pub fn platform_wallet_error_breadcrumb(platform_wallet_code: i32, _message: &str) -> String {
+    format!(
+        "take_pwffi_error: platform_wallet_code={} thrown_code={}",
+        platform_wallet_code,
+        platform_wallet_code + PWFFI_CODE_OFFSET
+    )
+}
+
+/// The breadcrumb recorded for a thrown exception, code only.
+///
+/// Same reasoning as [`platform_wallet_error_breadcrumb`]: the message reaches
+/// the caller on the exception, so the log records which error was raised
+/// rather than what it said.
+pub fn thrown_exception_breadcrumb(code: i32, _message: &str) -> String {
+    format!("throw_sdk_exception: code={code}")
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
@@ -103,8 +128,10 @@ pub const SDK_EXCEPTION_CLASS: &str = "org/dashfoundation/dashsdk/ffi/DashSDKExc
 pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
     // Diagnostic breadcrumb (warn-level so it provably reaches logcat): every
     // native→Kotlin error conversion is visible even when the Kotlin caller
-    // contains the exception into a status line.
-    log::warn!("throw_sdk_exception: code={code} message={message}");
+    // contains the exception into a status line. The message travels to the
+    // caller on the exception rather than into the log — see
+    // [`thrown_exception_breadcrumb`].
+    log::warn!("{}", thrown_exception_breadcrumb(code, message));
     // If an exception is already pending we must not call further JNI
     // functions that would themselves throw.
     if env.exception_check().unwrap_or(false) {
@@ -125,9 +152,16 @@ pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
     }
 }
 
-/// Run an export body under `catch_unwind` so a Rust panic surfaces as a
-/// Java `RuntimeException` instead of unwinding across the JNI boundary
-/// (which is undefined behavior).
+/// Run an export body under `catch_unwind` so a Rust panic surfaces as a Java
+/// `RuntimeException` instead of escaping the export.
+///
+/// Exports are declared with the non-unwinding `extern "system"` ABI, so an
+/// escaping unwind does not continue into the JVM frame: it reaches a frame
+/// that cannot unwind and is stopped there by a forced abort, taking the app
+/// process down. Catching here converts it into an exception the caller can
+/// handle instead. Under `panic = "abort"` the panic aborts where it is raised
+/// and no catch is possible; the Android profiles keep `panic = "unwind"` so
+/// this guard is effective there.
 pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) -> T {
     match catch_unwind(AssertUnwindSafe(|| f(env))) {
         Ok(value) => value,
@@ -163,5 +197,42 @@ mod tests {
         assert_eq!(net_from_ord(2), FFINetwork::Devnet);
         assert_eq!(net_from_ord(3), FFINetwork::Regtest);
         assert_eq!(net_from_ord(-1), FFINetwork::Testnet, "unknown → Testnet");
+    }
+
+    // ── Error breadcrumb seams ──────────────────────────────────────────────
+    //
+    // The message an error carries is unbounded and originates below this
+    // layer, so it can hold query shapes, contract internals, caller-supplied
+    // text, and newlines that forge additional log lines. It is delivered to
+    // the host through the thrown exception, which is where a caller can read
+    // it deliberately. The device log gets codes only.
+
+    /// The whole line is pinned, so any future addition of caller data or an
+    /// error body is an immediate failure rather than something a substring
+    /// check could miss. Both the raw platform-wallet code and the offset code
+    /// the host actually receives are asserted, separately and by value.
+    #[test]
+    fn platform_wallet_error_breadcrumb_is_codes_only() {
+        let hostile = "payload dump s3cr3t-marker-do-not-log\nFORGED WARN line";
+
+        assert_eq!(
+            super::platform_wallet_error_breadcrumb(2, hostile),
+            "take_pwffi_error: platform_wallet_code=2 thrown_code=1002",
+            "the breadcrumb must be exactly the two codes; the message is delivered \
+             through the thrown exception, not the device log"
+        );
+    }
+
+    /// Same contract on the generic throw path.
+    #[test]
+    fn thrown_exception_breadcrumb_is_code_only() {
+        let hostile = "payload dump s3cr3t-marker-do-not-log\nFORGED WARN line";
+
+        assert_eq!(
+            super::thrown_exception_breadcrumb(1, hostile),
+            "throw_sdk_exception: code=1",
+            "the breadcrumb must be exactly the code; the message is delivered \
+             through the thrown exception, not the device log"
+        );
     }
 }

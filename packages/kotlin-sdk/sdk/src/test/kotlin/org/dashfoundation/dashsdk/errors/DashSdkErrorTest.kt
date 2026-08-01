@@ -46,6 +46,79 @@ class DashSdkErrorTest {
         assertFalse(DashSdkError.InvalidParameter("x").isRetryable)
     }
 
+    /**
+     * A caller-input rejection decided by the Rust core must arrive as a typed
+     * platform-wallet invalid-parameter error carrying the core's own wording.
+     *
+     * The Rust core owns which values are acceptable. For the host to stop
+     * re-stating that policy it needs the rejection to be distinguishable from
+     * an unrelated failure and to keep its explanation intact, so the message
+     * can be surfaced without the host knowing what was wrong with the request.
+     *
+     * The message here is deliberately opaque: reproducing the core's actual
+     * wording would make this test a second copy of the very policy the host is
+     * supposed to be free of. The only contract this test owns is the numeric
+     * one — the offset code — plus the requirement that whatever text arrives
+     * is passed through untouched.
+     */
+    @Test
+    fun platformWalletInvalidParameterIsTypedAndPreservesTheCoreMessage() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val coreMessage = "rust-owned txMetadata validation detail"
+
+        val mapped = runCatching {
+            mapNativeErrors<Unit> { throw DashSDKException(offset + 2, coreMessage) }
+        }.exceptionOrNull()
+
+        assertTrue(
+            "a platform-wallet invalid-parameter code must map to its own type, " +
+                "not to the untyped fallback",
+            mapped is DashSdkError.PlatformWallet.InvalidParameter,
+        )
+        assertEquals(
+            "the core's explanation must reach the host unchanged",
+            coreMessage,
+            (mapped as DashSdkError).message,
+        )
+    }
+
+    /**
+     * Giving a code its own type must not strand callers that already branch on
+     * the untyped fallback.
+     *
+     * Existing code catches [DashSdkError.PlatformWallet.Generic] and inspects
+     * its native code to recognise specific failures. Introducing a narrower
+     * type for a code those callers already handle would silently stop matching
+     * for them, so the narrower type has to remain a Generic and keep reporting
+     * the same native code.
+     */
+    @Test
+    fun platformWalletInvalidParameterRemainsCompatibleWithTheGenericFallback() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val coreMessage = "rust-owned txMetadata validation detail"
+
+        val mapped = DashSdkError.fromNative(DashSDKException(offset + 2, coreMessage))
+
+        assertTrue(
+            "the narrower type must still satisfy the fallback callers match on",
+            mapped is DashSdkError.PlatformWallet.Generic,
+        )
+        assertTrue(
+            "and must still be the narrower type",
+            mapped is DashSdkError.PlatformWallet.InvalidParameter,
+        )
+        assertEquals(
+            "callers reading the native code off the fallback must still see it",
+            2,
+            (mapped as DashSdkError.PlatformWallet.Generic).nativeCode,
+        )
+        assertEquals(
+            "the core's explanation must reach the host unchanged",
+            coreMessage,
+            mapped.message,
+        )
+    }
+
     @Test
     fun platformWalletCodesMapToPlatformWalletSubtree() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
