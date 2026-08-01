@@ -142,8 +142,11 @@ public class ManagedCoreWallet {
     /// RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
     /// CrowdNode's server-side check.
     ///
-    /// The signed digest is `SHA256d(prefix ‖ varint(message.count) ‖ message)`,
-    /// where the prefix is the historical `"\u{19}DarkCoin Signed Message:\n"` —
+    /// The signed digest is
+    /// `SHA256d(prefix ‖ varint(message.utf8.count) ‖ message.utf8)`: the length
+    /// prefix counts **UTF-8 bytes**, not `String.count`, which counts grapheme
+    /// clusters and diverges for any non-ASCII text.
+    /// The prefix is the historical `"\u{19}DarkCoin Signed Message:\n"` —
     /// *not* `"Dash"`. Dash inherited that string from before the rename and
     /// every existing verifier depends on it, so it can never change. The
     /// returned signature is the 65-byte BIP-137-style recoverable form
