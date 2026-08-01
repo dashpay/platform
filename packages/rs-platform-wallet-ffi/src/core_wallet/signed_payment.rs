@@ -64,7 +64,7 @@ pub(crate) fn registry_test_guard() -> std::sync::MutexGuard<'static, ()> {
 /// concurrent broadcast of the same token gets `ErrorReservationTokenConsumed`
 /// (28) rather than a second send. `core_handle` must resolve to the same wallet
 /// *generation* the token was minted against; a wallet re-created under the same
-/// id yields `ErrorReservationWalletMismatch` (29). A token whose reservation
+/// id yields `ErrorReservationWalletMismatch` (30). A token whose reservation
 /// may already have aged out of key-wallet's TTL yields
 /// `ErrorStaleReservationToken` (27). These three deferred-token failures are
 /// distinct codes so a host can message each precisely. Writes `out_txid` (a
@@ -118,7 +118,7 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
         // generation to broadcast through. Reported as the existing `NotFound`
         // (98) rather than a new code: it is exactly the "the thing you named
         // does not exist" case 98 already means, and both hosts already map it.
-        // Distinct from `ErrorReservationWalletMismatch` (29), where a DIFFERENT
+        // Distinct from `ErrorReservationWalletMismatch` (30), where a DIFFERENT
         // live generation answers to the same id. Did NOT touch the network and
         // is NOT retryable — the wallet is gone.
         Err(e @ SignedPaymentError::WalletRemoved(_)) => {

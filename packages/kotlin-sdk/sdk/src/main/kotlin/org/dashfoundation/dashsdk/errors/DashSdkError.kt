@@ -270,7 +270,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorReservationWalletMismatch` (native code 29). A deferred
+         * `ErrorReservationWalletMismatch` (native code 30). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
          * token was minted against a different wallet *generation* than the one
          * broadcasting it (e.g. a wallet re-created under the same id); its

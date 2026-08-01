@@ -1367,7 +1367,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 /// consuming the token. Rather than double-broadcasting, an unusable token
 /// throws one of three sibling codes: `ErrorStaleReservationToken` (27, aged
 /// out), `ErrorReservationTokenConsumed` (28, unknown / already broadcast /
-/// already released), or `ErrorReservationWalletMismatch` (29, different wallet
+/// already released), or `ErrorReservationWalletMismatch` (30, different wallet
 /// generation). `coreHandle` must resolve to the wallet the token was minted
 /// against. Returns the txid as a lowercase hex string.
 #[no_mangle]

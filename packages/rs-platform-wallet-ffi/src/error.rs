@@ -280,7 +280,7 @@ pub enum PlatformWalletFFIResultCode {
     /// refuses to register a payment whose wallet was removed while it was being
     /// signed — reconciling that build's reservation before returning. Neither
     /// touched the network. Contrast [`Self::ErrorReservationWalletMismatch`]
-    /// (29), where a DIFFERENT live generation answers to the same wallet id;
+    /// (30), where a DIFFERENT live generation answers to the same wallet id;
     /// here there is no live generation at all, so there is nothing to retry
     /// against (`dashpay/platform#4185`).
     NotFound = 98,

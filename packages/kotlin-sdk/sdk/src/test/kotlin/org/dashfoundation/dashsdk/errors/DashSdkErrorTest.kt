@@ -135,7 +135,7 @@ class DashSdkErrorTest {
         assertEquals("already broadcast", consumed.message)
 
         val walletMismatch =
-            DashSdkError.fromNative(DashSDKException(offset + 29, "different generation"))
+            DashSdkError.fromNative(DashSDKException(offset + 30, "different generation"))
         assertTrue(walletMismatch is DashSdkError.PlatformWallet.ReservationWalletMismatch)
         assertFalse(
             "ReservationWalletMismatch must NOT be retryable (rebuild the payment)",
