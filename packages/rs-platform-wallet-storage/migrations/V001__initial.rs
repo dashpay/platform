@@ -193,7 +193,17 @@ CREATE TABLE identity_keys (
     -- derivation_indices lives inside public_key_blob (the
     -- IdentityKeyWire blob is the single source of truth).
     derivation_blob BLOB,
-    PRIMARY KEY (wallet_id, identity_id, key_id),
+    -- `wallet_id` is deliberately NOT part of the key. `identities`
+    -- keys on `identity_id` ALONE, so an identity has exactly one row
+    -- and exactly one owning wallet — the scope column here carries no
+    -- discriminating power, it is a denormalised copy of
+    -- `identities.wallet_id`. The wider `(wallet_id, identity_id,
+    -- key_id)` key was the enabling condition for the duplicate-row
+    -- corruption: it let the same key exist twice under two scopes, a
+    -- state the domain (`IdentityKeysChangeSet`, keyed
+    -- `(identity_id, key_id)`) cannot express. Narrowing the key makes
+    -- that row pair unrepresentable rather than merely rejected.
+    PRIMARY KEY (identity_id, key_id),
     -- Belt-and-braces: the compound FK below already implies a live
     -- `wallets` row (the matched `identities` row carries this same
     -- non-NULL wallet_id and is itself FK'd to `wallets`). Kept as an

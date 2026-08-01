@@ -780,6 +780,74 @@ mod tests {
         load_prekeyed(&conn, &payer).expect("payer wallet still loads");
     }
 
+    /// The cross-wallet write refused above must stay refused on the
+    /// UPSERT path specifically. With `PRIMARY KEY (identity_id, key_id)`
+    /// a foreign wallet's write for an existing key no longer arrives as
+    /// an INSERT — it collides and resolves to `DO UPDATE`, and an UPDATE
+    /// that leaves `wallet_id` alone violates no foreign key. The upsert
+    /// therefore assigns `wallet_id = excluded.wallet_id` so the mismatch
+    /// still trips the compound FK. Drop that one clause and this test
+    /// fails: the write returns `Ok` and the payer's key material
+    /// silently replaces the owner's under the owner's own scope.
+    #[test]
+    fn identity_key_upsert_cannot_overwrite_another_wallets_key() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let owner = [0x0Eu8; 32];
+        let payer = [0x0Fu8; 32];
+        insert_wallet(&conn, &owner);
+        insert_wallet(&conn, &payer);
+
+        // Owner holds identity X and its key 0, carrying `0x11` material.
+        let x = Identifier::from([0xE1u8; 32]);
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(x, entry([0xE1; 32], Some(owner), 700, Some(0)));
+        let mut owner_keys = IdentityKeysChangeSet::default();
+        owner_keys.upserts.insert((x, 0), sample_key_entry(x, 0x11));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &owner, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &owner, &owner_keys).unwrap();
+            tx.commit().unwrap();
+        }
+
+        // The payer re-files THE SAME `(identity_id, key_id)` with
+        // different material — the exact key collision the narrowed
+        // primary key turns into an update rather than an insert.
+        let mut payer_keys = IdentityKeysChangeSet::default();
+        payer_keys.upserts.insert((x, 0), sample_key_entry(x, 0x22));
+        {
+            let tx = conn.transaction().unwrap();
+            let err = crate::sqlite::schema::identity_keys::apply(&tx, &payer, &payer_keys)
+                .expect_err("an upsert onto another wallet's key must be rejected");
+            assert!(
+                matches!(
+                    err,
+                    WalletStorageError::IdentityKeyWalletMismatch {
+                        wallet_id, identity_id, ..
+                    } if wallet_id == payer && identity_id == x.to_buffer()
+                ),
+                "expected IdentityKeyWalletMismatch naming the payer and identity X, got {err:?}"
+            );
+        }
+
+        // Distinct material on each side, so this assertion catches a
+        // silent overwrite as well as a missing error.
+        let owner_state = load_prekeyed(&conn, &owner).expect("owner wallet still loads");
+        assert_eq!(
+            owner_state.wallet_identities[&owner][&0]
+                .identity
+                .public_keys()[&0]
+                .data()
+                .as_slice(),
+            &[0x11; 33],
+            "the owner's key material must survive the payer's upsert"
+        );
+    }
+
     /// `load_prekeyed` skips — never hard-errors on — an `identity_keys`
     /// entry whose owner is a known-tombstoned identity: those orphaned rows
     /// are the expected, self-explained fallout of a logical delete.

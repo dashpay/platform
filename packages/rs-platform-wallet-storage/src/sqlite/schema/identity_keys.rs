@@ -103,7 +103,8 @@ fn map_fk_violation(
     }
 }
 
-/// Keyed by `(wallet_id, identity_id, key_id)`, with an FK to `wallets` and a
+/// Keyed by `(identity_id, key_id)` — matching the domain changeset, since
+/// an identity has exactly one owning wallet — with an FK to `wallets` and a
 /// compound FK to `identities(wallet_id, identity_id)` — so a key can only be
 /// filed under the wallet that owns the identity. The typed `wallet_id` column
 /// comes from the flush scope; the entry's own `wallet_id` (when set) is
@@ -118,14 +119,27 @@ pub fn apply(
     if !cs.upserts.is_empty() {
         // `derivation_blob` is always NULL (reserved); derivation_indices ride
         // inside the IdentityKeyWire blob, the source of truth.
+        //
+        // `wallet_id = excluded.wallet_id` is load-bearing — do NOT drop it
+        // as a redundant self-assignment. The primary key is
+        // `(identity_id, key_id)`, so a foreign wallet writing an existing
+        // key arrives as a CONFLICT, not an INSERT, and resolves to this
+        // UPDATE. An UPDATE that leaves `wallet_id` untouched violates no
+        // foreign key, so without this assignment the compound FK never
+        // fires on the cross-wallet path — the write returns Ok and the
+        // foreign wallet's key material silently replaces the owner's
+        // under the owner's own scope. Assigning the column re-states the
+        // incoming scope, which is what the FK checks.
+        // Pinned by `identity_key_upsert_cannot_overwrite_another_wallets_key`.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identity_keys \
                 (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
              VALUES (?1, ?2, ?3, ?4, ?5, NULL) \
-             ON CONFLICT(wallet_id, identity_id, key_id) DO UPDATE SET \
+             ON CONFLICT(identity_id, key_id) DO UPDATE SET \
                 public_key_blob = excluded.public_key_blob, \
                 public_key_hash = excluded.public_key_hash, \
-                derivation_blob = NULL",
+                derivation_blob = NULL, \
+                wallet_id = excluded.wallet_id",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
             // Typed columns and blob fields must agree so a row can never
@@ -151,6 +165,13 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
+        // `(identity_id, key_id)` alone now identifies the row, so
+        // `wallet_id = ?1` is no longer part of the key — it is kept
+        // deliberately as a scope GUARD, mirroring the `identities`
+        // tombstone: one wallet's `removed` set must not delete another
+        // wallet's key. Keeping it makes a cross-scope delete a no-op;
+        // dropping it would make that delete succeed, which is a
+        // destructive way to be permissive.
         let mut stmt = tx.prepare_cached(
             "DELETE FROM identity_keys \
              WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
