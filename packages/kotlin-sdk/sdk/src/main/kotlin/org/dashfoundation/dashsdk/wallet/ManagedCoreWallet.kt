@@ -90,6 +90,15 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             fundingPath,
         )
 
+    /**
+     * Release the UTXO reservation a [buildSignedPayment] call took, for a
+     * build that will not be broadcast. See
+     * [ManagedPlatformWallet.releasePaymentReservation] for the full contract;
+     * drive this through it, not directly.
+     */
+    internal fun releasePaymentReservation(txBytes: ByteArray, fundingPath: String?) =
+        WalletManagerNative.coreWalletReleasePaymentReservation(handle, txBytes, fundingPath)
+
     override fun close() {
         cleanable.clean()
     }

@@ -39,9 +39,20 @@
 //! That reservation is in-memory only (never
 //! serialized) and is released when the spend is later processed back into the
 //! wallet by sync, or by the reservation-TTL backstop, or explicitly via
-//! [`ManagedCoreFundsAccount::release_reservation`] for an abandoned build. No
+//! [`CoreWallet::release_payment_reservation`] for an abandoned build. No
 //! balance is debited until the transaction actually confirms — exactly what
 //! the transition flow needs, since dashj owns commit/broadcast.
+//!
+//! ## Abandoning a build
+//!
+//! A caller that builds and then decides not to broadcast MUST call
+//! [`CoreWallet::release_payment_reservation`] with the transaction it was
+//! handed. Without it the selected inputs stay reserved until the TTL backstop
+//! fires 24 blocks later — and, critically, **forever** while the wallet has no
+//! processed height: key-wallet's `ReservationSet::sweep` early-returns at
+//! height 0, so a build made before the first sync completes can strand the
+//! whole balance for the life of the process (dashpay/platform#4247 review).
+//! The explicit release is height-independent and closes that hole.
 //!
 //! [`ManagedCoreFundsAccount::release_reservation`]:
 //!     key_wallet::managed_account::ManagedCoreFundsAccount::release_reservation
@@ -337,24 +348,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
         // Resolve the account-level path of the unmixed BIP44 account: both the
         // default funding source and the change sink.
-        let bip44_path = info
-            .core_wallet
-            .accounts
-            .standard_bip44_accounts
-            .get(&BIP44_ACCOUNT_INDEX)
-            .ok_or_else(|| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "BIP44 account {BIP44_ACCOUNT_INDEX} not found for payment funding"
-                ))
-            })?
-            .managed_account_type()
-            .to_account_type()
-            .derivation_path(network)
-            .map_err(|e| {
-                PlatformWalletError::TransactionBuild(format!(
-                    "failed to derive the unmixed BIP44 account-level path: {e}"
-                ))
-            })?;
+        let bip44_path = bip44_account_path(info, network)?;
         let funding_path = funding_path.unwrap_or_else(|| bip44_path.clone());
         let funds_from_change_account = funding_path == bip44_path;
 
@@ -568,6 +562,142 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             change_amount,
         })
     }
+
+    /// Release the UTXO reservation that a previous [`build_signed_payment`]
+    /// took, for a build the caller has decided **not** to broadcast.
+    ///
+    /// [`build_signed_payment`] deliberately leaves its selected inputs
+    /// reserved on success, because the expected next step is a broadcast. A
+    /// caller that abandons the build instead — the user backed out of the
+    /// confirmation screen, an upstream check failed, the app is tearing
+    /// down — must say so, or those coins stay unselectable.
+    ///
+    /// ## Why this is needed (dashpay/platform#4247 review)
+    ///
+    /// Without an explicit release the inputs are stranded until key-wallet's
+    /// TTL backstop reclaims them `RESERVATION_TTL_BLOCKS` (24) blocks later,
+    /// roughly an hour. Worse, that backstop is not merely slow but *absent*
+    /// before the first sync completes: `ReservationSet::sweep` early-returns
+    /// when the current height is 0, so a reservation taken at height 0 is
+    /// never reclaimed for the life of the process. A single abandoned build
+    /// on a freshly restored wallet could therefore strand the entire balance
+    /// indefinitely. This method takes no height and consults none, so it is
+    /// the one release path that works pre-sync.
+    ///
+    /// ## What is released — only this build's own inputs
+    ///
+    /// The transaction *is* the ownership signal. `build_signed_payment`
+    /// reserves exactly the outpoints it selected, and a reserved outpoint is
+    /// skipped by every subsequent coin selection — so no concurrent build can
+    /// hold a reservation on any input of `transaction`. Releasing precisely
+    /// `transaction`'s inputs therefore releases precisely this build's own
+    /// reservation and can never free a competing in-flight build's coins.
+    /// (The same signal already backs the internal
+    /// [`release_reservation_after_rejected_broadcast`] cleanup.)
+    ///
+    /// [`release_reservation_after_rejected_broadcast`]:
+    ///     crate::wallet::reservations::release_reservation_after_rejected_broadcast
+    ///
+    /// ## Idempotent, and safe after a broadcast
+    ///
+    /// Releasing is a per-outpoint map removal, so calling this twice — or on
+    /// a transaction that was in fact broadcast — is a silent no-op rather
+    /// than an error. It cannot resurrect a spent coin: coin selection reads
+    /// the UTXO set, and a broadcast spend is removed from that set by sync
+    /// independently of any reservation. That makes the release safe to wire
+    /// into an unconditional cleanup path (a `finally`, a teardown hook)
+    /// without the caller having to track whether the broadcast succeeded.
+    ///
+    /// ## Parameters
+    ///
+    /// * `transaction` — the transaction [`build_signed_payment`] returned
+    ///   (`SignedCorePayment::transaction`), or the same bytes deserialized.
+    /// * `funding_path` — the **same** `funding_path` the build was given, so
+    ///   the release lands on the account that holds the reservation. `None`
+    ///   means the unmixed BIP44 account, exactly as it does for the build.
+    ///   Passing a path that names a different account is harmless: that
+    ///   account's ledger holds none of these outpoints, so nothing is
+    ///   released.
+    ///
+    /// [`build_signed_payment`]: CoreWallet::build_signed_payment
+    pub async fn release_payment_reservation(
+        &self,
+        transaction: &Transaction,
+        funding_path: Option<DerivationPath>,
+    ) -> Result<(), PlatformWalletError> {
+        // `release_reservation` takes `&self` and no manager entry is mutated,
+        // so a read lock suffices — abandoning a build must not serialize
+        // against concurrent sends (same reasoning as the rejected-broadcast
+        // cleanup in `crate::wallet::reservations`).
+        let wm = self.wallet_manager.read().await;
+        let (_, info) = wm
+            .get_wallet_and_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+
+        let network = info.core_wallet.network();
+        let funding_path = match funding_path {
+            Some(path) => path,
+            None => bip44_account_path(info, network)?,
+        };
+
+        // PRIVACY-DOMAIN-OK: iterates funds accounts only to LOOK ONE UP by
+        // derivation path, exactly as the build does. Nothing is accumulated
+        // across accounts and only the named account's ledger is touched.
+        for account in info.core_wallet.accounts.all_funding_accounts() {
+            let account_path = account
+                .managed_account_type()
+                .to_account_type()
+                .derivation_path(network)
+                .map_err(|e| {
+                    PlatformWalletError::TransactionBuild(format!(
+                        "failed to derive account-level path for a funds account: {e}"
+                    ))
+                })?;
+            if account_path == funding_path {
+                account.release_reservation(transaction);
+                return Ok(());
+            }
+        }
+
+        // An unresolvable path is a caller error worth reporting, and is NOT
+        // the idempotent case: repeat releases resolve the account fine and
+        // no-op inside it. Watch-only accounts are not filtered out here the
+        // way the build filters them — releasing is not a spend, and a
+        // watch-only account can never have been funded a build to abandon.
+        Err(PlatformWalletError::TransactionBuild(format!(
+            "no funds account matches funding derivation path {funding_path}; \
+             the build to abandon must be released against the account that funded it"
+        )))
+    }
+}
+
+/// Account-level derivation path of the unmixed BIP44 account at
+/// [`BIP44_ACCOUNT_INDEX`] — the default funding source and the change sink.
+///
+/// Shared by the build and the release paths so both resolve `funding_path:
+/// None` to the same account; a release that disagreed with its build would
+/// silently fail to free anything.
+fn bip44_account_path(
+    info: &crate::wallet::platform_wallet::PlatformWalletInfo,
+    network: dashcore::Network,
+) -> Result<DerivationPath, PlatformWalletError> {
+    info.core_wallet
+        .accounts
+        .standard_bip44_accounts
+        .get(&BIP44_ACCOUNT_INDEX)
+        .ok_or_else(|| {
+            PlatformWalletError::TransactionBuild(format!(
+                "BIP44 account {BIP44_ACCOUNT_INDEX} not found for payment funding"
+            ))
+        })?
+        .managed_account_type()
+        .to_account_type()
+        .derivation_path(network)
+        .map_err(|e| {
+            PlatformWalletError::TransactionBuild(format!(
+                "failed to derive the unmixed BIP44 account-level path: {e}"
+            ))
+        })
 }
 
 /// Map a key-wallet [`BuilderError`] to a [`PlatformWalletError`], promoting the
@@ -1295,5 +1425,329 @@ mod tests {
             ),
             "the review's 25,835-recipient overflow case must be refused"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Abandoning a build — `release_payment_reservation`
+    //
+    // `funded_wallet_manager` puts the WHOLE balance on a single UTXO, so
+    // "the reservation was released" and "the reservation was not released"
+    // are cleanly distinguishable: while that one input is reserved the next
+    // build has nothing to select and fails, and the moment it is released
+    // the next build succeeds. Every test below turns on that signal.
+    // ------------------------------------------------------------------
+
+    type TestWalletManager = Arc<
+        tokio::sync::RwLock<
+            key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>,
+        >,
+    >;
+
+    /// Force the wallet's `last_processed_height`. Lets a test reproduce the
+    /// pre-sync state (height 0) in which key-wallet's TTL sweep early-returns
+    /// and therefore never reclaims anything.
+    async fn set_last_processed_height(wm: &TestWalletManager, wallet_id: &WalletId, height: u32) {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let mut guard = wm.write().await;
+        let (_, info) = guard
+            .get_wallet_and_info_mut(wallet_id)
+            .expect("wallet present");
+        info.core_wallet.update_last_processed_height(height);
+    }
+
+    /// The BIP44 account-0 outpoints currently in the wallet's UTXO set.
+    async fn bip44_outpoints(wm: &TestWalletManager, wallet_id: &WalletId) -> HashSet<OutPoint> {
+        let guard = wm.read().await;
+        let (_, info) = guard
+            .get_wallet_and_info(wallet_id)
+            .expect("wallet present");
+        info.core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .map(|a| a.utxos.keys().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// Process `tx` back into the wallet as a chain-locked spend — what sync
+    /// does after a real broadcast confirms, removing the spent input from the
+    /// UTXO set.
+    async fn process_spend(
+        wm: &TestWalletManager,
+        wallet_id: &WalletId,
+        tx: &dashcore::Transaction,
+    ) {
+        use dashcore::BlockHash;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+
+        let mut guard = wm.write().await;
+        let (wallet, info) = guard
+            .get_wallet_mut_and_info_mut(wallet_id)
+            .expect("wallet present");
+        info.core_wallet
+            .check_core_transaction(
+                tx,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    2,
+                    BlockHash::all_zeros(),
+                    1_700_000_100,
+                )),
+                wallet,
+                true,
+                true,
+            )
+            .await;
+    }
+
+    /// The core contract: a build reserves its inputs (proved by the second
+    /// build failing), and abandoning it makes exactly those inputs selectable
+    /// again immediately — no TTL wait.
+    #[tokio::test]
+    async fn abandoning_a_build_makes_its_inputs_selectable_again() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, balance);
+
+        let payment = core
+            .build_signed_payment(vec![(recipient(4), 1_000_000)], None, &signer, None)
+            .await
+            .expect("the funded account covers the payment");
+        let reserved: HashSet<OutPoint> = payment
+            .transaction
+            .input
+            .iter()
+            .map(|i| i.previous_output)
+            .collect();
+        assert!(!reserved.is_empty(), "the build must have selected inputs");
+
+        // Precondition: the reservation is real and it is what blocks a
+        // second build. Without this the test could pass vacuously.
+        assert!(
+            matches!(
+                core.build_signed_payment(vec![(recipient(4), 1_000_000)], None, &signer, None)
+                    .await,
+                Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+            ),
+            "the first build's reservation must block a second build"
+        );
+
+        core.release_payment_reservation(&payment.transaction, None)
+            .await
+            .expect("abandoning a build must succeed");
+
+        let after = core
+            .build_signed_payment(vec![(recipient(4), 1_000_000)], None, &signer, None)
+            .await
+            .expect("the abandoned build's inputs must be selectable again");
+        let reselected: HashSet<OutPoint> = after
+            .transaction
+            .input
+            .iter()
+            .map(|i| i.previous_output)
+            .collect();
+        assert_eq!(
+            reselected, reserved,
+            "the rebuild must reselect exactly the released inputs"
+        );
+        assert_all_inputs_signed(&after);
+    }
+
+    /// Releasing twice is a no-op, not an error: the second call resolves the
+    /// funding account fine and removes outpoints that are already gone. This
+    /// is what lets a caller wire the release into an unconditional cleanup
+    /// path without tracking whether it already ran.
+    #[tokio::test]
+    async fn abandoning_twice_is_a_no_op() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, balance);
+
+        let payment = core
+            .build_signed_payment(vec![(recipient(5), 1_000_000)], None, &signer, None)
+            .await
+            .expect("the funded account covers the payment");
+
+        for attempt in 0..3 {
+            core.release_payment_reservation(&payment.transaction, None)
+                .await
+                .unwrap_or_else(|e| panic!("release attempt {attempt} must be a no-op, got {e:?}"));
+        }
+
+        // Still exactly one release's worth of effect: the coins are free.
+        core.build_signed_payment(vec![(recipient(5), 1_000_000)], None, &signer, None)
+            .await
+            .expect("repeated releases must leave the inputs selectable");
+    }
+
+    /// Releasing after the transaction was actually broadcast and confirmed is
+    /// a no-op, and critically cannot resurrect the spent coin: coin selection
+    /// reads the UTXO set, from which sync has already removed the spend, so
+    /// the released reservation has nothing to expose. A caller that always
+    /// releases in a `finally` therefore cannot double-spend itself.
+    #[tokio::test]
+    async fn abandoning_after_broadcast_is_a_no_op() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, balance);
+
+        // Send the entire balance so the confirmed spend leaves no change to
+        // fund a follow-up build — any later success could only come from a
+        // resurrected input.
+        let payment = core
+            .build_signed_payment(vec![(recipient(6), 9_900_000)], None, &signer, None)
+            .await
+            .expect("the funded account covers the payment");
+        let spent: HashSet<OutPoint> = payment
+            .transaction
+            .input
+            .iter()
+            .map(|i| i.previous_output)
+            .collect();
+
+        // Stand in for the caller broadcasting and sync observing it.
+        process_spend(&wm, &wallet_id, &payment.transaction).await;
+
+        core.release_payment_reservation(&payment.transaction, None)
+            .await
+            .expect("releasing after a broadcast must be a silent no-op, not an error");
+
+        let live = bip44_outpoints(&wm, &wallet_id).await;
+        assert!(
+            spent.iter().all(|op| !live.contains(op)),
+            "the release must not resurrect the spent inputs {spent:?} into the UTXO set {live:?}"
+        );
+    }
+
+    /// The height-0 case shumkov flagged: before the first sync completes the
+    /// wallet's processed height is 0, and key-wallet's `ReservationSet::sweep`
+    /// early-returns at height 0 — so the TTL backstop never fires and an
+    /// abandoned build strands the balance for the life of the process. This
+    /// pins both halves: the TTL genuinely cannot recover it, and the explicit
+    /// release can.
+    #[tokio::test]
+    async fn abandoning_releases_at_height_zero_where_the_ttl_never_fires() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        // Pre-sync: no processed height yet. The funding UTXO is non-coinbase,
+        // so it stays spendable at height 0 — only the sweep is disabled.
+        set_last_processed_height(&wm, &wallet_id, 0).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, balance);
+
+        let payment = core
+            .build_signed_payment(vec![(recipient(8), 1_000_000)], None, &signer, None)
+            .await
+            .expect("a pre-sync wallet can still build from a confirmed UTXO");
+        assert!(
+            !payment.transaction.input.is_empty(),
+            "the build must have selected — and so reserved — inputs at height 0"
+        );
+
+        // The TTL backstop is inert here: even far beyond RESERVATION_TTL_BLOCKS
+        // worth of build attempts, the height-0 reservation is never swept, so
+        // the coins stay stranded. This is the bug, reproduced.
+        for _ in 0..30 {
+            assert!(
+                matches!(
+                    core.build_signed_payment(vec![(recipient(8), 1_000_000)], None, &signer, None)
+                        .await,
+                    Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+                ),
+                "at height 0 the TTL sweep must never reclaim the reservation"
+            );
+        }
+
+        // The explicit release consults no height, so it works where the TTL
+        // cannot.
+        core.release_payment_reservation(&payment.transaction, None)
+            .await
+            .expect("the release must not depend on a processed height");
+
+        core.build_signed_payment(vec![(recipient(8), 1_000_000)], None, &signer, None)
+            .await
+            .expect("releasing at height 0 must free the stranded inputs");
+    }
+
+    /// A release aimed at the wrong account frees nothing — the reservation
+    /// lives in the funding account's own ledger. Guards the "releases ONLY
+    /// its own build's inputs" property against a path-confusion regression.
+    #[tokio::test]
+    async fn releasing_against_another_account_frees_nothing() {
+        let (wm, wallet_id, signer) = split_funded_wallet_manager(9_000_000, 20_000_000).await;
+        let (_, _, coinjoin_path) =
+            split_account_outpoints_and_coinjoin_path(&wm, &wallet_id).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, Arc::new(WalletBalance::new()));
+
+        // Fund from CoinJoin, then try to release against the BIP44 default.
+        let payment = core
+            .build_signed_payment(
+                vec![(recipient(7), 15_000_000)],
+                None,
+                &signer,
+                Some(coinjoin_path.clone()),
+            )
+            .await
+            .expect("the named CoinJoin account covers 0.15 DASH");
+
+        core.release_payment_reservation(&payment.transaction, None)
+            .await
+            .expect("a mismatched release resolves the account and simply frees nothing");
+        assert!(
+            matches!(
+                core.build_signed_payment(
+                    vec![(recipient(7), 15_000_000)],
+                    None,
+                    &signer,
+                    Some(coinjoin_path.clone()),
+                )
+                .await,
+                Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+            ),
+            "releasing against BIP44 must not free the CoinJoin account's reservation"
+        );
+
+        // The correctly-aimed release does free it.
+        core.release_payment_reservation(&payment.transaction, Some(coinjoin_path.clone()))
+            .await
+            .expect("releasing against the funding account must succeed");
+        core.build_signed_payment(
+            vec![(recipient(7), 15_000_000)],
+            None,
+            &signer,
+            Some(coinjoin_path),
+        )
+        .await
+        .expect("the CoinJoin inputs must be selectable again");
+    }
+
+    /// An unresolvable funding path is reported rather than silently treated
+    /// as "nothing to release" — a caller passing a bad path would otherwise
+    /// believe it had cleaned up.
+    #[tokio::test]
+    async fn releasing_with_an_unknown_funding_path_is_rejected() {
+        use std::str::FromStr;
+
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, balance);
+
+        let payment = core
+            .build_signed_payment(vec![(recipient(3), 1_000_000)], None, &signer, None)
+            .await
+            .expect("the funded account covers the payment");
+
+        let bogus = DerivationPath::from_str("m/44'/5'/77'").expect("valid path");
+        match core
+            .release_payment_reservation(&payment.transaction, Some(bogus))
+            .await
+        {
+            Err(PlatformWalletError::TransactionBuild(m)) => assert!(
+                m.contains("no funds account matches"),
+                "the rejection must name the unresolvable path, got {m:?}"
+            ),
+            other => panic!("an unknown funding path must be refused, got {other:?}"),
+        }
     }
 }
