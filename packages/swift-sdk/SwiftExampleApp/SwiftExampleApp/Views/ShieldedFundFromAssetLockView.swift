@@ -245,30 +245,50 @@ struct ShieldedFundFromAssetLockView: View {
 
     @ViewBuilder
     private var coreFundingSection: some View {
-        let options = coreAccountOptions
+        let changeOptions = changeAccountOptions
+        let otherOptions = otherFundsAccountOptions
         Section {
-            if options.isEmpty {
-                Text("No spendable Core funds accounts on this wallet.")
+            if changeOptions.isEmpty {
+                Text("No spendable BIP44 Core accounts on this wallet.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
                 Picker("Core Account", selection: $fundingCoreAccountIndex) {
                     Text("Select…").tag(Optional<UInt32>.none)
-                    ForEach(options) { opt in
+                    ForEach(changeOptions) { opt in
                         Text("\(opt.typeLabel) #\(opt.accountIndex) — \(formatDuffs(opt.balanceDuffs))")
                             .tag(Optional(opt.accountIndex))
                     }
                 }
             }
+            // Non-BIP44 funds accounts are shown READ-ONLY, never as picker
+            // rows: account families reuse indices (BIP44 #0, BIP32 #0 and
+            // CoinJoin #0 all exist), so tagging every row with its bare
+            // `accountIndex` made the selection ambiguous — SwiftUI could not
+            // tell which row was chosen, and picking a non-BIP44 row whose
+            // index has no BIP44 counterpart fed an invalid change account to
+            // Rust (dashpay/platform#4184 review). Their balances stay visible
+            // here; to actually draw the lock from one, enter its account-level
+            // path in the Funding Account field below.
+            ForEach(otherOptions) { opt in
+                HStack {
+                    Text("\(opt.typeLabel) #\(opt.accountIndex)")
+                    Spacer()
+                    Text(formatDuffs(opt.balanceDuffs))
+                        .foregroundColor(.secondary)
+                }
+                .font(.caption)
+            }
         } header: {
             Text("Core Source")
         } footer: {
             Text(
-                "Supplies the transparent CHANGE address, and is the default "
-                    + "funding source when the Funding Account path below is blank. "
-                    + "Non-Standard accounts (CoinJoin, DashPay) are listed so their "
-                    + "balances are visible — to actually draw the lock from one, "
-                    + "enter its account-level path in the Funding Account field."
+                "The picker chooses a BIP44 account: it supplies the transparent "
+                    + "CHANGE address, and is the default funding source when the "
+                    + "Funding Account path below is blank. Other funds accounts "
+                    + "(BIP32, CoinJoin, DashPay) are listed read-only so their "
+                    + "balances are visible — to draw the lock from one, enter its "
+                    + "account-level path in the Funding Account field."
             )
         }
     }
@@ -859,11 +879,17 @@ struct ShieldedFundFromAssetLockView: View {
     /// provider) and watch-only DashPay-external (`13`, unsignable) are excluded.
     /// Non-Standard accounts are surfaced too (dashpay/platform#4184) so their
     /// balances are visible — the actual funding source is the `fundingPath`
-    /// field; the account selected here supplies the transparent change sink and
-    /// is the default source when `fundingPath` is blank.
+    /// field; the BIP44 account selected in the picker supplies the transparent
+    /// change sink and is the default source when `fundingPath` is blank.
+    ///
+    /// BIP44 accounts are listed even at zero balance: they are needed as the
+    /// change sink whether or not they hold coins, which is exactly the #4073
+    /// case (all the DASH sits on the CoinJoin path). Every other family is
+    /// listed only when it has something to show.
     private var coreAccountOptions: [CoreAccountOption] {
         walletManager.accountBalances(for: wallet.walletId)
-            .filter { ($0.typeTag == 0 || $0.typeTag == 1 || $0.typeTag == 12) && $0.confirmed > 0 }
+            .filter { $0.typeTag == 0 || $0.typeTag == 1 || $0.typeTag == 12 }
+            .filter { ($0.typeTag == 0 && $0.standardTag == 0) || $0.confirmed > 0 }
             .sorted { ($0.typeTag, $0.standardTag, $0.index) < ($1.typeTag, $1.standardTag, $1.index) }
             .map {
                 CoreAccountOption(
@@ -875,9 +901,24 @@ struct ShieldedFundFromAssetLockView: View {
             }
     }
 
+    /// BIP44 accounts only — the ones the picker binds to. `fundingAccountIndex`
+    /// is the mandatory BIP44 change sink on the Rust side, so only a BIP44
+    /// index is a valid selection, and restricting the list keeps each
+    /// `accountIndex` tag unambiguous (dashpay/platform#4184 review).
+    private var changeAccountOptions: [CoreAccountOption] {
+        coreAccountOptions.filter { $0.typeTag == 0 && $0.standardTag == 0 }
+    }
+
+    /// The remaining spendable funds accounts (BIP32, CoinJoin, DashPay). Shown
+    /// read-only so their balances are visible; they are reached as a funding
+    /// source through the `fundingPath` field, not through the picker.
+    private var otherFundsAccountOptions: [CoreAccountOption] {
+        coreAccountOptions.filter { !($0.typeTag == 0 && $0.standardTag == 0) }
+    }
+
     private var selectedCoreAccountBalanceDuffs: UInt64 {
         guard let idx = fundingCoreAccountIndex else { return 0 }
-        return coreAccountOptions.first(where: { $0.accountIndex == idx })?.balanceDuffs ?? 0
+        return changeAccountOptions.first(where: { $0.accountIndex == idx })?.balanceDuffs ?? 0
     }
 
     /// True when the user named an explicit funding source via a non-blank
@@ -934,9 +975,9 @@ struct ShieldedFundFromAssetLockView: View {
 
     private func autoSelectDefaults() {
         if fundingCoreAccountIndex == nil {
-            fundingCoreAccountIndex = coreAccountOptions
+            fundingCoreAccountIndex = changeAccountOptions
                 .first { $0.balanceDuffs > 0 }?.accountIndex
-                ?? coreAccountOptions.first?.accountIndex
+                ?? changeAccountOptions.first?.accountIndex
         }
         // Platform branch: default to the first Platform Payment
         // account (prefer one with a credit balance), mirroring the

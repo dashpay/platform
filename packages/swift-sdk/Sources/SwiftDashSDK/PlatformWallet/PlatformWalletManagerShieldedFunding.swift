@@ -107,8 +107,12 @@ extension PlatformWalletManager {
     /// - Parameters:
     ///   - walletId: 32-byte wallet identifier (the same key
     ///     `bindShielded` uses to look up the bound subwallet).
-    ///   - fundingAccountIndex: BIP44 Core account whose UTXOs fund
-    ///     the asset lock.
+    ///   - fundingAccountIndex: BIP44 Core account that always sinks
+    ///     the asset lock's transparent CHANGE, and — when
+    ///     `fundingPath` is `nil` — is also the account whose UTXOs
+    ///     fund the lock. With an explicit `fundingPath` the inputs
+    ///     come exclusively from the account that path names and this
+    ///     index remains only the (still required) change sink.
     ///   - amountDuffs: L1 amount to lock in Core duffs. Must be
     ///     large enough to cover `recipients.credits + Platform fee`;
     ///     undersized locks fail at Platform submission.

@@ -1397,7 +1397,11 @@ class PlatformWalletManager(
      * @param walletId the 32-byte wallet id.
      * @param recipientRaw43 the 43-byte raw Orchard payment address
      *   (11-byte diversifier + 32-byte pk_d).
-     * @param fundingAccountIndex the Core BIP44 account funding the lock.
+     * @param fundingAccountIndex the Core BIP44 account that always sinks the
+     *   asset lock's transparent CHANGE, and — when [fundingPath] is `null` —
+     *   is also the account whose UTXOs fund the lock. With an explicit
+     *   [fundingPath] the inputs come exclusively from the account that path
+     *   names and this index remains only the (still required) change sink.
      * @param amountDuffs the L1 lock amount in duffs.
      * @param surplusOutput optional 21-byte remainder platform address.
      * @param fundingPath optional UTF-8 BIP32 derivation-path string

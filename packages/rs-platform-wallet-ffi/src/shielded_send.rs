@@ -930,8 +930,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// by a `MnemonicResolverHandle` — the raw key never crosses the
 /// FFI boundary.
 ///
-/// `account_index` selects the BIP44 Core account whose UTXOs
-/// fund the asset lock. `amount_duffs` is the L1 amount to lock.
+/// `account_index` names the BIP44 Core account that always sinks the
+/// asset lock's transparent CHANGE, and is ALSO the input source when
+/// `funding_path` is null. With an explicit `funding_path` the inputs
+/// come exclusively from the account that path names and
+/// `account_index` remains only the (still required) change sink —
+/// see `funding_path` below. `amount_duffs` is the L1 amount to lock.
 /// The wallet derives the shielded credit amount internally
 /// (`lock_value − pool_fee`, where `pool_fee = shielded fee +
 /// asset_lock_base_cost`) — callers don't need to know about
