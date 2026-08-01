@@ -266,7 +266,24 @@ pub enum PlatformWalletFFIResultCode {
     /// retryable through this handle (rebuild the payment).
     ErrorReservationWalletMismatch = 36,
 
-    NotFound = 98, // Used exclusively for all the Option that are retuned as errors
+    /// The named thing does not exist.
+    ///
+    /// Originally (and still mostly) the code for every `Option` returned as an
+    /// error — a handle that resolves to nothing, a lookup that came back empty.
+    ///
+    /// The deferred build → broadcast/release lifecycle also reports its
+    /// wallet-was-REMOVED case here rather than minting a fourth
+    /// deferred-token code, because it *is* that same "does not exist" case:
+    /// `core_wallet_signed_payment_broadcast` maps
+    /// `SignedPaymentError::WalletRemoved` (the token's wallet is no longer
+    /// registered in the manager), and `core_wallet_signed_payment_finalize`
+    /// refuses to register a payment whose wallet was removed while it was being
+    /// signed — reconciling that build's reservation before returning. Neither
+    /// touched the network. Contrast [`Self::ErrorReservationWalletMismatch`]
+    /// (29), where a DIFFERENT live generation answers to the same wallet id;
+    /// here there is no live generation at all, so there is nothing to retry
+    /// against (`dashpay/platform#4185`).
+    NotFound = 98,
     ErrorUnknown = 99,
 }
 

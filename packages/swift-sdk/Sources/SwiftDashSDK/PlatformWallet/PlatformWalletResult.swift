@@ -103,6 +103,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// set. The call did NOT touch the network and did NOT consume the rightful
     /// owner's token. NOT retryable through this handle: rebuild the payment.
     case errorReservationWalletMismatch = 36
+    /// The named thing does not exist. Besides the handle/lookup failures this
+    /// has always covered, the deferred (BIP70/BIP270) payment calls report the
+    /// wallet-was-REMOVED case here: a signed-payment broadcast refuses a token
+    /// whose wallet is no longer registered in the manager, and a signed-payment
+    /// finalize refuses to register a payment whose wallet was removed while it
+    /// was being signed (reconciling its reservation first). Distinct from
+    /// `errorReservationWalletMismatch` (36), where a *different* live generation
+    /// answers to the same id. The call did NOT touch the network and is NOT
+    /// retryable — the wallet is gone.
     case notFound = 98
     case errorUnknown = 99
 
@@ -319,6 +328,13 @@ public enum PlatformWalletError: LocalizedError {
     /// the same id). Nothing was broadcast and the rightful owner's token was
     /// not consumed. NOT retryable through this handle; rebuild the payment.
     case reservationWalletMismatch(String)
+    /// The named thing does not exist. For the deferred payment calls this is
+    /// the wallet-was-REMOVED case: the token's wallet (or the wallet a payment
+    /// was just signed against) is no longer registered in the manager, so there
+    /// is no live generation to act through. Nothing was broadcast; the
+    /// finalize path reconciles the build's reservation before returning. NOT
+    /// retryable — unlike `reservationWalletMismatch`, no other generation holds
+    /// this payment either.
     case notFound(String)
     case unknown(String)
 

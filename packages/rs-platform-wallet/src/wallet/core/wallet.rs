@@ -359,6 +359,34 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         wm.get_wallet_and_info(&self.wallet_id)
             .map(|(_, info)| info.core_wallet.last_processed_height())
     }
+
+    /// Whether the generation this handle names is STILL the one registered
+    /// under its `wallet_id` in the manager.
+    ///
+    /// [`is_same_generation`](Self::is_same_generation) compares two *handles*
+    /// and therefore cannot see either way a generation stops being current:
+    ///
+    /// * **Removed** (`platform_wallet_manager_remove_wallet`). A retained
+    ///   handle keeps `wallet_id`, the shared manager `Arc`, and its own balance
+    ///   `Arc` alive, so two handles to the removed generation still compare
+    ///   equal to each other. Only a lookup against the manager can tell that
+    ///   nothing is registered under the id any more.
+    /// * **Re-created** under the same id. `wallet_id` and the manager `Arc` are
+    ///   preserved; only the balance `Arc` is fresh.
+    ///
+    /// Both cases mean the same thing to a deferred payment: the accounts —
+    /// and therefore the `ReservationSet` holding its funding inputs — that this
+    /// handle names are no longer the wallet's live state, so acting on them
+    /// would spend against state the manager no longer owns. Callers that must
+    /// be atomic against a concurrent teardown take
+    /// [`SignedPaymentRegistry::lifecycle_read`](crate::SignedPaymentRegistry::lifecycle_read)
+    /// around the check and the action it gates; on its own this is a point-in-
+    /// time observation (`dashpay/platform#4185`).
+    pub async fn is_current_generation(&self) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.balance, self.generation()))
+    }
 }
 
 impl<B: TransactionBroadcaster + ?Sized> std::fmt::Debug for CoreWallet<B> {
