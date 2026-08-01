@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import java.util.concurrent.atomic.AtomicLong
@@ -11,9 +12,10 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * Obtained via [ManagedPlatformWallet.coreWallet]. Owns the transient
  * core-wallet handle and destroys it (`core_wallet_destroy`) on [close] or a
- * [NativeCleaner] backstop, exactly like the Swift type's `deinit`. Balance /
- * address reads live on other Kotlin paths; this port carries only the
- * broadcast entry point the Core→Core send needs.
+ * [NativeCleaner] backstop, exactly like the Swift type's `deinit`.
+ * Balance reads live on other Kotlin paths; this port carries the
+ * broadcast entry points the Core→Core send needs plus the engine's
+ * next-unused address accessors ([nextReceiveAddress] / [nextChangeAddress]).
  */
 class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
 
@@ -72,7 +74,11 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      */
     fun nextReceiveAddress(accountIndex: Int = 0): String {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
-        return WalletManagerNative.coreWalletNextReceiveAddress(handle, accountIndex)
+        // Public boundary: map the JNI layer's DashSDKException into the
+        // typed DashSdkError hierarchy (the DashSdkError.kt contract).
+        return mapNativeErrors {
+            WalletManagerNative.coreWalletNextReceiveAddress(handle, accountIndex)
+        }
     }
 
     /**
@@ -85,7 +91,9 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
      */
     fun nextChangeAddress(accountIndex: Int = 0): String {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
-        return WalletManagerNative.coreWalletNextChangeAddress(handle, accountIndex)
+        return mapNativeErrors {
+            WalletManagerNative.coreWalletNextChangeAddress(handle, accountIndex)
+        }
     }
 
     override fun close() {
