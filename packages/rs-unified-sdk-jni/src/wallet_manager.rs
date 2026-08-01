@@ -1094,6 +1094,106 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_next_receive_address` — the engine's next unused BIP-44
+/// EXTERNAL (receive) address for `account_index`, base58-encoded.
+///
+/// Kotlin parity for the Swift binding (`SwiftDashSDKReceiveAddressReader`
+/// → `coreWallet().nextReceiveAddress(accountIndex:)`): the engine answers
+/// from its in-memory used-set, so this is authoritative over the Room
+/// `core_addresses` mirror and needs no persistence read. Same cold-start
+/// caveat as iOS documents: until SPV replay populates the used-set a
+/// fresh install answers index 0.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletNextReceiveAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    account_index: jni::sys::jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core wallet handle is 0");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let mut out_address: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_next_receive_address(
+                core_handle as Handle,
+                account_index as u32,
+                &mut out_address as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_address.is_null() {
+            throw_sdk_exception(env, 1, "next receive address returned NULL");
+            return ptr::null_mut();
+        }
+        // Copy the address out, then free the Rust-owned C string with the
+        // module's own free (`core_wallet_free_address`).
+        let address = unsafe { CStr::from_ptr(out_address) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_address) };
+        env.new_string(address)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// `core_wallet_next_change_address` — the engine's next unused BIP-44
+/// INTERNAL (change) address for `account_index`, base58-encoded. The
+/// change-side twin of [coreWalletNextReceiveAddress]; same contract.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletNextChangeAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    account_index: jni::sys::jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core wallet handle is 0");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let mut out_address: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_next_change_address(
+                core_handle as Handle,
+                account_index as u32,
+                &mut out_address as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_address.is_null() {
+            throw_sdk_exception(env, 1, "next change address returned NULL");
+            return ptr::null_mut();
+        }
+        let address = unsafe { CStr::from_ptr(out_address) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_address) };
+        env.new_string(address)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
 /// Consume and broadcast an atomically finalized V2 transaction handle.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedTransactionV2(

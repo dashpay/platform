@@ -55,6 +55,39 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
         )
     }
 
+    /**
+     * The engine's next unused BIP-44 EXTERNAL (receive) address for
+     * [accountIndex], base58-encoded — Android port of Swift's
+     * `ManagedCoreWallet.nextReceiveAddress(accountIndex:)`
+     * (`SwiftDashSDKReceiveAddressReader`'s source on iOS).
+     *
+     * Answered from the engine's in-memory used-set, so it is
+     * authoritative over the Room `core_addresses` mirror and needs no
+     * persistence read. "Unused" means never seen on-chain: the engine
+     * keeps no issued-marker, so repeated calls return the SAME address
+     * until it receives funds (current-address semantics, not
+     * per-invoice handout). Cold-start caveat (same as iOS documents):
+     * on a fresh install/post-wipe the used-set starts empty, so this
+     * answers index 0 until SPV replay catches the used-set up.
+     */
+    fun nextReceiveAddress(accountIndex: Int = 0): String {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        return WalletManagerNative.coreWalletNextReceiveAddress(handle, accountIndex)
+    }
+
+    /**
+     * The engine's next unused BIP-44 INTERNAL (change) address for
+     * [accountIndex], base58-encoded — the change-side twin of
+     * [nextReceiveAddress]; same used-set semantics and cold-start
+     * caveat. Builds pick change themselves (`setFunding`); this
+     * accessor exists for callers that must NAME a change address
+     * up front (e.g. `CoreTransactionBuilder.setChangeAddress`).
+     */
+    fun nextChangeAddress(accountIndex: Int = 0): String {
+        require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
+        return WalletManagerNative.coreWalletNextChangeAddress(handle, accountIndex)
+    }
+
     override fun close() {
         cleanable.clean()
     }

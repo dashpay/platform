@@ -224,6 +224,22 @@ internal object WalletManagerNative {
         accountIndex: Int,
     ): String
 
+    /**
+     * `core_wallet_next_receive_address` — the engine's next unused BIP-44
+     * EXTERNAL (receive) address for [accountIndex], base58-encoded.
+     * Answered from the engine's in-memory used-set (authoritative over
+     * the Room `core_addresses` mirror). Kotlin parity for the Swift
+     * binding (`coreWallet().nextReceiveAddress(accountIndex:)`).
+     */
+    external fun coreWalletNextReceiveAddress(coreHandle: Long, accountIndex: Int): String
+
+    /**
+     * `core_wallet_next_change_address` — the engine's next unused BIP-44
+     * INTERNAL (change) address for [accountIndex], base58-encoded. The
+     * change-side twin of [coreWalletNextReceiveAddress].
+     */
+    external fun coreWalletNextChangeAddress(coreHandle: Long, accountIndex: Int): String
+
     /** Consume and broadcast an atomically finalized V2 transaction. */
     external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
 
