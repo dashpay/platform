@@ -76,7 +76,9 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next free integer: 34** (see the proposed table; 27–33 are claimed).
+**Next free integer: 34** — 27–33 are all claimed in the proposed table below.
+(Before the 29/30 resolution landed this line disagreed with the table, which
+still showed 30 as unallocated; 30 is now allocated to #4185 and the two agree.)
 
 ## Proposed allocations (open PRs)
 
@@ -87,9 +89,8 @@ this file.
 | ---: | --- | --- | --- |
 | 27 | `ErrorStaleReservationToken` | #4185 | In review (also carried by #4256) |
 | 28 | `ErrorReservationTokenConsumed` | #4185 | In review (also carried by #4256) |
-| 29 | `ErrorReservationWalletMismatch` | #4185 | **Collision** — see below |
-| 29 | `ErrorAssetLockInsufficientFunds` | #4184 | **Collision** — see below |
-| 30 | — | — | **Unallocated.** Reserved in sibling comments only; see below |
+| 29 | `ErrorAssetLockInsufficientFunds` | #4184 | In review — **keeps 29** (collision resolved) |
+| 30 | `ErrorReservationWalletMismatch` | #4185 | In review — **moved 29 → 30** (collision resolved; #4256 must inherit) |
 | 31 | `ErrorSigningKeyUnavailable` | #4183 | In review (also carried by #4204) |
 | 32 | `ErrorTransactionBuild` | #4247 | In review (also carried by #4256) |
 | 33 | `ErrorTransactionSigning` | #4256 | In review |
@@ -99,26 +100,56 @@ Open PRs that touch `rs-platform-wallet-ffi` but claim **no** new code: #4186,
 
 ## Contested and pending
 
-### 29 — `ErrorReservationWalletMismatch` (#4185) vs `ErrorAssetLockInsufficientFunds` (#4184)
+### 29 — RESOLVED: #4184 keeps 29; #4185 moved to 30
 
-Both PR heads define code 29. This is the known collision: review on #4185
-directed that PR to keep #4184's `29 = ErrorAssetLockInsufficientFunds` and move
-`ErrorReservationWalletMismatch` to 30. That renumber has not landed on #4185's
-head, and #4256 (stacked downstream) carries the pre-renumber `29`.
+Both PR heads defined code 29. Resolution of record: **#4184 keeps
+`29 = ErrorAssetLockInsufficientFunds`; #4185 moves `ErrorReservationWalletMismatch`
+to 30.**
 
-Resolution of record: **#4184 keeps 29; #4185 moves to 30**, propagated through
-the Rust enum, the FFI `From` mapping, Swift `PlatformWalletResult`, Kotlin
-`DashSdkError` (+ `DashSdkErrorTest`), and the JNI rustdoc — plus #4256, which
-inherits the value.
+**This renumber has now landed on #4185's branch**, propagated through every
+site: the Rust enum discriminant and its three rustdoc cross-references
+(`rs-platform-wallet-ffi/src/error.rs`), the two `signed_payment.rs` doc
+references, the JNI rustdoc (`rs-unified-sdk-jni/src/wallet_manager.rs`), Swift
+`PlatformWalletResultCode`'s raw value + doc
+(`PlatformWalletResult.swift`), and Kotlin's `fromPlatformWalletNative` branch,
+class KDoc, code-98 comment (`DashSdkError.kt`), `WalletManagerNative.kt` KDoc,
+and the `DashSdkErrorTest` offset assertion.
 
-### 30 — reserved in comments for a variant that no longer exists
+Both Swift `switch`es are symbolic — `init(ffi:)` matches cbindgen-generated
+`PLATFORM_WALLET_FFI_RESULT_CODE_*` constants, so only the enum's raw value
+carried the number.
+
+**Still outstanding:** #4256 is stacked downstream and its head still carries the
+pre-renumber `29`; it must adopt 30 when it rebases. #4196 likewise (see below).
+
+### 30 — allocated to #4185; the old "consent code" reservation was stale
 
 `ErrorAssetLockCrossDomainConsentRequired` is named as the holder of 30 in
 in-tree comments on #4183, #4204, and #4247/#4256's numbering rationale. It is
 **not defined anywhere** — #4184, the PR that would have introduced it, does not
-contain it after a re-scope. 30 is therefore free, and is the slot the #4185
-renumber above should take. The stale "reserved for the consent code" comments
-should be dropped by whichever PR touches them next.
+contain it after a re-scope.
+
+Verified 2026-08-01 by reading `packages/rs-platform-wallet-ffi/src/error.rs` at
+the head of **every one of the 62 open PRs**: no PR anywhere defines a code 30.
+30 was therefore genuinely free, and #4185 has taken it. The stale "reserved for
+the consent code" comments should be dropped by whichever PR touches them next.
+
+### 27 / 28 — #3968 and #3954 collide with #4185's reservation trio
+
+Found by the same 2026-08-01 sweep; these were missing from the tables above.
+
+- **#3968** (`5931df745a`) numbers `ErrorPersisterTransient = 26`,
+  `ErrorPersisterFatal = 27`, `ErrorTransactionBroadcastRejected = 28`. It
+  branched before `26 = ErrorTransactionBroadcastRejected` merged, so it both
+  contradicts merged ABI at 26 **and** collides with #4185 at 27 and 28.
+- **#3954** (`93d0bd49b7`) numbers `ErrorShutdownIncomplete = 27`, colliding with
+  #4185's `ErrorStaleReservationToken = 27`.
+- **#4259** (`4270d827c2`) carries `ErrorSigningKeyUnavailable = 31` — the same
+  number and name as #4183, i.e. inherited rather than a new allocation, like
+  #4204.
+
+Both #3968 and #3954 need a rebase onto current `v4.2-dev` and fresh integers
+from the frontier below; #4185's 27/28 are the older claim and should stand.
 
 ### 26 — `ErrorStaleReservationToken` on #4196 collides with merged ABI
 
@@ -149,7 +180,8 @@ the same thing in both enums.
 ## Survey provenance
 
 Compiled 2026-08-01 against `v4.2-dev` at `ed4116b26c` and the following PR
-heads: #4183 `2cd948331b`, #4184 `a9e418af50`, #4185 `7d85953c2a`, #4186
+heads: #3954 `93d0bd49b7`, #3968 `5931df745a`, #4183 `2cd948331b`, #4184
+`a9e418af50`, #4185 `0b0d5c76d6` (post-renumber), #4259 `4270d827c2`, #4186
 `6f7abbadc1`, #4191 `8acb0bd14c`, #4194 `9efc0b7e3a`, #4195 `4f2eb06d64`, #4196
 `ea4f783490`, #4204 `7bc8a845c6`, #4240 `9328609a16`, #4247 `72c000dcfd`, #4251
 `176f8ed3eb`, #4256 `d8943ccf10`, #4258 `5adfc40032`. Rows describing open PRs
