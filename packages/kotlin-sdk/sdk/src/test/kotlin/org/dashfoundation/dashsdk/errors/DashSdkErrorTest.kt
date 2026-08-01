@@ -185,6 +185,36 @@ class DashSdkErrorTest {
         )
     }
 
+    /**
+     * `ErrorTransactionSigning` (33) must be its own type with the OPPOSITE
+     * retry contract to [DashSdkError.PlatformWallet.TransactionBuild] (32).
+     * Signing failures used to fold into 32, so a locked Keychain told the
+     * host its payment was invalid and a retry was pointless — when in fact
+     * the native layer released the inputs and the identical request succeeds
+     * after an unlock (dashpay/platform#4256 review).
+     */
+    @Test
+    fun signingFailuresAreRetryableAndNotRequestInvalid() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val message = "payment signing failed: mnemonic unavailable: keychain is locked"
+
+        val mapped = DashSdkError.fromNative(DashSDKException(offset + 33, message))
+        assertTrue(
+            "code 33 must not fall through to Generic",
+            mapped is DashSdkError.PlatformWallet.TransactionSigning,
+        )
+        assertFalse(
+            "a signing failure must not be typed as a request-invalid build",
+            mapped is DashSdkError.PlatformWallet.TransactionBuild,
+        )
+        assertEquals(message, mapped.message)
+        assertTrue(
+            "the request was valid and its inputs were released, so retrying " +
+                "after an unlock can succeed",
+            mapped.isRetryable,
+        )
+    }
+
     @Test
     fun unmappedPlatformWalletCodesFallBackToGeneric() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET

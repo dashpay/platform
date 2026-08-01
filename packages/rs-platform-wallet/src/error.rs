@@ -110,6 +110,22 @@ pub enum PlatformWalletError {
     )]
     TransactionBroadcastUnconfirmed(String),
 
+    /// The request was valid and the transaction was fully assembled — only
+    /// producing the input signatures failed. Kept OUT of
+    /// [`Self::TransactionBuild`] deliberately: that variant's contract is
+    /// "the request is at fault, a verbatim retry fails identically", which is
+    /// false here. The production `MnemonicResolverCoreSigner` raises
+    /// `BuilderError::SigningFailed` when the Keychain/Keystore mnemonic is
+    /// locked, missing, or the resolver callback fails, and key-wallet
+    /// `release_if_owner`-releases this build's owner-stamped input
+    /// reservation on that path — so the identical recipients, amount, fee and
+    /// funding path succeed once the signer is usable again
+    /// (dashpay/platform#4256 review).
+    ///
+    /// Retryable AFTER repairing the signer, never by resubmitting blindly.
+    #[error("Transaction signing failed: {0}")]
+    TransactionSigning(String),
+
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 

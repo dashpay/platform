@@ -1009,6 +1009,12 @@ fn bip44_account_path(
 /// primitive will not do (see [`crate::wallet::funding_privacy`]). `required` is
 /// at least the outputs total; a coin-selection error already carries the
 /// fee-inclusive figure, which we prefer when present.
+///
+/// [`BuilderError::SigningFailed`] is likewise promoted, to
+/// [`PlatformWalletError::TransactionSigning`]. Everything left over is a
+/// genuine request rejection and becomes [`PlatformWalletError::TransactionBuild`],
+/// whose contract — "change the request; a verbatim retry fails identically" —
+/// only holds once signing has been split out.
 fn map_send_builder_error(
     error: BuilderError,
     available_in_account: u64,
@@ -1033,6 +1039,15 @@ fn map_send_builder_error(
                 required: outputs_total,
             }
         }
+        // Signing is NOT a build rejection: the request was accepted and the
+        // transaction was fully assembled, and key-wallet already released this
+        // build's owner-stamped reservation, so the identical request succeeds
+        // once the signer works again. Folding it into `TransactionBuild` told
+        // the host "your request is invalid, retrying cannot help" for what is
+        // usually just a locked Keychain (dashpay/platform#4256 review).
+        BuilderError::SigningFailed(detail) => {
+            PlatformWalletError::TransactionSigning(format!("payment signing failed: {detail}"))
+        }
         other => PlatformWalletError::TransactionBuild(format!("payment build failed: {other}")),
     }
 }
@@ -1050,9 +1065,13 @@ mod tests {
     use key_wallet::managed_account::ManagedCoreFundsAccount;
     use key_wallet::Utxo;
 
+    use async_trait::async_trait;
+    use dashcore::secp256k1::{ecdsa, PublicKey};
+    use key_wallet::signer::{Signer, SignerMethod};
+
     use crate::test_support::{
         funded_wallet_manager, split_funded_wallet_manager, split_funded_wallet_manager_dashpay,
-        AlwaysRejectedBroadcaster, DashpayLeg,
+        AlwaysRejectedBroadcaster, DashpayLeg, WalletSigner,
     };
     use crate::wallet::core::{CoreWallet, WalletGeneration};
     use crate::wallet::platform_wallet::WalletId;
@@ -1316,6 +1335,105 @@ mod tests {
             "spending a 0.2 DASH UTXO for 0.15 DASH must leave change"
         );
         assert_all_inputs_signed(&payment);
+    }
+
+    /// Models a locked Keychain: key derivation still works (so the payment
+    /// assembles normally and the request is provably valid), but no signature
+    /// can be produced. This is exactly what `MnemonicResolverCoreSigner` does
+    /// when the mnemonic is locked, missing, or the resolver callback fails.
+    struct LockedSigner(WalletSigner);
+
+    #[async_trait]
+    impl Signer for LockedSigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[SignerMethod] {
+            &[SignerMethod::Digest]
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            _path: &DerivationPath,
+            _sighash: [u8; 32],
+        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+            Err("mnemonic unavailable: keychain is locked".to_string())
+        }
+
+        async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
+            self.0.public_key(path).await
+        }
+    }
+
+    /// A signing failure must NOT be reported as `TransactionBuild`, whose
+    /// contract is "the request is invalid, a verbatim retry fails
+    /// identically". It is the opposite: the request assembled fine, and the
+    /// SAME recipients/amount/fee/funding path succeed once the signer is
+    /// unlocked. Folding the two together told hosts to make the user edit a
+    /// payment that was never wrong (dashpay/platform#4256 review).
+    #[tokio::test]
+    async fn signing_failure_is_not_reported_as_an_invalid_request() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        let result = core
+            .build_signed_payment(
+                vec![(recipient(3), 1_000_000)],
+                None,
+                &LockedSigner(signer),
+                None,
+            )
+            .await;
+
+        match result {
+            Err(PlatformWalletError::TransactionSigning(message)) => {
+                assert!(
+                    message.contains("keychain is locked"),
+                    "the signer's own reason must survive for the host to act \
+                     on: {message}"
+                );
+            }
+            Err(PlatformWalletError::TransactionBuild(message)) => panic!(
+                "signing failures must not claim the request-invalid contract \
+                 (got TransactionBuild: {message})"
+            ),
+            other => panic!("expected TransactionSigning, got {other:?}"),
+        }
+    }
+
+    /// The same funds must be spendable immediately after a signing failure:
+    /// key-wallet releases the owner-stamped reservation on that path, which
+    /// is *why* the retry-after-unlock contract of `TransactionSigning` holds.
+    /// If the inputs stayed reserved, the honest code would be an
+    /// unconfirmed/stranded one instead.
+    #[tokio::test]
+    async fn signing_failure_leaves_the_inputs_spendable() {
+        let (wm, wallet_id, balance, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let core = core_wallet(wm, wallet_id, balance);
+
+        let locked = core
+            .build_signed_payment(
+                vec![(recipient(3), 1_000_000)],
+                None,
+                &LockedSigner(signer.clone()),
+                None,
+            )
+            .await;
+        assert!(
+            matches!(locked, Err(PlatformWalletError::TransactionSigning(_))),
+            "precondition: the locked signer must fail at signing, got {locked:?}"
+        );
+
+        // The identical request, once the signer works again.
+        let payment = core
+            .build_signed_payment(vec![(recipient(3), 1_000_000)], None, &signer, None)
+            .await
+            .expect("the same request must succeed after the signer recovers");
+        assert!(
+            !payment.transaction.input.is_empty(),
+            "the retry must select the inputs the failed build released"
+        );
     }
 
     /// A shortfall inside the SELECTED account surfaces as the typed

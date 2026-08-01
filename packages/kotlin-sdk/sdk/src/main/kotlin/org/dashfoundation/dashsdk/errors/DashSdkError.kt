@@ -94,8 +94,9 @@ sealed class DashSdkError(
          * not be assembled from the request. The REQUEST is at fault, so a
          * verbatim retry fails identically — the caller must change it.
          *
-         * It is what every non-shortfall `buildSignedPayment` rejection
-         * surfaces as: a `fundingPath` matching no spendable funds account or
+         * It is what every `buildSignedPayment` rejection that is neither a
+         * shortfall nor a signing failure ([TransactionSigning]) surfaces as:
+         * a `fundingPath` matching no spendable funds account or
          * naming a watch-only one (the two failure modes the single-account
          * send design rests on, dashpay/platform#4184), a request breaching a
          * monetary bound (MAX_MONEY total, max fee rate, a below-dust
@@ -106,6 +107,34 @@ sealed class DashSdkError(
          */
         class TransactionBuild(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
+
+        /**
+         * `ErrorTransactionSigning` (native code 33). The request was valid and
+         * the transaction was fully assembled — only the input signatures could
+         * not be produced, typically because the Keystore/Keychain mnemonic is
+         * locked or missing.
+         *
+         * Unlike [TransactionBuild], the REQUEST is fine: the native layer
+         * released this build's input reservation before returning, so once the
+         * signer is usable again the caller may resubmit the identical
+         * recipients, amount, fee and funding path. Surface this as "unlock to
+         * continue", never as "this payment is invalid"
+         * (dashpay/platform#4256).
+         *
+         * Retryable in the same sense as [ShieldedNoRecordedAnchor]: nothing
+         * was committed and the reservation was released, so the retry
+         * succeeds once its precondition is met. Gate it on the unlock — do
+         * not spin on it.
+         *
+         * Distinct from the sibling stack's `SigningKeyUnavailable` (native
+         * code 31, dashpay/platform#4183), which is a Platform
+         * state-transition signer failure reporting a specific identity key
+         * that must be re-derived.
+         */
+        class TransactionSigning(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         class AssetLockNotTracked(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
@@ -440,6 +469,7 @@ sealed class DashSdkError(
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
             32 -> PlatformWallet.TransactionBuild(message, cause) // ErrorTransactionBuild
+            33 -> PlatformWallet.TransactionSigning(message, cause) // ErrorTransactionSigning
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
