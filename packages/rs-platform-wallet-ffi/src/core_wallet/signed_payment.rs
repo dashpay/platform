@@ -32,6 +32,29 @@ use std::os::raw::c_char;
 pub(crate) static SIGNED_PAYMENT_REGISTRY: Lazy<SignedPaymentRegistry<SpvBroadcaster>> =
     Lazy::new(SignedPaymentRegistry::new);
 
+/// Serializes tests that reason about the process-global registry's *contents*.
+///
+/// [`SIGNED_PAYMENT_REGISTRY`] is one static shared by every test in the binary,
+/// and the harness runs tests in parallel threads by default. Any test that
+/// captures an `outstanding()` baseline and then asserts a delta against it is
+/// therefore racing every other test that mints or consumes a token — the
+/// baseline can be captured while a sibling's token is outstanding and compared
+/// after that sibling consumed it.
+///
+/// Tests take this around their whole body. Poisoning is recovered rather than
+/// propagated (mirroring `SignedPaymentRegistry`'s own lock): a panic in one
+/// test should fail that test, not cascade into every sibling.
+#[cfg(test)]
+pub(crate) static REGISTRY_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Take [`REGISTRY_TEST_LOCK`], recovering from poisoning.
+#[cfg(test)]
+pub(crate) fn registry_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    REGISTRY_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// Broadcast the payment behind `token` (built earlier via
 /// [`core_wallet_signed_payment_finalize`](super::transaction_builder::core_wallet_signed_payment_finalize)),
 /// reconciling its UTXO reservation on
@@ -91,6 +114,16 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
             PlatformWalletFFIResultCode::ErrorReservationWalletMismatch,
             e.to_string(),
         ),
+        // The wallet was REMOVED from the manager, so there is no live
+        // generation to broadcast through. Reported as the existing `NotFound`
+        // (98) rather than a new code: it is exactly the "the thing you named
+        // does not exist" case 98 already means, and both hosts already map it.
+        // Distinct from `ErrorReservationWalletMismatch` (29), where a DIFFERENT
+        // live generation answers to the same id. Did NOT touch the network and
+        // is NOT retryable — the wallet is gone.
+        Err(e @ SignedPaymentError::WalletRemoved(_)) => {
+            PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::NotFound, e.to_string())
+        }
         // Preserve the typed underlying wallet error (keeps the ambiguous
         // "may already be on the network" retry semantics intact).
         Err(SignedPaymentError::Broadcast(e)) => PlatformWalletFFIResult::from(e),
