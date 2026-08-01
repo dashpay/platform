@@ -389,7 +389,8 @@ impl crate::events::PlatformEventHandler for NoopTestEventHandler {}
 /// `Arc<PlatformWallet>`) alongside the wallet id.
 ///
 /// Used by FFI-layer tests that need genuine `PlatformWallet` aliases, e.g. the
-/// `platform_wallet_destroy` final-alias registry-sweep gating.
+/// `platform_wallet_destroy` regression asserting that destroying wrapper
+/// aliases never sweeps an independently-owned deferred-payment token.
 pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
