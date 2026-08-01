@@ -1083,6 +1083,183 @@ mod tests {
         );
     }
 
+    /// The same logical-delete skip, for a tombstoned UNOWNED identity.
+    ///
+    /// Not a duplicate of the wallet-owned case above: the skip depends on
+    /// `load_tombstoned_ids` recognising the owner as tombstoned, and that
+    /// query is scoped by `wallet_id`. Scoped with `=` it cannot match a
+    /// NULL, so an unowned tombstone is invisible, its surviving key rows
+    /// look like owners that vanished for no reason, and the read fails
+    /// with `OrphanedIdentityEntry` — the exact brick this whole line of
+    /// work exists to prevent, re-entering through the unowned door. The
+    /// NULL-safe `IS` is what closes it, and this test is what holds it
+    /// closed: revert that predicate to `= ?1` and this fails.
+    #[test]
+    fn load_prekeyed_skips_orphaned_keys_of_tombstoned_unowned_owner() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let unowned = [0u8; 32];
+        let z = Identifier::from([0x9Cu8; 32]);
+
+        let mut ids = IdentityChangeSet::default();
+        ids.identities.insert(z, entry([0x9C; 32], None, 30, None));
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((z, 0), sample_key_entry(z, 0x9D));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &unowned, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &unowned, &keys).unwrap();
+            tx.commit().unwrap();
+        }
+
+        // Tombstone Z. Its key row survives — a logical delete tombstones
+        // the identity, it does not reap the children.
+        let mut removed = IdentityChangeSet::default();
+        removed.removed.insert(z);
+        apply_in_tx(&mut conn, &unowned, &removed);
+        let surviving_keys: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1",
+                params![&z.to_buffer()[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            surviving_keys, 1,
+            "the orphaned key row must actually exist, or this test proves nothing"
+        );
+
+        let state = load_prekeyed(&conn, &unowned)
+            .expect("a tombstoned UNOWNED owner's orphan key must be skipped, not fatal");
+        assert!(
+            state.out_of_wallet_identities.is_empty(),
+            "the tombstoned identity must not surface in the loaded state"
+        );
+    }
+
+    /// The delete's scope guard, which nothing else holds in place.
+    ///
+    /// `(identity_id, key_id)` is the primary key, so `wallet_id` in the
+    /// DELETE's WHERE is no longer needed to SELECT the row — which makes
+    /// removing it look like an obvious tidy-up. It is not: it is what
+    /// stops one wallet's `removed` set from deleting another wallet's
+    /// key. Without it that cross-wallet delete succeeds, and a
+    /// permissive deletion is a worse failure than a permissive no-op.
+    #[test]
+    fn identity_key_delete_cannot_reach_another_wallets_key() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let owner = [0xC1u8; 32];
+        let other = [0xC2u8; 32];
+        insert_wallet(&conn, &owner);
+        insert_wallet(&conn, &other);
+
+        let x = Identifier::from([0xC3u8; 32]);
+        let mut ids = IdentityChangeSet::default();
+        ids.identities
+            .insert(x, entry([0xC3; 32], Some(owner), 600, Some(0)));
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((x, 0), sample_key_entry(x, 0xC4));
+        {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &owner, &ids).unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &owner, &keys).unwrap();
+            tx.commit().unwrap();
+        }
+
+        // The other wallet asks for the same key to be removed. Scoped
+        // out, this is a clean no-op rather than an error.
+        let mut removal = IdentityKeysChangeSet::default();
+        removal.removed.insert((x, 0));
+        {
+            let tx = conn.transaction().unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &other, &removal).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let surviving: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1 AND key_id = 0",
+                params![&x.to_buffer()[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            surviving, 1,
+            "a foreign wallet's removed set must not delete the owner's key"
+        );
+
+        // ...and the owner can still delete its own.
+        {
+            let tx = conn.transaction().unwrap();
+            crate::sqlite::schema::identity_keys::apply(&tx, &owner, &removal).unwrap();
+            tx.commit().unwrap();
+        }
+        let after_owner: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM identity_keys WHERE identity_id = ?1 AND key_id = 0",
+                params![&x.to_buffer()[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            after_owner, 0,
+            "the owning wallet must still be able to delete"
+        );
+    }
+
+    /// The converse of the NULL-scope trigger, and the reason no third
+    /// trigger is needed: a WALLET-scoped key naming an UNOWNED identity.
+    ///
+    /// Here the child key `(wallet_id, identity_id)` is fully non-NULL, so
+    /// MATCH SIMPLE leaves the compound FK live and it rejects the write
+    /// on its own. Asserting the extended code keeps that claim honest —
+    /// 787 proves the FK did it, rather than the trigger or one of the
+    /// earlier in-Rust guards quietly covering for an unenforced FK.
+    #[test]
+    fn wallet_scoped_key_is_rejected_for_an_unowned_identity() {
+        use platform_wallet::changeset::IdentityKeysChangeSet;
+
+        let mut conn = migrated_conn();
+        let a = [0xB7u8; 32];
+        let unowned = [0u8; 32];
+        insert_wallet(&conn, &a);
+
+        // Identity Z belongs to no wallet.
+        let z = Identifier::from([0xB8u8; 32]);
+        let mut ids = IdentityChangeSet::default();
+        ids.identities.insert(z, entry([0xB8; 32], None, 40, None));
+        apply_in_tx(&mut conn, &unowned, &ids);
+
+        // Wallet A files a key for it under its own scope.
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts.insert((z, 0), sample_key_entry(z, 0xB9));
+        let tx = conn.transaction().unwrap();
+        let err = crate::sqlite::schema::identity_keys::apply(&tx, &a, &keys)
+            .expect_err("a wallet may not file a key for an identity it does not own");
+        assert!(
+            matches!(
+                err,
+                WalletStorageError::IdentityKeyWalletMismatch {
+                    wallet_id, identity_id, ..
+                } if wallet_id == a && identity_id == z.to_buffer()
+            ),
+            "expected IdentityKeyWalletMismatch naming wallet A and identity Z, got {err:?}"
+        );
+        match &err {
+            WalletStorageError::IdentityKeyWalletMismatch { source, .. } => match source.as_ref() {
+                rusqlite::Error::SqliteFailure(e, _) => assert_eq!(
+                    e.extended_code, 787,
+                    "this case must be caught by the live compound FK, not a trigger"
+                ),
+                other => panic!("expected a SqliteFailure source, got {other:?}"),
+            },
+            other => panic!("expected IdentityKeyWalletMismatch, got {other:?}"),
+        }
+    }
+
     /// `load_state` rejects a row whose decoded blob names a different
     /// `identity_id` than its typed column — corruption is a hard, typed
     /// error, never rehydrated under the wrong id.
