@@ -50,7 +50,7 @@ use dashcore::secp256k1::{Message, Secp256k1};
 use dashcore::sign_message::{signed_msg_hash, MessageSignature};
 use dashcore::{Address as DashAddress, AddressType, PublicKey as DashPublicKey};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::signer::Signer;
+use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::ManagedAccountType;
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -114,7 +114,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///   verifier must be handed the identical bytes.
     /// * `signer` — the ECDSA signer that holds the key material (the
     ///   Keystore/Keychain-backed `MnemonicResolverCoreSigner` in production).
-    ///   No private key crosses the boundary.
+    ///   No private key crosses the boundary. It must advertise
+    ///   [`SignerMethod::Digest`]; a `Transaction`-only backend cannot sign a
+    ///   message and is refused with
+    ///   [`MessageSigningFailed`](PlatformWalletError::MessageSigningFailed)
+    ///   before it is invoked.
     ///
     /// # Determinism
     ///
@@ -186,6 +190,31 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             (target, path)
         };
 
+        // `Signer` advertises the methods it can perform and assigns dispatch to
+        // the CALLER: `sign_ecdsa` is documented as valid only when the backend
+        // supports `SignerMethod::Digest`. A classic signed message is
+        // inherently a host-computed-digest operation — there is no transaction
+        // for a device to re-hash and display — so a `Transaction`-only backend
+        // (a hardware wallet whose whole policy is to never blind-sign) cannot
+        // serve this call, and asking it to would defeat that policy.
+        //
+        // Refused here rather than left to the backend because an unadvertised
+        // method has no defined behavior: an implementation may reject it, panic
+        // because it believed the method unreachable, or — worst — blind-sign
+        // anyway. Mirrors the identical pre-check key-wallet performs before its
+        // own `sign_ecdsa` dispatch in `TransactionSigner::sig_and_pubkey`.
+        if !signer.supports(SignerMethod::Digest) {
+            return Err(PlatformWalletError::MessageSigningFailed {
+                address: target.to_string(),
+                reason: format!(
+                    "signer backend cannot sign message digests: it advertises {:?}, but a \
+                     classic signed message requires {:?}",
+                    signer.supported_methods(),
+                    SignerMethod::Digest,
+                ),
+            });
+        }
+
         let hash = signed_msg_hash(message);
         let (signature, public_key) = signer
             .sign_ecdsa(&path, hash.to_byte_array())
@@ -246,9 +275,11 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use dashcore::secp256k1::Secp256k1;
+    use dashcore::secp256k1::{ecdsa, PublicKey, Secp256k1};
     use dashcore::sign_message::{signed_msg_hash, MessageSignature};
     use dashcore::{Address as DashAddress, Network};
+    use key_wallet::signer::{Signer, SignerMethod, TransactionCategory};
+    use key_wallet::DerivationPath;
 
     use crate::test_support::{
         mnemonic_wallet_manager, AlwaysRejectedBroadcaster, MESSAGE_SIGNING_TEST_MNEMONIC,
@@ -317,6 +348,36 @@ mod tests {
             ),
             "dashj's ECKeyTest.verifyMessage signature must verify here — a failure means the \
              signed-message format has diverged and CrowdNode will reject our signatures"
+        );
+    }
+
+    /// **The empty message is signable.** Nothing about the format excludes it —
+    /// the digest length-prefixes the message, so `""` prefixes as `varint(0)`
+    /// and hashes to a perfectly ordinary digest.
+    ///
+    /// This is a contract the boundary layers depend on, not a curiosity: an
+    /// empty Swift `String` marshals to a **nil** base address with length 0, so
+    /// the FFI must accept a null `message_ptr` at `message_len == 0` rather
+    /// than rejecting it as a null-pointer error. Signing `""` end-to-end here
+    /// pins the semantic half of that contract; `empty_message_is_not_a_null_
+    /// pointer_error` in the FFI crate pins the boundary half.
+    #[tokio::test]
+    async fn empty_message_is_signable() {
+        let (wm, wallet_id, signer, address) =
+            mnemonic_wallet_manager(MESSAGE_SIGNING_TEST_MNEMONIC).await;
+        let core = core_wallet(wm, wallet_id);
+
+        let signature = core
+            .sign_message(&address.to_string(), "", &signer)
+            .await
+            .expect("the empty message is signable");
+
+        assert!(
+            MessageSignature::from_base64(&signature)
+                .expect("valid base64 of a 65-byte recoverable signature")
+                .is_signed_by_address(&Secp256k1::new(), &address, signed_msg_hash(""))
+                .expect("P2PKH address is a supported verification target"),
+            "a signature over the empty message must verify against signed_msg_hash(\"\")"
         );
     }
 
@@ -428,6 +489,74 @@ mod tests {
                 );
             }
             other => panic!("expected MessageSigningAddressInvalid, got {other:?}"),
+        }
+    }
+
+    /// A hardware-style backend that can only sign whole transactions it
+    /// re-hashes and displays, and never a host-computed digest. `sign_ecdsa`
+    /// panics rather than returning an error: the `Signer` contract makes an
+    /// unadvertised method undefined to call, so reaching it at all is the bug
+    /// this fixture exists to catch. A backend that instead blind-signed would
+    /// silently defeat the policy it advertises, which no `Result` could
+    /// express.
+    struct TransactionOnlySigner;
+
+    #[async_trait::async_trait]
+    impl Signer for TransactionOnlySigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[SignerMethod] {
+            &[SignerMethod::Transaction(TransactionCategory::Classical)]
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            _path: &DerivationPath,
+            _sighash: [u8; 32],
+        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+            panic!(
+                "sign_ecdsa must never be reached on a signer that does not advertise \
+                 SignerMethod::Digest — sign_message is required to refuse first"
+            );
+        }
+
+        async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
+            panic!("public_key is not part of the signed-message path");
+        }
+    }
+
+    /// **Capability dispatch.** `Signer` assigns method dispatch to the caller,
+    /// and documents `sign_ecdsa` as valid only when the backend advertises
+    /// `SignerMethod::Digest`. A transaction-only backend must therefore be
+    /// refused with a typed error *before* it is invoked — the fixture's
+    /// `sign_ecdsa` panics, so a regression that drops the guard fails loudly
+    /// here rather than blind-signing on a device whose policy forbids it.
+    ///
+    /// The address is one the wallet genuinely owns, so the refusal cannot be
+    /// mistaken for the key-unavailable path: this pins the capability check
+    /// specifically.
+    #[tokio::test]
+    async fn transaction_only_signer_is_refused_before_signing() {
+        let (wm, wallet_id, _, address) =
+            mnemonic_wallet_manager(MESSAGE_SIGNING_TEST_MNEMONIC).await;
+        let core = core_wallet(wm, wallet_id);
+
+        let result = core
+            .sign_message(&address.to_string(), MESSAGE, &TransactionOnlySigner)
+            .await;
+
+        match result {
+            Err(PlatformWalletError::MessageSigningFailed {
+                address: reported,
+                reason,
+            }) => {
+                assert_eq!(reported, address.to_string());
+                assert!(
+                    reason.contains("cannot sign message digests"),
+                    "the reason must name the capability refusal, got {reason:?}"
+                );
+            }
+            other => panic!("expected MessageSigningFailed, got {other:?}"),
         }
     }
 }

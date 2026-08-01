@@ -15,7 +15,7 @@
 use crate::error::*;
 use crate::handle::{Handle, CORE_WALLET_STORAGE};
 use crate::runtime::runtime;
-use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use crate::{check_ptr, unwrap_result_or_return};
 use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle};
 use std::ffi::CString;
@@ -106,38 +106,138 @@ pub unsafe extern "C" fn core_wallet_sign_message(
 
     let signer_addr = core_signer_handle as usize;
 
-    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
-        let address = read_utf8(address_ptr, address_len, |e| {
-            PlatformWalletError::MessageSigningAddressInvalid {
-                address: "<non-UTF-8>".to_string(),
-                reason: format!("address is not valid UTF-8: {e}"),
-            }
-        })?;
-        // A non-UTF-8 message is reported against the (now known) address, so the
-        // error names the signing target the caller asked about.
-        let message = read_utf8(message_ptr, message_len, |e| {
-            PlatformWalletError::MessageSigningFailed {
-                address: address.clone(),
-                reason: format!("message is not valid UTF-8: {e}"),
-            }
-        })?;
-        let network = wallet.network();
-        let wallet_id = wallet.wallet_id();
-        // SAFETY: `signer_addr` came from `core_signer_handle`, which the caller
-        // pinned alive for this call; the `MnemonicResolverCoreSigner` lives
-        // only on this stack frame and is dropped before returning.
-        let signer = MnemonicResolverCoreSigner::new(
-            signer_addr as *mut MnemonicResolverHandle,
-            wallet_id,
-            network,
+    // Clone the Arc-backed `CoreWallet` OUT of handle storage before doing any
+    // work. `with_item` holds `HandleStorage`'s process-global read guard for
+    // the whole closure, and the signing round-trip below re-enters the HOST
+    // through the mnemonic-resolver callback — which in production is a
+    // Keychain / Android Keystore call that can block on user presence
+    // (biometric or PIN prompt). Holding a global read guard across that would
+    // stall every other wallet-handle operation for as long as the user takes
+    // to respond, and deadlock outright if the host callback re-enters the FFI
+    // on any path that needs the write guard (parking_lot's RwLock is neither
+    // reentrant nor reader-preferring, so one waiting writer blocks us).
+    //
+    // Mirrors `core_wallet_broadcast_signed_transaction*`, which clone out for
+    // the same reason.
+    let Some(wallet) = CORE_WALLET_STORAGE.with_item(handle, Clone::clone) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "invalid core wallet handle".to_string(),
         );
-        runtime().block_on(wallet.sign_message(&address, &message, &signer))
-    });
+    };
 
-    let result = unwrap_option_or_return!(option);
-    let signature = unwrap_result_or_return!(result);
+    let address = unwrap_result_or_return!(read_utf8(address_ptr, address_len, |e| {
+        PlatformWalletError::MessageSigningAddressInvalid {
+            address: "<non-UTF-8>".to_string(),
+            reason: format!("address is not valid UTF-8: {e}"),
+        }
+    }));
+    // A non-UTF-8 message is reported against the (now known) address, so the
+    // error names the signing target the caller asked about.
+    let message = unwrap_result_or_return!(read_utf8(message_ptr, message_len, |e| {
+        PlatformWalletError::MessageSigningFailed {
+            address: address.clone(),
+            reason: format!("message is not valid UTF-8: {e}"),
+        }
+    }));
+
+    // SAFETY: `signer_addr` came from `core_signer_handle`, which the caller
+    // pinned alive for this call; the `MnemonicResolverCoreSigner` lives only on
+    // this stack frame and is dropped before returning.
+    let signer = MnemonicResolverCoreSigner::new(
+        signer_addr as *mut MnemonicResolverHandle,
+        wallet.wallet_id(),
+        wallet.network(),
+    );
+    let signature = unwrap_result_or_return!(
+        runtime().block_on(wallet.sign_message(&address, &message, &signer))
+    );
 
     let c_str = unwrap_result_or_return!(CString::new(signature));
     *out_signature = c_str.into_raw();
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
+    use std::os::raw::c_void;
+
+    unsafe extern "C" fn never_resolve(
+        _ctx: *const c_void,
+        _wallet_id_bytes: *const u8,
+        _out_buf: *mut c_char,
+        _out_capacity: usize,
+        _out_len: *mut usize,
+    ) -> i32 {
+        unreachable!("the handle is rejected long before any mnemonic is resolved");
+    }
+
+    unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
+
+    /// `read_utf8` must treat `len == 0` as the empty string without ever
+    /// touching `ptr` — a null pointer at length 0 is the shape Swift produces
+    /// for an empty `String`, and `from_raw_parts` is UB on null even for an
+    /// empty slice.
+    #[test]
+    fn read_utf8_accepts_a_null_pointer_at_zero_length() {
+        let read = unsafe {
+            read_utf8(std::ptr::null(), 0, |e| {
+                panic!("must not attempt a UTF-8 decode: {e}")
+            })
+        };
+        assert_eq!(read.expect("null at length 0 is the empty string"), "");
+    }
+
+    /// **The empty-message contract at the boundary.** An empty Swift `String`
+    /// marshals to a nil base address with length 0, so
+    /// `core_wallet_sign_message` must NOT reject a null `message_ptr` — only
+    /// `address_ptr`, `core_signer_handle` and `out_signature` are
+    /// null-checked.
+    ///
+    /// Asserted by discrimination rather than by signing: with a deliberately
+    /// invalid wallet handle the call must fail at the handle lookup
+    /// (`ErrorInvalidHandle`), which it can only reach by having accepted the
+    /// null message. If someone later adds an unconditional
+    /// `check_ptr!(message_ptr)`, the pointer checks run first and the code
+    /// becomes `ErrorNullPointer` — failing this test and catching exactly the
+    /// regression that would break iOS signing of an empty string.
+    ///
+    /// The semantic half — that `""` actually signs and verifies against
+    /// `signed_msg_hash("")` — is pinned by `empty_message_is_signable` in
+    /// `platform_wallet::wallet::core::sign_message`, where the wallet fixtures
+    /// live.
+    #[test]
+    fn empty_message_is_not_a_null_pointer_error() {
+        let resolver = unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), never_resolve, noop_destroy)
+        };
+        assert!(!resolver.is_null(), "resolver handle must be created");
+
+        let address = b"yRd4FhXfVGHXpsuZXPNkMrfD9GVj46pnjt";
+        let mut out_signature: *mut c_char = std::ptr::null_mut();
+
+        let result = unsafe {
+            core_wallet_sign_message(
+                Handle::MAX, // never a live core-wallet handle
+                address.as_ptr(),
+                address.len(),
+                std::ptr::null(), // the empty message, as Swift marshals it
+                0,
+                resolver,
+                &mut out_signature,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "a null message at length 0 must be accepted and the call must fail \
+             at the handle lookup, not as a null-pointer error"
+        );
+        assert!(out_signature.is_null());
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
 }

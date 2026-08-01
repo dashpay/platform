@@ -138,12 +138,22 @@ pub enum PlatformWalletError {
     MessageSigningKeyUnavailable { address: String },
 
     /// [`CoreWallet::sign_message`] resolved a derivation path for the address
-    /// but could not produce a signature over it. Three causes, all carried in
-    /// `reason`: the [`Signer`] itself failed (Keystore/Keychain round-trip);
-    /// the public key it returned does not hash to the target address (a
-    /// path-resolution bug — the guard exists so a wrong-key signature can
-    /// never be handed out as if it were the address owner's); or no recovery
-    /// id in `0..=3` recovers that public key.
+    /// but could not produce a signature over it. Four causes, all carried in
+    /// `reason`: the signer backend does not advertise
+    /// [`SignerMethod::Digest`], so it cannot sign a host-computed digest at
+    /// all and is refused before it is ever invoked; the [`Signer`] itself
+    /// failed (Keystore/Keychain round-trip); the public key it returned does
+    /// not hash to the target address (a path-resolution bug — the guard exists
+    /// so a wrong-key signature can never be handed out as if it were the
+    /// address owner's); or no recovery id in `0..=3` recovers that public key.
+    ///
+    /// The capability refusal shares this variant rather than taking a
+    /// dedicated one because this is the crate's "a path resolved but no
+    /// signature came back" bucket, and because key-wallet folds the very same
+    /// refusal into its ordinary `BuilderError::SigningFailed`. It is
+    /// unreachable with any signer that ships today — the production mnemonic
+    /// resolver advertises `Digest` — so it does not warrant a new FFI code and
+    /// the host mirror-enum churn that follows one.
     ///
     /// Deliberately NOT given a dedicated FFI code: a signer that reports its
     /// typed key-unavailable completion carries the stable machine prefix in
@@ -154,6 +164,7 @@ pub enum PlatformWalletError {
     ///
     /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
     /// [`Signer`]: key_wallet::signer::Signer
+    /// [`SignerMethod::Digest`]: key_wallet::signer::SignerMethod::Digest
     #[error("message signing failed for address {address}: {reason}")]
     MessageSigningFailed { address: String, reason: String },
 
