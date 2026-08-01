@@ -368,6 +368,15 @@ sealed class DashSdkError(
                 }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
+            // NotFound. Handle/Option lookup failures, plus the deferred
+            // (BIP70/BIP270) wallet-was-REMOVED case: a signed-payment broadcast
+            // whose wallet is no longer registered in the manager, or a
+            // signed-payment finalize whose wallet was removed while it was
+            // being signed (its reservation is reconciled before this returns).
+            // Nothing was broadcast, and unlike ReservationWalletMismatch (36)
+            // no other live generation holds the payment either — so it is not
+            // retryable. See dashpay/platform#4185.
+            98,
             -> NotFound(message, cause)
             // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option →
             // result miss) stays inside the wallet-error family as the typed

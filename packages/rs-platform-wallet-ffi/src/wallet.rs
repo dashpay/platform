@@ -441,6 +441,11 @@ mod destroy_tests {
     /// independently-owned payments.
     #[test]
     fn destroying_wrapper_aliases_never_sweeps_tokens() {
+        // Asserts `outstanding()` DELTAS against a captured baseline, so it must
+        // not run while a sibling test mints or consumes tokens in the same
+        // process-global registry.
+        let _registry = crate::core_wallet::signed_payment::registry_test_guard();
+
         // Async setup only. `platform_wallet_destroy` and the final `release`
         // each do their own `runtime().block_on(...)`, exactly as the JNI /
         // NativeCleaner threads do (never from inside a tokio runtime). Calling
