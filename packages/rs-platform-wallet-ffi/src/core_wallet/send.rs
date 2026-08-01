@@ -215,6 +215,78 @@ pub unsafe extern "C" fn core_wallet_free_payment_bytes(bytes: *mut u8, len: usi
     }
 }
 
+/// Release the UTXO reservation a [`core_wallet_build_signed_payment`] call
+/// took, for a build the caller has decided NOT to broadcast.
+///
+/// `build_signed_payment` leaves its selected inputs reserved on success,
+/// because the expected next step is a broadcast. A caller that abandons the
+/// build instead — the user backed out, an upstream check failed, the app is
+/// tearing down — must call this, or those coins stay unselectable until
+/// key-wallet's 24-block TTL backstop reclaims them. Before the first sync
+/// completes that backstop never fires at all (`ReservationSet::sweep`
+/// early-returns at height 0), so without this call a single abandoned build
+/// on a freshly restored wallet can strand the whole balance for the life of
+/// the process (dashpay/platform#4247 review). This call consults no height.
+///
+/// Releases ONLY this build's own inputs: the transaction is the ownership
+/// signal, since a reserved outpoint is skipped by every other build's coin
+/// selection, so no concurrent build can hold a reservation on any input of
+/// `tx_bytes`.
+///
+/// Idempotent, and a silent no-op when the transaction was in fact broadcast —
+/// safe to wire into an unconditional cleanup path without tracking whether the
+/// broadcast succeeded.
+///
+/// * `handle` — a core-wallet handle (`platform_wallet_get_core`).
+/// * `tx_bytes`/`tx_bytes_len` — the consensus-serialized signed transaction
+///   exactly as `core_wallet_build_signed_payment` returned it.
+/// * `funding_path_ptr`/`funding_path_len` — the SAME optional funding path the
+///   build was given, so the release lands on the account holding the
+///   reservation. `null` / `0` means the unmixed BIP44 account, as it does for
+///   the build. A path naming a different account is harmless but frees
+///   nothing.
+///
+/// # Safety
+/// `tx_bytes` must be readable for `tx_bytes_len` bytes; `funding_path_ptr`,
+/// when non-null, must point to `funding_path_len` readable bytes for the
+/// duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_release_payment_reservation(
+    handle: Handle,
+    tx_bytes: *const u8,
+    tx_bytes_len: usize,
+    funding_path_ptr: *const u8,
+    funding_path_len: usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(tx_bytes);
+
+    let funding_path = match parse_optional_derivation_path(funding_path_ptr, funding_path_len) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    let raw = std::slice::from_raw_parts(tx_bytes, tx_bytes_len);
+    let transaction: dashcore::Transaction =
+        match dashcore::consensus::deserialize(raw).map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("tx_bytes is not a consensus-serialized transaction: {e}"),
+            )
+        }) {
+            Ok(tx) => tx,
+            Err(result) => return result,
+        };
+
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.release_payment_reservation(&transaction, funding_path.clone()))
+    });
+
+    let result = unwrap_option_or_return!(option);
+    unwrap_result_or_return!(result);
+
+    PlatformWalletFFIResult::ok()
+}
+
 /// Decoder hardening tests.
 ///
 /// `decode_payment_outputs` parses a caller-controlled blob inside an

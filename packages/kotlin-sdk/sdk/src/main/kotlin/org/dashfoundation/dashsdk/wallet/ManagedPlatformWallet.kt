@@ -522,6 +522,55 @@ class ManagedPlatformWallet internal constructor(
     }
 
     /**
+     * Release the UTXO reservation a [buildSignedPayment] call took, for a
+     * build this caller has decided **not** to broadcast.
+     *
+     * [buildSignedPayment] deliberately leaves its selected inputs reserved on
+     * success, because the expected next step is a broadcast. If the build is
+     * abandoned instead — the user backed out of the confirmation screen, an
+     * upstream check failed, the send screen is being torn down — this must be
+     * called or those coins stay unselectable.
+     *
+     * **Why it matters (dashpay/platform#4247 review).** Without it the inputs
+     * are stranded until key-wallet's TTL backstop reclaims them 24 blocks
+     * (~1 hour) later. Worse, that backstop does not merely run late but does
+     * not run at all before the first sync completes: the sweep early-returns
+     * while the wallet has no processed height, so a reservation taken at
+     * height 0 is never reclaimed for the life of the process. A single
+     * abandoned build on a freshly restored wallet could otherwise strand the
+     * entire balance. This call consults no height, so it is the one release
+     * path that works pre-sync.
+     *
+     * **Releases only this build's own inputs.** The transaction is the
+     * ownership signal: a reserved outpoint is skipped by every other build's
+     * coin selection, so no concurrent build can hold a reservation on any
+     * input of [txBytes].
+     *
+     * **Idempotent, and safe after a broadcast.** Calling it twice, or on a
+     * transaction that was in fact broadcast, is a silent no-op rather than an
+     * error, and it cannot resurrect a spent coin — coin selection reads the
+     * UTXO set, from which sync removes the spend independently of any
+     * reservation. That makes it safe in an unconditional `finally` without
+     * tracking whether the broadcast succeeded.
+     *
+     * @param txBytes [SignedCorePayment.txBytes] from the build being
+     *   abandoned.
+     * @param fundingPath the **same** [fundingPath] the build was given, so the
+     *   release lands on the account holding the reservation; `null` means the
+     *   unmixed BIP44 account, exactly as it does for the build. A path naming
+     *   a different account is harmless but frees nothing.
+     */
+    suspend fun releasePaymentReservation(
+        txBytes: ByteArray,
+        fundingPath: String? = null,
+    ): Unit = gate.op {
+        require(txBytes.isNotEmpty()) { "txBytes must not be empty" }
+        mapNativeErrors {
+            coreWallet().use { core -> core.releasePaymentReservation(txBytes, fundingPath) }
+        }
+    }
+
+    /**
      * The wallet's Platform-payment addresses that currently hold credits,
      * each as a [FundingInput] whose `credits` is the full cached balance —
      * the funding-input candidates for an identity top-up. Port of the

@@ -256,6 +256,35 @@ internal object WalletManagerNative {
     ): ByteArray
 
     /**
+     * `core_wallet_release_payment_reservation` — release the UTXO reservation
+     * a [coreWalletBuildSignedPayment] call took, for a build that will NOT be
+     * broadcast.
+     *
+     * `build_signed_payment` leaves its selected inputs reserved on success,
+     * expecting a broadcast to follow. A caller that abandons the build must
+     * call this or the coins stay unselectable until key-wallet's 24-block TTL
+     * backstop reclaims them — and that backstop never fires before the first
+     * sync completes (`ReservationSet::sweep` early-returns at height 0), so an
+     * abandoned build on a freshly restored wallet can otherwise strand the
+     * whole balance for the life of the process (dashpay/platform#4247 review).
+     * This call consults no height.
+     *
+     * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
+     * [txBytes] is the consensus-serialized signed transaction exactly as
+     * [coreWalletBuildSignedPayment] returned it — the transaction is the
+     * ownership signal, so only that build's own inputs are released.
+     * [fundingPath] must be the SAME optional path the build was given (null =
+     * the unmixed BIP44 account).
+     *
+     * Idempotent, and a silent no-op after a successful broadcast.
+     */
+    external fun coreWalletReleasePaymentReservation(
+        coreHandle: Long,
+        txBytes: ByteArray,
+        fundingPath: String?,
+    )
+
+    /**
      * `core_wallet_broadcast_transaction` — broadcast a transaction built by
      * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
      * funding account so a definitive rejection releases its UTXO

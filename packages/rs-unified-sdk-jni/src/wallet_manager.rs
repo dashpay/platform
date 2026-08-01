@@ -1119,6 +1119,82 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_release_payment_reservation` — release the UTXO reservation a
+/// [coreWalletBuildSignedPayment] call took, for a build that will NOT be
+/// broadcast.
+///
+/// `build_signed_payment` leaves its selected inputs reserved on success,
+/// expecting a broadcast to follow. A caller that abandons the build instead
+/// must call this or the coins stay unselectable until key-wallet's 24-block
+/// TTL backstop reclaims them — and that backstop never fires before the first
+/// sync completes (`ReservationSet::sweep` early-returns at height 0), so an
+/// abandoned build on a freshly restored wallet can otherwise strand the whole
+/// balance for the life of the process (dashpay/platform#4247 review). This
+/// call consults no height.
+///
+/// `core_handle` is the transient core-wallet `Handle` from
+/// [platformWalletGetCore]. `tx_bytes` is the consensus-serialized signed
+/// transaction exactly as [coreWalletBuildSignedPayment] returned it — the
+/// transaction is the ownership signal, so only this build's own inputs are
+/// released. `funding_path` must be the SAME optional path the build was given
+/// (null = the unmixed BIP44 account).
+///
+/// Idempotent, and a silent no-op after a successful broadcast, so it is safe
+/// in an unconditional cleanup path. Throws only on an invalid handle,
+/// undecodable transaction bytes, or an unresolvable funding path.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletReleasePaymentReservation(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    tx_bytes: JByteArray,
+    funding_path: JString,
+) {
+    guard(&mut env, (), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core handle is 0");
+            return;
+        }
+        let raw = match env.convert_byte_array(&tx_bytes) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "txBytes byte[] was invalid");
+                return;
+            }
+        };
+        if raw.is_empty() {
+            throw_sdk_exception(env, 1, "txBytes must not be empty");
+            return;
+        }
+        // STRICT reader, matching the build: a genuine read error must throw
+        // rather than silently degrade to the default BIP44 account, which
+        // would release against the wrong ledger and leave the real
+        // reservation stranded — the exact failure this export exists to fix.
+        let funding_path =
+            match crate::funding::read_cstring_opt_strict(env, &funding_path, "fundingPath") {
+                Ok(v) => v,
+                Err(()) => return,
+            };
+        let (funding_path_ptr, funding_path_len) =
+            funding_path.as_ref().map_or((ptr::null(), 0usize), |c| {
+                let b = c.as_bytes();
+                (b.as_ptr(), b.len())
+            });
+
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_release_payment_reservation(
+                core_handle as Handle,
+                raw.as_ptr(),
+                raw.len(),
+                funding_path_ptr,
+                funding_path_len,
+            )
+        };
+        take_pwffi_error(env, result);
+    })
+}
+
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
 /// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.
