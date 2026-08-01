@@ -124,34 +124,32 @@ impl IdentifierArray {
     }
 
     pub fn new(identifiers: Vec<dpp::prelude::Identifier>) -> Self {
-        let count = identifiers.len();
-        if count == 0 {
-            return Self::empty();
-        }
-
-        let mut items: Vec<[u8; 32]> = identifiers.into_iter().map(|id| id.to_buffer()).collect();
-
-        let ptr = items.as_mut_ptr();
-        std::mem::forget(items);
-
-        Self { items: ptr, count }
+        Self::from_hashes(identifiers.into_iter().map(|id| id.to_buffer()).collect())
     }
 
     /// Build the array from raw 32-byte rows (e.g. proTxHashes), which are not
-    /// platform `Identifier`s. Same ownership contract as [`Self::new`]: the
-    /// buffer is heap-leaked here and reclaimed by
+    /// platform `Identifier`s. The buffer is heap-leaked here and reclaimed by
     /// [`platform_wallet_identifier_array_free`].
+    ///
+    /// The rows are moved into an exact-length **boxed slice** before ownership
+    /// is transferred, so the allocation is exactly `count` elements wide and
+    /// the free path can reconstruct it with the identical layout. Leaking the
+    /// `Vec` directly would export only `(ptr, len)` while the allocation kept
+    /// whatever spare capacity the producer happened to have — and freeing an
+    /// allocation with a capacity it was not created with is undefined
+    /// behaviour. That is not hypothetical: `masternodes_by_voting_key`
+    /// collects through a `filter`, whose `size_hint` lower bound is 0, so an
+    /// ordinary one-match lookup routinely produces `capacity != len`
+    /// (dashpay/platform#4258 review).
     pub fn from_hashes(hashes: Vec<[u8; 32]>) -> Self {
         let count = hashes.len();
         if count == 0 {
             return Self::empty();
         }
 
-        let mut items = hashes;
-        let ptr = items.as_mut_ptr();
-        std::mem::forget(items);
+        let items = Box::into_raw(hashes.into_boxed_slice()) as *mut [u8; 32];
 
-        Self { items: ptr, count }
+        Self { items, count }
     }
 }
 
@@ -168,8 +166,12 @@ pub unsafe extern "C" fn platform_wallet_identifier_array_free(array: *mut Ident
     }
     let array = unsafe { &mut *array };
     if !array.items.is_null() && array.count > 0 {
+        // Mirror image of [`IdentifierArray::from_hashes`]: the allocation was
+        // handed over as an exact-length boxed slice, so reclaim it as one.
+        // (The previous `Vec::from_raw_parts(items, count, count)` asserted a
+        // capacity the producer never guaranteed — see that constructor.)
         unsafe {
-            let _ = Vec::from_raw_parts(array.items, array.count, array.count);
+            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(array.items, array.count));
         }
     }
     array.items = std::ptr::null_mut();
@@ -229,6 +231,72 @@ mod tests {
             platform_wallet_identifier_array_free(&mut array);
             assert!(array.items.is_null());
             assert_eq!(array.count, 0);
+        }
+    }
+
+    /// The production `masternodes_by_voting_key` path collects through a
+    /// `filter`, so its `Vec` routinely carries spare capacity — a one-match
+    /// lookup over many masternodes is the common case. Creation and free must
+    /// agree on the allocation layout regardless; under Miri (or a
+    /// capacity-checking allocator) the old `Vec::from_raw_parts(p, n, n)`
+    /// free of such a buffer is undefined behaviour
+    /// (dashpay/platform#4258 review).
+    #[test]
+    fn identifier_array_frees_rows_collected_with_spare_capacity() {
+        unsafe {
+            // Exactly the production shape: filter many rows down to one.
+            let hashes: Vec<[u8; 32]> = (0u8..64)
+                .map(|i| [i; 32])
+                .filter(|row| row[0] == 7)
+                .collect();
+            assert_eq!(hashes.len(), 1);
+            assert!(
+                hashes.capacity() > hashes.len(),
+                "precondition: a filtered collect must over-allocate for this \
+                 test to exercise the layout mismatch (len {}, capacity {})",
+                hashes.len(),
+                hashes.capacity(),
+            );
+
+            let mut array = IdentifierArray::from_hashes(hashes);
+            assert_eq!(array.count, 1);
+            assert!(!array.items.is_null());
+            assert_eq!(*array.items, [7u8; 32], "the row must survive intact");
+
+            platform_wallet_identifier_array_free(&mut array);
+            assert!(array.items.is_null());
+            assert_eq!(array.count, 0);
+        }
+    }
+
+    /// Multi-row round trip: every row must come back byte-for-byte in order,
+    /// and the whole buffer must free cleanly.
+    #[test]
+    fn identifier_array_from_hashes_round_trips_every_row() {
+        unsafe {
+            let rows: Vec<[u8; 32]> = (0u8..5).map(|i| [i; 32]).collect();
+            let mut array = IdentifierArray::from_hashes(rows.clone());
+            assert_eq!(array.count, rows.len());
+
+            let seen = std::slice::from_raw_parts(array.items, array.count);
+            assert_eq!(seen, rows.as_slice());
+
+            platform_wallet_identifier_array_free(&mut array);
+            assert!(array.items.is_null());
+        }
+    }
+
+    /// `from_hashes` with no rows must produce the `(null, 0)` sentinel, which
+    /// the free path skips — an empty lookup result is not an allocation.
+    #[test]
+    fn identifier_array_from_hashes_empty_is_the_sentinel() {
+        unsafe {
+            let mut array = IdentifierArray::from_hashes(Vec::new());
+            assert!(array.items.is_null());
+            assert_eq!(array.count, 0);
+            // Freeing the sentinel is a no-op, and idempotent.
+            platform_wallet_identifier_array_free(&mut array);
+            platform_wallet_identifier_array_free(&mut array);
         }
     }
 
