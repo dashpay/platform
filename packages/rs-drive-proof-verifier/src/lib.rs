@@ -14,12 +14,12 @@ pub use proof::document_count::{
     verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, DocumentCount,
 };
-/// Verified ranked (`HAVING … TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`)
-/// result types. `DocumentRankedEntries` carries one entry per
-/// returned group **in ranking order**;
-/// [`verify_ranked_top_k_proof`](proof::document_ranked::verify_ranked_top_k_proof)
-/// is the tenderdash-composition wrapper that binds the proof's
-/// reconstructed root hash to the signed app hash.
+/// Verified ranked (`HAVING … TOP(n)` / `BOTTOM(n)`) result types.
+/// `DocumentRankedEntries` carries one entry per returned group **in
+/// ranking order**; [`verify_ranked_top_k_proof`] is the
+/// tenderdash-composition wrapper that binds the proof's reconstructed
+/// root hash to the signed app hash. (`MAX` / `MIN` are rejected —
+/// every group tied at the extreme cannot be proved.)
 pub use proof::document_ranked::{verify_ranked_top_k_proof, DocumentRankedEntries};
 pub use proof::document_split_count::DocumentSplitCounts;
 // Re-export `SplitCountEntry` from rs-drive at the proof-verifier
