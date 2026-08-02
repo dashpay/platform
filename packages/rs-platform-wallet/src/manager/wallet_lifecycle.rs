@@ -51,6 +51,33 @@ fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
     Err("phrase does not match any supported BIP-39 wordlist")
 }
 
+/// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
+/// between the inner-manager removal and the public-map removal.
+///
+/// That window is exactly where a concurrent same-id `register_wallet` can
+/// publish a NEW generation into both maps — the id is free in the inner
+/// manager from the moment the removal above completes, and nothing gates
+/// registration. Reproducing it deterministically from outside is not possible:
+/// the window is bounded by two *different* locks, and the only lock a test
+/// could hold to park the remover inside it (`self.wallets`) is the same lock
+/// the registration must acquire to publish, so parking the remover would also
+/// block the registration — and `tokio`'s `RwLock` hands the writer queue out
+/// in FIFO order, which puts the remover first. A rendezvous is therefore the
+/// only way to pin this ordering without a sleep or a completion-order race.
+///
+/// Compiled under `cfg(test)` only: neither this static nor its call site
+/// exists in a production build, and it is not part of any public API.
+#[cfg(test)]
+pub(crate) type RemoveWalletMidpointHook = Box<
+    dyn Fn(&WalletId) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+        + Send
+        + Sync,
+>;
+
+#[cfg(test)]
+pub(crate) static REMOVE_WALLET_MIDPOINT_HOOK: std::sync::Mutex<Option<RemoveWalletMidpointHook>> =
+    std::sync::Mutex::new(None);
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Create a PlatformWallet from a BIP39 mnemonic phrase.
     ///
@@ -615,6 +642,40 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// awaiting the gate, so no manager lock is ever held across a gate
     /// acquisition; payment operations likewise take the gate and only then await
     /// the manager. The order is total, so the two cannot deadlock.
+    ///
+    /// ## Removal is by generation identity, not by key
+    ///
+    /// The gate excludes *payment operations on this generation*. It does not
+    /// exclude a fresh **registration** under the same `wallet_id`:
+    /// [`register_wallet`](Self::register_wallet) mints its own
+    /// [`WalletGeneration`] and takes no gate at all, by design — a create must
+    /// never queue behind an unrelated wallet's teardown.
+    ///
+    /// So once this method has removed generation G1 from the inner
+    /// `wallet_manager`, the id is free and a concurrent registration can publish
+    /// a *different* generation G2 into both maps before this method reaches its
+    /// own `self.wallets` removal — the two removals are separately locked, with
+    /// no happens-before edge between them and the registration. Removing by key
+    /// there would take G2 out of the public map (leaving it registered in the
+    /// inner manager, invisible and unremovable) and hand G2 to `tear_down`,
+    /// which would sweep G2's registry tokens and V2 handles while holding only
+    /// G1's gate — i.e. with G2's payment operations *not* excluded, which is the
+    /// exact property this gate exists to provide.
+    ///
+    /// The `Arc<PlatformWallet>` validated under the gate is therefore retained,
+    /// and the public-map entry is removed only while it still names that same
+    /// generation. Both maps, the returned handle and the `tear_down` argument
+    /// are then all that one generation (`dashpay/platform#4185`). The one
+    /// remaining id-keyed step is the shielded coordinator detach below, which
+    /// has no generation concept at all; a generation that has just been
+    /// registered has not run `bind_shielded` yet, so it holds no coordinator
+    /// entry to detach.
+    ///
+    /// The inner-manager removal needs no such check: G1 can only leave
+    /// `wallet_manager` through this method (which requires G1's gate, held here)
+    /// or through a registration/load rollback for an insert that could not have
+    /// happened while G1 occupied the id — so while the gate is held and before
+    /// the removal below, the inner entry is still G1 by construction.
     pub async fn remove_wallet_with_teardown<F>(
         &self,
         wallet_id: &WalletId,
@@ -628,29 +689,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // removed and re-created under the same id while we waited: in that case
         // we hold the OLD generation's gate, which excludes nothing relevant to
         // the new one, so retry against the generation that is actually current.
-        let _teardown = loop {
-            let generation = {
+        //
+        // The validated handle is carried out of the loop: it is both what this
+        // call returns and tears down, and the identity every mutation below is
+        // matched against.
+        let (removed, _teardown) = loop {
+            let candidate = {
                 let wallets = self.wallets.read().await;
                 match wallets.get(wallet_id) {
                     None => {
                         return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
                     }
-                    Some(wallet) => Arc::clone(wallet.generation()),
+                    Some(wallet) => Arc::clone(wallet),
                 }
             };
-            let guard = generation.teardown_guard().await;
+            let guard = candidate.generation().teardown_guard().await;
             let still_current = {
                 let wallets = self.wallets.read().await;
                 wallets
                     .get(wallet_id)
-                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation))
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), candidate.generation()))
             };
             if still_current {
-                break guard;
+                break (candidate, guard);
             }
             // Drop this generation's guard and re-resolve.
             drop(guard);
         };
+        let generation = Arc::clone(removed.generation());
 
         let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
             let mut wm = self.wallet_manager.write().await;
@@ -679,12 +745,41 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ids
         };
 
-        let removed = {
+        // Test-only rendezvous: the window a concurrent same-id registration can
+        // publish a new generation into. See `REMOVE_WALLET_MIDPOINT_HOOK`.
+        #[cfg(test)]
+        {
+            let pending = REMOVE_WALLET_MIDPOINT_HOOK
+                .lock()
+                .expect("remove-wallet midpoint hook mutex")
+                .as_ref()
+                .map(|hook| hook(wallet_id));
+            if let Some(rendezvous) = pending {
+                rendezvous.await;
+            }
+        }
+
+        // Remove the public-map entry only while it still names the generation
+        // validated under the gate. A concurrent same-id registration could have
+        // published a NEW generation here in the window since the inner removal
+        // above freed the id (see the "Removal is by generation identity" note on
+        // this method); removing by key would evict that live wallet and hand it
+        // to `tear_down` under the wrong gate.
+        {
             let mut wallets = self.wallets.write().await;
-            wallets
-                .remove(wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
-        };
+            let entry_is_ours = wallets
+                .get(wallet_id)
+                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation));
+            if entry_is_ours {
+                wallets.remove(wallet_id);
+            } else {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "remove_wallet: a new generation was registered under this id while the \
+                     previous one was being removed; leaving the new registration in place"
+                );
+            }
+        }
 
         // Detach the wallet's shielded state from the network
         // coordinator. After the Phase-2b refactor the coordinator
@@ -942,6 +1037,195 @@ mod register_wallet_duplicate_tests {
         assert!(
             matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
             "duplicate create must map to WalletAlreadyExists, got: {err:?}"
+        );
+    }
+}
+
+/// Removal versus a same-id re-registration that lands *during* the removal
+/// (`dashpay/platform#4185` review).
+///
+/// The invariant: `remove_wallet_with_teardown` removes, returns and tears down
+/// exactly the wallet generation it validated under that generation's lifecycle
+/// gate — never a different generation that appeared under the same
+/// `wallet_id` while the removal was in progress.
+#[cfg(test)]
+mod remove_versus_recreate_tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use super::REMOVE_WALLET_MIDPOINT_HOOK;
+    use crate::test_support::test_platform_wallet_manager;
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::PlatformWallet;
+
+    /// The mnemonic `test_platform_wallet_manager` builds its wallet from, so
+    /// re-registering from the same seed collides on the same network-scoped
+    /// `wallet_id` — which is the whole point of the scenario.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    /// Clears [`REMOVE_WALLET_MIDPOINT_HOOK`] on drop, including on panic, so a
+    /// failing assertion can never leave the hook armed for another test in the
+    /// same binary.
+    struct MidpointHookGuard;
+
+    impl Drop for MidpointHookGuard {
+        fn drop(&mut self) {
+            if let Ok(mut slot) = REMOVE_WALLET_MIDPOINT_HOOK.lock() {
+                *slot = None;
+            }
+        }
+    }
+
+    /// Requirement: a wallet generation registered while a removal is in flight
+    /// must survive that removal — in BOTH maps — and the removal must return
+    /// and tear down the generation it actually validated.
+    ///
+    /// Deterministic by construction: the re-registration runs from a rendezvous
+    /// fired inside the removal, in the exact window between the inner-manager
+    /// removal and the public-map removal, so there is no completion order to
+    /// race and no sleep. The registration itself is the real
+    /// `create_wallet_from_seed_bytes` → `register_wallet` path, publishing into
+    /// the inner `WalletManager` and then `self.wallets` in the production
+    /// order.
+    ///
+    /// Why that window is reachable in production: the removal frees the id in
+    /// the inner manager and only then acquires `self.wallets` — two separately
+    /// locked stages with no happens-before edge to a concurrent registration,
+    /// which takes no lifecycle gate at all (it mints its own generation). A
+    /// remover descheduled in that gap resumes into a map that already names the
+    /// new generation.
+    ///
+    /// Before the fix the removal took the public-map entry by KEY: it evicted
+    /// the freshly registered generation — leaving it registered in the inner
+    /// manager but invisible and unremovable through `self.wallets` — returned
+    /// it to the caller, and handed it to `tear_down`, which sweeps that
+    /// generation's registry tokens and V2 finalized-transaction handles while
+    /// holding only the OLD generation's gate. The new generation's in-flight
+    /// payment operations were therefore not excluded, which is the one property
+    /// the gate exists to provide.
+    #[tokio::test]
+    async fn removal_leaves_a_generation_registered_during_it_intact() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let original = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("fixture wallet is registered");
+
+        // Filled by the rendezvous with the generation the re-registration
+        // publishes, so the assertions can name it rather than infer it.
+        let recreated: Arc<Mutex<Option<Arc<PlatformWallet>>>> = Arc::new(Mutex::new(None));
+
+        let _hook_guard = MidpointHookGuard;
+        {
+            let manager_for_hook = Arc::clone(&manager);
+            let recreated_slot = Arc::clone(&recreated);
+            // One-shot: the re-registration must not recurse into a later
+            // removal, and no other test in this binary may see the hook.
+            let fired = AtomicBool::new(false);
+            *REMOVE_WALLET_MIDPOINT_HOOK
+                .lock()
+                .expect("midpoint hook mutex") = Some(Box::new(move |id| {
+                let already_fired = fired.swap(true, Ordering::SeqCst);
+                let manager = Arc::clone(&manager_for_hook);
+                let recreated_slot = Arc::clone(&recreated_slot);
+                let id = *id;
+                Box::pin(async move {
+                    if already_fired {
+                        return;
+                    }
+                    let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
+                        .expect("valid test mnemonic");
+                    let seed_bytes = mnemonic.to_seed("");
+                    // The real registration path: inner `WalletManager` first,
+                    // then `self.wallets`. `Some(0)` skips the SPV-tip lookup.
+                    let wallet = manager
+                        .create_wallet_from_seed_bytes(
+                            Network::Testnet,
+                            &seed_bytes,
+                            WalletAccountCreationOptions::Default,
+                            Some(0),
+                        )
+                        .await
+                        .expect(
+                            "the id is free in the inner manager at this point, so a same-seed \
+                             re-registration must succeed",
+                        );
+                    assert_eq!(wallet.wallet_id(), id, "the fixture seeds must collide");
+                    *recreated_slot.lock().expect("recreated slot") = Some(wallet);
+                })
+            }));
+        }
+
+        // Capture what teardown was actually handed.
+        let torn_down: Arc<Mutex<Option<Arc<WalletGeneration>>>> = Arc::new(Mutex::new(None));
+        let torn_down_slot = Arc::clone(&torn_down);
+
+        let removed = manager
+            .remove_wallet_with_teardown(&wallet_id, move |wallet| {
+                *torn_down_slot.lock().expect("torn-down slot") =
+                    Some(Arc::clone(wallet.generation()));
+            })
+            .await
+            .expect("removal of the validated generation succeeds");
+
+        let recreated = recreated
+            .lock()
+            .expect("recreated slot")
+            .clone()
+            .expect("the rendezvous must have re-registered the wallet");
+        assert!(
+            !Arc::ptr_eq(original.generation(), recreated.generation()),
+            "the fixture must produce two distinct generations under one wallet id"
+        );
+
+        // 1. The removal returns the generation it validated under the gate.
+        assert!(
+            Arc::ptr_eq(removed.generation(), original.generation()),
+            "remove_wallet_with_teardown returned a generation it never validated — it took the \
+             public-map entry by key and got the generation registered during the removal"
+        );
+
+        // 2. …and tears down that same generation. Sweeping the other one here
+        //    would run without holding ITS gate, so its in-flight payment
+        //    operations would not be excluded.
+        let torn_down = torn_down
+            .lock()
+            .expect("torn-down slot")
+            .clone()
+            .expect("tear_down must have run");
+        assert!(
+            Arc::ptr_eq(&torn_down, original.generation()),
+            "tear_down was handed a generation whose lifecycle gate this removal does not hold"
+        );
+
+        // 3. The generation registered during the removal is still published.
+        let still_registered = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("a wallet registered during a removal must remain in the public map");
+        assert!(
+            Arc::ptr_eq(still_registered.generation(), recreated.generation()),
+            "the public map must still name the generation the registration published"
+        );
+
+        // 4. …and both maps agree about it: `is_current_generation` compares the
+        //    handle against the inner `WalletManager`, so this fails if the
+        //    removal evicted it from one map only.
+        assert!(
+            recreated.core().is_current_generation().await,
+            "the re-registered generation must be live in both the inner manager and the public \
+             map — evicting it from one leaves an invisible, unremovable wallet"
+        );
+
+        // 5. The removed generation is gone.
+        assert!(
+            !original.core().is_current_generation().await,
+            "the validated generation must be gone from the inner manager"
         );
     }
 }
