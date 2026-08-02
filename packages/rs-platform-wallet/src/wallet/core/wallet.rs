@@ -3,9 +3,10 @@
 use std::sync::Arc;
 
 use super::balance::WalletBalance;
+use super::generation::WalletGeneration;
 
 use dashcore::Address as DashAddress;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use key_wallet::managed_account::address_pool::KeySource;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -33,8 +34,10 @@ pub struct CoreWallet<B: TransactionBroadcaster + ?Sized> {
     /// Injected broadcaster — delegates to SPV or DAPI depending on how
     /// the wallet was constructed by `PlatformWalletManager`.
     pub(crate) broadcaster: Arc<B>,
-    /// Lock-free balance for UI reads.
-    balance: Arc<WalletBalance>,
+    /// This handle's wallet *generation*: the lock-free balance the UI reads and
+    /// that generation's lifecycle gate, in the one `Arc` every handle to the
+    /// generation shares.
+    generation: Arc<WalletGeneration>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -43,20 +46,20 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
         broadcaster: Arc<B>,
-        balance: Arc<WalletBalance>,
+        generation: Arc<WalletGeneration>,
     ) -> Self {
         Self {
             sdk,
             wallet_manager,
             wallet_id,
             broadcaster,
-            balance,
+            generation,
         }
     }
 
     /// Lock-free balance snapshot for UI reads.
     pub fn balance(&self) -> &WalletBalance {
-        &self.balance
+        self.generation.balance()
     }
 
     /// Wallet id this `CoreWallet` operates on. Exposed so FFI
@@ -72,15 +75,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// Two aliases of one generation (the `Arc<PlatformWallet>` clones handed
     /// out by `PlatformWalletManager::get_wallet`) share the per-generation
-    /// `Arc<WalletBalance>`; a wallet removed and re-created under the same
-    /// `wallet_id` gets a fresh one. `Arc::ptr_eq` on that balance therefore
-    /// distinguishes generations that `wallet_id` — and the shared multi-wallet
-    /// `WalletManager` `Arc` — alone cannot (both are equal across a
-    /// remove-then-recreate). While either handle is held the balance `Arc`
-    /// cannot be freed, so its address can never be reused for a different
-    /// generation, which makes the pointer comparison sound (the same soundness
-    /// argument the registry already relies on for `Arc::ptr_eq` on the
-    /// manager).
+    /// [`Arc<WalletGeneration>`](WalletGeneration); a wallet removed and
+    /// re-created under the same `wallet_id` gets a fresh one. `Arc::ptr_eq` on
+    /// it therefore distinguishes generations that `wallet_id` — and the shared
+    /// multi-wallet `WalletManager` `Arc` — alone cannot (both are equal across a
+    /// remove-then-recreate). While either handle is held that `Arc` cannot be
+    /// freed, so its address can never be reused for a different generation,
+    /// which makes the pointer comparison sound (the same soundness argument the
+    /// registry already relies on for `Arc::ptr_eq` on the manager).
     ///
     /// This is the single generation identity shared by BOTH deferred-payment
     /// paths — the registry-token path
@@ -94,18 +96,35 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ) -> bool {
         self.wallet_id == other.wallet_id
             && Arc::ptr_eq(&self.wallet_manager, &other.wallet_manager)
-            && Arc::ptr_eq(&self.balance, &other.balance)
+            && Arc::ptr_eq(&self.generation, &other.generation)
     }
 
-    /// This handle's per-generation balance `Arc` — the generation-identity
-    /// marker (see [`is_same_generation`](Self::is_same_generation)). The
-    /// manager stores the same `Arc` in `PlatformWalletInfo.balance`, so a
+    /// This handle's [`WalletGeneration`] `Arc` — the generation-identity marker
+    /// (see [`is_same_generation`](Self::is_same_generation)). The manager stores
+    /// the same `Arc` in `PlatformWalletInfo.generation`, so a
     /// reservation-cleanup path can, **under the manager lock**, compare this
     /// against the wallet currently registered under `wallet_id` and act only if
     /// they are the same generation — binding a validate-then-mutate to one lock
     /// hold and refusing to touch a generation re-created under the same id.
-    pub(crate) fn generation(&self) -> &Arc<WalletBalance> {
-        &self.balance
+    pub(crate) fn generation(&self) -> &Arc<WalletGeneration> {
+        &self.generation
+    }
+
+    /// Enter THIS generation's lifecycle gate as a payment operation — see
+    /// [`WalletGeneration::payment_guard`].
+    ///
+    /// Every path that publishes an ownership handle for this generation (a
+    /// registry token, a V2 finalized-transaction handle) or pushes one of its
+    /// transactions to the network must hold this across both its
+    /// [`is_current_generation`](Self::is_current_generation) check and the
+    /// action that check authorizes. Without it the check is a bare
+    /// point-in-time observation and a teardown can complete in the gap
+    /// (`dashpay/platform#4185`).
+    ///
+    /// Scoped to this generation, so holding it across a slow SPV send blocks
+    /// only this wallet's teardown — never an unrelated wallet's.
+    pub async fn generation_payment_guard(&self) -> RwLockReadGuard<'_, ()> {
+        self.generation.payment_guard().await
     }
 
     /// This handle's per-generation identity marker, cloned — for tests (and
@@ -116,8 +135,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// as the production `finalize_transaction` path binds a token to the
     /// finalizing wallet.
     #[cfg(any(test, feature = "test-utils"))]
-    pub fn test_generation_marker(&self) -> Arc<WalletBalance> {
-        Arc::clone(&self.balance)
+    pub fn test_generation_marker(&self) -> Arc<WalletGeneration> {
+        Arc::clone(&self.generation)
     }
 
     pub async fn set_gap_limit(
@@ -367,25 +386,25 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// and therefore cannot see either way a generation stops being current:
     ///
     /// * **Removed** (`platform_wallet_manager_remove_wallet`). A retained
-    ///   handle keeps `wallet_id`, the shared manager `Arc`, and its own balance
-    ///   `Arc` alive, so two handles to the removed generation still compare
-    ///   equal to each other. Only a lookup against the manager can tell that
-    ///   nothing is registered under the id any more.
+    ///   handle keeps `wallet_id`, the shared manager `Arc`, and its own
+    ///   [`WalletGeneration`] `Arc` alive, so two handles to the removed
+    ///   generation still compare equal to each other. Only a lookup against the
+    ///   manager can tell that nothing is registered under the id any more.
     /// * **Re-created** under the same id. `wallet_id` and the manager `Arc` are
-    ///   preserved; only the balance `Arc` is fresh.
+    ///   preserved; only the `WalletGeneration` `Arc` is fresh.
     ///
     /// Both cases mean the same thing to a deferred payment: the accounts —
     /// and therefore the `ReservationSet` holding its funding inputs — that this
     /// handle names are no longer the wallet's live state, so acting on them
     /// would spend against state the manager no longer owns. Callers that must
     /// be atomic against a concurrent teardown take
-    /// [`SignedPaymentRegistry::lifecycle_read`](crate::SignedPaymentRegistry::lifecycle_read)
-    /// around the check and the action it gates; on its own this is a point-in-
-    /// time observation (`dashpay/platform#4185`).
+    /// [`generation_payment_guard`](Self::generation_payment_guard) around the
+    /// check and the action it gates; on its own this is a point-in-time
+    /// observation (`dashpay/platform#4185`).
     pub async fn is_current_generation(&self) -> bool {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
-            .is_some_and(|info| Arc::ptr_eq(&info.balance, self.generation()))
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, self.generation()))
     }
 }
 
@@ -407,7 +426,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for CoreWallet<B> {
             wallet_manager: Arc::clone(&self.wallet_manager),
             wallet_id: self.wallet_id,
             broadcaster: Arc::clone(&self.broadcaster),
-            balance: Arc::clone(&self.balance),
+            generation: Arc::clone(&self.generation),
         }
     }
 }
@@ -418,21 +437,21 @@ mod tests {
 
     use key_wallet::account::account_type::StandardAccountType;
 
-    use super::WalletBalance;
+    use super::WalletGeneration;
     use crate::test_support::{funded_wallet_manager, AlwaysOkBroadcaster};
     use crate::wallet::core::CoreWallet;
 
     /// The single generation identity both deferred-payment paths share:
-    /// aliases of one generation share the per-generation balance `Arc` (same
+    /// aliases of one generation share the per-generation `WalletGeneration` `Arc` (same
     /// generation), while a wallet re-created under the same `wallet_id` and the
-    /// same multi-wallet `WalletManager` `Arc` but a fresh balance `Arc` is a
+    /// same multi-wallet `WalletManager` `Arc` but a fresh generation `Arc` is a
     /// DIFFERENT generation. Neither `wallet_id` nor the manager `Arc` alone can
-    /// tell them apart — the balance `Arc` is what distinguishes them, closing
+    /// tell them apart — the generation `Arc` is what distinguishes them, closing
     /// the gap where an old handle could act through the old generation while a
     /// new generation selected the same inputs.
     #[tokio::test]
     async fn is_same_generation_distinguishes_recreation_from_aliases() {
-        let (manager, wallet_id, balance, _signer) =
+        let (manager, wallet_id, generation, _signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let broadcaster = Arc::new(AlwaysOkBroadcaster);
@@ -442,10 +461,10 @@ mod tests {
             Arc::clone(&manager),
             wallet_id,
             Arc::clone(&broadcaster),
-            Arc::clone(&balance),
+            Arc::clone(&generation),
         );
 
-        // A clone is an alias of the SAME generation (shares the balance Arc).
+        // A clone is an alias of the SAME generation (shares the generation Arc).
         let alias = generation_a.clone();
         assert!(
             generation_a.is_same_generation(&alias),
@@ -454,19 +473,19 @@ mod tests {
         assert!(alias.is_same_generation(&generation_a));
 
         // A re-created generation: SAME manager Arc + SAME wallet_id, fresh
-        // per-generation balance Arc.
+        // per-generation `WalletGeneration` Arc.
         let generation_b = CoreWallet::new(
             sdk,
             Arc::clone(&manager),
             wallet_id,
             broadcaster,
-            Arc::new(WalletBalance::new()),
+            Arc::new(WalletGeneration::new()),
         );
         assert!(
             !generation_a.is_same_generation(&generation_b),
             "a re-created generation must NOT match, despite equal wallet_id + manager"
         );
-        // Sanity: it is ONLY the balance Arc that differs — wallet_id and the
+        // Sanity: it is ONLY the generation Arc that differs — wallet_id and the
         // manager Arc are identical, so those checks alone could not tell the
         // two generations apart.
         assert_eq!(generation_a.wallet_id(), generation_b.wallet_id());
