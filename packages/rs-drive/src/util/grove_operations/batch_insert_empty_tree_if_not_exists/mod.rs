@@ -12,6 +12,24 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::{TransactionArg, TreeType};
 
+/// How the underlying v0 body builds the empty-tree operation.
+#[derive(Clone, Copy)]
+enum EmptyTreeInsertMode {
+    /// Plain empty tree of the requested type (non-aggregating parent).
+    NotWrapped,
+    /// v0 wrapper dispatch keyed on the aggregating parent's tree type —
+    /// the diagonal-only matrix
+    /// ([`LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type`]),
+    /// consensus-frozen for the pre-v14 index walkers.
+    NonAggregatedForParent(TreeType),
+    /// v2 zero-contribution dispatch keyed on the aggregating parent's
+    /// tree type — the full parent×inner matrix
+    /// ([`LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent`]),
+    /// which may emit an unwrapped op when the child contributes zero
+    /// naturally. Reachable only from the v2 index walkers.
+    ContributingZeroToParent(TreeType),
+}
+
 impl Drive {
     /// Pushes an "insert empty tree where path key does not yet exist" operation to `drive_operations`.
     /// Will also check the current drive operations
@@ -36,7 +54,7 @@ impl Drive {
             0 => self.batch_insert_empty_tree_if_not_exists_v0(
                 path_key_info,
                 tree_type,
-                None, // wrap_in_non_aggregated_for_parent_tree_type — non-aggregating insert, no wrap
+                EmptyTreeInsertMode::NotWrapped, // non-aggregating insert, no wrap
                 storage_flags,
                 apply_type,
                 transaction,
@@ -94,7 +112,7 @@ impl Drive {
             0 => self.batch_insert_empty_tree_if_not_exists_v0(
                 path_key_info,
                 tree_type,
-                Some(aggregating_parent_tree_type),
+                EmptyTreeInsertMode::NonAggregatedForParent(aggregating_parent_tree_type),
                 storage_flags,
                 apply_type,
                 transaction,
@@ -109,6 +127,53 @@ impl Drive {
                 received: version,
             })),
         }
+    }
+
+    /// Pushes an "insert empty `tree_type` contributing zero to every axis
+    /// its aggregating parent tracks" operation to `drive_operations`, but
+    /// only if the path/key doesn't already exist (in current state OR in
+    /// pending operations).
+    ///
+    /// The v2 index walkers' replacement for
+    /// [`Self::batch_insert_empty_tree_under_aggregating_parent_if_not_exists`]:
+    /// where that helper's v0 wrapper dispatch covers only the diagonal of
+    /// the parent×inner matrix (and errors on shared-prefix aggregate
+    /// layouts like a summable `[a]` next to a plain compound `[a, b]`),
+    /// this one completes the matrix — see
+    /// [`LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent`]
+    /// for the full dispatch (including the unwrapped fallback for children
+    /// that contribute zero naturally, e.g. a plain continuation under a
+    /// sum-only value tree).
+    ///
+    /// Not dispatched on a drive feature version of its own: the platform
+    /// gate is carried by its only callers, the v14+ v2 index walkers, so
+    /// pre-v14 behavior can't reach this path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists<
+        const N: usize,
+    >(
+        &self,
+        path_key_info: PathKeyInfo<N>,
+        aggregating_parent_tree_type: TreeType,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
+        check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<bool, Error> {
+        self.batch_insert_empty_tree_if_not_exists_v0(
+            path_key_info,
+            tree_type,
+            EmptyTreeInsertMode::ContributingZeroToParent(aggregating_parent_tree_type),
+            storage_flags,
+            apply_type,
+            transaction,
+            check_existing_operations,
+            drive_operations,
+            drive_version,
+        )
     }
 
     /// Count-only specialization of

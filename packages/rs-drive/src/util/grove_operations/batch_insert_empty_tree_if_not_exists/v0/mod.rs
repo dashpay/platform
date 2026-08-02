@@ -1,3 +1,4 @@
+use super::EmptyTreeInsertMode;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -22,7 +23,7 @@ impl Drive {
         &self,
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,
-        wrap_in_non_aggregated_for_parent_tree_type: Option<TreeType>,
+        insert_mode: EmptyTreeInsertMode,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -31,27 +32,40 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         // The index walker passes the parent value tree's TreeType when
-        // the parent aggregates count, sum, or both. The
-        // `wrap_in_non_aggregated_for_parent_tree_type` dispatcher
-        // then picks the right wrapper variant
-        // (NonCounted / NotSummed / NotCountedOrSummed) based on what
-        // axes the parent aggregates. For non-aggregating parents
-        // (`wrap_in_non_aggregated_for_parent_tree_type: None`), no wrapping is
-        // needed and we fall through to the plain empty-tree op.
-        let build_op =
-            |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
-                if let Some(parent_tt) = wrap_in_non_aggregated_for_parent_tree_type {
-                    LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
-                        path,
-                        key,
-                        parent_tt,
-                        tree_type,
-                        storage_flags,
-                    )
-                } else {
-                    tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
+        // the parent aggregates count, sum, or both, along with which
+        // wrapper-dispatch generation to use: `NonAggregatedForParent`
+        // (the frozen diagonal-only v0 matrix) or
+        // `ContributingZeroToParent` (the complete matrix, v2 walkers
+        // only). For non-aggregating parents (`NotWrapped`), no
+        // wrapping is needed and we fall through to the plain
+        // empty-tree op.
+        let build_op = |path: Vec<Vec<u8>>,
+                        key: Vec<u8>|
+         -> Result<LowLevelDriveOperation, Error> {
+            match insert_mode {
+                    EmptyTreeInsertMode::NotWrapped => {
+                        tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
+                    }
+                    EmptyTreeInsertMode::NonAggregatedForParent(parent_tt) => {
+                        LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
+                            path,
+                            key,
+                            parent_tt,
+                            tree_type,
+                            storage_flags,
+                        )
+                    }
+                    EmptyTreeInsertMode::ContributingZeroToParent(parent_tt) => {
+                        LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+                            path,
+                            key,
+                            parent_tt,
+                            tree_type,
+                            storage_flags,
+                        )
+                    }
                 }
-            };
+        };
         //todo: clean up the duplication
         match path_key_info {
             PathKeyRef((path, key)) => {
@@ -338,7 +352,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -389,7 +403,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -430,7 +444,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -458,7 +472,7 @@ mod tests {
         let result = drive.batch_insert_empty_tree_if_not_exists_v0(
             info,
             TreeType::NormalTree,
-            None,
+            super::EmptyTreeInsertMode::NotWrapped,
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree,
             None,
@@ -496,7 +510,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -536,7 +550,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -576,7 +590,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
