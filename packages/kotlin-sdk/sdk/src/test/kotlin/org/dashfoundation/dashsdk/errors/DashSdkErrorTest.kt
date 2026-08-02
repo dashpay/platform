@@ -47,6 +47,33 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun platformWalletInvalidParameterIsTypedAndPreservesTheCoreMessage() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val coreMessage = "rust-owned txMetadata validation detail"
+
+        val mapped = runCatching {
+            mapNativeErrors<Unit> { throw DashSDKException(offset + 2, coreMessage) }
+        }.exceptionOrNull()
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.InvalidParameter)
+        assertEquals(coreMessage, mapped?.message)
+    }
+
+    /**
+     * Adding a narrower type must not break callers that already branch on the
+     * generic platform-wallet error and inspect its native code.
+     */
+    @Test
+    fun platformWalletInvalidParameterRemainsCompatibleWithTheGenericFallback() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+        val mapped = DashSdkError.fromNative(DashSDKException(offset + 2, "invalid input"))
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.InvalidParameter)
+        assertTrue(mapped is DashSdkError.PlatformWallet.Generic)
+        assertEquals(2, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
+    }
+
+    @Test
     fun platformWalletCodesMapToPlatformWalletSubtree() {
         val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
         // Retry-semantics-bearing + typed platform-wallet codes.
