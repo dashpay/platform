@@ -17,6 +17,15 @@ pub use {
     drive_document_count_query::{
         CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
+    // Ranked-query verifier-shareable types. The verifier needs the
+    // whole set: `DocumentRankedMode` + `RankedPaginationInputs` to
+    // re-run the same versioned request validation the prover ran,
+    // `DriveDocumentRankedQuery` to rebuild the proved grove path, and
+    // `RankedEntry` / `RankedEntryValue` as the verified result shape.
+    drive_document_ranked_query::{
+        DocumentRankedMode, DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue,
+        RankedPaginationInputs, MAX_RANKED_LIMIT, RANKED_AVG_SCALE,
+    },
     // Sum-query verifier-shareable types: `SumEntry` is the per-key
     // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
     // are shape inputs the verifier needs to rebuild the path query.
@@ -55,6 +64,13 @@ pub use drive_document_sum_query::{
 // `server`-only (parallels the sum-side server-only exports above).
 #[cfg(feature = "server")]
 pub use drive_document_average_query::{DocumentAverageRequest, DocumentAverageResponse};
+
+// `DocumentRankedRequest` / `DocumentRankedResponse` are the
+// server-side dispatcher ABI for the ranked surface — the types
+// drive-abci's routing layer names. Server-only for the same reason
+// as the count / sum / average request types above.
+#[cfg(feature = "server")]
+pub use drive_document_ranked_query::{DocumentRankedRequest, DocumentRankedResponse};
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -223,6 +239,15 @@ pub mod drive_document_sum_query;
 /// the worked example contract.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_average_query;
+
+/// A query to rank an index's groups by a per-group aggregate — "top
+/// 5 restaurants by average grade" — reading grovedb's per-axis
+/// secondary Merk of an indexed tree (PR #657, PV14). Unlike the
+/// count / sum / average surfaces this one never opens the value
+/// trees: the ordering is maintained on write, so a ranked read is
+/// `O(log n + k)` with a proof.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_ranked_query;
 
 /// Joint count-and-sum no-prove executor surface — backs the AVG
 /// no-prove path's unified single-walk dispatch. See its module

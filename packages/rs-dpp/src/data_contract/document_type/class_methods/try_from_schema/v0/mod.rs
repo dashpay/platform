@@ -54,6 +54,7 @@ use crate::identity::SecurityLevel;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::{
     DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
+    DOCUMENT_META_SCHEMA_V3,
 };
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -146,11 +147,12 @@ impl DocumentTypeV0 {
                 0 => &*DOCUMENT_META_SCHEMA_V0,
                 1 => &*DOCUMENT_META_SCHEMA_V1,
                 2 => &*DOCUMENT_META_SCHEMA_V2,
+                3 => &*DOCUMENT_META_SCHEMA_V3,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentTypeV0::try_from_schema (document_type_schema)"
                             .to_string(),
-                        known_versions: vec![0, 1, 2],
+                        known_versions: vec![0, 1, 2, 3],
                         received: version,
                     })
                 }

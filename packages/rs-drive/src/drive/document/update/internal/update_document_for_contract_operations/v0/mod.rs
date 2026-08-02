@@ -1,4 +1,5 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
@@ -37,6 +38,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
+use grovedb::element::IndexAxis;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -78,22 +80,23 @@ fn value_tree_type_for_index_level(index_level: &IndexLevel) -> TreeType {
     }
 }
 
-/// Property-name-tree `TreeType` dispatch for a given `IndexLevel`
-/// node. Mirrors the dispatch in
+/// Property-name-tree `TreeType` (plus ranking axes) dispatch for a given
+/// `IndexLevel` node. Mirrors the dispatch in
 /// `add_indices_for_index_level_for_contract_operations_v1` —
-/// only the range-* flags drive this upgrade because the
+/// only the range-* flags drive the base upgrade, because the
 /// property-name level only matters for the
-/// `AggregateCountOnRange` / `AggregateSumOnRange` walks.
-fn property_name_tree_type_for_index_level(index_level: &IndexLevel) -> TreeType {
-    let info = index_level.has_index_with_type();
-    let range_countable = info.map(|i| i.range_countable).unwrap_or(false);
-    let range_summable = info.map(|i| i.range_summable).unwrap_or(false);
-    match (range_countable, range_summable) {
-        (true, true) => TreeType::ProvableCountProvableSumTree,
-        (true, false) => TreeType::ProvableCountTree,
-        (false, true) => TreeType::ProvableSumTree,
-        (false, false) => TreeType::NormalTree,
-    }
+/// `AggregateCountOnRange` / `AggregateSumOnRange` walks, and the
+/// meta-schema-v3 `ranked*` flags then promote the result to the matching
+/// indexed variant.
+///
+/// A key-changing update can be the operation that re-materializes a
+/// property-name tree an earlier delete drained away, so it has to reproduce
+/// the ranked layout exactly — otherwise the index would silently come back as
+/// a plain tree with no secondaries.
+fn property_name_tree_type_for_index_level(
+    index_level: &IndexLevel,
+) -> Result<(TreeType, Vec<IndexAxis>), Error> {
+    property_name_tree_type_and_ranked_axes(index_level.has_index_with_type())
 }
 
 /// `[0]`-key reference-bucket `TreeType` dispatch for the
@@ -489,14 +492,15 @@ impl Drive {
                         // `ProvableSumTree` / `ProvableCountProvableSumTree`
                         // when the level below opts into the
                         // range-* variant for the corresponding axis.
-                        let property_name_tree_type =
-                            property_name_tree_type_for_index_level(current_index_level);
-                        let inserted = self.batch_insert_empty_tree_if_not_exists(
+                        let (property_name_tree_type, ranked_axes) =
+                            property_name_tree_type_for_index_level(current_index_level)?;
+                        let inserted = self.batch_insert_empty_index_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((
                                 index_path.clone(),
                                 index_property.name.as_bytes(),
                             )),
                             property_name_tree_type,
+                            &ranked_axes,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,

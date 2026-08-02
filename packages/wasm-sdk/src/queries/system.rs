@@ -916,6 +916,11 @@ fn element_type_name(element: &Element) -> &'static str {
         Element::ProvableCountSumTree(_, _, _, _) => "provableCountSumTree",
         Element::ProvableCountProvableSumTree(_, _, _, _) => "provableCountProvableSumTree",
         Element::ProvableSumTree(_, _, _) => "provableSumTree",
+        Element::ProvableSumIndexedTree(_, _, _, _) => "provableSumIndexedTree",
+        Element::ProvableCountIndexedTree(_, _, _, _) => "provableCountIndexedTree",
+        Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
+            "provableCountProvableSumIndexedTree"
+        }
         Element::CommitmentTree(_, _, _) => "commitmentTree",
         Element::MmrTree(_, _) => "mmrTree",
         Element::BulkAppendTree(_, _, _) => "bulkAppendTree",
@@ -944,6 +949,11 @@ fn non_counted_element_type_name(element: &Element) -> &'static str {
             "nonCountedProvableCountProvableSumTree"
         }
         Element::ProvableSumTree(_, _, _) => "nonCountedProvableSumTree",
+        Element::ProvableSumIndexedTree(_, _, _, _) => "nonCountedProvableSumIndexedTree",
+        Element::ProvableCountIndexedTree(_, _, _, _) => "nonCountedProvableCountIndexedTree",
+        Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
+            "nonCountedProvableCountProvableSumIndexedTree"
+        }
         Element::CommitmentTree(_, _, _) => "nonCountedCommitmentTree",
         Element::MmrTree(_, _) => "nonCountedMmrTree",
         Element::BulkAppendTree(_, _, _) => "nonCountedBulkAppendTree",

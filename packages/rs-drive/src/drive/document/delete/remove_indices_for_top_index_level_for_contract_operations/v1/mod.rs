@@ -8,6 +8,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::drive::document::unique_event_id;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -94,13 +95,12 @@ impl Drive {
             let sub_level_range_summable = sub_level_info
                 .map(|info| info.range_summable)
                 .unwrap_or(false);
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
+            // Includes the meta-schema-v3 ranked upgrade: the delete walker
+            // writes nothing itself, but its estimation layer must describe
+            // the tree the insert path actually laid down, or dry-run delete
+            // fees drift from applied ones on ranked indexes.
+            let (property_name_tree_type, _ranked_axes) =
+                property_name_tree_type_and_ranked_axes(sub_level_info)?;
 
             // Derive `value_tree_type` from the full four-axis flags
             // (mirror of the insert side's matrix). The delete walker

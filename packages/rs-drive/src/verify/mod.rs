@@ -7,6 +7,9 @@ pub mod document;
 /// Document-count verification methods on proofs (the
 /// `GetDocumentsCount` endpoint's prove-path verifiers).
 pub mod document_count;
+/// Document-ranked verification methods on proofs (the
+/// `HAVING … TOP(n)` surface's prove-path verifier).
+pub mod document_ranked;
 /// Document-sum verification methods on proofs (the
 /// `GetDocumentsSum` endpoint's prove-path verifiers).
 pub mod document_sum;

@@ -12,6 +12,7 @@ use crate::util::storage_flags::StorageFlags;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::GroveOp;
+use grovedb::element::IndexAxis;
 use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
@@ -23,6 +24,7 @@ impl Drive {
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,
         wrap_in_non_aggregated_for_parent_tree_type: Option<TreeType>,
+        ranked_axes: &[IndexAxis],
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -38,8 +40,33 @@ impl Drive {
         // axes the parent aggregates. For non-aggregating parents
         // (`wrap_in_non_aggregated_for_parent_tree_type: None`), no wrapping is
         // needed and we fall through to the plain empty-tree op.
+        //
+        // `ranked_axes` is non-empty only for a ranked index's terminal
+        // property-name tree, where `tree_type` is one of the three indexed
+        // variants and the element needs the axis TLV that `TreeType` cannot
+        // carry. The two cases are mutually exclusive by construction — see
+        // `INDEXED_INNER_UNWRAPPABLE` in `fees::op` for why an indexed tree
+        // can never be wrapped.
         let build_op =
             |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
+                if !ranked_axes.is_empty() {
+                    if wrap_in_non_aggregated_for_parent_tree_type.is_some() {
+                        return Err(Error::Drive(DriveError::NotSupported(
+                            "a ranked index's terminal property-name tree cannot be created \
+                             inside an aggregating value tree: grovedb's NonCounted / NotSummed \
+                             / NotCountedOrSummed wrappers reject indexed inners, because an \
+                             indexed primary commits its aggregate and secondary root keys \
+                             through the very parent element the wrapper neutralizes.",
+                        )));
+                    }
+                    return LowLevelDriveOperation::for_known_path_key_empty_indexed_tree(
+                        path,
+                        key,
+                        tree_type,
+                        ranked_axes,
+                        storage_flags,
+                    );
+                }
                 if let Some(parent_tt) = wrap_in_non_aggregated_for_parent_tree_type {
                     LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
                         path,
@@ -339,6 +366,7 @@ mod tests {
                 info,
                 TreeType::NormalTree,
                 None,
+                &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -390,6 +418,7 @@ mod tests {
                 info,
                 TreeType::NormalTree,
                 None,
+                &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -431,6 +460,7 @@ mod tests {
                 info,
                 TreeType::NormalTree,
                 None,
+                &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -459,6 +489,7 @@ mod tests {
             info,
             TreeType::NormalTree,
             None,
+            &[],
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree,
             None,
@@ -497,6 +528,7 @@ mod tests {
                 info,
                 TreeType::NormalTree,
                 None,
+                &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -537,6 +569,7 @@ mod tests {
                 info,
                 TreeType::NormalTree,
                 None,
+                &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -577,6 +610,7 @@ mod tests {
                 info,
                 TreeType::NormalTree,
                 None,
+                &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),

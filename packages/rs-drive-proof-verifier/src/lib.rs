@@ -14,12 +14,27 @@ pub use proof::document_count::{
     verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, DocumentCount,
 };
+/// Verified ranked (`HAVING … TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`)
+/// result types. `DocumentRankedEntries` carries one entry per
+/// returned group **in ranking order**;
+/// [`verify_ranked_top_k_proof`](proof::document_ranked::verify_ranked_top_k_proof)
+/// is the tenderdash-composition wrapper that binds the proof's
+/// reconstructed root hash to the signed app hash.
+pub use proof::document_ranked::{verify_ranked_top_k_proof, DocumentRankedEntries};
 pub use proof::document_split_count::DocumentSplitCounts;
 // Re-export `SplitCountEntry` from rs-drive at the proof-verifier
 // crate root so SDK consumers don't have to depend on rs-drive
 // directly just to name the entry type returned by
 // `verify_distinct_count_proof` and `DocumentSplitCounts::from_verified`.
 pub use drive::query::SplitCountEntry;
+// Same treatment for the ranked surface's entry types, plus the
+// fixed-point scale the Avg axis sorts by. `RANKED_AVG_SCALE` is
+// itself a re-export of grovedb's `AVG_FIXED_POINT_SCALE` — it moved
+// from 10^15 to 10^19 late in grovedb's development, so clients must
+// read it from here and never hardcode the literal. Divide an
+// `AvgFixedPoint` value by it (or call `RankedEntryValue::as_f64`) to
+// render an average.
+pub use drive::query::{RankedEntry, RankedEntryValue, RANKED_AVG_SCALE};
 /// Verified average result types. Average-side analog of `DocumentSum`
 /// / `DocumentSplitSums`; carry the `(count, sum)` pair the verifier
 /// recovers from grovedb PR 670's `AggregateCountAndSumOnRange`

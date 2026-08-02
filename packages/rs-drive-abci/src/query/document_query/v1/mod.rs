@@ -29,7 +29,9 @@
 mod compute_aggregate_mode_and_check_limit;
 mod conversions;
 
-use self::compute_aggregate_mode_and_check_limit::compute_aggregate_mode_and_check_limit;
+use self::compute_aggregate_mode_and_check_limit::{
+    compute_aggregate_mode_and_check_limit, AggregateRouting,
+};
 
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -41,9 +43,9 @@ use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::St
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Start as RequestV1Start;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
-    average_results, count_results, result_data, sum_results, AverageAggregate, AverageEntries,
-    AverageEntry, AverageResults, CountEntries, CountEntry, CountResults, Documents, ResultData,
-    SumEntries, SumEntry, SumResults,
+    average_results, count_results, ranked_entry, result_data, sum_results, AverageAggregate,
+    AverageEntries, AverageEntry, AverageResults, CountEntries, CountEntry, CountResults,
+    Documents, RankedEntries, RankedEntry, ResultData, SumEntries, SumEntry, SumResults,
 };
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, get_documents_response_v1, GetDocumentsResponseV1,
@@ -56,9 +58,10 @@ use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
     AverageEntry as DriveAverageEntry, AverageMode, CountMode, DocumentAverageRequest,
-    DocumentAverageResponse, DocumentCountRequest, DocumentCountResponse, DocumentSumRequest,
-    DocumentSumResponse, OrderClause, SelectFunction, SelectProjection, SplitCountEntry,
-    SumEntry as DriveSumEntry, SumMode, WhereClause,
+    DocumentAverageResponse, DocumentCountRequest, DocumentCountResponse, DocumentRankedRequest,
+    DocumentRankedResponse, DocumentSumRequest, DocumentSumResponse, HavingClause, OrderClause,
+    RankedEntry as DriveRankedEntry, RankedEntryValue, SelectFunction, SelectProjection,
+    SplitCountEntry, SumEntry as DriveSumEntry, SumMode, WhereClause,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -84,7 +87,7 @@ pub(super) fn not_yet_implemented(feature: &str) -> QueryError {
 fn validate_and_route(
     select: &SelectProjection,
     limit: Option<u32>,
-    having_non_empty: bool,
+    having: &[HavingClause],
     group_by: &[String],
     where_clauses: &[WhereClause],
     platform_version: &PlatformVersion,
@@ -123,7 +126,28 @@ fn validate_and_route(
         )));
     }
 
-    if having_non_empty {
+    // HAVING is only ever meaningful for an aggregate projection:
+    // it constrains (or, for a ranking operand, orders) the groups a
+    // `COUNT` / `SUM` / `AVG` produces. Those three functions route
+    // through the versioned `compute_aggregate_mode_and_check_limit`
+    // helper below, which is where the ranked gate lives — under the
+    // v0 table every non-empty HAVING is still rejected, under v1 a
+    // ranking operand routes to the ranked executor.
+    //
+    // For every other SELECT there is no aggregate for a HAVING to
+    // talk about, so the rejection stays here and stays unversioned.
+    // It also stays *ahead* of the per-function gates below, exactly
+    // where the old blanket rejection was: `SELECT DOCUMENTS … HAVING`
+    // must keep reporting the HAVING rather than silently dropping it
+    // on the documents path, and `SELECT MIN/MAX … HAVING` must not
+    // start reporting MIN/MAX as the reason a request with two
+    // unsupported features was refused.
+    if !having.is_empty()
+        && !matches!(
+            select.function,
+            SelectFunction::Count | SelectFunction::Sum | SelectFunction::Avg
+        )
+    {
         return Err(not_yet_implemented("HAVING clause"));
     }
 
@@ -184,17 +208,20 @@ fn validate_and_route(
                         .to_string(),
                 ));
             }
-            let mode = compute_aggregate_mode_and_check_limit(
+            match compute_aggregate_mode_and_check_limit(
                 group_by,
                 where_clauses,
                 limit,
+                having,
                 "SUM",
                 platform_version,
-            )?;
-            Ok(RoutingDecision::Sum {
-                sum_property: select.field.clone(),
-                mode,
-            })
+            )? {
+                AggregateRouting::Grouped(mode) => Ok(RoutingDecision::Sum {
+                    sum_property: select.field.clone(),
+                    mode,
+                }),
+                AggregateRouting::Ranked => Ok(RoutingDecision::Ranked),
+            }
         }
         SelectFunction::Avg => {
             // SELECT AVG(field): routes to
@@ -223,17 +250,20 @@ fn validate_and_route(
                         .to_string(),
                 ));
             }
-            let mode = compute_aggregate_mode_and_check_limit(
+            match compute_aggregate_mode_and_check_limit(
                 group_by,
                 where_clauses,
                 limit,
+                having,
                 "AVG",
                 platform_version,
-            )?;
-            Ok(RoutingDecision::Average {
-                sum_property: select.field.clone(),
-                mode,
-            })
+            )? {
+                AggregateRouting::Grouped(mode) => Ok(RoutingDecision::Average {
+                    sum_property: select.field.clone(),
+                    mode,
+                }),
+                AggregateRouting::Ranked => Ok(RoutingDecision::Ranked),
+            }
         }
         SelectFunction::Min => Err(not_yet_implemented(
             "SELECT MIN (the wire surface accepts MIN(field) so callers \
@@ -278,14 +308,17 @@ fn validate_and_route(
             // but the `any` shape is used here too so the routing
             // logic doesn't bake in an assumption that could go
             // stale if that validator's contract ever relaxes.
-            let mode = compute_aggregate_mode_and_check_limit(
+            match compute_aggregate_mode_and_check_limit(
                 group_by,
                 where_clauses,
                 limit,
+                having,
                 "COUNT",
                 platform_version,
-            )?;
-            Ok(RoutingDecision::Count(mode))
+            )? {
+                AggregateRouting::Grouped(mode) => Ok(RoutingDecision::Count(mode)),
+                AggregateRouting::Ranked => Ok(RoutingDecision::Ranked),
+            }
         }
     }
 }
@@ -320,6 +353,21 @@ enum RoutingDecision {
         sum_property: String,
         mode: CountMode,
     },
+    /// Ranked routing: a `COUNT` / `SUM` / `AVG` select whose single
+    /// `HAVING` clause carries a ranking right operand (`TOP(n)` /
+    /// `BOTTOM(n)` / `MAX` / `MIN`). Dispatches to
+    /// [`Self::dispatch_ranked_v1`] → `Drive::execute_document_ranked_request`
+    /// and emits the `RankedEntries` proto message.
+    ///
+    /// Carries nothing, unlike its `Sum` / `Average` siblings: those
+    /// pass the projected property forward because their drive
+    /// request takes it as a separate field, whereas the ranked drive
+    /// request takes the whole `(select, group_by, having)` triple and
+    /// resolves the axis, direction and `k` itself. The handler still
+    /// owns all three after routing, so there is nothing to carry and
+    /// no opportunity for the routing layer's reading of the ranking
+    /// to drift from drive's.
+    Ranked,
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -337,8 +385,12 @@ enum RoutingDecision {
 ///    rejection / `InvalidArgument` decode errors
 /// 4. `selects.len() > 1` → `not_yet_implemented("multi-projection …")`
 /// 5. `select_from_proto` (first element, or default documents)
-/// 6. [`validate_and_route`] — which itself runs `limit == Some(0)`
-///    → `having_non_empty` → per-function gates → mode pick.
+/// 6. `having_clauses_from_proto` → propagate `InvalidArgument`
+///    decode errors (unknown aggregate-function / operator / ranking
+///    discriminant, missing aggregate, missing right operand)
+/// 7. [`validate_and_route`] — which itself runs `limit == Some(0)`
+///    → the non-aggregate HAVING gate → per-function gates →
+///    routing pick (including the versioned ranked gate).
 ///
 /// Treats an unset `select` (proto-default) the same way the
 /// handler does — as `SelectProjection::documents()`.
@@ -385,12 +437,15 @@ pub(super) fn validate_and_route_for_tests(
         .map(conversions::select_from_proto)
         .transpose()?
         .unwrap_or_else(SelectProjection::documents);
-    // 6. `validate_and_route` runs the inner `limit` / `having` /
+    // 6. HAVING decoding — wire-malformed clauses reject as
+    //    `InvalidArgument` before any routing decision is taken.
+    let having = conversions::having_clauses_from_proto(request_v1.having.clone())?;
+    // 7. `validate_and_route` runs the inner `limit` / `having` /
     //    per-function gates.
     validate_and_route(
         &select,
         request_v1.limit,
-        !request_v1.having.is_empty(),
+        &having,
         &request_v1.group_by,
         where_clauses,
         platform_version,
@@ -409,6 +464,10 @@ pub(super) fn validate_and_route_for_tests(
         // `dispatch_average_v1` further routes by where-shape ×
         // prove flag once the executor lands.
         RoutingDecision::Average { .. } => "average",
+        // Ranked surface — single label; the axis / direction / `k`
+        // breakdown is drive's to resolve, not routing's, so there
+        // is no sub-mode to report here.
+        RoutingDecision::Ranked => "ranked",
     })
 }
 
@@ -453,17 +512,19 @@ impl<C> Platform<C> {
         // executor consume the typed clauses directly — no CBOR
         // envelope on the v1 path.
         //
-        // `having` is checked for non-empty before decoding rather
-        // than after: the server rejects non-empty HAVING
-        // wholesale today, so decoding the clauses just to
-        // discard them is pure overhead and the downstream
-        // dispatchers don't accept the decoded vec yet. When
-        // HAVING execution lands, the `is_empty()` short-circuit
-        // gives way to a full `having_clauses_from_proto` call
-        // that threads into the dispatchers — and at that point
-        // wire-malformed HAVING (bad discriminant, missing
-        // aggregate, …) starts surfacing as `InvalidArgument`
-        // automatically.
+        // `having` is decoded here too, unconditionally. It used to
+        // be short-circuited on `is_empty()` because the server
+        // rejected non-empty HAVING wholesale and decoding just to
+        // discard was pure overhead; now the ranked path consumes
+        // the decoded clauses, so the decode runs for every request.
+        // The consequence the old comment predicted follows
+        // automatically: wire-malformed HAVING (bad discriminant,
+        // missing aggregate, missing right operand, …) now surfaces
+        // as `InvalidArgument` instead of being masked by the
+        // blanket "not yet implemented" — including on protocol
+        // versions whose routing table still refuses every HAVING,
+        // since malformed input is malformed regardless of which
+        // capability would have handled it.
         let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
@@ -472,7 +533,10 @@ impl<C> Platform<C> {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
-        let having_non_empty = !having.is_empty();
+        let having_clauses = match conversions::having_clauses_from_proto(having) {
+            Ok(c) => c,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
 
         // `selects` is `repeated Select` on the wire. Empty
         // list → default-construct a `documents()` projection
@@ -502,7 +566,7 @@ impl<C> Platform<C> {
         let routing = match validate_and_route(
             &select,
             limit,
-            having_non_empty,
+            &having_clauses,
             &group_by,
             &where_clauses,
             platform_version,
@@ -558,6 +622,20 @@ impl<C> Platform<C> {
                 prove,
                 sum_property,
                 mode,
+                platform_state,
+                platform_version,
+            ),
+            RoutingDecision::Ranked => self.dispatch_ranked_v1(
+                data_contract_id,
+                document_type,
+                select,
+                group_by,
+                having_clauses,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
                 platform_state,
                 platform_version,
             ),
@@ -1131,6 +1209,233 @@ impl<C> Platform<C> {
 
         Ok(QueryValidationResult::new_with_data(response))
     }
+
+    /// Dispatch a ranked request — a `COUNT` / `SUM` / `AVG` select
+    /// whose single `HAVING` clause carries a `TOP(n)` / `BOTTOM(n)` /
+    /// `MAX` / `MIN` ranking — to
+    /// [`Drive::execute_document_ranked_request`], and map the response
+    /// into a `GetDocumentsResponseV1` carrying a `RankedEntries`
+    /// payload (or a `Proof` payload when prove=true).
+    ///
+    /// Structurally parallel to [`Self::dispatch_count_v1`] — same
+    /// contract fetch, same `Error::Query` → typed-rejection mapping,
+    /// same prove vs no-prove split — with two differences worth
+    /// naming:
+    ///
+    /// 1. **The request is forwarded whole.** `where_clauses`,
+    ///    `limit` and `start` are passed down even though a ranked
+    ///    request must carry none of them, because drive owns that
+    ///    rejection: the SDK's client-side helpers call drive's
+    ///    validator with no abci in the path, so re-checking here
+    ///    would create a second, driftable copy of the grammar. The
+    ///    rejections come back as `Error::Query(...)` and are
+    ///    surfaced to the caller as query errors, not internal ones.
+    ///    `order_by` is the sole exception — the drive request has no
+    ///    field for it, so it is rejected here.
+    /// 2. **Proving an empty ranking is mapped, not propagated.** See
+    ///    [`empty_ranking_proof_rejection`].
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_ranked_v1(
+        &self,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        select: SelectProjection,
+        group_by: Vec<String>,
+        having: Vec<HavingClause>,
+        where_clauses: Vec<WhereClause>,
+        order_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        // ORDER BY is refused here rather than downstream because
+        // `DocumentRankedRequest` has no field to carry it, so drive
+        // cannot own this rejection the way it owns `where` / `limit`
+        // / `start_at`. The result order of a ranked query *is* the
+        // ranking, produced by the direction of the walk over the
+        // axis secondary: a caller-supplied ordering could only
+        // agree with it (redundant) or contradict it (unsatisfiable —
+        // re-sorting the k returned groups by a document property
+        // answers a different question than the ranking asked).
+        // Accepting and silently ignoring it is the one genuinely
+        // dangerous option, so it is rejected loudly.
+        if !order_clauses.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "ORDER BY is not valid for a ranked query: the entry order of a \
+                     `HAVING … TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN` result already \
+                     is the ranking order (best-first for TOP / MAX, worst-first for \
+                     BOTTOM / MIN). Drop `order_by`, or flip TOP ↔ BOTTOM to reverse \
+                     the ranking."
+                        .to_string(),
+                ),
+            ));
+        }
+
+        let contract_id: Identifier =
+            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
+
+        let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            None,
+            true,
+            None,
+            platform_version,
+        )?;
+        let contract_fetch_info = check_validation_result_with_data!(contract_fetch_info.ok_or(
+            QueryError::Query(QuerySyntaxError::DataContractNotFound(
+                "contract not found when querying from value with contract info",
+            ))
+        ));
+        let contract_ref = &contract_fetch_info.contract;
+        let document_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(document_type_name.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for contract {}",
+                document_type_name, contract_id
+            ))));
+
+        let drive_request = DocumentRankedRequest {
+            contract: contract_ref,
+            document_type,
+            group_by: &group_by,
+            select,
+            having: &having,
+            where_clauses: &where_clauses,
+            limit,
+            // `offset` is rejected for every v1 request at the top of
+            // `query_documents_v1`, so it can only be `None` here.
+            offset: None,
+            has_start_at: start.is_some(),
+            prove,
+        };
+
+        let drive_response =
+            match self
+                .drive
+                .execute_document_ranked_request(drive_request, None, platform_version)
+            {
+                Ok(r) => r,
+                Err(drive::error::Error::Query(qe)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
+                }
+                Err(e) => match empty_ranking_proof_rejection(&e) {
+                    Some(rejection) => {
+                        return Ok(QueryValidationResult::new_with_error(rejection));
+                    }
+                    None => return Err(e.into()),
+                },
+            };
+
+        let response = match drive_response {
+            DocumentRankedResponse::Entries(entries) => GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Data(ResultData {
+                    // No aggregate-collapse arm here, unlike count /
+                    // sum / average: a ranked result is always a list
+                    // of groups. `MAX` / `MIN` are `TOP(1)` /
+                    // `BOTTOM(1)` and still return one *entry*,
+                    // because the caller needs to know which group
+                    // won, not only the winning value.
+                    variant: Some(result_data::Variant::Ranked(RankedEntries {
+                        // Order is preserved verbatim: entry order is
+                        // the ranking order, and drive already
+                        // asserted the list is no longer than `k`.
+                        entries: entries.into_iter().map(into_v1_ranked_entry).collect(),
+                    })),
+                })),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+            },
+            DocumentRankedResponse::Proof(proof_bytes) => {
+                let (grovedb_used, proof) =
+                    self.response_proof_v0(platform_state, proof_bytes, GroveDBToUse::Current)?;
+                GetDocumentsResponseV1 {
+                    result: Some(get_documents_response_v1::Result::Proof(proof)),
+                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                }
+            }
+        };
+
+        Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+/// Translate an rs-drive `RankedEntry` into the wire `RankedEntry`.
+/// Mirror of [`into_v1_entry`] / [`into_v1_sum_entry`] /
+/// [`into_v1_average_entry`] for the ranked surface.
+///
+/// `key` passes through as the raw index-key bytes of the grouped
+/// property value — the same bytes the proof commits to, so a client
+/// verifying the proof compares byte-for-byte against what it
+/// reconstructs.
+///
+/// The `value` oneof is always set: drive's `RankedEntryValue` has no
+/// "absent" variant (unlike the count / sum entry types, whose
+/// `Option` exists for the SDK's synthesize-for-missing-In-value
+/// concept — a ranked result has no caller-supplied key set to be
+/// silent about).
+fn into_v1_ranked_entry(e: DriveRankedEntry) -> RankedEntry {
+    RankedEntry {
+        key: e.key,
+        value: Some(match e.value {
+            RankedEntryValue::Count(count) => ranked_entry::Value::Count(count),
+            RankedEntryValue::Sum(sum) => ranked_entry::Value::Sum(sum),
+            // 16-byte big-endian two's complement, the encoding the
+            // proto field documents. `to_be_bytes` on `i128` is
+            // exactly that, and is the inverse of the client's
+            // `i128::from_be_bytes`.
+            RankedEntryValue::AvgFixedPoint(avg) => {
+                ranked_entry::Value::AvgFixedPoint(avg.to_be_bytes().to_vec())
+            }
+        }),
+    }
+}
+
+/// Recognize the one grovedb failure that is a caller-facing
+/// condition rather than a server fault: **an empty ranking cannot be
+/// proved**.
+///
+/// grovedb's prover has no absence-proof shape for "this axis
+/// secondary has no entries", so proving a ranking over an index that
+/// holds no documents fails with a merk-level "Cannot create proof for
+/// empty tree", wrapped by grovedb as `CorruptedData`. Reaching that
+/// state needs nothing exotic — querying a freshly registered contract
+/// with `prove = true` does it — so letting it propagate would answer
+/// an ordinary request with an internal error (`Status::unknown`) and
+/// an alarming server-side log line, and give the caller no idea that
+/// the same request without `prove` succeeds and returns the empty
+/// list.
+///
+/// Detection is by variant + marker substring rather than by a typed
+/// error, because grovedb flattens the merk error into a
+/// `CorruptedData(String)` at the indexed-axis proof boundary; the
+/// substring is the merk-side constant. The match is deliberately
+/// narrow: any other `CorruptedData` still propagates as an internal
+/// error, because for every other cause that classification is
+/// correct.
+fn empty_ranking_proof_rejection(error: &drive::error::Error) -> Option<QueryError> {
+    let drive::error::Error::GroveDB(grove_error) = error else {
+        return None;
+    };
+    let drive::query::GroveError::CorruptedData(message) = grove_error.as_ref() else {
+        return None;
+    };
+    if !message.contains("Cannot create proof for empty tree") {
+        return None;
+    }
+    Some(QueryError::InvalidArgument(
+        "this ranking has no groups yet, and an empty ranking cannot be proved: \
+         grovedb has no absence-proof shape for an empty axis secondary. Retry \
+         with `prove = false` — the unproven read answers the same request with \
+         an empty entry list. Once the index holds at least one document, the \
+         proved form works."
+            .to_string(),
+    ))
 }
 
 fn into_v1_entry(e: SplitCountEntry) -> CountEntry {

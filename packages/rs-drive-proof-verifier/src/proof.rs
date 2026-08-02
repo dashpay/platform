@@ -4,6 +4,10 @@
 /// `AggregateCountAndSumOnRange` primitive.
 pub mod document_average;
 pub mod document_count;
+/// Verified ranked (`HAVING … TOP(n)`) result. One entry per returned
+/// group, in ranking order, read from an indexed tree's per-axis
+/// secondary (grovedb PR 657); see the file's docs.
+pub mod document_ranked;
 /// Per-entry verified average result. One `(in_key, key, count, sum)`
 /// tuple per matched group; client divides per-entry to obtain
 /// per-group averages.
@@ -3918,7 +3922,7 @@ mod tests {
             })),
         };
         let provider = unreachable_provider();
-        let err = <StateTransitionProofResult as FromProof<
+        let err = <StateTransitionProofOutcome as FromProof<
             platform::BroadcastStateTransitionRequest,
         >>::maybe_from_proof(
             request,
@@ -6023,7 +6027,7 @@ mod tests {
         };
         let response = platform::WaitForStateTransitionResultResponse::default();
         let provider = unreachable_provider();
-        let err = <StateTransitionProofResult as FromProof<
+        let err = <StateTransitionProofOutcome as FromProof<
             platform::BroadcastStateTransitionRequest,
         >>::maybe_from_proof(
             request,
@@ -6039,7 +6043,7 @@ mod tests {
     #[test]
     fn broadcast_state_transition_protocol_error_fires_before_metadata_check() {
         // This test pins the ORDERING of validation in
-        // `StateTransitionProofResult::maybe_from_proof` for broadcast
+        // `StateTransitionProofOutcome::maybe_from_proof` for broadcast
         // state transitions: proof extraction -> state_transition decode ->
         // metadata check. An invalid state_transition payload triggers
         // `ProtocolError` on decode BEFORE the missing-metadata branch is
@@ -6064,7 +6068,7 @@ mod tests {
             })),
         };
         let provider = unreachable_provider();
-        let err = <StateTransitionProofResult as FromProof<
+        let err = <StateTransitionProofOutcome as FromProof<
             platform::BroadcastStateTransitionRequest,
         >>::maybe_from_proof(
             request,

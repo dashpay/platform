@@ -714,3 +714,67 @@ impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
         drive_proof_verifier::DocumentSplitAverages(entries)
     }
 }
+
+/// Wire shape for `DocumentRankedEntries` mock round-trip:
+/// `(group key, axis tag, value)` triples, in list order — **order is
+/// the ranking**, so a map-shaped encoding (as used nowhere here, but
+/// as would be the obvious alternative) would destroy the answer.
+///
+/// The value is widened to `i128` across all three axes: `Count`
+/// (`u64`) and `Sum` (`i64`) both fit losslessly, and `AvgFixedPoint`
+/// is already an `i128`. One numeric column keeps the tuple flat while
+/// the tag preserves which axis produced it, so a mock expectation
+/// can't quietly turn a count into a sum.
+type DocumentRankedTriples = Vec<(Vec<u8>, u8, i128)>;
+
+const RANKED_TAG_COUNT: u8 = 0;
+const RANKED_TAG_SUM: u8 = 1;
+const RANKED_TAG_AVG: u8 = 2;
+
+impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        let bincode_config = standard();
+        let triples: DocumentRankedTriples = self
+            .0
+            .iter()
+            .map(|e| match e.value {
+                drive_proof_verifier::RankedEntryValue::Count(count) => {
+                    (e.key.clone(), RANKED_TAG_COUNT, count as i128)
+                }
+                drive_proof_verifier::RankedEntryValue::Sum(sum) => {
+                    (e.key.clone(), RANKED_TAG_SUM, sum as i128)
+                }
+                drive_proof_verifier::RankedEntryValue::AvgFixedPoint(avg) => {
+                    (e.key.clone(), RANKED_TAG_AVG, avg)
+                }
+            })
+            .collect();
+        bincode::encode_to_vec(triples, bincode_config).expect("encode DocumentRankedEntries")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        let bincode_config = standard();
+        let (triples, _): (DocumentRankedTriples, _) =
+            bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentRankedEntries");
+        let entries: Vec<drive_proof_verifier::RankedEntry> = triples
+            .into_iter()
+            .map(|(key, tag, value)| {
+                let value = match tag {
+                    RANKED_TAG_COUNT => drive_proof_verifier::RankedEntryValue::Count(
+                        u64::try_from(value).expect("a Count entry round-trips through i128"),
+                    ),
+                    RANKED_TAG_SUM => drive_proof_verifier::RankedEntryValue::Sum(
+                        i64::try_from(value).expect("a Sum entry round-trips through i128"),
+                    ),
+                    RANKED_TAG_AVG => drive_proof_verifier::RankedEntryValue::AvgFixedPoint(value),
+                    other => panic!("unknown ranked axis tag {other} in mock expectation"),
+                };
+                drive_proof_verifier::RankedEntry { key, value }
+            })
+            .collect();
+        drive_proof_verifier::DocumentRankedEntries(entries)
+    }
+}

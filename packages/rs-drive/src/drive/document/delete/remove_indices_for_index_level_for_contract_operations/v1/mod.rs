@@ -10,6 +10,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::util::storage_flags::StorageFlags;
@@ -115,13 +116,10 @@ impl Drive {
             let sub_level_range_summable = sub_level_info
                 .map(|info| info.range_summable)
                 .unwrap_or(false);
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
+            // Includes the meta-schema-v3 ranked upgrade — see the matching
+            // note in the top-level delete walker.
+            let (property_name_tree_type, _ranked_axes) =
+                property_name_tree_type_and_ranked_axes(sub_level_info)?;
 
             // Derive the value tree type from the four-axis flags
             // (matches the matrix in

@@ -72,6 +72,7 @@ use crate::tokens::token_amount_on_contract_token::{
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::{
     DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
+    DOCUMENT_META_SCHEMA_V3,
 };
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -165,11 +166,12 @@ impl DocumentTypeV1 {
                 0 => &*DOCUMENT_META_SCHEMA_V0,
                 1 => &*DOCUMENT_META_SCHEMA_V1,
                 2 => &*DOCUMENT_META_SCHEMA_V2,
+                3 => &*DOCUMENT_META_SCHEMA_V3,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentTypeV1::try_from_schema (document_type_schema)"
                             .to_string(),
-                        known_versions: vec![0, 1, 2],
+                        known_versions: vec![0, 1, 2, 3],
                         received: version,
                     })
                 }
@@ -357,6 +359,25 @@ impl DocumentTypeV1 {
             Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
                 .map_err(consensus_or_protocol_value_error)?;
 
+        // The ranked-aggregate index keywords (`rankedCountable` /
+        // `rankedSummable` / `rankedAverageable`) are only part of the index
+        // grammar from document meta-schema v3 (protocol version 14). Below
+        // that they are unknown property names and the index parser rejects
+        // them, exactly as a pre-v14 node does. Same shape as the
+        // `document_type_schema >= 2` gate on the history-subscription flags
+        // above: the meta-schema also rejects the keys (v2 has
+        // `additionalProperties: false` on index entries), but only under
+        // `full_validation` — this gate is what stops a non-validating parse
+        // (check_tx, cache warm-up, restore) from admitting a ranked index on
+        // a node that has no way to lay one out on disk.
+        let ranked_aggregates_allowed = platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .document_type_schema
+            >= 3;
+
         #[cfg(feature = "validation")]
         let mut index_names: HashSet<String> = HashSet::new();
         #[cfg(feature = "validation")]
@@ -376,12 +397,14 @@ impl DocumentTypeV1 {
                 index_values
                     .iter()
                     .map(|index_value| {
-                        let index: Index = index_value
-                            .to_map()
-                            .map_err(consensus_or_protocol_value_error)?
-                            .as_slice()
-                            .try_into()
-                            .map_err(consensus_or_protocol_data_contract_error)?;
+                        let index: Index = Index::try_from_value_map(
+                            index_value
+                                .to_map()
+                                .map_err(consensus_or_protocol_value_error)?
+                                .as_slice(),
+                            ranked_aggregates_allowed,
+                        )
+                        .map_err(consensus_or_protocol_data_contract_error)?;
 
                         #[cfg(feature = "validation")]
                         if full_validation {

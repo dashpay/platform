@@ -1258,9 +1258,75 @@ message GetDocumentsResponse {
       }
     }
 
+    // One group in a ranked (`HAVING … TOP(n)` / `BOTTOM(n)` /
+    // `MAX` / `MIN`) result: the group's index key plus the
+    // aggregate it was ranked by.
+    //
+    // `key` is the raw index-key bytes of the GROUP BY property's
+    // value — the same bytes that name the group's value tree under
+    // the index (for a `string` property, its UTF-8 bytes). Clients
+    // that want the typed value decode it with the document type's
+    // key deserialization; the wire carries bytes so prover and
+    // verifier agree without a schema round-trip.
+    //
+    // Exactly one `value` variant is set, determined by the
+    // request's SELECT function:
+    //   * `count`  — `SELECT COUNT(*)`, ranked on the index's
+    //     `rankedCountable` axis.
+    //   * `sum`    — `SELECT SUM(field)`, `rankedSummable` axis.
+    //     Signed for the same reason `SumEntry.sum` is.
+    //   * `avg_fixed_point` — `SELECT AVG(field)`,
+    //     `rankedAverageable` axis.
+    message RankedEntry {
+      bytes key = 1;
+      oneof value {
+        // `jstype = JS_STRING` so JS/Web clients receive a string
+        // and don't round counts > 2^53−1 to the nearest
+        // representable Number — same choice as `CountEntry.count`.
+        uint64 count = 2 [jstype = JS_STRING];
+        // `jstype = JS_STRING` for the same precision reason as
+        // `SumEntry.sum`.
+        sint64 sum = 3 [jstype = JS_STRING];
+        // The group's average as a **16-byte big-endian two's-
+        // complement `i128` fixed-point number**: the exact integer
+        // grovedb sorts the Avg axis by, namely
+        // `floor(sum * SCALE / count)` with euclidean (toward −∞)
+        // division, where SCALE is grovedb's `AVG_FIXED_POINT_SCALE`
+        // (currently 10^19). Divide by that scale to get a float:
+        // `avg = i128_from_be_bytes(avg_fixed_point) / SCALE`.
+        //
+        // Carried as raw bytes rather than a numeric field because
+        // protobuf has no 128-bit integer type, and as the exact
+        // fixed-point integer rather than a `double` because this is
+        // the value the ranked proof commits to — a client that
+        // verifies the proof must be able to compare byte-for-byte
+        // with what it reconstructs. Rounding to a `double`
+        // server-side would make two groups with distinct averages
+        // indistinguishable and break that comparison.
+        //
+        // SCALE is a grovedb constant, not a wire constant: it moved
+        // from 10^15 to 10^19 before release. Clients should read it
+        // from the SDK's re-export (`RANKED_AVG_SCALE`) rather than
+        // hardcoding the literal.
+        bytes avg_fixed_point = 4;
+      }
+    }
+
+    // Ranked result entries. **Entry order IS the ranking order** —
+    // best-first for `TOP(n)` / `MAX`, worst-first for `BOTTOM(n)` /
+    // `MIN`. Clients must not re-sort; ties (equal aggregates) come
+    // back in group-key order in the direction of the walk, which is
+    // descending group-key order for `TOP` / `MAX`.
+    //
+    // Fewer than `n` entries is normal — the index simply has fewer
+    // groups than requested — and is not an error.
+    message RankedEntries {
+      repeated RankedEntry entries = 1;
+    }
+
     // Non-proof result wrapper. The outer `oneof result` switches
     // between this and `proof`; this inner oneof switches between
-    // the four non-proof shapes the v1 surface can return.
+    // the non-proof shapes the v1 surface can return.
     message ResultData {
       oneof variant {
         Documents documents = 1;
@@ -1280,6 +1346,15 @@ message GetDocumentsResponse {
         // `book/src/drive/average-index-examples.md` for the design
         // and the grades-contract worked example.
         AverageResults averages = 4;
+        // Ranked-aggregate result. Routed when the request carries a
+        // `having` clause whose right operand is a `HavingRanking`
+        // (`TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`) matching the
+        // single `select`. Answered from the per-axis secondary of
+        // an indexed tree, so the index must declare the matching
+        // `rankedCountable` / `rankedSummable` / `rankedAverageable`
+        // keyword (meta-schema v3, protocol version 14+). Entry
+        // order is the ranking order — see `RankedEntries`.
+        RankedEntries ranked = 5;
       }
     }
 

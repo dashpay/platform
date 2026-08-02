@@ -1,4 +1,5 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -193,13 +194,15 @@ impl Drive {
             // the property-name level — only their value-tree level (see
             // below). The range-* variants are what `AggregateCountOnRange`
             // / `AggregateSumOnRange` walk over.
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
+            //
+            // Meta schema v3 (PV14) adds a fifth outcome: a sub-level that
+            // declares any `ranked*` axis upgrades the tree it would have
+            // gotten to the matching *indexed* variant, which additionally
+            // carries one ordered secondary Merk per axis. `ranked_axes` is
+            // empty for every contract that predates the grammar, so this is a
+            // bit-identical no-op for them.
+            let (property_name_tree_type, ranked_axes) =
+                property_name_tree_type_and_ranked_axes(sub_level_index_info)?;
 
             // The value tree (one per distinct property value, hosting the
             // `[0]` reference subtree + sibling continuations) becomes an
@@ -306,6 +309,11 @@ impl Drive {
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
             if wrap_property_name_tree_under_aggregating_parent {
+                // A ranked terminal level reaching this branch is rejected
+                // inside the helper: grovedb's wrappers cannot hold an indexed
+                // inner (see `INDEXED_INNER_UNWRAPPABLE` in `fees::op`), so
+                // the shape fails closed rather than silently degrading to a
+                // non-indexed tree whose secondaries never exist.
                 self.batch_insert_empty_tree_under_aggregating_parent_if_not_exists(
                     path_key_info.clone(),
                     parent_value_tree_type,
@@ -318,9 +326,10 @@ impl Drive {
                     &platform_version.drive,
                 )?;
             } else {
-                self.batch_insert_empty_tree_if_not_exists(
+                self.batch_insert_empty_index_tree_if_not_exists(
                     path_key_info.clone(),
                     property_name_tree_type,
+                    &ranked_axes,
                     *storage_flags,
                     property_name_apply_type,
                     transaction,

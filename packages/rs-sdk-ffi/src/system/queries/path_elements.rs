@@ -182,6 +182,21 @@ fn format_element_data(element: &Element) -> String {
             format!("provable_count_provable_sum_tree:{}:{}", count, sum)
         }
         Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
+        // Indexed trees render their aggregate exactly like the
+        // non-indexed Provable* tree they mirror. The secondary root
+        // key(s) and, for the PCPS variant, the ranked-axis TLV are
+        // index-maintenance detail rather than element data, so they
+        // stay out of this rendering the same way the primary root key
+        // does for every other tree variant above.
+        Element::ProvableSumIndexedTree(_, _, sum, _) => {
+            format!("provable_sum_indexed_tree:{}", sum)
+        }
+        Element::ProvableCountIndexedTree(_, _, count, _) => {
+            format!("provable_count_indexed_tree:{}", count)
+        }
+        Element::ProvableCountProvableSumIndexedTree(_, count, sum, _, _) => {
+            format!("provable_count_provable_sum_indexed_tree:{}:{}", count, sum)
+        }
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
         Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
@@ -215,6 +230,11 @@ fn format_element_type(element: &Element) -> String {
             "provable_count_provable_sum_tree".to_string()
         }
         Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
+        Element::ProvableSumIndexedTree(_, _, _, _) => "provable_sum_indexed_tree".to_string(),
+        Element::ProvableCountIndexedTree(_, _, _, _) => "provable_count_indexed_tree".to_string(),
+        Element::ProvableCountProvableSumIndexedTree(_, _, _, _, _) => {
+            "provable_count_provable_sum_indexed_tree".to_string()
+        }
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
         Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),

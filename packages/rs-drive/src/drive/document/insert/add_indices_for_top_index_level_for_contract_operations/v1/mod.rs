@@ -17,6 +17,7 @@ use dpp::version::PlatformVersion;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::paths::contract_document_type_path_vec;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::AllSubtrees;
@@ -127,13 +128,15 @@ impl Drive {
             let sub_level_range_summable = sub_level_index_info
                 .map(|info| info.range_summable)
                 .unwrap_or(false);
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
+            // The top-level property-name tree is created once, at contract
+            // registration — this walker never writes it. The resolved type is
+            // used only to describe the tree we are inserting INTO (the
+            // stateless apply type's `in_tree_type`) and to stamp the
+            // estimation layer, so it must agree exactly with what
+            // `insert_contract_operations_v0` laid down, ranked variants
+            // included.
+            let (property_name_tree_type, _ranked_axes) =
+                property_name_tree_type_and_ranked_axes(sub_level_index_info)?;
             let value_tree_type = match (
                 sub_level_is_countable_terminator,
                 sub_level_range_countable,
