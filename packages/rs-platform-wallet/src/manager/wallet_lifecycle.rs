@@ -16,7 +16,7 @@ use crate::changeset::{
     PlatformWalletPersistence, ProviderKeyAccountEntry, WalletMetadataEntry,
 };
 use crate::error::PlatformWalletError;
-use crate::wallet::core::WalletBalance;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
@@ -183,7 +183,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // place below, BEFORE the address-pool snapshot is taken.
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
-        let balance = Arc::new(WalletBalance::new());
+        let generation = Arc::new(WalletGeneration::new());
 
         // Snapshot per-account xpubs and address-pool entries BEFORE
         // the wallet / managed-info are moved into insert_wallet. The
@@ -333,7 +333,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_info = PlatformWalletInfo {
             core_wallet: wallet_info,
-            balance: Arc::clone(&balance),
+            generation: Arc::clone(&generation),
             identity_manager: crate::wallet::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
         };
@@ -446,7 +446,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&self.sdk),
             wallet_id,
             Arc::clone(&self.wallet_manager),
-            balance,
+            generation,
             Arc::clone(&self.lock_notify),
             persister_dyn,
             broadcaster,
@@ -567,10 +567,91 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Remove a wallet from the manager.
+    ///
+    /// Runs under the removed generation's lifecycle gate — see
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown), of
+    /// which this is the no-extra-teardown case.
     pub async fn remove_wallet(
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        self.remove_wallet_with_teardown(wallet_id, |_| {}).await
+    }
+
+    /// Remove a wallet from the manager and run `tear_down` on the removed
+    /// wallet — both under that generation's exclusive lifecycle gate, as one
+    /// linearization point.
+    ///
+    /// # Why the gate lives here rather than in the caller
+    ///
+    /// Removing the generation and tearing down the deferred state that names it
+    /// (the [`SignedPaymentRegistry`](crate::SignedPaymentRegistry) tokens and
+    /// the FFI's finalized-transaction handles) must be indivisible. If they are
+    /// two steps, a retained handle can broadcast in the gap: the removal's own
+    /// `.await`s (shielded-coordinator and identity-sync unregistration) sit
+    /// inside it, `CoreWallet::is_same_generation` passes for a removed
+    /// generation (a removed generation matches itself), and the reservation age
+    /// guard is disabled once `last_processed_height` returns `None`. So a
+    /// payment for a wallet the host already deleted reaches the network
+    /// (`dashpay/platform#4185`).
+    ///
+    /// Taking the gate *inside* this method rather than leaving it to the caller
+    /// is deliberate: `PlatformWalletManager` is public and `SignedPaymentRegistry`
+    /// is re-exported, so a direct Rust embedder that never goes through the FFI
+    /// would otherwise remove wallets with no exclusion at all, and could
+    /// interleave between a payment operation's liveness check and its register
+    /// or network action. `tear_down` is the hook that lets the FFI layer sweep
+    /// its own process-global handle storages inside the same critical section
+    /// without the gate ever being optional.
+    ///
+    /// `tear_down` is synchronous by design — it runs while the gate is held, and
+    /// every sweep it needs (`remove_entries_for_wallet`,
+    /// `HandleStorage::remove_matching`) is a synchronous map retain.
+    ///
+    /// ## Lock ordering
+    ///
+    /// The generation gate is always taken BEFORE the manager locks. The lookup
+    /// that finds the gate takes `wallets` briefly and **drops it before**
+    /// awaiting the gate, so no manager lock is ever held across a gate
+    /// acquisition; payment operations likewise take the gate and only then await
+    /// the manager. The order is total, so the two cannot deadlock.
+    pub async fn remove_wallet_with_teardown<F>(
+        &self,
+        wallet_id: &WalletId,
+        tear_down: F,
+    ) -> Result<Arc<PlatformWallet>, PlatformWalletError>
+    where
+        F: FnOnce(&Arc<PlatformWallet>),
+    {
+        // Find the generation registered under `wallet_id` and take ITS gate.
+        // Re-validated after acquisition because the wallet could have been
+        // removed and re-created under the same id while we waited: in that case
+        // we hold the OLD generation's gate, which excludes nothing relevant to
+        // the new one, so retry against the generation that is actually current.
+        let _teardown = loop {
+            let generation = {
+                let wallets = self.wallets.read().await;
+                match wallets.get(wallet_id) {
+                    None => {
+                        return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
+                    }
+                    Some(wallet) => Arc::clone(wallet.generation()),
+                }
+            };
+            let guard = generation.teardown_guard().await;
+            let still_current = {
+                let wallets = self.wallets.read().await;
+                wallets
+                    .get(wallet_id)
+                    .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), &generation))
+            };
+            if still_current {
+                break guard;
+            }
+            // Drop this generation's guard and re-resolve.
+            drop(guard);
+        };
+
         let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
             let mut wm = self.wallet_manager.write().await;
             let ids = match wm.get_wallet_info(wallet_id) {
@@ -639,6 +720,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .unregister_identity(identity_id)
                 .await;
         }
+
+        // Still under the generation's teardown gate: any deferred state naming
+        // this generation is dropped in the same critical section as the removal
+        // itself, so no payment operation can observe the wallet as live and then
+        // act on it after this returns.
+        tear_down(&removed);
 
         Ok(removed)
     }

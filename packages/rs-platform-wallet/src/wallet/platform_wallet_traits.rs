@@ -37,7 +37,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         let inner = ManagedWalletInfo::from_wallet(wallet, birth_height);
         Self {
             core_wallet: inner,
-            balance: std::sync::Arc::new(super::core::WalletBalance::new()),
+            generation: std::sync::Arc::new(super::core::WalletGeneration::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
         }
@@ -49,7 +49,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         let inner = ManagedWalletInfo::from_wallet_with_name(wallet, name, birth_height);
         Self {
             core_wallet: inner,
-            balance: std::sync::Arc::new(super::core::WalletBalance::new()),
+            generation: std::sync::Arc::new(super::core::WalletGeneration::new()),
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
         }
