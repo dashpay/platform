@@ -100,9 +100,14 @@ pub struct EventHandlerCallbacks {
     /// Setting this transfers ownership of `context` to Rust: the host
     /// hands over a strong reference (Swift `Unmanaged.passRetained`, JNI
     /// a boxed `GlobalRef`) and must NOT free the context itself. The
-    /// callback may fire on any thread. `None` keeps the legacy borrowed
-    /// contract where the host guarantees the context outlives the
-    /// manager.
+    /// callback may fire on any thread.
+    ///
+    /// **Required whenever `context` is non-null** —
+    /// `platform_wallet_manager_create` rejects a context-carrying vtable
+    /// without a destructor, because `destroy` returns without proving
+    /// every worker joined and only ownership keeps a straggler's
+    /// callbacks memory-safe. A context needing no cleanup takes a no-op
+    /// `release_fn`; `None` is valid only alongside a null `context`.
     pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,
 }
 

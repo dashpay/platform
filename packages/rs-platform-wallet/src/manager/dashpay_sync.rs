@@ -757,8 +757,9 @@ mod tests {
         let _wallet_id = register_test_wallet(&manager).await;
         let mgr = manager.dashpay_sync_arc();
 
-        // Raise the gate as `quiesce()` would.
-        mgr.quiescing.close();
+        // Raise the gate as an in-flight `quiesce()` would (a drain holds
+        // the gate from its first instruction).
+        let gate_hold = mgr.quiescing.hold();
 
         let summary = mgr.sync_now().await;
 
@@ -766,6 +767,7 @@ mod tests {
         // released so a later (post-quiesce) pass can still run.
         assert!(summary.is_empty());
         assert!(!mgr.is_syncing());
+        drop(gate_hold);
     }
 
     /// Regression: a `stop()` + quick `start()` must leave the NEW loop

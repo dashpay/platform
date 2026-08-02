@@ -626,8 +626,9 @@ mod tests {
     async fn sync_now_bails_when_quiescing() {
         let (mgr, counter) = make_manager();
 
-        // Raise the gate as `quiesce()` would.
-        mgr.quiescing.close();
+        // Raise the gate as an in-flight `quiesce()` would (a drain holds
+        // the gate from its first instruction).
+        let gate_hold = mgr.quiescing.hold();
 
         let summary = mgr.sync_now().await;
 
@@ -636,6 +637,7 @@ mod tests {
         assert!(summary.is_empty());
         assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
         assert!(!mgr.is_syncing());
+        drop(gate_hold);
     }
 
     /// The barrier `reset_platform_address_sync_state` needs: admission

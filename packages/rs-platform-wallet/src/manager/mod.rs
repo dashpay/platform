@@ -127,24 +127,25 @@ impl Drop for SyncSlotGuard<'_> {
 /// barrier Clear / reset / shutdown need before they mutate or free the
 /// state a pass would touch.
 ///
-/// Three independent reasons close it, deliberately kept apart:
-/// - a drain in progress ([`drain_pass`]) — reopened when it completes,
-/// - a live [`QuiesceGuard`] holder — a caller that quiesced and is still
-///   mutating; the gate reopens when the last guard drops,
+/// Four independent reasons close it, deliberately kept apart:
+/// - an active drain ([`drain_pass`]) — the drain **counts as a holder
+///   from its first instruction**, so overlapping drains keep the gate
+///   shut for each other (see the race note on [`GateBookkeeping::holds`]),
+/// - a live [`QuiesceGuard`] holder — a caller that drained and is still
+///   mutating; the gate reopens when the last hold drops,
+/// - the latch — a drain that timed out leaves the gate stuck closed with
+///   no holder, so the wedged pass cannot be followed by a fresh one; the
+///   next *successful* drain clears it,
 /// - [`seal`](Self::seal) — terminal, set by
 ///   [`shutdown`](PlatformWalletManager::shutdown); never reopens, so a
 ///   direct `sync_now` that was already dispatched on a host thread
 ///   cannot start a fresh pass after the drain concluded and the FFI
 ///   freed the callback context.
-///
-/// A drain that times out leaves the gate closed without a guard: the
-/// wedged pass must not be followed by a fresh one, and a later
-/// successful drain reopens it.
 #[derive(Default)]
 pub(crate) struct QuiesceGate {
     /// The single flag every pass reads — one atomic load on the hot path
     /// instead of taking `bookkeeping`. Only ever written while holding
-    /// that lock, so it is always consistent with the counters below.
+    /// that lock, so it is always consistent with the state below.
     closed: std::sync::atomic::AtomicBool,
     /// Serializes every transition. Without it, a guard dropping (reopen)
     /// can interleave with another caller closing + taking a hold, and the
@@ -155,11 +156,26 @@ pub(crate) struct QuiesceGate {
 
 #[derive(Default)]
 struct GateBookkeeping {
-    /// Live [`QuiesceGuard`]s. The gate reopens only when this falls to 0
-    /// (and no seal is set), so overlapping holders compose.
+    /// Live [`QuiesceGuard`]s — including every drain still in flight,
+    /// which takes its hold at [`drain_pass`] entry rather than after its
+    /// final `is_syncing` observation. The early hold is load-bearing:
+    /// were a drain not counted until it finished, a concurrent holder's
+    /// drop could reopen the gate in the window between the drain's last
+    /// `is_syncing` load and its own hold, letting a direct sync claim
+    /// the slot and pass the gate check — and the drain would then return
+    /// "success" to a caller about to wipe state under that live pass.
     holds: usize,
-    /// Terminal close. Wins over every guard drop.
+    /// A drain timed out with the pass still holding `is_syncing`; keeps
+    /// the gate closed with no holder until a later drain succeeds.
+    latched: bool,
+    /// Terminal close. Wins over everything.
     sealed: bool,
+}
+
+impl GateBookkeeping {
+    fn should_close(&self) -> bool {
+        self.sealed || self.latched || self.holds > 0
+    }
 }
 
 impl QuiesceGate {
@@ -176,33 +192,47 @@ impl QuiesceGate {
             .expect("quiesce gate mutex poisoned")
     }
 
-    /// Close the gate. Not public: callers go through [`drain_pass`] so a
-    /// close is always paired with a drain.
-    fn close(&self) {
-        let _bookkeeping = self.bookkeeping();
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Release);
+    /// Recompute the hot-path flag from the bookkeeping — the ONLY writer
+    /// of `closed`, always under the lock.
+    fn publish_locked(&self, bookkeeping: &GateBookkeeping) {
+        self.closed.store(
+            bookkeeping.should_close(),
+            std::sync::atomic::Ordering::Release,
+        );
     }
 
-    /// Take a hold on an already-closed gate. Returned to a caller that
-    /// drained and is about to mutate state a pass would touch.
+    /// Take a hold, closing the gate. Called at [`drain_pass`] entry (the
+    /// drain itself is a holder) — there is no close-without-hold except
+    /// the timeout latch and the seal.
     fn hold(&self) -> QuiesceGuard<'_> {
         let mut bookkeeping = self.bookkeeping();
         bookkeeping.holds += 1;
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.publish_locked(&bookkeeping);
         QuiesceGuard(self)
     }
 
-    /// Drop a hold, reopening the gate if it was the last one and no seal
-    /// is in place.
+    /// A drain observed the pass fully drained while holding the gate:
+    /// clear any latch left by a previously timed-out drain. The caller
+    /// still holds its guard, so the gate stays closed until that drops.
+    fn drain_succeeded(&self) {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.latched = false;
+        self.publish_locked(&bookkeeping);
+    }
+
+    /// A drain gave up with the pass still holding `is_syncing`: latch the
+    /// gate closed so dropping the drain's own hold cannot reopen it.
+    fn latch_closed(&self) {
+        let mut bookkeeping = self.bookkeeping();
+        bookkeeping.latched = true;
+        self.publish_locked(&bookkeeping);
+    }
+
+    /// Drop a hold, reopening the gate only if nothing else closes it.
     fn release(&self) {
         let mut bookkeeping = self.bookkeeping();
         bookkeeping.holds = bookkeeping.holds.saturating_sub(1);
-        if bookkeeping.holds == 0 && !bookkeeping.sealed {
-            self.closed
-                .store(false, std::sync::atomic::Ordering::Release);
-        }
+        self.publish_locked(&bookkeeping);
     }
 
     /// Close the gate permanently. Used by manager shutdown, after which
@@ -210,8 +240,7 @@ impl QuiesceGate {
     pub(crate) fn seal(&self) {
         let mut bookkeeping = self.bookkeeping();
         bookkeeping.sealed = true;
-        self.closed
-            .store(true, std::sync::atomic::Ordering::Release);
+        self.publish_locked(&bookkeeping);
     }
 }
 
@@ -232,34 +261,44 @@ impl Drop for QuiesceGuard<'_> {
     }
 }
 
-/// Shared drain body behind every coordinator's `quiesce*` family: close
-/// the gate so no new pass can start, cancel the loop, then wait for the
-/// in-flight pass (if any) to release `is_syncing`.
+/// Shared drain body behind every coordinator's `quiesce*` family: take a
+/// hold on the gate so no new pass can start, cancel the loop, then wait
+/// for the in-flight pass (if any) to release `is_syncing`.
 ///
 /// `is_syncing` is held across a pass's persister / host-callback fan-out,
 /// so its falling edge *with the gate closed* is a sound "fully drained,
-/// nothing more will fire" signal.
+/// nothing more will fire" signal. The hold is taken at ENTRY — before the
+/// first `is_syncing` observation — so the gate is closed continuously
+/// from here to the returned guard's drop, and no concurrent holder's
+/// release can open an admission window mid-drain (the race a
+/// close-then-hold-at-the-end sequence has).
 ///
 /// Returns a [`QuiesceGuard`] that keeps the gate closed until it drops.
 /// Returns `None` when the pass was still holding `is_syncing` at the
-/// deadline; the gate is left closed on that path (no guard, so a later
-/// successful drain reopens it) and the caller must fail closed.
+/// deadline; the gate is latched closed on that path (the wedged pass
+/// must not be followed by a fresh one — a later successful drain clears
+/// the latch) and the caller must fail closed.
 pub(crate) async fn drain_pass<'a>(
     gate: &'a QuiesceGate,
     is_syncing: &std::sync::atomic::AtomicBool,
     stop: impl FnOnce(),
     budget: Duration,
 ) -> Option<QuiesceGuard<'a>> {
-    gate.close();
+    let guard = gate.hold();
     stop();
     let deadline = tokio::time::Instant::now() + budget;
     while is_syncing.load(std::sync::atomic::Ordering::Acquire) {
         if tokio::time::Instant::now() >= deadline {
+            // Latch BEFORE the guard drops so there is no instant in
+            // which the gate is open on the timeout path.
+            gate.latch_closed();
+            drop(guard);
             return None;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    Some(gate.hold())
+    gate.drain_succeeded();
+    Some(guard)
 }
 
 /// Base [`WorkerConfig`] each coordinator starts its loop thread with — the
@@ -1031,6 +1070,103 @@ mod tests {
             !mgr.registry.is_clearing(WalletWorker::PlatformAddressSync),
             "the clearing latch must be released on the failure path"
         );
+    }
+
+    /// A concurrent holder's drop must NOT reopen admission while another
+    /// drain is still in flight.
+    ///
+    /// RED against the close-then-hold-at-the-end gate: drain B closed the
+    /// gate but only became a *holder* after its final `is_syncing`
+    /// observation, so holder A dropping in that window stored
+    /// `closed = false` — a direct `sync_now` could then claim the slot,
+    /// pass the gate check, and run a full pass that B's caller (a
+    /// clear/reset about to wipe state) believed was impossible. With the
+    /// hold taken at drain entry, the gate is closed continuously from
+    /// B's first instruction to its guard's drop.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_drain_keeps_gate_closed_across_another_holders_drop() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let gate = Arc::new(QuiesceGate::default());
+        let is_syncing = Arc::new(AtomicBool::new(false));
+
+        // Holder A: a completed drain (idle coordinator) holding its guard.
+        let guard_a = drain_pass(&gate, &is_syncing, || {}, Duration::from_secs(1))
+            .await
+            .expect("idle drain must succeed");
+
+        // Drain B: in flight against a wedged pass, parked in its poll
+        // loop. The guard cannot cross the task boundary (it borrows the
+        // task-local gate Arc), so B holds it in-task and is driven over
+        // channels.
+        is_syncing.store(true, Ordering::Release);
+        let gate_b = Arc::clone(&gate);
+        let is_syncing_b = Arc::clone(&is_syncing);
+        let (b_drained_tx, b_drained_rx) = tokio::sync::oneshot::channel::<bool>();
+        let (b_release_tx, b_release_rx) = tokio::sync::oneshot::channel::<()>();
+        let b = tokio::spawn(async move {
+            let guard = drain_pass(&gate_b, &is_syncing_b, || {}, Duration::from_secs(5)).await;
+            let _ = b_drained_tx.send(guard.is_some());
+            // Keep the guard held (B's caller "is mutating") until driven.
+            let _ = b_release_rx.await;
+            drop(guard);
+        });
+        // Let B take its entry hold and enter the poll loop.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // A finishes its mutation and drops. The gate must STAY closed:
+        // B's drain is still deciding whether the pass has drained.
+        drop(guard_a);
+        assert!(
+            gate.is_closed(),
+            "a holder's drop must not reopen admission while a drain is in flight"
+        );
+
+        // Release the wedge; B's drain completes and its guard keeps the
+        // gate closed until B's caller is done mutating.
+        is_syncing.store(false, Ordering::Release);
+        let b_drained = tokio::time::timeout(Duration::from_secs(2), b_drained_rx)
+            .await
+            .expect("drain B must complete once the pass drains")
+            .expect("channel");
+        assert!(b_drained, "drain B must succeed");
+        assert!(gate.is_closed());
+
+        b_release_tx.send(()).expect("drive B's guard drop");
+        tokio::time::timeout(Duration::from_secs(2), b)
+            .await
+            .expect("B must finish")
+            .expect("join");
+        assert!(!gate.is_closed(), "last hold gone — admission restored");
+    }
+
+    /// The timeout latch composes with the entry-hold: a timed-out drain
+    /// leaves the gate closed even though its own hold is gone, and only
+    /// a later successful drain clears the latch.
+    #[tokio::test(start_paused = true)]
+    async fn timed_out_drain_latches_gate_closed_until_a_successful_drain() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let gate = QuiesceGate::default();
+        let is_syncing = AtomicBool::new(true);
+
+        assert!(
+            drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+                .await
+                .is_none(),
+            "a wedged pass must time the drain out"
+        );
+        assert!(gate.is_closed(), "timed-out drain leaves the gate latched");
+
+        // The wedge clears; the next drain succeeds, clears the latch, and
+        // its guard's drop restores admission.
+        is_syncing.store(false, Ordering::Release);
+        let guard = drain_pass(&gate, &is_syncing, || {}, Duration::from_millis(50))
+            .await
+            .expect("drain must succeed once the pass drained");
+        assert!(gate.is_closed());
+        drop(guard);
+        assert!(!gate.is_closed(), "successful drain clears the latch");
     }
 
     /// `SyncSlotGuard` must clear the `is_syncing` slot on panic unwind,

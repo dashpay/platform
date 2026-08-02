@@ -1024,8 +1024,9 @@ mod tests {
         let token_x = Identifier::from([10u8; 32]);
         mgr.register_identity(id_a, [token_x]).await;
 
-        // Raise the gate as `quiesce()` would.
-        mgr.quiescing.close();
+        // Raise the gate as an in-flight `quiesce()` would (a drain holds
+        // the gate from its first instruction).
+        let gate_hold = mgr.quiescing.hold();
 
         mgr.sync_now().await;
 
@@ -1033,6 +1034,7 @@ mod tests {
         // later (post-quiesce) pass can still run.
         assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
         assert!(!mgr.is_syncing());
+        drop(gate_hold);
     }
 
     /// Round-trip: register → read → update_watched_tokens → read.
