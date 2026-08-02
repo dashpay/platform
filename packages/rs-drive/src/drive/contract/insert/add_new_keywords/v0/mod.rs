@@ -103,7 +103,10 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = self.cache.system_data_contracts.load_keyword_search();
+        let contract = self
+            .cache
+            .system_data_contracts
+            .load_keyword_search(platform_version)?;
         let document_type = contract.document_type_for_name("contractKeywords")?;
 
         for keyword in keywords.iter() {

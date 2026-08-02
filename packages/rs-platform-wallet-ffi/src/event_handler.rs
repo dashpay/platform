@@ -91,6 +91,24 @@ pub struct EventHandlerCallbacks {
     pub on_shielded_tree_progress_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, leaves_committed: u64, total_target: u64),
     >,
+    /// Destructor for `context`, called by Rust **exactly once** when the
+    /// last internal reference to this vtable drops — that is, when the
+    /// manager and every background worker that can still dispatch an
+    /// event have finished. Appended at the END so the struct layout
+    /// stays stable.
+    ///
+    /// Setting this transfers ownership of `context` to Rust: the host
+    /// hands over a strong reference (Swift `Unmanaged.passRetained`, JNI
+    /// a boxed `GlobalRef`) and must NOT free the context itself. The
+    /// callback may fire on any thread.
+    ///
+    /// **Required whenever `context` is non-null** —
+    /// `platform_wallet_manager_create` rejects a context-carrying vtable
+    /// without a destructor, because `destroy` returns without proving
+    /// every worker joined and only ownership keeps a straggler's
+    /// callbacks memory-safe. A context needing no cleanup takes a no-op
+    /// `release_fn`; `None` is valid only alongside a null `context`.
+    pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -106,6 +124,26 @@ pub(crate) struct FFIEventHandler {
 impl FFIEventHandler {
     pub fn new(callbacks: EventHandlerCallbacks) -> Self {
         Self { callbacks }
+    }
+}
+
+/// Releases the host callback context when the handler's last owner drops.
+/// The handler is constructed exactly once per manager into the
+/// `Arc<dyn PlatformEventHandler>` every event dispatcher clones, so this
+/// `Drop` runs exactly once — after the manager and every worker that
+/// could still fire an event (including a straggler that outlived a
+/// non-clean shutdown) are done. See [`FFIPersister`]'s `Drop` for the
+/// full ownership rationale.
+///
+/// [`FFIPersister`]: crate::persistence::FFIPersister
+impl Drop for FFIEventHandler {
+    fn drop(&mut self) {
+        if let Some(release) = self.callbacks.release_fn {
+            // SAFETY: `release_fn` was supplied together with `context` by
+            // the host, which contracted for exactly one call on any
+            // thread. This is the only call site and `Drop` runs once.
+            unsafe { release(self.callbacks.context) };
+        }
     }
 }
 
@@ -270,5 +308,46 @@ impl PlatformEventHandler for FFIEventHandler {
         unsafe {
             cb(self.callbacks.context, leaves_committed, total_target);
         }
+    }
+}
+
+#[cfg(test)]
+mod release_tests {
+    use super::*;
+
+    /// Mirror of the persister-level test: the event context is released
+    /// exactly once, only when the last `Arc<dyn PlatformEventHandler>`
+    /// clone drops — so a straggling event dispatcher keeps the host
+    /// handler alive rather than firing into freed memory.
+    #[test]
+    fn release_fires_once_when_the_last_arc_clone_drops() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        unsafe extern "C" fn count_release(context: *mut c_void) {
+            if let Some(counter) = (context as *const AtomicUsize).as_ref() {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let releases = Box::leak(Box::new(AtomicUsize::new(0)));
+        let handler: Arc<dyn PlatformEventHandler> =
+            Arc::new(FFIEventHandler::new(EventHandlerCallbacks {
+                context: releases as *const AtomicUsize as *mut c_void,
+                on_wallet_event_fn: None,
+                on_error_fn: None,
+                on_platform_address_sync_completed_fn: None,
+                on_shielded_sync_completed_fn: None,
+                on_shielded_sync_progress_fn: None,
+                on_shielded_tree_progress_fn: None,
+                release_fn: Some(count_release),
+            }));
+        let straggler = Arc::clone(&handler);
+
+        drop(handler);
+        assert_eq!(releases.load(Ordering::SeqCst), 0);
+
+        drop(straggler);
+        assert_eq!(releases.load(Ordering::SeqCst), 1);
     }
 }

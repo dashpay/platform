@@ -667,7 +667,8 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                                     .drive
                                     .cache
                                     .system_data_contracts
-                                    .load_token_history();
+                                    .load_token_history(platform_version)
+                                    .expect("expected the token_history system contract");
 
                                 let query = SingleDocumentDriveQuery {
                                     contract_id: SystemDataContract::TokenHistory.id().to_buffer(),

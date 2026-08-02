@@ -2,6 +2,7 @@ use crate::execution::types::block_execution_context::v0::BlockExecutionContextV
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Methods;
 use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 impl<C> Platform<C>
@@ -18,6 +19,18 @@ where
             .cache
             .data_contracts
             .merge_and_clear_block_cache();
+
+        // This block is committed, so its protocol version is now the committed one and system
+        // contracts materialized for anything below it can no longer be reached: `check_tx`
+        // validates against the committed state, and the next block executes at the committed
+        // version until another upgrade proposes a candidate. On the block that switches protocol version
+        // this releases the outgoing version's materializations, which were only needed while
+        // that block was still executing against them.
+        self.drive.cache.system_data_contracts.drop_versions_below(
+            block_execution_context
+                .block_platform_state()
+                .current_protocol_version_in_consensus(),
+        );
 
         let mut protocol_versions_counter = self.drive.cache.protocol_versions_counter.write();
 

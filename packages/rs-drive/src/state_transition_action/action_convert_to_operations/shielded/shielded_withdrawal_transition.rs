@@ -532,7 +532,11 @@ mod tests {
             // Insert the withdrawals contract so the `AddWithdrawalDocument` op has a real document
             // tree to write into during the apply.
             let tx = drive.grove.start_transaction();
-            let withdrawals = drive.cache.system_data_contracts.load_withdrawals();
+            let withdrawals = drive
+                .cache
+                .system_data_contracts
+                .load_withdrawals(platform_version)
+                .expect("expected the withdrawals contract");
             drive
                 .apply_contract(
                     &withdrawals,

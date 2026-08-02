@@ -13,20 +13,21 @@
 //! manager, matching `PlatformWalletManager.swift`, which holds only a
 //! persistence handler + event handler.
 //!
-//! ## Context ownership (the subtle part)
+//! ## Context ownership
 //!
-//! `platform_wallet_manager_create` consumes both vtables by value via
-//! `std::ptr::read`, copying the `context` pointer into the manager's
-//! `FFIPersister` / `FFIEventHandler`. Neither has a `Drop`, so Rust
-//! never frees the context — exactly the `passUnretained` model the Swift
-//! SDK uses (the host owns the callback object's lifetime).
-//!
-//! We therefore box each context (persistence bridge + event bridge as
-//! JNI `GlobalRef`s) and keep the two box pointers alongside the manager
-//! handle in a [`ManagerBundle`]. [`Java_..._nativeDestroy`] runs
-//! `platform_wallet_manager_destroy` first — which calls `shutdown()` to
-//! quiesce every callback-firing task — and only then drops the context
-//! boxes, so no task can fire against a freed `GlobalRef`.
+//! Both vtables are built with a `release_fn`, so
+//! `platform_wallet_manager_create` takes **ownership** of the boxed
+//! contexts (persistence bridge + event bridge as JNI `GlobalRef`s):
+//! the native manager keeps each box alive for exactly as long as any
+//! worker can still fire a callback through it, and frees it — on
+//! whatever thread the last reference drops on — via the vtable's
+//! `release_fn` (`GlobalRef`'s own `Drop` re-attaches the thread to the
+//! JVM). [`Java_..._nativeDestroy`] therefore only destroys the manager;
+//! it never touches the context boxes, and a worker that straggles past
+//! destroy keeps its bridge alive instead of dereferencing a freed
+//! `GlobalRef`. The create-failure path is the one place this JNI layer
+//! still frees the boxes itself, because a failed create never took
+//! ownership.
 //!
 //! ## Result convention
 //!
@@ -65,14 +66,13 @@ use rs_sdk_ffi::{dash_sdk_get_inner_sdk_ptr, SDKHandle};
 
 // ── Manager bundle ────────────────────────────────────────────────────
 
-/// Owns the native manager handle plus the two context boxes whose
-/// `GlobalRef`s back the persistence + event vtables the manager copied.
-/// Boxed and returned to Kotlin as a single `jlong`; freed by
+/// Owns the native manager handle. The persistence/event context boxes
+/// are owned by the native manager itself (their vtables carry a
+/// `release_fn`), so the bundle no longer tracks them. Boxed and
+/// returned to Kotlin as a single `jlong`; freed by
 /// [`Java_..._nativeDestroy`].
 struct ManagerBundle {
     manager_handle: Handle,
-    persistence_ctx: *mut KotlinPersistenceCtx,
-    event_ctx: *mut KotlinEventCtx,
 }
 
 // ── Exports: lifecycle ────────────────────────────────────────────────
@@ -188,7 +188,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             )
         };
         if take_pwffi_error(env, result) {
-            // Manager was not created — drop both context boxes.
+            // Manager was not created, so it never took ownership of the
+            // context boxes — reclaim them here (the only place this JNI
+            // layer frees them; every success path leaves that to the
+            // native manager's `release_fn`).
             unsafe {
                 drop(Box::from_raw(persistence_ctx));
                 drop(Box::from_raw(event_ctx));
@@ -196,11 +199,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
             return 0;
         }
 
-        let bundle = Box::new(ManagerBundle {
-            manager_handle,
-            persistence_ctx,
-            event_ctx,
-        });
+        let bundle = Box::new(ManagerBundle { manager_handle });
         Box::into_raw(bundle) as jlong
     })
 }
@@ -286,10 +285,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
     })
 }
 
-/// Destroy a manager bundle: shut down the native manager (quiesces every
-/// callback-firing task), then drop the persistence + event context
-/// boxes. Safe on 0. Idempotent is the caller's responsibility (Kotlin's
-/// `AtomicLong` handle guard calls this exactly once).
+/// Destroy a manager bundle: shut down the native manager (bounded
+/// quiesce + join of every callback-firing task). The persistence/event
+/// context boxes are owned by the native manager, which frees them via
+/// each vtable's `release_fn` once its last worker reference drops — at
+/// destroy for a clean shutdown, or when a straggling worker finally
+/// exits otherwise. Either way this layer has nothing to free and
+/// nothing to deliberately leak. Safe on 0. Idempotent is the caller's
+/// responsibility (Kotlin's `AtomicLong` handle guard calls this exactly
+/// once).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_nativeDestroy(
     mut env: JNIEnv,
@@ -303,23 +307,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         // SAFETY: bundle is a live ManagerBundle pointer from nativeCreate,
         // consumed exactly once here.
         let b = unsafe { Box::from_raw(bundle as *mut ManagerBundle) };
-        // shutdown() runs to completion before returning — no task may
-        // fire a callback after this.
-        let result =
+        let mut result =
             unsafe { platform_wallet_ffi::platform_wallet_manager_destroy(b.manager_handle) };
-        // destroy is documented to always return ok; free the message if any.
-        let mut result = result;
-        unsafe { platform_wallet_ffi_result_free(&mut result) };
-        // Now safe to drop the context boxes (their GlobalRefs release the
-        // Kotlin bridges).
-        unsafe {
-            if !b.persistence_ctx.is_null() {
-                drop(Box::from_raw(b.persistence_ctx));
-            }
-            if !b.event_ctx.is_null() {
-                drop(Box::from_raw(b.event_ctx));
-            }
+        if result.code != PlatformWalletFFIResultCode::Success {
+            log::error!("manager destroy failed with code {:?}", result.code);
         }
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     })
 }
 

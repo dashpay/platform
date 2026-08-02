@@ -69,6 +69,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Core definitively rejected the transaction. Its reserved inputs were
     /// released and a corrected transaction may be submitted again.
     case errorTransactionBroadcastRejected = 26
+    /// A quiesce/drain barrier did not complete within its budget: an
+    /// in-flight sync pass was still running when a Clear / reset /
+    /// sync-stop needed it provably drained. The operation failed closed —
+    /// no state was wiped — and the caller should retry once sync is idle.
+    /// (Not returned by `destroy`: Rust owns the callback contexts, so a
+    /// straggling worker is memory-safe and merely logged there.)
+    case errorShutdownIncomplete = 27
     case notFound = 98
     case errorUnknown = 99
 
@@ -128,6 +135,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorAssetLockFundingMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BROADCAST_REJECTED:
             self = .errorTransactionBroadcastRejected
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
+            self = .errorShutdownIncomplete
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -250,6 +259,10 @@ public enum PlatformWalletError: LocalizedError {
     /// to retry, and the retry re-fetches the address nonce so the mismatch
     /// self-heals. The submitted/expected nonce values are in the message.
     case addressNonceMismatch(String)
+    /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
+    /// sync pass still in flight. The operation failed closed — retry once
+    /// sync is idle.
+    case shutdownIncomplete(String)
     case notFound(String)
     case unknown(String)
 
@@ -272,6 +285,7 @@ public enum PlatformWalletError: LocalizedError {
              .transactionBroadcastUnconfirmed(let m),
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
+             .shutdownIncomplete(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -313,6 +327,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .transactionBroadcastRejected(detail)
         case .errorAddressNonceMismatch:
             self = .addressNonceMismatch(detail)
+        case .errorShutdownIncomplete:
+            self = .shutdownIncomplete(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }
