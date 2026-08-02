@@ -30,21 +30,25 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 is the activation gate for contract-level ranked aggregates: an index
-/// can declare that its groups are rankable by an aggregate, so a query like
-/// "top 5 restaurants by average grade" is served from an ordered secondary
-/// tree in O(log n + k) with a proof, instead of being rejected.
+/// v14 hosts two consensus changes:
 ///
-/// At introduction v14 is behaviorally identical to v13 — every slot that
-/// changed is a v14-only home for a follow-up change, so a v13 → v14 upgrade
-/// is a no-op until the grammar, write path and query path land on top:
+/// 1. **Contract-level ranked aggregates** (this branch): an index can
+///    declare that its groups are rankable by an aggregate, so a query like
+///    "top 5 restaurants by average grade" is served from an ordered
+///    secondary tree in O(log n + k) with a proof, instead of being rejected.
+/// 2. **The shared-prefix aggregate index fix** (follow-up): an aggregating
+///    countable / summable index whose terminal property also prefixes a
+///    compound index registers today but rejects document inserts; the v2
+///    document index walkers that fix it gate here as well.
+///
+/// Until a contract uses the ranked grammar, v14 is behaviorally identical
+/// to v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
-///   meta-schema, presently an exact copy of v2. The ranked index keywords
-///   (`rankedCountable` / `rankedSummable` / `rankedAverageable`) are added to
-///   v3 only, which is what stops a pre-v14 contract from smuggling them past
-///   validation: v13 keeps validating against meta-schema v2, where those keys
-///   are rejected as unknown properties.
+///   meta-schema, which hosts the ranked index keywords
+///   (`rankedCountable` / `rankedSummable` / `rankedAverageable`). v13 keeps
+///   validating against meta-schema v2, where those keys are rejected as
+///   unknown properties, so a pre-v14 contract cannot smuggle them in.
 /// * `DRIVE_VERSION_V9` carries `DRIVE_DOCUMENT_METHOD_VERSIONS_V4`, adding
 ///   the `detect_ranked_mode` routing slot, plus the grove-method slots for
 ///   creating the three indexed tree variants and the verify-method slot for
@@ -52,14 +56,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 1,
 ///   switching the v1 document-query handler from "reject every non-empty
-///   HAVING" to routing a ranking right-operand (`TOP(n)` / `BOTTOM(n)` /
-///   `MAX` / `MIN`) to the ranked executor. v13 and earlier keep the v1
-///   table and therefore keep rejecting HAVING, so mixed-version networks
-///   agree across the upgrade.
+///   HAVING" to routing a `TOP(n)` / `BOTTOM(n)` ranking right-operand to
+///   the ranked executor (`MAX` / `MIN` are refused — tie semantics). v13
+///   and earlier keep the v1 table and therefore keep rejecting HAVING, so
+///   mixed-version networks agree across the upgrade.
 ///
 /// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
-/// already carries `selects` / `group_by` / `having`, so no proto change and
-/// no `document_query` version bump is needed.
+/// already carries `selects` / `group_by` / `having`; the ranked response
+/// is an additive `ResultData.ranked` variant.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 (detect_ranked_mode slot)

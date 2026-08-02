@@ -172,6 +172,16 @@ pub enum PlatformWalletFFIResultCode {
     /// rejected the transaction, so its UTXO reservation was released and the
     /// host may safely retry after addressing the rejection reason.
     ErrorTransactionBroadcastRejected = 26,
+    /// A quiesce/drain barrier did not complete within its budget: an
+    /// in-flight sync pass was still running when a Clear / reset /
+    /// sync-stop needed it provably drained. The operation failed closed
+    /// (no state was wiped) and the host should retry once sync is idle.
+    /// NOT returned by `platform_wallet_manager_destroy` — with owned
+    /// callback contexts (`release_fn`) a straggling worker keeps its
+    /// context alive and releases it on exit, so destroy logs a non-clean
+    /// join instead of erroring. Swift mirror:
+    /// `PlatformWalletResultCode.errorShutdownIncomplete`.
+    ErrorShutdownIncomplete = 27,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -335,6 +345,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
+            }
+            // A quiesce/drain barrier that did not complete within budget
+            // (clear/reset paths). The host must fail closed: keep its
+            // callback context alive and skip any paired persistence wipe.
+            PlatformWalletError::ShutdownIncomplete(..) => {
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };

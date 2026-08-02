@@ -5126,6 +5126,53 @@ mod tests {
     }
 
     #[test]
+    fn epochs_info_descending_with_explicit_max_start_passes_guard() {
+        // The SDK's `fetch_current` sends a descending query with an explicit
+        // start (the hinted current epoch index). Any explicit start — up to
+        // MAX_EPOCH, the highest index that fits Drive's epoch key encoding —
+        // makes the request fully self-describing, so it must get past the
+        // explicit-start guard and proceed to proof verification (which here
+        // fails on the garbage proof, not on the request shape).
+        use dapi_grpc::platform::v0::get_epochs_info_request::GetEpochsInfoRequestV0;
+        use dpp::block::epoch::MAX_EPOCH;
+        use platform::get_epochs_info_response::{
+            get_epochs_info_response_v0::Result as V0Result, GetEpochsInfoResponseV0, Version,
+        };
+        let response = platform::GetEpochsInfoResponse {
+            version: Some(Version::V0(GetEpochsInfoResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(default_metadata_with_epoch(10)),
+            })),
+        };
+        let request = platform::GetEpochsInfoRequest {
+            version: Some(platform::get_epochs_info_request::Version::V0(
+                GetEpochsInfoRequestV0 {
+                    start_epoch: Some(MAX_EPOCH as u32),
+                    count: 1,
+                    ascending: false,
+                    prove: true,
+                },
+            )),
+        };
+        let provider = unreachable_provider();
+
+        let err =
+            <ExtendedEpochInfos as FromProof<platform::GetEpochsInfoRequest>>::maybe_from_proof(
+                request,
+                response,
+                Network::Testnet,
+                default_platform_version(),
+                &provider,
+            )
+            .unwrap_err();
+
+        assert!(
+            !matches!(err, Error::RequestError { .. }),
+            "explicit-start descending query must pass the guard, got: {err:?}"
+        );
+    }
+
+    #[test]
     fn extended_epoch_info_single_bubbles_empty_version() {
         // Ensures the wrapper passes through error from inner impl.
         use platform::get_epochs_info_response::{

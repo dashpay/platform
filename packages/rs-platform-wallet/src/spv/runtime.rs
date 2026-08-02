@@ -25,22 +25,70 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
 
+/// Graceful join budget for the SPV run loop before escalating to `abort`.
 const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Join a stopped SPV runner, escalating to cancellation after `timeout` but
-/// never returning until Tokio confirms that the task has terminated.
-async fn join_spv_task(mut handle: JoinHandle<()>, timeout: Duration) {
+/// Budget for `DashSpvClient::stop()` itself.
+///
+/// dash-spv's stop joins its internal monitors, and those monitors dispatch
+/// host event callbacks **synchronously** — a callback blocked in host code
+/// (an FFI persister `store`, say) makes the stop unbounded. Since
+/// [`SpvRuntime::stop`] sits on the path the FFI `destroy` must return
+/// through, an unbounded stop hangs teardown outright instead of surfacing
+/// `ErrorShutdownIncomplete`. On timeout the partially-stopped client is
+/// dropped and the stop is reported as an error, so the caller treats SPV
+/// as non-clean.
+const SPV_CLIENT_STOP_BUDGET: Duration = Duration::from_secs(15);
+
+/// Post-`abort` confirmation grace for the SPV run loop.
+///
+/// An abort only lands at the task's next await point, so a task parked in
+/// synchronous host-callback code cannot be interrupted at all. Without this
+/// bound the post-abort `handle.await` waits forever — the same hang the
+/// graceful timeout above was meant to escape.
+const SPV_ABORT_GRACE: Duration = Duration::from_secs(2);
+
+/// Join a stopped SPV runner, escalating to cancellation after `timeout`.
+///
+/// Returns `None` once Tokio has confirmed the task terminated. Returns
+/// `Some(handle)` when it is *still live* after the post-abort grace: the
+/// caller must re-park that handle (so a teardown retry re-joins it rather
+/// than silently detaching a callback-capable task) and report SPV as
+/// non-clean.
+#[must_use = "a returned handle is a still-live task that must be re-parked and reported non-clean"]
+async fn join_spv_task(handle: JoinHandle<()>, timeout: Duration) -> Option<JoinHandle<()>> {
+    join_spv_task_within(handle, timeout, SPV_ABORT_GRACE).await
+}
+
+/// [`join_spv_task`] with an explicit post-abort grace, so tests can drive
+/// the survived-the-abort path without waiting out [`SPV_ABORT_GRACE`].
+#[must_use = "a returned handle is a still-live task that must be re-parked and reported non-clean"]
+async fn join_spv_task_within(
+    mut handle: JoinHandle<()>,
+    timeout: Duration,
+    abort_grace: Duration,
+) -> Option<JoinHandle<()>> {
     match tokio::time::timeout(timeout, &mut handle).await {
-        Ok(Ok(())) => {}
+        Ok(Ok(())) => None,
         Ok(Err(error)) => {
             tracing::warn!(?error, "SPV background run loop join error");
+            None
         }
         Err(_) => {
             tracing::warn!("SPV stop: background run loop did not unwind in time; aborting it");
             handle.abort();
-            if let Err(error) = handle.await {
-                if !error.is_cancelled() {
+            match tokio::time::timeout(abort_grace, &mut handle).await {
+                Ok(Err(error)) if !error.is_cancelled() => {
                     tracing::warn!(?error, "SPV background run loop abort join error");
+                    None
+                }
+                Ok(_) => None,
+                Err(_) => {
+                    tracing::warn!(
+                        "SPV stop: background run loop survived abort for {abort_grace:?}; \
+                         keeping the handle for a teardown retry"
+                    );
+                    Some(handle)
                 }
             }
         }
@@ -227,7 +275,20 @@ impl SpvRuntime {
         result
     }
 
-    /// Stop SPV sync gracefully. Unlocks the data dir safely
+    /// Stop SPV sync gracefully. Unlocks the data dir safely.
+    ///
+    /// **Every phase is bounded** — `stop` runs on the path
+    /// [`PlatformWalletManager::shutdown`](crate::manager::PlatformWalletManager::shutdown)
+    /// and therefore the FFI's `destroy` must return through, so a wedged
+    /// host callback has to surface as an error rather than hang teardown:
+    /// the client stop is capped at [`SPV_CLIENT_STOP_BUDGET`], the run-loop
+    /// join at [`SPV_STOP_TIMEOUT`] with an [`SPV_ABORT_GRACE`] post-abort
+    /// confirmation. A run loop that outlives all of that is **re-parked**,
+    /// not detached, so a teardown retry re-joins it — and the error return
+    /// keeps it out of a clean shutdown verdict.
+    ///
+    /// Idempotent: a second call finds no client and re-joins whatever the
+    /// first call re-parked.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         let taken = {
             let mut client = self.client.write().await;
@@ -235,20 +296,47 @@ impl SpvRuntime {
         };
 
         let stop_result = match taken {
-            Some(c) => c
-                .stop()
-                .await
-                .map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+            Some(c) => match tokio::time::timeout(SPV_CLIENT_STOP_BUDGET, c.stop()).await {
+                Ok(result) => result.map_err(|e| PlatformWalletError::SpvError(e.to_string())),
+                Err(_) => {
+                    // The client is dropped with the timed-out future. The
+                    // data-dir lock may outlive this call, which is strictly
+                    // better than never returning from `destroy`.
+                    tracing::warn!(
+                        "SPV client stop did not complete within {:?}; abandoning it",
+                        SPV_CLIENT_STOP_BUDGET
+                    );
+                    Err(PlatformWalletError::SpvError(format!(
+                        "SPV client stop did not complete within {SPV_CLIENT_STOP_BUDGET:?}"
+                    )))
+                }
+            },
             None => Ok(()),
         };
         self.peer_tracker.clear();
 
         let handle = self.task.lock().expect("spv task mutex poisoned").take();
-        if let Some(handle) = handle {
-            join_spv_task(handle, SPV_STOP_TIMEOUT).await;
-        }
+        let join_result = match handle {
+            None => Ok(()),
+            Some(handle) => match join_spv_task(handle, SPV_STOP_TIMEOUT).await {
+                None => Ok(()),
+                Some(live) => {
+                    // Re-park rather than drop: dropping a `JoinHandle`
+                    // detaches the task, and this one can still reach host
+                    // callbacks. Keeping it lets a teardown retry re-join.
+                    *self.task.lock().expect("spv task mutex poisoned") = Some(live);
+                    Err(PlatformWalletError::SpvError(
+                        "SPV background run loop did not terminate after abort; \
+                         it is still tracked for a retry"
+                            .to_string(),
+                    ))
+                }
+            },
+        };
 
-        stop_result
+        // A failed client stop is the more informative diagnosis, so it wins;
+        // either one makes the caller's shutdown verdict non-clean.
+        stop_result.and(join_result)
     }
 
     /// Spawn the sync loop of an already-[`start`]ed client on the current
@@ -458,12 +546,44 @@ mod shutdown_tests {
         });
         started_rx.await.expect("SPV task should start");
 
-        join_spv_task(handle, SPV_STOP_TIMEOUT).await;
+        assert!(
+            join_spv_task(handle, SPV_STOP_TIMEOUT).await.is_none(),
+            "an abortable task must be confirmed terminated, not returned as live"
+        );
 
         assert!(
             dropped.load(Ordering::SeqCst),
             "abort must be joined so task-owned callback state is dropped"
         );
+    }
+
+    /// A run loop parked in **synchronous** code cannot be interrupted by
+    /// `abort` — the cancellation only lands at the next await point, which
+    /// never comes. The post-abort confirmation must therefore be bounded
+    /// and hand the still-live handle back, so `stop` can re-park it (a
+    /// dropped `JoinHandle` detaches the task, and this one can still reach
+    /// host callbacks) and report SPV non-clean.
+    ///
+    /// Without the post-abort deadline this test hangs: that is exactly the
+    /// hang that reached the FFI's `destroy` before this fix.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn spv_task_surviving_abort_is_returned_for_reparking() {
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            let _ = started_tx.send(());
+            // Stands in for a monitor blocked inside a synchronous host
+            // callback: no await point for the abort to land on.
+            std::thread::sleep(Duration::from_millis(500));
+        });
+        started_rx.await.expect("SPV task should start");
+
+        let live =
+            join_spv_task_within(handle, Duration::from_millis(10), Duration::from_millis(20))
+                .await
+                .expect("an un-abortable task must be handed back, never silently detached");
+
+        // Cleanup: the blocking section does end eventually.
+        let _ = live.await;
     }
 }
 

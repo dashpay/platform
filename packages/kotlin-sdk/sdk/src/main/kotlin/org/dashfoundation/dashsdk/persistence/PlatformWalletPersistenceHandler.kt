@@ -147,9 +147,14 @@ class PlatformWalletPersistenceHandler(
 
     /**
      * Shut down the owned executor (no-op for an injected dispatcher).
-     * Callers must quiesce native callbacks first — the manager invokes
-     * this only after `nativeDestroy` has freed the callback contexts, so
-     * nothing can dispatch onto the executor afterwards.
+     * The manager invokes this after `nativeDestroy`'s bounded shutdown
+     * has quiesced the callback-firing tasks. A native worker that
+     * straggled past that shutdown holds its own strong reference to the
+     * bridge (Rust owns the callback context and frees it when the worker
+     * exits), so a late callback is memory-safe; if it dispatches onto
+     * the already-closed executor it is rejected and dropped, which is
+     * fine — every persistence hook is reconciliation-based and re-runs
+     * on the next launch.
      */
     override fun close() {
         ownedDispatcher?.close()
