@@ -12,9 +12,7 @@ mod wallet_lifecycle;
 use std::sync::Arc;
 use std::time::Duration;
 
-use dash_async::{
-    ShutdownReport, ShutdownWeight, ThreadRegistry, WorkerConfig, WorkerStatus, DEFAULT_JOIN_BUDGET,
-};
+use dash_async::{ShutdownReport, ThreadRegistry, WorkerConfig, WorkerStatus, DEFAULT_JOIN_BUDGET};
 use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -77,10 +75,6 @@ pub enum WalletWorker {
 // `dash_async::RegistryKey` is a blanket impl over
 // `Copy + Ord + Eq + Debug + Send + Sync + 'static`, which the derives above
 // satisfy — no explicit impl needed.
-
-/// Teardown tier for the periodic coordinators. All four share one tier so
-/// [`ThreadRegistry::shutdown`] drains them concurrently.
-pub(crate) const COORDINATOR_WEIGHT: ShutdownWeight = ShutdownWeight(0);
 
 /// Deadline for a coordinator `quiesce()` drain — how long we wait for an
 /// in-flight pass (its `is_syncing` slot) to fall before giving up and
@@ -268,17 +262,15 @@ pub(crate) async fn drain_pass<'a>(
     Some(gate.hold())
 }
 
-/// Base [`WorkerConfig`] each coordinator starts its loop thread with — one
-/// shared tier, no drain hook, the registry's default managed-join budget
-/// ([`DEFAULT_JOIN_BUDGET`]) so a wedged loop pass surfaces as
+/// Base [`WorkerConfig`] each coordinator starts its loop thread with — the
+/// registry's default managed-join budget ([`DEFAULT_JOIN_BUDGET`]) so a
+/// wedged loop pass surfaces as
 /// [`WorkerStatus::Timeout`](dash_async::WorkerStatus::Timeout) instead of
 /// hanging shutdown forever, and the platform default OS-thread stack. A
 /// coordinator that needs a deeper stack (e.g. DashPay's GroveDB proof
 /// descent) overrides `stack_size` on top of this.
 pub(crate) fn coordinator_worker_config() -> WorkerConfig {
     WorkerConfig {
-        weight: COORDINATOR_WEIGHT,
-        drain: None,
         join_budget: DEFAULT_JOIN_BUDGET,
         stack_size: None,
     }
