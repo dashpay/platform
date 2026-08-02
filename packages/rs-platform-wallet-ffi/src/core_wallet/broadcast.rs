@@ -27,6 +27,11 @@ fn classify_broadcast_result(
 /// Success and `MaybeSent` both permanently consume the handle. A definitive
 /// rejection also consumes it after releasing the reservation. This prevents
 /// accidental rebroadcast through the same ownership token.
+///
+/// A handle whose wallet generation is no longer registered in the manager
+/// (removed, or re-created under the same id) is refused with `NotFound` (98)
+/// **before** the network is touched; the handle is consumed and its reservation
+/// reconciled. This mirrors the deferred-token path's `WalletRemoved` → 98.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
     handle: Handle,
@@ -58,6 +63,35 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
         );
     }
     let local_txid = finalized.transaction.transaction().txid();
+
+    // Hold this generation's lifecycle gate across BOTH the liveness check and
+    // the send. The `is_same_generation` check above compares two HANDLES, so it
+    // passes for a removed generation — both sides name the same removed wallet —
+    // and nothing further down re-checks: `broadcast_finalized_transaction` goes
+    // straight to the broadcaster with no manager lookup. Without this, two
+    // retained handles push a deleted wallet's transaction onto the network,
+    // where it can conflict with inputs a re-created generation has since
+    // selected (`dashpay/platform#4185`).
+    //
+    // The gate makes this atomic rather than check-then-act: a teardown takes the
+    // exclusive side, so it cannot interleave between the check and the send.
+    // Scoped per generation, so this send — up to the broadcaster's timeout —
+    // blocks only THIS wallet's teardown, never an unrelated wallet's.
+    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+        let gate = wallet.generation_payment_guard().await;
+        let live = wallet.is_current_generation().await;
+        (gate, live)
+    });
+    if !wallet_is_live {
+        runtime().block_on(finalized.wallet.abandon_transaction(&finalized.transaction));
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "wallet is no longer registered in the manager (removed or re-created); the \
+             transaction was NOT broadcast and its reservation was reconciled"
+                .to_string(),
+        );
+    }
+
     let result = runtime().block_on(
         finalized
             .wallet

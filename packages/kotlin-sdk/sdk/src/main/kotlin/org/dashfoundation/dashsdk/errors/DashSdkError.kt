@@ -368,11 +368,16 @@ sealed class DashSdkError(
                 }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
-            // NotFound. Handle/Option lookup failures, plus the deferred
-            // (BIP70/BIP270) wallet-was-REMOVED case: a signed-payment broadcast
-            // whose wallet is no longer registered in the manager, or a
-            // signed-payment finalize whose wallet was removed while it was
-            // being signed (its reservation is reconciled before this returns).
+            // NotFound. Handle/Option lookup failures, plus the
+            // wallet-was-REMOVED case on BOTH deferred-send paths:
+            //  * deferred (BIP70/BIP270) TOKEN path — a signed-payment broadcast
+            //    whose wallet is no longer registered in the manager, or a
+            //    signed-payment finalize whose wallet was removed while it was
+            //    being signed;
+            //  * finalized-transaction HANDLE (V2) path — a tx-builder finalize
+            //    whose wallet was removed or re-created during signing (no handle
+            //    is published), or a V2 broadcast whose generation is gone.
+            // Every one reconciles the build's UTXO reservation before returning.
             // Nothing was broadcast, and unlike ReservationWalletMismatch (36)
             // no other live generation holds the payment either — so it is not
             // retryable. See dashpay/platform#4185.

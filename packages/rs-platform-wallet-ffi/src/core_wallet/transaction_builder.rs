@@ -94,6 +94,11 @@ impl From<CoreAccountTypeFFI> for AccountTypePreference {
 /// On success `out_transaction_handle` receives an opaque V2 handle. Consume
 /// it with `core_wallet_broadcast_signed_transaction_v2` or
 /// `core_wallet_abandon_signed_transaction_v2`.
+///
+/// If the host removes (or re-creates) this wallet while the external signer is
+/// running, no handle is published: the build's reservation is reconciled and
+/// this returns `NotFound` (98), the same code the deferred-token sibling
+/// `core_wallet_signed_payment_finalize` uses for that case.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
@@ -130,6 +135,43 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
         &signer,
     ));
     let finalized = unwrap_result_or_return!(finalized);
+
+    // Publishing the V2 handle is gated exactly like the deferred-token sibling
+    // below (`core_wallet_signed_payment_finalize`). `finalize_transaction` drops
+    // the wallet-manager write lock before awaiting the (external, possibly slow)
+    // signer, so the host can have removed this wallet while we were signing —
+    // and that removal's V2-handle sweep has then ALREADY run. Inserting now
+    // would publish a live handle for a removed generation that no later sweep
+    // catches, and `core_wallet_broadcast_signed_transaction_v2` would happily
+    // push it to the network: its `is_same_generation` check compares two
+    // handles, and a removed generation matches itself (`dashpay/platform#4185`).
+    //
+    // Hold THIS generation's lifecycle gate across BOTH the liveness check and
+    // the insert, so a teardown cannot interleave between them. Acquired AFTER
+    // the signer await, never around it: holding it across an open signing prompt
+    // would stall this wallet's teardown for as long as the user takes, and the
+    // check makes that unnecessary.
+    let (_lifecycle, wallet_is_live) = runtime().block_on(async {
+        let gate = wallet.core().generation_payment_guard().await;
+        let live = wallet.core().is_current_generation().await;
+        (gate, live)
+    });
+    if !wallet_is_live {
+        // No handle was published, so nothing would ever release this build's
+        // reservation. Reconcile it here: the release is generation-bound, so on
+        // a genuine removal it is a logged no-op (the `ReservationSet` died with
+        // the generation), and on a re-create it correctly declines to touch the
+        // new generation's inputs.
+        runtime().block_on(wallet.core().abandon_transaction(&finalized));
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "wallet is no longer registered in the manager (removed or re-created while the \
+             transaction was being signed); no transaction handle was published and its \
+             reservation was reconciled"
+                .to_string(),
+        );
+    }
+
     *out_transaction_handle =
         CORE_SIGNED_TRANSACTION_V2_STORAGE.insert(FFICoreSignedTransactionV2 {
             wallet: wallet.core().clone(),
@@ -225,16 +267,14 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     // invariant that dropping tokens makes stale handles inert
     // (`dashpay/platform#4185`).
     //
-    // Take the lifecycle gate (shared — concurrent payments are unaffected) and
-    // hold it across BOTH the liveness check and the synchronous `register`, so
-    // a teardown cannot interleave between them. Deliberately acquired AFTER the
-    // signer await rather than around it: holding it across an open signing
-    // prompt would stall every wallet's teardown for as long as the user takes,
-    // and the check below makes that unnecessary.
+    // Take THIS wallet generation's lifecycle gate (shared — concurrent payments
+    // are unaffected) and hold it across BOTH the liveness check and the
+    // synchronous `register`, so a teardown cannot interleave between them.
+    // Deliberately acquired AFTER the signer await rather than around it: holding
+    // it across an open signing prompt would stall this wallet's teardown for as
+    // long as the user takes, and the check below makes that unnecessary.
     let (_lifecycle, wallet_is_live) = runtime().block_on(async {
-        let gate = crate::core_wallet::signed_payment::SIGNED_PAYMENT_REGISTRY
-            .lifecycle_read()
-            .await;
+        let gate = wallet.core().generation_payment_guard().await;
         let live = wallet.core().is_current_generation().await;
         (gate, live)
     });

@@ -67,7 +67,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use dashcore::{Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
@@ -286,19 +285,6 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
 pub struct SignedPaymentRegistry<B: TransactionBroadcaster + ?Sized> {
     next_token: AtomicU64,
     entries: Mutex<HashMap<ReservationToken, RegisteredPayment<B>>>,
-    /// Wallet-generation lifecycle gate, held across whole *operations* rather
-    /// than around individual map mutations — see
-    /// [`lifecycle_read`](Self::lifecycle_read) /
-    /// [`lifecycle_write`](Self::lifecycle_write).
-    ///
-    /// `entries` alone cannot provide this. It is a `std::sync::Mutex` that is
-    /// deliberately dropped before every `.await`, so it can only make a single
-    /// map mutation atomic — it cannot span a teardown (which awaits the manager
-    /// write lock plus shielded/identity unregistration) or a broadcast (which
-    /// awaits the network). Without a second, `await`-capable lock the
-    /// remove-then-sweep sequence and a concurrent broadcast interleave freely
-    /// (`dashpay/platform#4185`).
-    lifecycle: RwLock<()>,
 }
 
 impl<B: TransactionBroadcaster + ?Sized> Default for SignedPaymentRegistry<B> {
@@ -315,56 +301,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             // null-handle convention).
             next_token: AtomicU64::new(1),
             entries: Mutex::new(HashMap::new()),
-            lifecycle: RwLock::new(()),
         }
-    }
-
-    /// Enter the lifecycle gate as a *payment* operation — a broadcast, a
-    /// release, or a finalize→register sequence.
-    ///
-    /// Shared: any number of payment operations run concurrently, exactly as
-    /// before. What the guard excludes is a wallet-generation teardown
-    /// ([`lifecycle_write`](Self::lifecycle_write)), which is what makes a
-    /// generation-liveness observation
-    /// ([`CoreWallet::is_current_generation`]) safe to act on: a removal cannot
-    /// interleave between the check and the action the guard spans.
-    ///
-    /// Exposed (rather than only taken internally) because the finalize→register
-    /// sequence spans two crates: the FFI holds this guard across its liveness
-    /// check and the synchronous [`register`](Self::register), which is the only
-    /// way to stop an in-flight finalizer from inserting a token *after*
-    /// teardown already swept the registry. [`broadcast`](Self::broadcast) and
-    /// [`release`](Self::release) take it themselves, so a caller must NOT hold
-    /// it across those (the `RwLock` is not reentrant and tokio's is
-    /// write-preferring, so a pending teardown would deadlock the re-entry).
-    pub async fn lifecycle_read(&self) -> RwLockReadGuard<'_, ()> {
-        self.lifecycle.read().await
-    }
-
-    /// Enter the lifecycle gate as a wallet-generation *teardown*.
-    ///
-    /// Exclusive against every payment operation. The FFI's
-    /// `platform_wallet_manager_remove_wallet` holds this across BOTH the
-    /// manager removal and the subsequent
-    /// [`remove_entries_for_wallet`](Self::remove_entries_for_wallet) sweep, so
-    /// the two are one linearization point rather than two independent steps
-    /// with a window between them (`dashpay/platform#4185`).
-    ///
-    /// Acquiring it also *waits for* in-flight payment operations to finish, so
-    /// a finalizer that is mid-signature when the host removes the wallet
-    /// completes and reconciles its own reservation before the sweep runs —
-    /// rather than registering a token into an already-swept registry.
-    ///
-    /// ## Lock ordering
-    ///
-    /// This gate is always taken BEFORE the wallet-manager `RwLock`, never
-    /// after: teardown takes it and then awaits `PlatformWalletManager::
-    /// remove_wallet` (which takes the manager write lock); payment operations
-    /// take it and then await the manager read lock. Nothing in the wallet crate
-    /// acquires the gate while already holding a manager lock, so the two-lock
-    /// order is total and cannot deadlock.
-    pub async fn lifecycle_write(&self) -> RwLockWriteGuard<'_, ()> {
-        self.lifecycle.write().await
     }
 
     /// Lock the entries map, recovering from a poisoned mutex rather than
@@ -430,11 +367,19 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// generation, defeating the documented teardown invariant that dropping
     /// tokens makes stale handles inert.
     ///
-    /// Callers must therefore hold [`lifecycle_read`](Self::lifecycle_read)
-    /// across `CoreWallet::is_current_generation` and this call, and abandon the
-    /// payment (releasing its reservation) when the wallet is gone. The FFI's
-    /// `core_wallet_signed_payment_finalize` is the production caller and does
-    /// exactly that.
+    /// Callers must therefore hold
+    /// [`CoreWallet::generation_payment_guard`] — the finalizing generation's own
+    /// lifecycle gate — across `CoreWallet::is_current_generation` and this call,
+    /// and abandon the payment (releasing its reservation) when the wallet is
+    /// gone. The FFI's `core_wallet_signed_payment_finalize` is the production
+    /// caller and does exactly that.
+    ///
+    /// The gate is acquired **after** the external signer returns, not around it:
+    /// holding a generation's gate across an open signing prompt would stall that
+    /// wallet's teardown for as long as the user takes, and the liveness check
+    /// makes it unnecessary. A finalizer whose wallet was torn down mid-signature
+    /// therefore observes the missing generation at its check and abandons
+    /// instead of registering.
     pub fn register(
         &self,
         core: CoreWallet<B>,
@@ -497,12 +442,23 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         // strand the owner's reservation until the TTL backstop). The
         // check-then-remove is one lock hold, so it is atomic against a
         // concurrent broadcast; the std::Mutex guard is dropped before any await.
-        // Hold the lifecycle gate for the whole operation. A wallet-generation
-        // teardown needs the exclusive side, so it cannot interleave between the
-        // liveness check below and the send: either the wallet is gone before we
-        // enter (our entry was already swept → `StaleToken`), or it stays live
-        // until we leave. Shared, so concurrent payments are unaffected.
-        let _lifecycle = self.lifecycle_read().await;
+        //
+        // Hold `current`'s OWN generation lifecycle gate for the whole operation.
+        // That generation's teardown needs the exclusive side, so it cannot
+        // interleave between the liveness check below and the send: either the
+        // wallet is gone before we enter (our entry was already swept →
+        // `StaleToken`), or it stays live until we leave. Shared, so concurrent
+        // payments — on this generation and on every other — are unaffected, and
+        // scoped per generation, so holding it across the network send below
+        // blocks only THIS wallet's teardown rather than every wallet's
+        // (`dashpay/platform#4185`).
+        //
+        // Taking `current`'s gate rather than the entry's is sound because the
+        // only path that proceeds past the check below is one where
+        // `entry.core.is_same_generation(current)` held — i.e. they are the same
+        // generation and therefore the same gate. A mismatched caller returns
+        // without touching the entry or the network.
+        let _lifecycle = current.generation_payment_guard().await;
 
         let entry = {
             let mut entries = self.lock();
@@ -606,14 +562,31 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// the one whose `ReservationSet` actually holds the inputs — so no wallet
     /// handle need be threaded in.
     pub async fn release(&self, token: ReservationToken) {
-        // Same lifecycle gate as `broadcast`: the reconciliation below reads the
-        // manager to bind its release to a live generation, so a teardown must
-        // not interleave between taking the entry and acting on it.
-        let _lifecycle = self.lifecycle_read().await;
+        // Same per-generation lifecycle gate as `broadcast`: the reconciliation
+        // below reads the manager to bind its release to a live generation, so
+        // that generation's teardown must not interleave between taking the entry
+        // and acting on it.
+        //
+        // No wallet handle is threaded in, so the gate has to come from the entry
+        // itself. PEEK the entry's generation without consuming it, drop the map
+        // lock (a `std::sync::Mutex` — it must never be held across an `.await`),
+        // take that generation's gate, and only then consume. Both ways the peek
+        // can go stale are already the correct outcome: if a teardown swept the
+        // entry, or a concurrent release/broadcast consumed it, the `remove`
+        // below returns `None` and this is the documented idempotent no-op.
+        let generation = {
+            let entries = self.lock();
+            match entries.get(&token) {
+                // Unknown / already consumed — idempotent no-op.
+                None => return,
+                Some(entry) => Arc::clone(entry.core.generation()),
+            }
+        };
+        let _lifecycle = generation.payment_guard().await;
 
         let entry = { self.lock().remove(&token) };
         let Some(entry) = entry else {
-            // Unknown / already consumed — idempotent no-op.
+            // Swept or consumed while we were acquiring the gate — no-op.
             return;
         };
         Self::reconcile_removed_entry(entry).await;
@@ -632,16 +605,22 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// against a re-created generation's inputs — this is the teardown half of
     /// the single generation policy the deferred paths share.
     ///
-    /// # Must be called under [`lifecycle_write`](Self::lifecycle_write)
+    /// # Must be called under the removed generation's [`WalletGeneration::teardown_guard`]
     ///
     /// Dropping the tokens is only half of teardown; the other half is the
     /// manager removal itself, and the two are one atomic step only if the
-    /// caller holds the exclusive lifecycle gate across BOTH. Sweeping without
-    /// it leaves two windows a payment operation slips through — a broadcast
-    /// between the removal and this sweep still finds its entry, and an
-    /// in-flight finalizer registers a fresh token *after* this sweep has run
+    /// caller holds that generation's exclusive lifecycle gate across BOTH.
+    /// Sweeping without it leaves two windows a payment operation slips through —
+    /// a broadcast between the removal and this sweep still finds its entry, and
+    /// an in-flight finalizer registers a fresh token *after* this sweep has run
     /// (`dashpay/platform#4185`). This function cannot take the gate itself: it
     /// is synchronous, and the removal it must be atomic with is `async`.
+    ///
+    /// [`PlatformWalletManager::remove_wallet_with_teardown`](crate::PlatformWalletManager::remove_wallet_with_teardown)
+    /// is the supported way to satisfy this: it holds the gate across the removal
+    /// and runs the sweep as its teardown hook, so the ordering cannot be got
+    /// wrong by a caller — including a direct Rust embedder that never goes
+    /// through the FFI.
     pub fn remove_entries_for_wallet(&self, wallet: &CoreWallet<B>) -> usize {
         let mut entries = self.lock();
         let before = entries.len();
@@ -1748,7 +1727,7 @@ mod tests {
         let (_, info) = wm
             .get_wallet_and_info_mut(&core.wallet_id())
             .expect("wallet present in manager");
-        info.balance = Arc::new(crate::wallet::core::WalletBalance::new());
+        info.generation = Arc::new(crate::wallet::core::WalletGeneration::new());
     }
 
     /// Regression for the non-atomic generation-validation + cleanup: a token's

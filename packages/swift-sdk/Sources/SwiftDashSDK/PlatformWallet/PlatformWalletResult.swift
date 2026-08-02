@@ -104,14 +104,23 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// owner's token. NOT retryable through this handle: rebuild the payment.
     case errorReservationWalletMismatch = 36
     /// The named thing does not exist. Besides the handle/lookup failures this
-    /// has always covered, the deferred (BIP70/BIP270) payment calls report the
-    /// wallet-was-REMOVED case here: a signed-payment broadcast refuses a token
-    /// whose wallet is no longer registered in the manager, and a signed-payment
-    /// finalize refuses to register a payment whose wallet was removed while it
-    /// was being signed (reconciling its reservation first). Distinct from
-    /// `errorReservationWalletMismatch` (36), where a *different* live generation
-    /// answers to the same id. The call did NOT touch the network and is NOT
-    /// retryable — the wallet is gone.
+    /// has always covered, BOTH deferred-send paths report the
+    /// wallet-was-REMOVED case here.
+    ///
+    /// Deferred (BIP70/BIP270) *token* path: a signed-payment broadcast refuses
+    /// a token whose wallet is no longer registered in the manager, and a
+    /// signed-payment finalize refuses to register a payment whose wallet was
+    /// removed while it was being signed.
+    ///
+    /// Finalized-transaction *handle* (V2) path: `finalizeAtomic` publishes no
+    /// handle when the wallet was removed or re-created during signing, and
+    /// `broadcastTransactionWithOutcome(_: FinalizedCoreTransaction)` refuses a
+    /// handle whose generation is gone.
+    ///
+    /// Every one of these reconciles the build's UTXO reservation before
+    /// returning. Distinct from `errorReservationWalletMismatch` (36), where a
+    /// *different* live generation answers to the same id. The call did NOT touch
+    /// the network and is NOT retryable — the wallet is gone.
     case notFound = 98
     case errorUnknown = 99
 
