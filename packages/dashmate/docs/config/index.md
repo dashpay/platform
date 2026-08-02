@@ -67,6 +67,9 @@ dashmate config default <n>
 # Get a specific config option
 dashmate config get <option>
 
+# Get what is stored, rather than the value in effect
+dashmate config get --raw <option>
+
 # Set a specific config option
 dashmate config set <option> <value>
 
@@ -94,6 +97,55 @@ Configuration files are stored in the Dashmate home directory:
 
 - Default location: `~/.dashmate/config.json`
 - Can be changed with the `DASHMATE_HOME_DIR` environment variable
+
+## Options with dynamic defaults
+
+A few options are left unset, and their value is derived from the dashmate build
+you are running rather than written into your config. Today these are the Drive
+and rs-dapi images:
+
+- `platform.drive.abci.docker.image`
+- `platform.dapi.rsDapi.docker.image`
+
+Unset means "use the image published for this dashmate version". Upgrading
+dashmate moves them automatically — there is nothing pinned in your config to go
+stale, and no config change to make.
+
+Reads show the value that will actually be used, and `dashmate config` marks the
+ones you have not set:
+
+```
+$ dashmate config get platform.drive.abci.docker.image
+dashpay/drive:4-rc
+
+$ dashmate config
+    image: 'dashpay/drive:4-rc' (default),
+```
+
+`--raw` shows what is stored instead, which is how you tell the two apart:
+
+```
+$ dashmate config get --raw platform.drive.abci.docker.image
+null
+```
+
+Setting one pins it, and dashmate will not change it again — including across
+upgrades. That is deliberate: an image you chose is yours to manage.
+
+```
+$ dashmate config set platform.drive.abci.docker.image registry.example.com/drive:patched
+$ dashmate config get --raw platform.drive.abci.docker.image
+registry.example.com/drive:patched
+```
+
+Set it back to `null` to return to tracking the published image:
+
+```
+$ dashmate config set platform.drive.abci.docker.image null
+```
+
+Note `dashmate config --format=json` prints effective values without the
+`(default)` marker, so it stays machine-readable.
 
 ## Configuration Migration
 

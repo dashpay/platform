@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import semver from 'semver';
 import { STOCK_PRERELEASE_IDS } from '../../../../src/config/stockImages.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
@@ -92,153 +91,28 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
-  it('should refresh version-derived images from every config version that has a migration', async () => {
-    // The drive and rs-dapi image tags are derived from the package version, so
-    // every release that changes the major or the prerelease identifier changes
-    // them. Config files store resolved values, so operators only pick the new
-    // tags up when a migration re-pins them; a release that forgets leaves them
-    // running the images of the line they installed.
+  it('should unset a stock version-derived tag and leave an operator image alone', async () => {
+    // The migration records intent rather than re-pinning a value: a tag a
+    // release published becomes unset, meaning "use the line this build ships",
+    // while an image the operator chose stays exactly as they set it.
     //
-    // Rather than a test per migration, walk the migration table itself: every
-    // config version an operator can be sitting on must end up on the images a
-    // fresh install produces today. New migrations are covered without touching
-    // this test. A failure here means the upcoming release needs its own
-    // migration re-pinning these images from the base config.
-    //
-    // The migration at this key and every older one rewrite the config shape of
-    // their own era and throw against a config built from the current defaults
-    // (this one reads core.log.file.categories, which current configs no longer
-    // have). They stay covered by 'should migrate v0.25.0 config file to the
-    // latest one', which carries a real historical config all the way up.
-    const OLDEST_MIGRATABLE_FROM_VERSION = '1.3.0-dev.3';
-
-    const getConfigFileMigrations = container.resolve('getConfigFileMigrations');
-
-    const defaultConfigFileData = createConfigFile().toObject();
-    const [firstConfigName] = Object.keys(defaultConfigFileData.configs);
-    const expectedDriveImage = defaultConfigFileData
-      .configs[firstConfigName].platform.drive.abci.docker.image;
-    const expectedRsDapiImage = defaultConfigFileData
-      .configs[firstConfigName].platform.dapi.rsDapi.docker.image;
-
-    const migrationVersions = Object.keys(getConfigFileMigrations()).sort(semver.compare);
-
-    // Upgrade towards the release the newest migration is keyed at, not the
-    // version in package.json. Those are the same only in the release that
-    // ships that migration; every other time the package trails it, and a
-    // config already stamped at or above the package version either short
-    // circuits on fromVersion === toVersion or selects nothing at all, leaving
-    // the newest migration - the one most likely to be wrong - unexercised.
-    const upgradingTo = migrationVersions.at(-1);
-
-    const releases = migrationVersions
-      .filter((migrationVersion) => semver.gte(migrationVersion, OLDEST_MIGRATABLE_FROM_VERSION));
-
-    // The newest migration is the one a release is most likely to forget, so
-    // guard against a floor that silently drops it along with everything else.
-    expect(releases).to.include(upgradingTo, 'the newest migration is not being checked');
-
-    // The tag a release's base config produced, derived the way
-    // getBaseConfigFactory derives it.
-    const imageVersionOf = (release) => {
-      const prereleaseTag = semver.prerelease(release) === null ? '' : `-${semver.prerelease(release)[0]}`;
-
-      return `${semver.major(release)}${prereleaseTag}`;
-    };
-
-    // Collect every mismatch instead of stopping at the first, so one stale
-    // release does not hide the others.
-    const stale = [];
-
-    for (const release of releases) {
-      // A config stamped at a release does not necessarily carry that release's
-      // own tag: operators arrive by upgrading far more often than by
-      // installing fresh, so they keep whatever the last re-pin left them with.
-      // Seeding only the release's own tag makes exactly the interesting case
-      // unreachable - a config stamped at a prerelease while still carrying the
-      // stable tag it inherited. Every tag a release of the same major
-      // published at or before this one is reachable here; crossing a major
-      // means crossing an unconditional re-pin, which resets the tag.
-      //
-      // The newest release is the exception. Its own migration is the one that
-      // re-pins, and a config only reaches that stamp by running it, so it
-      // cannot still be carrying an older tag. Seeding one there would assert
-      // against a state no operator can be in.
-      const inheritedImageVersions = release === upgradingTo
-        ? [imageVersionOf(release)]
-        : [...new Set(
-          migrationVersions
-            .filter((candidate) => semver.major(candidate) === semver.major(release)
-              && semver.lte(candidate, release))
-            .map(imageVersionOf),
-        )];
-
-      for (const imageVersion of inheritedImageVersions) {
-        const configFileData = createConfigFile().toObject();
-        configFileData.configFormatVersion = release;
-        for (const options of Object.values(configFileData.configs)) {
-          options.platform.drive.abci.docker.image = `dashpay/drive:${imageVersion}`;
-          options.platform.dapi.rsDapi.docker.image = `dashpay/rs-dapi:${imageVersion}`;
-        }
-
-        const migratedConfigFileData = migrateConfigFile(configFileData, release, upgradingTo);
-
-        for (const [name, options] of Object.entries(migratedConfigFileData.configs)) {
-          const carried = `${release} carrying :${imageVersion} -> ${name}`;
-
-          const { image: driveImage } = options.platform.drive.abci.docker;
-          if (driveImage !== expectedDriveImage) {
-            stale.push(`${carried}: drive ${driveImage}, expected ${expectedDriveImage}`);
-          }
-
-          const { image: rsDapiImage } = options.platform.dapi.rsDapi.docker;
-          if (rsDapiImage !== expectedRsDapiImage) {
-            stale.push(`${carried}: rs-dapi ${rsDapiImage}, expected ${expectedRsDapiImage}`);
-          }
-        }
-      }
-    }
-
-    expect(stale).to.deep.equal(
-      [],
-      'images left on a stale tag; add a migration keyed at the upcoming release that re-pins them from the base config',
-    );
-  });
-
-  it('should move only the stock version-derived tags and leave operator images alone', async () => {
-    // The re-pin is guarded so it never overwrites an image the operator chose.
-    // Both halves of that guard need pinning: the stock tags a release publishes
-    // must move, and anything else must survive untouched. Every operator image
-    // below except the private-registry one sits in the dashpay namespace, so
-    // the suffix is what has to reject them - a foreign registry would pass on
-    // the namespace alone and never exercise it.
-    //
-    // 4.0.0 is the only starting point where this migration acts alone. Below
-    // it the unconditional re-pin in the '4.0.0' migration overwrites every
-    // image regardless, operator-chosen ones included.
+    // This is the last time a stock tag is recognised by shape, so both halves
+    // need pinning - a widened pattern would overwrite operator images, and a
+    // narrowed one would strand operators on a tag that no longer moves.
     const FROM_VERSION = '4.0.0';
 
     // Spelled out rather than only imported, so adding an identifier to the
     // shared list without deciding it belongs here fails instead of silently
-    // widening what the migration moves.
+    // widening what the migration unsets.
     const expectedPrereleaseIds = ['alpha', 'beta', 'dev', 'hotfix', 'pr', 'rc'];
     expect([...STOCK_PRERELEASE_IDS].sort()).to.deep.equal(
       expectedPrereleaseIds,
-      'the published prerelease identifiers changed; confirm the new one should move operators',
+      'the published prerelease identifiers changed; confirm the new one should unset operators',
     );
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+    const [firstConfigName] = Object.keys(createConfigFile().toObject().configs);
 
-    const defaultConfigFileData = createConfigFile().toObject();
-    const [firstConfigName] = Object.keys(defaultConfigFileData.configs);
-    const expectedDriveImage = defaultConfigFileData
-      .configs[firstConfigName].platform.drive.abci.docker.image;
-    const expectedRsDapiImage = defaultConfigFileData
-      .configs[firstConfigName].platform.dapi.rsDapi.docker.image;
-
-    // Both images are named explicitly rather than derived from one another, so
-    // a case added later cannot seed the rs-dapi slot with a drive image and
-    // pass without testing anything.
     const migrateImages = (driveImage, rsDapiImage) => {
       const configFileData = createConfigFile().toObject();
       configFileData.configFormatVersion = FROM_VERSION;
@@ -258,18 +132,22 @@ describe('migrateConfigFileFactory', () => {
       const platform = migrateImages(`dashpay/drive:${tag}`, `dashpay/rs-dapi:${tag}`);
 
       expect(platform.drive.abci.docker.image).to.equal(
-        expectedDriveImage,
-        `stock drive image dashpay/drive:${tag} was not moved`,
+        null,
+        `stock drive image dashpay/drive:${tag} was not unset`,
       );
       expect(platform.dapi.rsDapi.docker.image).to.equal(
-        expectedRsDapiImage,
-        `stock rs-dapi image dashpay/rs-dapi:${tag} was not moved`,
+        null,
+        `stock rs-dapi image dashpay/rs-dapi:${tag} was not unset`,
       );
     }
 
     const operatorImages = [
       // vendor-patched build under the stock namespace
       ['dashpay/drive:4-patched', 'dashpay/rs-dapi:4-patched'],
+      // a major no release had published when this migration shipped, so it can
+      // only be something the operator built themselves
+      ['dashpay/drive:5', 'dashpay/rs-dapi:5'],
+      ['dashpay/drive:999', 'dashpay/rs-dapi:999'],
       // locally built image, operator's own tag
       ['dashpay/drive:4-local', 'dashpay/rs-dapi:4-local'],
       // pinned to an exact version
@@ -290,6 +168,95 @@ describe('migrateConfigFileFactory', () => {
       expect(platform.dapi.rsDapi.docker.image).to.equal(
         rsDapiImage,
         `operator rs-dapi image ${rsDapiImage} was overwritten`,
+      );
+    }
+  });
+
+  it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
+    // Every config older than 4.0.0 crosses the unconditional re-pin in that
+    // migration, so it is the first place operator intent can be respected. It
+    // used to overwrite unconditionally, which destroyed a custom image before
+    // any later migration could tell it apart from a stale default.
+    const FROM_VERSION = '3.1.0';
+    const customDriveImage = 'registry.example.com/security-patched-drive:stable';
+    const customRsDapiImage = 'registry.example.com/security-patched-rs-dapi:stable';
+
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = FROM_VERSION;
+    for (const options of Object.values(configFileData.configs)) {
+      options.platform.drive.abci.docker.image = customDriveImage;
+      options.platform.dapi.rsDapi.docker.image = customRsDapiImage;
+    }
+
+    const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(options.platform.drive.abci.docker.image).to.equal(
+        customDriveImage,
+        `operator drive image was overwritten for ${name}`,
+      );
+      expect(options.platform.dapi.rsDapi.docker.image).to.equal(
+        customRsDapiImage,
+        `operator rs-dapi image was overwritten for ${name}`,
+      );
+    }
+  });
+
+  it('should unset a stock tag carried across majors', async () => {
+    // A config from before 4.0.0 carries a tag of its own era. Those still have
+    // to be recognised as published defaults, or an operator who never chose an
+    // image is stranded on a tag nothing moves any more.
+    const FROM_VERSION = '3.1.0';
+
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    // v1.0.0 and v1.0.1 derived major.minor tags; the derivation changed to the
+    // major alone in v1.0.2, and the 0.x line used major.minor throughout.
+    for (const tag of ['3', '2', '1-dev', '1.0', '1.0-rc', '0.25', '0.24']) {
+      const configFileData = createConfigFile().toObject();
+      configFileData.configFormatVersion = FROM_VERSION;
+      for (const options of Object.values(configFileData.configs)) {
+        options.platform.drive.abci.docker.image = `dashpay/drive:${tag}`;
+        options.platform.dapi.rsDapi.docker.image = `dashpay/rs-dapi:${tag}`;
+      }
+
+      const migrated = migrateConfigFile(configFileData, FROM_VERSION, version);
+
+      for (const [name, options] of Object.entries(migrated.configs)) {
+        expect(options.platform.drive.abci.docker.image).to.equal(
+          null,
+          `stock drive image dashpay/drive:${tag} was not unset for ${name}`,
+        );
+      }
+    }
+  });
+
+  it('should carry an operator image from the oldest migratable config to the newest', async () => {
+    // The strongest form of the guarantee: a config old enough to cross every
+    // migration in the table still arrives with the operator's image intact.
+    // These re-pins used to overwrite unconditionally, so an operator running
+    // their own build lost it at the first one they crossed - far earlier than
+    // any guard could see it.
+    const customDriveImage = 'registry.example.com/security-patched-drive:stable';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const oldConfigFileData = getConfigFileDataV0250();
+    for (const options of Object.values(oldConfigFileData.configs)) {
+      options.platform.drive.abci.docker.image = customDriveImage;
+    }
+
+    const migrated = migrateConfigFile(
+      oldConfigFileData,
+      oldConfigFileData.configFormatVersion,
+      version,
+    );
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(options.platform.drive.abci.docker.image).to.equal(
+        customDriveImage,
+        `operator drive image was overwritten for ${name}`,
       );
     }
   });
