@@ -828,9 +828,20 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
 /// one batch, so lazy terminal creation itself is no longer a blocker —
 /// the restriction is relaxable at a future protocol version.)
 ///
-/// Storage-level backstop behind this gate: the wrapper helpers in
+/// Storage-level backstop behind this gate: both wrapper dispatchers in
 /// `fees/op.rs` fail closed (`DriveError::NotSupported`) for a ranked
-/// terminal level inside an aggregating value tree.
+/// terminal level inside an aggregating value tree — the frozen v0
+/// diagonal and the v14 zero-contribution matrix alike. The latter
+/// matters since the v14 shared-prefix fix: its unwrapped fallback for
+/// non-sum children of sum-only parents would otherwise have accepted an
+/// indexed continuation, quietly creating a ranked tree that neither the
+/// grammar nor the ranked query picker supports.
+///
+/// Note that a ranked index *sharing* its property with a compound index
+/// — `[a]` ranked next to `[a, b]` — is a different (and, since v14,
+/// fully supported) shape: there the ranked level is still the terminal
+/// one, and the continuation hangs *below* it. See
+/// `ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property`.
 #[test]
 fn compound_ranked_index_contract_is_rejected_at_parse_time() {
     for standalone_prefix_index in [false, true] {
@@ -1128,6 +1139,261 @@ fn sum_axis_ranks_groups_by_running_sum() {
     assert_eq!(
         descending.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
         vec![100, 25, 24]
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
+// A ranked index sharing its property with a compound index
+// ---------------------------------------------------------------------------
+
+/// A `dish` doctype whose ranked single-property index `[restaurantId]`
+/// shares its property with a plain compound index `[restaurantId, chefId]`.
+///
+/// This is the shape both v14 changes meet on. The compound index hangs a
+/// `chefId` continuation property-name tree inside the very value trees whose
+/// (count, sum) the ranked Avg secondary orders by, so:
+///
+/// * the **shared-prefix fix** decides the value trees: with a continuation
+///   present they demote from `ProvableCountProvableSumTree` to
+///   `CountSumTree`, and the continuation goes in `Element::NonCounted` so it
+///   contributes zero to the group's count and sum;
+/// * the **ranked upgrade** decides the property-name tree one level up: it
+///   stays the `ProvableCountProvableSumIndexedTree` carrying the Avg axis.
+///
+/// Before v14 this contract registered but rejected every document insert
+/// (the diagonal-only wrapper matrix had no legal element for a plain
+/// continuation under a count+sum value tree), which is why the ranked
+/// multi-index fixture in `query::drive_document_ranked_query::tests` had to
+/// hang its compound sibling off a count-only index instead.
+fn build_shared_prefix_ranked_dish_contract() -> DataContract {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    use dpp::tests::utils::generate_random_identifier_struct;
+
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V14).expect("expected to create factory");
+
+    let schemas = platform_value!({
+        "dish": {
+            "type": "object",
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "properties": {
+                "restaurantId": {"type": "string", "position": 0, "maxLength": 32},
+                "chefId": {"type": "string", "position": 1, "maxLength": 32},
+                "grade": {"type": "integer", "minimum": 0, "maximum": 100, "position": 2},
+            },
+            "required": ["restaurantId", "chefId", "grade"],
+            "indices": [
+                {
+                    "name": "byRestaurant",
+                    "properties": [{"restaurantId": "asc"}],
+                    "countable": "countable",
+                    "summable": "grade",
+                    "averageable": "grade",
+                    "rangeCountable": true,
+                    "rangeSummable": true,
+                    "rangeAverageable": true,
+                    "rankedAverageable": true,
+                },
+                {
+                    "name": "byRestaurantChef",
+                    "properties": [{"restaurantId": "asc"}, {"chefId": "asc"}],
+                },
+            ],
+            "additionalProperties": false,
+        }
+    });
+
+    factory
+        .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+        .expect("expected to build the shared-prefix ranked contract")
+        .data_contract_owned()
+}
+
+/// Build a `dish` document with the three properties the shared-prefix
+/// contract declares.
+fn build_dish(
+    contract: &DataContract,
+    restaurant: &str,
+    chef: &str,
+    grade: i64,
+    seed: u64,
+) -> Document {
+    let document_type = contract
+        .document_type_for_name("dish")
+        .expect("dish doctype exists");
+    let mut doc = document_type
+        .random_document(Some(seed), platform_version())
+        .expect("random document");
+    let mut props = std::collections::BTreeMap::new();
+    props.insert(
+        GROUP_PROPERTY.to_string(),
+        Value::Text(restaurant.to_string()),
+    );
+    props.insert("chefId".to_string(), Value::Text(chef.to_string()));
+    props.insert("grade".to_string(), Value::I64(grade));
+    doc.set_properties(props);
+    doc
+}
+
+/// The two v14 fixes on the same doctype: ranking must stay exact while a
+/// compound index hangs continuations inside the ranked groups.
+///
+/// The assertions that would break if either fix regressed:
+/// - inserts succeed at all (pre-v14 they did not for this shape);
+/// - the Avg ranking matches the averages computed from the documents alone,
+///   i.e. the `chefId` continuations contribute nothing to any group;
+/// - the group's value tree is the demoted `CountSumTree` carrying exactly
+///   the documents' (count, sum), with the continuation `NonCounted`-wrapped;
+/// - the property-name tree above it is still the indexed element;
+/// - grovedb's integrity sweep — which walks primary against secondary for
+///   every axis — reports nothing.
+#[test]
+fn ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property() {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = build_shared_prefix_ranked_dish_contract();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version(),
+        )
+        .expect("expected to apply the shared-prefix ranked contract");
+
+    // The ranked upgrade survives the presence of the compound sibling.
+    let element = read_indexed_property_name_element(&drive, &contract, "dish");
+    match &element {
+        Element::ProvableCountProvableSumIndexedTree(_, _, _, axes, _) => {
+            assert_eq!(
+                axes,
+                &vec![(2u8, None)],
+                "the terminal property-name tree must carry exactly the Avg axis"
+            );
+        }
+        other => panic!("expected a ProvableCountProvableSumIndexedTree, got {other:?}"),
+    }
+
+    // alpha (90 + 80)/2 = 85, beta (60 + 70 + 50)/3 = 60, gamma 95/1 = 95.
+    // Two different chefs per restaurant, so every group really does host a
+    // populated `chefId` continuation.
+    let rows = [
+        ("alpha", "chefA", 90),
+        ("alpha", "chefB", 80),
+        ("beta", "chefA", 60),
+        ("beta", "chefB", 70),
+        ("beta", "chefC", 50),
+        ("gamma", "chefC", 95),
+    ];
+    let docs: Vec<Document> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, (restaurant, chef, grade))| {
+            let doc = build_dish(&contract, restaurant, chef, *grade, i as u64 + 1);
+            insert_doc(&drive, &contract, "dish", &doc);
+            doc
+        })
+        .collect();
+
+    let path = indexed_property_name_tree_path(&contract, "dish");
+    let ranking = avg_top_k(&drive, &path, 10, true);
+    assert_eq!(
+        group_keys(&ranking),
+        vec!["gamma", "alpha", "beta"],
+        "Avg ranking must be gamma(95) > alpha(85) > beta(60)"
+    );
+    assert_eq!(
+        ranking.iter().map(|(avg, _)| *avg).collect::<Vec<_>>(),
+        vec![
+            expected_avg_fixed_point(95, 1),
+            expected_avg_fixed_point(170, 2),
+            expected_avg_fixed_point(180, 3),
+        ],
+        "the continuations must contribute nothing to any group's (count, sum)"
+    );
+
+    // The group value tree itself: demoted to CountSumTree, carrying only the
+    // documents' aggregates.
+    let alpha = read_grove_element(&drive, &path, b"alpha").expect("alpha's group must exist");
+    match &alpha {
+        Element::CountSumTree(_, count, sum, _) => {
+            assert_eq!(*count, 2, "alpha's count must be its two dishes");
+            assert_eq!(*sum, 170, "alpha's sum must be 90 + 80");
+        }
+        other => panic!("expected alpha's value tree to be a demoted CountSumTree, got {other:?}"),
+    }
+
+    // ...and the compound index's continuation lives inside it, wrapped so it
+    // contributes zero to both axes.
+    let mut alpha_path = path.clone();
+    alpha_path.push(b"alpha".to_vec());
+    let continuation = read_grove_element(&drive, &alpha_path, b"chefId")
+        .expect("the compound index's continuation must exist under alpha");
+    assert!(
+        matches!(&continuation, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+        "the continuation must be NonCounted-wrapped, got {continuation:?}"
+    );
+
+    // A key-changing update runs the v1 update walker over the same shape.
+    let document_type = contract
+        .document_type_for_name("dish")
+        .expect("dish doctype exists");
+    let mut moved = docs[5].clone();
+    let mut props = moved.properties().clone();
+    props.insert("chefId".to_string(), Value::Text("chefD".to_string()));
+    props.insert("grade".to_string(), Value::I64(20));
+    moved.set_properties(props);
+    moved.set_revision(Some(2));
+    drive
+        .update_document_for_contract(
+            &moved,
+            &contract,
+            document_type,
+            Some(moved.owner_id().to_buffer()),
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version(),
+            None,
+        )
+        .expect("expected to update the dish document across the compound index");
+
+    assert_eq!(
+        group_keys(&avg_top_k(&drive, &path, 10, true)),
+        vec!["alpha", "beta", "gamma"],
+        "gamma's only dish dropped to 20 and must fall to last"
+    );
+
+    // Deleting alpha's dishes drains the group without leaving its
+    // continuation behind.
+    for doc in docs.iter().take(2) {
+        drive
+            .delete_document_for_contract(
+                doc.id(),
+                &contract,
+                "dish",
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version(),
+                None,
+            )
+            .expect("expected to delete an alpha dish");
+    }
+    assert_eq!(
+        group_keys(&avg_top_k(&drive, &path, 10, true)),
+        vec!["beta", "gamma"],
+        "the drained group must leave the axis"
+    );
+    assert!(
+        read_grove_element(&drive, &path, b"alpha").is_none(),
+        "the drained group's value tree must be gone from the primary too"
     );
 
     assert_grovedb_is_consistent(&drive);

@@ -1,3 +1,4 @@
+use super::EmptyTreeInsertMode;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -23,7 +24,7 @@ impl Drive {
         &self,
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,
-        wrap_in_non_aggregated_for_parent_tree_type: Option<TreeType>,
+        insert_mode: EmptyTreeInsertMode,
         ranked_axes: &[IndexAxis],
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
@@ -33,52 +34,67 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
         // The index walker passes the parent value tree's TreeType when
-        // the parent aggregates count, sum, or both. The
-        // `wrap_in_non_aggregated_for_parent_tree_type` dispatcher
-        // then picks the right wrapper variant
-        // (NonCounted / NotSummed / NotCountedOrSummed) based on what
-        // axes the parent aggregates. For non-aggregating parents
-        // (`wrap_in_non_aggregated_for_parent_tree_type: None`), no wrapping is
-        // needed and we fall through to the plain empty-tree op.
+        // the parent aggregates count, sum, or both, along with which
+        // wrapper-dispatch generation to use: `NonAggregatedForParent`
+        // (the frozen diagonal-only v0 matrix) or
+        // `ContributingZeroToParent` (the complete matrix, v2 walkers
+        // only). For non-aggregating parents (`NotWrapped`), no
+        // wrapping is needed and we fall through to the plain
+        // empty-tree op.
         //
         // `ranked_axes` is non-empty only for a ranked index's terminal
         // property-name tree, where `tree_type` is one of the three indexed
         // variants and the element needs the axis TLV that `TreeType` cannot
-        // carry. The two cases are mutually exclusive by construction — see
+        // carry. It is mutually exclusive with both wrapping modes — see
         // `INDEXED_INNER_UNWRAPPABLE` in `fees::op` for why an indexed tree
-        // can never be wrapped.
-        let build_op =
-            |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
-                if !ranked_axes.is_empty() {
-                    if wrap_in_non_aggregated_for_parent_tree_type.is_some() {
-                        return Err(Error::Drive(DriveError::NotSupported(
+        // can never be wrapped, and why it must not be inserted unwrapped
+        // under an aggregating parent either (the zero-contribution
+        // dispatcher's sum-only-parent fallback would otherwise take it).
+        let build_op = |path: Vec<Vec<u8>>,
+                        key: Vec<u8>|
+         -> Result<LowLevelDriveOperation, Error> {
+            match insert_mode {
+                    EmptyTreeInsertMode::NotWrapped if !ranked_axes.is_empty() => {
+                        LowLevelDriveOperation::for_known_path_key_empty_indexed_tree(
+                            path,
+                            key,
+                            tree_type,
+                            ranked_axes,
+                            storage_flags,
+                        )
+                    }
+                    _ if !ranked_axes.is_empty() => {
+                        Err(Error::Drive(DriveError::NotSupported(
                             "a ranked index's terminal property-name tree cannot be created \
                              inside an aggregating value tree: grovedb's NonCounted / NotSummed \
                              / NotCountedOrSummed wrappers reject indexed inners, because an \
                              indexed primary commits its aggregate and secondary root keys \
                              through the very parent element the wrapper neutralizes.",
-                        )));
+                        )))
                     }
-                    return LowLevelDriveOperation::for_known_path_key_empty_indexed_tree(
-                        path,
-                        key,
-                        tree_type,
-                        ranked_axes,
-                        storage_flags,
-                    );
+                    EmptyTreeInsertMode::NotWrapped => {
+                        tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
+                    }
+                    EmptyTreeInsertMode::NonAggregatedForParent(parent_tt) => {
+                        LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
+                            path,
+                            key,
+                            parent_tt,
+                            tree_type,
+                            storage_flags,
+                        )
+                    }
+                    EmptyTreeInsertMode::ContributingZeroToParent(parent_tt) => {
+                        LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+                            path,
+                            key,
+                            parent_tt,
+                            tree_type,
+                            storage_flags,
+                        )
+                    }
                 }
-                if let Some(parent_tt) = wrap_in_non_aggregated_for_parent_tree_type {
-                    LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
-                        path,
-                        key,
-                        parent_tt,
-                        tree_type,
-                        storage_flags,
-                    )
-                } else {
-                    tree_type.empty_tree_operation_for_known_path_key(path, key, storage_flags)
-                }
-            };
+        };
         //todo: clean up the duplication
         match path_key_info {
             PathKeyRef((path, key)) => {
@@ -365,7 +381,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -417,7 +433,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -459,7 +475,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -488,7 +504,7 @@ mod tests {
         let result = drive.batch_insert_empty_tree_if_not_exists_v0(
             info,
             TreeType::NormalTree,
-            None,
+            super::EmptyTreeInsertMode::NotWrapped,
             &[],
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -527,7 +543,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -568,7 +584,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -609,7 +625,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                None,
+                super::EmptyTreeInsertMode::NotWrapped,
                 &[],
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -621,5 +637,209 @@ mod tests {
             .expect("expected operation to succeed");
 
         assert!(inserted);
+    }
+
+    /// The two wrapping modes must emit the exact wrapper element the
+    /// corresponding dispatcher specifies. `ContributingZeroToParent`
+    /// is the v14 consensus-affecting path; `NonAggregatedForParent`
+    /// is the frozen diagonal.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_wrapping_modes() {
+        use crate::fees::op::LowLevelDriveOperation;
+        use grovedb::batch::GroveOp;
+        use grovedb::Element;
+
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        /// (insert mode, predicate on the produced element, description).
+        type WrappingModeCase = (
+            super::EmptyTreeInsertMode,
+            fn(&Element) -> bool,
+            &'static str,
+        );
+
+        let cases: Vec<WrappingModeCase> = vec![
+            (
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountTree),
+                |element| matches!(element, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+                "CountTree parent + NormalTree inner → NonCounted(Tree)",
+            ),
+            (
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountSumTree),
+                |element| matches!(element, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+                "CountSumTree parent + NormalTree inner → NonCounted(Tree)",
+            ),
+            (
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::SumTree),
+                |element| matches!(element, Element::Tree(..)),
+                "SumTree parent + NormalTree inner → unwrapped Tree",
+            ),
+            (
+                super::EmptyTreeInsertMode::NonAggregatedForParent(TreeType::CountTree),
+                |element| matches!(element, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+                "frozen diagonal: CountTree parent + NormalTree inner → NonCounted(Tree)",
+            ),
+        ];
+
+        for (index, (mode, element_matches, description)) in cases.into_iter().enumerate() {
+            let mut ops = vec![];
+            let key = format!("child-{index}");
+            let info = PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], key.as_bytes()));
+
+            let inserted = drive
+                .batch_insert_empty_tree_if_not_exists_v0(
+                    info,
+                    TreeType::NormalTree,
+                    mode,
+                    &[],
+                    None,
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                    Some(&tx),
+                    &mut None,
+                    &mut ops,
+                    &pv.drive,
+                )
+                .unwrap_or_else(|error| panic!("{description}: must succeed: {error}"));
+            assert!(inserted, "{description}: must insert");
+
+            let element = match ops.pop().expect("one operation must be pushed") {
+                LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                    GroveOp::InsertOrReplace { element } => element,
+                    other => panic!("{description}: expected InsertOrReplace, got {other:?}"),
+                },
+                other => panic!("{description}: expected GroveOperation, got {other:?}"),
+            };
+            assert!(element_matches(&element), "{description}: got {element:?}");
+        }
+
+        // A sum-bearing inner under a CountSumTree parent takes the
+        // NotCountedOrSummed wrapper.
+        let mut ops = vec![];
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"child-sum")),
+                TreeType::SumTree,
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountSumTree),
+                &[],
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("CountSumTree parent + SumTree inner must succeed");
+        assert!(inserted);
+        let element = match ops.pop().expect("one operation must be pushed") {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                GroveOp::InsertOrReplace { element } => element,
+                other => panic!("expected InsertOrReplace, got {other:?}"),
+            },
+            other => panic!("expected GroveOperation, got {other:?}"),
+        };
+        assert!(
+            matches!(
+                &element,
+                Element::NotCountedOrSummed(inner) if matches!(inner.as_ref(), Element::SumTree(..))
+            ),
+            "CountSumTree parent + SumTree inner → NotCountedOrSummed(SumTree), got {element:?}"
+        );
+    }
+
+    /// The ranking axes and the wrapping mode are mutually exclusive:
+    /// an unwrapped insert with axes builds the indexed element, and
+    /// every wrapped mode with axes fails closed instead of dropping
+    /// the axes on the floor (which would leave a ranked index with a
+    /// tree whose secondaries nothing maintains).
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_ranked_axes() {
+        use crate::fees::op::LowLevelDriveOperation;
+        use grovedb::batch::GroveOp;
+        use grovedb::element::IndexAxis;
+        use grovedb::Element;
+
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        // Unwrapped + a single Count axis → the dedicated PCIT element.
+        let mut ops = vec![];
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"ranked")),
+                TreeType::ProvableCountIndexedTree,
+                super::EmptyTreeInsertMode::NotWrapped,
+                &[IndexAxis::Count],
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("a ranked terminal tree under a non-aggregating parent must insert");
+        assert!(inserted);
+        let element = match ops.pop().expect("one operation must be pushed") {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                GroveOp::InsertOrReplace { element } => element,
+                other => panic!("expected InsertOrReplace, got {other:?}"),
+            },
+            other => panic!("expected GroveOperation, got {other:?}"),
+        };
+        assert!(
+            matches!(&element, Element::ProvableCountIndexedTree(..)),
+            "expected a ProvableCountIndexedTree element, got {element:?}"
+        );
+
+        // Both wrapping modes reject the same shape.
+        for mode in [
+            super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountSumTree),
+            super::EmptyTreeInsertMode::NonAggregatedForParent(TreeType::CountTree),
+        ] {
+            let error = drive
+                .batch_insert_empty_tree_if_not_exists_v0(
+                    PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"ranked-wrapped")),
+                    TreeType::ProvableCountIndexedTree,
+                    mode,
+                    &[IndexAxis::Count],
+                    None,
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                    Some(&tx),
+                    &mut None,
+                    &mut vec![],
+                    &pv.drive,
+                )
+                .expect_err("a ranked terminal tree inside an aggregating value tree must fail");
+            assert!(
+                error.to_string().contains("aggregating value tree"),
+                "expected the indexed-inner rejection, got: {error}"
+            );
+        }
     }
 }

@@ -10,6 +10,7 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
+use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
 use crate::util::storage_flags::StorageFlags;
@@ -28,22 +29,23 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Removes indices for an index level and recurses.
     ///
-    /// `parent_value_tree_type` carries the exact `TreeType` of the
-    /// value tree at `index_path_info` — `NormalTree` /
-    /// `CountTree` / `ProvableCountTree` / `SumTree` /
-    /// `ProvableSumTree` / `CountSumTree` / `ProvableCountSumTree` /
-    /// `ProvableCountProvableSumTree`. Used to emit a correct
-    /// `EstimatedLayerInformation` for the layer being walked, so
-    /// dry-run delete fees match applied delete fees on sum-bearing
-    /// indexes.
+    /// v2 derives tree types through the shared
+    /// [`index_level_tree_types_with_continuation_demotion`] helper so
+    /// the estimation layer info describes the exact on-disk shape the
+    /// v2 insert walker writes — including the continuation demotion of
+    /// provable count-bearing value trees to `CountSumTree`. Must stay
+    /// in lockstep with
+    /// [`Drive::add_indices_for_index_level_for_contract_operations_v2`];
+    /// part of the platform v14 shared-prefix aggregate fix.
     ///
-    /// (Pre-v3 callers funnel through the dispatcher which converts
-    /// the wider TreeType to a bool when routing to v0 — v0 stays
-    /// stuck in time at `parent_value_tree_is_range_countable:
-    /// bool`.)
+    /// The delete path constructs no wrapper elements itself — grovedb
+    /// looks through `NonCounted` / `NotSummed` / `NotCountedOrSummed`
+    /// when deleting trees and subtracts the stored (zero) feature
+    /// contribution, so only the tree-type derivation needs to mirror
+    /// the insert side.
     #[inline]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn remove_indices_for_index_level_for_contract_operations_v1(
+    pub(super) fn remove_indices_for_index_level_for_contract_operations_v2(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         index_path_info: PathInfo<0>,
@@ -65,10 +67,8 @@ impl Drive {
 
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             // On this level we will have a 0 and all the top index paths.
-            // `parent_value_tree_type` carries the full TreeType the
-            // insert walker actually wrote, so sum-bearing layers
-            // emit `tree_type: SumTree` / `CountSumTree` / etc here
-            // — fixing the v0 collapse-to-NormalTree under-charge.
+            // `parent_value_tree_type` carries the (post-demotion)
+            // TreeType the v2 insert walker actually wrote.
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
@@ -104,53 +104,14 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            // Same property-name tree-type composition as the insert
-            // side — see
-            // `add_indices_for_index_level_for_contract_operations_v1`
-            // for the four-way dispatch table.
-            let sub_level_info = sub_level.has_index_with_type();
-            let sub_level_range_countable = sub_level_info
-                .map(|info| info.range_countable)
-                .unwrap_or(false);
-            let sub_level_range_summable = sub_level_info
-                .map(|info| info.range_summable)
-                .unwrap_or(false);
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
-
-            // Derive the value tree type from the four-axis flags
-            // (matches the matrix in
-            // `add_indices_for_index_level_for_contract_operations`).
-            // The delete walker never writes anything itself, but it
-            // needs to emit estimation layer info whose `EstimatedSumTrees`
-            // accounts for the per-node aggregate bytes the value
-            // trees actually hold.
-            let sub_level_is_countable_terminator = sub_level_info
-                .map(|info| info.countable.is_countable())
-                .unwrap_or(false);
-            let sub_level_is_summable_terminator = sub_level_info
-                .map(|info| info.summable.is_some())
-                .unwrap_or(false);
-            let value_tree_type = match (
-                sub_level_is_countable_terminator,
-                sub_level_range_countable,
-                sub_level_is_summable_terminator,
-                sub_level_range_summable,
-            ) {
-                (true, true, true, true) => TreeType::ProvableCountProvableSumTree,
-                (true, false, true, false) => TreeType::CountSumTree,
-                (true, true, true, false) => TreeType::ProvableCountSumTree,
-                (true, false, true, true) => TreeType::ProvableCountProvableSumTree,
-                (true, _, false, false) => TreeType::CountTree,
-                (false, false, true, _) => TreeType::SumTree,
-                (false, _, false, _) => TreeType::NormalTree,
-                _ => TreeType::NormalTree,
-            };
+            // The delete walker writes nothing itself, but its
+            // estimation layers must describe the tree the insert path
+            // actually laid down — including the meta-schema-v3 ranked
+            // upgrade of the property-name tree — or dry-run delete fees
+            // drift from applied ones on ranked indexes.
+            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
+            let property_name_tree_type = tree_types.property_name_tree_type;
+            let value_tree_type = tree_types.value_tree_type;
 
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
@@ -183,11 +144,8 @@ impl Drive {
                 }
 
                 // The property-name layer's children are value trees of
-                // type `value_tree_type` (derived above). v0 emitted
-                // `NoSumTrees` here unconditionally — correct only for
-                // pre-v12 contracts whose value trees are always
-                // NormalTree. v1 maps `value_tree_type` to the matching
-                // `SomeSumTrees` weight slot via the shared helper.
+                // type `value_tree_type` (post-demotion — matching what
+                // the v2 insert walker actually writes).
                 estimated_costs_only_with_layer_info.insert(
                     sub_level_index_path_info.clone().convert_to_key_info_path(),
                     EstimatedLayerInformation {
@@ -212,7 +170,7 @@ impl Drive {
             sub_level_index_path_info.push(document_index_field)?;
             // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
             // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.remove_indices_for_index_level_for_contract_operations_v1(
+            self.remove_indices_for_index_level_for_contract_operations_v2(
                 document_and_contract_info,
                 sub_level_index_path_info,
                 sub_level,

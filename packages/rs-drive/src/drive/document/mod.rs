@@ -57,6 +57,10 @@ pub(crate) mod prove;
 #[cfg(feature = "server")]
 pub(crate) mod ranked_index_tree_type;
 
+/// Shared index-walker tree-type derivation for the v2 walkers
+#[cfg(feature = "server")]
+pub(crate) mod index_level_tree_types;
+
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
 pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;

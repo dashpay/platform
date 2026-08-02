@@ -1514,16 +1514,24 @@ const CHEF_PROPERTY: &str = "chefId";
 ///    single-property-ness — not mere presence of the property — that
 ///    qualifies an index.
 ///
-/// The compound sibling deliberately hangs off `byChef` (count-only)
-/// rather than off `byRestaurant` (count+sum): a continuation tree under
-/// a **sum-bearing** value tree has to be wrapped `NotCountedOrSummed`,
-/// and that wrapper accepts only sum-bearing inners, so a plain
-/// `NormalTree` continuation is refused outright. That refusal predates
-/// this feature — it reproduces with the `ranked*` keywords removed — and
-/// it means *any* summable index terminating at `[a]` is currently
-/// incompatible with a compound index `[a, …]` on the same doctype.
-/// Reusing that shape here would test the pre-existing gap, not the
-/// picker.
+/// The compound sibling hangs off `byChef` (count-only) rather than off
+/// `byRestaurant` (count+sum) because that is the narrower shape for a
+/// *picker* test: a count-only parent takes the `NonCounted` wrapper on
+/// both sides of the v14 boundary, so this fixture reads identically
+/// whichever index walker generation runs it.
+///
+/// Hanging it off `byRestaurant` is no longer impossible, though. Until
+/// v14 a plain `NormalTree` continuation under a count+sum value tree
+/// was refused outright (the wrapper matrix had only its diagonal), which
+/// made *any* summable index terminating at `[a]` incompatible with a
+/// compound index `[a, …]` on the same doctype; the v14 shared-prefix fix
+/// completes the matrix and demotes the value trees, so ranked and
+/// compound indexes can now share a count+sum prefix. That combination is
+/// covered end to end by
+/// `ranked_index_ranks_correctly_next_to_a_compound_index_sharing_its_property`
+/// in `drive::contract::insert::insert_contract::v0::tests::ranked_index_e2e_tests`;
+/// keeping it out of this fixture keeps the picker assertions below about
+/// index selection only.
 fn multi_index_contract() -> DataContract {
     use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 

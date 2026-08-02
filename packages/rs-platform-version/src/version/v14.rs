@@ -36,13 +36,36 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    declare that its groups are rankable by an aggregate, so a query like
 ///    "top 5 restaurants by average grade" is served from an ordered
 ///    secondary tree in O(log n + k) with a proof, instead of being rejected.
-/// 2. **The shared-prefix aggregate index fix** (follow-up): an aggregating
-///    countable / summable index whose terminal property also prefixes a
-///    compound index registers today but rejects document inserts; the v2
-///    document index walkers that fix it gate here as well.
+/// 2. **The shared-prefix aggregate index fix**: a data contract declaring
+///    an aggregating (countable / summable) index that terminates at a
+///    property which is also the prefix of a compound index (e.g. summable
+///    `[a]` next to `[a, b]`) registered successfully but rejected every
+///    document insert for most flag combinations, because Drive could not
+///    legally hang the compound continuation tree under the aggregating
+///    per-value tree. The v2 document index walkers (plus the v1 update
+///    walker) that fix it gate here as well: tree types derive through a
+///    shared continuation-demotion helper (provable count-bearing value
+///    trees with compound continuations demote to `CountSumTree`, since
+///    grovedb rejects count-suppressed children under provable count
+///    parents by design) and continuation inserts route through the
+///    completed zero-contribution wrapper matrix. No state migration is
+///    needed: shapes without compound continuations produce bit-identical
+///    operations, the broken shapes could never hold documents, and the
+///    one previously-insertable shape the demotion changes (a provable
+///    count-bearing value tree whose continuations were all sum-bearing —
+///    insertable pre-v14 only through an unenforced grovedb batch guard)
+///    simply gets `CountSumTree` value trees for values first seen at
+///    v14+, which readers treat identically.
 ///
-/// Until a contract uses the ranked grammar, v14 is behaviorally identical
-/// to v13:
+/// The two are orthogonal by construction: the ranked upgrade decides the
+/// *property-name* tree type, the demotion decides the *value* tree type
+/// one level below it, and a demoted `CountSumTree` value tree contributes
+/// its (count, sum) to a ranked indexed parent exactly as the provable
+/// variant did — so ranked secondaries keep ranking correctly over
+/// shared-prefix shapes.
+///
+/// Until a contract uses the ranked grammar, the only v14 behavior change
+/// is the shared-prefix fix; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -52,7 +75,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// * `DRIVE_VERSION_V9` carries `DRIVE_DOCUMENT_METHOD_VERSIONS_V4`, adding
 ///   the `detect_ranked_mode` routing slot, plus the grove-method slots for
 ///   creating the three indexed tree variants and the verify-method slot for
-///   `verify_ranked_top_k_proof`. All are 0 today.
+///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
+///   four index walkers to v2 and the document update walker to v1 for the
+///   shared-prefix fix.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 1,
 ///   switching the v1 document-query handler from "reject every non-empty
@@ -66,7 +91,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// is an additive `ResultData.ranked` variant.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 (detect_ranked_mode slot)
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
