@@ -81,11 +81,25 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
     sub_level: &IndexLevel,
 ) -> IndexLevelTreeTypes {
     let info = sub_level.has_index_with_type();
-    let countable_terminator = info.map(|i| i.countable.is_countable()).unwrap_or(false);
-    let range_countable = info.map(|i| i.range_countable).unwrap_or(false);
-    let summable_terminator = info.map(|i| i.summable.is_some()).unwrap_or(false);
-    let range_summable = info.map(|i| i.range_summable).unwrap_or(false);
+    derive_index_level_tree_types(
+        info.map(|i| i.countable.is_countable()).unwrap_or(false),
+        info.map(|i| i.range_countable).unwrap_or(false),
+        info.map(|i| i.summable.is_some()).unwrap_or(false),
+        info.map(|i| i.range_summable).unwrap_or(false),
+        !sub_level.sub_levels().is_empty(),
+    )
+}
 
+/// Pure derivation over the level's four terminator flags plus whether
+/// continuations hang beneath its value trees. Split out so the full
+/// input space is unit-testable without constructing `IndexLevel`s.
+fn derive_index_level_tree_types(
+    countable_terminator: bool,
+    range_countable: bool,
+    summable_terminator: bool,
+    range_summable: bool,
+    has_continuations: bool,
+) -> IndexLevelTreeTypes {
     let property_name_tree_type = match (range_countable, range_summable) {
         (true, true) => TreeType::ProvableCountProvableSumTree,
         (true, false) => TreeType::ProvableCountTree,
@@ -110,7 +124,6 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
         _ => TreeType::NormalTree,
     };
 
-    let has_continuations = !sub_level.sub_levels().is_empty();
     let value_tree_type = if has_continuations {
         match value_tree_type {
             TreeType::ProvableCountSumTree | TreeType::ProvableCountProvableSumTree => {
@@ -125,5 +138,116 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
     IndexLevelTreeTypes {
         property_name_tree_type,
         value_tree_type,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fees::op::LowLevelDriveOperation;
+
+    fn all_flag_combinations() -> impl Iterator<Item = (bool, bool, bool, bool)> {
+        (0u8..16).map(|bits| (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0))
+    }
+
+    /// The load-bearing cross-module invariant: whenever continuations
+    /// exist, the derived value-tree type must be accepted as a parent
+    /// by the zero-contribution dispatcher for every continuation
+    /// property-name tree type the derivation can produce. A future
+    /// edit to either table that breaks this surfaces here instead of
+    /// as a `NotSupported` insert failure at v14.
+    #[test]
+    fn demoted_value_trees_are_accepted_zero_contribution_parents() {
+        // Every property-name (continuation) tree type the derivation
+        // can produce for a child level.
+        let possible_continuations = [
+            TreeType::NormalTree,
+            TreeType::ProvableCountTree,
+            TreeType::ProvableSumTree,
+            TreeType::ProvableCountProvableSumTree,
+        ];
+
+        for (countable, range_countable, summable, range_summable) in all_flag_combinations() {
+            let with_continuations = derive_index_level_tree_types(
+                countable,
+                range_countable,
+                summable,
+                range_summable,
+                true,
+            );
+
+            // Provable count-bearing value trees must never host
+            // continuations — grovedb rejects count-suppressed
+            // children under them.
+            assert!(
+                !matches!(
+                    with_continuations.value_tree_type,
+                    TreeType::ProvableCountTree
+                        | TreeType::ProvableCountSumTree
+                        | TreeType::ProvableCountProvableSumTree
+                ),
+                "flags ({countable}, {range_countable}, {summable}, {range_summable}): \
+                 value tree with continuations must not be provable count-bearing, got {:?}",
+                with_continuations.value_tree_type
+            );
+
+            if matches!(with_continuations.value_tree_type, TreeType::NormalTree) {
+                // Non-aggregating parents take the plain insert path.
+                continue;
+            }
+            for continuation in possible_continuations {
+                LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+                    vec![b"path".to_vec()],
+                    b"key".to_vec(),
+                    with_continuations.value_tree_type,
+                    continuation,
+                    None,
+                )
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "flags ({countable}, {range_countable}, {summable}, {range_summable}): \
+                         dispatcher must accept parent {:?} with continuation {continuation:?}: \
+                         {error}",
+                        with_continuations.value_tree_type
+                    )
+                });
+            }
+        }
+    }
+
+    /// Without continuations, the derivation must match the v1
+    /// walkers' (consensus-frozen) tables exactly — restated here
+    /// literally as the frozen expectation.
+    #[test]
+    fn derivation_without_continuations_matches_v1_tables() {
+        for (countable, range_countable, summable, range_summable) in all_flag_combinations() {
+            let derived = derive_index_level_tree_types(
+                countable,
+                range_countable,
+                summable,
+                range_summable,
+                false,
+            );
+
+            let expected_property = match (range_countable, range_summable) {
+                (true, true) => TreeType::ProvableCountProvableSumTree,
+                (true, false) => TreeType::ProvableCountTree,
+                (false, true) => TreeType::ProvableSumTree,
+                (false, false) => TreeType::NormalTree,
+            };
+            let expected_value = match (countable, range_countable, summable, range_summable) {
+                (true, true, true, true) => TreeType::ProvableCountProvableSumTree,
+                (true, false, true, false) => TreeType::CountSumTree,
+                (true, true, true, false) => TreeType::ProvableCountSumTree,
+                (true, false, true, true) => TreeType::ProvableCountProvableSumTree,
+                (true, _, false, false) => TreeType::CountTree,
+                (false, false, true, _) => TreeType::SumTree,
+                (false, _, false, _) => TreeType::NormalTree,
+                _ => TreeType::NormalTree,
+            };
+
+            assert_eq!(derived.property_name_tree_type, expected_property);
+            assert_eq!(derived.value_tree_type, expected_value);
+        }
     }
 }

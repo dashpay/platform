@@ -145,11 +145,14 @@ impl Drive {
     /// that contribute zero naturally, e.g. a plain continuation under a
     /// sum-only value tree).
     ///
-    /// Not dispatched on a drive feature version of its own: the platform
-    /// gate is carried by its only callers, the v14+ v2 index walkers, so
-    /// pre-v14 behavior can't reach this path.
+    /// The platform gate is carried by its only callers — the v14+ v2
+    /// index walkers and v1 update walker — so pre-v14 behavior can't
+    /// reach this path. Crate-private for the same reason: exposing it
+    /// would let downstream crates bypass that gate. The grove feature
+    /// version is still dispatched like the sibling helpers so a future
+    /// v1 of the batch-dedup semantics can't silently diverge here.
     #[allow(clippy::too_many_arguments)]
-    pub fn batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists<
+    pub(crate) fn batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists<
         const N: usize,
     >(
         &self,
@@ -163,17 +166,30 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        self.batch_insert_empty_tree_if_not_exists_v0(
-            path_key_info,
-            tree_type,
-            EmptyTreeInsertMode::ContributingZeroToParent(aggregating_parent_tree_type),
-            storage_flags,
-            apply_type,
-            transaction,
-            check_existing_operations,
-            drive_operations,
-            drive_version,
-        )
+        match drive_version
+            .grove_methods
+            .batch
+            .batch_insert_empty_tree_if_not_exists
+        {
+            0 => self.batch_insert_empty_tree_if_not_exists_v0(
+                path_key_info,
+                tree_type,
+                EmptyTreeInsertMode::ContributingZeroToParent(aggregating_parent_tree_type),
+                storage_flags,
+                apply_type,
+                transaction,
+                check_existing_operations,
+                drive_operations,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method:
+                    "batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists"
+                        .to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
     }
 
     /// Count-only specialization of

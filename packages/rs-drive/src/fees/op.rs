@@ -2123,6 +2123,155 @@ mod tests {
         }
     }
 
+    /// Table-driven pin of the v14 zero-contribution dispatcher: every
+    /// accepted parent × inner cell must produce exactly the specified
+    /// wrapper (or an unwrapped tree), and every rejected parent must
+    /// error for every inner. This decides consensus-relevant element
+    /// shapes for v14 continuation inserts, so a regression here (or a
+    /// demotion-helper change routing a provable parent in) must fail
+    /// loudly.
+    #[test]
+    fn zero_contribution_dispatcher_full_matrix() {
+        use grovedb::batch::GroveOp;
+
+        const ALL_INNERS: [TreeType; 9] = [
+            TreeType::NormalTree,
+            TreeType::SumTree,
+            TreeType::BigSumTree,
+            TreeType::CountTree,
+            TreeType::CountSumTree,
+            TreeType::ProvableCountTree,
+            TreeType::ProvableCountSumTree,
+            TreeType::ProvableSumTree,
+            TreeType::ProvableCountProvableSumTree,
+        ];
+
+        fn is_sum_bearing(tree_type: TreeType) -> bool {
+            matches!(
+                tree_type,
+                TreeType::SumTree
+                    | TreeType::BigSumTree
+                    | TreeType::CountSumTree
+                    | TreeType::ProvableCountSumTree
+                    | TreeType::ProvableSumTree
+                    | TreeType::ProvableCountProvableSumTree
+            )
+        }
+
+        fn element_tree_type(element: &Element) -> TreeType {
+            match element {
+                Element::Tree(..) => TreeType::NormalTree,
+                Element::SumTree(..) => TreeType::SumTree,
+                Element::BigSumTree(..) => TreeType::BigSumTree,
+                Element::CountTree(..) => TreeType::CountTree,
+                Element::CountSumTree(..) => TreeType::CountSumTree,
+                Element::ProvableCountTree(..) => TreeType::ProvableCountTree,
+                Element::ProvableCountSumTree(..) => TreeType::ProvableCountSumTree,
+                Element::ProvableSumTree(..) => TreeType::ProvableSumTree,
+                Element::ProvableCountProvableSumTree(..) => TreeType::ProvableCountProvableSumTree,
+                other => panic!("unexpected inner element: {other:?}"),
+            }
+        }
+
+        #[derive(Debug, PartialEq)]
+        enum Expected {
+            NonCounted,
+            NotSummed,
+            NotCountedOrSummed,
+            Unwrapped,
+        }
+
+        let dispatch = |parent: TreeType, inner: TreeType| {
+            LowLevelDriveOperation::for_known_path_key_empty_tree_contributing_zero_to_parent(
+                vec![b"root".to_vec()],
+                b"key".to_vec(),
+                parent,
+                inner,
+                None,
+            )
+        };
+
+        let assert_cell = |parent: TreeType, inner: TreeType, expected: Expected| {
+            let op = dispatch(parent, inner).unwrap_or_else(|error| {
+                panic!("parent {parent:?} inner {inner:?} must be accepted: {error}")
+            });
+            let element = match op {
+                LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                    GroveOp::InsertOrReplace { element } => element,
+                    other => panic!("expected InsertOrReplace, got {other:?}"),
+                },
+                other => panic!("expected GroveOperation, got {other:?}"),
+            };
+            let (wrapper, produced_inner) = match &element {
+                Element::NonCounted(inner_element) => {
+                    (Expected::NonCounted, inner_element.as_ref())
+                }
+                Element::NotSummed(inner_element) => (Expected::NotSummed, inner_element.as_ref()),
+                Element::NotCountedOrSummed(inner_element) => {
+                    (Expected::NotCountedOrSummed, inner_element.as_ref())
+                }
+                plain => (Expected::Unwrapped, plain),
+            };
+            assert_eq!(
+                wrapper, expected,
+                "parent {parent:?} inner {inner:?}: wrong wrapper"
+            );
+            assert_eq!(
+                element_tree_type(produced_inner),
+                inner,
+                "parent {parent:?} inner {inner:?}: wrong inner tree type"
+            );
+        };
+
+        // Count-only parents wrap every inner NonCounted.
+        for inner in ALL_INNERS {
+            assert_cell(TreeType::CountTree, inner, Expected::NonCounted);
+        }
+        // Count-sum parents: sum-bearing inners get NotCountedOrSummed,
+        // non-sum inners get NonCounted.
+        for inner in ALL_INNERS {
+            let expected = if is_sum_bearing(inner) {
+                Expected::NotCountedOrSummed
+            } else {
+                Expected::NonCounted
+            };
+            assert_cell(TreeType::CountSumTree, inner, expected);
+        }
+        // Sum-only parents: sum-bearing inners get NotSummed, non-sum
+        // inners are inserted unwrapped (they contribute 0 naturally).
+        for parent in [
+            TreeType::SumTree,
+            TreeType::BigSumTree,
+            TreeType::ProvableSumTree,
+        ] {
+            for inner in ALL_INNERS {
+                let expected = if is_sum_bearing(inner) {
+                    Expected::NotSummed
+                } else {
+                    Expected::Unwrapped
+                };
+                assert_cell(parent, inner, expected);
+            }
+        }
+        // Provable count-bearing parents can't host zero-contributing
+        // children (the walkers demote them first); non-aggregating
+        // parents should use the plain path. Both must error for every
+        // inner.
+        for parent in [
+            TreeType::NormalTree,
+            TreeType::ProvableCountTree,
+            TreeType::ProvableCountSumTree,
+            TreeType::ProvableCountProvableSumTree,
+        ] {
+            for inner in ALL_INNERS {
+                assert!(
+                    dispatch(parent, inner).is_err(),
+                    "parent {parent:?} inner {inner:?} must be rejected"
+                );
+            }
+        }
+    }
+
     #[test]
     fn ephemeral_cost_overflow_in_addition_chain() {
         // Use values that individually do not overflow but whose sum does.

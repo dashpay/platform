@@ -158,7 +158,7 @@ impl Drive {
 
                 if document_top_field_estimated_size > u8::MAX as u16 {
                     return Err(Error::Fee(FeeError::Overflow(
-                        "document field is too big for being an index on delete",
+                        "document field is too big for being an index",
                     )));
                 }
 

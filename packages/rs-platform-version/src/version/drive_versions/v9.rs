@@ -25,14 +25,15 @@ use grovedb_version::version::v3::GROVE_V3;
 /// Drive version 9.
 /// Introduced in protocol v14 for the shared-prefix aggregate index fix:
 /// `DRIVE_DOCUMENT_METHOD_VERSIONS_V4` bumps the four index walkers to v2
-/// so contracts that pair an aggregating (countable / summable) index with
-/// a compound index sharing its leading property can insert documents.
+/// (and the document update walker to v1) so contracts that pair an
+/// aggregating (countable / summable) index with a compound index sharing
+/// its leading property can insert, update, and delete documents.
 /// Everything else matches `DRIVE_VERSION_V8`.
 pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
-            create_initial_state_structure: 3, // changed: adds shielded pool trees (commitment tree, nullifiers, anchors)
+            create_initial_state_structure: 3, // changed in v8: adds shielded pool trees (commitment tree, nullifiers, anchors)
         },
         credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
         protocol_upgrade: DriveProtocolUpgradeVersions {
@@ -56,9 +57,9 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             remove_from_system_credits_operations: 0,
             calculate_total_credits_balance: 2, // ShieldedBalances root tree adds a fifth term to the equation
         },
-        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed: v2 index walkers — shared-prefix aggregate indexes become insertable
+        document: DRIVE_DOCUMENT_METHOD_VERSIONS_V4, // changed in v9: v2 index walkers + v1 update walker — shared-prefix aggregate indexes become insertable
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,
-        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V3, // changed: count-tree-aware contract-insertion cost estimation (v12+ countable/range_countable doctypes)
+        contract: DRIVE_CONTRACT_METHOD_VERSIONS_V3, // changed in v8: count-tree-aware contract-insertion cost estimation (v12+ countable/range_countable doctypes)
         fees: DriveFeesMethodVersions { calculate_fee: 0 },
         estimated_costs: DriveEstimatedCostsMethodVersions {
             add_estimation_costs_for_levels_up_to_contract: 0,
@@ -88,7 +89,7 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
             apply_batch_low_level_drive_operations: 0,
             apply_batch_grovedb_operations: 0,
         },
-        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3, // changed: DPNS domain records.identity rewrite on transfer/purchase
+        state_transitions: DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V3, // changed in v8: DPNS domain records.identity rewrite on transfer/purchase
         batch_operations: DriveBatchOperationsMethodVersion {
             convert_drive_operations_to_grove_operations: 0,
             apply_drive_operations: 0,

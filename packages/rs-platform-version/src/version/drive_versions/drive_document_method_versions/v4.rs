@@ -88,7 +88,12 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             update_document_for_contract: 0,
             update_document_for_contract_apply_and_add_to_operations: 0,
             update_document_for_contract_id: 0,
-            update_document_for_contract_operations: 0,
+            // Bumped alongside the four walkers: a key-changing update
+            // materializes index branches itself, so it must derive the
+            // same post-demotion tree types and zero-contribution
+            // wrappers as the v2 insert walkers or the shapes (and the
+            // per-value aggregates) diverge.
+            update_document_for_contract_operations: 1,
             update_document_with_serialization_for_contract: 0,
             update_serialized_document_for_contract: 0,
         },

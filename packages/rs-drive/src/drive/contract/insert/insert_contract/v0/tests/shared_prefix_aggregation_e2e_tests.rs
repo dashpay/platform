@@ -16,17 +16,27 @@
 //! when continuations exist (grovedb's stated design rejects
 //! count-suppressed children under provable count parents; pre-v14
 //! those shapes only worked at all through an unenforced in-batch
-//! creation path).
+//! creation path). Key-changing updates materialize index branches
+//! through their own walker, which is bumped to v1 at v14 with the
+//! same demotion + zero-contribution treatment.
 //!
-//! Two suites:
-//! - `..._insert_and_delete_at_latest` proves the entire matrix
-//!   inserts at v14+, that the value trees carry exactly the `[0]`
+//! Suites:
+//! - `..._insert_update_delete_at_v14` proves the entire matrix
+//!   inserts at v14, that the value trees carry exactly the `[0]`
 //!   ref-bucket's (count, sum) — never the structural overhead of
-//!   continuations — through insert AND delete, and that the
-//!   continuation trees land with the exact expected wrapper.
+//!   continuations — through insert, key-changing update (which
+//!   materializes a fresh branch via the update walker), and delete,
+//!   and that the continuation trees land with the exact expected
+//!   wrapper on both the insert- and update-materialized branches.
 //! - `..._frozen_at_v13` pins the pre-v14 behavior (which combos
 //!   insert, which error) so the consensus-locked v1 walkers cannot
 //!   drift.
+//! - `..._estimated_costs_do_not_write_state` exercises the v2
+//!   walkers' stateless-estimation branches (`apply: false`).
+//! - `..._v13_and_v14_layouts_coexist` proves a provable value tree
+//!   created at v13 keeps working at v14 next to newly-demoted
+//!   `CountSumTree` siblings, through inserts and full-cleanup
+//!   deletes.
 
 use crate::drive::Drive;
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -104,7 +114,7 @@ impl IndexFlags {
         summable: true,
         range_summable: true,
     };
-    const RANGE_COUNT_SUM: Self = Self {
+    const RANGE_COUNT_RANGE_SUM: Self = Self {
         countable: true,
         range_countable: true,
         summable: true,
@@ -178,13 +188,13 @@ fn all_cases() -> Vec<SharedPrefixCase> {
         ("range_sum", IndexFlags::RANGE_SUM),
         ("count_sum_range_count", IndexFlags::COUNT_SUM_RANGE_COUNT),
         ("count_sum_range_sum", IndexFlags::COUNT_SUM_RANGE_SUM),
-        ("range_count_sum", IndexFlags::RANGE_COUNT_SUM),
+        ("range_count_range_sum", IndexFlags::RANGE_COUNT_RANGE_SUM),
     ];
     let children: [(&'static str, IndexFlags); 4] = [
         ("plain", IndexFlags::PLAIN),
         ("range_count", IndexFlags::RANGE_COUNT),
         ("range_sum", IndexFlags::RANGE_SUM),
-        ("range_count_sum", IndexFlags::RANGE_COUNT_SUM),
+        ("range_count_range_sum", IndexFlags::RANGE_COUNT_RANGE_SUM),
     ];
 
     let mut cases = Vec::new();
@@ -331,11 +341,20 @@ fn apply_contract(
         .map_err(|error| format!("{error:?}"))
 }
 
+/// Inserts a review document. `apply: false` runs the stateless
+/// estimation path instead of writing state.
+///
+/// Seeds must be distinct across calls: the `ownerAndResource` index
+/// is unique on `($ownerId, resourceId)` and all documents share a
+/// per-test `resourceId`, so only the seed-derived random owner keeps
+/// the inserts from colliding on that index.
 fn insert_review_document(
     drive: &Drive,
     contract: &DataContract,
     seed: u64,
+    resource: &str,
     rating: u8,
+    apply: bool,
     platform_version: &PlatformVersion,
 ) -> Result<Document, String> {
     let document_type = contract
@@ -345,10 +364,7 @@ fn insert_review_document(
         .random_document(Some(seed), platform_version)
         .expect("random review document");
     let mut properties = BTreeMap::new();
-    properties.insert(
-        "resourceId".to_string(),
-        Value::Text("resource-1".to_string()),
-    );
+    properties.insert("resourceId".to_string(), Value::Text(resource.to_string()));
     properties.insert("rating".to_string(), Value::U8(rating));
     properties.insert(
         "reviewText".to_string(),
@@ -372,7 +388,7 @@ fn insert_review_document(
             },
             false,
             BlockInfo::default(),
-            true,
+            apply,
             None,
             platform_version,
             None,
@@ -381,17 +397,77 @@ fn insert_review_document(
         .map_err(|error| format!("{error:?}"))
 }
 
+/// Moves a stored review document to a new `resourceId` through the
+/// document UPDATE path — the update walker materializes the new
+/// index branch itself, which is exactly the surface the v14
+/// update-walker bump covers.
+fn update_review_document_resource(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    new_resource: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Document, String> {
+    let document_type = contract
+        .document_type_for_name("review")
+        .expect("review document type exists");
+    let mut updated = document.clone();
+    updated.set("resourceId", Value::Text(new_resource.to_string()));
+    updated.set_revision(updated.revision().map(|revision| revision + 1));
+
+    drive
+        .update_document_for_contract(
+            &updated,
+            contract,
+            document_type,
+            None,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            platform_version,
+            None,
+        )
+        .map(|_| updated)
+        .map_err(|error| format!("{error:?}"))
+}
+
+fn delete_review_document(
+    drive: &Drive,
+    contract: &DataContract,
+    document: &Document,
+    platform_version: &PlatformVersion,
+) -> Result<(), String> {
+    drive
+        .delete_document_for_contract(
+            document.id(),
+            contract,
+            "review",
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+            None,
+        )
+        .map(|_| ())
+        .map_err(|error| format!("{error:?}"))
+}
+
 /// Reads the raw element at `@/contract/1/review/resourceId` +
-/// `"resource-1"` — the prefix index's value tree — or None if absent.
-fn probe_value_tree(drive: &Drive, contract: &DataContract) -> Option<Element> {
-    probe(drive, contract, &["resourceId"], b"resource-1")
+/// `resource` — the prefix index's value tree — or None if absent.
+fn probe_value_tree(drive: &Drive, contract: &DataContract, resource: &str) -> Option<Element> {
+    probe(drive, contract, &["resourceId"], resource.as_bytes())
 }
 
 /// Reads the raw element at
-/// `@/contract/1/review/resourceId/resource-1` + `"rating"` — the
+/// `@/contract/1/review/resourceId/<resource>` + `"rating"` — the
 /// compound index's continuation property-name tree.
-fn probe_continuation_tree(drive: &Drive, contract: &DataContract) -> Option<Element> {
-    probe(drive, contract, &["resourceId", "resource-1"], b"rating")
+fn probe_continuation_tree(
+    drive: &Drive,
+    contract: &DataContract,
+    resource: &str,
+) -> Option<Element> {
+    probe(drive, contract, &["resourceId", resource], b"rating")
 }
 
 fn probe(drive: &Drive, contract: &DataContract, sub_path: &[&str], key: &[u8]) -> Option<Element> {
@@ -421,51 +497,55 @@ fn probe(drive: &Drive, contract: &DataContract, sub_path: &[&str], key: &[u8]) 
         .expect("probe must succeed")
 }
 
-/// Asserts the value tree carries exactly the `[0]` bucket's
+/// Checks the value tree carries exactly the `[0]` bucket's
 /// (count, sum) on the axes the prefix aggregates — with the
 /// continuation demotion, always the non-provable variant.
-fn assert_value_tree_aggregates(
-    case_name: &str,
+fn check_value_tree_aggregates(
     element: &Element,
     axes: ParentAxes,
     expected_count: u64,
     expected_sum: i64,
-) {
+) -> Result<(), String> {
     match (axes, element) {
         (ParentAxes::Count, Element::CountTree(_, count, _)) => {
-            assert_eq!(
-                *count, expected_count,
-                "{case_name}: value tree count must equal the ref-bucket contribution"
-            );
+            if *count != expected_count {
+                return Err(format!(
+                    "value tree count {count} != expected ref-bucket contribution {expected_count}"
+                ));
+            }
         }
         (ParentAxes::Sum, Element::SumTree(_, sum, _)) => {
-            assert_eq!(
-                *sum, expected_sum,
-                "{case_name}: value tree sum must equal the ref-bucket contribution"
-            );
+            if *sum != expected_sum {
+                return Err(format!(
+                    "value tree sum {sum} != expected ref-bucket contribution {expected_sum}"
+                ));
+            }
         }
         (ParentAxes::CountSum, Element::CountSumTree(_, count, sum, _)) => {
-            assert_eq!(
-                (*count, *sum),
-                (expected_count, expected_sum),
-                "{case_name}: value tree (count, sum) must equal the ref-bucket contribution"
-            );
+            if (*count, *sum) != (expected_count, expected_sum) {
+                return Err(format!(
+                    "value tree (count, sum) ({count}, {sum}) != expected ref-bucket \
+                     contribution ({expected_count}, {expected_sum})"
+                ));
+            }
         }
-        (_, other) => panic!(
-            "{case_name}: unexpected value tree element (demotion or axis mismatch): {other:?}"
-        ),
+        (_, other) => {
+            return Err(format!(
+                "unexpected value tree element (demotion or axis mismatch): {other:?}"
+            ))
+        }
     }
+    Ok(())
 }
 
-/// Asserts the continuation property-name tree landed with the exact
+/// Checks the continuation property-name tree landed with the exact
 /// wrapper the zero-contribution matrix specifies for this
 /// parent-axes / child-tree-type combination.
-fn assert_continuation_shape(
-    case_name: &str,
+fn check_continuation_shape(
     element: &Element,
     axes: ParentAxes,
     child_flags: &IndexFlags,
-) {
+) -> Result<(), String> {
     let expected_inner = child_flags.continuation_tree_type();
     let child_is_sum_bearing = child_flags.is_sum_bearing_continuation();
 
@@ -480,7 +560,7 @@ fn assert_continuation_shape(
         // children are stored unwrapped (they contribute 0 naturally).
         (ParentAxes::Sum, true, Element::NotSummed(inner)) => inner,
         (ParentAxes::Sum, false, plain) => plain,
-        (_, _, other) => panic!("{case_name}: unexpected continuation wrapper: {other:?}"),
+        (_, _, other) => return Err(format!("unexpected continuation wrapper: {other:?}")),
     };
 
     let inner_tree_type = match inner {
@@ -488,94 +568,121 @@ fn assert_continuation_shape(
         Element::ProvableCountTree(..) => TreeType::ProvableCountTree,
         Element::ProvableSumTree(..) => TreeType::ProvableSumTree,
         Element::ProvableCountProvableSumTree(..) => TreeType::ProvableCountProvableSumTree,
-        other => panic!("{case_name}: unexpected continuation inner element: {other:?}"),
+        other => return Err(format!("unexpected continuation inner element: {other:?}")),
     };
-    assert_eq!(
-        inner_tree_type, expected_inner,
-        "{case_name}: continuation inner tree type mismatch"
-    );
+    if inner_tree_type != expected_inner {
+        return Err(format!(
+            "continuation inner tree type {inner_tree_type:?} != expected {expected_inner:?}"
+        ));
+    }
+    Ok(())
 }
 
-/// The whole matrix must insert at v14+, keep value-tree aggregates
-/// equal to the `[0]` bucket contribution through insert and delete,
-/// and clean the (possibly wrapped) trees up once the last document
-/// is gone.
-#[test]
-fn shared_prefix_aggregate_index_combinations_insert_and_delete_at_latest() {
-    let platform_version = PlatformVersion::latest();
-    assert!(
-        platform_version.protocol_version >= 14,
-        "this suite exercises the v2 index walkers"
-    );
+/// Full v14 lifecycle for one matrix case: two inserts, a
+/// key-changing update (branch materialized by the UPDATE walker),
+/// and deletes down to full cleanup, with the value-tree aggregates
+/// checked against the `[0]`-bucket contribution at every step.
+fn run_case_at_v14(
+    case: &SharedPrefixCase,
+    platform_version: &PlatformVersion,
+) -> Result<(), String> {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = build_review_contract(case.prefix_flags, case.child_flags)
+        .map_err(|error| format!("contract must build: {error}"))?;
+    apply_contract(&drive, &contract, platform_version)
+        .map_err(|error| format!("contract must apply: {error}"))?;
 
-    for case in all_cases() {
-        let drive = setup_drive_with_initial_state_structure(None);
-        let contract = build_review_contract(case.prefix_flags, case.child_flags)
-            .unwrap_or_else(|error| panic!("{}: contract must build: {error}", case.name));
-        apply_contract(&drive, &contract, platform_version)
-            .unwrap_or_else(|error| panic!("{}: contract must apply: {error}", case.name));
+    let axes = ParentAxes::from_flags(&case.prefix_flags);
 
-        let first_document = insert_review_document(&drive, &contract, 1, 5, platform_version)
-            .unwrap_or_else(|error| panic!("{}: first insert must succeed: {error}", case.name));
-        let second_document = insert_review_document(&drive, &contract, 2, 3, platform_version)
-            .unwrap_or_else(|error| panic!("{}: second insert must succeed: {error}", case.name));
+    let first_document = insert_review_document(
+        &drive,
+        &contract,
+        1,
+        "resource-1",
+        5,
+        true,
+        platform_version,
+    )
+    .map_err(|error| format!("first insert must succeed: {error}"))?;
+    let second_document = insert_review_document(
+        &drive,
+        &contract,
+        2,
+        "resource-1",
+        3,
+        true,
+        platform_version,
+    )
+    .map_err(|error| format!("second insert must succeed: {error}"))?;
 
-        let axes = ParentAxes::from_flags(&case.prefix_flags);
-        let value_tree = probe_value_tree(&drive, &contract)
-            .unwrap_or_else(|| panic!("{}: value tree must exist after inserts", case.name));
-        assert_value_tree_aggregates(&case.name, &value_tree, axes, 2, 8);
+    let value_tree = probe_value_tree(&drive, &contract, "resource-1")
+        .ok_or("value tree must exist after inserts")?;
+    check_value_tree_aggregates(&value_tree, axes, 2, 8)
+        .map_err(|error| format!("after inserts: {error}"))?;
+    let continuation = probe_continuation_tree(&drive, &contract, "resource-1")
+        .ok_or("continuation tree must exist after inserts")?;
+    check_continuation_shape(&continuation, axes, &case.child_flags)
+        .map_err(|error| format!("insert-materialized continuation: {error}"))?;
 
-        let continuation = probe_continuation_tree(&drive, &contract)
-            .unwrap_or_else(|| panic!("{}: continuation tree must exist after inserts", case.name));
-        assert_continuation_shape(&case.name, &continuation, axes, &case.child_flags);
+    // Move the second document to a fresh resource through the UPDATE
+    // path — the update walker materializes the resource-2 branch.
+    let second_document = update_review_document_resource(
+        &drive,
+        &contract,
+        &second_document,
+        "resource-2",
+        platform_version,
+    )
+    .map_err(|error| format!("key-changing update must succeed: {error}"))?;
 
-        // Deleting one document must subtract exactly its contribution.
-        drive
-            .delete_document_for_contract(
-                second_document.id(),
-                &contract,
-                "review",
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "{}: delete of second document must succeed: {error:?}",
-                    case.name
-                )
-            });
-        let value_tree = probe_value_tree(&drive, &contract)
-            .unwrap_or_else(|| panic!("{}: value tree must survive first delete", case.name));
-        assert_value_tree_aggregates(&case.name, &value_tree, axes, 1, 5);
+    let value_tree = probe_value_tree(&drive, &contract, "resource-1")
+        .ok_or("resource-1 value tree must survive the update")?;
+    check_value_tree_aggregates(&value_tree, axes, 1, 5)
+        .map_err(|error| format!("after update, old branch: {error}"))?;
+    let value_tree = probe_value_tree(&drive, &contract, "resource-2")
+        .ok_or("resource-2 value tree must exist after the update")?;
+    check_value_tree_aggregates(&value_tree, axes, 1, 3)
+        .map_err(|error| format!("after update, new branch: {error}"))?;
+    let continuation = probe_continuation_tree(&drive, &contract, "resource-2")
+        .ok_or("continuation tree must exist on the update-materialized branch")?;
+    check_continuation_shape(&continuation, axes, &case.child_flags)
+        .map_err(|error| format!("update-materialized continuation: {error}"))?;
 
-        // Deleting the last document must clean the value tree (and the
-        // wrapped continuation trees inside it) away entirely.
-        drive
-            .delete_document_for_contract(
-                first_document.id(),
-                &contract,
-                "review",
-                BlockInfo::default(),
-                true,
-                None,
-                platform_version,
-                None,
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "{}: delete of last document must succeed: {error:?}",
-                    case.name
-                )
-            });
-        assert!(
-            probe_value_tree(&drive, &contract).is_none(),
-            "{}: value tree must be cleaned up once empty",
-            case.name
-        );
+    // Deleting each branch's last document must clean its trees away
+    // entirely (through the wrapped continuations).
+    delete_review_document(&drive, &contract, &second_document, platform_version)
+        .map_err(|error| format!("delete of second document must succeed: {error}"))?;
+    if probe_value_tree(&drive, &contract, "resource-2").is_some() {
+        return Err("resource-2 value tree must be cleaned up once empty".to_string());
     }
+    delete_review_document(&drive, &contract, &first_document, platform_version)
+        .map_err(|error| format!("delete of first document must succeed: {error}"))?;
+    if probe_value_tree(&drive, &contract, "resource-1").is_some() {
+        return Err("resource-1 value tree must be cleaned up once empty".to_string());
+    }
+    Ok(())
+}
+
+/// The whole matrix must insert, update, and delete correctly at
+/// protocol v14. Pinned to v14 explicitly (not `latest()`) so the
+/// exact v14 → Drive v9 → v2-walker dispatch chain stays covered when
+/// later protocol versions appear.
+#[test]
+fn shared_prefix_aggregate_index_combinations_insert_update_delete_at_v14() {
+    let platform_version = PlatformVersion::get(14).expect("platform version 14 must be known");
+
+    let mut failures = Vec::new();
+    for case in all_cases() {
+        if let Err(error) = run_case_at_v14(&case, platform_version) {
+            failures.push(format!("{}: {error}", case.name));
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "v14 shared-prefix aggregate matrix failed:\n{}",
+        failures.join("\n")
+    );
 }
 
 /// Pins the consensus-frozen v1 walker behavior: at protocol v13 the
@@ -594,7 +701,15 @@ fn shared_prefix_aggregate_index_combinations_frozen_at_v13() {
         apply_contract(&drive, &contract, platform_version_v13)
             .unwrap_or_else(|error| panic!("{}: contract must apply at v13: {error}", case.name));
 
-        let result = insert_review_document(&drive, &contract, 1, 5, platform_version_v13);
+        let result = insert_review_document(
+            &drive,
+            &contract,
+            1,
+            "resource-1",
+            5,
+            true,
+            platform_version_v13,
+        );
         match (case.works_at_v13, result) {
             (true, Err(error)) => mismatches.push(format!(
                 "{}: expected insert to succeed at v13, got: {error}",
@@ -612,5 +727,147 @@ fn shared_prefix_aggregate_index_combinations_frozen_at_v13() {
         mismatches.is_empty(),
         "v13 consensus freeze drifted:\n{}",
         mismatches.join("\n")
+    );
+}
+
+/// The v2 walkers' stateless-estimation branches (`apply: false`)
+/// must produce a fee without writing any state — covering the
+/// post-demotion `tree_type` / `EstimatedSumTrees` layer info and the
+/// stateless zero-contribution op construction.
+#[test]
+fn shared_prefix_aggregate_estimated_costs_do_not_write_state() {
+    let platform_version = PlatformVersion::get(14).expect("platform version 14 must be known");
+
+    // One demoted layout (provable count-bearing prefix) and one
+    // non-demoted aggregating layout (sum-only prefix).
+    let representative = [
+        (
+            "demoted_range_count_range_sum_parent_plain_child",
+            IndexFlags::RANGE_COUNT_RANGE_SUM,
+            IndexFlags::PLAIN,
+        ),
+        ("sum_parent_plain_child", IndexFlags::SUM, IndexFlags::PLAIN),
+    ];
+
+    for (name, prefix_flags, child_flags) in representative {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = build_review_contract(prefix_flags, child_flags)
+            .unwrap_or_else(|error| panic!("{name}: contract must build: {error}"));
+        apply_contract(&drive, &contract, platform_version)
+            .unwrap_or_else(|error| panic!("{name}: contract must apply: {error}"));
+
+        insert_review_document(
+            &drive,
+            &contract,
+            1,
+            "resource-1",
+            5,
+            false,
+            platform_version,
+        )
+        .unwrap_or_else(|error| panic!("{name}: estimated insert must succeed: {error}"));
+
+        assert!(
+            probe_value_tree(&drive, &contract, "resource-1").is_none(),
+            "{name}: estimated insert must not write state"
+        );
+    }
+}
+
+/// A provable count-sum value tree created at v13 (through the
+/// unenforced in-batch wrapper path) must keep working at v14 next to
+/// newly-demoted `CountSumTree` siblings: inserts into both branches
+/// keep exact aggregates, and deletes clean both away.
+#[test]
+fn shared_prefix_aggregate_v13_and_v14_layouts_coexist() {
+    let platform_version_v13 = PlatformVersion::get(13).expect("platform version 13 must be known");
+    let platform_version_v14 = PlatformVersion::get(14).expect("platform version 14 must be known");
+
+    // countable + rangeCountable + summable prefix → ProvableCountSumTree
+    // value trees at v13; sum-bearing (rangeSummable) child so the shape
+    // is insertable at v13.
+    let drive = setup_drive_with_initial_state_structure(None);
+    let contract = build_review_contract(IndexFlags::COUNT_SUM_RANGE_COUNT, IndexFlags::RANGE_SUM)
+        .expect("contract must build");
+    apply_contract(&drive, &contract, platform_version_v13).expect("contract must apply at v13");
+
+    let first_document = insert_review_document(
+        &drive,
+        &contract,
+        1,
+        "resource-1",
+        5,
+        true,
+        platform_version_v13,
+    )
+    .expect("v13 insert must succeed");
+
+    let v13_tree =
+        probe_value_tree(&drive, &contract, "resource-1").expect("v13 value tree must exist");
+    match &v13_tree {
+        Element::ProvableCountSumTree(_, count, sum, _) => {
+            assert_eq!((*count, *sum), (1, 5), "v13 provable value tree aggregates");
+        }
+        other => panic!("expected ProvableCountSumTree at v13, got {other:?}"),
+    }
+
+    // v14 insert into the EXISTING v13-created provable branch.
+    let second_document = insert_review_document(
+        &drive,
+        &contract,
+        2,
+        "resource-1",
+        3,
+        true,
+        platform_version_v14,
+    )
+    .expect("v14 insert into the v13 branch must succeed");
+    let v13_tree =
+        probe_value_tree(&drive, &contract, "resource-1").expect("v13 value tree must survive");
+    match &v13_tree {
+        Element::ProvableCountSumTree(_, count, sum, _) => {
+            assert_eq!(
+                (*count, *sum),
+                (2, 8),
+                "v13-created provable value tree must keep exact aggregates at v14"
+            );
+        }
+        other => panic!("v13-created value tree must keep its type at v14, got {other:?}"),
+    }
+
+    // v14 insert materializing a NEW branch — demoted CountSumTree.
+    let third_document = insert_review_document(
+        &drive,
+        &contract,
+        3,
+        "resource-2",
+        4,
+        true,
+        platform_version_v14,
+    )
+    .expect("v14 insert into a new branch must succeed");
+    let v14_tree =
+        probe_value_tree(&drive, &contract, "resource-2").expect("v14 value tree must exist");
+    match &v14_tree {
+        Element::CountSumTree(_, count, sum, _) => {
+            assert_eq!((*count, *sum), (1, 4), "v14 demoted value tree aggregates");
+        }
+        other => panic!("expected demoted CountSumTree at v14, got {other:?}"),
+    }
+
+    // Deletes at v14 must clean both layouts away entirely.
+    for document in [&first_document, &second_document] {
+        delete_review_document(&drive, &contract, document, platform_version_v14)
+            .expect("v14 delete from the v13 branch must succeed");
+    }
+    assert!(
+        probe_value_tree(&drive, &contract, "resource-1").is_none(),
+        "v13-created value tree must be cleaned up once empty"
+    );
+    delete_review_document(&drive, &contract, &third_document, platform_version_v14)
+        .expect("v14 delete from the v14 branch must succeed");
+    assert!(
+        probe_value_tree(&drive, &contract, "resource-2").is_none(),
+        "v14-created value tree must be cleaned up once empty"
     );
 }

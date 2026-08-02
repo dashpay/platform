@@ -602,4 +602,121 @@ mod tests {
 
         assert!(inserted);
     }
+
+    /// The two wrapping modes must emit the exact wrapper element the
+    /// corresponding dispatcher specifies. `ContributingZeroToParent`
+    /// is the v14 consensus-affecting path; `NonAggregatedForParent`
+    /// is the frozen diagonal.
+    #[test]
+    fn test_batch_insert_empty_tree_if_not_exists_wrapping_modes() {
+        use crate::fees::op::LowLevelDriveOperation;
+        use grovedb::batch::GroveOp;
+        use grovedb::Element;
+
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        // (mode, parent, inner, check on the produced element)
+        let cases: Vec<(
+            super::EmptyTreeInsertMode,
+            fn(&Element) -> bool,
+            &'static str,
+        )> = vec![
+            (
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountTree),
+                |element| matches!(element, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+                "CountTree parent + NormalTree inner → NonCounted(Tree)",
+            ),
+            (
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountSumTree),
+                |element| matches!(element, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+                "CountSumTree parent + NormalTree inner → NonCounted(Tree)",
+            ),
+            (
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::SumTree),
+                |element| matches!(element, Element::Tree(..)),
+                "SumTree parent + NormalTree inner → unwrapped Tree",
+            ),
+            (
+                super::EmptyTreeInsertMode::NonAggregatedForParent(TreeType::CountTree),
+                |element| matches!(element, Element::NonCounted(inner) if matches!(inner.as_ref(), Element::Tree(..))),
+                "frozen diagonal: CountTree parent + NormalTree inner → NonCounted(Tree)",
+            ),
+        ];
+
+        for (index, (mode, element_matches, description)) in cases.into_iter().enumerate() {
+            let mut ops = vec![];
+            let key = format!("child-{index}");
+            let info = PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], key.as_bytes()));
+
+            let inserted = drive
+                .batch_insert_empty_tree_if_not_exists_v0(
+                    info,
+                    TreeType::NormalTree,
+                    mode,
+                    None,
+                    BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                    Some(&tx),
+                    &mut None,
+                    &mut ops,
+                    &pv.drive,
+                )
+                .unwrap_or_else(|error| panic!("{description}: must succeed: {error}"));
+            assert!(inserted, "{description}: must insert");
+
+            let element = match ops.pop().expect("one operation must be pushed") {
+                LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                    GroveOp::InsertOrReplace { element } => element,
+                    other => panic!("{description}: expected InsertOrReplace, got {other:?}"),
+                },
+                other => panic!("{description}: expected GroveOperation, got {other:?}"),
+            };
+            assert!(element_matches(&element), "{description}: got {element:?}");
+        }
+
+        // A sum-bearing inner under a CountSumTree parent takes the
+        // NotCountedOrSummed wrapper.
+        let mut ops = vec![];
+        let inserted = drive
+            .batch_insert_empty_tree_if_not_exists_v0(
+                PathKeyInfo::<0>::PathKeyRef((vec![b"root".to_vec()], b"child-sum")),
+                TreeType::SumTree,
+                super::EmptyTreeInsertMode::ContributingZeroToParent(TreeType::CountSumTree),
+                None,
+                BatchInsertTreeApplyType::StatefulBatchInsertTree,
+                Some(&tx),
+                &mut None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("CountSumTree parent + SumTree inner must succeed");
+        assert!(inserted);
+        let element = match ops.pop().expect("one operation must be pushed") {
+            LowLevelDriveOperation::GroveOperation(grove_op) => match grove_op.op {
+                GroveOp::InsertOrReplace { element } => element,
+                other => panic!("expected InsertOrReplace, got {other:?}"),
+            },
+            other => panic!("expected GroveOperation, got {other:?}"),
+        };
+        assert!(
+            matches!(
+                &element,
+                Element::NotCountedOrSummed(inner) if matches!(inner.as_ref(), Element::SumTree(..))
+            ),
+            "CountSumTree parent + SumTree inner → NotCountedOrSummed(SumTree), got {element:?}"
+        );
+    }
 }
