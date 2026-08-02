@@ -412,9 +412,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             Ok(v) => v,
             Err(()) => return,
         };
-        let (funding_path_ptr, funding_path_len) = funding_path
-            .as_ref()
-            .map_or((ptr::null(), 0usize), |c| {
+        let (funding_path_ptr, funding_path_len) =
+            funding_path.as_ref().map_or((ptr::null(), 0usize), |c| {
                 let b = c.as_bytes();
                 (b.as_ptr(), b.len())
             });

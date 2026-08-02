@@ -13,13 +13,18 @@ use async_trait::async_trait;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
 use dashcore::BlockHash;
-use dashcore::{Network, OutPoint, Transaction, TxOut, Txid};
+use dashcore::{Network, Transaction};
+// Consumed only by the `cfg(test)`-gated split fixtures below.
+#[cfg(test)]
+use dashcore::{OutPoint, TxOut, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-use key_wallet::{DerivationPath, Utxo, Wallet};
+#[cfg(test)]
+use key_wallet::Utxo;
+use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
@@ -287,6 +292,13 @@ pub async fn funded_spv_core_wallet(
 /// Returns the manager, the wallet id, and a soft signer over the wallet's
 /// seed (which can derive keys for BOTH accounts, so per-account signing of a
 /// mixed-input asset lock can be exercised end-to-end).
+///
+/// Like the broadcasters above, this and the other split fixtures are consumed
+/// only by this crate's own `#[cfg(test)]` unit tests (never via the
+/// `test-utils` feature alone), so they're gated on `cfg(test)` directly —
+/// otherwise `--all-features` builds without `--tests` compile them with no
+/// consumer and clippy flags them as dead code.
+#[cfg(test)]
 pub(crate) async fn split_funded_wallet_manager(
     bip44_duffs: u64,
     coinjoin_duffs: u64,
@@ -371,6 +383,7 @@ pub(crate) async fn split_funded_wallet_manager(
 /// are fund-bearing and both are covered by the vendored asset-lock router fix
 /// (`get_relevant_account_types(AssetLock)` lists `DashpayReceivingFunds` AND
 /// `DashpayExternalAccount` alongside `CoinJoin`).
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum DashpayLeg {
     /// Incoming DashPay funds account (`user_id/friend_id`).
@@ -388,6 +401,7 @@ pub(crate) enum DashpayLeg {
 /// account unsignable by the local seed exactly as it is in production, so an
 /// asset-lock builder that (wrongly) selected its UTXOs would sign them with
 /// the local mnemonic's key and produce an invalid input signature.
+#[cfg(test)]
 fn foreign_contact_account_xpub() -> ExtendedPubKey {
     let foreign = TestWalletContext::new_random();
     foreign
@@ -422,6 +436,7 @@ fn foreign_contact_account_xpub() -> ExtendedPubKey {
 /// seed and is signable end-to-end; the `ExternalAccount` account is watch-only
 /// (its xpub is a contact's, from a foreign seed), so the local signer CANNOT
 /// sign its UTXOs — the asset-lock builder must exclude them.
+#[cfg(test)]
 pub(crate) async fn split_funded_wallet_manager_dashpay(
     bip44_duffs: u64,
     dashpay_duffs: u64,
@@ -582,6 +597,7 @@ pub(crate) async fn split_funded_wallet_manager_dashpay(
 /// real DIP-9 CoinJoin account carries (0.001 / 0.01 / 0.1 DASH mixing
 /// outputs) — the shape that made the asset-lock coin selector blow up
 /// on-device when it defaulted to the exponential BranchAndBound subset-sum.
+#[cfg(test)]
 pub(crate) async fn split_funded_wallet_manager_many_coinjoin(
     bip44_duffs: u64,
     coinjoin_values: &[u64],

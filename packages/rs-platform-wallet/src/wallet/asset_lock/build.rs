@@ -2935,6 +2935,115 @@ mod tests {
         );
     }
 
+    /// A [`WalletSigner`] that records every `public_key` request and answers
+    /// only the FIRST one — every later request is a hard error. A delegated
+    /// build can therefore only succeed if the credit key it needs is served
+    /// from the prefetch cache rather than re-requested downstream.
+    struct RecordingCreditKeySigner {
+        inner: WalletSigner,
+        public_key_requests: Arc<Mutex<Vec<DerivationPath>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl Signer for RecordingCreditKeySigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+            self.inner.supported_methods()
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            path: &DerivationPath,
+            sighash: [u8; 32],
+        ) -> Result<
+            (
+                dashcore::secp256k1::ecdsa::Signature,
+                dashcore::secp256k1::PublicKey,
+            ),
+            Self::Error,
+        > {
+            self.inner.sign_ecdsa(path, sighash).await
+        }
+
+        async fn public_key(
+            &self,
+            path: &DerivationPath,
+        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+            let is_first = {
+                let mut seen = self.public_key_requests.lock().expect("requests lock");
+                seen.push(path.clone());
+                seen.len() == 1
+            };
+            if !is_first {
+                return Err(format!(
+                    "underlying signer re-queried for {path} after the prefetch"
+                ));
+            }
+            self.inner.public_key(path).await
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ExtendedPubKeySigner for RecordingCreditKeySigner {
+        async fn extended_public_key(
+            &self,
+            path: &DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, Self::Error> {
+            self.inner.extended_public_key(path).await
+        }
+    }
+
+    /// dashpay/platform#4184 review: the delegated builder must be served the
+    /// credit key from [`PrefetchedCreditKeySigner`]'s cache.
+    ///
+    /// The sibling failure test above only proves that a *prefetch* failure is
+    /// reservation-free — its signer rejects every `public_key` call, so that
+    /// build dies during the up-front prefetch and the wrapper is never
+    /// exercised. This pins the load-bearing other half: the prefetch asks the
+    /// underlying signer for exactly ONE key, that key's path is exactly the
+    /// credit path the builder returns, and the builder's own later request is
+    /// answered from cache without touching the underlying signer again.
+    ///
+    /// This fails if the prefetch and delegated paths ever diverge (the
+    /// wrapper's `*path == self.path` guard misses, so the request delegates
+    /// and hits the poisoned second call) or if the wrapper stops caching.
+    #[tokio::test]
+    async fn delegated_builder_serves_credit_key_from_prefetch_cache() {
+        let (manager, signer, _persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysOkBroadcaster)).await;
+
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recording = RecordingCreditKeySigner {
+            inner: signer.clone(),
+            public_key_requests: Arc::clone(&requests),
+        };
+
+        let (_tx, credit_path) = manager
+            .build_asset_lock_transaction(
+                5_000_000,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &recording,
+                None,
+            )
+            .await
+            .expect("the delegated build must succeed when the credit key is cached");
+
+        let seen = requests.lock().expect("requests lock").clone();
+        assert_eq!(
+            seen.len(),
+            1,
+            "the underlying signer must be asked for a public key exactly once (the \
+             prefetch) — the builder's own credit-key request must hit the cache, saw {seen:?}"
+        );
+        assert_eq!(
+            seen[0], credit_path,
+            "the prefetched path must be exactly the credit path the builder returns"
+        );
+    }
+
     /// dashpay/platform#4184 review: an explicitly-selected **Standard BIP32**
     /// funding account must have its own xpub passed to `set_funding`.
     ///
