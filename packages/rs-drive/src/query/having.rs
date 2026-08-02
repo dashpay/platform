@@ -29,10 +29,12 @@
 //! and the SDK's request builder
 //! (`rs-sdk/src/platform/documents/document_query.rs`) so the
 //! drive-side struct is the single source of truth for the shape.
-//! The server currently rejects any non-empty `having` with
-//! `QuerySyntaxError::Unsupported("HAVING clause is not yet
-//! implemented")` — the types exist so the wire surface is stable
-//! when execution lands.
+//! Only the ranked subset of this grammar executes today — a single
+//! `HAVING <agg> IN TOP(n)` / `BOTTOM(n)` clause over a ranked index
+//! (see the `drive_document_ranked_query` module).
+//! Everything else, value right-operands included, is rejected with
+//! `QuerySyntaxError::Unsupported`; the types exist so the wire
+//! surface is stable as more of it lands.
 
 use dpp::platform_value::Value;
 #[cfg(feature = "serde")]
@@ -82,9 +84,21 @@ pub struct HavingAggregate {
 pub enum HavingRankingKind {
     /// Smallest group-aggregate value across the result set
     /// (single scalar).
+    ///
+    /// **Wire-stable but rejected by evaluation.** `= MIN` selects
+    /// *every* group tied at the smallest value, and the ranked
+    /// storage cannot prove that set: the axis secondary breaks
+    /// ties by group key, so a bounded read would silently omit
+    /// tied groups and the proof could not attest that nothing
+    /// else ties. Use [`Self::Bottom`] with `n = 1` for the
+    /// positional "single worst-ranked group", where dropping ties
+    /// is the documented meaning.
     Min,
     /// Largest group-aggregate value across the result set
     /// (single scalar).
+    ///
+    /// **Wire-stable but rejected by evaluation**, symmetrically to
+    /// [`Self::Min`]. Use [`Self::Top`] with `n = 1`.
     Max,
     /// Set of the `N` largest group-aggregate values. Pair with
     /// `IN` for membership (`COUNT(*) IN TOP(5)`); single-value
@@ -105,10 +119,11 @@ pub struct HavingRanking {
     /// Which ranking primitive.
     pub kind: HavingRankingKind,
     /// Required for `Top` / `Bottom` (1-indexed: `n=1` is the
-    /// single largest / smallest); must be `None` for `Min` /
-    /// `Max`. The wire allows it on `Min` / `Max` for forward
-    /// compatibility, but evaluation rejects it as a malformed
-    /// ranking.
+    /// single largest / smallest). The wire makes it optional for
+    /// forward compatibility, so its absence is rejected at
+    /// evaluation rather than at decode. Ignored for `Min` / `Max`,
+    /// which evaluation rejects outright whether or not `n` is
+    /// present.
     pub n: Option<u64>,
 }
 
@@ -129,9 +144,11 @@ pub enum HavingRightOperand {
     /// list of candidates for `In`.
     Value(Value),
     /// Cross-group ranking reference. Operator compatibility:
-    /// scalar comparison operators work with `Min` / `Max` /
-    /// `Top(1)` / `Bottom(1)`; `In` works with `Top(N)` /
-    /// `Bottom(N)` (membership in the top-N / bottom-N set).
+    /// scalar comparison operators work with `Top(1)` /
+    /// `Bottom(1)`; `In` works with `Top(N)` / `Bottom(N)`
+    /// (membership in the top-N / bottom-N set). `Min` / `Max` are
+    /// wire-stable but rejected by evaluation whatever the
+    /// operator — see [`HavingRankingKind::Min`].
     Ranking(HavingRanking),
 }
 

@@ -177,38 +177,41 @@ pub fn detect_ranked_mode_v0(
         }
     };
 
-    // Direction comes from the ranking kind; `k` comes from `n` for the
-    // set-valued kinds and is pinned to 1 for the scalar ones.
+    // Direction comes from the ranking kind; `k` comes from `n`.
+    //
+    // MAX / MIN are rejected rather than mapped to `TOP(1)` / `BOTTOM(1)`:
+    // `HAVING <agg> = MAX` selects *every* group whose aggregate equals the
+    // extreme scalar, but the axis secondary breaks ties by group key, so a
+    // k = 1 read silently drops all but one tied group and the proof cannot
+    // express "and nothing else ties". Serving MAX/MIN honestly needs a
+    // value-bounded walk ("all entries with sort key == the extreme"), a
+    // primitive the indexed trees do not offer yet. `TOP(1)` / `BOTTOM(1)`
+    // remain available for the positional "single best-ranked group"
+    // semantics, where dropping ties is the documented meaning.
     let descending = match ranking.kind {
-        HavingRankingKind::Top | HavingRankingKind::Max => true,
-        HavingRankingKind::Bottom | HavingRankingKind::Min => false,
+        HavingRankingKind::Top => true,
+        HavingRankingKind::Bottom => false,
+        HavingRankingKind::Max | HavingRankingKind::Min => {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "`{:?}` ranking is not supported: it selects every group tied at the \
+                 extreme aggregate, which the ranked storage cannot prove (ties are \
+                 broken by group key, so a bounded read would silently omit tied \
+                 groups). Use `TOP(1)` / `BOTTOM(1)` for the positional single \
+                 best-ranked group instead.",
+                ranking.kind
+            ))));
+        }
     };
 
     let k = match ranking.kind {
-        HavingRankingKind::Max | HavingRankingKind::Min => {
-            // `n` is wire-permitted on Min/Max for forward compatibility
-            // but is malformed today — see `HavingRanking::n`.
-            if ranking.n.is_some() {
-                return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
-                    "`{:?}` ranking must not carry `n` (it selects exactly one group); \
-                     use `TOP(n)` / `BOTTOM(n)` for a set of size n",
-                    ranking.kind
-                ))));
-            }
-            if !matches!(clause.operator, HavingOperator::Equal) {
-                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                    "`{:?}` ranking is supported with the `=` having operator only; got \
-                     {:?}",
-                    ranking.kind, clause.operator
-                ))));
-            }
-            1u16
-        }
+        // Unreachable — rejected above — but keep the match exhaustive so a
+        // future kind addition is a compile error here.
+        HavingRankingKind::Max | HavingRankingKind::Min => unreachable!("rejected above"),
         HavingRankingKind::Top | HavingRankingKind::Bottom => {
             let n = ranking.n.ok_or_else(|| {
                 Error::Query(QuerySyntaxError::InvalidParameter(format!(
-                    "`{:?}(n)` ranking requires `n`; use `MAX` / `MIN` for the single \
-                     best group",
+                    "`{:?}(n)` ranking requires `n`; use n = 1 for the single \
+                     best-ranked group",
                     ranking.kind
                 )))
             })?;
@@ -229,7 +232,9 @@ pub fn detect_ranked_mode_v0(
                 ))));
             }
             // `IN TOP(n)` is the canonical membership form; `= TOP(1)` is
-            // documented as equivalent to `= MAX` on `HavingRightOperand`.
+            // accepted as the positional "the single best-ranked group"
+            // (NOT `= MAX` — MAX is value-based and rejected above because
+            // ties at the extreme cannot be proved).
             match clause.operator {
                 HavingOperator::In => {}
                 HavingOperator::Equal if n == 1 => {}

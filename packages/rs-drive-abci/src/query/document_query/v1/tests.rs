@@ -91,7 +91,7 @@ fn oc(field: &str, ascending: bool) -> ProtoOrderClause {
 /// wholesale today, so the specific aggregate function / operator
 /// / value here don't need to be domain-meaningful, only
 /// well-formed. Tests that need the ranking right-operand
-/// (`COUNT EQ MAX`, `COUNT IN TOP(5)`, …) should build the
+/// (`COUNT IN TOP(5)`, `SUM IN BOTTOM(3)`, …) should build the
 /// `ProtoHavingClause` inline with `having_clause::Right::Ranking`
 /// rather than route through this helper.
 fn hc(
@@ -2030,8 +2030,9 @@ mod ranked_tests {
     /// A proto `HavingClause` carrying a **ranking** right operand,
     /// paired with the operator the grammar expects for its kind
     /// (`IN` for the set-valued `TOP` / `BOTTOM`, `=` for the scalar
-    /// `MAX` / `MIN`). The module-level `hc` helper builds the
-    /// *literal-value* form, which the ranked surface rejects.
+    /// `MAX` / `MIN` — which decode fine and are then refused by
+    /// drive). The module-level `hc` helper builds the *literal-value*
+    /// form, which the ranked surface rejects.
     fn ranking_having(
         function: having_aggregate::Function,
         field: &str,
@@ -2433,11 +2434,16 @@ mod ranked_tests {
     }
 
     /// `BOTTOM(n)` walks the axis from the smallest aggregate up, and
-    /// `MIN` / `MAX` are its `n = 1` special cases — all three still
-    /// return *entries*, because "which group" is as much of the
-    /// answer as "what value".
+    /// `n = 1` is how the single worst- (or, for `TOP`, best-) ranked
+    /// group is asked for. Both still return *entries*, because "which
+    /// group" is as much of the answer as "what value".
+    ///
+    /// `MAX` / `MIN` — the value-based spelling of the same intent —
+    /// are wire-decodable and route here, and drive then refuses them:
+    /// what this pins is that the refusal reaches the caller as a
+    /// query error on the validation result, not as an internal error.
     #[test]
-    fn bottom_max_and_min_shapes_all_return_entries() {
+    fn bottom_shapes_return_entries_and_max_min_are_refused() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
         let contract = register_restaurants(&platform, version);
         insert_docs(
@@ -2478,23 +2484,44 @@ mod ranked_tests {
         );
         assert_eq!(sums(&bottom_two), vec![10, 55]);
 
-        let max = ranked_entries(
+        let top_one = ranked_entries(
             &platform,
             &state,
-            sum_request(having_ranking::Kind::Max, None),
+            sum_request(having_ranking::Kind::Top, Some(1)),
             version,
         );
-        assert_eq!(group_keys(&max), vec!["beta"], "MAX is TOP(1)");
-        assert_eq!(sums(&max), vec![100]);
+        assert_eq!(
+            group_keys(&top_one),
+            vec!["beta"],
+            "TOP(1) is the single largest sum"
+        );
+        assert_eq!(sums(&top_one), vec![100]);
 
-        let min = ranked_entries(
+        let bottom_one = ranked_entries(
             &platform,
             &state,
-            sum_request(having_ranking::Kind::Min, None),
+            sum_request(having_ranking::Kind::Bottom, Some(1)),
             version,
         );
-        assert_eq!(group_keys(&min), vec!["alpha"], "MIN is BOTTOM(1)");
-        assert_eq!(sums(&min), vec![10]);
+        assert_eq!(
+            group_keys(&bottom_one),
+            vec!["alpha"],
+            "BOTTOM(1) is the single smallest sum"
+        );
+        assert_eq!(sums(&bottom_one), vec![10]);
+
+        for kind in [having_ranking::Kind::Max, having_ranking::Kind::Min] {
+            match ranked_error(&platform, &state, sum_request(kind, None), version) {
+                QueryError::Query(QuerySyntaxError::Unsupported(message)) => {
+                    assert!(
+                        message.contains("tied"),
+                        "expected drive's tie-semantics refusal to reach the caller \
+                         verbatim, got: {message}"
+                    );
+                }
+                other => panic!("expected Unsupported from drive for {kind:?}, got {other:?}"),
+            }
+        }
     }
 
     /// A `HAVING` whose right operand is a literal value

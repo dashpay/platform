@@ -135,16 +135,27 @@ const EMPTY_RANKING_MARKER: &str = "empty ranking cannot be proved";
 /// ranking kind with the comparison operator the grammar expects.
 ///
 /// That pairing is the surface's sharpest edge: `TOP(n)` / `BOTTOM(n)`
-/// are *set membership* and take `IN`, while `MAX` / `MIN` select a
-/// single group and take `=`. Getting it backwards is rejected by
-/// both the SDK and the server, with an error that is clear but
-/// avoidable — hence this constructor. (`= TOP(1)` is accepted as a
-/// synonym of `= MAX`, so the `n == 1` case is not a trap.)
+/// are *set membership* and take `IN`, while `MAX` / `MIN` are the
+/// value-based scalars and take `=`. Getting it backwards is rejected
+/// by both the SDK and the server, with an error that is clear but
+/// avoidable — hence this constructor. (`= TOP(1)` is also accepted,
+/// so the `n == 1` case is not a trap.)
+///
+/// **`MAX` / `MIN` are rejected.** They remain wire-decodable, but
+/// evaluation refuses them on every axis: `= MAX` selects *every*
+/// group tied at the extreme, and the ranked storage cannot prove that
+/// set — ties break by group key, so a bounded read would silently
+/// omit tied groups. Ask for `TOP(1)` / `BOTTOM(1)` instead, which is
+/// the positional "single best- / worst-ranked group" and documents
+/// dropping ties as its meaning. Building a `MAX` / `MIN` clause here
+/// is allowed so the refusal comes back from the one place that owns
+/// the grammar rather than being duplicated in the SDK.
 ///
 /// `field` must be the property the aggregate applies to and must
 /// match the `select` exactly; pass `""` for `COUNT(*)`, which counts
 /// documents per group and takes no field. `n` is required for
-/// `TOP` / `BOTTOM` (`1 ..= 100`) and must be absent for `MAX` / `MIN`.
+/// `TOP` / `BOTTOM` (`1 ..= 100`) and is ignored for `MAX` / `MIN`,
+/// which are refused either way.
 ///
 /// ```rust
 /// use dash_sdk::drive::query::{HavingAggregateFunction, HavingOperator, HavingRankingKind};
@@ -382,9 +393,12 @@ mod tests {
         assert_eq!(aggregate.field, "");
     }
 
-    /// `MAX` / `MIN` take `=` and **no** `n`; `TOP` / `BOTTOM` take
-    /// `IN` and require one. This is the pairing [`ranking_having`]
-    /// exists to get right, and it is what the wire carries.
+    /// `MAX` / `MIN` take `=`; `TOP` / `BOTTOM` take `IN` and require
+    /// an `n`. This is the pairing [`ranking_having`] exists to get
+    /// right, and it is what the wire carries. The builder still
+    /// assembles the `MAX` / `MIN` shapes even though evaluation
+    /// refuses them — see
+    /// [`assert_ranked_shape_rejects_max_and_min`].
     #[test]
     fn ranking_having_pairs_each_kind_with_its_operator() {
         for (kind, n, expected_operator) in [
@@ -423,19 +437,44 @@ mod tests {
         assert_eq!(mode.group_by_property, "restaurantId");
         assert_eq!(mode.aggregate_field, "grade");
 
-        let bottom = DocumentQuery::new(contract(), "niceDocument")
+        let bottom = count_query_ranked_by(HavingRankingKind::Bottom, Some(1));
+        let mode =
+            assert_ranked_shape(&bottom, platform_version()).expect("BOTTOM(1) is well-formed");
+        assert!(!mode.descending, "BOTTOM ranks lowest-first");
+        assert_eq!(mode.k, 1, "BOTTOM(1) is the single worst-ranked group");
+    }
+
+    /// A `COUNT(*)` query ranked by `kind`, for the tests that vary
+    /// only the ranking.
+    fn count_query_ranked_by(kind: HavingRankingKind, n: Option<u64>) -> DocumentQuery {
+        DocumentQuery::new(contract(), "niceDocument")
             .expect("doctype exists")
             .with_select(SelectProjection::count_star())
             .with_group_by("restaurantId")
-            .with_having(ranking_having(
-                HavingAggregateFunction::Count,
-                "",
-                HavingRankingKind::Min,
-                None,
-            ));
-        let mode = assert_ranked_shape(&bottom, platform_version()).expect("MIN is well-formed");
-        assert!(!mode.descending, "MIN ranks lowest-first");
-        assert_eq!(mode.k, 1, "MIN is BOTTOM(1)");
+            .with_having(ranking_having(HavingAggregateFunction::Count, "", kind, n))
+    }
+
+    /// `MAX` / `MIN` are refused client side, so the caller learns
+    /// before a round trip. They are *value-based* — `= MAX` selects
+    /// every group tied at the extreme — and the axis secondary breaks
+    /// ties by group key, so no bounded read can prove that set. The
+    /// refusal names the positional alternative rather than silently
+    /// serving `TOP(1)` / `BOTTOM(1)`, which would answer a different
+    /// question whenever the extreme is tied.
+    #[test]
+    fn assert_ranked_shape_rejects_max_and_min() {
+        for kind in [HavingRankingKind::Max, HavingRankingKind::Min] {
+            for n in [None, Some(1)] {
+                let query = count_query_ranked_by(kind, n);
+                let err = assert_ranked_shape(&query, platform_version())
+                    .expect_err("MAX / MIN cannot be served");
+                let message = format!("{err}");
+                assert!(
+                    message.contains("tied") && message.contains("TOP(1)"),
+                    "the refusal must explain ties and name the alternative, got: {message}"
+                );
+            }
+        }
     }
 
     /// Every knob a ranked walk cannot honour is rejected **client

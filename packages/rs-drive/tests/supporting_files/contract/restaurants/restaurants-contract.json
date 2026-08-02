@@ -112,6 +112,45 @@
         "amount"
       ],
       "additionalProperties": false
+    },
+    "adjustment": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRestaurantAdjustments",
+          "properties": [
+            { "restaurantId": "asc" }
+          ],
+          "countable": "countable",
+          "summable": "delta",
+          "averageable": "delta",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "restaurantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 0
+        },
+        "delta": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000,
+          "position": 1
+        }
+      },
+      "required": [
+        "restaurantId",
+        "delta"
+      ],
+      "additionalProperties": false
     }
   }
 }

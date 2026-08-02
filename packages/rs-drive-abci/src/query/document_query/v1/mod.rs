@@ -354,8 +354,9 @@ enum RoutingDecision {
         mode: CountMode,
     },
     /// Ranked routing: a `COUNT` / `SUM` / `AVG` select whose single
-    /// `HAVING` clause carries a ranking right operand (`TOP(n)` /
-    /// `BOTTOM(n)` / `MAX` / `MIN`). Dispatches to
+    /// `HAVING` clause carries a ranking right operand. Routing does
+    /// not read the ranking kind: `MAX` / `MIN` route here too and are
+    /// then refused by drive, which owns that judgement. Dispatches to
     /// [`Self::dispatch_ranked_v1`] → `Drive::execute_document_ranked_request`
     /// and emits the `RankedEntries` proto message.
     ///
@@ -1211,8 +1212,9 @@ impl<C> Platform<C> {
     }
 
     /// Dispatch a ranked request — a `COUNT` / `SUM` / `AVG` select
-    /// whose single `HAVING` clause carries a `TOP(n)` / `BOTTOM(n)` /
-    /// `MAX` / `MIN` ranking — to
+    /// whose single `HAVING` clause carries a ranking (`TOP(n)` /
+    /// `BOTTOM(n)`; `MAX` / `MIN` are forwarded too and refused by
+    /// drive) — to
     /// [`Drive::execute_document_ranked_request`], and map the response
     /// into a `GetDocumentsResponseV1` carrying a `RankedEntries`
     /// payload (or a `Proof` payload when prove=true).
@@ -1265,10 +1267,9 @@ impl<C> Platform<C> {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(
                     "ORDER BY is not valid for a ranked query: the entry order of a \
-                     `HAVING … TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN` result already \
-                     is the ranking order (best-first for TOP / MAX, worst-first for \
-                     BOTTOM / MIN). Drop `order_by`, or flip TOP ↔ BOTTOM to reverse \
-                     the ranking."
+                     `HAVING … TOP(n)` / `BOTTOM(n)` result already is the ranking \
+                     order (best-first for TOP, worst-first for BOTTOM). Drop \
+                     `order_by`, or flip TOP ↔ BOTTOM to reverse the ranking."
                         .to_string(),
                 ),
             ));
@@ -1338,8 +1339,7 @@ impl<C> Platform<C> {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
                     // No aggregate-collapse arm here, unlike count /
                     // sum / average: a ranked result is always a list
-                    // of groups. `MAX` / `MIN` are `TOP(1)` /
-                    // `BOTTOM(1)` and still return one *entry*,
+                    // of groups. Even `TOP(1)` returns one *entry*,
                     // because the caller needs to know which group
                     // won, not only the winning value.
                     variant: Some(result_data::Variant::Ranked(RankedEntries {

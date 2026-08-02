@@ -83,18 +83,22 @@ pub struct DocumentQuery {
     /// SQL `HAVING` clauses — aggregate filters that apply to the
     /// grouped rows produced by `select = Count`, `group_by =
     /// […]`. Unlike `where_clauses`, the left side is an aggregate
-    /// (`COUNT(*)`, `SUM(field)`, `AVG(field)`, `MIN`/`MAX`,
-    /// `TOP`/`BOTTOM` for N-th-element selection) rather than a
-    /// raw row field. See [`HavingClause`] /
-    /// [`drive::query::HavingAggregate`] /
+    /// (`COUNT(*)`, `SUM(field)`, `AVG(field)`) rather than a raw
+    /// row field, and the right side is either a literal value or a
+    /// cross-group ranking (`TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`).
+    /// See [`HavingClause`] / [`drive::query::HavingAggregate`] /
     /// [`drive::query::HavingOperator`] for the catalogs. Multiple
     /// entries combine with implicit `AND`.
     ///
-    /// Non-empty values are rejected by the server today with
-    /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
-    /// implemented")` — the typed builder exists so callers can
-    /// encode the full aggregate-filter surface ahead of server
-    /// support landing without a wire-format change.
+    /// Only the *ranked* subset executes today, from protocol version
+    /// 14: exactly one clause, over an aggregate the contract's index
+    /// declares rankable, with a `TOP(n)` / `BOTTOM(n)` right
+    /// operand. Literal right operands, multiple clauses, and the
+    /// `MAX` / `MIN` rankings (whose groups tied at the extreme are
+    /// not provable — use `TOP(1)` / `BOTTOM(1)`) are rejected with
+    /// `QuerySyntaxError`. The typed builder covers the whole
+    /// aggregate-filter surface so callers can encode the rest ahead
+    /// of server support landing without a wire-format change.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub having: Vec<HavingClause>,
     /// `order_by` clauses for the query

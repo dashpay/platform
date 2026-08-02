@@ -97,8 +97,9 @@ pub(super) fn compute_aggregate_mode_and_check_limit_v1(
                 "HAVING {}(…) <operator> <value> — a threshold comparison on an \
                  aggregate (the wire surface accepts a literal right operand so \
                  callers can encode it ahead of server support landing, but today \
-                 only a ranking right operand — TOP(n) / BOTTOM(n) / MAX / MIN — is \
-                 evaluated)",
+                 only a ranking right operand is evaluated, and of those only \
+                 TOP(n) / BOTTOM(n) — MAX / MIN are refused further down because \
+                 groups tied at the extreme are not provable)",
                 function_name
             )));
         }

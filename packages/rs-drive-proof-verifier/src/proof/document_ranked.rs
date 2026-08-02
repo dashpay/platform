@@ -1,5 +1,5 @@
-//! Verified **ranked** (`HAVING … TOP(n)` / `BOTTOM(n)` / `MAX` /
-//! `MIN`) document results.
+//! Verified **ranked** (`HAVING … TOP(n)` / `BOTTOM(n)`) document
+//! results.
 //!
 //! A ranked query answers "which `n` groups score highest (or lowest)
 //! on an aggregate?" — `SELECT AVG(grade) GROUP BY restaurantId
@@ -38,11 +38,14 @@ use drive::verify::RootHash;
 
 /// The ranked groups of a `HAVING … TOP(n)` query.
 ///
-/// **Entry order is the ranking order** — best-first for `TOP(n)` /
-/// `MAX`, worst-first for `BOTTOM(n)` / `MIN`. Callers must not
-/// re-sort; ties (groups with equal aggregates) come back in group-key
-/// order *in the direction of the walk*, which is descending group-key
-/// order for `TOP` / `MAX`.
+/// **Entry order is the ranking order** — best-first for `TOP(n)`,
+/// worst-first for `BOTTOM(n)`. Callers must not re-sort; ties (groups
+/// with equal aggregates) come back in group-key order *in the
+/// direction of the walk*, which is descending group-key order for
+/// `TOP`. That tie handling is also why the value-based `MAX` / `MIN`
+/// rankings are refused rather than served as `TOP(1)` / `BOTTOM(1)`:
+/// a bounded read cannot prove it returned *every* group tied at the
+/// extreme.
 ///
 /// Fewer than `n` entries is normal — the index simply holds fewer
 /// groups than were asked for — and is not an error.
@@ -259,7 +262,7 @@ where
             error: "DocumentRankedEntries can't be verified via the generic FromProof path; \
                  call DocumentRankedEntries::fetch on a DocumentQuery carrying \
                  .with_select(<aggregate>), .with_group_by(<property>) and .with_having(<one \
-                 clause with a TOP/BOTTOM/MAX/MIN ranking>), which resolves the ranking axis \
+                 clause with a TOP(n) / BOTTOM(n) ranking>), which resolves the ranking axis \
                  and the covering index from the data contract"
                 .to_string(),
         })

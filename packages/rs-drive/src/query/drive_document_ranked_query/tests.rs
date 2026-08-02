@@ -21,11 +21,15 @@
 //! doctypes give one doctype per ranking axis, because two indexes over
 //! the same property set on one doctype is a `DuplicateIndexError`:
 //!
-//! | doctype  | index                | axis  | aggregated property |
-//! |----------|----------------------|-------|---------------------|
-//! | `review` | `byRestaurant`       | Avg   | `grade`             |
-//! | `visit`  | `byRestaurantVisits` | Count | — (`COUNT(*)`)      |
-//! | `tip`    | `byRestaurantTips`   | Sum   | `amount`            |
+//! | doctype      | index                     | axis  | aggregated property |
+//! |--------------|---------------------------|-------|---------------------|
+//! | `review`     | `byRestaurant`            | Avg   | `grade`             |
+//! | `visit`      | `byRestaurantVisits`      | Count | — (`COUNT(*)`)      |
+//! | `tip`        | `byRestaurantTips`        | Sum   | `amount`            |
+//! | `adjustment` | `byRestaurantAdjustments` | Avg   | `delta` (signed)    |
+//!
+//! `adjustment` exists for the write-path suite's signed-average coverage
+//! (`delta` admits negatives, `grade` does not) and is unused here.
 
 use super::index_picker::find_ranked_index_for_axis;
 use super::mode_detection::{detect_ranked_mode, detect_ranked_mode_v0};
@@ -74,6 +78,12 @@ fn group_by() -> Vec<String> {
 /// A single `HAVING <aggregate> <op> <ranking>` clause, with the operator
 /// that v0's grammar pairs with the ranking kind (`in` for the set-valued
 /// `TOP` / `BOTTOM`, `=` for the scalar `MAX` / `MIN`).
+///
+/// `MAX` / `MIN` are rejected by detection (their ties at the extreme are
+/// not provable — see [`max_and_min_are_rejected_as_untieable`]), but the
+/// helper still builds the operator the wire pairs with them so the
+/// rejection tests exercise a clause that is well-formed *apart* from the
+/// ranking kind.
 fn having(
     function: HavingAggregateFunction,
     field: &str,
@@ -107,9 +117,9 @@ fn detect_avg(kind: HavingRankingKind, n: Option<u64>) -> Result<DocumentRankedM
     )
 }
 
-/// The four ranking kinds map onto `(descending, k)` exactly as the SQL
-/// reading demands: `TOP` is "highest first", `BOTTOM` is "lowest first",
-/// and the scalar kinds are their `n = 1` special cases.
+/// The two positional ranking kinds map onto `(descending, k)` exactly as
+/// the SQL reading demands: `TOP` is "highest first", `BOTTOM` is "lowest
+/// first", and `n = 1` is how the single best-ranked group is asked for.
 #[test]
 fn ranking_kinds_map_to_direction_and_k() {
     let top = detect_avg(HavingRankingKind::Top, Some(5)).expect("TOP(5) is well-formed");
@@ -120,13 +130,46 @@ fn ranking_kinds_map_to_direction_and_k() {
     assert!(!bottom.descending, "BOTTOM ranks lowest-first");
     assert_eq!(bottom.k, 3);
 
-    let max = detect_avg(HavingRankingKind::Max, None).expect("MAX is well-formed");
-    assert!(max.descending);
-    assert_eq!(max.k, 1, "MAX is TOP(1)");
+    let top_one = detect_avg(HavingRankingKind::Top, Some(1)).expect("TOP(1) is well-formed");
+    assert!(top_one.descending);
+    assert_eq!(top_one.k, 1, "TOP(1) is the single best-ranked group");
 
-    let min = detect_avg(HavingRankingKind::Min, None).expect("MIN is well-formed");
-    assert!(!min.descending);
-    assert_eq!(min.k, 1, "MIN is BOTTOM(1)");
+    let bottom_one =
+        detect_avg(HavingRankingKind::Bottom, Some(1)).expect("BOTTOM(1) is well-formed");
+    assert!(!bottom_one.descending);
+    assert_eq!(
+        bottom_one.k, 1,
+        "BOTTOM(1) is the single worst-ranked group"
+    );
+}
+
+/// `MAX` / `MIN` are *value-based*: `HAVING <agg> = MAX` selects every
+/// group whose aggregate equals the extreme. The axis secondary breaks
+/// ties by group key, so a bounded read would silently drop tied groups
+/// and the proof could not attest that nothing else ties. They are
+/// therefore rejected as unsupported — with or without `n`, on every axis
+/// — and `TOP(1)` / `BOTTOM(1)` are the positional alternative.
+#[test]
+fn max_and_min_are_rejected_as_untieable() {
+    for kind in [HavingRankingKind::Max, HavingRankingKind::Min] {
+        for n in [None, Some(1), Some(3)] {
+            let error = detect_avg(kind, n)
+                .expect_err("MAX / MIN must be rejected regardless of whether `n` is present");
+            match error {
+                Error::Query(QuerySyntaxError::Unsupported(message)) => {
+                    assert!(
+                        message.contains("tied"),
+                        "the rejection must explain the tie semantics, got: {message}"
+                    );
+                    assert!(
+                        message.contains("TOP(1)") && message.contains("BOTTOM(1)"),
+                        "the rejection must point at the positional alternative, got: {message}"
+                    );
+                }
+                other => panic!("expected an Unsupported query error, got {other}"),
+            }
+        }
+    }
 }
 
 /// The resolved mode carries everything the index picker needs, not just
@@ -198,19 +241,18 @@ fn k_is_bounded_to_one_through_max_ranked_limit() {
     assert_eq!(at_limit.k, MAX_RANKED_LIMIT);
 }
 
-/// `TOP` / `BOTTOM` need an `n`; `MAX` / `MIN` must not carry one. The
-/// wire permits `n` on the scalar kinds for forward compatibility, so
-/// evaluation is where it gets rejected (see `HavingRanking::n`).
+/// `TOP` / `BOTTOM` need an `n` — the wire makes it optional (see
+/// `HavingRanking::n`), so evaluation is where its absence gets rejected.
 #[test]
-fn n_presence_must_match_the_ranking_kind() {
-    assert!(
-        detect_avg(HavingRankingKind::Top, None).is_err(),
-        "TOP without n is malformed"
-    );
-    assert!(
-        detect_avg(HavingRankingKind::Max, Some(3)).is_err(),
-        "MAX with n is malformed"
-    );
+fn top_and_bottom_require_n() {
+    for kind in [HavingRankingKind::Top, HavingRankingKind::Bottom] {
+        let error =
+            detect_avg(kind, None).expect_err("a positional ranking without n is malformed");
+        assert!(matches!(
+            error,
+            Error::Query(QuerySyntaxError::InvalidParameter(_))
+        ));
+    }
 }
 
 /// Ranked indexes are single-property, so grouping is single-property
@@ -1021,11 +1063,30 @@ fn count_axis_ranks_reads_and_proves_consistently() {
     assert_eq!(entries[1].value, RankedEntryValue::Count(3));
     assert_proof_round_trips(&drive, &contract, &top_two, &entries);
 
-    let min = RankedCase::count(HavingRankingKind::Min, None);
-    let entries = entries_of(run(&drive, &contract, &min, false).expect("read must succeed"));
-    assert_eq!(keys_of(&entries), vec!["alpha"], "MIN is BOTTOM(1)");
+    let bottom_one = RankedCase::count(HavingRankingKind::Bottom, Some(1));
+    let entries =
+        entries_of(run(&drive, &contract, &bottom_one, false).expect("read must succeed"));
+    assert_eq!(
+        keys_of(&entries),
+        vec!["alpha"],
+        "BOTTOM(1) is the single smallest group"
+    );
     assert_eq!(entries[0].value, RankedEntryValue::Count(1));
-    assert_proof_round_trips(&drive, &contract, &min, &entries);
+    assert_proof_round_trips(&drive, &contract, &bottom_one, &entries);
+
+    // The value-based spelling of the same intent is refused end to end,
+    // not just in the pure detector.
+    let error = run(
+        &drive,
+        &contract,
+        &RankedCase::count(HavingRankingKind::Min, None),
+        false,
+    )
+    .expect_err("MIN cannot be served: groups tied at the minimum are not provable");
+    assert!(matches!(
+        error,
+        Error::Query(QuerySyntaxError::Unsupported(_))
+    ));
 }
 
 /// The Sum axis ranks by the running sum of the index's summable property.
@@ -1049,11 +1110,30 @@ fn sum_axis_ranks_reads_and_proves_consistently() {
         ],
     );
 
-    let max = RankedCase::sum(HavingRankingKind::Max, None);
-    let entries = entries_of(run(&drive, &contract, &max, false).expect("read must succeed"));
-    assert_eq!(keys_of(&entries), vec!["beta"], "MAX is TOP(1)");
+    let top_one = RankedCase::sum(HavingRankingKind::Top, Some(1));
+    let entries = entries_of(run(&drive, &contract, &top_one, false).expect("read must succeed"));
+    assert_eq!(
+        keys_of(&entries),
+        vec!["beta"],
+        "TOP(1) is the single largest sum"
+    );
     assert_eq!(entries[0].value, RankedEntryValue::Sum(100));
-    assert_proof_round_trips(&drive, &contract, &max, &entries);
+    assert_proof_round_trips(&drive, &contract, &top_one, &entries);
+
+    // `= MAX` would mean "every group at the maximum", which the axis
+    // secondary cannot prove — it is refused rather than silently served
+    // as `TOP(1)`.
+    let error = run(
+        &drive,
+        &contract,
+        &RankedCase::sum(HavingRankingKind::Max, None),
+        false,
+    )
+    .expect_err("MAX cannot be served: groups tied at the maximum are not provable");
+    assert!(matches!(
+        error,
+        Error::Query(QuerySyntaxError::Unsupported(_))
+    ));
 
     let bottom_three = RankedCase::sum(HavingRankingKind::Bottom, Some(3));
     let entries =
@@ -1344,7 +1424,7 @@ fn verify_rejects_an_unknown_method_version() {
     let (drive, contract) = setup_restaurants();
     insert_docs(&drive, &contract, "review", "grade", 1, &[("alpha", 90)]);
 
-    let case = RankedCase::avg(HavingRankingKind::Max, None);
+    let case = RankedCase::avg(HavingRankingKind::Top, Some(1));
     let proof = proof_of(run(&drive, &contract, &case, true).expect("prove must succeed"));
     let query = client_side_query(&contract, &case);
 

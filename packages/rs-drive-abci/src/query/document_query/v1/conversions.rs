@@ -251,10 +251,13 @@ fn having_ranking_kind_from_proto(kind: i32) -> Result<HavingRankingKind, QueryE
 }
 
 /// Map a wire [`ProtoHavingRanking`] onto drive's [`HavingRanking`].
-/// The `kind` ↔ `n` consistency check (e.g. `n` required for
-/// `Top` / `Bottom`, forbidden on `Min` / `Max`) runs inside the
-/// evaluator when HAVING execution lands; this converter only
-/// enforces that the proto shape is well-formed.
+/// Which `(kind, n)` pairs are actually servable — `n` required for
+/// `Top` / `Bottom`, and `Min` / `Max` rejected outright because
+/// groups tied at the extreme are not provable — is decided by
+/// drive's `detect_ranked_mode`. Every wire-valid kind converts here,
+/// so the refusal carries drive's explanation instead of a decode
+/// error; this converter only enforces that the proto shape is
+/// well-formed.
 #[allow(dead_code)]
 fn having_ranking_from_proto(ranking: ProtoHavingRanking) -> Result<HavingRanking, QueryError> {
     Ok(HavingRanking {

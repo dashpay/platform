@@ -251,8 +251,7 @@ pub struct DriveDocumentRankedQuery<'a> {
     /// `index`'s matching `ranked_*` flag.
     pub axis: RankedAxis,
     /// `true` walks the secondary from the largest aggregate down
-    /// (`TOP(n)` / `MAX`); `false` walks from the smallest up
-    /// (`BOTTOM(n)` / `MIN`).
+    /// (`TOP(n)`); `false` walks from the smallest up (`BOTTOM(n)`).
     ///
     /// **Tie ordering.** The secondary's keys are `(sort_key ‖
     /// group_key)`, and the walk is a plain directional scan of that
@@ -304,7 +303,7 @@ pub struct RankedPaginationInputs {
 pub struct DocumentRankedMode {
     /// The ranking axis, from the `SELECT` function.
     pub axis: RankedAxis,
-    /// Walk direction: `TOP` / `MAX` ⇒ `true`, `BOTTOM` / `MIN` ⇒ `false`.
+    /// Walk direction: `TOP(n)` ⇒ `true`, `BOTTOM(n)` ⇒ `false`.
     pub descending: bool,
     /// Number of groups requested, `1 ..= MAX_RANKED_LIMIT`.
     pub k: u16,

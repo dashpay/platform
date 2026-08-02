@@ -1137,6 +1137,108 @@ mod tests {
         );
     }
 
+    /// An index over `restaurantId` carrying exactly one ranked keyword and
+    /// no aggregate layout whatsoever — the shape that separates "the key is
+    /// present" from "a ranking axis was asked for".
+    fn bare_ranked_index_schema(key: &str, value: bool) -> Value {
+        let index_entry = Value::Map(vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text(key.to_string()), Value::Bool(value)),
+        ]);
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 0,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![Value::Text("restaurantId".to_string())]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![index_entry]),
+            ),
+        ])
+    }
+
+    /// The ranked prerequisites are **value-sensitive**. `dependentRequired`
+    /// fires on key *presence*, so expressing the opt-out explicitly
+    /// (`"rankedCountable": false`) would have been made to demand a range
+    /// axis the index never uses — a contract that says "no ranking here"
+    /// rejected for not declaring the machinery of a ranking it declined.
+    /// The structural parser reads `false` as "no ranking axis"; full
+    /// validation at PV14 must agree.
+    #[test]
+    fn ranked_flags_written_out_as_false_do_not_require_a_range_axis() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let v2 = parse_with(
+                bare_ranked_index_schema(key, false),
+                PlatformVersion::latest(),
+                true,
+            )
+            .unwrap_or_else(|e| {
+                panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}")
+            });
+
+            let index = v2
+                .indices
+                .get("byRestaurant")
+                .expect("index parsed under its name");
+            assert!(
+                !index.ranked_countable && !index.ranked_summable && !index.ranked_averageable,
+                "`{key}: false` must leave every ranking axis off"
+            );
+            assert!(
+                !index.range_countable && !index.range_summable,
+                "`{key}: false` must not have conjured a range axis either"
+            );
+        }
+    }
+
+    /// The other half of the same rule: `true` without the matching range
+    /// axis is still refused under full validation, on every one of the three
+    /// axes. Making the prerequisite value-sensitive must not have made it
+    /// toothless.
+    #[test]
+    fn ranked_flags_set_true_still_require_their_range_axis() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let result = parse_with(
+                bare_ranked_index_schema(key, true),
+                PlatformVersion::latest(),
+                true,
+            );
+            assert!(
+                result.is_err(),
+                "`{key}: true` with no range axis must be rejected under full validation"
+            );
+        }
+    }
+
     /// Structural counterpart of the check above, on the path where no
     /// meta-schema runs: `rankedCountable` with neither `countable` nor
     /// `rangeCountable` in effect is rejected by the index parser itself.

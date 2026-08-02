@@ -51,7 +51,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
-            document_type_schema: 3, // changed: v3 document meta-schema (currently a byte-identical copy of v2; ranked index keywords land on it)
+            document_type_schema: 3, // changed: v3 document meta-schema — v2 plus the ranked index keywords, and the gate the index parser reads
             should_add_creator_id: 1,
             enrich_with_base_schema: 1,
             find_identifier_and_binary_paths: 0,

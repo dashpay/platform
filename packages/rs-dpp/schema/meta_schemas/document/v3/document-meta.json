@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
-  "$comment": "EDITABLE UNTIL 4.1 RELEASE — FROZEN AFTER. This v2 document meta-schema activates with protocol v13 (CONTRACT_VERSIONS_V5). It is v1 plus the keepsTransferHistory, keepsPurchaseHistory and keepsPricingHistory document type configuration flags, and admits every v13+ contract written to disk. Once the release carrying protocol v13 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v3+).",
+  "$comment": "EDITABLE UNTIL THE RELEASE CARRYING PROTOCOL V14 SHIPS — FROZEN AFTER. This v3 document meta-schema activates with protocol v14 (CONTRACT_VERSIONS_V6). It is v2 plus the ranked index keywords (rankedCountable, rankedSummable, rankedAverageable), and admits every v14+ contract written to disk. v2 stays in place for protocol v13, where those keys still fail an index entry's `additionalProperties: false`. Once the release carrying protocol v14 ships, mutating it would change historical validation results and break consensus replay. After release, any new top-level property or rule MUST go in a newer meta-schema version (v4+). The $id above deliberately still names the v1 path: v1, v2 and v3 all share that identity, and it is the exact string `enrich_with_base_schema` injects as every PV12+ document schema's `$schema`, so bumping it here would be a wire-visible change rather than a documentation fix.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -486,11 +486,32 @@
         "dependentRequired": {
           "rangeCountable": ["countable"],
           "rangeSummable": ["summable"],
-          "rangeAverageable": ["averageable"],
-          "rankedCountable": ["rangeCountable"],
-          "rankedSummable": ["rangeSummable"],
-          "rankedAverageable": ["rangeAverageable"]
+          "rangeAverageable": ["averageable"]
         },
+        "$comment": "The ranked prerequisites are value-sensitive, unlike the range* rows above: `dependentRequired` fires on key *presence*, so listing them there would make an explicit `\"rankedCountable\": false` — a written-out opt-out, which the structural parser accepts as such — demand a `rangeCountable` the index does not need. The range* rows keep presence semantics because that is what they shipped with in v2 and changing them would move historical validation results.",
+        "allOf": [
+          {
+            "if": {
+              "properties": { "rankedCountable": { "const": true } },
+              "required": ["rankedCountable"]
+            },
+            "then": { "required": ["rangeCountable"] }
+          },
+          {
+            "if": {
+              "properties": { "rankedSummable": { "const": true } },
+              "required": ["rankedSummable"]
+            },
+            "then": { "required": ["rangeSummable"] }
+          },
+          {
+            "if": {
+              "properties": { "rankedAverageable": { "const": true } },
+              "required": ["rankedAverageable"]
+            },
+            "then": { "required": ["rangeAverageable"] }
+          }
+        ],
         "additionalProperties": false
       },
       "minItems": 1,

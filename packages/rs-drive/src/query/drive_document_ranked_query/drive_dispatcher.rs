@@ -79,14 +79,14 @@ pub struct DocumentRankedRequest<'a> {
 ///   verifies with
 ///   [`DriveDocumentRankedQuery::verify_ranked_top_k_proof`](crate::query::DriveDocumentRankedQuery::verify_ranked_top_k_proof).
 ///
-/// There is deliberately no `Aggregate` variant: even `MAX` / `MIN`
-/// return a one-element entry list, because the caller needs the *group*
-/// as much as the value ("which restaurant is best", not just "what the
-/// best score is").
+/// There is deliberately no `Aggregate` variant: even `TOP(1)` returns a
+/// one-element entry list, because the caller needs the *group* as much
+/// as the value ("which restaurant is best", not just "what the best
+/// score is").
 #[derive(Debug, Clone)]
 pub enum DocumentRankedResponse {
-    /// Ranked groups, best-first for `TOP` / `MAX` and worst-first for
-    /// `BOTTOM` / `MIN`.
+    /// Ranked groups, best-first for `TOP(n)` and worst-first for
+    /// `BOTTOM(n)`.
     Entries(Vec<RankedEntry>),
     /// Grovedb indexed-axis top-k proof bytes.
     Proof(Vec<u8>),

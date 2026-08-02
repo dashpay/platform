@@ -4,8 +4,11 @@
 //! The helper decides how a `SELECT COUNT` / `SUM` / `AVG` request
 //! against the v1 query surface is executed: as one of the four
 //! `(group_by × where)` grouped modes, or — from feature version 1 —
-//! as a *ranked* request when a `HAVING … TOP(n)` / `BOTTOM(n)` /
-//! `MAX` / `MIN` clause is present. It also enforces the per-mode
+//! as a *ranked* request when a `HAVING … <ranking>` clause is
+//! present. Routing here only asks whether the right operand is a
+//! ranking at all; which rankings drive can actually serve
+//! (`TOP(n)` / `BOTTOM(n)`, but not `MAX` / `MIN`) is drive's call and
+//! is made in `detect_ranked_mode`. It also enforces the per-mode
 //! `accepts_limit()` contract on the grouped path.
 //!
 //! The routing rules it embeds are part of the query contract clients

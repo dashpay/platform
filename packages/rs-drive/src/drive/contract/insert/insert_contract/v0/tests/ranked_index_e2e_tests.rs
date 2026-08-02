@@ -12,6 +12,12 @@
 //! | `review` | `byRestaurant`       | `averageable` + `rangeAverageable` + `rankedAverageable` | `ProvableCountProvableSumIndexedTree` axes `[Avg]` |
 //! | `visit`  | `byRestaurantVisits` | `countable` + `rangeCountable` + `rankedCountable`        | `ProvableCountIndexedTree`              |
 //! | `tip`    | `byRestaurantTips`   | `summable` + `rangeSummable` + `rankedSummable`           | `ProvableSumIndexedTree`                |
+//! | `adjustment` | `byRestaurantAdjustments` | same as `review`                          | `ProvableCountProvableSumIndexedTree` axes `[Avg]` |
+//!
+//! `adjustment` duplicates `review`'s shape for one reason: its aggregated
+//! property `delta` admits negative values, which `grade` (minimum 0) does
+//! not, so it is the only doctype that can exercise signed sums and the
+//! floor-toward-negative-infinity rounding of the Avg sort key.
 //!
 //! Two layers are checked. First the *shape*: contract registration must lay
 //! down the right indexed element, with the right axes TLV. Then the
@@ -233,8 +239,19 @@ fn insert_docs(
 /// `floor(sum * AVG_FIXED_POINT_SCALE / count)` with euclidean (toward
 /// -inf) division. The scale is grovedb's constant — 10^19 as of the
 /// merged PR #657 — and is deliberately not spelled as a literal here.
+///
+/// Mirrors `grovedb::element::indexed::compute_avg_fixed_point` operation
+/// for operation. `div_euclid`, **not** Rust's `/`: the two agree on
+/// non-negative sums and disagree by one unit on every negative sum that
+/// does not divide evenly, and it is grovedb's choice that decides what is
+/// on disk. `saturating_mul` matches for the same reason.
 fn expected_avg_fixed_point(sum: i64, count: u64) -> i128 {
-    (sum as i128) * AVG_FIXED_POINT_SCALE / (count as i128)
+    if count == 0 {
+        return 0;
+    }
+    (sum as i128)
+        .saturating_mul(AVG_FIXED_POINT_SCALE)
+        .div_euclid(count as i128)
 }
 
 fn group_keys<T>(entries: &[(T, Vec<u8>)]) -> Vec<String> {
@@ -435,6 +452,62 @@ fn avg_axis_ranks_groups_by_average_grade() {
     // `k` truncates the ranking rather than the scan — top-2 is the prefix.
     let top_two = avg_top_k(&drive, &path, 2, true);
     assert_eq!(group_keys(&top_two), vec!["gamma", "alpha"]);
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// Averages can be negative — `summable` properties are signed — and the two
+/// things that could quietly go wrong there are the fixed-point rounding and
+/// the sign-aware sort-key encoding. Both are exercised here on the
+/// `adjustment` doctype, whose `delta` is the one fixture property that admits
+/// negative values.
+///
+/// Sums: alpha (-3-4-4) = -11 over 3, beta (3+4+4) = 11 over 3, gamma 0 over
+/// 1. Neither ±11/3 divides evenly, so the rounding mode is observable:
+/// grovedb floors toward -inf, which for the negative group is one unit below
+/// what truncating division would give.
+#[test]
+fn avg_axis_ranks_negative_averages_and_floors_toward_negative_infinity() {
+    let (drive, contract) = setup_restaurants();
+
+    insert_docs(
+        &drive,
+        &contract,
+        "adjustment",
+        "delta",
+        &[
+            ("alpha", -3),
+            ("alpha", -4),
+            ("alpha", -4),
+            ("beta", 3),
+            ("beta", 4),
+            ("beta", 4),
+            ("gamma", 0),
+        ],
+    );
+
+    let path = indexed_property_name_tree_path(&contract, "adjustment");
+
+    let descending = avg_top_k(&drive, &path, 10, true);
+    assert_eq!(
+        group_keys(&descending),
+        vec!["beta", "gamma", "alpha"],
+        "the sort key must order signed averages: beta(+3.67) > gamma(0) > alpha(-3.67)"
+    );
+    assert_eq!(descending[0].0, expected_avg_fixed_point(11, 3));
+    assert_eq!(descending[1].0, expected_avg_fixed_point(0, 1));
+    assert_eq!(descending[2].0, expected_avg_fixed_point(-11, 3));
+
+    // The rounding mode itself, stated rather than implied: on this group
+    // euclidean division lands one unit *below* truncating division, so a
+    // helper written with `/` would have agreed with the positive group and
+    // silently disagreed with the negative one.
+    let truncating = (-11i128 * AVG_FIXED_POINT_SCALE) / 3;
+    assert_eq!(
+        expected_avg_fixed_point(-11, 3),
+        truncating - 1,
+        "grovedb floors toward -inf; truncation would round the wrong way"
+    );
 
     assert_grovedb_is_consistent(&drive);
 }

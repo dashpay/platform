@@ -67,9 +67,9 @@ pub(super) fn assert_ranked_shape(
     if !request.order_by_clauses.is_empty() {
         return Err(drive_proof_verifier::Error::RequestError {
             error: "ORDER BY is not valid for a ranked query: the entry order of a \
-                    `HAVING … TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN` result already is the \
-                    ranking order (best-first for TOP / MAX, worst-first for BOTTOM / MIN). \
-                    Drop `order_by`, or flip TOP ↔ BOTTOM to reverse the ranking."
+                    `HAVING … TOP(n)` / `BOTTOM(n)` result already is the ranking order \
+                    (best-first for TOP, worst-first for BOTTOM). Drop `order_by`, or \
+                    flip TOP ↔ BOTTOM to reverse the ranking."
                 .to_string(),
         });
     }
@@ -98,9 +98,9 @@ pub(super) fn assert_ranked_shape(
         error: format!(
             "this DocumentQuery is not a well-formed ranked query: {e}. A ranked query is \
              `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)` and \
-             `.with_having(vec![<one clause whose right operand is a TOP(n) / BOTTOM(n) / \
-             MAX / MIN ranking on the same aggregate>])`, with no where clauses, no limit, \
-             no start_at and no order_by."
+             `.with_having(vec![<one clause whose right operand is a TOP(n) / BOTTOM(n) \
+             ranking on the same aggregate>])`, with no where clauses, no limit, no \
+             start_at and no order_by."
         ),
     })
 }

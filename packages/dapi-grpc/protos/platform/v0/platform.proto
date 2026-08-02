@@ -694,12 +694,20 @@ message GetDocumentsRequest {
   //
   // **Operator compatibility**:
   // - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
-  //   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
-  //   only make sense when `n=1` (the single largest / smallest);
-  //   evaluation rejects other combinations as ambiguous.
+  //   with `TOP` / `BOTTOM` only when `n=1` (the single largest /
+  //   smallest); evaluation rejects other combinations as
+  //   ambiguous.
   // - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
   // - `BETWEEN*` doesn't compose meaningfully with rankings and
   //   is rejected at evaluation time.
+  //
+  // **`MIN` / `MAX` are wire-stable but rejected by evaluation**,
+  // whatever the operator. They are value-based — `= MAX` selects
+  // *every* group tied at the extreme — and the ranked storage
+  // cannot prove that set: ties break by group key, so a bounded
+  // read would silently omit tied groups. Use `TOP(1)` /
+  // `BOTTOM(1)` for the positional single best- / worst-ranked
+  // group, where dropping ties is the documented meaning.
   message HavingRanking {
     enum Kind {
       MIN = 0;
@@ -709,10 +717,10 @@ message GetDocumentsRequest {
     }
     Kind kind = 1;
     // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
-    // single largest / smallest). Required for those two kinds;
-    // must be unset for `MIN` / `MAX`. The wire allows setting
-    // it on `MIN` / `MAX` for forward compatibility, but
-    // evaluation rejects it as a malformed ranking.
+    // single largest / smallest). Required for those two kinds,
+    // and its absence is rejected at evaluation rather than at
+    // decode. Ignored for `MIN` / `MAX`, which evaluation
+    // rejects whether or not it is set.
     optional uint64 n = 2 [jstype = JS_STRING];
   }
 
