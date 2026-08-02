@@ -100,12 +100,19 @@ impl PaymentTaskTracker {
 
     /// Close admission and join every admitted task, bounded by `budget`.
     ///
-    /// Returns `true` when every task terminated. A task that exceeds the
-    /// shared deadline is aborted (an abort lands at its next await point)
-    /// and given [`PAYMENT_ABORT_GRACE`](crate::manager::PAYMENT_ABORT_GRACE)
-    /// to confirm; a task stuck in a synchronous call (e.g. an FFI
-    /// persister `store`) cannot be interrupted — it is put **back into
-    /// the tracker** (so a destroy retry re-joins it instead of silently
+    /// Returns `true` when every task terminated. Two phases, each under a
+    /// **shared** deadline so the whole drain is bounded by
+    /// `budget + PAYMENT_ABORT_GRACE` regardless of how many stragglers
+    /// there are: every task gets until `budget` to finish on its own, then
+    /// every survivor is aborted *first* and only then confirmed, all
+    /// against one [`PAYMENT_ABORT_GRACE`](crate::manager::PAYMENT_ABORT_GRACE)
+    /// deadline. (Aborting and confirming one straggler at a time would
+    /// cost `survivors × PAYMENT_ABORT_GRACE`, which is not the bound
+    /// `shutdown` advertises.)
+    ///
+    /// A task stuck in a synchronous call (e.g. an FFI persister `store`)
+    /// cannot be interrupted by an abort — it is put **back into the
+    /// tracker** (so a destroy retry re-joins it instead of silently
     /// detaching a callback-capable task) and the method returns `false`.
     ///
     /// Aborting is safe here: the payment hooks are reconciliation-based
@@ -118,48 +125,48 @@ impl PaymentTaskTracker {
             std::mem::take(&mut state.handles)
         };
 
+        // Phase 1 — graceful, one shared deadline for all tasks.
         let deadline = tokio::time::Instant::now() + budget;
         let mut survivors = Vec::new();
         for mut handle in handles {
-            let joined = match tokio::time::timeout_at(deadline, &mut handle).await {
-                Ok(result) => {
-                    if let Err(error) = result {
-                        tracing::warn!(?error, "DashPay payment task join error");
-                    }
-                    true
-                }
-                Err(_) => {
-                    handle.abort();
-                    match tokio::time::timeout(crate::manager::PAYMENT_ABORT_GRACE, &mut handle)
-                        .await
-                    {
-                        Ok(result) => {
-                            if let Err(error) = result {
-                                if !error.is_cancelled() {
-                                    tracing::warn!(?error, "DashPay payment task abort join error");
-                                }
-                            }
-                            true
-                        }
-                        Err(_) => false,
-                    }
-                }
-            };
-            if !joined {
-                survivors.push(handle);
+            match tokio::time::timeout_at(deadline, &mut handle).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => tracing::warn!(?error, "DashPay payment task join error"),
+                Err(_) => survivors.push(handle),
             }
         }
 
         if survivors.is_empty() {
             return true;
         }
+
+        // Phase 2 — abort EVERY straggler before awaiting any of them, so
+        // the grace below is paid once rather than once per straggler.
+        for handle in &survivors {
+            handle.abort();
+        }
+        let abort_deadline = tokio::time::Instant::now() + crate::manager::PAYMENT_ABORT_GRACE;
+        let mut still_live = Vec::new();
+        for mut handle in survivors {
+            match tokio::time::timeout_at(abort_deadline, &mut handle).await {
+                Ok(Err(error)) if !error.is_cancelled() => {
+                    tracing::warn!(?error, "DashPay payment task abort join error");
+                }
+                Ok(_) => {}
+                Err(_) => still_live.push(handle),
+            }
+        }
+
+        if still_live.is_empty() {
+            return true;
+        }
         tracing::warn!(
-            survivors = survivors.len(),
+            survivors = still_live.len(),
             "DashPay payment tasks did not terminate within the drain budget; \
              keeping them tracked for a retry"
         );
         let mut state = self.state.lock().expect("payment task mutex poisoned");
-        state.handles.extend(survivors);
+        state.handles.extend(still_live);
         false
     }
 

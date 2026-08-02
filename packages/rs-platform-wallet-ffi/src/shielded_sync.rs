@@ -436,6 +436,18 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
+        // A drain that did not complete is NOT an ordinary store failure:
+        // it means callback-capable work may still be running, which the
+        // host must be able to tell apart (it keeps its callback context
+        // alive rather than just retrying the wipe). Route that one case
+        // through the typed conversion and keep the generic mapping for
+        // every other failure.
+        if matches!(
+            e,
+            platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
+        ) {
+            return PlatformWalletFFIResult::from(e);
+        }
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("clear_shielded failed: {e}"),

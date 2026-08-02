@@ -37,7 +37,16 @@ public struct PlatformAddressSyncEvent: Sendable {
     }
 }
 
-final class PlatformWalletEventHandler {
+/// `@unchecked Sendable`, matching `PlatformWalletPersistenceHandler`: this
+/// object *is* a cross-thread callback context by construction — Rust holds
+/// an `Unmanaged.passUnretained` pointer to it and invokes the callbacks
+/// below from its own background threads. `manager` is written once at
+/// `init` and only read afterwards (weak loads are atomic), and every
+/// touch of the main-actor manager already hops through
+/// `Task { @MainActor }`. The conformance is also what lets
+/// `PlatformWalletManager.deinit` — which is nonisolated — retain this
+/// owner when Rust reports an incomplete shutdown.
+final class PlatformWalletEventHandler: @unchecked Sendable {
     weak var manager: PlatformWalletManager?
 
     init(manager: PlatformWalletManager) {

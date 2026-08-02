@@ -66,7 +66,8 @@ use dash_async::ThreadRegistry;
 
 use crate::changeset::{PlatformWalletPersistence, TokenBalanceChangeSet};
 use crate::manager::{
-    coordinator_worker_config, SyncSlotGuard, WalletWorker, COORDINATOR_DRAIN_BUDGET,
+    coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
+    COORDINATOR_DRAIN_BUDGET,
 };
 use crate::wallet::platform_wallet::WalletId;
 
@@ -169,13 +170,14 @@ where
     registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
-    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
-    /// drains an in-flight one. `sync_now` bails (after taking the
-    /// `is_syncing` slot) when this is set, so once `quiesce` observes
+    /// Gates new passes while a [`quiesce`](Self::quiesce) drains an
+    /// in-flight one, while a [`QuiesceGuard`] holder mutates state, and
+    /// terminally once shutdown seals it. `sync_now` bails (after taking the
+    /// `is_syncing` slot) when it is closed, so once a drain observes
     /// `is_syncing == false` no further pass can start — giving shutdown
     /// a real "no more host-visible persister stores" barrier that
     /// cancel-only [`stop`](Self::stop) does not provide.
-    quiescing: AtomicBool,
+    quiescing: QuiesceGate,
     /// Unix seconds of the last completed pass across all identities.
     /// `0` = never. Identity-level timestamps live on the per-identity
     /// rows in [`IdentitySyncManager::state`].
@@ -213,7 +215,7 @@ where
             registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
-            quiescing: AtomicBool::new(false),
+            quiescing: QuiesceGate::default(),
             last_sync_unix: AtomicU64::new(0),
             state: RwLock::new(BTreeMap::new()),
         }
@@ -456,7 +458,7 @@ where
     /// persister context the FFI handed to us) cannot be raced by a pass
     /// that calls `persister.store(...)` through a now-dangling pointer.
     ///
-    /// Mechanism: set the `quiescing` gate so any pass that hasn't yet
+    /// Mechanism: close the `quiescing` gate so any pass that hasn't yet
     /// taken the `is_syncing` slot bails, cancel the loop, then wait for
     /// `is_syncing` to clear. `is_syncing` is held for the whole pass
     /// including the persister fan-out (`sync_now` clears it only after
@@ -477,22 +479,43 @@ where
     ///
     /// Returns `true` when the drain completed. Returns `false` when
     /// `is_syncing` was still held at the deadline — a wedged pass. On
-    /// that path the `quiescing` gate is deliberately **left up** so the
+    /// that path the `quiescing` gate is deliberately **left closed** so the
     /// wedged pass cannot be followed by a fresh one; the caller must
     /// treat the coordinator as non-clean. A later successful `quiesce`
     /// reopens the gate.
     pub(crate) async fn quiesce_within(&self, budget: Duration) -> bool {
-        self.quiescing.store(true, Ordering::Release);
-        self.stop();
-        let deadline = tokio::time::Instant::now() + budget;
-        while self.is_syncing.load(Ordering::Acquire) {
-            if tokio::time::Instant::now() >= deadline {
-                return false;
-            }
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-        self.quiescing.store(false, Ordering::Release);
-        true
+        // The guard drops here, reopening the gate — this is the
+        // "drain only" flavor.
+        self.quiesce_held_within(budget).await.is_some()
+    }
+
+    /// [`quiesce_within`](Self::quiesce_within) that **keeps sync admission
+    /// shut** until the returned guard drops — the barrier a caller needs
+    /// when it mutates state a pass touches right after draining.
+    ///
+    /// `None` means the in-flight pass did not drain within `budget`; the
+    /// gate is left closed and the caller must fail closed.
+    #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
+    pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
+        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+    }
+
+    /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
+    /// admission never reopens on this coordinator instance.
+    ///
+    /// Used by manager shutdown. Reopening there would let a direct
+    /// `sync_now` that was already dispatched on a host thread — the FFI
+    /// resolves the manager under a shared read guard, so it can be
+    /// mid-flight while `destroy` runs — start a fresh pass *after* the
+    /// drain concluded and fire persister / completion callbacks through
+    /// a context the host has since freed.
+    pub(crate) async fn quiesce_sealed_within(&self, budget: Duration) -> bool {
+        let guard = self.quiesce_held_within(budget).await;
+        let drained = guard.is_some();
+        // Seal before the guard drops so its Drop cannot reopen.
+        self.quiescing.seal();
+        drop(guard);
+        drained
     }
 
     /// Run one sync pass across every registered identity.
@@ -521,7 +544,7 @@ where
         // here; if so, release the slot and bail without running a pass
         // so the drain can complete and shutdown gets a true barrier
         // (no further `persister.store(...)` after quiesce returns).
-        if self.quiescing.load(Ordering::Acquire) {
+        if self.quiescing.is_closed() {
             return;
         }
 
@@ -954,14 +977,14 @@ mod tests {
             .expect("quiesce did not return after the pass drained");
 
         // The gate is reopened before quiesce returns.
-        assert!(!mgr.quiescing.load(Ordering::Acquire));
+        assert!(!mgr.quiescing.is_closed());
         assert!(!mgr.is_syncing());
         pass.await.unwrap();
     }
 
     /// A pass that never drains must NOT hang `quiesce_within` forever:
     /// the drain returns `false` at its deadline and deliberately leaves
-    /// the `quiescing` gate up (so the wedged pass cannot be followed by
+    /// the `quiescing` gate closed (so the wedged pass cannot be followed by
     /// a fresh one). A later successful quiesce reopens the gate. Sibling
     /// of the dashpay / platform-address regression tests.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -981,13 +1004,13 @@ mod tests {
         .expect("bounded quiesce must return at its deadline");
         assert!(!drained, "a wedged pass must be reported as non-drained");
         assert!(
-            mgr.quiescing.load(Ordering::Acquire),
+            mgr.quiescing.is_closed(),
             "gate must stay up after a timed-out drain"
         );
 
         mgr.is_syncing.store(false, Ordering::Release);
         assert!(mgr.quiesce().await);
-        assert!(!mgr.quiescing.load(Ordering::Acquire));
+        assert!(!mgr.quiescing.is_closed());
     }
 
     /// A `sync_now()` invoked while `quiescing` is set must bail without
@@ -1002,7 +1025,7 @@ mod tests {
         mgr.register_identity(id_a, [token_x]).await;
 
         // Raise the gate as `quiesce()` would.
-        mgr.quiescing.store(true, Ordering::Release);
+        mgr.quiescing.close();
 
         mgr.sync_now().await;
 
