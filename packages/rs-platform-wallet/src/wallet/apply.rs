@@ -359,7 +359,7 @@ impl PlatformWalletInfo {
         // Mirror the recomputed balance into the lock-free Arc that the
         // UI reads.
         let core_balance = &self.core_wallet.balance;
-        self.balance.set(
+        self.generation.set(
             core_balance.confirmed(),
             core_balance.unconfirmed(),
             core_balance.immature(),
@@ -389,7 +389,7 @@ mod tests {
         ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::identity::{ContactRequest, EstablishedContact};
@@ -410,7 +410,7 @@ mod tests {
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
-            balance: std::sync::Arc::new(WalletBalance::new()),
+            generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
         }

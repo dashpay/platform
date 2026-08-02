@@ -19,7 +19,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::{Account, DerivationPath, ReservationToken, Utxo};
 
-use super::{CoreWallet, WalletBalance};
+use super::{CoreWallet, WalletGeneration};
 use crate::broadcaster::TransactionBroadcaster;
 use crate::PlatformWalletError;
 
@@ -95,7 +95,7 @@ pub struct SignedCoreTransaction {
     /// the owner, submit A's transaction through B's broadcaster, and run B's
     /// cleanup while A's real reservation leaked until its TTL
     /// (`dashpay/platform#4185`).
-    origin_generation: Arc<WalletBalance>,
+    origin_generation: Arc<WalletGeneration>,
 }
 
 impl SignedCoreTransaction {
@@ -138,7 +138,7 @@ impl SignedCoreTransaction {
     /// [`origin_generation`](Self::origin_generation) field docs). Borrowed, not
     /// consumed, so the check can run before
     /// [`into_registered_parts`](Self::into_registered_parts) takes ownership.
-    pub(crate) fn origin_generation(&self) -> &Arc<WalletBalance> {
+    pub(crate) fn origin_generation(&self) -> &Arc<WalletGeneration> {
         &self.origin_generation
     }
 
@@ -193,7 +193,7 @@ impl SignedCoreTransaction {
         funding_account_index: u32,
         reservation_height: u32,
         reservation_token: Option<ReservationToken>,
-        origin_generation: Arc<WalletBalance>,
+        origin_generation: Arc<WalletGeneration>,
     ) -> Self {
         Self {
             transaction,
@@ -429,7 +429,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             );
             return;
         };
-        if !Arc::ptr_eq(&info.balance, self.generation()) {
+        if !Arc::ptr_eq(&info.generation, self.generation()) {
             // The wallet under this id is a different (re-created) generation:
             // releasing by outpoint could free ITS reservation. Leave it — the
             // original generation's reservation ceased to exist with it.

@@ -32,7 +32,7 @@ use tokio::sync::RwLock;
 
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use crate::wallet::core::WalletBalance;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -183,7 +183,7 @@ pub(crate) async fn funded_wallet_manager(
 ) -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     WalletId,
-    Arc<WalletBalance>,
+    Arc<WalletGeneration>,
     WalletSigner,
 ) {
     funded_wallet_manager_with_outputs(account_type, &[10_000_000]).await
@@ -198,7 +198,7 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
 ) -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     WalletId,
-    Arc<WalletBalance>,
+    Arc<WalletGeneration>,
     WalletSigner,
 ) {
     let mut ctx = TestWalletContext::new_random();
@@ -248,10 +248,10 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
         wallet: ctx.wallet.clone(),
     };
 
-    let balance = Arc::new(WalletBalance::new());
+    let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         core_wallet: ctx.managed_wallet,
-        balance: Arc::clone(&balance),
+        generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
     };
@@ -259,7 +259,7 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
-    (Arc::new(RwLock::new(wm)), wallet_id, balance, signer)
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
 /// Like [`funded_wallet_manager`] but funds the wallet's CoinJoin account 0
@@ -275,7 +275,7 @@ pub(crate) async fn funded_wallet_manager_with_outputs(
 pub(crate) async fn funded_coinjoin_wallet_manager() -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     WalletId,
-    Arc<WalletBalance>,
+    Arc<WalletGeneration>,
     WalletSigner,
 ) {
     let mut ctx = TestWalletContext::new_random();
@@ -319,10 +319,10 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         wallet: ctx.wallet.clone(),
     };
 
-    let balance = Arc::new(WalletBalance::new());
+    let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         core_wallet: ctx.managed_wallet,
-        balance: Arc::clone(&balance),
+        generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
     };
@@ -330,7 +330,7 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
-    (Arc::new(RwLock::new(wm)), wallet_id, balance, signer)
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
 /// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
@@ -341,7 +341,7 @@ pub async fn funded_spv_core_wallet(
     crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
     WalletSigner,
 ) {
-    let (manager, wallet_id, balance, signer) = funded_wallet_manager(account_type).await;
+    let (manager, wallet_id, generation, signer) = funded_wallet_manager(account_type).await;
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
@@ -349,7 +349,7 @@ pub async fn funded_spv_core_wallet(
     let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(spv));
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
     (
-        crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, balance),
+        crate::CoreWallet::new(sdk, manager, wallet_id, broadcaster, generation),
         signer,
     )
 }
