@@ -112,6 +112,8 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_Documents;
+@class GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_ResultData;
 @class GetDocumentsResponse_GetDocumentsResponseV1_SumEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_SumEntry;
@@ -2655,12 +2657,20 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_FieldNumber) {
  *
  * **Operator compatibility**:
  * - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
- *   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
- *   only make sense when `n=1` (the single largest / smallest);
- *   evaluation rejects other combinations as ambiguous.
+ *   with `TOP` / `BOTTOM` only when `n=1` (the single largest /
+ *   smallest); evaluation rejects other combinations as
+ *   ambiguous.
  * - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
  * - `BETWEEN*` doesn't compose meaningfully with rankings and
  *   is rejected at evaluation time.
+ *
+ * **`MIN` / `MAX` are wire-stable but rejected by evaluation**,
+ * whatever the operator. They are value-based — `= MAX` selects
+ * *every* group tied at the extreme — and the ranked storage
+ * cannot prove that set: ties break by group key, so a bounded
+ * read would silently omit tied groups. Use `TOP(1)` /
+ * `BOTTOM(1)` for the positional single best- / worst-ranked
+ * group, where dropping ties is the documented meaning.
  **/
 GPB_FINAL @interface GetDocumentsRequest_HavingRanking : GPBMessage
 
@@ -2668,10 +2678,10 @@ GPB_FINAL @interface GetDocumentsRequest_HavingRanking : GPBMessage
 
 /**
  * N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
- * single largest / smallest). Required for those two kinds;
- * must be unset for `MIN` / `MAX`. The wire allows setting
- * it on `MIN` / `MAX` for forward compatibility, but
- * evaluation rejects it as a malformed ranking.
+ * single largest / smallest). Required for those two kinds,
+ * and its absence is rejected at evaluation rather than at
+ * decode. Ignored for `MIN` / `MAX`, which evaluation
+ * rejects whether or not it is set.
  **/
 @property(nonatomic, readwrite) uint64_t n;
 
@@ -3680,6 +3690,118 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageResults 
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *message);
 
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Key = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Count = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Sum = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_AvgFixedPoint = 4,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Count = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Sum = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_AvgFixedPoint = 4,
+};
+
+/**
+ * One group in a ranked (`HAVING … TOP(n)` / `BOTTOM(n)` /
+ * `MAX` / `MIN`) result: the group's index key plus the
+ * aggregate it was ranked by.
+ *
+ * `key` is the raw index-key bytes of the GROUP BY property's
+ * value — the same bytes that name the group's value tree under
+ * the index (for a `string` property, its UTF-8 bytes). Clients
+ * that want the typed value decode it with the document type's
+ * key deserialization; the wire carries bytes so prover and
+ * verifier agree without a schema round-trip.
+ *
+ * Exactly one `value` variant is set, determined by the
+ * request's SELECT function:
+ *   * `count`  — `SELECT COUNT(*)`, ranked on the index's
+ *     `rankedCountable` axis.
+ *   * `sum`    — `SELECT SUM(field)`, `rankedSummable` axis.
+ *     Signed for the same reason `SumEntry.sum` is.
+ *   * `avg_fixed_point` — `SELECT AVG(field)`,
+ *     `rankedAverageable` axis.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase valueOneOfCase;
+
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string
+ * and don't round counts > 2^53−1 to the nearest
+ * representable Number — same choice as `CountEntry.count`.
+ **/
+@property(nonatomic, readwrite) uint64_t count;
+
+/**
+ * `jstype = JS_STRING` for the same precision reason as
+ * `SumEntry.sum`.
+ **/
+@property(nonatomic, readwrite) int64_t sum;
+
+/**
+ * The group's average as a **16-byte big-endian two's-
+ * complement `i128` fixed-point number**: the exact integer
+ * grovedb sorts the Avg axis by, namely
+ * `floor(sum * SCALE / count)` with euclidean (toward −∞)
+ * division, where SCALE is grovedb's `AVG_FIXED_POINT_SCALE`
+ * (currently 10^19). Divide by that scale to get a float:
+ * `avg = i128_from_be_bytes(avg_fixed_point) / SCALE`.
+ *
+ * Carried as raw bytes rather than a numeric field because
+ * protobuf has no 128-bit integer type, and as the exact
+ * fixed-point integer rather than a `double` because this is
+ * the value the ranked proof commits to — a client that
+ * verifies the proof must be able to compare byte-for-byte
+ * with what it reconstructs. Rounding to a `double`
+ * server-side would make two groups with distinct averages
+ * indistinguishable and break that comparison.
+ *
+ * SCALE is a grovedb constant, not a wire constant: it moved
+ * from 10^15 to 10^19 before release. Clients should read it
+ * from the SDK's re-export (`RANKED_AVG_SCALE`) rather than
+ * hardcoding the literal.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *avgFixedPoint;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'value'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_ClearValueOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_FieldNumber_EntriesArray = 1,
+};
+
+/**
+ * Ranked result entries. **Entry order IS the ranking order** —
+ * best-first for `TOP(n)` / `MAX`, worst-first for `BOTTOM(n)` /
+ * `MIN`. Clients must not re-sort; ties (equal aggregates) come
+ * back in group-key order in the direction of the walk, which is
+ * descending group-key order for `TOP` / `MAX`.
+ *
+ * Fewer than `n` entries is normal — the index simply has fewer
+ * groups than requested — and is not an error.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
 #pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ResultData
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber) {
@@ -3687,6 +3809,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNum
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Counts = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Sums = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Ranked = 5,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
@@ -3695,12 +3818,13 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Counts = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Sums = 3,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Ranked = 5,
 };
 
 /**
  * Non-proof result wrapper. The outer `oneof result` switches
  * between this and `proof`; this inner oneof switches between
- * the four non-proof shapes the v1 surface can return.
+ * the non-proof shapes the v1 surface can return.
  **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GPBMessage
 
@@ -3730,6 +3854,18 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
  * and the grades-contract worked example.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
+
+/**
+ * Ranked-aggregate result. Routed when the request carries a
+ * `having` clause whose right operand is a `HavingRanking`
+ * (`TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`) matching the
+ * single `select`. Answered from the per-axis secondary of
+ * an indexed tree, so the index must declare the matching
+ * `rankedCountable` / `rankedSummable` / `rankedAverageable`
+ * keyword (meta-schema v3, protocol version 14+). Entry
+ * order is the ranking order — see `RankedEntries`.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries *ranked;
 
 @end
 

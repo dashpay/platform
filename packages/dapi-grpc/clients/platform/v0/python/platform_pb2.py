@@ -23,7 +23,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x01\n\x05Proof\x12\x15\n\rgrovedb_proof\x18\x01 \x01(\x0c\x12\x13\n\x0bquorum_hash\x18\x02 \x01(\x0c\x12\x11\n\tsignature\x18\x03 \x01(\x0c\x12\r\n\x05round\x18\x04 \x01(\r\x12\x15\n\rblock_id_hash\x18\x05 \x01(\x0c\x12\x13\n\x0bquorum_type\x18\x06 \x01(\r\"\x98\x01\n\x10ResponseMetadata\x12\x12\n\x06height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12 \n\x18\x63ore_chain_locked_height\x18\x02 \x01(\r\x12\r\n\x05\x65poch\x18\x03 \x01(\r\x12\x13\n\x07time_ms\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x18\n\x10protocol_version\x18\x05 \x01(\r\x12\x10\n\x08\x63hain_id\x18\x06 \x01(\t\"L\n\x1dStateTransitionBroadcastError\x12\x0c\n\x04\x63ode\x18\x01 \x01(\r\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\";\n\x1f\x42roadcastStateTransitionRequest\x12\x18\n\x10state_transition\x18\x01 \x01(\x0c\"\"\n BroadcastStateTransitionResponse\"\xa4\x01\n\x12GetIdentityRequest\x12P\n\x02v0\x18\x01 \x01(\x0b\x32\x42.org.dash.platform.dapi.v0.GetIdentityRequest.GetIdentityRequestV0H\x00\x1a\x31\n\x14GetIdentityRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xc1\x01\n\x17GetIdentityNonceRequest\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0H\x00\x1a?\n\x19GetIdentityNonceRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xf6\x01\n\x1fGetIdentityContractNonceRequest\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetIdentityContractNonceRequest.GetIdentityContractNonceRequestV0H\x00\x1a\\\n!GetIdentityContractNonceRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x13\n\x0b\x63ontract_id\x18\x02 \x01(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xc0\x01\n\x19GetIdentityBalanceRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetIdentityBalanceRequest.GetIdentityBalanceRequestV0H\x00\x1a\x38\n\x1bGetIdentityBalanceRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xec\x01\n$GetIdentityBalanceAndRevisionRequest\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionRequest.GetIdentityBalanceAndRevisionRequestV0H\x00\x1a\x43\n&GetIdentityBalanceAndRevisionRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x9e\x02\n\x13GetIdentityResponse\x12R\n\x02v0\x18\x01 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetIdentityResponse.GetIdentityResponseV0H\x00\x1a\xa7\x01\n\x15GetIdentityResponseV0\x12\x12\n\x08identity\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbc\x02\n\x18GetIdentityNonceResponse\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0H\x00\x1a\xb6\x01\n\x1aGetIdentityNonceResponseV0\x12\x1c\n\x0eidentity_nonce\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xe5\x02\n GetIdentityContractNonceResponse\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0H\x00\x1a\xc7\x01\n\"GetIdentityContractNonceResponseV0\x12%\n\x17identity_contract_nonce\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbd\x02\n\x1aGetIdentityBalanceResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0H\x00\x1a\xb1\x01\n\x1cGetIdentityBalanceResponseV0\x12\x15\n\x07\x62\x61lance\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xb1\x04\n%GetIdentityBalanceAndRevisionResponse\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0H\x00\x1a\x84\x03\n\'GetIdentityBalanceAndRevisionResponseV0\x12\x9b\x01\n\x14\x62\x61lance_and_revision\x18\x01 \x01(\x0b\x32{.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevisionH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a?\n\x12\x42\x61lanceAndRevision\x12\x13\n\x07\x62\x61lance\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x14\n\x08revision\x18\x02 \x01(\x04\x42\x02\x30\x01\x42\x08\n\x06resultB\t\n\x07version\"\xd1\x01\n\x0eKeyRequestType\x12\x36\n\x08\x61ll_keys\x18\x01 \x01(\x0b\x32\".org.dash.platform.dapi.v0.AllKeysH\x00\x12@\n\rspecific_keys\x18\x02 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.SpecificKeysH\x00\x12:\n\nsearch_key\x18\x03 \x01(\x0b\x32$.org.dash.platform.dapi.v0.SearchKeyH\x00\x42\t\n\x07request\"\t\n\x07\x41llKeys\"\x1f\n\x0cSpecificKeys\x12\x0f\n\x07key_ids\x18\x01 \x03(\r\"\xb6\x01\n\tSearchKey\x12I\n\x0bpurpose_map\x18\x01 \x03(\x0b\x32\x34.org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry\x1a^\n\x0fPurposeMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12:\n\x05value\x18\x02 \x01(\x0b\x32+.org.dash.platform.dapi.v0.SecurityLevelMap:\x02\x38\x01\"\xbf\x02\n\x10SecurityLevelMap\x12]\n\x12security_level_map\x18\x01 \x03(\x0b\x32\x41.org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry\x1aw\n\x15SecurityLevelMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12M\n\x05value\x18\x02 \x01(\x0e\x32>.org.dash.platform.dapi.v0.SecurityLevelMap.KeyKindRequestType:\x02\x38\x01\"S\n\x12KeyKindRequestType\x12\x1f\n\x1b\x43URRENT_KEY_OF_KIND_REQUEST\x10\x00\x12\x1c\n\x18\x41LL_KEYS_OF_KIND_REQUEST\x10\x01\"\xda\x02\n\x16GetIdentityKeysRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetIdentityKeysRequest.GetIdentityKeysRequestV0H\x00\x1a\xda\x01\n\x18GetIdentityKeysRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12?\n\x0crequest_type\x18\x02 \x01(\x0b\x32).org.dash.platform.dapi.v0.KeyRequestType\x12+\n\x05limit\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x04 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\t\n\x07version\"\x99\x03\n\x17GetIdentityKeysResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetIdentityKeysResponse.GetIdentityKeysResponseV0H\x00\x1a\x96\x02\n\x19GetIdentityKeysResponseV0\x12\x61\n\x04keys\x18\x01 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetIdentityKeysResponse.GetIdentityKeysResponseV0.KeysH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1a\n\x04Keys\x12\x12\n\nkeys_bytes\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\xef\x02\n GetIdentitiesContractKeysRequest\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0H\x00\x1a\xd1\x01\n\"GetIdentitiesContractKeysRequestV0\x12\x16\n\x0eidentities_ids\x18\x01 \x03(\x0c\x12\x13\n\x0b\x63ontract_id\x18\x02 \x01(\x0c\x12\x1f\n\x12\x64ocument_type_name\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x37\n\x08purposes\x18\x04 \x03(\x0e\x32%.org.dash.platform.dapi.v0.KeyPurpose\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\x15\n\x13_document_type_nameB\t\n\x07version\"\xdf\x06\n!GetIdentitiesContractKeysResponse\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0H\x00\x1a\xbe\x05\n#GetIdentitiesContractKeysResponseV0\x12\x8a\x01\n\x0fidentities_keys\x18\x01 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeysH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aY\n\x0bPurposeKeys\x12\x36\n\x07purpose\x18\x01 \x01(\x0e\x32%.org.dash.platform.dapi.v0.KeyPurpose\x12\x12\n\nkeys_bytes\x18\x02 \x03(\x0c\x1a\x9f\x01\n\x0cIdentityKeys\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12z\n\x04keys\x18\x02 \x03(\x0b\x32l.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys\x1a\x90\x01\n\x0eIdentitiesKeys\x12~\n\x07\x65ntries\x18\x01 \x03(\x0b\x32m.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeysB\x08\n\x06resultB\t\n\x07version\"\xa4\x02\n*GetEvonodesProposedEpochBlocksByIdsRequest\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0H\x00\x1ah\n,GetEvonodesProposedEpochBlocksByIdsRequestV0\x12\x12\n\x05\x65poch\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x0b\n\x03ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\x08\n\x06_epochB\t\n\x07version\"\x92\x06\n&GetEvonodesProposedEpochBlocksResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0H\x00\x1a\xe2\x04\n(GetEvonodesProposedEpochBlocksResponseV0\x12\xb1\x01\n#evonodes_proposed_block_counts_info\x18\x01 \x01(\x0b\x32\x81\x01.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocksH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a?\n\x15\x45vonodeProposedBlocks\x12\x13\n\x0bpro_tx_hash\x18\x01 \x01(\x0c\x12\x11\n\x05\x63ount\x18\x02 \x01(\x04\x42\x02\x30\x01\x1a\xc4\x01\n\x16\x45vonodesProposedBlocks\x12\xa9\x01\n\x1e\x65vonodes_proposed_block_counts\x18\x01 \x03(\x0b\x32\x80\x01.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocksB\x08\n\x06resultB\t\n\x07version\"\xf2\x02\n,GetEvonodesProposedEpochBlocksByRangeRequest\x12\x84\x01\n\x02v0\x18\x01 \x01(\x0b\x32v.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0H\x00\x1a\xaf\x01\n.GetEvonodesProposedEpochBlocksByRangeRequestV0\x12\x12\n\x05\x65poch\x18\x01 \x01(\rH\x01\x88\x01\x01\x12\x12\n\x05limit\x18\x02 \x01(\rH\x02\x88\x01\x01\x12\x15\n\x0bstart_after\x18\x03 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x04 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\x07\n\x05startB\x08\n\x06_epochB\x08\n\x06_limitB\t\n\x07version\"\xcd\x01\n\x1cGetIdentitiesBalancesRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0H\x00\x1a<\n\x1eGetIdentitiesBalancesRequestV0\x12\x0b\n\x03ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x9f\x05\n\x1dGetIdentitiesBalancesResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0H\x00\x1a\x8a\x04\n\x1fGetIdentitiesBalancesResponseV0\x12\x8a\x01\n\x13identities_balances\x18\x01 \x01(\x0b\x32k.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalancesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aL\n\x0fIdentityBalance\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x18\n\x07\x62\x61lance\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x88\x01\x01\x42\n\n\x08_balance\x1a\x8f\x01\n\x12IdentitiesBalances\x12y\n\x07\x65ntries\x18\x01 \x03(\x0b\x32h.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalanceB\x08\n\x06resultB\t\n\x07version\"\xb4\x01\n\x16GetDataContractRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetDataContractRequest.GetDataContractRequestV0H\x00\x1a\x35\n\x18GetDataContractRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xb3\x02\n\x17GetDataContractResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetDataContractResponse.GetDataContractResponseV0H\x00\x1a\xb0\x01\n\x19GetDataContractResponseV0\x12\x17\n\rdata_contract\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xb9\x01\n\x17GetDataContractsRequest\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetDataContractsRequest.GetDataContractsRequestV0H\x00\x1a\x37\n\x19GetDataContractsRequestV0\x12\x0b\n\x03ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xcf\x04\n\x18GetDataContractsResponse\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetDataContractsResponse.GetDataContractsResponseV0H\x00\x1a[\n\x11\x44\x61taContractEntry\x12\x12\n\nidentifier\x18\x01 \x01(\x0c\x12\x32\n\rdata_contract\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.BytesValue\x1au\n\rDataContracts\x12\x64\n\x15\x64\x61ta_contract_entries\x18\x01 \x03(\x0b\x32\x45.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntry\x1a\xf5\x01\n\x1aGetDataContractsResponseV0\x12[\n\x0e\x64\x61ta_contracts\x18\x01 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc5\x02\n\x1dGetDataContractHistoryRequest\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHistoryRequestV0H\x00\x1a\xb0\x01\n\x1fGetDataContractHistoryRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12+\n\x05limit\x18\x02 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\x17\n\x0bstart_at_ms\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\t\n\x07version\"\xb2\x05\n\x1eGetDataContractHistoryResponse\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0H\x00\x1a\x9a\x04\n GetDataContractHistoryResponseV0\x12\x8f\x01\n\x15\x64\x61ta_contract_history\x18\x01 \x01(\x0b\x32n.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a;\n\x18\x44\x61taContractHistoryEntry\x12\x10\n\x04\x64\x61te\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05value\x18\x02 \x01(\x0c\x1a\xaa\x01\n\x13\x44\x61taContractHistory\x12\x92\x01\n\x15\x64\x61ta_contract_entries\x18\x01 \x03(\x0b\x32s.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntryB\x08\n\x06resultB\t\n\x07version\"\xdb\x17\n\x13GetDocumentsRequest\x12R\n\x02v0\x18\x01 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0H\x00\x12R\n\x02v1\x18\x02 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1H\x00\x1a\xfe\x02\n\x12\x44ocumentFieldValue\x12\x14\n\nbool_value\x18\x01 \x01(\x08H\x00\x12\x19\n\x0bint64_value\x18\x02 \x01(\x12\x42\x02\x30\x01H\x00\x12\x1a\n\x0cuint64_value\x18\x03 \x01(\x04\x42\x02\x30\x01H\x00\x12\x16\n\x0c\x64ouble_value\x18\x04 \x01(\x01H\x00\x12\x0e\n\x04text\x18\x05 \x01(\tH\x00\x12\x15\n\x0b\x62ytes_value\x18\x06 \x01(\x0cH\x00\x12[\n\x04list\x18\x07 \x01(\x0b\x32K.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueListH\x00\x12\x14\n\nnull_value\x18\x08 \x01(\x08H\x00\x1a^\n\tValueList\x12Q\n\x06values\x18\x01 \x03(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValueB\t\n\x07variant\x1a\xbe\x01\n\x0bWhereClause\x12\r\n\x05\x66ield\x18\x01 \x01(\t\x12N\n\x08operator\x18\x02 \x01(\x0e\x32<.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator\x12P\n\x05value\x18\x03 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue\x1a\xa4\x01\n\x0fHavingAggregate\x12Y\n\x08\x66unction\x18\x01 \x01(\x0e\x32G.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function\x12\r\n\x05\x66ield\x18\x02 \x01(\t\"\'\n\x08\x46unction\x12\t\n\x05\x43OUNT\x10\x00\x12\x07\n\x03SUM\x10\x01\x12\x07\n\x03\x41VG\x10\x02\x1a\xa9\x01\n\rHavingRanking\x12O\n\x04kind\x18\x01 \x01(\x0e\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind\x12\x12\n\x01n\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x88\x01\x01\"-\n\x04Kind\x12\x07\n\x03MIN\x10\x00\x12\x07\n\x03MAX\x10\x01\x12\x07\n\x03TOP\x10\x02\x12\n\n\x06\x42OTTOM\x10\x03\x42\x04\n\x02_n\x1a\xca\x04\n\x0cHavingClause\x12Q\n\taggregate\x18\x01 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate\x12V\n\x08operator\x18\x02 \x01(\x0e\x32\x44.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator\x12R\n\x05value\x18\x03 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValueH\x00\x12O\n\x07ranking\x18\x04 \x01(\x0b\x32<.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRankingH\x00\"\xe0\x01\n\x08Operator\x12\t\n\x05\x45QUAL\x10\x00\x12\r\n\tNOT_EQUAL\x10\x01\x12\x10\n\x0cGREATER_THAN\x10\x02\x12\x1a\n\x16GREATER_THAN_OR_EQUALS\x10\x03\x12\r\n\tLESS_THAN\x10\x04\x12\x17\n\x13LESS_THAN_OR_EQUALS\x10\x05\x12\x0b\n\x07\x42\x45TWEEN\x10\x06\x12\x1a\n\x16\x42\x45TWEEN_EXCLUDE_BOUNDS\x10\x07\x12\x18\n\x14\x42\x45TWEEN_EXCLUDE_LEFT\x10\x08\x12\x19\n\x15\x42\x45TWEEN_EXCLUDE_RIGHT\x10\t\x12\x06\n\x02IN\x10\nB\x07\n\x05right\x1a\x90\x01\n\x0bOrderClause\x12\x0f\n\x05\x66ield\x18\x01 \x01(\tH\x00\x12S\n\taggregate\x18\x03 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregateH\x00\x12\x11\n\tascending\x18\x02 \x01(\x08\x42\x08\n\x06target\x1a\xbb\x01\n\x15GetDocumentsRequestV0\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12\r\n\x05where\x18\x03 \x01(\x0c\x12\x10\n\x08order_by\x18\x04 \x01(\x0c\x12\r\n\x05limit\x18\x05 \x01(\r\x12\x15\n\x0bstart_after\x18\x06 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x08 \x01(\x08\x42\x07\n\x05start\x1a\xf3\x05\n\x15GetDocumentsRequestV1\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12Q\n\rwhere_clauses\x18\x03 \x03(\x0b\x32:.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause\x12L\n\x08order_by\x18\x04 \x03(\x0b\x32:.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause\x12\x12\n\x05limit\x18\x05 \x01(\rH\x01\x88\x01\x01\x12\x15\n\x0bstart_after\x18\x06 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x08 \x01(\x08\x12\\\n\x07selects\x18\t \x03(\x0b\x32K.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select\x12\x10\n\x08group_by\x18\n \x03(\t\x12K\n\x06having\x18\x0b \x03(\x0b\x32;.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause\x12\x13\n\x06offset\x18\x0c \x01(\rH\x02\x88\x01\x01\x1a\xc9\x01\n\x06Select\x12\x66\n\x08\x66unction\x18\x01 \x01(\x0e\x32T.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.Function\x12\r\n\x05\x66ield\x18\x02 \x01(\t\"H\n\x08\x46unction\x12\r\n\tDOCUMENTS\x10\x00\x12\t\n\x05\x43OUNT\x10\x01\x12\x07\n\x03SUM\x10\x02\x12\x07\n\x03\x41VG\x10\x03\x12\x07\n\x03MIN\x10\x04\x12\x07\n\x03MAX\x10\x05\x42\x07\n\x05startB\x08\n\x06_limitB\t\n\x07_offset\"\xe7\x01\n\rWhereOperator\x12\t\n\x05\x45QUAL\x10\x00\x12\x10\n\x0cGREATER_THAN\x10\x01\x12\x1a\n\x16GREATER_THAN_OR_EQUALS\x10\x02\x12\r\n\tLESS_THAN\x10\x03\x12\x17\n\x13LESS_THAN_OR_EQUALS\x10\x04\x12\x0b\n\x07\x42\x45TWEEN\x10\x05\x12\x1a\n\x16\x42\x45TWEEN_EXCLUDE_BOUNDS\x10\x06\x12\x18\n\x14\x42\x45TWEEN_EXCLUDE_LEFT\x10\x07\x12\x19\n\x15\x42\x45TWEEN_EXCLUDE_RIGHT\x10\x08\x12\x06\n\x02IN\x10\t\x12\x0f\n\x0bSTARTS_WITH\x10\nB\t\n\x07version\"\x86\x13\n\x14GetDocumentsResponse\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0H\x00\x12T\n\x02v1\x18\x02 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1H\x00\x1a\x9b\x02\n\x16GetDocumentsResponseV0\x12\x65\n\tdocuments\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.DocumentsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1e\n\tDocuments\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x42\x08\n\x06result\x1a\x98\x0f\n\x16GetDocumentsResponseV1\x12\x61\n\x04\x64\x61ta\x18\x01 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultDataH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1e\n\tDocuments\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x1aL\n\nCountEntry\x12\x13\n\x06in_key\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12\x11\n\x05\x63ount\x18\x03 \x01(\x04\x42\x02\x30\x01\x42\t\n\x07_in_key\x1ar\n\x0c\x43ountEntries\x12\x62\n\x07\x65ntries\x18\x01 \x03(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry\x1a\xa0\x01\n\x0c\x43ountResults\x12\x1d\n\x0f\x61ggregate_count\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x66\n\x07\x65ntries\x18\x02 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntriesH\x00\x42\t\n\x07variant\x1aH\n\x08SumEntry\x12\x13\n\x06in_key\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12\x0f\n\x03sum\x18\x03 \x01(\x12\x42\x02\x30\x01\x42\t\n\x07_in_key\x1an\n\nSumEntries\x12`\n\x07\x65ntries\x18\x01 \x03(\x0b\x32O.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry\x1a\x9a\x01\n\nSumResults\x12\x1b\n\raggregate_sum\x18\x01 \x01(\x12\x42\x02\x30\x01H\x00\x12\x64\n\x07\x65ntries\x18\x02 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntriesH\x00\x42\t\n\x07variant\x1a_\n\x0c\x41verageEntry\x12\x13\n\x06in_key\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12\x11\n\x05\x63ount\x18\x03 \x01(\x04\x42\x02\x30\x01\x12\x0f\n\x03sum\x18\x04 \x01(\x12\x42\x02\x30\x01\x42\t\n\x07_in_key\x1av\n\x0e\x41verageEntries\x12\x64\n\x07\x65ntries\x18\x01 \x03(\x0b\x32S.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry\x1a\x36\n\x10\x41verageAggregate\x12\x11\n\x05\x63ount\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x0f\n\x03sum\x18\x02 \x01(\x12\x42\x02\x30\x01\x1a\xfb\x01\n\x0e\x41verageResults\x12t\n\x11\x61ggregate_average\x18\x01 \x01(\x0b\x32W.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregateH\x00\x12h\n\x07\x65ntries\x18\x02 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntriesH\x00\x42\t\n\x07variant\x1a\xb3\x03\n\nResultData\x12\x65\n\tdocuments\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.DocumentsH\x00\x12\x65\n\x06\x63ounts\x18\x02 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResultsH\x00\x12\x61\n\x04sums\x18\x03 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResultsH\x00\x12i\n\x08\x61verages\x18\x04 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResultsH\x00\x42\t\n\x07variantB\x08\n\x06resultB\t\n\x07version\"\xf4\x02\n\x19GetDocumentHistoryRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0H\x00\x1a\xeb\x01\n\x1bGetDocumentHistoryRequestV0\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x13\n\x0b\x64ocument_id\x18\x03 \x01(\x0c\x12+\n\x05limit\x18\x04 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x05 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\x17\n\x0bstart_at_ms\x18\x06 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x07 \x01(\x08\x42\t\n\x07version\"\xf7\x04\n\x1aGetDocumentHistoryResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0H\x00\x1a\xeb\x03\n\x1cGetDocumentHistoryResponseV0\x12~\n\x10\x64ocument_history\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x37\n\x14\x44ocumentHistoryEntry\x12\x10\n\x04\x64\x61te\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05value\x18\x02 \x01(\x0c\x1a\x95\x01\n\x0f\x44ocumentHistory\x12\x81\x01\n\x10\x64ocument_entries\x18\x01 \x03(\x0b\x32g.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntryB\x08\n\x06resultB\t\n\x07version\"\xed\x01\n!GetIdentityByPublicKeyHashRequest\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashRequest.GetIdentityByPublicKeyHashRequestV0H\x00\x1aM\n#GetIdentityByPublicKeyHashRequestV0\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xda\x02\n\"GetIdentityByPublicKeyHashResponse\x12p\n\x02v0\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashResponse.GetIdentityByPublicKeyHashResponseV0H\x00\x1a\xb6\x01\n$GetIdentityByPublicKeyHashResponseV0\x12\x12\n\x08identity\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbd\x02\n*GetIdentityByNonUniquePublicKeyHashRequest\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0H\x00\x1a\x80\x01\n,GetIdentityByNonUniquePublicKeyHashRequestV0\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\x12\x18\n\x0bstart_after\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\x0e\n\x0c_start_afterB\t\n\x07version\"\xd6\x06\n+GetIdentityByNonUniquePublicKeyHashResponse\x12\x82\x01\n\x02v0\x18\x01 \x01(\x0b\x32t.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0H\x00\x1a\x96\x05\n-GetIdentityByNonUniquePublicKeyHashResponseV0\x12\x9a\x01\n\x08identity\x18\x01 \x01(\x0b\x32\x85\x01.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponseH\x00\x12\x9d\x01\n\x05proof\x18\x02 \x01(\x0b\x32\x8b\x01.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponseH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x36\n\x10IdentityResponse\x12\x15\n\x08identity\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x42\x0b\n\t_identity\x1a\xa6\x01\n\x16IdentityProvedResponse\x12P\n&grovedb_identity_public_key_hash_proof\x18\x01 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12!\n\x14identity_proof_bytes\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\x17\n\x15_identity_proof_bytesB\x08\n\x06resultB\t\n\x07version\"\xfb\x01\n#WaitForStateTransitionResultRequest\x12r\n\x02v0\x18\x01 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0H\x00\x1aU\n%WaitForStateTransitionResultRequestV0\x12\x1d\n\x15state_transition_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x99\x03\n$WaitForStateTransitionResultResponse\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0H\x00\x1a\xef\x01\n&WaitForStateTransitionResultResponseV0\x12I\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x38.org.dash.platform.dapi.v0.StateTransitionBroadcastErrorH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc4\x01\n\x19GetConsensusParamsRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0H\x00\x1a<\n\x1bGetConsensusParamsRequestV0\x12\x0e\n\x06height\x18\x01 \x01(\x05\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x9c\x04\n\x1aGetConsensusParamsResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetConsensusParamsResponse.GetConsensusParamsResponseV0H\x00\x1aP\n\x14\x43onsensusParamsBlock\x12\x11\n\tmax_bytes\x18\x01 \x01(\t\x12\x0f\n\x07max_gas\x18\x02 \x01(\t\x12\x14\n\x0ctime_iota_ms\x18\x03 \x01(\t\x1a\x62\n\x17\x43onsensusParamsEvidence\x12\x1a\n\x12max_age_num_blocks\x18\x01 \x01(\t\x12\x18\n\x10max_age_duration\x18\x02 \x01(\t\x12\x11\n\tmax_bytes\x18\x03 \x01(\t\x1a\xda\x01\n\x1cGetConsensusParamsResponseV0\x12Y\n\x05\x62lock\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetConsensusParamsResponse.ConsensusParamsBlock\x12_\n\x08\x65vidence\x18\x02 \x01(\x0b\x32M.org.dash.platform.dapi.v0.GetConsensusParamsResponse.ConsensusParamsEvidenceB\t\n\x07version\"\xe4\x01\n%GetProtocolVersionUpgradeStateRequest\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0H\x00\x1a\x38\n\'GetProtocolVersionUpgradeStateRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xb5\x05\n&GetProtocolVersionUpgradeStateResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0H\x00\x1a\x85\x04\n(GetProtocolVersionUpgradeStateResponseV0\x12\x87\x01\n\x08versions\x18\x01 \x01(\x0b\x32s.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x96\x01\n\x08Versions\x12\x89\x01\n\x08versions\x18\x01 \x03(\x0b\x32w.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry\x1a:\n\x0cVersionEntry\x12\x16\n\x0eversion_number\x18\x01 \x01(\r\x12\x12\n\nvote_count\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xa3\x02\n*GetProtocolVersionUpgradeVoteStatusRequest\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0H\x00\x1ag\n,GetProtocolVersionUpgradeVoteStatusRequestV0\x12\x19\n\x11start_pro_tx_hash\x18\x01 \x01(\x0c\x12\r\n\x05\x63ount\x18\x02 \x01(\r\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xef\x05\n+GetProtocolVersionUpgradeVoteStatusResponse\x12\x82\x01\n\x02v0\x18\x01 \x01(\x0b\x32t.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0H\x00\x1a\xaf\x04\n-GetProtocolVersionUpgradeVoteStatusResponseV0\x12\x98\x01\n\x08versions\x18\x01 \x01(\x0b\x32\x83\x01.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignalsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xaf\x01\n\x0eVersionSignals\x12\x9c\x01\n\x0fversion_signals\x18\x01 \x03(\x0b\x32\x82\x01.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal\x1a\x35\n\rVersionSignal\x12\x13\n\x0bpro_tx_hash\x18\x01 \x01(\x0c\x12\x0f\n\x07version\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xf5\x01\n\x14GetEpochsInfoRequest\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0H\x00\x1a|\n\x16GetEpochsInfoRequestV0\x12\x31\n\x0bstart_epoch\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\r\n\x05\x63ount\x18\x02 \x01(\r\x12\x11\n\tascending\x18\x03 \x01(\x08\x12\r\n\x05prove\x18\x04 \x01(\x08\x42\t\n\x07version\"\x99\x05\n\x15GetEpochsInfoResponse\x12V\n\x02v0\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0H\x00\x1a\x9c\x04\n\x17GetEpochsInfoResponseV0\x12\x65\n\x06\x65pochs\x18\x01 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1au\n\nEpochInfos\x12g\n\x0b\x65poch_infos\x18\x01 \x03(\x0b\x32R.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo\x1a\xa6\x01\n\tEpochInfo\x12\x0e\n\x06number\x18\x01 \x01(\r\x12\x1e\n\x12\x66irst_block_height\x18\x02 \x01(\x04\x42\x02\x30\x01\x12\x1f\n\x17\x66irst_core_block_height\x18\x03 \x01(\r\x12\x16\n\nstart_time\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x16\n\x0e\x66\x65\x65_multiplier\x18\x05 \x01(\x01\x12\x18\n\x10protocol_version\x18\x06 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xbf\x02\n\x1dGetFinalizedEpochInfosRequest\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetFinalizedEpochInfosRequest.GetFinalizedEpochInfosRequestV0H\x00\x1a\xaa\x01\n\x1fGetFinalizedEpochInfosRequestV0\x12\x19\n\x11start_epoch_index\x18\x01 \x01(\r\x12\"\n\x1astart_epoch_index_included\x18\x02 \x01(\x08\x12\x17\n\x0f\x65nd_epoch_index\x18\x03 \x01(\r\x12 \n\x18\x65nd_epoch_index_included\x18\x04 \x01(\x08\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\t\n\x07version\"\xbd\t\n\x1eGetFinalizedEpochInfosResponse\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0H\x00\x1a\xa5\x08\n GetFinalizedEpochInfosResponseV0\x12\x80\x01\n\x06\x65pochs\x18\x01 \x01(\x0b\x32n.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xa4\x01\n\x13\x46inalizedEpochInfos\x12\x8c\x01\n\x15\x66inalized_epoch_infos\x18\x01 \x03(\x0b\x32m.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo\x1a\x9f\x04\n\x12\x46inalizedEpochInfo\x12\x0e\n\x06number\x18\x01 \x01(\r\x12\x1e\n\x12\x66irst_block_height\x18\x02 \x01(\x04\x42\x02\x30\x01\x12\x1f\n\x17\x66irst_core_block_height\x18\x03 \x01(\r\x12\x1c\n\x10\x66irst_block_time\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x16\n\x0e\x66\x65\x65_multiplier\x18\x05 \x01(\x01\x12\x18\n\x10protocol_version\x18\x06 \x01(\r\x12!\n\x15total_blocks_in_epoch\x18\x07 \x01(\x04\x42\x02\x30\x01\x12*\n\"next_epoch_start_core_block_height\x18\x08 \x01(\r\x12!\n\x15total_processing_fees\x18\t \x01(\x04\x42\x02\x30\x01\x12*\n\x1etotal_distributed_storage_fees\x18\n \x01(\x04\x42\x02\x30\x01\x12&\n\x1atotal_created_storage_fees\x18\x0b \x01(\x04\x42\x02\x30\x01\x12\x1e\n\x12\x63ore_block_rewards\x18\x0c \x01(\x04\x42\x02\x30\x01\x12\x81\x01\n\x0f\x62lock_proposers\x18\r \x03(\x0b\x32h.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer\x1a\x39\n\rBlockProposer\x12\x13\n\x0bproposer_id\x18\x01 \x01(\x0c\x12\x13\n\x0b\x62lock_count\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xde\x04\n\x1cGetContestedResourcesRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0H\x00\x1a\xcc\x03\n\x1eGetContestedResourcesRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x12\n\nindex_name\x18\x03 \x01(\t\x12\x1a\n\x12start_index_values\x18\x04 \x03(\x0c\x12\x18\n\x10\x65nd_index_values\x18\x05 \x03(\x0c\x12\x89\x01\n\x13start_at_value_info\x18\x06 \x01(\x0b\x32g.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.StartAtValueInfoH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x07 \x01(\rH\x01\x88\x01\x01\x12\x17\n\x0forder_ascending\x18\x08 \x01(\x08\x12\r\n\x05prove\x18\t \x01(\x08\x1a\x45\n\x10StartAtValueInfo\x12\x13\n\x0bstart_value\x18\x01 \x01(\x0c\x12\x1c\n\x14start_value_included\x18\x02 \x01(\x08\x42\x16\n\x14_start_at_value_infoB\x08\n\x06_countB\t\n\x07version\"\x88\x04\n\x1dGetContestedResourcesResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0H\x00\x1a\xf3\x02\n\x1fGetContestedResourcesResponseV0\x12\x95\x01\n\x19\x63ontested_resource_values\x18\x01 \x01(\x0b\x32p.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResourceValuesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a<\n\x17\x43ontestedResourceValues\x12!\n\x19\x63ontested_resource_values\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\xd2\x05\n\x1cGetVotePollsByEndDateRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0H\x00\x1a\xc0\x04\n\x1eGetVotePollsByEndDateRequestV0\x12\x84\x01\n\x0fstart_time_info\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfoH\x00\x88\x01\x01\x12\x80\x01\n\rend_time_info\x18\x02 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfoH\x01\x88\x01\x01\x12\x12\n\x05limit\x18\x03 \x01(\rH\x02\x88\x01\x01\x12\x13\n\x06offset\x18\x04 \x01(\rH\x03\x88\x01\x01\x12\x11\n\tascending\x18\x05 \x01(\x08\x12\r\n\x05prove\x18\x06 \x01(\x08\x1aI\n\x0fStartAtTimeInfo\x12\x19\n\rstart_time_ms\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1b\n\x13start_time_included\x18\x02 \x01(\x08\x1a\x43\n\rEndAtTimeInfo\x12\x17\n\x0b\x65nd_time_ms\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x19\n\x11\x65nd_time_included\x18\x02 \x01(\x08\x42\x12\n\x10_start_time_infoB\x10\n\x0e_end_time_infoB\x08\n\x06_limitB\t\n\x07_offsetB\t\n\x07version\"\x83\x06\n\x1dGetVotePollsByEndDateResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0H\x00\x1a\xee\x04\n\x1fGetVotePollsByEndDateResponseV0\x12\x9c\x01\n\x18vote_polls_by_timestamps\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestampsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aV\n\x1eSerializedVotePollsByTimestamp\x12\x15\n\ttimestamp\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1d\n\x15serialized_vote_polls\x18\x02 \x03(\x0c\x1a\xd7\x01\n\x1fSerializedVotePollsByTimestamps\x12\x99\x01\n\x18vote_polls_by_timestamps\x18\x01 \x03(\x0b\x32w.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp\x12\x18\n\x10\x66inished_results\x18\x02 \x01(\x08\x42\x08\n\x06resultB\t\n\x07version\"\xff\x06\n$GetContestedResourceVoteStateRequest\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0H\x00\x1a\xd5\x05\n&GetContestedResourceVoteStateRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x12\n\nindex_name\x18\x03 \x01(\t\x12\x14\n\x0cindex_values\x18\x04 \x03(\x0c\x12\x86\x01\n\x0bresult_type\x18\x05 \x01(\x0e\x32q.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.ResultType\x12\x36\n.allow_include_locked_and_abstaining_vote_tally\x18\x06 \x01(\x08\x12\xa3\x01\n\x18start_at_identifier_info\x18\x07 \x01(\x0b\x32|.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.StartAtIdentifierInfoH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x08 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\t \x01(\x08\x1aT\n\x15StartAtIdentifierInfo\x12\x18\n\x10start_identifier\x18\x01 \x01(\x0c\x12!\n\x19start_identifier_included\x18\x02 \x01(\x08\"I\n\nResultType\x12\r\n\tDOCUMENTS\x10\x00\x12\x0e\n\nVOTE_TALLY\x10\x01\x12\x1c\n\x18\x44OCUMENTS_AND_VOTE_TALLY\x10\x02\x42\x1b\n\x19_start_at_identifier_infoB\x08\n\x06_countB\t\n\x07version\"\x94\x0c\n%GetContestedResourceVoteStateResponse\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0H\x00\x1a\xe7\n\n\'GetContestedResourceVoteStateResponseV0\x12\xae\x01\n\x1d\x63ontested_resource_contenders\x18\x01 \x01(\x0b\x32\x84\x01.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContendersH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xda\x03\n\x10\x46inishedVoteInfo\x12\xad\x01\n\x15\x66inished_vote_outcome\x18\x01 \x01(\x0e\x32\x8d\x01.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.FinishedVoteOutcome\x12\x1f\n\x12won_by_identity_id\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x12$\n\x18\x66inished_at_block_height\x18\x03 \x01(\x04\x42\x02\x30\x01\x12%\n\x1d\x66inished_at_core_block_height\x18\x04 \x01(\r\x12%\n\x19\x66inished_at_block_time_ms\x18\x05 \x01(\x04\x42\x02\x30\x01\x12\x19\n\x11\x66inished_at_epoch\x18\x06 \x01(\r\"O\n\x13\x46inishedVoteOutcome\x12\x14\n\x10TOWARDS_IDENTITY\x10\x00\x12\n\n\x06LOCKED\x10\x01\x12\x16\n\x12NO_PREVIOUS_WINNER\x10\x02\x42\x15\n\x13_won_by_identity_id\x1a\xc4\x03\n\x1b\x43ontestedResourceContenders\x12\x86\x01\n\ncontenders\x18\x01 \x03(\x0b\x32r.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender\x12\x1f\n\x12\x61\x62stain_vote_tally\x18\x02 \x01(\rH\x00\x88\x01\x01\x12\x1c\n\x0flock_vote_tally\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\x9a\x01\n\x12\x66inished_vote_info\x18\x04 \x01(\x0b\x32y.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfoH\x02\x88\x01\x01\x42\x15\n\x13_abstain_vote_tallyB\x12\n\x10_lock_vote_tallyB\x15\n\x13_finished_vote_info\x1ak\n\tContender\x12\x12\n\nidentifier\x18\x01 \x01(\x0c\x12\x17\n\nvote_count\x18\x02 \x01(\rH\x00\x88\x01\x01\x12\x15\n\x08\x64ocument\x18\x03 \x01(\x0cH\x01\x88\x01\x01\x42\r\n\x0b_vote_countB\x0b\n\t_documentB\x08\n\x06resultB\t\n\x07version\"\xd5\x05\n,GetContestedResourceVotersForIdentityRequest\x12\x84\x01\n\x02v0\x18\x01 \x01(\x0b\x32v.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityRequest.GetContestedResourceVotersForIdentityRequestV0H\x00\x1a\x92\x04\n.GetContestedResourceVotersForIdentityRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x12\n\nindex_name\x18\x03 \x01(\t\x12\x14\n\x0cindex_values\x18\x04 \x03(\x0c\x12\x15\n\rcontestant_id\x18\x05 \x01(\x0c\x12\xb4\x01\n\x18start_at_identifier_info\x18\x06 \x01(\x0b\x32\x8c\x01.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityRequest.GetContestedResourceVotersForIdentityRequestV0.StartAtIdentifierInfoH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x07 \x01(\rH\x01\x88\x01\x01\x12\x17\n\x0forder_ascending\x18\x08 \x01(\x08\x12\r\n\x05prove\x18\t \x01(\x08\x1aT\n\x15StartAtIdentifierInfo\x12\x18\n\x10start_identifier\x18\x01 \x01(\x0c\x12!\n\x19start_identifier_included\x18\x02 \x01(\x08\x42\x1b\n\x19_start_at_identifier_infoB\x08\n\x06_countB\t\n\x07version\"\xf1\x04\n-GetContestedResourceVotersForIdentityResponse\x12\x86\x01\n\x02v0\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityResponse.GetContestedResourceVotersForIdentityResponseV0H\x00\x1a\xab\x03\n/GetContestedResourceVotersForIdentityResponseV0\x12\xb6\x01\n\x19\x63ontested_resource_voters\x18\x01 \x01(\x0b\x32\x90\x01.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityResponse.GetContestedResourceVotersForIdentityResponseV0.ContestedResourceVotersH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x43\n\x17\x43ontestedResourceVoters\x12\x0e\n\x06voters\x18\x01 \x03(\x0c\x12\x18\n\x10\x66inished_results\x18\x02 \x01(\x08\x42\x08\n\x06resultB\t\n\x07version\"\xad\x05\n(GetContestedResourceIdentityVotesRequest\x12|\n\x02v0\x18\x01 \x01(\x0b\x32n.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesRequest.GetContestedResourceIdentityVotesRequestV0H\x00\x1a\xf7\x03\n*GetContestedResourceIdentityVotesRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12+\n\x05limit\x18\x02 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\x17\n\x0forder_ascending\x18\x04 \x01(\x08\x12\xae\x01\n\x1astart_at_vote_poll_id_info\x18\x05 \x01(\x0b\x32\x84\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesRequest.GetContestedResourceIdentityVotesRequestV0.StartAtVotePollIdInfoH\x00\x88\x01\x01\x12\r\n\x05prove\x18\x06 \x01(\x08\x1a\x61\n\x15StartAtVotePollIdInfo\x12 \n\x18start_at_poll_identifier\x18\x01 \x01(\x0c\x12&\n\x1estart_poll_identifier_included\x18\x02 \x01(\x08\x42\x1d\n\x1b_start_at_vote_poll_id_infoB\t\n\x07version\"\xc8\n\n)GetContestedResourceIdentityVotesResponse\x12~\n\x02v0\x18\x01 \x01(\x0b\x32p.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0H\x00\x1a\x8f\t\n+GetContestedResourceIdentityVotesResponseV0\x12\xa1\x01\n\x05votes\x18\x01 \x01(\x0b\x32\x8f\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ContestedResourceIdentityVotesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xf7\x01\n\x1e\x43ontestedResourceIdentityVotes\x12\xba\x01\n!contested_resource_identity_votes\x18\x01 \x03(\x0b\x32\x8e\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ContestedResourceIdentityVote\x12\x18\n\x10\x66inished_results\x18\x02 \x01(\x08\x1a\xad\x02\n\x12ResourceVoteChoice\x12\xad\x01\n\x10vote_choice_type\x18\x01 \x01(\x0e\x32\x92\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ResourceVoteChoice.VoteChoiceType\x12\x18\n\x0bidentity_id\x18\x02 \x01(\x0cH\x00\x88\x01\x01\"=\n\x0eVoteChoiceType\x12\x14\n\x10TOWARDS_IDENTITY\x10\x00\x12\x0b\n\x07\x41\x42STAIN\x10\x01\x12\x08\n\x04LOCK\x10\x02\x42\x0e\n\x0c_identity_id\x1a\x95\x02\n\x1d\x43ontestedResourceIdentityVote\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\'\n\x1fserialized_index_storage_values\x18\x03 \x03(\x0c\x12\x99\x01\n\x0bvote_choice\x18\x04 \x01(\x0b\x32\x83\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ResourceVoteChoiceB\x08\n\x06resultB\t\n\x07version\"\xf0\x01\n%GetPrefundedSpecializedBalanceRequest\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceRequest.GetPrefundedSpecializedBalanceRequestV0H\x00\x1a\x44\n\'GetPrefundedSpecializedBalanceRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xed\x02\n&GetPrefundedSpecializedBalanceResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0H\x00\x1a\xbd\x01\n(GetPrefundedSpecializedBalanceResponseV0\x12\x15\n\x07\x62\x61lance\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xd0\x01\n GetTotalCreditsInPlatformRequest\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0H\x00\x1a\x33\n\"GetTotalCreditsInPlatformRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xd9\x02\n!GetTotalCreditsInPlatformResponse\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0H\x00\x1a\xb8\x01\n#GetTotalCreditsInPlatformResponseV0\x12\x15\n\x07\x63redits\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc4\x01\n\x16GetPathElementsRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0H\x00\x1a\x45\n\x18GetPathElementsRequestV0\x12\x0c\n\x04path\x18\x01 \x03(\x0c\x12\x0c\n\x04keys\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xa3\x03\n\x17GetPathElementsResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0H\x00\x1a\xa0\x02\n\x19GetPathElementsResponseV0\x12i\n\x08\x65lements\x18\x01 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.ElementsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1c\n\x08\x45lements\x12\x10\n\x08\x65lements\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\x81\x01\n\x10GetStatusRequest\x12L\n\x02v0\x18\x01 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0H\x00\x1a\x14\n\x12GetStatusRequestV0B\t\n\x07version\"\xe4\x10\n\x11GetStatusResponse\x12N\n\x02v0\x18\x01 \x01(\x0b\x32@.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0H\x00\x1a\xf3\x0f\n\x13GetStatusResponseV0\x12Y\n\x07version\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version\x12S\n\x04node\x18\x02 \x01(\x0b\x32\x45.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node\x12U\n\x05\x63hain\x18\x03 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain\x12Y\n\x07network\x18\x04 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network\x12^\n\nstate_sync\x18\x05 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync\x12S\n\x04time\x18\x06 \x01(\x0b\x32\x45.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time\x1a\x82\x05\n\x07Version\x12\x63\n\x08software\x18\x01 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software\x12\x63\n\x08protocol\x18\x02 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol\x1a^\n\x08Software\x12\x0c\n\x04\x64\x61pi\x18\x01 \x01(\t\x12\x12\n\x05\x64rive\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x17\n\ntenderdash\x18\x03 \x01(\tH\x01\x88\x01\x01\x42\x08\n\x06_driveB\r\n\x0b_tenderdash\x1a\xcc\x02\n\x08Protocol\x12p\n\ntenderdash\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash\x12\x66\n\x05\x64rive\x18\x02 \x01(\x0b\x32W.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive\x1a(\n\nTenderdash\x12\x0b\n\x03p2p\x18\x01 \x01(\r\x12\r\n\x05\x62lock\x18\x02 \x01(\r\x1a<\n\x05\x44rive\x12\x0e\n\x06latest\x18\x03 \x01(\r\x12\x0f\n\x07\x63urrent\x18\x04 \x01(\r\x12\x12\n\nnext_epoch\x18\x05 \x01(\r\x1a\x7f\n\x04Time\x12\x11\n\x05local\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x16\n\x05\x62lock\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x88\x01\x01\x12\x18\n\x07genesis\x18\x03 \x01(\x04\x42\x02\x30\x01H\x01\x88\x01\x01\x12\x12\n\x05\x65poch\x18\x04 \x01(\rH\x02\x88\x01\x01\x42\x08\n\x06_blockB\n\n\x08_genesisB\x08\n\x06_epoch\x1a<\n\x04Node\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\x18\n\x0bpro_tx_hash\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\x0e\n\x0c_pro_tx_hash\x1a\xb3\x02\n\x05\x43hain\x12\x13\n\x0b\x63\x61tching_up\x18\x01 \x01(\x08\x12\x19\n\x11latest_block_hash\x18\x02 \x01(\x0c\x12\x17\n\x0flatest_app_hash\x18\x03 \x01(\x0c\x12\x1f\n\x13latest_block_height\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x1b\n\x13\x65\x61rliest_block_hash\x18\x05 \x01(\x0c\x12\x19\n\x11\x65\x61rliest_app_hash\x18\x06 \x01(\x0c\x12!\n\x15\x65\x61rliest_block_height\x18\x07 \x01(\x04\x42\x02\x30\x01\x12!\n\x15max_peer_block_height\x18\t \x01(\x04\x42\x02\x30\x01\x12%\n\x18\x63ore_chain_locked_height\x18\n \x01(\rH\x00\x88\x01\x01\x42\x1b\n\x19_core_chain_locked_height\x1a\x43\n\x07Network\x12\x10\n\x08\x63hain_id\x18\x01 \x01(\t\x12\x13\n\x0bpeers_count\x18\x02 \x01(\r\x12\x11\n\tlistening\x18\x03 \x01(\x08\x1a\x85\x02\n\tStateSync\x12\x1d\n\x11total_synced_time\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1a\n\x0eremaining_time\x18\x02 \x01(\x04\x42\x02\x30\x01\x12\x17\n\x0ftotal_snapshots\x18\x03 \x01(\r\x12\"\n\x16\x63hunk_process_avg_time\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x1b\n\x0fsnapshot_height\x18\x05 \x01(\x04\x42\x02\x30\x01\x12!\n\x15snapshot_chunks_count\x18\x06 \x01(\x04\x42\x02\x30\x01\x12\x1d\n\x11\x62\x61\x63kfilled_blocks\x18\x07 \x01(\x04\x42\x02\x30\x01\x12!\n\x15\x62\x61\x63kfill_blocks_total\x18\x08 \x01(\x04\x42\x02\x30\x01\x42\t\n\x07version\"\xb1\x01\n\x1cGetCurrentQuorumsInfoRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0H\x00\x1a \n\x1eGetCurrentQuorumsInfoRequestV0B\t\n\x07version\"\xa1\x05\n\x1dGetCurrentQuorumsInfoResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0H\x00\x1a\x46\n\x0bValidatorV0\x12\x13\n\x0bpro_tx_hash\x18\x01 \x01(\x0c\x12\x0f\n\x07node_ip\x18\x02 \x01(\t\x12\x11\n\tis_banned\x18\x03 \x01(\x08\x1a\xaf\x01\n\x0eValidatorSetV0\x12\x13\n\x0bquorum_hash\x18\x01 \x01(\x0c\x12\x13\n\x0b\x63ore_height\x18\x02 \x01(\r\x12U\n\x07members\x18\x03 \x03(\x0b\x32\x44.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0\x12\x1c\n\x14threshold_public_key\x18\x04 \x01(\x0c\x1a\x92\x02\n\x1fGetCurrentQuorumsInfoResponseV0\x12\x15\n\rquorum_hashes\x18\x01 \x03(\x0c\x12\x1b\n\x13\x63urrent_quorum_hash\x18\x02 \x01(\x0c\x12_\n\x0evalidator_sets\x18\x03 \x03(\x0b\x32G.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0\x12\x1b\n\x13last_block_proposer\x18\x04 \x01(\x0c\x12=\n\x08metadata\x18\x05 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\t\n\x07version\"\xf4\x01\n\x1fGetIdentityTokenBalancesRequest\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetIdentityTokenBalancesRequest.GetIdentityTokenBalancesRequestV0H\x00\x1aZ\n!GetIdentityTokenBalancesRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x11\n\ttoken_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xad\x05\n GetIdentityTokenBalancesResponse\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse.GetIdentityTokenBalancesResponseV0H\x00\x1a\x8f\x04\n\"GetIdentityTokenBalancesResponseV0\x12\x86\x01\n\x0etoken_balances\x18\x01 \x01(\x0b\x32l.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse.GetIdentityTokenBalancesResponseV0.TokenBalancesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aG\n\x11TokenBalanceEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x14\n\x07\x62\x61lance\x18\x02 \x01(\x04H\x00\x88\x01\x01\x42\n\n\x08_balance\x1a\x9a\x01\n\rTokenBalances\x12\x88\x01\n\x0etoken_balances\x18\x01 \x03(\x0b\x32p.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse.GetIdentityTokenBalancesResponseV0.TokenBalanceEntryB\x08\n\x06resultB\t\n\x07version\"\xfc\x01\n!GetIdentitiesTokenBalancesRequest\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesRequest.GetIdentitiesTokenBalancesRequestV0H\x00\x1a\\\n#GetIdentitiesTokenBalancesRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x14\n\x0cidentity_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xf2\x05\n\"GetIdentitiesTokenBalancesResponse\x12p\n\x02v0\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse.GetIdentitiesTokenBalancesResponseV0H\x00\x1a\xce\x04\n$GetIdentitiesTokenBalancesResponseV0\x12\x9b\x01\n\x17identity_token_balances\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse.GetIdentitiesTokenBalancesResponseV0.IdentityTokenBalancesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aR\n\x19IdentityTokenBalanceEntry\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x14\n\x07\x62\x61lance\x18\x02 \x01(\x04H\x00\x88\x01\x01\x42\n\n\x08_balance\x1a\xb7\x01\n\x15IdentityTokenBalances\x12\x9d\x01\n\x17identity_token_balances\x18\x01 \x03(\x0b\x32|.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse.GetIdentitiesTokenBalancesResponseV0.IdentityTokenBalanceEntryB\x08\n\x06resultB\t\n\x07version\"\xe8\x01\n\x1cGetIdentityTokenInfosRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetIdentityTokenInfosRequest.GetIdentityTokenInfosRequestV0H\x00\x1aW\n\x1eGetIdentityTokenInfosRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x11\n\ttoken_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\x98\x06\n\x1dGetIdentityTokenInfosResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0H\x00\x1a\x83\x05\n\x1fGetIdentityTokenInfosResponseV0\x12z\n\x0btoken_infos\x18\x01 \x01(\x0b\x32\x63.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0.TokenInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a(\n\x16TokenIdentityInfoEntry\x12\x0e\n\x06\x66rozen\x18\x01 \x01(\x08\x1a\xb0\x01\n\x0eTokenInfoEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x82\x01\n\x04info\x18\x02 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0.TokenIdentityInfoEntryH\x00\x88\x01\x01\x42\x07\n\x05_info\x1a\x8a\x01\n\nTokenInfos\x12|\n\x0btoken_infos\x18\x01 \x03(\x0b\x32g.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0.TokenInfoEntryB\x08\n\x06resultB\t\n\x07version\"\xf0\x01\n\x1eGetIdentitiesTokenInfosRequest\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosRequest.GetIdentitiesTokenInfosRequestV0H\x00\x1aY\n GetIdentitiesTokenInfosRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x14\n\x0cidentity_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xca\x06\n\x1fGetIdentitiesTokenInfosResponse\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0H\x00\x1a\xaf\x05\n!GetIdentitiesTokenInfosResponseV0\x12\x8f\x01\n\x14identity_token_infos\x18\x01 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0.IdentityTokenInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a(\n\x16TokenIdentityInfoEntry\x12\x0e\n\x06\x66rozen\x18\x01 \x01(\x08\x1a\xb7\x01\n\x0eTokenInfoEntry\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x86\x01\n\x04info\x18\x02 \x01(\x0b\x32s.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0.TokenIdentityInfoEntryH\x00\x88\x01\x01\x42\x07\n\x05_info\x1a\x97\x01\n\x12IdentityTokenInfos\x12\x80\x01\n\x0btoken_infos\x18\x01 \x03(\x0b\x32k.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0.TokenInfoEntryB\x08\n\x06resultB\t\n\x07version\"\xbf\x01\n\x17GetTokenStatusesRequest\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetTokenStatusesRequest.GetTokenStatusesRequestV0H\x00\x1a=\n\x19GetTokenStatusesRequestV0\x12\x11\n\ttoken_ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xe7\x04\n\x18GetTokenStatusesResponse\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetTokenStatusesResponse.GetTokenStatusesResponseV0H\x00\x1a\xe1\x03\n\x1aGetTokenStatusesResponseV0\x12v\n\x0etoken_statuses\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetTokenStatusesResponse.GetTokenStatusesResponseV0.TokenStatusesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x44\n\x10TokenStatusEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x13\n\x06paused\x18\x02 \x01(\x08H\x00\x88\x01\x01\x42\t\n\x07_paused\x1a\x88\x01\n\rTokenStatuses\x12w\n\x0etoken_statuses\x18\x01 \x03(\x0b\x32_.org.dash.platform.dapi.v0.GetTokenStatusesResponse.GetTokenStatusesResponseV0.TokenStatusEntryB\x08\n\x06resultB\t\n\x07version\"\xef\x01\n#GetTokenDirectPurchasePricesRequest\x12r\n\x02v0\x18\x01 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0H\x00\x1aI\n%GetTokenDirectPurchasePricesRequestV0\x12\x11\n\ttoken_ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x8b\t\n$GetTokenDirectPurchasePricesResponse\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0H\x00\x1a\xe1\x07\n&GetTokenDirectPurchasePricesResponseV0\x12\xa9\x01\n\x1ctoken_direct_purchase_prices\x18\x01 \x01(\x0b\x32\x80\x01.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.TokenDirectPurchasePricesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x33\n\x10PriceForQuantity\x12\x10\n\x08quantity\x18\x01 \x01(\x04\x12\r\n\x05price\x18\x02 \x01(\x04\x1a\xa7\x01\n\x0fPricingSchedule\x12\x93\x01\n\x12price_for_quantity\x18\x01 \x03(\x0b\x32w.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PriceForQuantity\x1a\xe4\x01\n\x1dTokenDirectPurchasePriceEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x15\n\x0b\x66ixed_price\x18\x02 \x01(\x04H\x00\x12\x90\x01\n\x0evariable_price\x18\x03 \x01(\x0b\x32v.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PricingScheduleH\x00\x42\x07\n\x05price\x1a\xc8\x01\n\x19TokenDirectPurchasePrices\x12\xaa\x01\n\x1btoken_direct_purchase_price\x18\x01 \x03(\x0b\x32\x84\x01.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.TokenDirectPurchasePriceEntryB\x08\n\x06resultB\t\n\x07version\"\xce\x01\n\x1bGetTokenContractInfoRequest\x12\x62\n\x02v0\x18\x01 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetTokenContractInfoRequest.GetTokenContractInfoRequestV0H\x00\x1a@\n\x1dGetTokenContractInfoRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xfb\x03\n\x1cGetTokenContractInfoResponse\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetTokenContractInfoResponse.GetTokenContractInfoResponseV0H\x00\x1a\xe9\x02\n\x1eGetTokenContractInfoResponseV0\x12|\n\x04\x64\x61ta\x18\x01 \x01(\x0b\x32l.org.dash.platform.dapi.v0.GetTokenContractInfoResponse.GetTokenContractInfoResponseV0.TokenContractInfoDataH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aM\n\x15TokenContractInfoData\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17token_contract_position\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xef\x04\n)GetTokenPreProgrammedDistributionsRequest\x12~\n\x02v0\x18\x01 \x01(\x0b\x32p.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0H\x00\x1a\xb6\x03\n+GetTokenPreProgrammedDistributionsRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x98\x01\n\rstart_at_info\x18\x02 \x01(\x0b\x32|.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0.StartAtInfoH\x00\x88\x01\x01\x12\x12\n\x05limit\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\x04 \x01(\x08\x1a\x9a\x01\n\x0bStartAtInfo\x12\x15\n\rstart_time_ms\x18\x01 \x01(\x04\x12\x1c\n\x0fstart_recipient\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x12%\n\x18start_recipient_included\x18\x03 \x01(\x08H\x01\x88\x01\x01\x42\x12\n\x10_start_recipientB\x1b\n\x19_start_recipient_includedB\x10\n\x0e_start_at_infoB\x08\n\x06_limitB\t\n\x07version\"\xec\x07\n*GetTokenPreProgrammedDistributionsResponse\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0H\x00\x1a\xaf\x06\n,GetTokenPreProgrammedDistributionsResponseV0\x12\xa5\x01\n\x13token_distributions\x18\x01 \x01(\x0b\x32\x85\x01.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a>\n\x16TokenDistributionEntry\x12\x14\n\x0crecipient_id\x18\x01 \x01(\x0c\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x04\x1a\xd4\x01\n\x1bTokenTimedDistributionEntry\x12\x11\n\ttimestamp\x18\x01 \x01(\x04\x12\xa1\x01\n\rdistributions\x18\x02 \x03(\x0b\x32\x89\x01.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry\x1a\xc3\x01\n\x12TokenDistributions\x12\xac\x01\n\x13token_distributions\x18\x01 \x03(\x0b\x32\x8e\x01.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntryB\x08\n\x06resultB\t\n\x07version\"\x82\x04\n-GetTokenPerpetualDistributionLastClaimRequest\x12\x86\x01\n\x02v0\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimRequest.GetTokenPerpetualDistributionLastClaimRequestV0H\x00\x1aI\n\x11\x43ontractTokenInfo\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17token_contract_position\x18\x02 \x01(\r\x1a\xf1\x01\n/GetTokenPerpetualDistributionLastClaimRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12v\n\rcontract_info\x18\x02 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimRequest.ContractTokenInfoH\x00\x88\x01\x01\x12\x13\n\x0bidentity_id\x18\x04 \x01(\x0c\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\x10\n\x0e_contract_infoB\t\n\x07version\"\x93\x05\n.GetTokenPerpetualDistributionLastClaimResponse\x12\x88\x01\n\x02v0\x18\x01 \x01(\x0b\x32z.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0H\x00\x1a\xca\x03\n0GetTokenPerpetualDistributionLastClaimResponseV0\x12\x9f\x01\n\nlast_claim\x18\x01 \x01(\x0b\x32\x88\x01.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0.LastClaimInfoH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1ax\n\rLastClaimInfo\x12\x1a\n\x0ctimestamp_ms\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x1a\n\x0c\x62lock_height\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12\x0f\n\x05\x65poch\x18\x03 \x01(\rH\x00\x12\x13\n\traw_bytes\x18\x04 \x01(\x0cH\x00\x42\t\n\x07paid_atB\x08\n\x06resultB\t\n\x07version\"\xca\x01\n\x1aGetTokenTotalSupplyRequest\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetTokenTotalSupplyRequest.GetTokenTotalSupplyRequestV0H\x00\x1a?\n\x1cGetTokenTotalSupplyRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xaf\x04\n\x1bGetTokenTotalSupplyResponse\x12\x62\n\x02v0\x18\x01 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetTokenTotalSupplyResponse.GetTokenTotalSupplyResponseV0H\x00\x1a\xa0\x03\n\x1dGetTokenTotalSupplyResponseV0\x12\x88\x01\n\x12token_total_supply\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetTokenTotalSupplyResponse.GetTokenTotalSupplyResponseV0.TokenTotalSupplyEntryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1ax\n\x15TokenTotalSupplyEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x30\n(total_aggregated_amount_in_user_accounts\x18\x02 \x01(\x04\x12\x1b\n\x13total_system_amount\x18\x03 \x01(\x04\x42\x08\n\x06resultB\t\n\x07version\"\xd2\x01\n\x13GetGroupInfoRequest\x12R\n\x02v0\x18\x01 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetGroupInfoRequest.GetGroupInfoRequestV0H\x00\x1a\\\n\x15GetGroupInfoRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17group_contract_position\x18\x02 \x01(\r\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xd4\x05\n\x14GetGroupInfoResponse\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0H\x00\x1a\xda\x04\n\x16GetGroupInfoResponseV0\x12\x66\n\ngroup_info\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0.GroupInfoH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x04 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x34\n\x10GroupMemberEntry\x12\x11\n\tmember_id\x18\x01 \x01(\x0c\x12\r\n\x05power\x18\x02 \x01(\r\x1a\x98\x01\n\x0eGroupInfoEntry\x12h\n\x07members\x18\x01 \x03(\x0b\x32W.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0.GroupMemberEntry\x12\x1c\n\x14group_required_power\x18\x02 \x01(\r\x1a\x8a\x01\n\tGroupInfo\x12n\n\ngroup_info\x18\x01 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0.GroupInfoEntryH\x00\x88\x01\x01\x42\r\n\x0b_group_infoB\x08\n\x06resultB\t\n\x07version\"\xed\x03\n\x14GetGroupInfosRequest\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetGroupInfosRequest.GetGroupInfosRequestV0H\x00\x1au\n\x1cStartAtGroupContractPosition\x12%\n\x1dstart_group_contract_position\x18\x01 \x01(\r\x12.\n&start_group_contract_position_included\x18\x02 \x01(\x08\x1a\xfc\x01\n\x16GetGroupInfosRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12{\n start_at_group_contract_position\x18\x02 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetGroupInfosRequest.StartAtGroupContractPositionH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\x04 \x01(\x08\x42#\n!_start_at_group_contract_positionB\x08\n\x06_countB\t\n\x07version\"\xff\x05\n\x15GetGroupInfosResponse\x12V\n\x02v0\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0H\x00\x1a\x82\x05\n\x17GetGroupInfosResponseV0\x12j\n\x0bgroup_infos\x18\x01 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0.GroupInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x04 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x34\n\x10GroupMemberEntry\x12\x11\n\tmember_id\x18\x01 \x01(\x0c\x12\r\n\x05power\x18\x02 \x01(\r\x1a\xc3\x01\n\x16GroupPositionInfoEntry\x12\x1f\n\x17group_contract_position\x18\x01 \x01(\r\x12j\n\x07members\x18\x02 \x03(\x0b\x32Y.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0.GroupMemberEntry\x12\x1c\n\x14group_required_power\x18\x03 \x01(\r\x1a\x82\x01\n\nGroupInfos\x12t\n\x0bgroup_infos\x18\x01 \x03(\x0b\x32_.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0.GroupPositionInfoEntryB\x08\n\x06resultB\t\n\x07version\"\xbe\x04\n\x16GetGroupActionsRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetGroupActionsRequest.GetGroupActionsRequestV0H\x00\x1aL\n\x0fStartAtActionId\x12\x17\n\x0fstart_action_id\x18\x01 \x01(\x0c\x12 \n\x18start_action_id_included\x18\x02 \x01(\x08\x1a\xc8\x02\n\x18GetGroupActionsRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17group_contract_position\x18\x02 \x01(\r\x12N\n\x06status\x18\x03 \x01(\x0e\x32>.org.dash.platform.dapi.v0.GetGroupActionsRequest.ActionStatus\x12\x62\n\x12start_at_action_id\x18\x04 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetGroupActionsRequest.StartAtActionIdH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x05 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\x06 \x01(\x08\x42\x15\n\x13_start_at_action_idB\x08\n\x06_count\"&\n\x0c\x41\x63tionStatus\x12\n\n\x06\x41\x43TIVE\x10\x00\x12\n\n\x06\x43LOSED\x10\x01\x42\t\n\x07version\"\xd6\x1e\n\x17GetGroupActionsResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0H\x00\x1a\xd3\x1d\n\x19GetGroupActionsResponseV0\x12r\n\rgroup_actions\x18\x01 \x01(\x0b\x32Y.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.GroupActionsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a[\n\tMintEvent\x12\x0e\n\x06\x61mount\x18\x01 \x01(\x04\x12\x14\n\x0crecipient_id\x18\x02 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a[\n\tBurnEvent\x12\x0e\n\x06\x61mount\x18\x01 \x01(\x04\x12\x14\n\x0c\x62urn_from_id\x18\x02 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1aJ\n\x0b\x46reezeEvent\x12\x11\n\tfrozen_id\x18\x01 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1aL\n\rUnfreezeEvent\x12\x11\n\tfrozen_id\x18\x01 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a\x66\n\x17\x44\x65stroyFrozenFundsEvent\x12\x11\n\tfrozen_id\x18\x01 \x01(\x0c\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x04\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a\x64\n\x13SharedEncryptedNote\x12\x18\n\x10sender_key_index\x18\x01 \x01(\r\x12\x1b\n\x13recipient_key_index\x18\x02 \x01(\r\x12\x16\n\x0e\x65ncrypted_data\x18\x03 \x01(\x0c\x1a{\n\x15PersonalEncryptedNote\x12!\n\x19root_encryption_key_index\x18\x01 \x01(\r\x12\'\n\x1f\x64\x65rivation_encryption_key_index\x18\x02 \x01(\r\x12\x16\n\x0e\x65ncrypted_data\x18\x03 \x01(\x0c\x1a\xe9\x01\n\x14\x45mergencyActionEvent\x12\x81\x01\n\x0b\x61\x63tion_type\x18\x01 \x01(\x0e\x32l.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.ActionType\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\"#\n\nActionType\x12\t\n\x05PAUSE\x10\x00\x12\n\n\x06RESUME\x10\x01\x42\x0e\n\x0c_public_note\x1a\x64\n\x16TokenConfigUpdateEvent\x12 \n\x18token_config_update_item\x18\x01 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a\xe6\x03\n\x1eUpdateDirectPurchasePriceEvent\x12\x15\n\x0b\x66ixed_price\x18\x01 \x01(\x04H\x00\x12\x95\x01\n\x0evariable_price\x18\x02 \x01(\x0b\x32{.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.PricingScheduleH\x00\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x01\x88\x01\x01\x1a\x33\n\x10PriceForQuantity\x12\x10\n\x08quantity\x18\x01 \x01(\x04\x12\r\n\x05price\x18\x02 \x01(\x04\x1a\xac\x01\n\x0fPricingSchedule\x12\x98\x01\n\x12price_for_quantity\x18\x01 \x03(\x0b\x32|.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.PriceForQuantityB\x07\n\x05priceB\x0e\n\x0c_public_note\x1a\xfc\x02\n\x10GroupActionEvent\x12n\n\x0btoken_event\x18\x01 \x01(\x0b\x32W.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEventH\x00\x12t\n\x0e\x64ocument_event\x18\x02 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.DocumentEventH\x00\x12t\n\x0e\x63ontract_event\x18\x03 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.ContractEventH\x00\x42\x0c\n\nevent_type\x1a\x8b\x01\n\rDocumentEvent\x12r\n\x06\x63reate\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.DocumentCreateEventH\x00\x42\x06\n\x04type\x1a/\n\x13\x44ocumentCreateEvent\x12\x18\n\x10\x63reated_document\x18\x01 \x01(\x0c\x1a/\n\x13\x43ontractUpdateEvent\x12\x18\n\x10updated_contract\x18\x01 \x01(\x0c\x1a\x8b\x01\n\rContractEvent\x12r\n\x06update\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.ContractUpdateEventH\x00\x42\x06\n\x04type\x1a\xd1\x07\n\nTokenEvent\x12\x66\n\x04mint\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintEventH\x00\x12\x66\n\x04\x62urn\x18\x02 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnEventH\x00\x12j\n\x06\x66reeze\x18\x03 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.FreezeEventH\x00\x12n\n\x08unfreeze\x18\x04 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UnfreezeEventH\x00\x12\x84\x01\n\x14\x64\x65stroy_frozen_funds\x18\x05 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.DestroyFrozenFundsEventH\x00\x12}\n\x10\x65mergency_action\x18\x06 \x01(\x0b\x32\x61.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEventH\x00\x12\x82\x01\n\x13token_config_update\x18\x07 \x01(\x0b\x32\x63.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEventH\x00\x12\x83\x01\n\x0cupdate_price\x18\x08 \x01(\x0b\x32k.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEventH\x00\x42\x06\n\x04type\x1a\x93\x01\n\x10GroupActionEntry\x12\x11\n\taction_id\x18\x01 \x01(\x0c\x12l\n\x05\x65vent\x18\x02 \x01(\x0b\x32].org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.GroupActionEvent\x1a\x84\x01\n\x0cGroupActions\x12t\n\rgroup_actions\x18\x01 \x03(\x0b\x32].org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.GroupActionEntryB\x08\n\x06resultB\t\n\x07version\"\x88\x03\n\x1cGetGroupActionSignersRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetGroupActionSignersRequest.GetGroupActionSignersRequestV0H\x00\x1a\xce\x01\n\x1eGetGroupActionSignersRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17group_contract_position\x18\x02 \x01(\r\x12T\n\x06status\x18\x03 \x01(\x0e\x32\x44.org.dash.platform.dapi.v0.GetGroupActionSignersRequest.ActionStatus\x12\x11\n\taction_id\x18\x04 \x01(\x0c\x12\r\n\x05prove\x18\x05 \x01(\x08\"&\n\x0c\x41\x63tionStatus\x12\n\n\x06\x41\x43TIVE\x10\x00\x12\n\n\x06\x43LOSED\x10\x01\x42\t\n\x07version\"\x8b\x05\n\x1dGetGroupActionSignersResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetGroupActionSignersResponse.GetGroupActionSignersResponseV0H\x00\x1a\xf6\x03\n\x1fGetGroupActionSignersResponseV0\x12\x8b\x01\n\x14group_action_signers\x18\x01 \x01(\x0b\x32k.org.dash.platform.dapi.v0.GetGroupActionSignersResponse.GetGroupActionSignersResponseV0.GroupActionSignersH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x35\n\x11GroupActionSigner\x12\x11\n\tsigner_id\x18\x01 \x01(\x0c\x12\r\n\x05power\x18\x02 \x01(\r\x1a\x91\x01\n\x12GroupActionSigners\x12{\n\x07signers\x18\x01 \x03(\x0b\x32j.org.dash.platform.dapi.v0.GetGroupActionSignersResponse.GetGroupActionSignersResponseV0.GroupActionSignerB\x08\n\x06resultB\t\n\x07version\"\xb5\x01\n\x15GetAddressInfoRequest\x12V\n\x02v0\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0H\x00\x1a\x39\n\x17GetAddressInfoRequestV0\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x85\x01\n\x10\x41\x64\x64ressInfoEntry\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12J\n\x11\x62\x61lance_and_nonce\x18\x02 \x01(\x0b\x32*.org.dash.platform.dapi.v0.BalanceAndNonceH\x00\x88\x01\x01\x42\x14\n\x12_balance_and_nonce\"1\n\x0f\x42\x61lanceAndNonce\x12\x0f\n\x07\x62\x61lance\x18\x01 \x01(\x04\x12\r\n\x05nonce\x18\x02 \x01(\r\"_\n\x12\x41\x64\x64ressInfoEntries\x12I\n\x14\x61\x64\x64ress_info_entries\x18\x01 \x03(\x0b\x32+.org.dash.platform.dapi.v0.AddressInfoEntry\"m\n\x14\x41\x64\x64ressBalanceChange\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\x19\n\x0bset_balance\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12\x1c\n\x0e\x61\x64\x64_to_balance\x18\x03 \x01(\x04\x42\x02\x30\x01H\x00\x42\x0b\n\toperation\"x\n\x1a\x42lockAddressBalanceChanges\x12\x18\n\x0c\x62lock_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12@\n\x07\x63hanges\x18\x02 \x03(\x0b\x32/.org.dash.platform.dapi.v0.AddressBalanceChange\"k\n\x1b\x41\x64\x64ressBalanceUpdateEntries\x12L\n\rblock_changes\x18\x01 \x03(\x0b\x32\x35.org.dash.platform.dapi.v0.BlockAddressBalanceChanges\"\xe1\x02\n\x16GetAddressInfoResponse\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0H\x00\x1a\xe1\x01\n\x18GetAddressInfoResponseV0\x12I\n\x12\x61\x64\x64ress_info_entry\x18\x01 \x01(\x0b\x32+.org.dash.platform.dapi.v0.AddressInfoEntryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc3\x01\n\x18GetAddressesInfosRequest\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0H\x00\x1a>\n\x1aGetAddressesInfosRequestV0\x12\x11\n\taddresses\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xf1\x02\n\x19GetAddressesInfosResponse\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0H\x00\x1a\xe8\x01\n\x1bGetAddressesInfosResponseV0\x12M\n\x14\x61\x64\x64ress_info_entries\x18\x01 \x01(\x0b\x32-.org.dash.platform.dapi.v0.AddressInfoEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xb5\x01\n\x1dGetAddressesTrunkStateRequest\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0H\x00\x1a!\n\x1fGetAddressesTrunkStateRequestV0B\t\n\x07version\"\xaa\x02\n\x1eGetAddressesTrunkStateResponse\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0H\x00\x1a\x92\x01\n GetAddressesTrunkStateResponseV0\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\t\n\x07version\"\xf0\x01\n\x1eGetAddressesBranchStateRequest\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0H\x00\x1aY\n GetAddressesBranchStateRequestV0\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05\x64\x65pth\x18\x02 \x01(\r\x12\x19\n\x11\x63heckpoint_height\x18\x03 \x01(\x04\x42\t\n\x07version\"\xd1\x01\n\x1fGetAddressesBranchStateResponse\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0H\x00\x1a\x37\n!GetAddressesBranchStateResponseV0\x12\x12\n\nmerk_proof\x18\x02 \x01(\x0c\x42\t\n\x07version\"\x9e\x02\n%GetRecentAddressBalanceChangesRequest\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0H\x00\x1ar\n\'GetRecentAddressBalanceChangesRequestV0\x12\x18\n\x0cstart_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x02 \x01(\x08\x12\x1e\n\x16start_height_exclusive\x18\x03 \x01(\x08\x42\t\n\x07version\"\xb8\x03\n&GetRecentAddressBalanceChangesResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0H\x00\x1a\x88\x02\n(GetRecentAddressBalanceChangesResponseV0\x12`\n\x1e\x61\x64\x64ress_balance_update_entries\x18\x01 \x01(\x0b\x32\x36.org.dash.platform.dapi.v0.AddressBalanceUpdateEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"G\n\x16\x42lockHeightCreditEntry\x12\x18\n\x0c\x62lock_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x13\n\x07\x63redits\x18\x02 \x01(\x04\x42\x02\x30\x01\"\xb0\x01\n\x1d\x43ompactedAddressBalanceChange\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\x19\n\x0bset_credits\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12V\n\x19\x61\x64\x64_to_credits_operations\x18\x03 \x01(\x0b\x32\x31.org.dash.platform.dapi.v0.AddToCreditsOperationsH\x00\x42\x0b\n\toperation\"\\\n\x16\x41\x64\x64ToCreditsOperations\x12\x42\n\x07\x65ntries\x18\x01 \x03(\x0b\x32\x31.org.dash.platform.dapi.v0.BlockHeightCreditEntry\"\xae\x01\n#CompactedBlockAddressBalanceChanges\x12\x1e\n\x12start_block_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1c\n\x10\x65nd_block_height\x18\x02 \x01(\x04\x42\x02\x30\x01\x12I\n\x07\x63hanges\x18\x03 \x03(\x0b\x32\x38.org.dash.platform.dapi.v0.CompactedAddressBalanceChange\"\x87\x01\n$CompactedAddressBalanceUpdateEntries\x12_\n\x17\x63ompacted_block_changes\x18\x01 \x03(\x0b\x32>.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges\"\xa9\x02\n.GetRecentCompactedAddressBalanceChangesRequest\x12\x88\x01\n\x02v0\x18\x01 \x01(\x0b\x32z.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0H\x00\x1a\x61\n0GetRecentCompactedAddressBalanceChangesRequestV0\x12\x1e\n\x12start_block_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xf0\x03\n/GetRecentCompactedAddressBalanceChangesResponse\x12\x8a\x01\n\x02v0\x18\x01 \x01(\x0b\x32|.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0H\x00\x1a\xa4\x02\n1GetRecentCompactedAddressBalanceChangesResponseV0\x12s\n(compacted_address_balance_update_entries\x18\x01 \x01(\x0b\x32?.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xf4\x01\n GetShieldedEncryptedNotesRequest\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0H\x00\x1aW\n\"GetShieldedEncryptedNotesRequestV0\x12\x13\n\x0bstart_index\x18\x01 \x01(\x04\x12\r\n\x05\x63ount\x18\x02 \x01(\r\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xbc\x05\n!GetShieldedEncryptedNotesResponse\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0H\x00\x1a\x9b\x04\n#GetShieldedEncryptedNotesResponseV0\x12\x8a\x01\n\x0f\x65ncrypted_notes\x18\x01 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aW\n\rEncryptedNote\x12\x11\n\tnullifier\x18\x01 \x01(\x0c\x12\x0b\n\x03\x63mx\x18\x02 \x01(\x0c\x12\x16\n\x0e\x65ncrypted_note\x18\x03 \x01(\x0c\x12\x0e\n\x06\x63v_net\x18\x04 \x01(\x0c\x1a\x91\x01\n\x0e\x45ncryptedNotes\x12\x7f\n\x07\x65ntries\x18\x01 \x03(\x0b\x32n.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNoteB\x08\n\x06resultB\t\n\x07version\"\xb4\x01\n\x19GetShieldedAnchorsRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0H\x00\x1a,\n\x1bGetShieldedAnchorsRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xb1\x03\n\x1aGetShieldedAnchorsResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0H\x00\x1a\xa5\x02\n\x1cGetShieldedAnchorsResponseV0\x12m\n\x07\x61nchors\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.AnchorsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1a\n\x07\x41nchors\x12\x0f\n\x07\x61nchors\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\xd8\x01\n\"GetMostRecentShieldedAnchorRequest\x12p\n\x02v0\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0H\x00\x1a\x35\n$GetMostRecentShieldedAnchorRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xdc\x02\n#GetMostRecentShieldedAnchorResponse\x12r\n\x02v0\x18\x01 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0H\x00\x1a\xb5\x01\n%GetMostRecentShieldedAnchorResponseV0\x12\x10\n\x06\x61nchor\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbc\x01\n\x1bGetShieldedPoolStateRequest\x12\x62\n\x02v0\x18\x01 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0H\x00\x1a.\n\x1dGetShieldedPoolStateRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xcb\x02\n\x1cGetShieldedPoolStateResponse\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0H\x00\x1a\xb9\x01\n\x1eGetShieldedPoolStateResponseV0\x12\x1b\n\rtotal_balance\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc0\x01\n\x1cGetShieldedNotesCountRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0H\x00\x1a/\n\x1eGetShieldedNotesCountRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xd3\x02\n\x1dGetShieldedNotesCountResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0H\x00\x1a\xbe\x01\n\x1fGetShieldedNotesCountResponseV0\x12\x1f\n\x11total_notes_count\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xd4\x01\n\x1cGetShieldedNullifiersRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0H\x00\x1a\x43\n\x1eGetShieldedNullifiersRequestV0\x12\x12\n\nnullifiers\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x86\x05\n\x1dGetShieldedNullifiersResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0H\x00\x1a\xf1\x03\n\x1fGetShieldedNullifiersResponseV0\x12\x88\x01\n\x12nullifier_statuses\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatusesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x36\n\x0fNullifierStatus\x12\x11\n\tnullifier\x18\x01 \x01(\x0c\x12\x10\n\x08is_spent\x18\x02 \x01(\x08\x1a\x8e\x01\n\x11NullifierStatuses\x12y\n\x07\x65ntries\x18\x01 \x03(\x0b\x32h.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatusB\x08\n\x06resultB\t\n\x07version*Z\n\nKeyPurpose\x12\x12\n\x0e\x41UTHENTICATION\x10\x00\x12\x0e\n\nENCRYPTION\x10\x01\x12\x0e\n\nDECRYPTION\x10\x02\x12\x0c\n\x08TRANSFER\x10\x03\x12\n\n\x06VOTING\x10\x05\x32\xce\x44\n\x08Platform\x12\x93\x01\n\x18\x62roadcastStateTransition\x12:.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest\x1a;.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse\x12l\n\x0bgetIdentity\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platform.dapi.v0.GetIdentityResponse\x12x\n\x0fgetIdentityKeys\x12\x31.org.dash.platform.dapi.v0.GetIdentityKeysRequest\x1a\x32.org.dash.platform.dapi.v0.GetIdentityKeysResponse\x12\x96\x01\n\x19getIdentitiesContractKeys\x12;.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest\x1a<.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse\x12{\n\x10getIdentityNonce\x12\x32.org.dash.platform.dapi.v0.GetIdentityNonceRequest\x1a\x33.org.dash.platform.dapi.v0.GetIdentityNonceResponse\x12\x93\x01\n\x18getIdentityContractNonce\x12:.org.dash.platform.dapi.v0.GetIdentityContractNonceRequest\x1a;.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse\x12\x81\x01\n\x12getIdentityBalance\x12\x34.org.dash.platform.dapi.v0.GetIdentityBalanceRequest\x1a\x35.org.dash.platform.dapi.v0.GetIdentityBalanceResponse\x12\x8a\x01\n\x15getIdentitiesBalances\x12\x37.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest\x1a\x38.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse\x12\xa2\x01\n\x1dgetIdentityBalanceAndRevision\x12?.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionRequest\x1a@.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse\x12\xaf\x01\n#getEvonodesProposedEpochBlocksByIds\x12\x45.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest\x1a\x41.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse\x12\xb3\x01\n%getEvonodesProposedEpochBlocksByRange\x12G.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest\x1a\x41.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse\x12x\n\x0fgetDataContract\x12\x31.org.dash.platform.dapi.v0.GetDataContractRequest\x1a\x32.org.dash.platform.dapi.v0.GetDataContractResponse\x12\x8d\x01\n\x16getDataContractHistory\x12\x38.org.dash.platform.dapi.v0.GetDataContractHistoryRequest\x1a\x39.org.dash.platform.dapi.v0.GetDataContractHistoryResponse\x12{\n\x10getDataContracts\x12\x32.org.dash.platform.dapi.v0.GetDataContractsRequest\x1a\x33.org.dash.platform.dapi.v0.GetDataContractsResponse\x12\x81\x01\n\x12getDocumentHistory\x12\x34.org.dash.platform.dapi.v0.GetDocumentHistoryRequest\x1a\x35.org.dash.platform.dapi.v0.GetDocumentHistoryResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsResponse\x12\x99\x01\n\x1agetIdentityByPublicKeyHash\x12<.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashRequest\x1a=.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashResponse\x12\xb4\x01\n#getIdentityByNonUniquePublicKeyHash\x12\x45.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest\x1a\x46.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse\x12\x9f\x01\n\x1cwaitForStateTransitionResult\x12>.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest\x1a?.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse\x12\x81\x01\n\x12getConsensusParams\x12\x34.org.dash.platform.dapi.v0.GetConsensusParamsRequest\x1a\x35.org.dash.platform.dapi.v0.GetConsensusParamsResponse\x12\xa5\x01\n\x1egetProtocolVersionUpgradeState\x12@.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest\x1a\x41.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse\x12\xb4\x01\n#getProtocolVersionUpgradeVoteStatus\x12\x45.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest\x1a\x46.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse\x12r\n\rgetEpochsInfo\x12/.org.dash.platform.dapi.v0.GetEpochsInfoRequest\x1a\x30.org.dash.platform.dapi.v0.GetEpochsInfoResponse\x12\x8d\x01\n\x16getFinalizedEpochInfos\x12\x38.org.dash.platform.dapi.v0.GetFinalizedEpochInfosRequest\x1a\x39.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse\x12\x8a\x01\n\x15getContestedResources\x12\x37.org.dash.platform.dapi.v0.GetContestedResourcesRequest\x1a\x38.org.dash.platform.dapi.v0.GetContestedResourcesResponse\x12\xa2\x01\n\x1dgetContestedResourceVoteState\x12?.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest\x1a@.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse\x12\xba\x01\n%getContestedResourceVotersForIdentity\x12G.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityRequest\x1aH.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityResponse\x12\xae\x01\n!getContestedResourceIdentityVotes\x12\x43.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesRequest\x1a\x44.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse\x12\x8a\x01\n\x15getVotePollsByEndDate\x12\x37.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest\x1a\x38.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse\x12\xa5\x01\n\x1egetPrefundedSpecializedBalance\x12@.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceRequest\x1a\x41.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse\x12\x96\x01\n\x19getTotalCreditsInPlatform\x12;.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest\x1a<.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse\x12x\n\x0fgetPathElements\x12\x31.org.dash.platform.dapi.v0.GetPathElementsRequest\x1a\x32.org.dash.platform.dapi.v0.GetPathElementsResponse\x12\x66\n\tgetStatus\x12+.org.dash.platform.dapi.v0.GetStatusRequest\x1a,.org.dash.platform.dapi.v0.GetStatusResponse\x12\x8a\x01\n\x15getCurrentQuorumsInfo\x12\x37.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest\x1a\x38.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse\x12\x93\x01\n\x18getIdentityTokenBalances\x12:.org.dash.platform.dapi.v0.GetIdentityTokenBalancesRequest\x1a;.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse\x12\x99\x01\n\x1agetIdentitiesTokenBalances\x12<.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesRequest\x1a=.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse\x12\x8a\x01\n\x15getIdentityTokenInfos\x12\x37.org.dash.platform.dapi.v0.GetIdentityTokenInfosRequest\x1a\x38.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse\x12\x90\x01\n\x17getIdentitiesTokenInfos\x12\x39.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosRequest\x1a:.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse\x12{\n\x10getTokenStatuses\x12\x32.org.dash.platform.dapi.v0.GetTokenStatusesRequest\x1a\x33.org.dash.platform.dapi.v0.GetTokenStatusesResponse\x12\x9f\x01\n\x1cgetTokenDirectPurchasePrices\x12>.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesRequest\x1a?.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse\x12\x87\x01\n\x14getTokenContractInfo\x12\x36.org.dash.platform.dapi.v0.GetTokenContractInfoRequest\x1a\x37.org.dash.platform.dapi.v0.GetTokenContractInfoResponse\x12\xb1\x01\n\"getTokenPreProgrammedDistributions\x12\x44.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsRequest\x1a\x45.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse\x12\xbd\x01\n&getTokenPerpetualDistributionLastClaim\x12H.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimRequest\x1aI.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimResponse\x12\x84\x01\n\x13getTokenTotalSupply\x12\x35.org.dash.platform.dapi.v0.GetTokenTotalSupplyRequest\x1a\x36.org.dash.platform.dapi.v0.GetTokenTotalSupplyResponse\x12o\n\x0cgetGroupInfo\x12..org.dash.platform.dapi.v0.GetGroupInfoRequest\x1a/.org.dash.platform.dapi.v0.GetGroupInfoResponse\x12r\n\rgetGroupInfos\x12/.org.dash.platform.dapi.v0.GetGroupInfosRequest\x1a\x30.org.dash.platform.dapi.v0.GetGroupInfosResponse\x12x\n\x0fgetGroupActions\x12\x31.org.dash.platform.dapi.v0.GetGroupActionsRequest\x1a\x32.org.dash.platform.dapi.v0.GetGroupActionsResponse\x12\x8a\x01\n\x15getGroupActionSigners\x12\x37.org.dash.platform.dapi.v0.GetGroupActionSignersRequest\x1a\x38.org.dash.platform.dapi.v0.GetGroupActionSignersResponse\x12u\n\x0egetAddressInfo\x12\x30.org.dash.platform.dapi.v0.GetAddressInfoRequest\x1a\x31.org.dash.platform.dapi.v0.GetAddressInfoResponse\x12~\n\x11getAddressesInfos\x12\x33.org.dash.platform.dapi.v0.GetAddressesInfosRequest\x1a\x34.org.dash.platform.dapi.v0.GetAddressesInfosResponse\x12\x8d\x01\n\x16getAddressesTrunkState\x12\x38.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest\x1a\x39.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse\x12\x90\x01\n\x17getAddressesBranchState\x12\x39.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest\x1a:.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse\x12\xa5\x01\n\x1egetRecentAddressBalanceChanges\x12@.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest\x1a\x41.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse\x12\xc0\x01\n\'getRecentCompactedAddressBalanceChanges\x12I.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest\x1aJ.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse\x12\x96\x01\n\x19getShieldedEncryptedNotes\x12;.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest\x1a<.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse\x12\x81\x01\n\x12getShieldedAnchors\x12\x34.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest\x1a\x35.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse\x12\x9c\x01\n\x1bgetMostRecentShieldedAnchor\x12=.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest\x1a>.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse\x12\x87\x01\n\x14getShieldedPoolState\x12\x36.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest\x1a\x37.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse\x12\x8a\x01\n\x15getShieldedNotesCount\x12\x37.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest\x1a\x38.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse\x12\x8a\x01\n\x15getShieldedNullifiers\x12\x37.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest\x1a\x38.org.dash.platform.dapi.v0.GetShieldedNullifiersResponseb\x06proto3'
+  serialized_pb=b'\n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\x1a\x1egoogle/protobuf/wrappers.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x81\x01\n\x05Proof\x12\x15\n\rgrovedb_proof\x18\x01 \x01(\x0c\x12\x13\n\x0bquorum_hash\x18\x02 \x01(\x0c\x12\x11\n\tsignature\x18\x03 \x01(\x0c\x12\r\n\x05round\x18\x04 \x01(\r\x12\x15\n\rblock_id_hash\x18\x05 \x01(\x0c\x12\x13\n\x0bquorum_type\x18\x06 \x01(\r\"\x98\x01\n\x10ResponseMetadata\x12\x12\n\x06height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12 \n\x18\x63ore_chain_locked_height\x18\x02 \x01(\r\x12\r\n\x05\x65poch\x18\x03 \x01(\r\x12\x13\n\x07time_ms\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x18\n\x10protocol_version\x18\x05 \x01(\r\x12\x10\n\x08\x63hain_id\x18\x06 \x01(\t\"L\n\x1dStateTransitionBroadcastError\x12\x0c\n\x04\x63ode\x18\x01 \x01(\r\x12\x0f\n\x07message\x18\x02 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\";\n\x1f\x42roadcastStateTransitionRequest\x12\x18\n\x10state_transition\x18\x01 \x01(\x0c\"\"\n BroadcastStateTransitionResponse\"\xa4\x01\n\x12GetIdentityRequest\x12P\n\x02v0\x18\x01 \x01(\x0b\x32\x42.org.dash.platform.dapi.v0.GetIdentityRequest.GetIdentityRequestV0H\x00\x1a\x31\n\x14GetIdentityRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xc1\x01\n\x17GetIdentityNonceRequest\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetIdentityNonceRequest.GetIdentityNonceRequestV0H\x00\x1a?\n\x19GetIdentityNonceRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xf6\x01\n\x1fGetIdentityContractNonceRequest\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetIdentityContractNonceRequest.GetIdentityContractNonceRequestV0H\x00\x1a\\\n!GetIdentityContractNonceRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x13\n\x0b\x63ontract_id\x18\x02 \x01(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xc0\x01\n\x19GetIdentityBalanceRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetIdentityBalanceRequest.GetIdentityBalanceRequestV0H\x00\x1a\x38\n\x1bGetIdentityBalanceRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xec\x01\n$GetIdentityBalanceAndRevisionRequest\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionRequest.GetIdentityBalanceAndRevisionRequestV0H\x00\x1a\x43\n&GetIdentityBalanceAndRevisionRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x9e\x02\n\x13GetIdentityResponse\x12R\n\x02v0\x18\x01 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetIdentityResponse.GetIdentityResponseV0H\x00\x1a\xa7\x01\n\x15GetIdentityResponseV0\x12\x12\n\x08identity\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbc\x02\n\x18GetIdentityNonceResponse\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetIdentityNonceResponse.GetIdentityNonceResponseV0H\x00\x1a\xb6\x01\n\x1aGetIdentityNonceResponseV0\x12\x1c\n\x0eidentity_nonce\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xe5\x02\n GetIdentityContractNonceResponse\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse.GetIdentityContractNonceResponseV0H\x00\x1a\xc7\x01\n\"GetIdentityContractNonceResponseV0\x12%\n\x17identity_contract_nonce\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbd\x02\n\x1aGetIdentityBalanceResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetIdentityBalanceResponse.GetIdentityBalanceResponseV0H\x00\x1a\xb1\x01\n\x1cGetIdentityBalanceResponseV0\x12\x15\n\x07\x62\x61lance\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xb1\x04\n%GetIdentityBalanceAndRevisionResponse\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0H\x00\x1a\x84\x03\n\'GetIdentityBalanceAndRevisionResponseV0\x12\x9b\x01\n\x14\x62\x61lance_and_revision\x18\x01 \x01(\x0b\x32{.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse.GetIdentityBalanceAndRevisionResponseV0.BalanceAndRevisionH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a?\n\x12\x42\x61lanceAndRevision\x12\x13\n\x07\x62\x61lance\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x14\n\x08revision\x18\x02 \x01(\x04\x42\x02\x30\x01\x42\x08\n\x06resultB\t\n\x07version\"\xd1\x01\n\x0eKeyRequestType\x12\x36\n\x08\x61ll_keys\x18\x01 \x01(\x0b\x32\".org.dash.platform.dapi.v0.AllKeysH\x00\x12@\n\rspecific_keys\x18\x02 \x01(\x0b\x32\'.org.dash.platform.dapi.v0.SpecificKeysH\x00\x12:\n\nsearch_key\x18\x03 \x01(\x0b\x32$.org.dash.platform.dapi.v0.SearchKeyH\x00\x42\t\n\x07request\"\t\n\x07\x41llKeys\"\x1f\n\x0cSpecificKeys\x12\x0f\n\x07key_ids\x18\x01 \x03(\r\"\xb6\x01\n\tSearchKey\x12I\n\x0bpurpose_map\x18\x01 \x03(\x0b\x32\x34.org.dash.platform.dapi.v0.SearchKey.PurposeMapEntry\x1a^\n\x0fPurposeMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12:\n\x05value\x18\x02 \x01(\x0b\x32+.org.dash.platform.dapi.v0.SecurityLevelMap:\x02\x38\x01\"\xbf\x02\n\x10SecurityLevelMap\x12]\n\x12security_level_map\x18\x01 \x03(\x0b\x32\x41.org.dash.platform.dapi.v0.SecurityLevelMap.SecurityLevelMapEntry\x1aw\n\x15SecurityLevelMapEntry\x12\x0b\n\x03key\x18\x01 \x01(\r\x12M\n\x05value\x18\x02 \x01(\x0e\x32>.org.dash.platform.dapi.v0.SecurityLevelMap.KeyKindRequestType:\x02\x38\x01\"S\n\x12KeyKindRequestType\x12\x1f\n\x1b\x43URRENT_KEY_OF_KIND_REQUEST\x10\x00\x12\x1c\n\x18\x41LL_KEYS_OF_KIND_REQUEST\x10\x01\"\xda\x02\n\x16GetIdentityKeysRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetIdentityKeysRequest.GetIdentityKeysRequestV0H\x00\x1a\xda\x01\n\x18GetIdentityKeysRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12?\n\x0crequest_type\x18\x02 \x01(\x0b\x32).org.dash.platform.dapi.v0.KeyRequestType\x12+\n\x05limit\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x04 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\t\n\x07version\"\x99\x03\n\x17GetIdentityKeysResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetIdentityKeysResponse.GetIdentityKeysResponseV0H\x00\x1a\x96\x02\n\x19GetIdentityKeysResponseV0\x12\x61\n\x04keys\x18\x01 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetIdentityKeysResponse.GetIdentityKeysResponseV0.KeysH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1a\n\x04Keys\x12\x12\n\nkeys_bytes\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\xef\x02\n GetIdentitiesContractKeysRequest\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest.GetIdentitiesContractKeysRequestV0H\x00\x1a\xd1\x01\n\"GetIdentitiesContractKeysRequestV0\x12\x16\n\x0eidentities_ids\x18\x01 \x03(\x0c\x12\x13\n\x0b\x63ontract_id\x18\x02 \x01(\x0c\x12\x1f\n\x12\x64ocument_type_name\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x37\n\x08purposes\x18\x04 \x03(\x0e\x32%.org.dash.platform.dapi.v0.KeyPurpose\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\x15\n\x13_document_type_nameB\t\n\x07version\"\xdf\x06\n!GetIdentitiesContractKeysResponse\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0H\x00\x1a\xbe\x05\n#GetIdentitiesContractKeysResponseV0\x12\x8a\x01\n\x0fidentities_keys\x18\x01 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentitiesKeysH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aY\n\x0bPurposeKeys\x12\x36\n\x07purpose\x18\x01 \x01(\x0e\x32%.org.dash.platform.dapi.v0.KeyPurpose\x12\x12\n\nkeys_bytes\x18\x02 \x03(\x0c\x1a\x9f\x01\n\x0cIdentityKeys\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12z\n\x04keys\x18\x02 \x03(\x0b\x32l.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.PurposeKeys\x1a\x90\x01\n\x0eIdentitiesKeys\x12~\n\x07\x65ntries\x18\x01 \x03(\x0b\x32m.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse.GetIdentitiesContractKeysResponseV0.IdentityKeysB\x08\n\x06resultB\t\n\x07version\"\xa4\x02\n*GetEvonodesProposedEpochBlocksByIdsRequest\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest.GetEvonodesProposedEpochBlocksByIdsRequestV0H\x00\x1ah\n,GetEvonodesProposedEpochBlocksByIdsRequestV0\x12\x12\n\x05\x65poch\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x0b\n\x03ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\x08\n\x06_epochB\t\n\x07version\"\x92\x06\n&GetEvonodesProposedEpochBlocksResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0H\x00\x1a\xe2\x04\n(GetEvonodesProposedEpochBlocksResponseV0\x12\xb1\x01\n#evonodes_proposed_block_counts_info\x18\x01 \x01(\x0b\x32\x81\x01.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodesProposedBlocksH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a?\n\x15\x45vonodeProposedBlocks\x12\x13\n\x0bpro_tx_hash\x18\x01 \x01(\x0c\x12\x11\n\x05\x63ount\x18\x02 \x01(\x04\x42\x02\x30\x01\x1a\xc4\x01\n\x16\x45vonodesProposedBlocks\x12\xa9\x01\n\x1e\x65vonodes_proposed_block_counts\x18\x01 \x03(\x0b\x32\x80\x01.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse.GetEvonodesProposedEpochBlocksResponseV0.EvonodeProposedBlocksB\x08\n\x06resultB\t\n\x07version\"\xf2\x02\n,GetEvonodesProposedEpochBlocksByRangeRequest\x12\x84\x01\n\x02v0\x18\x01 \x01(\x0b\x32v.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest.GetEvonodesProposedEpochBlocksByRangeRequestV0H\x00\x1a\xaf\x01\n.GetEvonodesProposedEpochBlocksByRangeRequestV0\x12\x12\n\x05\x65poch\x18\x01 \x01(\rH\x01\x88\x01\x01\x12\x12\n\x05limit\x18\x02 \x01(\rH\x02\x88\x01\x01\x12\x15\n\x0bstart_after\x18\x03 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x04 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\x07\n\x05startB\x08\n\x06_epochB\x08\n\x06_limitB\t\n\x07version\"\xcd\x01\n\x1cGetIdentitiesBalancesRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest.GetIdentitiesBalancesRequestV0H\x00\x1a<\n\x1eGetIdentitiesBalancesRequestV0\x12\x0b\n\x03ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x9f\x05\n\x1dGetIdentitiesBalancesResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0H\x00\x1a\x8a\x04\n\x1fGetIdentitiesBalancesResponseV0\x12\x8a\x01\n\x13identities_balances\x18\x01 \x01(\x0b\x32k.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentitiesBalancesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aL\n\x0fIdentityBalance\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x18\n\x07\x62\x61lance\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x88\x01\x01\x42\n\n\x08_balance\x1a\x8f\x01\n\x12IdentitiesBalances\x12y\n\x07\x65ntries\x18\x01 \x03(\x0b\x32h.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse.GetIdentitiesBalancesResponseV0.IdentityBalanceB\x08\n\x06resultB\t\n\x07version\"\xb4\x01\n\x16GetDataContractRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetDataContractRequest.GetDataContractRequestV0H\x00\x1a\x35\n\x18GetDataContractRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xb3\x02\n\x17GetDataContractResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetDataContractResponse.GetDataContractResponseV0H\x00\x1a\xb0\x01\n\x19GetDataContractResponseV0\x12\x17\n\rdata_contract\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xb9\x01\n\x17GetDataContractsRequest\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetDataContractsRequest.GetDataContractsRequestV0H\x00\x1a\x37\n\x19GetDataContractsRequestV0\x12\x0b\n\x03ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xcf\x04\n\x18GetDataContractsResponse\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetDataContractsResponse.GetDataContractsResponseV0H\x00\x1a[\n\x11\x44\x61taContractEntry\x12\x12\n\nidentifier\x18\x01 \x01(\x0c\x12\x32\n\rdata_contract\x18\x02 \x01(\x0b\x32\x1b.google.protobuf.BytesValue\x1au\n\rDataContracts\x12\x64\n\x15\x64\x61ta_contract_entries\x18\x01 \x03(\x0b\x32\x45.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractEntry\x1a\xf5\x01\n\x1aGetDataContractsResponseV0\x12[\n\x0e\x64\x61ta_contracts\x18\x01 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDataContractsResponse.DataContractsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc5\x02\n\x1dGetDataContractHistoryRequest\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetDataContractHistoryRequest.GetDataContractHistoryRequestV0H\x00\x1a\xb0\x01\n\x1fGetDataContractHistoryRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12+\n\x05limit\x18\x02 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\x17\n\x0bstart_at_ms\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\t\n\x07version\"\xb2\x05\n\x1eGetDataContractHistoryResponse\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0H\x00\x1a\x9a\x04\n GetDataContractHistoryResponseV0\x12\x8f\x01\n\x15\x64\x61ta_contract_history\x18\x01 \x01(\x0b\x32n.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a;\n\x18\x44\x61taContractHistoryEntry\x12\x10\n\x04\x64\x61te\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05value\x18\x02 \x01(\x0c\x1a\xaa\x01\n\x13\x44\x61taContractHistory\x12\x92\x01\n\x15\x64\x61ta_contract_entries\x18\x01 \x03(\x0b\x32s.org.dash.platform.dapi.v0.GetDataContractHistoryResponse.GetDataContractHistoryResponseV0.DataContractHistoryEntryB\x08\n\x06resultB\t\n\x07version\"\xdb\x17\n\x13GetDocumentsRequest\x12R\n\x02v0\x18\x01 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV0H\x00\x12R\n\x02v1\x18\x02 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1H\x00\x1a\xfe\x02\n\x12\x44ocumentFieldValue\x12\x14\n\nbool_value\x18\x01 \x01(\x08H\x00\x12\x19\n\x0bint64_value\x18\x02 \x01(\x12\x42\x02\x30\x01H\x00\x12\x1a\n\x0cuint64_value\x18\x03 \x01(\x04\x42\x02\x30\x01H\x00\x12\x16\n\x0c\x64ouble_value\x18\x04 \x01(\x01H\x00\x12\x0e\n\x04text\x18\x05 \x01(\tH\x00\x12\x15\n\x0b\x62ytes_value\x18\x06 \x01(\x0cH\x00\x12[\n\x04list\x18\x07 \x01(\x0b\x32K.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.ValueListH\x00\x12\x14\n\nnull_value\x18\x08 \x01(\x08H\x00\x1a^\n\tValueList\x12Q\n\x06values\x18\x01 \x03(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValueB\t\n\x07variant\x1a\xbe\x01\n\x0bWhereClause\x12\r\n\x05\x66ield\x18\x01 \x01(\t\x12N\n\x08operator\x18\x02 \x01(\x0e\x32<.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereOperator\x12P\n\x05value\x18\x03 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue\x1a\xa4\x01\n\x0fHavingAggregate\x12Y\n\x08\x66unction\x18\x01 \x01(\x0e\x32G.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate.Function\x12\r\n\x05\x66ield\x18\x02 \x01(\t\"\'\n\x08\x46unction\x12\t\n\x05\x43OUNT\x10\x00\x12\x07\n\x03SUM\x10\x01\x12\x07\n\x03\x41VG\x10\x02\x1a\xa9\x01\n\rHavingRanking\x12O\n\x04kind\x18\x01 \x01(\x0e\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind\x12\x12\n\x01n\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x88\x01\x01\"-\n\x04Kind\x12\x07\n\x03MIN\x10\x00\x12\x07\n\x03MAX\x10\x01\x12\x07\n\x03TOP\x10\x02\x12\n\n\x06\x42OTTOM\x10\x03\x42\x04\n\x02_n\x1a\xca\x04\n\x0cHavingClause\x12Q\n\taggregate\x18\x01 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregate\x12V\n\x08operator\x18\x02 \x01(\x0e\x32\x44.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator\x12R\n\x05value\x18\x03 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValueH\x00\x12O\n\x07ranking\x18\x04 \x01(\x0b\x32<.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRankingH\x00\"\xe0\x01\n\x08Operator\x12\t\n\x05\x45QUAL\x10\x00\x12\r\n\tNOT_EQUAL\x10\x01\x12\x10\n\x0cGREATER_THAN\x10\x02\x12\x1a\n\x16GREATER_THAN_OR_EQUALS\x10\x03\x12\r\n\tLESS_THAN\x10\x04\x12\x17\n\x13LESS_THAN_OR_EQUALS\x10\x05\x12\x0b\n\x07\x42\x45TWEEN\x10\x06\x12\x1a\n\x16\x42\x45TWEEN_EXCLUDE_BOUNDS\x10\x07\x12\x18\n\x14\x42\x45TWEEN_EXCLUDE_LEFT\x10\x08\x12\x19\n\x15\x42\x45TWEEN_EXCLUDE_RIGHT\x10\t\x12\x06\n\x02IN\x10\nB\x07\n\x05right\x1a\x90\x01\n\x0bOrderClause\x12\x0f\n\x05\x66ield\x18\x01 \x01(\tH\x00\x12S\n\taggregate\x18\x03 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingAggregateH\x00\x12\x11\n\tascending\x18\x02 \x01(\x08\x42\x08\n\x06target\x1a\xbb\x01\n\x15GetDocumentsRequestV0\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12\r\n\x05where\x18\x03 \x01(\x0c\x12\x10\n\x08order_by\x18\x04 \x01(\x0c\x12\r\n\x05limit\x18\x05 \x01(\r\x12\x15\n\x0bstart_after\x18\x06 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x08 \x01(\x08\x42\x07\n\x05start\x1a\xf3\x05\n\x15GetDocumentsRequestV1\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x15\n\rdocument_type\x18\x02 \x01(\t\x12Q\n\rwhere_clauses\x18\x03 \x03(\x0b\x32:.org.dash.platform.dapi.v0.GetDocumentsRequest.WhereClause\x12L\n\x08order_by\x18\x04 \x03(\x0b\x32:.org.dash.platform.dapi.v0.GetDocumentsRequest.OrderClause\x12\x12\n\x05limit\x18\x05 \x01(\rH\x01\x88\x01\x01\x12\x15\n\x0bstart_after\x18\x06 \x01(\x0cH\x00\x12\x12\n\x08start_at\x18\x07 \x01(\x0cH\x00\x12\r\n\x05prove\x18\x08 \x01(\x08\x12\\\n\x07selects\x18\t \x03(\x0b\x32K.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select\x12\x10\n\x08group_by\x18\n \x03(\t\x12K\n\x06having\x18\x0b \x03(\x0b\x32;.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause\x12\x13\n\x06offset\x18\x0c \x01(\rH\x02\x88\x01\x01\x1a\xc9\x01\n\x06Select\x12\x66\n\x08\x66unction\x18\x01 \x01(\x0e\x32T.org.dash.platform.dapi.v0.GetDocumentsRequest.GetDocumentsRequestV1.Select.Function\x12\r\n\x05\x66ield\x18\x02 \x01(\t\"H\n\x08\x46unction\x12\r\n\tDOCUMENTS\x10\x00\x12\t\n\x05\x43OUNT\x10\x01\x12\x07\n\x03SUM\x10\x02\x12\x07\n\x03\x41VG\x10\x03\x12\x07\n\x03MIN\x10\x04\x12\x07\n\x03MAX\x10\x05\x42\x07\n\x05startB\x08\n\x06_limitB\t\n\x07_offset\"\xe7\x01\n\rWhereOperator\x12\t\n\x05\x45QUAL\x10\x00\x12\x10\n\x0cGREATER_THAN\x10\x01\x12\x1a\n\x16GREATER_THAN_OR_EQUALS\x10\x02\x12\r\n\tLESS_THAN\x10\x03\x12\x17\n\x13LESS_THAN_OR_EQUALS\x10\x04\x12\x0b\n\x07\x42\x45TWEEN\x10\x05\x12\x1a\n\x16\x42\x45TWEEN_EXCLUDE_BOUNDS\x10\x06\x12\x18\n\x14\x42\x45TWEEN_EXCLUDE_LEFT\x10\x07\x12\x19\n\x15\x42\x45TWEEN_EXCLUDE_RIGHT\x10\x08\x12\x06\n\x02IN\x10\t\x12\x0f\n\x0bSTARTS_WITH\x10\nB\t\n\x07version\"\xcc\x15\n\x14GetDocumentsResponse\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0H\x00\x12T\n\x02v1\x18\x02 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1H\x00\x1a\x9b\x02\n\x16GetDocumentsResponseV0\x12\x65\n\tdocuments\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV0.DocumentsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1e\n\tDocuments\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x42\x08\n\x06result\x1a\xde\x11\n\x16GetDocumentsResponseV1\x12\x61\n\x04\x64\x61ta\x18\x01 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultDataH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1e\n\tDocuments\x12\x11\n\tdocuments\x18\x01 \x03(\x0c\x1aL\n\nCountEntry\x12\x13\n\x06in_key\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12\x11\n\x05\x63ount\x18\x03 \x01(\x04\x42\x02\x30\x01\x42\t\n\x07_in_key\x1ar\n\x0c\x43ountEntries\x12\x62\n\x07\x65ntries\x18\x01 \x03(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntry\x1a\xa0\x01\n\x0c\x43ountResults\x12\x1d\n\x0f\x61ggregate_count\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x66\n\x07\x65ntries\x18\x02 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountEntriesH\x00\x42\t\n\x07variant\x1aH\n\x08SumEntry\x12\x13\n\x06in_key\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12\x0f\n\x03sum\x18\x03 \x01(\x12\x42\x02\x30\x01\x42\t\n\x07_in_key\x1an\n\nSumEntries\x12`\n\x07\x65ntries\x18\x01 \x03(\x0b\x32O.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry\x1a\x9a\x01\n\nSumResults\x12\x1b\n\raggregate_sum\x18\x01 \x01(\x12\x42\x02\x30\x01H\x00\x12\x64\n\x07\x65ntries\x18\x02 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntriesH\x00\x42\t\n\x07variant\x1a_\n\x0c\x41verageEntry\x12\x13\n\x06in_key\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x12\x0b\n\x03key\x18\x02 \x01(\x0c\x12\x11\n\x05\x63ount\x18\x03 \x01(\x04\x42\x02\x30\x01\x12\x0f\n\x03sum\x18\x04 \x01(\x12\x42\x02\x30\x01\x42\t\n\x07_in_key\x1av\n\x0e\x41verageEntries\x12\x64\n\x07\x65ntries\x18\x01 \x03(\x0b\x32S.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry\x1a\x36\n\x10\x41verageAggregate\x12\x11\n\x05\x63ount\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x0f\n\x03sum\x18\x02 \x01(\x12\x42\x02\x30\x01\x1a\xfb\x01\n\x0e\x41verageResults\x12t\n\x11\x61ggregate_average\x18\x01 \x01(\x0b\x32W.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregateH\x00\x12h\n\x07\x65ntries\x18\x02 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntriesH\x00\x42\t\n\x07variant\x1a\x66\n\x0bRankedEntry\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\x13\n\x05\x63ount\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12\x11\n\x03sum\x18\x03 \x01(\x12\x42\x02\x30\x01H\x00\x12\x19\n\x0f\x61vg_fixed_point\x18\x04 \x01(\x0cH\x00\x42\x07\n\x05value\x1at\n\rRankedEntries\x12\x63\n\x07\x65ntries\x18\x01 \x03(\x0b\x32R.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry\x1a\x9b\x04\n\nResultData\x12\x65\n\tdocuments\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.DocumentsH\x00\x12\x65\n\x06\x63ounts\x18\x02 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResultsH\x00\x12\x61\n\x04sums\x18\x03 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResultsH\x00\x12i\n\x08\x61verages\x18\x04 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResultsH\x00\x12\x66\n\x06ranked\x18\x05 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntriesH\x00\x42\t\n\x07variantB\x08\n\x06resultB\t\n\x07version\"\xf4\x02\n\x19GetDocumentHistoryRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0H\x00\x1a\xeb\x01\n\x1bGetDocumentHistoryRequestV0\x12\x18\n\x10\x64\x61ta_contract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x13\n\x0b\x64ocument_id\x18\x03 \x01(\x0c\x12+\n\x05limit\x18\x04 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x05 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\x17\n\x0bstart_at_ms\x18\x06 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x07 \x01(\x08\x42\t\n\x07version\"\xf7\x04\n\x1aGetDocumentHistoryResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0H\x00\x1a\xeb\x03\n\x1cGetDocumentHistoryResponseV0\x12~\n\x10\x64ocument_history\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x37\n\x14\x44ocumentHistoryEntry\x12\x10\n\x04\x64\x61te\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05value\x18\x02 \x01(\x0c\x1a\x95\x01\n\x0f\x44ocumentHistory\x12\x81\x01\n\x10\x64ocument_entries\x18\x01 \x03(\x0b\x32g.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntryB\x08\n\x06resultB\t\n\x07version\"\xed\x01\n!GetIdentityByPublicKeyHashRequest\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashRequest.GetIdentityByPublicKeyHashRequestV0H\x00\x1aM\n#GetIdentityByPublicKeyHashRequestV0\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xda\x02\n\"GetIdentityByPublicKeyHashResponse\x12p\n\x02v0\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashResponse.GetIdentityByPublicKeyHashResponseV0H\x00\x1a\xb6\x01\n$GetIdentityByPublicKeyHashResponseV0\x12\x12\n\x08identity\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbd\x02\n*GetIdentityByNonUniquePublicKeyHashRequest\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0H\x00\x1a\x80\x01\n,GetIdentityByNonUniquePublicKeyHashRequestV0\x12\x17\n\x0fpublic_key_hash\x18\x01 \x01(\x0c\x12\x18\n\x0bstart_after\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\x0e\n\x0c_start_afterB\t\n\x07version\"\xd6\x06\n+GetIdentityByNonUniquePublicKeyHashResponse\x12\x82\x01\n\x02v0\x18\x01 \x01(\x0b\x32t.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0H\x00\x1a\x96\x05\n-GetIdentityByNonUniquePublicKeyHashResponseV0\x12\x9a\x01\n\x08identity\x18\x01 \x01(\x0b\x32\x85\x01.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponseH\x00\x12\x9d\x01\n\x05proof\x18\x02 \x01(\x0b\x32\x8b\x01.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponseH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x36\n\x10IdentityResponse\x12\x15\n\x08identity\x18\x01 \x01(\x0cH\x00\x88\x01\x01\x42\x0b\n\t_identity\x1a\xa6\x01\n\x16IdentityProvedResponse\x12P\n&grovedb_identity_public_key_hash_proof\x18\x01 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12!\n\x14identity_proof_bytes\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\x17\n\x15_identity_proof_bytesB\x08\n\x06resultB\t\n\x07version\"\xfb\x01\n#WaitForStateTransitionResultRequest\x12r\n\x02v0\x18\x01 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0H\x00\x1aU\n%WaitForStateTransitionResultRequestV0\x12\x1d\n\x15state_transition_hash\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x99\x03\n$WaitForStateTransitionResultResponse\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.WaitForStateTransitionResultResponseV0H\x00\x1a\xef\x01\n&WaitForStateTransitionResultResponseV0\x12I\n\x05\x65rror\x18\x01 \x01(\x0b\x32\x38.org.dash.platform.dapi.v0.StateTransitionBroadcastErrorH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc4\x01\n\x19GetConsensusParamsRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetConsensusParamsRequest.GetConsensusParamsRequestV0H\x00\x1a<\n\x1bGetConsensusParamsRequestV0\x12\x0e\n\x06height\x18\x01 \x01(\x05\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x9c\x04\n\x1aGetConsensusParamsResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetConsensusParamsResponse.GetConsensusParamsResponseV0H\x00\x1aP\n\x14\x43onsensusParamsBlock\x12\x11\n\tmax_bytes\x18\x01 \x01(\t\x12\x0f\n\x07max_gas\x18\x02 \x01(\t\x12\x14\n\x0ctime_iota_ms\x18\x03 \x01(\t\x1a\x62\n\x17\x43onsensusParamsEvidence\x12\x1a\n\x12max_age_num_blocks\x18\x01 \x01(\t\x12\x18\n\x10max_age_duration\x18\x02 \x01(\t\x12\x11\n\tmax_bytes\x18\x03 \x01(\t\x1a\xda\x01\n\x1cGetConsensusParamsResponseV0\x12Y\n\x05\x62lock\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetConsensusParamsResponse.ConsensusParamsBlock\x12_\n\x08\x65vidence\x18\x02 \x01(\x0b\x32M.org.dash.platform.dapi.v0.GetConsensusParamsResponse.ConsensusParamsEvidenceB\t\n\x07version\"\xe4\x01\n%GetProtocolVersionUpgradeStateRequest\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest.GetProtocolVersionUpgradeStateRequestV0H\x00\x1a\x38\n\'GetProtocolVersionUpgradeStateRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xb5\x05\n&GetProtocolVersionUpgradeStateResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0H\x00\x1a\x85\x04\n(GetProtocolVersionUpgradeStateResponseV0\x12\x87\x01\n\x08versions\x18\x01 \x01(\x0b\x32s.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x96\x01\n\x08Versions\x12\x89\x01\n\x08versions\x18\x01 \x03(\x0b\x32w.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse.GetProtocolVersionUpgradeStateResponseV0.VersionEntry\x1a:\n\x0cVersionEntry\x12\x16\n\x0eversion_number\x18\x01 \x01(\r\x12\x12\n\nvote_count\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xa3\x02\n*GetProtocolVersionUpgradeVoteStatusRequest\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest.GetProtocolVersionUpgradeVoteStatusRequestV0H\x00\x1ag\n,GetProtocolVersionUpgradeVoteStatusRequestV0\x12\x19\n\x11start_pro_tx_hash\x18\x01 \x01(\x0c\x12\r\n\x05\x63ount\x18\x02 \x01(\r\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xef\x05\n+GetProtocolVersionUpgradeVoteStatusResponse\x12\x82\x01\n\x02v0\x18\x01 \x01(\x0b\x32t.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0H\x00\x1a\xaf\x04\n-GetProtocolVersionUpgradeVoteStatusResponseV0\x12\x98\x01\n\x08versions\x18\x01 \x01(\x0b\x32\x83\x01.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignalsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xaf\x01\n\x0eVersionSignals\x12\x9c\x01\n\x0fversion_signals\x18\x01 \x03(\x0b\x32\x82\x01.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse.GetProtocolVersionUpgradeVoteStatusResponseV0.VersionSignal\x1a\x35\n\rVersionSignal\x12\x13\n\x0bpro_tx_hash\x18\x01 \x01(\x0c\x12\x0f\n\x07version\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xf5\x01\n\x14GetEpochsInfoRequest\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetEpochsInfoRequest.GetEpochsInfoRequestV0H\x00\x1a|\n\x16GetEpochsInfoRequestV0\x12\x31\n\x0bstart_epoch\x18\x01 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\r\n\x05\x63ount\x18\x02 \x01(\r\x12\x11\n\tascending\x18\x03 \x01(\x08\x12\r\n\x05prove\x18\x04 \x01(\x08\x42\t\n\x07version\"\x99\x05\n\x15GetEpochsInfoResponse\x12V\n\x02v0\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0H\x00\x1a\x9c\x04\n\x17GetEpochsInfoResponseV0\x12\x65\n\x06\x65pochs\x18\x01 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1au\n\nEpochInfos\x12g\n\x0b\x65poch_infos\x18\x01 \x03(\x0b\x32R.org.dash.platform.dapi.v0.GetEpochsInfoResponse.GetEpochsInfoResponseV0.EpochInfo\x1a\xa6\x01\n\tEpochInfo\x12\x0e\n\x06number\x18\x01 \x01(\r\x12\x1e\n\x12\x66irst_block_height\x18\x02 \x01(\x04\x42\x02\x30\x01\x12\x1f\n\x17\x66irst_core_block_height\x18\x03 \x01(\r\x12\x16\n\nstart_time\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x16\n\x0e\x66\x65\x65_multiplier\x18\x05 \x01(\x01\x12\x18\n\x10protocol_version\x18\x06 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xbf\x02\n\x1dGetFinalizedEpochInfosRequest\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetFinalizedEpochInfosRequest.GetFinalizedEpochInfosRequestV0H\x00\x1a\xaa\x01\n\x1fGetFinalizedEpochInfosRequestV0\x12\x19\n\x11start_epoch_index\x18\x01 \x01(\r\x12\"\n\x1astart_epoch_index_included\x18\x02 \x01(\x08\x12\x17\n\x0f\x65nd_epoch_index\x18\x03 \x01(\r\x12 \n\x18\x65nd_epoch_index_included\x18\x04 \x01(\x08\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\t\n\x07version\"\xbd\t\n\x1eGetFinalizedEpochInfosResponse\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0H\x00\x1a\xa5\x08\n GetFinalizedEpochInfosResponseV0\x12\x80\x01\n\x06\x65pochs\x18\x01 \x01(\x0b\x32n.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xa4\x01\n\x13\x46inalizedEpochInfos\x12\x8c\x01\n\x15\x66inalized_epoch_infos\x18\x01 \x03(\x0b\x32m.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo\x1a\x9f\x04\n\x12\x46inalizedEpochInfo\x12\x0e\n\x06number\x18\x01 \x01(\r\x12\x1e\n\x12\x66irst_block_height\x18\x02 \x01(\x04\x42\x02\x30\x01\x12\x1f\n\x17\x66irst_core_block_height\x18\x03 \x01(\r\x12\x1c\n\x10\x66irst_block_time\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x16\n\x0e\x66\x65\x65_multiplier\x18\x05 \x01(\x01\x12\x18\n\x10protocol_version\x18\x06 \x01(\r\x12!\n\x15total_blocks_in_epoch\x18\x07 \x01(\x04\x42\x02\x30\x01\x12*\n\"next_epoch_start_core_block_height\x18\x08 \x01(\r\x12!\n\x15total_processing_fees\x18\t \x01(\x04\x42\x02\x30\x01\x12*\n\x1etotal_distributed_storage_fees\x18\n \x01(\x04\x42\x02\x30\x01\x12&\n\x1atotal_created_storage_fees\x18\x0b \x01(\x04\x42\x02\x30\x01\x12\x1e\n\x12\x63ore_block_rewards\x18\x0c \x01(\x04\x42\x02\x30\x01\x12\x81\x01\n\x0f\x62lock_proposers\x18\r \x03(\x0b\x32h.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer\x1a\x39\n\rBlockProposer\x12\x13\n\x0bproposer_id\x18\x01 \x01(\x0c\x12\x13\n\x0b\x62lock_count\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xde\x04\n\x1cGetContestedResourcesRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0H\x00\x1a\xcc\x03\n\x1eGetContestedResourcesRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x12\n\nindex_name\x18\x03 \x01(\t\x12\x1a\n\x12start_index_values\x18\x04 \x03(\x0c\x12\x18\n\x10\x65nd_index_values\x18\x05 \x03(\x0c\x12\x89\x01\n\x13start_at_value_info\x18\x06 \x01(\x0b\x32g.org.dash.platform.dapi.v0.GetContestedResourcesRequest.GetContestedResourcesRequestV0.StartAtValueInfoH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x07 \x01(\rH\x01\x88\x01\x01\x12\x17\n\x0forder_ascending\x18\x08 \x01(\x08\x12\r\n\x05prove\x18\t \x01(\x08\x1a\x45\n\x10StartAtValueInfo\x12\x13\n\x0bstart_value\x18\x01 \x01(\x0c\x12\x1c\n\x14start_value_included\x18\x02 \x01(\x08\x42\x16\n\x14_start_at_value_infoB\x08\n\x06_countB\t\n\x07version\"\x88\x04\n\x1dGetContestedResourcesResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0H\x00\x1a\xf3\x02\n\x1fGetContestedResourcesResponseV0\x12\x95\x01\n\x19\x63ontested_resource_values\x18\x01 \x01(\x0b\x32p.org.dash.platform.dapi.v0.GetContestedResourcesResponse.GetContestedResourcesResponseV0.ContestedResourceValuesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a<\n\x17\x43ontestedResourceValues\x12!\n\x19\x63ontested_resource_values\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\xd2\x05\n\x1cGetVotePollsByEndDateRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0H\x00\x1a\xc0\x04\n\x1eGetVotePollsByEndDateRequestV0\x12\x84\x01\n\x0fstart_time_info\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.StartAtTimeInfoH\x00\x88\x01\x01\x12\x80\x01\n\rend_time_info\x18\x02 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest.GetVotePollsByEndDateRequestV0.EndAtTimeInfoH\x01\x88\x01\x01\x12\x12\n\x05limit\x18\x03 \x01(\rH\x02\x88\x01\x01\x12\x13\n\x06offset\x18\x04 \x01(\rH\x03\x88\x01\x01\x12\x11\n\tascending\x18\x05 \x01(\x08\x12\r\n\x05prove\x18\x06 \x01(\x08\x1aI\n\x0fStartAtTimeInfo\x12\x19\n\rstart_time_ms\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1b\n\x13start_time_included\x18\x02 \x01(\x08\x1a\x43\n\rEndAtTimeInfo\x12\x17\n\x0b\x65nd_time_ms\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x19\n\x11\x65nd_time_included\x18\x02 \x01(\x08\x42\x12\n\x10_start_time_infoB\x10\n\x0e_end_time_infoB\x08\n\x06_limitB\t\n\x07_offsetB\t\n\x07version\"\x83\x06\n\x1dGetVotePollsByEndDateResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0H\x00\x1a\xee\x04\n\x1fGetVotePollsByEndDateResponseV0\x12\x9c\x01\n\x18vote_polls_by_timestamps\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestampsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aV\n\x1eSerializedVotePollsByTimestamp\x12\x15\n\ttimestamp\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1d\n\x15serialized_vote_polls\x18\x02 \x03(\x0c\x1a\xd7\x01\n\x1fSerializedVotePollsByTimestamps\x12\x99\x01\n\x18vote_polls_by_timestamps\x18\x01 \x03(\x0b\x32w.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse.GetVotePollsByEndDateResponseV0.SerializedVotePollsByTimestamp\x12\x18\n\x10\x66inished_results\x18\x02 \x01(\x08\x42\x08\n\x06resultB\t\n\x07version\"\xff\x06\n$GetContestedResourceVoteStateRequest\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0H\x00\x1a\xd5\x05\n&GetContestedResourceVoteStateRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x12\n\nindex_name\x18\x03 \x01(\t\x12\x14\n\x0cindex_values\x18\x04 \x03(\x0c\x12\x86\x01\n\x0bresult_type\x18\x05 \x01(\x0e\x32q.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.ResultType\x12\x36\n.allow_include_locked_and_abstaining_vote_tally\x18\x06 \x01(\x08\x12\xa3\x01\n\x18start_at_identifier_info\x18\x07 \x01(\x0b\x32|.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest.GetContestedResourceVoteStateRequestV0.StartAtIdentifierInfoH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x08 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\t \x01(\x08\x1aT\n\x15StartAtIdentifierInfo\x12\x18\n\x10start_identifier\x18\x01 \x01(\x0c\x12!\n\x19start_identifier_included\x18\x02 \x01(\x08\"I\n\nResultType\x12\r\n\tDOCUMENTS\x10\x00\x12\x0e\n\nVOTE_TALLY\x10\x01\x12\x1c\n\x18\x44OCUMENTS_AND_VOTE_TALLY\x10\x02\x42\x1b\n\x19_start_at_identifier_infoB\x08\n\x06_countB\t\n\x07version\"\x94\x0c\n%GetContestedResourceVoteStateResponse\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0H\x00\x1a\xe7\n\n\'GetContestedResourceVoteStateResponseV0\x12\xae\x01\n\x1d\x63ontested_resource_contenders\x18\x01 \x01(\x0b\x32\x84\x01.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.ContestedResourceContendersH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xda\x03\n\x10\x46inishedVoteInfo\x12\xad\x01\n\x15\x66inished_vote_outcome\x18\x01 \x01(\x0e\x32\x8d\x01.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfo.FinishedVoteOutcome\x12\x1f\n\x12won_by_identity_id\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x12$\n\x18\x66inished_at_block_height\x18\x03 \x01(\x04\x42\x02\x30\x01\x12%\n\x1d\x66inished_at_core_block_height\x18\x04 \x01(\r\x12%\n\x19\x66inished_at_block_time_ms\x18\x05 \x01(\x04\x42\x02\x30\x01\x12\x19\n\x11\x66inished_at_epoch\x18\x06 \x01(\r\"O\n\x13\x46inishedVoteOutcome\x12\x14\n\x10TOWARDS_IDENTITY\x10\x00\x12\n\n\x06LOCKED\x10\x01\x12\x16\n\x12NO_PREVIOUS_WINNER\x10\x02\x42\x15\n\x13_won_by_identity_id\x1a\xc4\x03\n\x1b\x43ontestedResourceContenders\x12\x86\x01\n\ncontenders\x18\x01 \x03(\x0b\x32r.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.Contender\x12\x1f\n\x12\x61\x62stain_vote_tally\x18\x02 \x01(\rH\x00\x88\x01\x01\x12\x1c\n\x0flock_vote_tally\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\x9a\x01\n\x12\x66inished_vote_info\x18\x04 \x01(\x0b\x32y.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse.GetContestedResourceVoteStateResponseV0.FinishedVoteInfoH\x02\x88\x01\x01\x42\x15\n\x13_abstain_vote_tallyB\x12\n\x10_lock_vote_tallyB\x15\n\x13_finished_vote_info\x1ak\n\tContender\x12\x12\n\nidentifier\x18\x01 \x01(\x0c\x12\x17\n\nvote_count\x18\x02 \x01(\rH\x00\x88\x01\x01\x12\x15\n\x08\x64ocument\x18\x03 \x01(\x0cH\x01\x88\x01\x01\x42\r\n\x0b_vote_countB\x0b\n\t_documentB\x08\n\x06resultB\t\n\x07version\"\xd5\x05\n,GetContestedResourceVotersForIdentityRequest\x12\x84\x01\n\x02v0\x18\x01 \x01(\x0b\x32v.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityRequest.GetContestedResourceVotersForIdentityRequestV0H\x00\x1a\x92\x04\n.GetContestedResourceVotersForIdentityRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\x12\n\nindex_name\x18\x03 \x01(\t\x12\x14\n\x0cindex_values\x18\x04 \x03(\x0c\x12\x15\n\rcontestant_id\x18\x05 \x01(\x0c\x12\xb4\x01\n\x18start_at_identifier_info\x18\x06 \x01(\x0b\x32\x8c\x01.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityRequest.GetContestedResourceVotersForIdentityRequestV0.StartAtIdentifierInfoH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x07 \x01(\rH\x01\x88\x01\x01\x12\x17\n\x0forder_ascending\x18\x08 \x01(\x08\x12\r\n\x05prove\x18\t \x01(\x08\x1aT\n\x15StartAtIdentifierInfo\x12\x18\n\x10start_identifier\x18\x01 \x01(\x0c\x12!\n\x19start_identifier_included\x18\x02 \x01(\x08\x42\x1b\n\x19_start_at_identifier_infoB\x08\n\x06_countB\t\n\x07version\"\xf1\x04\n-GetContestedResourceVotersForIdentityResponse\x12\x86\x01\n\x02v0\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityResponse.GetContestedResourceVotersForIdentityResponseV0H\x00\x1a\xab\x03\n/GetContestedResourceVotersForIdentityResponseV0\x12\xb6\x01\n\x19\x63ontested_resource_voters\x18\x01 \x01(\x0b\x32\x90\x01.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityResponse.GetContestedResourceVotersForIdentityResponseV0.ContestedResourceVotersH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x43\n\x17\x43ontestedResourceVoters\x12\x0e\n\x06voters\x18\x01 \x03(\x0c\x12\x18\n\x10\x66inished_results\x18\x02 \x01(\x08\x42\x08\n\x06resultB\t\n\x07version\"\xad\x05\n(GetContestedResourceIdentityVotesRequest\x12|\n\x02v0\x18\x01 \x01(\x0b\x32n.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesRequest.GetContestedResourceIdentityVotesRequestV0H\x00\x1a\xf7\x03\n*GetContestedResourceIdentityVotesRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12+\n\x05limit\x18\x02 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12,\n\x06offset\x18\x03 \x01(\x0b\x32\x1c.google.protobuf.UInt32Value\x12\x17\n\x0forder_ascending\x18\x04 \x01(\x08\x12\xae\x01\n\x1astart_at_vote_poll_id_info\x18\x05 \x01(\x0b\x32\x84\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesRequest.GetContestedResourceIdentityVotesRequestV0.StartAtVotePollIdInfoH\x00\x88\x01\x01\x12\r\n\x05prove\x18\x06 \x01(\x08\x1a\x61\n\x15StartAtVotePollIdInfo\x12 \n\x18start_at_poll_identifier\x18\x01 \x01(\x0c\x12&\n\x1estart_poll_identifier_included\x18\x02 \x01(\x08\x42\x1d\n\x1b_start_at_vote_poll_id_infoB\t\n\x07version\"\xc8\n\n)GetContestedResourceIdentityVotesResponse\x12~\n\x02v0\x18\x01 \x01(\x0b\x32p.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0H\x00\x1a\x8f\t\n+GetContestedResourceIdentityVotesResponseV0\x12\xa1\x01\n\x05votes\x18\x01 \x01(\x0b\x32\x8f\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ContestedResourceIdentityVotesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\xf7\x01\n\x1e\x43ontestedResourceIdentityVotes\x12\xba\x01\n!contested_resource_identity_votes\x18\x01 \x03(\x0b\x32\x8e\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ContestedResourceIdentityVote\x12\x18\n\x10\x66inished_results\x18\x02 \x01(\x08\x1a\xad\x02\n\x12ResourceVoteChoice\x12\xad\x01\n\x10vote_choice_type\x18\x01 \x01(\x0e\x32\x92\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ResourceVoteChoice.VoteChoiceType\x12\x18\n\x0bidentity_id\x18\x02 \x01(\x0cH\x00\x88\x01\x01\"=\n\x0eVoteChoiceType\x12\x14\n\x10TOWARDS_IDENTITY\x10\x00\x12\x0b\n\x07\x41\x42STAIN\x10\x01\x12\x08\n\x04LOCK\x10\x02\x42\x0e\n\x0c_identity_id\x1a\x95\x02\n\x1d\x43ontestedResourceIdentityVote\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1a\n\x12\x64ocument_type_name\x18\x02 \x01(\t\x12\'\n\x1fserialized_index_storage_values\x18\x03 \x03(\x0c\x12\x99\x01\n\x0bvote_choice\x18\x04 \x01(\x0b\x32\x83\x01.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse.GetContestedResourceIdentityVotesResponseV0.ResourceVoteChoiceB\x08\n\x06resultB\t\n\x07version\"\xf0\x01\n%GetPrefundedSpecializedBalanceRequest\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceRequest.GetPrefundedSpecializedBalanceRequestV0H\x00\x1a\x44\n\'GetPrefundedSpecializedBalanceRequestV0\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xed\x02\n&GetPrefundedSpecializedBalanceResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse.GetPrefundedSpecializedBalanceResponseV0H\x00\x1a\xbd\x01\n(GetPrefundedSpecializedBalanceResponseV0\x12\x15\n\x07\x62\x61lance\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xd0\x01\n GetTotalCreditsInPlatformRequest\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest.GetTotalCreditsInPlatformRequestV0H\x00\x1a\x33\n\"GetTotalCreditsInPlatformRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xd9\x02\n!GetTotalCreditsInPlatformResponse\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse.GetTotalCreditsInPlatformResponseV0H\x00\x1a\xb8\x01\n#GetTotalCreditsInPlatformResponseV0\x12\x15\n\x07\x63redits\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc4\x01\n\x16GetPathElementsRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetPathElementsRequest.GetPathElementsRequestV0H\x00\x1a\x45\n\x18GetPathElementsRequestV0\x12\x0c\n\x04path\x18\x01 \x03(\x0c\x12\x0c\n\x04keys\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xa3\x03\n\x17GetPathElementsResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0H\x00\x1a\xa0\x02\n\x19GetPathElementsResponseV0\x12i\n\x08\x65lements\x18\x01 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetPathElementsResponse.GetPathElementsResponseV0.ElementsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1c\n\x08\x45lements\x12\x10\n\x08\x65lements\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\x81\x01\n\x10GetStatusRequest\x12L\n\x02v0\x18\x01 \x01(\x0b\x32>.org.dash.platform.dapi.v0.GetStatusRequest.GetStatusRequestV0H\x00\x1a\x14\n\x12GetStatusRequestV0B\t\n\x07version\"\xe4\x10\n\x11GetStatusResponse\x12N\n\x02v0\x18\x01 \x01(\x0b\x32@.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0H\x00\x1a\xf3\x0f\n\x13GetStatusResponseV0\x12Y\n\x07version\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version\x12S\n\x04node\x18\x02 \x01(\x0b\x32\x45.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Node\x12U\n\x05\x63hain\x18\x03 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Chain\x12Y\n\x07network\x18\x04 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Network\x12^\n\nstate_sync\x18\x05 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.StateSync\x12S\n\x04time\x18\x06 \x01(\x0b\x32\x45.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Time\x1a\x82\x05\n\x07Version\x12\x63\n\x08software\x18\x01 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Software\x12\x63\n\x08protocol\x18\x02 \x01(\x0b\x32Q.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol\x1a^\n\x08Software\x12\x0c\n\x04\x64\x61pi\x18\x01 \x01(\t\x12\x12\n\x05\x64rive\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x17\n\ntenderdash\x18\x03 \x01(\tH\x01\x88\x01\x01\x42\x08\n\x06_driveB\r\n\x0b_tenderdash\x1a\xcc\x02\n\x08Protocol\x12p\n\ntenderdash\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Tenderdash\x12\x66\n\x05\x64rive\x18\x02 \x01(\x0b\x32W.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive\x1a(\n\nTenderdash\x12\x0b\n\x03p2p\x18\x01 \x01(\r\x12\r\n\x05\x62lock\x18\x02 \x01(\r\x1a<\n\x05\x44rive\x12\x0e\n\x06latest\x18\x03 \x01(\r\x12\x0f\n\x07\x63urrent\x18\x04 \x01(\r\x12\x12\n\nnext_epoch\x18\x05 \x01(\r\x1a\x7f\n\x04Time\x12\x11\n\x05local\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x16\n\x05\x62lock\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x88\x01\x01\x12\x18\n\x07genesis\x18\x03 \x01(\x04\x42\x02\x30\x01H\x01\x88\x01\x01\x12\x12\n\x05\x65poch\x18\x04 \x01(\rH\x02\x88\x01\x01\x42\x08\n\x06_blockB\n\n\x08_genesisB\x08\n\x06_epoch\x1a<\n\x04Node\x12\n\n\x02id\x18\x01 \x01(\x0c\x12\x18\n\x0bpro_tx_hash\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x42\x0e\n\x0c_pro_tx_hash\x1a\xb3\x02\n\x05\x43hain\x12\x13\n\x0b\x63\x61tching_up\x18\x01 \x01(\x08\x12\x19\n\x11latest_block_hash\x18\x02 \x01(\x0c\x12\x17\n\x0flatest_app_hash\x18\x03 \x01(\x0c\x12\x1f\n\x13latest_block_height\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x1b\n\x13\x65\x61rliest_block_hash\x18\x05 \x01(\x0c\x12\x19\n\x11\x65\x61rliest_app_hash\x18\x06 \x01(\x0c\x12!\n\x15\x65\x61rliest_block_height\x18\x07 \x01(\x04\x42\x02\x30\x01\x12!\n\x15max_peer_block_height\x18\t \x01(\x04\x42\x02\x30\x01\x12%\n\x18\x63ore_chain_locked_height\x18\n \x01(\rH\x00\x88\x01\x01\x42\x1b\n\x19_core_chain_locked_height\x1a\x43\n\x07Network\x12\x10\n\x08\x63hain_id\x18\x01 \x01(\t\x12\x13\n\x0bpeers_count\x18\x02 \x01(\r\x12\x11\n\tlistening\x18\x03 \x01(\x08\x1a\x85\x02\n\tStateSync\x12\x1d\n\x11total_synced_time\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1a\n\x0eremaining_time\x18\x02 \x01(\x04\x42\x02\x30\x01\x12\x17\n\x0ftotal_snapshots\x18\x03 \x01(\r\x12\"\n\x16\x63hunk_process_avg_time\x18\x04 \x01(\x04\x42\x02\x30\x01\x12\x1b\n\x0fsnapshot_height\x18\x05 \x01(\x04\x42\x02\x30\x01\x12!\n\x15snapshot_chunks_count\x18\x06 \x01(\x04\x42\x02\x30\x01\x12\x1d\n\x11\x62\x61\x63kfilled_blocks\x18\x07 \x01(\x04\x42\x02\x30\x01\x12!\n\x15\x62\x61\x63kfill_blocks_total\x18\x08 \x01(\x04\x42\x02\x30\x01\x42\t\n\x07version\"\xb1\x01\n\x1cGetCurrentQuorumsInfoRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest.GetCurrentQuorumsInfoRequestV0H\x00\x1a \n\x1eGetCurrentQuorumsInfoRequestV0B\t\n\x07version\"\xa1\x05\n\x1dGetCurrentQuorumsInfoResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.GetCurrentQuorumsInfoResponseV0H\x00\x1a\x46\n\x0bValidatorV0\x12\x13\n\x0bpro_tx_hash\x18\x01 \x01(\x0c\x12\x0f\n\x07node_ip\x18\x02 \x01(\t\x12\x11\n\tis_banned\x18\x03 \x01(\x08\x1a\xaf\x01\n\x0eValidatorSetV0\x12\x13\n\x0bquorum_hash\x18\x01 \x01(\x0c\x12\x13\n\x0b\x63ore_height\x18\x02 \x01(\r\x12U\n\x07members\x18\x03 \x03(\x0b\x32\x44.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorV0\x12\x1c\n\x14threshold_public_key\x18\x04 \x01(\x0c\x1a\x92\x02\n\x1fGetCurrentQuorumsInfoResponseV0\x12\x15\n\rquorum_hashes\x18\x01 \x03(\x0c\x12\x1b\n\x13\x63urrent_quorum_hash\x18\x02 \x01(\x0c\x12_\n\x0evalidator_sets\x18\x03 \x03(\x0b\x32G.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse.ValidatorSetV0\x12\x1b\n\x13last_block_proposer\x18\x04 \x01(\x0c\x12=\n\x08metadata\x18\x05 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\t\n\x07version\"\xf4\x01\n\x1fGetIdentityTokenBalancesRequest\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetIdentityTokenBalancesRequest.GetIdentityTokenBalancesRequestV0H\x00\x1aZ\n!GetIdentityTokenBalancesRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x11\n\ttoken_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xad\x05\n GetIdentityTokenBalancesResponse\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse.GetIdentityTokenBalancesResponseV0H\x00\x1a\x8f\x04\n\"GetIdentityTokenBalancesResponseV0\x12\x86\x01\n\x0etoken_balances\x18\x01 \x01(\x0b\x32l.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse.GetIdentityTokenBalancesResponseV0.TokenBalancesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aG\n\x11TokenBalanceEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x14\n\x07\x62\x61lance\x18\x02 \x01(\x04H\x00\x88\x01\x01\x42\n\n\x08_balance\x1a\x9a\x01\n\rTokenBalances\x12\x88\x01\n\x0etoken_balances\x18\x01 \x03(\x0b\x32p.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse.GetIdentityTokenBalancesResponseV0.TokenBalanceEntryB\x08\n\x06resultB\t\n\x07version\"\xfc\x01\n!GetIdentitiesTokenBalancesRequest\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesRequest.GetIdentitiesTokenBalancesRequestV0H\x00\x1a\\\n#GetIdentitiesTokenBalancesRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x14\n\x0cidentity_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xf2\x05\n\"GetIdentitiesTokenBalancesResponse\x12p\n\x02v0\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse.GetIdentitiesTokenBalancesResponseV0H\x00\x1a\xce\x04\n$GetIdentitiesTokenBalancesResponseV0\x12\x9b\x01\n\x17identity_token_balances\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse.GetIdentitiesTokenBalancesResponseV0.IdentityTokenBalancesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aR\n\x19IdentityTokenBalanceEntry\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x14\n\x07\x62\x61lance\x18\x02 \x01(\x04H\x00\x88\x01\x01\x42\n\n\x08_balance\x1a\xb7\x01\n\x15IdentityTokenBalances\x12\x9d\x01\n\x17identity_token_balances\x18\x01 \x03(\x0b\x32|.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse.GetIdentitiesTokenBalancesResponseV0.IdentityTokenBalanceEntryB\x08\n\x06resultB\t\n\x07version\"\xe8\x01\n\x1cGetIdentityTokenInfosRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetIdentityTokenInfosRequest.GetIdentityTokenInfosRequestV0H\x00\x1aW\n\x1eGetIdentityTokenInfosRequestV0\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x11\n\ttoken_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\x98\x06\n\x1dGetIdentityTokenInfosResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0H\x00\x1a\x83\x05\n\x1fGetIdentityTokenInfosResponseV0\x12z\n\x0btoken_infos\x18\x01 \x01(\x0b\x32\x63.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0.TokenInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a(\n\x16TokenIdentityInfoEntry\x12\x0e\n\x06\x66rozen\x18\x01 \x01(\x08\x1a\xb0\x01\n\x0eTokenInfoEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x82\x01\n\x04info\x18\x02 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0.TokenIdentityInfoEntryH\x00\x88\x01\x01\x42\x07\n\x05_info\x1a\x8a\x01\n\nTokenInfos\x12|\n\x0btoken_infos\x18\x01 \x03(\x0b\x32g.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse.GetIdentityTokenInfosResponseV0.TokenInfoEntryB\x08\n\x06resultB\t\n\x07version\"\xf0\x01\n\x1eGetIdentitiesTokenInfosRequest\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosRequest.GetIdentitiesTokenInfosRequestV0H\x00\x1aY\n GetIdentitiesTokenInfosRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x14\n\x0cidentity_ids\x18\x02 \x03(\x0c\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xca\x06\n\x1fGetIdentitiesTokenInfosResponse\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0H\x00\x1a\xaf\x05\n!GetIdentitiesTokenInfosResponseV0\x12\x8f\x01\n\x14identity_token_infos\x18\x01 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0.IdentityTokenInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a(\n\x16TokenIdentityInfoEntry\x12\x0e\n\x06\x66rozen\x18\x01 \x01(\x08\x1a\xb7\x01\n\x0eTokenInfoEntry\x12\x13\n\x0bidentity_id\x18\x01 \x01(\x0c\x12\x86\x01\n\x04info\x18\x02 \x01(\x0b\x32s.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0.TokenIdentityInfoEntryH\x00\x88\x01\x01\x42\x07\n\x05_info\x1a\x97\x01\n\x12IdentityTokenInfos\x12\x80\x01\n\x0btoken_infos\x18\x01 \x03(\x0b\x32k.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse.GetIdentitiesTokenInfosResponseV0.TokenInfoEntryB\x08\n\x06resultB\t\n\x07version\"\xbf\x01\n\x17GetTokenStatusesRequest\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetTokenStatusesRequest.GetTokenStatusesRequestV0H\x00\x1a=\n\x19GetTokenStatusesRequestV0\x12\x11\n\ttoken_ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xe7\x04\n\x18GetTokenStatusesResponse\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetTokenStatusesResponse.GetTokenStatusesResponseV0H\x00\x1a\xe1\x03\n\x1aGetTokenStatusesResponseV0\x12v\n\x0etoken_statuses\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetTokenStatusesResponse.GetTokenStatusesResponseV0.TokenStatusesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x44\n\x10TokenStatusEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x13\n\x06paused\x18\x02 \x01(\x08H\x00\x88\x01\x01\x42\t\n\x07_paused\x1a\x88\x01\n\rTokenStatuses\x12w\n\x0etoken_statuses\x18\x01 \x03(\x0b\x32_.org.dash.platform.dapi.v0.GetTokenStatusesResponse.GetTokenStatusesResponseV0.TokenStatusEntryB\x08\n\x06resultB\t\n\x07version\"\xef\x01\n#GetTokenDirectPurchasePricesRequest\x12r\n\x02v0\x18\x01 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0H\x00\x1aI\n%GetTokenDirectPurchasePricesRequestV0\x12\x11\n\ttoken_ids\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x8b\t\n$GetTokenDirectPurchasePricesResponse\x12t\n\x02v0\x18\x01 \x01(\x0b\x32\x66.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0H\x00\x1a\xe1\x07\n&GetTokenDirectPurchasePricesResponseV0\x12\xa9\x01\n\x1ctoken_direct_purchase_prices\x18\x01 \x01(\x0b\x32\x80\x01.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.TokenDirectPurchasePricesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x33\n\x10PriceForQuantity\x12\x10\n\x08quantity\x18\x01 \x01(\x04\x12\r\n\x05price\x18\x02 \x01(\x04\x1a\xa7\x01\n\x0fPricingSchedule\x12\x93\x01\n\x12price_for_quantity\x18\x01 \x03(\x0b\x32w.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PriceForQuantity\x1a\xe4\x01\n\x1dTokenDirectPurchasePriceEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x15\n\x0b\x66ixed_price\x18\x02 \x01(\x04H\x00\x12\x90\x01\n\x0evariable_price\x18\x03 \x01(\x0b\x32v.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.PricingScheduleH\x00\x42\x07\n\x05price\x1a\xc8\x01\n\x19TokenDirectPurchasePrices\x12\xaa\x01\n\x1btoken_direct_purchase_price\x18\x01 \x03(\x0b\x32\x84\x01.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse.GetTokenDirectPurchasePricesResponseV0.TokenDirectPurchasePriceEntryB\x08\n\x06resultB\t\n\x07version\"\xce\x01\n\x1bGetTokenContractInfoRequest\x12\x62\n\x02v0\x18\x01 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetTokenContractInfoRequest.GetTokenContractInfoRequestV0H\x00\x1a@\n\x1dGetTokenContractInfoRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xfb\x03\n\x1cGetTokenContractInfoResponse\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetTokenContractInfoResponse.GetTokenContractInfoResponseV0H\x00\x1a\xe9\x02\n\x1eGetTokenContractInfoResponseV0\x12|\n\x04\x64\x61ta\x18\x01 \x01(\x0b\x32l.org.dash.platform.dapi.v0.GetTokenContractInfoResponse.GetTokenContractInfoResponseV0.TokenContractInfoDataH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aM\n\x15TokenContractInfoData\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17token_contract_position\x18\x02 \x01(\rB\x08\n\x06resultB\t\n\x07version\"\xef\x04\n)GetTokenPreProgrammedDistributionsRequest\x12~\n\x02v0\x18\x01 \x01(\x0b\x32p.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0H\x00\x1a\xb6\x03\n+GetTokenPreProgrammedDistributionsRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x98\x01\n\rstart_at_info\x18\x02 \x01(\x0b\x32|.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsRequest.GetTokenPreProgrammedDistributionsRequestV0.StartAtInfoH\x00\x88\x01\x01\x12\x12\n\x05limit\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\x04 \x01(\x08\x1a\x9a\x01\n\x0bStartAtInfo\x12\x15\n\rstart_time_ms\x18\x01 \x01(\x04\x12\x1c\n\x0fstart_recipient\x18\x02 \x01(\x0cH\x00\x88\x01\x01\x12%\n\x18start_recipient_included\x18\x03 \x01(\x08H\x01\x88\x01\x01\x42\x12\n\x10_start_recipientB\x1b\n\x19_start_recipient_includedB\x10\n\x0e_start_at_infoB\x08\n\x06_limitB\t\n\x07version\"\xec\x07\n*GetTokenPreProgrammedDistributionsResponse\x12\x80\x01\n\x02v0\x18\x01 \x01(\x0b\x32r.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0H\x00\x1a\xaf\x06\n,GetTokenPreProgrammedDistributionsResponseV0\x12\xa5\x01\n\x13token_distributions\x18\x01 \x01(\x0b\x32\x85\x01.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a>\n\x16TokenDistributionEntry\x12\x14\n\x0crecipient_id\x18\x01 \x01(\x0c\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x04\x1a\xd4\x01\n\x1bTokenTimedDistributionEntry\x12\x11\n\ttimestamp\x18\x01 \x01(\x04\x12\xa1\x01\n\rdistributions\x18\x02 \x03(\x0b\x32\x89\x01.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenDistributionEntry\x1a\xc3\x01\n\x12TokenDistributions\x12\xac\x01\n\x13token_distributions\x18\x01 \x03(\x0b\x32\x8e\x01.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse.GetTokenPreProgrammedDistributionsResponseV0.TokenTimedDistributionEntryB\x08\n\x06resultB\t\n\x07version\"\x82\x04\n-GetTokenPerpetualDistributionLastClaimRequest\x12\x86\x01\n\x02v0\x18\x01 \x01(\x0b\x32x.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimRequest.GetTokenPerpetualDistributionLastClaimRequestV0H\x00\x1aI\n\x11\x43ontractTokenInfo\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17token_contract_position\x18\x02 \x01(\r\x1a\xf1\x01\n/GetTokenPerpetualDistributionLastClaimRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12v\n\rcontract_info\x18\x02 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimRequest.ContractTokenInfoH\x00\x88\x01\x01\x12\x13\n\x0bidentity_id\x18\x04 \x01(\x0c\x12\r\n\x05prove\x18\x05 \x01(\x08\x42\x10\n\x0e_contract_infoB\t\n\x07version\"\x93\x05\n.GetTokenPerpetualDistributionLastClaimResponse\x12\x88\x01\n\x02v0\x18\x01 \x01(\x0b\x32z.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0H\x00\x1a\xca\x03\n0GetTokenPerpetualDistributionLastClaimResponseV0\x12\x9f\x01\n\nlast_claim\x18\x01 \x01(\x0b\x32\x88\x01.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0.LastClaimInfoH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1ax\n\rLastClaimInfo\x12\x1a\n\x0ctimestamp_ms\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x1a\n\x0c\x62lock_height\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12\x0f\n\x05\x65poch\x18\x03 \x01(\rH\x00\x12\x13\n\traw_bytes\x18\x04 \x01(\x0cH\x00\x42\t\n\x07paid_atB\x08\n\x06resultB\t\n\x07version\"\xca\x01\n\x1aGetTokenTotalSupplyRequest\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetTokenTotalSupplyRequest.GetTokenTotalSupplyRequestV0H\x00\x1a?\n\x1cGetTokenTotalSupplyRequestV0\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xaf\x04\n\x1bGetTokenTotalSupplyResponse\x12\x62\n\x02v0\x18\x01 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetTokenTotalSupplyResponse.GetTokenTotalSupplyResponseV0H\x00\x1a\xa0\x03\n\x1dGetTokenTotalSupplyResponseV0\x12\x88\x01\n\x12token_total_supply\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetTokenTotalSupplyResponse.GetTokenTotalSupplyResponseV0.TokenTotalSupplyEntryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1ax\n\x15TokenTotalSupplyEntry\x12\x10\n\x08token_id\x18\x01 \x01(\x0c\x12\x30\n(total_aggregated_amount_in_user_accounts\x18\x02 \x01(\x04\x12\x1b\n\x13total_system_amount\x18\x03 \x01(\x04\x42\x08\n\x06resultB\t\n\x07version\"\xd2\x01\n\x13GetGroupInfoRequest\x12R\n\x02v0\x18\x01 \x01(\x0b\x32\x44.org.dash.platform.dapi.v0.GetGroupInfoRequest.GetGroupInfoRequestV0H\x00\x1a\\\n\x15GetGroupInfoRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17group_contract_position\x18\x02 \x01(\r\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xd4\x05\n\x14GetGroupInfoResponse\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0H\x00\x1a\xda\x04\n\x16GetGroupInfoResponseV0\x12\x66\n\ngroup_info\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0.GroupInfoH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x04 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x34\n\x10GroupMemberEntry\x12\x11\n\tmember_id\x18\x01 \x01(\x0c\x12\r\n\x05power\x18\x02 \x01(\r\x1a\x98\x01\n\x0eGroupInfoEntry\x12h\n\x07members\x18\x01 \x03(\x0b\x32W.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0.GroupMemberEntry\x12\x1c\n\x14group_required_power\x18\x02 \x01(\r\x1a\x8a\x01\n\tGroupInfo\x12n\n\ngroup_info\x18\x01 \x01(\x0b\x32U.org.dash.platform.dapi.v0.GetGroupInfoResponse.GetGroupInfoResponseV0.GroupInfoEntryH\x00\x88\x01\x01\x42\r\n\x0b_group_infoB\x08\n\x06resultB\t\n\x07version\"\xed\x03\n\x14GetGroupInfosRequest\x12T\n\x02v0\x18\x01 \x01(\x0b\x32\x46.org.dash.platform.dapi.v0.GetGroupInfosRequest.GetGroupInfosRequestV0H\x00\x1au\n\x1cStartAtGroupContractPosition\x12%\n\x1dstart_group_contract_position\x18\x01 \x01(\r\x12.\n&start_group_contract_position_included\x18\x02 \x01(\x08\x1a\xfc\x01\n\x16GetGroupInfosRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12{\n start_at_group_contract_position\x18\x02 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetGroupInfosRequest.StartAtGroupContractPositionH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x03 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\x04 \x01(\x08\x42#\n!_start_at_group_contract_positionB\x08\n\x06_countB\t\n\x07version\"\xff\x05\n\x15GetGroupInfosResponse\x12V\n\x02v0\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0H\x00\x1a\x82\x05\n\x17GetGroupInfosResponseV0\x12j\n\x0bgroup_infos\x18\x01 \x01(\x0b\x32S.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0.GroupInfosH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x04 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x34\n\x10GroupMemberEntry\x12\x11\n\tmember_id\x18\x01 \x01(\x0c\x12\r\n\x05power\x18\x02 \x01(\r\x1a\xc3\x01\n\x16GroupPositionInfoEntry\x12\x1f\n\x17group_contract_position\x18\x01 \x01(\r\x12j\n\x07members\x18\x02 \x03(\x0b\x32Y.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0.GroupMemberEntry\x12\x1c\n\x14group_required_power\x18\x03 \x01(\r\x1a\x82\x01\n\nGroupInfos\x12t\n\x0bgroup_infos\x18\x01 \x03(\x0b\x32_.org.dash.platform.dapi.v0.GetGroupInfosResponse.GetGroupInfosResponseV0.GroupPositionInfoEntryB\x08\n\x06resultB\t\n\x07version\"\xbe\x04\n\x16GetGroupActionsRequest\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetGroupActionsRequest.GetGroupActionsRequestV0H\x00\x1aL\n\x0fStartAtActionId\x12\x17\n\x0fstart_action_id\x18\x01 \x01(\x0c\x12 \n\x18start_action_id_included\x18\x02 \x01(\x08\x1a\xc8\x02\n\x18GetGroupActionsRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17group_contract_position\x18\x02 \x01(\r\x12N\n\x06status\x18\x03 \x01(\x0e\x32>.org.dash.platform.dapi.v0.GetGroupActionsRequest.ActionStatus\x12\x62\n\x12start_at_action_id\x18\x04 \x01(\x0b\x32\x41.org.dash.platform.dapi.v0.GetGroupActionsRequest.StartAtActionIdH\x00\x88\x01\x01\x12\x12\n\x05\x63ount\x18\x05 \x01(\rH\x01\x88\x01\x01\x12\r\n\x05prove\x18\x06 \x01(\x08\x42\x15\n\x13_start_at_action_idB\x08\n\x06_count\"&\n\x0c\x41\x63tionStatus\x12\n\n\x06\x41\x43TIVE\x10\x00\x12\n\n\x06\x43LOSED\x10\x01\x42\t\n\x07version\"\xd6\x1e\n\x17GetGroupActionsResponse\x12Z\n\x02v0\x18\x01 \x01(\x0b\x32L.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0H\x00\x1a\xd3\x1d\n\x19GetGroupActionsResponseV0\x12r\n\rgroup_actions\x18\x01 \x01(\x0b\x32Y.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.GroupActionsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a[\n\tMintEvent\x12\x0e\n\x06\x61mount\x18\x01 \x01(\x04\x12\x14\n\x0crecipient_id\x18\x02 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a[\n\tBurnEvent\x12\x0e\n\x06\x61mount\x18\x01 \x01(\x04\x12\x14\n\x0c\x62urn_from_id\x18\x02 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1aJ\n\x0b\x46reezeEvent\x12\x11\n\tfrozen_id\x18\x01 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1aL\n\rUnfreezeEvent\x12\x11\n\tfrozen_id\x18\x01 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a\x66\n\x17\x44\x65stroyFrozenFundsEvent\x12\x11\n\tfrozen_id\x18\x01 \x01(\x0c\x12\x0e\n\x06\x61mount\x18\x02 \x01(\x04\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a\x64\n\x13SharedEncryptedNote\x12\x18\n\x10sender_key_index\x18\x01 \x01(\r\x12\x1b\n\x13recipient_key_index\x18\x02 \x01(\r\x12\x16\n\x0e\x65ncrypted_data\x18\x03 \x01(\x0c\x1a{\n\x15PersonalEncryptedNote\x12!\n\x19root_encryption_key_index\x18\x01 \x01(\r\x12\'\n\x1f\x64\x65rivation_encryption_key_index\x18\x02 \x01(\r\x12\x16\n\x0e\x65ncrypted_data\x18\x03 \x01(\x0c\x1a\xe9\x01\n\x14\x45mergencyActionEvent\x12\x81\x01\n\x0b\x61\x63tion_type\x18\x01 \x01(\x0e\x32l.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEvent.ActionType\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\"#\n\nActionType\x12\t\n\x05PAUSE\x10\x00\x12\n\n\x06RESUME\x10\x01\x42\x0e\n\x0c_public_note\x1a\x64\n\x16TokenConfigUpdateEvent\x12 \n\x18token_config_update_item\x18\x01 \x01(\x0c\x12\x18\n\x0bpublic_note\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0e\n\x0c_public_note\x1a\xe6\x03\n\x1eUpdateDirectPurchasePriceEvent\x12\x15\n\x0b\x66ixed_price\x18\x01 \x01(\x04H\x00\x12\x95\x01\n\x0evariable_price\x18\x02 \x01(\x0b\x32{.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.PricingScheduleH\x00\x12\x18\n\x0bpublic_note\x18\x03 \x01(\tH\x01\x88\x01\x01\x1a\x33\n\x10PriceForQuantity\x12\x10\n\x08quantity\x18\x01 \x01(\x04\x12\r\n\x05price\x18\x02 \x01(\x04\x1a\xac\x01\n\x0fPricingSchedule\x12\x98\x01\n\x12price_for_quantity\x18\x01 \x03(\x0b\x32|.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEvent.PriceForQuantityB\x07\n\x05priceB\x0e\n\x0c_public_note\x1a\xfc\x02\n\x10GroupActionEvent\x12n\n\x0btoken_event\x18\x01 \x01(\x0b\x32W.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenEventH\x00\x12t\n\x0e\x64ocument_event\x18\x02 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.DocumentEventH\x00\x12t\n\x0e\x63ontract_event\x18\x03 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.ContractEventH\x00\x42\x0c\n\nevent_type\x1a\x8b\x01\n\rDocumentEvent\x12r\n\x06\x63reate\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.DocumentCreateEventH\x00\x42\x06\n\x04type\x1a/\n\x13\x44ocumentCreateEvent\x12\x18\n\x10\x63reated_document\x18\x01 \x01(\x0c\x1a/\n\x13\x43ontractUpdateEvent\x12\x18\n\x10updated_contract\x18\x01 \x01(\x0c\x1a\x8b\x01\n\rContractEvent\x12r\n\x06update\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.ContractUpdateEventH\x00\x42\x06\n\x04type\x1a\xd1\x07\n\nTokenEvent\x12\x66\n\x04mint\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.MintEventH\x00\x12\x66\n\x04\x62urn\x18\x02 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.BurnEventH\x00\x12j\n\x06\x66reeze\x18\x03 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.FreezeEventH\x00\x12n\n\x08unfreeze\x18\x04 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UnfreezeEventH\x00\x12\x84\x01\n\x14\x64\x65stroy_frozen_funds\x18\x05 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.DestroyFrozenFundsEventH\x00\x12}\n\x10\x65mergency_action\x18\x06 \x01(\x0b\x32\x61.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.EmergencyActionEventH\x00\x12\x82\x01\n\x13token_config_update\x18\x07 \x01(\x0b\x32\x63.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.TokenConfigUpdateEventH\x00\x12\x83\x01\n\x0cupdate_price\x18\x08 \x01(\x0b\x32k.org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.UpdateDirectPurchasePriceEventH\x00\x42\x06\n\x04type\x1a\x93\x01\n\x10GroupActionEntry\x12\x11\n\taction_id\x18\x01 \x01(\x0c\x12l\n\x05\x65vent\x18\x02 \x01(\x0b\x32].org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.GroupActionEvent\x1a\x84\x01\n\x0cGroupActions\x12t\n\rgroup_actions\x18\x01 \x03(\x0b\x32].org.dash.platform.dapi.v0.GetGroupActionsResponse.GetGroupActionsResponseV0.GroupActionEntryB\x08\n\x06resultB\t\n\x07version\"\x88\x03\n\x1cGetGroupActionSignersRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetGroupActionSignersRequest.GetGroupActionSignersRequestV0H\x00\x1a\xce\x01\n\x1eGetGroupActionSignersRequestV0\x12\x13\n\x0b\x63ontract_id\x18\x01 \x01(\x0c\x12\x1f\n\x17group_contract_position\x18\x02 \x01(\r\x12T\n\x06status\x18\x03 \x01(\x0e\x32\x44.org.dash.platform.dapi.v0.GetGroupActionSignersRequest.ActionStatus\x12\x11\n\taction_id\x18\x04 \x01(\x0c\x12\r\n\x05prove\x18\x05 \x01(\x08\"&\n\x0c\x41\x63tionStatus\x12\n\n\x06\x41\x43TIVE\x10\x00\x12\n\n\x06\x43LOSED\x10\x01\x42\t\n\x07version\"\x8b\x05\n\x1dGetGroupActionSignersResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetGroupActionSignersResponse.GetGroupActionSignersResponseV0H\x00\x1a\xf6\x03\n\x1fGetGroupActionSignersResponseV0\x12\x8b\x01\n\x14group_action_signers\x18\x01 \x01(\x0b\x32k.org.dash.platform.dapi.v0.GetGroupActionSignersResponse.GetGroupActionSignersResponseV0.GroupActionSignersH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x35\n\x11GroupActionSigner\x12\x11\n\tsigner_id\x18\x01 \x01(\x0c\x12\r\n\x05power\x18\x02 \x01(\r\x1a\x91\x01\n\x12GroupActionSigners\x12{\n\x07signers\x18\x01 \x03(\x0b\x32j.org.dash.platform.dapi.v0.GetGroupActionSignersResponse.GetGroupActionSignersResponseV0.GroupActionSignerB\x08\n\x06resultB\t\n\x07version\"\xb5\x01\n\x15GetAddressInfoRequest\x12V\n\x02v0\x18\x01 \x01(\x0b\x32H.org.dash.platform.dapi.v0.GetAddressInfoRequest.GetAddressInfoRequestV0H\x00\x1a\x39\n\x17GetAddressInfoRequestV0\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x85\x01\n\x10\x41\x64\x64ressInfoEntry\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12J\n\x11\x62\x61lance_and_nonce\x18\x02 \x01(\x0b\x32*.org.dash.platform.dapi.v0.BalanceAndNonceH\x00\x88\x01\x01\x42\x14\n\x12_balance_and_nonce\"1\n\x0f\x42\x61lanceAndNonce\x12\x0f\n\x07\x62\x61lance\x18\x01 \x01(\x04\x12\r\n\x05nonce\x18\x02 \x01(\r\"_\n\x12\x41\x64\x64ressInfoEntries\x12I\n\x14\x61\x64\x64ress_info_entries\x18\x01 \x03(\x0b\x32+.org.dash.platform.dapi.v0.AddressInfoEntry\"m\n\x14\x41\x64\x64ressBalanceChange\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\x19\n\x0bset_balance\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12\x1c\n\x0e\x61\x64\x64_to_balance\x18\x03 \x01(\x04\x42\x02\x30\x01H\x00\x42\x0b\n\toperation\"x\n\x1a\x42lockAddressBalanceChanges\x12\x18\n\x0c\x62lock_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12@\n\x07\x63hanges\x18\x02 \x03(\x0b\x32/.org.dash.platform.dapi.v0.AddressBalanceChange\"k\n\x1b\x41\x64\x64ressBalanceUpdateEntries\x12L\n\rblock_changes\x18\x01 \x03(\x0b\x32\x35.org.dash.platform.dapi.v0.BlockAddressBalanceChanges\"\xe1\x02\n\x16GetAddressInfoResponse\x12X\n\x02v0\x18\x01 \x01(\x0b\x32J.org.dash.platform.dapi.v0.GetAddressInfoResponse.GetAddressInfoResponseV0H\x00\x1a\xe1\x01\n\x18GetAddressInfoResponseV0\x12I\n\x12\x61\x64\x64ress_info_entry\x18\x01 \x01(\x0b\x32+.org.dash.platform.dapi.v0.AddressInfoEntryH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc3\x01\n\x18GetAddressesInfosRequest\x12\\\n\x02v0\x18\x01 \x01(\x0b\x32N.org.dash.platform.dapi.v0.GetAddressesInfosRequest.GetAddressesInfosRequestV0H\x00\x1a>\n\x1aGetAddressesInfosRequestV0\x12\x11\n\taddresses\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xf1\x02\n\x19GetAddressesInfosResponse\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetAddressesInfosResponse.GetAddressesInfosResponseV0H\x00\x1a\xe8\x01\n\x1bGetAddressesInfosResponseV0\x12M\n\x14\x61\x64\x64ress_info_entries\x18\x01 \x01(\x0b\x32-.org.dash.platform.dapi.v0.AddressInfoEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xb5\x01\n\x1dGetAddressesTrunkStateRequest\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest.GetAddressesTrunkStateRequestV0H\x00\x1a!\n\x1fGetAddressesTrunkStateRequestV0B\t\n\x07version\"\xaa\x02\n\x1eGetAddressesTrunkStateResponse\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse.GetAddressesTrunkStateResponseV0H\x00\x1a\x92\x01\n GetAddressesTrunkStateResponseV0\x12/\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.Proof\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\t\n\x07version\"\xf0\x01\n\x1eGetAddressesBranchStateRequest\x12h\n\x02v0\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest.GetAddressesBranchStateRequestV0H\x00\x1aY\n GetAddressesBranchStateRequestV0\x12\x0b\n\x03key\x18\x01 \x01(\x0c\x12\r\n\x05\x64\x65pth\x18\x02 \x01(\r\x12\x19\n\x11\x63heckpoint_height\x18\x03 \x01(\x04\x42\t\n\x07version\"\xd1\x01\n\x1fGetAddressesBranchStateResponse\x12j\n\x02v0\x18\x01 \x01(\x0b\x32\\.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse.GetAddressesBranchStateResponseV0H\x00\x1a\x37\n!GetAddressesBranchStateResponseV0\x12\x12\n\nmerk_proof\x18\x02 \x01(\x0c\x42\t\n\x07version\"\x9e\x02\n%GetRecentAddressBalanceChangesRequest\x12v\n\x02v0\x18\x01 \x01(\x0b\x32h.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest.GetRecentAddressBalanceChangesRequestV0H\x00\x1ar\n\'GetRecentAddressBalanceChangesRequestV0\x12\x18\n\x0cstart_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x02 \x01(\x08\x12\x1e\n\x16start_height_exclusive\x18\x03 \x01(\x08\x42\t\n\x07version\"\xb8\x03\n&GetRecentAddressBalanceChangesResponse\x12x\n\x02v0\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse.GetRecentAddressBalanceChangesResponseV0H\x00\x1a\x88\x02\n(GetRecentAddressBalanceChangesResponseV0\x12`\n\x1e\x61\x64\x64ress_balance_update_entries\x18\x01 \x01(\x0b\x32\x36.org.dash.platform.dapi.v0.AddressBalanceUpdateEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"G\n\x16\x42lockHeightCreditEntry\x12\x18\n\x0c\x62lock_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x13\n\x07\x63redits\x18\x02 \x01(\x04\x42\x02\x30\x01\"\xb0\x01\n\x1d\x43ompactedAddressBalanceChange\x12\x0f\n\x07\x61\x64\x64ress\x18\x01 \x01(\x0c\x12\x19\n\x0bset_credits\x18\x02 \x01(\x04\x42\x02\x30\x01H\x00\x12V\n\x19\x61\x64\x64_to_credits_operations\x18\x03 \x01(\x0b\x32\x31.org.dash.platform.dapi.v0.AddToCreditsOperationsH\x00\x42\x0b\n\toperation\"\\\n\x16\x41\x64\x64ToCreditsOperations\x12\x42\n\x07\x65ntries\x18\x01 \x03(\x0b\x32\x31.org.dash.platform.dapi.v0.BlockHeightCreditEntry\"\xae\x01\n#CompactedBlockAddressBalanceChanges\x12\x1e\n\x12start_block_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\x1c\n\x10\x65nd_block_height\x18\x02 \x01(\x04\x42\x02\x30\x01\x12I\n\x07\x63hanges\x18\x03 \x03(\x0b\x32\x38.org.dash.platform.dapi.v0.CompactedAddressBalanceChange\"\x87\x01\n$CompactedAddressBalanceUpdateEntries\x12_\n\x17\x63ompacted_block_changes\x18\x01 \x03(\x0b\x32>.org.dash.platform.dapi.v0.CompactedBlockAddressBalanceChanges\"\xa9\x02\n.GetRecentCompactedAddressBalanceChangesRequest\x12\x88\x01\n\x02v0\x18\x01 \x01(\x0b\x32z.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest.GetRecentCompactedAddressBalanceChangesRequestV0H\x00\x1a\x61\n0GetRecentCompactedAddressBalanceChangesRequestV0\x12\x1e\n\x12start_block_height\x18\x01 \x01(\x04\x42\x02\x30\x01\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\xf0\x03\n/GetRecentCompactedAddressBalanceChangesResponse\x12\x8a\x01\n\x02v0\x18\x01 \x01(\x0b\x32|.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse.GetRecentCompactedAddressBalanceChangesResponseV0H\x00\x1a\xa4\x02\n1GetRecentCompactedAddressBalanceChangesResponseV0\x12s\n(compacted_address_balance_update_entries\x18\x01 \x01(\x0b\x32?.org.dash.platform.dapi.v0.CompactedAddressBalanceUpdateEntriesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xf4\x01\n GetShieldedEncryptedNotesRequest\x12l\n\x02v0\x18\x01 \x01(\x0b\x32^.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest.GetShieldedEncryptedNotesRequestV0H\x00\x1aW\n\"GetShieldedEncryptedNotesRequestV0\x12\x13\n\x0bstart_index\x18\x01 \x01(\x04\x12\r\n\x05\x63ount\x18\x02 \x01(\r\x12\r\n\x05prove\x18\x03 \x01(\x08\x42\t\n\x07version\"\xbc\x05\n!GetShieldedEncryptedNotesResponse\x12n\n\x02v0\x18\x01 \x01(\x0b\x32`.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0H\x00\x1a\x9b\x04\n#GetShieldedEncryptedNotesResponseV0\x12\x8a\x01\n\x0f\x65ncrypted_notes\x18\x01 \x01(\x0b\x32o.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNotesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1aW\n\rEncryptedNote\x12\x11\n\tnullifier\x18\x01 \x01(\x0c\x12\x0b\n\x03\x63mx\x18\x02 \x01(\x0c\x12\x16\n\x0e\x65ncrypted_note\x18\x03 \x01(\x0c\x12\x0e\n\x06\x63v_net\x18\x04 \x01(\x0c\x1a\x91\x01\n\x0e\x45ncryptedNotes\x12\x7f\n\x07\x65ntries\x18\x01 \x03(\x0b\x32n.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse.GetShieldedEncryptedNotesResponseV0.EncryptedNoteB\x08\n\x06resultB\t\n\x07version\"\xb4\x01\n\x19GetShieldedAnchorsRequest\x12^\n\x02v0\x18\x01 \x01(\x0b\x32P.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest.GetShieldedAnchorsRequestV0H\x00\x1a,\n\x1bGetShieldedAnchorsRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xb1\x03\n\x1aGetShieldedAnchorsResponse\x12`\n\x02v0\x18\x01 \x01(\x0b\x32R.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0H\x00\x1a\xa5\x02\n\x1cGetShieldedAnchorsResponseV0\x12m\n\x07\x61nchors\x18\x01 \x01(\x0b\x32Z.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse.GetShieldedAnchorsResponseV0.AnchorsH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x1a\n\x07\x41nchors\x12\x0f\n\x07\x61nchors\x18\x01 \x03(\x0c\x42\x08\n\x06resultB\t\n\x07version\"\xd8\x01\n\"GetMostRecentShieldedAnchorRequest\x12p\n\x02v0\x18\x01 \x01(\x0b\x32\x62.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest.GetMostRecentShieldedAnchorRequestV0H\x00\x1a\x35\n$GetMostRecentShieldedAnchorRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xdc\x02\n#GetMostRecentShieldedAnchorResponse\x12r\n\x02v0\x18\x01 \x01(\x0b\x32\x64.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse.GetMostRecentShieldedAnchorResponseV0H\x00\x1a\xb5\x01\n%GetMostRecentShieldedAnchorResponseV0\x12\x10\n\x06\x61nchor\x18\x01 \x01(\x0cH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xbc\x01\n\x1bGetShieldedPoolStateRequest\x12\x62\n\x02v0\x18\x01 \x01(\x0b\x32T.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest.GetShieldedPoolStateRequestV0H\x00\x1a.\n\x1dGetShieldedPoolStateRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xcb\x02\n\x1cGetShieldedPoolStateResponse\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse.GetShieldedPoolStateResponseV0H\x00\x1a\xb9\x01\n\x1eGetShieldedPoolStateResponseV0\x12\x1b\n\rtotal_balance\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xc0\x01\n\x1cGetShieldedNotesCountRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0H\x00\x1a/\n\x1eGetShieldedNotesCountRequestV0\x12\r\n\x05prove\x18\x01 \x01(\x08\x42\t\n\x07version\"\xd3\x02\n\x1dGetShieldedNotesCountResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0H\x00\x1a\xbe\x01\n\x1fGetShieldedNotesCountResponseV0\x12\x1f\n\x11total_notes_count\x18\x01 \x01(\x04\x42\x02\x30\x01H\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadataB\x08\n\x06resultB\t\n\x07version\"\xd4\x01\n\x1cGetShieldedNullifiersRequest\x12\x64\n\x02v0\x18\x01 \x01(\x0b\x32V.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest.GetShieldedNullifiersRequestV0H\x00\x1a\x43\n\x1eGetShieldedNullifiersRequestV0\x12\x12\n\nnullifiers\x18\x01 \x03(\x0c\x12\r\n\x05prove\x18\x02 \x01(\x08\x42\t\n\x07version\"\x86\x05\n\x1dGetShieldedNullifiersResponse\x12\x66\n\x02v0\x18\x01 \x01(\x0b\x32X.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0H\x00\x1a\xf1\x03\n\x1fGetShieldedNullifiersResponseV0\x12\x88\x01\n\x12nullifier_statuses\x18\x01 \x01(\x0b\x32j.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatusesH\x00\x12\x31\n\x05proof\x18\x02 \x01(\x0b\x32 .org.dash.platform.dapi.v0.ProofH\x00\x12=\n\x08metadata\x18\x03 \x01(\x0b\x32+.org.dash.platform.dapi.v0.ResponseMetadata\x1a\x36\n\x0fNullifierStatus\x12\x11\n\tnullifier\x18\x01 \x01(\x0c\x12\x10\n\x08is_spent\x18\x02 \x01(\x08\x1a\x8e\x01\n\x11NullifierStatuses\x12y\n\x07\x65ntries\x18\x01 \x03(\x0b\x32h.org.dash.platform.dapi.v0.GetShieldedNullifiersResponse.GetShieldedNullifiersResponseV0.NullifierStatusB\x08\n\x06resultB\t\n\x07version*Z\n\nKeyPurpose\x12\x12\n\x0e\x41UTHENTICATION\x10\x00\x12\x0e\n\nENCRYPTION\x10\x01\x12\x0e\n\nDECRYPTION\x10\x02\x12\x0c\n\x08TRANSFER\x10\x03\x12\n\n\x06VOTING\x10\x05\x32\xce\x44\n\x08Platform\x12\x93\x01\n\x18\x62roadcastStateTransition\x12:.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest\x1a;.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse\x12l\n\x0bgetIdentity\x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platform.dapi.v0.GetIdentityResponse\x12x\n\x0fgetIdentityKeys\x12\x31.org.dash.platform.dapi.v0.GetIdentityKeysRequest\x1a\x32.org.dash.platform.dapi.v0.GetIdentityKeysResponse\x12\x96\x01\n\x19getIdentitiesContractKeys\x12;.org.dash.platform.dapi.v0.GetIdentitiesContractKeysRequest\x1a<.org.dash.platform.dapi.v0.GetIdentitiesContractKeysResponse\x12{\n\x10getIdentityNonce\x12\x32.org.dash.platform.dapi.v0.GetIdentityNonceRequest\x1a\x33.org.dash.platform.dapi.v0.GetIdentityNonceResponse\x12\x93\x01\n\x18getIdentityContractNonce\x12:.org.dash.platform.dapi.v0.GetIdentityContractNonceRequest\x1a;.org.dash.platform.dapi.v0.GetIdentityContractNonceResponse\x12\x81\x01\n\x12getIdentityBalance\x12\x34.org.dash.platform.dapi.v0.GetIdentityBalanceRequest\x1a\x35.org.dash.platform.dapi.v0.GetIdentityBalanceResponse\x12\x8a\x01\n\x15getIdentitiesBalances\x12\x37.org.dash.platform.dapi.v0.GetIdentitiesBalancesRequest\x1a\x38.org.dash.platform.dapi.v0.GetIdentitiesBalancesResponse\x12\xa2\x01\n\x1dgetIdentityBalanceAndRevision\x12?.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionRequest\x1a@.org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse\x12\xaf\x01\n#getEvonodesProposedEpochBlocksByIds\x12\x45.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByIdsRequest\x1a\x41.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse\x12\xb3\x01\n%getEvonodesProposedEpochBlocksByRange\x12G.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksByRangeRequest\x1a\x41.org.dash.platform.dapi.v0.GetEvonodesProposedEpochBlocksResponse\x12x\n\x0fgetDataContract\x12\x31.org.dash.platform.dapi.v0.GetDataContractRequest\x1a\x32.org.dash.platform.dapi.v0.GetDataContractResponse\x12\x8d\x01\n\x16getDataContractHistory\x12\x38.org.dash.platform.dapi.v0.GetDataContractHistoryRequest\x1a\x39.org.dash.platform.dapi.v0.GetDataContractHistoryResponse\x12{\n\x10getDataContracts\x12\x32.org.dash.platform.dapi.v0.GetDataContractsRequest\x1a\x33.org.dash.platform.dapi.v0.GetDataContractsResponse\x12\x81\x01\n\x12getDocumentHistory\x12\x34.org.dash.platform.dapi.v0.GetDocumentHistoryRequest\x1a\x35.org.dash.platform.dapi.v0.GetDocumentHistoryResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsResponse\x12\x99\x01\n\x1agetIdentityByPublicKeyHash\x12<.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashRequest\x1a=.org.dash.platform.dapi.v0.GetIdentityByPublicKeyHashResponse\x12\xb4\x01\n#getIdentityByNonUniquePublicKeyHash\x12\x45.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashRequest\x1a\x46.org.dash.platform.dapi.v0.GetIdentityByNonUniquePublicKeyHashResponse\x12\x9f\x01\n\x1cwaitForStateTransitionResult\x12>.org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest\x1a?.org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse\x12\x81\x01\n\x12getConsensusParams\x12\x34.org.dash.platform.dapi.v0.GetConsensusParamsRequest\x1a\x35.org.dash.platform.dapi.v0.GetConsensusParamsResponse\x12\xa5\x01\n\x1egetProtocolVersionUpgradeState\x12@.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateRequest\x1a\x41.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeStateResponse\x12\xb4\x01\n#getProtocolVersionUpgradeVoteStatus\x12\x45.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusRequest\x1a\x46.org.dash.platform.dapi.v0.GetProtocolVersionUpgradeVoteStatusResponse\x12r\n\rgetEpochsInfo\x12/.org.dash.platform.dapi.v0.GetEpochsInfoRequest\x1a\x30.org.dash.platform.dapi.v0.GetEpochsInfoResponse\x12\x8d\x01\n\x16getFinalizedEpochInfos\x12\x38.org.dash.platform.dapi.v0.GetFinalizedEpochInfosRequest\x1a\x39.org.dash.platform.dapi.v0.GetFinalizedEpochInfosResponse\x12\x8a\x01\n\x15getContestedResources\x12\x37.org.dash.platform.dapi.v0.GetContestedResourcesRequest\x1a\x38.org.dash.platform.dapi.v0.GetContestedResourcesResponse\x12\xa2\x01\n\x1dgetContestedResourceVoteState\x12?.org.dash.platform.dapi.v0.GetContestedResourceVoteStateRequest\x1a@.org.dash.platform.dapi.v0.GetContestedResourceVoteStateResponse\x12\xba\x01\n%getContestedResourceVotersForIdentity\x12G.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityRequest\x1aH.org.dash.platform.dapi.v0.GetContestedResourceVotersForIdentityResponse\x12\xae\x01\n!getContestedResourceIdentityVotes\x12\x43.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesRequest\x1a\x44.org.dash.platform.dapi.v0.GetContestedResourceIdentityVotesResponse\x12\x8a\x01\n\x15getVotePollsByEndDate\x12\x37.org.dash.platform.dapi.v0.GetVotePollsByEndDateRequest\x1a\x38.org.dash.platform.dapi.v0.GetVotePollsByEndDateResponse\x12\xa5\x01\n\x1egetPrefundedSpecializedBalance\x12@.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceRequest\x1a\x41.org.dash.platform.dapi.v0.GetPrefundedSpecializedBalanceResponse\x12\x96\x01\n\x19getTotalCreditsInPlatform\x12;.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformRequest\x1a<.org.dash.platform.dapi.v0.GetTotalCreditsInPlatformResponse\x12x\n\x0fgetPathElements\x12\x31.org.dash.platform.dapi.v0.GetPathElementsRequest\x1a\x32.org.dash.platform.dapi.v0.GetPathElementsResponse\x12\x66\n\tgetStatus\x12+.org.dash.platform.dapi.v0.GetStatusRequest\x1a,.org.dash.platform.dapi.v0.GetStatusResponse\x12\x8a\x01\n\x15getCurrentQuorumsInfo\x12\x37.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoRequest\x1a\x38.org.dash.platform.dapi.v0.GetCurrentQuorumsInfoResponse\x12\x93\x01\n\x18getIdentityTokenBalances\x12:.org.dash.platform.dapi.v0.GetIdentityTokenBalancesRequest\x1a;.org.dash.platform.dapi.v0.GetIdentityTokenBalancesResponse\x12\x99\x01\n\x1agetIdentitiesTokenBalances\x12<.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesRequest\x1a=.org.dash.platform.dapi.v0.GetIdentitiesTokenBalancesResponse\x12\x8a\x01\n\x15getIdentityTokenInfos\x12\x37.org.dash.platform.dapi.v0.GetIdentityTokenInfosRequest\x1a\x38.org.dash.platform.dapi.v0.GetIdentityTokenInfosResponse\x12\x90\x01\n\x17getIdentitiesTokenInfos\x12\x39.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosRequest\x1a:.org.dash.platform.dapi.v0.GetIdentitiesTokenInfosResponse\x12{\n\x10getTokenStatuses\x12\x32.org.dash.platform.dapi.v0.GetTokenStatusesRequest\x1a\x33.org.dash.platform.dapi.v0.GetTokenStatusesResponse\x12\x9f\x01\n\x1cgetTokenDirectPurchasePrices\x12>.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesRequest\x1a?.org.dash.platform.dapi.v0.GetTokenDirectPurchasePricesResponse\x12\x87\x01\n\x14getTokenContractInfo\x12\x36.org.dash.platform.dapi.v0.GetTokenContractInfoRequest\x1a\x37.org.dash.platform.dapi.v0.GetTokenContractInfoResponse\x12\xb1\x01\n\"getTokenPreProgrammedDistributions\x12\x44.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsRequest\x1a\x45.org.dash.platform.dapi.v0.GetTokenPreProgrammedDistributionsResponse\x12\xbd\x01\n&getTokenPerpetualDistributionLastClaim\x12H.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimRequest\x1aI.org.dash.platform.dapi.v0.GetTokenPerpetualDistributionLastClaimResponse\x12\x84\x01\n\x13getTokenTotalSupply\x12\x35.org.dash.platform.dapi.v0.GetTokenTotalSupplyRequest\x1a\x36.org.dash.platform.dapi.v0.GetTokenTotalSupplyResponse\x12o\n\x0cgetGroupInfo\x12..org.dash.platform.dapi.v0.GetGroupInfoRequest\x1a/.org.dash.platform.dapi.v0.GetGroupInfoResponse\x12r\n\rgetGroupInfos\x12/.org.dash.platform.dapi.v0.GetGroupInfosRequest\x1a\x30.org.dash.platform.dapi.v0.GetGroupInfosResponse\x12x\n\x0fgetGroupActions\x12\x31.org.dash.platform.dapi.v0.GetGroupActionsRequest\x1a\x32.org.dash.platform.dapi.v0.GetGroupActionsResponse\x12\x8a\x01\n\x15getGroupActionSigners\x12\x37.org.dash.platform.dapi.v0.GetGroupActionSignersRequest\x1a\x38.org.dash.platform.dapi.v0.GetGroupActionSignersResponse\x12u\n\x0egetAddressInfo\x12\x30.org.dash.platform.dapi.v0.GetAddressInfoRequest\x1a\x31.org.dash.platform.dapi.v0.GetAddressInfoResponse\x12~\n\x11getAddressesInfos\x12\x33.org.dash.platform.dapi.v0.GetAddressesInfosRequest\x1a\x34.org.dash.platform.dapi.v0.GetAddressesInfosResponse\x12\x8d\x01\n\x16getAddressesTrunkState\x12\x38.org.dash.platform.dapi.v0.GetAddressesTrunkStateRequest\x1a\x39.org.dash.platform.dapi.v0.GetAddressesTrunkStateResponse\x12\x90\x01\n\x17getAddressesBranchState\x12\x39.org.dash.platform.dapi.v0.GetAddressesBranchStateRequest\x1a:.org.dash.platform.dapi.v0.GetAddressesBranchStateResponse\x12\xa5\x01\n\x1egetRecentAddressBalanceChanges\x12@.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesRequest\x1a\x41.org.dash.platform.dapi.v0.GetRecentAddressBalanceChangesResponse\x12\xc0\x01\n\'getRecentCompactedAddressBalanceChanges\x12I.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesRequest\x1aJ.org.dash.platform.dapi.v0.GetRecentCompactedAddressBalanceChangesResponse\x12\x96\x01\n\x19getShieldedEncryptedNotes\x12;.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesRequest\x1a<.org.dash.platform.dapi.v0.GetShieldedEncryptedNotesResponse\x12\x81\x01\n\x12getShieldedAnchors\x12\x34.org.dash.platform.dapi.v0.GetShieldedAnchorsRequest\x1a\x35.org.dash.platform.dapi.v0.GetShieldedAnchorsResponse\x12\x9c\x01\n\x1bgetMostRecentShieldedAnchor\x12=.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorRequest\x1a>.org.dash.platform.dapi.v0.GetMostRecentShieldedAnchorResponse\x12\x87\x01\n\x14getShieldedPoolState\x12\x36.org.dash.platform.dapi.v0.GetShieldedPoolStateRequest\x1a\x37.org.dash.platform.dapi.v0.GetShieldedPoolStateResponse\x12\x8a\x01\n\x15getShieldedNotesCount\x12\x37.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest\x1a\x38.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse\x12\x8a\x01\n\x15getShieldedNullifiers\x12\x37.org.dash.platform.dapi.v0.GetShieldedNullifiersRequest\x1a\x38.org.dash.platform.dapi.v0.GetShieldedNullifiersResponseb\x06proto3'
   ,
   dependencies=[google_dot_protobuf_dot_wrappers__pb2.DESCRIPTOR,google_dot_protobuf_dot_struct__pb2.DESCRIPTOR,google_dot_protobuf_dot_timestamp__pb2.DESCRIPTOR,])
 
@@ -62,8 +62,8 @@ _KEYPURPOSE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=65680,
-  serialized_end=65770,
+  serialized_start=66006,
+  serialized_end=66096,
 )
 _sym_db.RegisterEnumDescriptor(_KEYPURPOSE)
 
@@ -375,8 +375,8 @@ _GETCONTESTEDRESOURCEVOTESTATEREQUEST_GETCONTESTEDRESOURCEVOTESTATEREQUESTV0_RES
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=28390,
-  serialized_end=28463,
+  serialized_start=28716,
+  serialized_end=28789,
 )
 _sym_db.RegisterEnumDescriptor(_GETCONTESTEDRESOURCEVOTESTATEREQUEST_GETCONTESTEDRESOURCEVOTESTATEREQUESTV0_RESULTTYPE)
 
@@ -405,8 +405,8 @@ _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_F
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=29385,
-  serialized_end=29464,
+  serialized_start=29711,
+  serialized_end=29790,
 )
 _sym_db.RegisterEnumDescriptor(_GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_FINISHEDVOTEINFO_FINISHEDVOTEOUTCOME)
 
@@ -435,8 +435,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESP
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=33093,
-  serialized_end=33154,
+  serialized_start=33419,
+  serialized_end=33480,
 )
 _sym_db.RegisterEnumDescriptor(_GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSEV0_RESOURCEVOTECHOICE_VOTECHOICETYPE)
 
@@ -460,8 +460,8 @@ _GETGROUPACTIONSREQUEST_ACTIONSTATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=51718,
-  serialized_end=51756,
+  serialized_start=52044,
+  serialized_end=52082,
 )
 _sym_db.RegisterEnumDescriptor(_GETGROUPACTIONSREQUEST_ACTIONSTATUS)
 
@@ -485,8 +485,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_EMERGENCYACTIONEVENT_ACTIONTY
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=53003,
-  serialized_end=53038,
+  serialized_start=53329,
+  serialized_end=53364,
 )
 _sym_db.RegisterEnumDescriptor(_GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_EMERGENCYACTIONEVENT_ACTIONTYPE)
 
@@ -510,8 +510,8 @@ _GETGROUPACTIONSIGNERSREQUEST_ACTIONSTATUS = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=51718,
-  serialized_end=51756,
+  serialized_start=52044,
+  serialized_end=52082,
 )
 _sym_db.RegisterEnumDescriptor(_GETGROUPACTIONSIGNERSREQUEST_ACTIONSTATUS)
 
@@ -4774,6 +4774,94 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS = _descriptor.Descri
   serialized_end=15913,
 )
 
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY = _descriptor.Descriptor(
+  name='RankedEntry',
+  full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='key', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.key', index=0,
+      number=1, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"",
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='count', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.count', index=1,
+      number=2, type=4, cpp_type=4, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=b'0\001', file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='sum', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.sum', index=2,
+      number=3, type=18, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=b'0\001', file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='avg_fixed_point', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.avg_fixed_point', index=3,
+      number=4, type=12, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"",
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+    _descriptor.OneofDescriptor(
+      name='value', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.value',
+      index=0, containing_type=None,
+      create_key=_descriptor._internal_create_key,
+    fields=[]),
+  ],
+  serialized_start=15915,
+  serialized_end=16017,
+)
+
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRIES = _descriptor.Descriptor(
+  name='RankedEntries',
+  full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='entries', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.entries', index=0,
+      number=1, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=16019,
+  serialized_end=16135,
+)
+
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA = _descriptor.Descriptor(
   name='ResultData',
   full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData',
@@ -4810,6 +4898,13 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA = _descriptor.Descriptor
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='ranked', full_name='org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.ranked', index=4,
+      number=5, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
   ],
   extensions=[
   ],
@@ -4827,8 +4922,8 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA = _descriptor.Descriptor
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=15916,
-  serialized_end=16351,
+  serialized_start=16138,
+  serialized_end=16677,
 )
 
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1 = _descriptor.Descriptor(
@@ -4863,7 +4958,7 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1 = _descriptor.Descriptor(
   ],
   extensions=[
   ],
-  nested_types=[_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_DOCUMENTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTRESULTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMRESULTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEAGGREGATE, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA, ],
+  nested_types=[_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_DOCUMENTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTRESULTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMRESULTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEAGGREGATE, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRIES, _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA, ],
   enum_types=[
   ],
   serialized_options=None,
@@ -4878,7 +4973,7 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1 = _descriptor.Descriptor(
     fields=[]),
   ],
   serialized_start=14417,
-  serialized_end=16361,
+  serialized_end=16687,
 )
 
 _GETDOCUMENTSRESPONSE = _descriptor.Descriptor(
@@ -4921,7 +5016,7 @@ _GETDOCUMENTSRESPONSE = _descriptor.Descriptor(
     fields=[]),
   ],
   serialized_start=13934,
-  serialized_end=16372,
+  serialized_end=16698,
 )
 
 
@@ -4994,8 +5089,8 @@ _GETDOCUMENTHISTORYREQUEST_GETDOCUMENTHISTORYREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=16501,
-  serialized_end=16736,
+  serialized_start=16827,
+  serialized_end=17062,
 )
 
 _GETDOCUMENTHISTORYREQUEST = _descriptor.Descriptor(
@@ -5030,8 +5125,8 @@ _GETDOCUMENTHISTORYREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=16375,
-  serialized_end=16747,
+  serialized_start=16701,
+  serialized_end=17073,
 )
 
 
@@ -5069,8 +5164,8 @@ _GETDOCUMENTHISTORYRESPONSE_GETDOCUMENTHISTORYRESPONSEV0_DOCUMENTHISTORYENTRY = 
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=17153,
-  serialized_end=17208,
+  serialized_start=17479,
+  serialized_end=17534,
 )
 
 _GETDOCUMENTHISTORYRESPONSE_GETDOCUMENTHISTORYRESPONSEV0_DOCUMENTHISTORY = _descriptor.Descriptor(
@@ -5100,8 +5195,8 @@ _GETDOCUMENTHISTORYRESPONSE_GETDOCUMENTHISTORYRESPONSEV0_DOCUMENTHISTORY = _desc
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=17211,
-  serialized_end=17360,
+  serialized_start=17537,
+  serialized_end=17686,
 )
 
 _GETDOCUMENTHISTORYRESPONSE_GETDOCUMENTHISTORYRESPONSEV0 = _descriptor.Descriptor(
@@ -5150,8 +5245,8 @@ _GETDOCUMENTHISTORYRESPONSE_GETDOCUMENTHISTORYRESPONSEV0 = _descriptor.Descripto
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=16879,
-  serialized_end=17370,
+  serialized_start=17205,
+  serialized_end=17696,
 )
 
 _GETDOCUMENTHISTORYRESPONSE = _descriptor.Descriptor(
@@ -5186,8 +5281,8 @@ _GETDOCUMENTHISTORYRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=16750,
-  serialized_end=17381,
+  serialized_start=17076,
+  serialized_end=17707,
 )
 
 
@@ -5225,8 +5320,8 @@ _GETIDENTITYBYPUBLICKEYHASHREQUEST_GETIDENTITYBYPUBLICKEYHASHREQUESTV0 = _descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=17533,
-  serialized_end=17610,
+  serialized_start=17859,
+  serialized_end=17936,
 )
 
 _GETIDENTITYBYPUBLICKEYHASHREQUEST = _descriptor.Descriptor(
@@ -5261,8 +5356,8 @@ _GETIDENTITYBYPUBLICKEYHASHREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=17384,
-  serialized_end=17621,
+  serialized_start=17710,
+  serialized_end=17947,
 )
 
 
@@ -5312,8 +5407,8 @@ _GETIDENTITYBYPUBLICKEYHASHRESPONSE_GETIDENTITYBYPUBLICKEYHASHRESPONSEV0 = _desc
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=17777,
-  serialized_end=17959,
+  serialized_start=18103,
+  serialized_end=18285,
 )
 
 _GETIDENTITYBYPUBLICKEYHASHRESPONSE = _descriptor.Descriptor(
@@ -5348,8 +5443,8 @@ _GETIDENTITYBYPUBLICKEYHASHRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=17624,
-  serialized_end=17970,
+  serialized_start=17950,
+  serialized_end=18296,
 )
 
 
@@ -5399,8 +5494,8 @@ _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHREQUEST_GETIDENTITYBYNONUNIQUEPUBLICKEYHASHR
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=18151,
-  serialized_end=18279,
+  serialized_start=18477,
+  serialized_end=18605,
 )
 
 _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHREQUEST = _descriptor.Descriptor(
@@ -5435,8 +5530,8 @@ _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=17973,
-  serialized_end=18290,
+  serialized_start=18299,
+  serialized_end=18616,
 )
 
 
@@ -5472,8 +5567,8 @@ _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE_GETIDENTITYBYNONUNIQUEPUBLICKEYHASH
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=18903,
-  serialized_end=18957,
+  serialized_start=19229,
+  serialized_end=19283,
 )
 
 _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE_GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSEV0_IDENTITYPROVEDRESPONSE = _descriptor.Descriptor(
@@ -5515,8 +5610,8 @@ _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE_GETIDENTITYBYNONUNIQUEPUBLICKEYHASH
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=18960,
-  serialized_end=19126,
+  serialized_start=19286,
+  serialized_end=19452,
 )
 
 _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE_GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSEV0 = _descriptor.Descriptor(
@@ -5565,8 +5660,8 @@ _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE_GETIDENTITYBYNONUNIQUEPUBLICKEYHASH
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=18474,
-  serialized_end=19136,
+  serialized_start=18800,
+  serialized_end=19462,
 )
 
 _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE = _descriptor.Descriptor(
@@ -5601,8 +5696,8 @@ _GETIDENTITYBYNONUNIQUEPUBLICKEYHASHRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=18293,
-  serialized_end=19147,
+  serialized_start=18619,
+  serialized_end=19473,
 )
 
 
@@ -5640,8 +5735,8 @@ _WAITFORSTATETRANSITIONRESULTREQUEST_WAITFORSTATETRANSITIONRESULTREQUESTV0 = _de
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=19305,
-  serialized_end=19390,
+  serialized_start=19631,
+  serialized_end=19716,
 )
 
 _WAITFORSTATETRANSITIONRESULTREQUEST = _descriptor.Descriptor(
@@ -5676,8 +5771,8 @@ _WAITFORSTATETRANSITIONRESULTREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=19150,
-  serialized_end=19401,
+  serialized_start=19476,
+  serialized_end=19727,
 )
 
 
@@ -5727,8 +5822,8 @@ _WAITFORSTATETRANSITIONRESULTRESPONSE_WAITFORSTATETRANSITIONRESULTRESPONSEV0 = _
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=19563,
-  serialized_end=19802,
+  serialized_start=19889,
+  serialized_end=20128,
 )
 
 _WAITFORSTATETRANSITIONRESULTRESPONSE = _descriptor.Descriptor(
@@ -5763,8 +5858,8 @@ _WAITFORSTATETRANSITIONRESULTRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=19404,
-  serialized_end=19813,
+  serialized_start=19730,
+  serialized_end=20139,
 )
 
 
@@ -5802,8 +5897,8 @@ _GETCONSENSUSPARAMSREQUEST_GETCONSENSUSPARAMSREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=19941,
-  serialized_end=20001,
+  serialized_start=20267,
+  serialized_end=20327,
 )
 
 _GETCONSENSUSPARAMSREQUEST = _descriptor.Descriptor(
@@ -5838,8 +5933,8 @@ _GETCONSENSUSPARAMSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=19816,
-  serialized_end=20012,
+  serialized_start=20142,
+  serialized_end=20338,
 )
 
 
@@ -5884,8 +5979,8 @@ _GETCONSENSUSPARAMSRESPONSE_CONSENSUSPARAMSBLOCK = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=20143,
-  serialized_end=20223,
+  serialized_start=20469,
+  serialized_end=20549,
 )
 
 _GETCONSENSUSPARAMSRESPONSE_CONSENSUSPARAMSEVIDENCE = _descriptor.Descriptor(
@@ -5929,8 +6024,8 @@ _GETCONSENSUSPARAMSRESPONSE_CONSENSUSPARAMSEVIDENCE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=20225,
-  serialized_end=20323,
+  serialized_start=20551,
+  serialized_end=20649,
 )
 
 _GETCONSENSUSPARAMSRESPONSE_GETCONSENSUSPARAMSRESPONSEV0 = _descriptor.Descriptor(
@@ -5967,8 +6062,8 @@ _GETCONSENSUSPARAMSRESPONSE_GETCONSENSUSPARAMSRESPONSEV0 = _descriptor.Descripto
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=20326,
-  serialized_end=20544,
+  serialized_start=20652,
+  serialized_end=20870,
 )
 
 _GETCONSENSUSPARAMSRESPONSE = _descriptor.Descriptor(
@@ -6003,8 +6098,8 @@ _GETCONSENSUSPARAMSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=20015,
-  serialized_end=20555,
+  serialized_start=20341,
+  serialized_end=20881,
 )
 
 
@@ -6035,8 +6130,8 @@ _GETPROTOCOLVERSIONUPGRADESTATEREQUEST_GETPROTOCOLVERSIONUPGRADESTATEREQUESTV0 =
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=20719,
-  serialized_end=20775,
+  serialized_start=21045,
+  serialized_end=21101,
 )
 
 _GETPROTOCOLVERSIONUPGRADESTATEREQUEST = _descriptor.Descriptor(
@@ -6071,8 +6166,8 @@ _GETPROTOCOLVERSIONUPGRADESTATEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=20558,
-  serialized_end=20786,
+  serialized_start=20884,
+  serialized_end=21112,
 )
 
 
@@ -6103,8 +6198,8 @@ _GETPROTOCOLVERSIONUPGRADESTATERESPONSE_GETPROTOCOLVERSIONUPGRADESTATERESPONSEV0
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=21251,
-  serialized_end=21401,
+  serialized_start=21577,
+  serialized_end=21727,
 )
 
 _GETPROTOCOLVERSIONUPGRADESTATERESPONSE_GETPROTOCOLVERSIONUPGRADESTATERESPONSEV0_VERSIONENTRY = _descriptor.Descriptor(
@@ -6141,8 +6236,8 @@ _GETPROTOCOLVERSIONUPGRADESTATERESPONSE_GETPROTOCOLVERSIONUPGRADESTATERESPONSEV0
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=21403,
-  serialized_end=21461,
+  serialized_start=21729,
+  serialized_end=21787,
 )
 
 _GETPROTOCOLVERSIONUPGRADESTATERESPONSE_GETPROTOCOLVERSIONUPGRADESTATERESPONSEV0 = _descriptor.Descriptor(
@@ -6191,8 +6286,8 @@ _GETPROTOCOLVERSIONUPGRADESTATERESPONSE_GETPROTOCOLVERSIONUPGRADESTATERESPONSEV0
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=20954,
-  serialized_end=21471,
+  serialized_start=21280,
+  serialized_end=21797,
 )
 
 _GETPROTOCOLVERSIONUPGRADESTATERESPONSE = _descriptor.Descriptor(
@@ -6227,8 +6322,8 @@ _GETPROTOCOLVERSIONUPGRADESTATERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=20789,
-  serialized_end=21482,
+  serialized_start=21115,
+  serialized_end=21808,
 )
 
 
@@ -6273,8 +6368,8 @@ _GETPROTOCOLVERSIONUPGRADEVOTESTATUSREQUEST_GETPROTOCOLVERSIONUPGRADEVOTESTATUSR
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=21662,
-  serialized_end=21765,
+  serialized_start=21988,
+  serialized_end=22091,
 )
 
 _GETPROTOCOLVERSIONUPGRADEVOTESTATUSREQUEST = _descriptor.Descriptor(
@@ -6309,8 +6404,8 @@ _GETPROTOCOLVERSIONUPGRADEVOTESTATUSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=21485,
-  serialized_end=21776,
+  serialized_start=21811,
+  serialized_end=22102,
 )
 
 
@@ -6341,8 +6436,8 @@ _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE_GETPROTOCOLVERSIONUPGRADEVOTESTATUS
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=22279,
-  serialized_end=22454,
+  serialized_start=22605,
+  serialized_end=22780,
 )
 
 _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE_GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSEV0_VERSIONSIGNAL = _descriptor.Descriptor(
@@ -6379,8 +6474,8 @@ _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE_GETPROTOCOLVERSIONUPGRADEVOTESTATUS
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=22456,
-  serialized_end=22509,
+  serialized_start=22782,
+  serialized_end=22835,
 )
 
 _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE_GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSEV0 = _descriptor.Descriptor(
@@ -6429,8 +6524,8 @@ _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE_GETPROTOCOLVERSIONUPGRADEVOTESTATUS
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=21960,
-  serialized_end=22519,
+  serialized_start=22286,
+  serialized_end=22845,
 )
 
 _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE = _descriptor.Descriptor(
@@ -6465,8 +6560,8 @@ _GETPROTOCOLVERSIONUPGRADEVOTESTATUSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=21779,
-  serialized_end=22530,
+  serialized_start=22105,
+  serialized_end=22856,
 )
 
 
@@ -6518,8 +6613,8 @@ _GETEPOCHSINFOREQUEST_GETEPOCHSINFOREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=22643,
-  serialized_end=22767,
+  serialized_start=22969,
+  serialized_end=23093,
 )
 
 _GETEPOCHSINFOREQUEST = _descriptor.Descriptor(
@@ -6554,8 +6649,8 @@ _GETEPOCHSINFOREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=22533,
-  serialized_end=22778,
+  serialized_start=22859,
+  serialized_end=23104,
 )
 
 
@@ -6586,8 +6681,8 @@ _GETEPOCHSINFORESPONSE_GETEPOCHSINFORESPONSEV0_EPOCHINFOS = _descriptor.Descript
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=23139,
-  serialized_end=23256,
+  serialized_start=23465,
+  serialized_end=23582,
 )
 
 _GETEPOCHSINFORESPONSE_GETEPOCHSINFORESPONSEV0_EPOCHINFO = _descriptor.Descriptor(
@@ -6652,8 +6747,8 @@ _GETEPOCHSINFORESPONSE_GETEPOCHSINFORESPONSEV0_EPOCHINFO = _descriptor.Descripto
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=23259,
-  serialized_end=23425,
+  serialized_start=23585,
+  serialized_end=23751,
 )
 
 _GETEPOCHSINFORESPONSE_GETEPOCHSINFORESPONSEV0 = _descriptor.Descriptor(
@@ -6702,8 +6797,8 @@ _GETEPOCHSINFORESPONSE_GETEPOCHSINFORESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=22895,
-  serialized_end=23435,
+  serialized_start=23221,
+  serialized_end=23761,
 )
 
 _GETEPOCHSINFORESPONSE = _descriptor.Descriptor(
@@ -6738,8 +6833,8 @@ _GETEPOCHSINFORESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=22781,
-  serialized_end=23446,
+  serialized_start=23107,
+  serialized_end=23772,
 )
 
 
@@ -6798,8 +6893,8 @@ _GETFINALIZEDEPOCHINFOSREQUEST_GETFINALIZEDEPOCHINFOSREQUESTV0 = _descriptor.Des
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=23587,
-  serialized_end=23757,
+  serialized_start=23913,
+  serialized_end=24083,
 )
 
 _GETFINALIZEDEPOCHINFOSREQUEST = _descriptor.Descriptor(
@@ -6834,8 +6929,8 @@ _GETFINALIZEDEPOCHINFOSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=23449,
-  serialized_end=23768,
+  serialized_start=23775,
+  serialized_end=24094,
 )
 
 
@@ -6866,8 +6961,8 @@ _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0_FINALIZEDEPOCHI
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=24194,
-  serialized_end=24358,
+  serialized_start=24520,
+  serialized_end=24684,
 )
 
 _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0_FINALIZEDEPOCHINFO = _descriptor.Descriptor(
@@ -6981,8 +7076,8 @@ _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0_FINALIZEDEPOCHI
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=24361,
-  serialized_end=24904,
+  serialized_start=24687,
+  serialized_end=25230,
 )
 
 _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0_BLOCKPROPOSER = _descriptor.Descriptor(
@@ -7019,8 +7114,8 @@ _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0_BLOCKPROPOSER =
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=24906,
-  serialized_end=24963,
+  serialized_start=25232,
+  serialized_end=25289,
 )
 
 _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0 = _descriptor.Descriptor(
@@ -7069,8 +7164,8 @@ _GETFINALIZEDEPOCHINFOSRESPONSE_GETFINALIZEDEPOCHINFOSRESPONSEV0 = _descriptor.D
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=23912,
-  serialized_end=24973,
+  serialized_start=24238,
+  serialized_end=25299,
 )
 
 _GETFINALIZEDEPOCHINFOSRESPONSE = _descriptor.Descriptor(
@@ -7105,8 +7200,8 @@ _GETFINALIZEDEPOCHINFOSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=23771,
-  serialized_end=24984,
+  serialized_start=24097,
+  serialized_end=25310,
 )
 
 
@@ -7144,8 +7239,8 @@ _GETCONTESTEDRESOURCESREQUEST_GETCONTESTEDRESOURCESREQUESTV0_STARTATVALUEINFO = 
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=25479,
-  serialized_end=25548,
+  serialized_start=25805,
+  serialized_end=25874,
 )
 
 _GETCONTESTEDRESOURCESREQUEST_GETCONTESTEDRESOURCESREQUESTV0 = _descriptor.Descriptor(
@@ -7241,8 +7336,8 @@ _GETCONTESTEDRESOURCESREQUEST_GETCONTESTEDRESOURCESREQUESTV0 = _descriptor.Descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=25122,
-  serialized_end=25582,
+  serialized_start=25448,
+  serialized_end=25908,
 )
 
 _GETCONTESTEDRESOURCESREQUEST = _descriptor.Descriptor(
@@ -7277,8 +7372,8 @@ _GETCONTESTEDRESOURCESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=24987,
-  serialized_end=25593,
+  serialized_start=25313,
+  serialized_end=25919,
 )
 
 
@@ -7309,8 +7404,8 @@ _GETCONTESTEDRESOURCESRESPONSE_GETCONTESTEDRESOURCESRESPONSEV0_CONTESTEDRESOURCE
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=26035,
-  serialized_end=26095,
+  serialized_start=26361,
+  serialized_end=26421,
 )
 
 _GETCONTESTEDRESOURCESRESPONSE_GETCONTESTEDRESOURCESRESPONSEV0 = _descriptor.Descriptor(
@@ -7359,8 +7454,8 @@ _GETCONTESTEDRESOURCESRESPONSE_GETCONTESTEDRESOURCESRESPONSEV0 = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=25734,
-  serialized_end=26105,
+  serialized_start=26060,
+  serialized_end=26431,
 )
 
 _GETCONTESTEDRESOURCESRESPONSE = _descriptor.Descriptor(
@@ -7395,8 +7490,8 @@ _GETCONTESTEDRESOURCESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=25596,
-  serialized_end=26116,
+  serialized_start=25922,
+  serialized_end=26442,
 )
 
 
@@ -7434,8 +7529,8 @@ _GETVOTEPOLLSBYENDDATEREQUEST_GETVOTEPOLLSBYENDDATEREQUESTV0_STARTATTIMEINFO = _
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=26629,
-  serialized_end=26702,
+  serialized_start=26955,
+  serialized_end=27028,
 )
 
 _GETVOTEPOLLSBYENDDATEREQUEST_GETVOTEPOLLSBYENDDATEREQUESTV0_ENDATTIMEINFO = _descriptor.Descriptor(
@@ -7472,8 +7567,8 @@ _GETVOTEPOLLSBYENDDATEREQUEST_GETVOTEPOLLSBYENDDATEREQUESTV0_ENDATTIMEINFO = _de
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=26704,
-  serialized_end=26771,
+  serialized_start=27030,
+  serialized_end=27097,
 )
 
 _GETVOTEPOLLSBYENDDATEREQUEST_GETVOTEPOLLSBYENDDATEREQUESTV0 = _descriptor.Descriptor(
@@ -7558,8 +7653,8 @@ _GETVOTEPOLLSBYENDDATEREQUEST_GETVOTEPOLLSBYENDDATEREQUESTV0 = _descriptor.Descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=26254,
-  serialized_end=26830,
+  serialized_start=26580,
+  serialized_end=27156,
 )
 
 _GETVOTEPOLLSBYENDDATEREQUEST = _descriptor.Descriptor(
@@ -7594,8 +7689,8 @@ _GETVOTEPOLLSBYENDDATEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=26119,
-  serialized_end=26841,
+  serialized_start=26445,
+  serialized_end=27167,
 )
 
 
@@ -7633,8 +7728,8 @@ _GETVOTEPOLLSBYENDDATERESPONSE_GETVOTEPOLLSBYENDDATERESPONSEV0_SERIALIZEDVOTEPOL
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=27290,
-  serialized_end=27376,
+  serialized_start=27616,
+  serialized_end=27702,
 )
 
 _GETVOTEPOLLSBYENDDATERESPONSE_GETVOTEPOLLSBYENDDATERESPONSEV0_SERIALIZEDVOTEPOLLSBYTIMESTAMPS = _descriptor.Descriptor(
@@ -7671,8 +7766,8 @@ _GETVOTEPOLLSBYENDDATERESPONSE_GETVOTEPOLLSBYENDDATERESPONSEV0_SERIALIZEDVOTEPOL
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=27379,
-  serialized_end=27594,
+  serialized_start=27705,
+  serialized_end=27920,
 )
 
 _GETVOTEPOLLSBYENDDATERESPONSE_GETVOTEPOLLSBYENDDATERESPONSEV0 = _descriptor.Descriptor(
@@ -7721,8 +7816,8 @@ _GETVOTEPOLLSBYENDDATERESPONSE_GETVOTEPOLLSBYENDDATERESPONSEV0 = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=26982,
-  serialized_end=27604,
+  serialized_start=27308,
+  serialized_end=27930,
 )
 
 _GETVOTEPOLLSBYENDDATERESPONSE = _descriptor.Descriptor(
@@ -7757,8 +7852,8 @@ _GETVOTEPOLLSBYENDDATERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=26844,
-  serialized_end=27615,
+  serialized_start=27170,
+  serialized_end=27941,
 )
 
 
@@ -7796,8 +7891,8 @@ _GETCONTESTEDRESOURCEVOTESTATEREQUEST_GETCONTESTEDRESOURCEVOTESTATEREQUESTV0_STA
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=28304,
-  serialized_end=28388,
+  serialized_start=28630,
+  serialized_end=28714,
 )
 
 _GETCONTESTEDRESOURCEVOTESTATEREQUEST_GETCONTESTEDRESOURCEVOTESTATEREQUESTV0 = _descriptor.Descriptor(
@@ -7894,8 +7989,8 @@ _GETCONTESTEDRESOURCEVOTESTATEREQUEST_GETCONTESTEDRESOURCEVOTESTATEREQUESTV0 = _
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=27777,
-  serialized_end=28502,
+  serialized_start=28103,
+  serialized_end=28828,
 )
 
 _GETCONTESTEDRESOURCEVOTESTATEREQUEST = _descriptor.Descriptor(
@@ -7930,8 +8025,8 @@ _GETCONTESTEDRESOURCEVOTESTATEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=27618,
-  serialized_end=28513,
+  serialized_start=27944,
+  serialized_end=28839,
 )
 
 
@@ -8003,8 +8098,8 @@ _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_F
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=29013,
-  serialized_end=29487,
+  serialized_start=29339,
+  serialized_end=29813,
 )
 
 _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_CONTESTEDRESOURCECONTENDERS = _descriptor.Descriptor(
@@ -8070,8 +8165,8 @@ _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_C
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=29490,
-  serialized_end=29942,
+  serialized_start=29816,
+  serialized_end=30268,
 )
 
 _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_CONTENDER = _descriptor.Descriptor(
@@ -8125,8 +8220,8 @@ _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0_C
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=29944,
-  serialized_end=30051,
+  serialized_start=30270,
+  serialized_end=30377,
 )
 
 _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0 = _descriptor.Descriptor(
@@ -8175,8 +8270,8 @@ _GETCONTESTEDRESOURCEVOTESTATERESPONSE_GETCONTESTEDRESOURCEVOTESTATERESPONSEV0 =
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=28678,
-  serialized_end=30061,
+  serialized_start=29004,
+  serialized_end=30387,
 )
 
 _GETCONTESTEDRESOURCEVOTESTATERESPONSE = _descriptor.Descriptor(
@@ -8211,8 +8306,8 @@ _GETCONTESTEDRESOURCEVOTESTATERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=28516,
-  serialized_end=30072,
+  serialized_start=28842,
+  serialized_end=30398,
 )
 
 
@@ -8250,8 +8345,8 @@ _GETCONTESTEDRESOURCEVOTERSFORIDENTITYREQUEST_GETCONTESTEDRESOURCEVOTERSFORIDENT
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=28304,
-  serialized_end=28388,
+  serialized_start=28630,
+  serialized_end=28714,
 )
 
 _GETCONTESTEDRESOURCEVOTERSFORIDENTITYREQUEST_GETCONTESTEDRESOURCEVOTERSFORIDENTITYREQUESTV0 = _descriptor.Descriptor(
@@ -8347,8 +8442,8 @@ _GETCONTESTEDRESOURCEVOTERSFORIDENTITYREQUEST_GETCONTESTEDRESOURCEVOTERSFORIDENT
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=30259,
-  serialized_end=30789,
+  serialized_start=30585,
+  serialized_end=31115,
 )
 
 _GETCONTESTEDRESOURCEVOTERSFORIDENTITYREQUEST = _descriptor.Descriptor(
@@ -8383,8 +8478,8 @@ _GETCONTESTEDRESOURCEVOTERSFORIDENTITYREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=30075,
-  serialized_end=30800,
+  serialized_start=30401,
+  serialized_end=31126,
 )
 
 
@@ -8422,8 +8517,8 @@ _GETCONTESTEDRESOURCEVOTERSFORIDENTITYRESPONSE_GETCONTESTEDRESOURCEVOTERSFORIDEN
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=31340,
-  serialized_end=31407,
+  serialized_start=31666,
+  serialized_end=31733,
 )
 
 _GETCONTESTEDRESOURCEVOTERSFORIDENTITYRESPONSE_GETCONTESTEDRESOURCEVOTERSFORIDENTITYRESPONSEV0 = _descriptor.Descriptor(
@@ -8472,8 +8567,8 @@ _GETCONTESTEDRESOURCEVOTERSFORIDENTITYRESPONSE_GETCONTESTEDRESOURCEVOTERSFORIDEN
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=30990,
-  serialized_end=31417,
+  serialized_start=31316,
+  serialized_end=31743,
 )
 
 _GETCONTESTEDRESOURCEVOTERSFORIDENTITYRESPONSE = _descriptor.Descriptor(
@@ -8508,8 +8603,8 @@ _GETCONTESTEDRESOURCEVOTERSFORIDENTITYRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=30803,
-  serialized_end=31428,
+  serialized_start=31129,
+  serialized_end=31754,
 )
 
 
@@ -8547,8 +8642,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESREQUEST_GETCONTESTEDRESOURCEIDENTITYVOTESREQUE
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=31977,
-  serialized_end=32074,
+  serialized_start=32303,
+  serialized_end=32400,
 )
 
 _GETCONTESTEDRESOURCEIDENTITYVOTESREQUEST_GETCONTESTEDRESOURCEIDENTITYVOTESREQUESTV0 = _descriptor.Descriptor(
@@ -8618,8 +8713,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESREQUEST_GETCONTESTEDRESOURCEIDENTITYVOTESREQUE
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=31602,
-  serialized_end=32105,
+  serialized_start=31928,
+  serialized_end=32431,
 )
 
 _GETCONTESTEDRESOURCEIDENTITYVOTESREQUEST = _descriptor.Descriptor(
@@ -8654,8 +8749,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=31431,
-  serialized_end=32116,
+  serialized_start=31757,
+  serialized_end=32442,
 )
 
 
@@ -8693,8 +8788,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESP
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=32619,
-  serialized_end=32866,
+  serialized_start=32945,
+  serialized_end=33192,
 )
 
 _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSEV0_RESOURCEVOTECHOICE = _descriptor.Descriptor(
@@ -8737,8 +8832,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESP
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=32869,
-  serialized_end=33170,
+  serialized_start=33195,
+  serialized_end=33496,
 )
 
 _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSEV0_CONTESTEDRESOURCEIDENTITYVOTE = _descriptor.Descriptor(
@@ -8789,8 +8884,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESP
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=33173,
-  serialized_end=33450,
+  serialized_start=33499,
+  serialized_end=33776,
 )
 
 _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSEV0 = _descriptor.Descriptor(
@@ -8839,8 +8934,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE_GETCONTESTEDRESOURCEIDENTITYVOTESRESP
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=32293,
-  serialized_end=33460,
+  serialized_start=32619,
+  serialized_end=33786,
 )
 
 _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE = _descriptor.Descriptor(
@@ -8875,8 +8970,8 @@ _GETCONTESTEDRESOURCEIDENTITYVOTESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=32119,
-  serialized_end=33471,
+  serialized_start=32445,
+  serialized_end=33797,
 )
 
 
@@ -8914,8 +9009,8 @@ _GETPREFUNDEDSPECIALIZEDBALANCEREQUEST_GETPREFUNDEDSPECIALIZEDBALANCEREQUESTV0 =
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=33635,
-  serialized_end=33703,
+  serialized_start=33961,
+  serialized_end=34029,
 )
 
 _GETPREFUNDEDSPECIALIZEDBALANCEREQUEST = _descriptor.Descriptor(
@@ -8950,8 +9045,8 @@ _GETPREFUNDEDSPECIALIZEDBALANCEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=33474,
-  serialized_end=33714,
+  serialized_start=33800,
+  serialized_end=34040,
 )
 
 
@@ -9001,8 +9096,8 @@ _GETPREFUNDEDSPECIALIZEDBALANCERESPONSE_GETPREFUNDEDSPECIALIZEDBALANCERESPONSEV0
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=33882,
-  serialized_end=34071,
+  serialized_start=34208,
+  serialized_end=34397,
 )
 
 _GETPREFUNDEDSPECIALIZEDBALANCERESPONSE = _descriptor.Descriptor(
@@ -9037,8 +9132,8 @@ _GETPREFUNDEDSPECIALIZEDBALANCERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=33717,
-  serialized_end=34082,
+  serialized_start=34043,
+  serialized_end=34408,
 )
 
 
@@ -9069,8 +9164,8 @@ _GETTOTALCREDITSINPLATFORMREQUEST_GETTOTALCREDITSINPLATFORMREQUESTV0 = _descript
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=34231,
-  serialized_end=34282,
+  serialized_start=34557,
+  serialized_end=34608,
 )
 
 _GETTOTALCREDITSINPLATFORMREQUEST = _descriptor.Descriptor(
@@ -9105,8 +9200,8 @@ _GETTOTALCREDITSINPLATFORMREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=34085,
-  serialized_end=34293,
+  serialized_start=34411,
+  serialized_end=34619,
 )
 
 
@@ -9156,8 +9251,8 @@ _GETTOTALCREDITSINPLATFORMRESPONSE_GETTOTALCREDITSINPLATFORMRESPONSEV0 = _descri
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=34446,
-  serialized_end=34630,
+  serialized_start=34772,
+  serialized_end=34956,
 )
 
 _GETTOTALCREDITSINPLATFORMRESPONSE = _descriptor.Descriptor(
@@ -9192,8 +9287,8 @@ _GETTOTALCREDITSINPLATFORMRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=34296,
-  serialized_end=34641,
+  serialized_start=34622,
+  serialized_end=34967,
 )
 
 
@@ -9238,8 +9333,8 @@ _GETPATHELEMENTSREQUEST_GETPATHELEMENTSREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=34760,
-  serialized_end=34829,
+  serialized_start=35086,
+  serialized_end=35155,
 )
 
 _GETPATHELEMENTSREQUEST = _descriptor.Descriptor(
@@ -9274,8 +9369,8 @@ _GETPATHELEMENTSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=34644,
-  serialized_end=34840,
+  serialized_start=34970,
+  serialized_end=35166,
 )
 
 
@@ -9306,8 +9401,8 @@ _GETPATHELEMENTSRESPONSE_GETPATHELEMENTSRESPONSEV0_ELEMENTS = _descriptor.Descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=35213,
-  serialized_end=35241,
+  serialized_start=35539,
+  serialized_end=35567,
 )
 
 _GETPATHELEMENTSRESPONSE_GETPATHELEMENTSRESPONSEV0 = _descriptor.Descriptor(
@@ -9356,8 +9451,8 @@ _GETPATHELEMENTSRESPONSE_GETPATHELEMENTSRESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=34963,
-  serialized_end=35251,
+  serialized_start=35289,
+  serialized_end=35577,
 )
 
 _GETPATHELEMENTSRESPONSE = _descriptor.Descriptor(
@@ -9392,8 +9487,8 @@ _GETPATHELEMENTSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=34843,
-  serialized_end=35262,
+  serialized_start=35169,
+  serialized_end=35588,
 )
 
 
@@ -9417,8 +9512,8 @@ _GETSTATUSREQUEST_GETSTATUSREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=35363,
-  serialized_end=35383,
+  serialized_start=35689,
+  serialized_end=35709,
 )
 
 _GETSTATUSREQUEST = _descriptor.Descriptor(
@@ -9453,8 +9548,8 @@ _GETSTATUSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=35265,
-  serialized_end=35394,
+  serialized_start=35591,
+  serialized_end=35720,
 )
 
 
@@ -9509,8 +9604,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_SOFTWARE = _descriptor.Descriptor
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=36271,
-  serialized_end=36365,
+  serialized_start=36597,
+  serialized_end=36691,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_PROTOCOL_TENDERDASH = _descriptor.Descriptor(
@@ -9547,8 +9642,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_PROTOCOL_TENDERDASH = _descriptor
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=36598,
-  serialized_end=36638,
+  serialized_start=36924,
+  serialized_end=36964,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_PROTOCOL_DRIVE = _descriptor.Descriptor(
@@ -9592,8 +9687,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_PROTOCOL_DRIVE = _descriptor.Desc
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=36640,
-  serialized_end=36700,
+  serialized_start=36966,
+  serialized_end=37026,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_PROTOCOL = _descriptor.Descriptor(
@@ -9630,8 +9725,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION_PROTOCOL = _descriptor.Descriptor
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=36368,
-  serialized_end=36700,
+  serialized_start=36694,
+  serialized_end=37026,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION = _descriptor.Descriptor(
@@ -9668,8 +9763,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_VERSION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=36058,
-  serialized_end=36700,
+  serialized_start=36384,
+  serialized_end=37026,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_TIME = _descriptor.Descriptor(
@@ -9735,8 +9830,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_TIME = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=36702,
-  serialized_end=36829,
+  serialized_start=37028,
+  serialized_end=37155,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_NODE = _descriptor.Descriptor(
@@ -9778,8 +9873,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_NODE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=36831,
-  serialized_end=36891,
+  serialized_start=37157,
+  serialized_end=37217,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_CHAIN = _descriptor.Descriptor(
@@ -9870,8 +9965,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_CHAIN = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=36894,
-  serialized_end=37201,
+  serialized_start=37220,
+  serialized_end=37527,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_NETWORK = _descriptor.Descriptor(
@@ -9915,8 +10010,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_NETWORK = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=37203,
-  serialized_end=37270,
+  serialized_start=37529,
+  serialized_end=37596,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_STATESYNC = _descriptor.Descriptor(
@@ -9995,8 +10090,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0_STATESYNC = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=37273,
-  serialized_end=37534,
+  serialized_start=37599,
+  serialized_end=37860,
 )
 
 _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0 = _descriptor.Descriptor(
@@ -10061,8 +10156,8 @@ _GETSTATUSRESPONSE_GETSTATUSRESPONSEV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=35499,
-  serialized_end=37534,
+  serialized_start=35825,
+  serialized_end=37860,
 )
 
 _GETSTATUSRESPONSE = _descriptor.Descriptor(
@@ -10097,8 +10192,8 @@ _GETSTATUSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=35397,
-  serialized_end=37545,
+  serialized_start=35723,
+  serialized_end=37871,
 )
 
 
@@ -10122,8 +10217,8 @@ _GETCURRENTQUORUMSINFOREQUEST_GETCURRENTQUORUMSINFOREQUESTV0 = _descriptor.Descr
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=37682,
-  serialized_end=37714,
+  serialized_start=38008,
+  serialized_end=38040,
 )
 
 _GETCURRENTQUORUMSINFOREQUEST = _descriptor.Descriptor(
@@ -10158,8 +10253,8 @@ _GETCURRENTQUORUMSINFOREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=37548,
-  serialized_end=37725,
+  serialized_start=37874,
+  serialized_end=38051,
 )
 
 
@@ -10204,8 +10299,8 @@ _GETCURRENTQUORUMSINFORESPONSE_VALIDATORV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=37865,
-  serialized_end=37935,
+  serialized_start=38191,
+  serialized_end=38261,
 )
 
 _GETCURRENTQUORUMSINFORESPONSE_VALIDATORSETV0 = _descriptor.Descriptor(
@@ -10256,8 +10351,8 @@ _GETCURRENTQUORUMSINFORESPONSE_VALIDATORSETV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=37938,
-  serialized_end=38113,
+  serialized_start=38264,
+  serialized_end=38439,
 )
 
 _GETCURRENTQUORUMSINFORESPONSE_GETCURRENTQUORUMSINFORESPONSEV0 = _descriptor.Descriptor(
@@ -10315,8 +10410,8 @@ _GETCURRENTQUORUMSINFORESPONSE_GETCURRENTQUORUMSINFORESPONSEV0 = _descriptor.Des
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=38116,
-  serialized_end=38390,
+  serialized_start=38442,
+  serialized_end=38716,
 )
 
 _GETCURRENTQUORUMSINFORESPONSE = _descriptor.Descriptor(
@@ -10351,8 +10446,8 @@ _GETCURRENTQUORUMSINFORESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=37728,
-  serialized_end=38401,
+  serialized_start=38054,
+  serialized_end=38727,
 )
 
 
@@ -10397,8 +10492,8 @@ _GETIDENTITYTOKENBALANCESREQUEST_GETIDENTITYTOKENBALANCESREQUESTV0 = _descriptor
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=38547,
-  serialized_end=38637,
+  serialized_start=38873,
+  serialized_end=38963,
 )
 
 _GETIDENTITYTOKENBALANCESREQUEST = _descriptor.Descriptor(
@@ -10433,8 +10528,8 @@ _GETIDENTITYTOKENBALANCESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=38404,
-  serialized_end=38648,
+  serialized_start=38730,
+  serialized_end=38974,
 )
 
 
@@ -10477,8 +10572,8 @@ _GETIDENTITYTOKENBALANCESRESPONSE_GETIDENTITYTOKENBALANCESRESPONSEV0_TOKENBALANC
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=39087,
-  serialized_end=39158,
+  serialized_start=39413,
+  serialized_end=39484,
 )
 
 _GETIDENTITYTOKENBALANCESRESPONSE_GETIDENTITYTOKENBALANCESRESPONSEV0_TOKENBALANCES = _descriptor.Descriptor(
@@ -10508,8 +10603,8 @@ _GETIDENTITYTOKENBALANCESRESPONSE_GETIDENTITYTOKENBALANCESRESPONSEV0_TOKENBALANC
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=39161,
-  serialized_end=39315,
+  serialized_start=39487,
+  serialized_end=39641,
 )
 
 _GETIDENTITYTOKENBALANCESRESPONSE_GETIDENTITYTOKENBALANCESRESPONSEV0 = _descriptor.Descriptor(
@@ -10558,8 +10653,8 @@ _GETIDENTITYTOKENBALANCESRESPONSE_GETIDENTITYTOKENBALANCESRESPONSEV0 = _descript
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=38798,
-  serialized_end=39325,
+  serialized_start=39124,
+  serialized_end=39651,
 )
 
 _GETIDENTITYTOKENBALANCESRESPONSE = _descriptor.Descriptor(
@@ -10594,8 +10689,8 @@ _GETIDENTITYTOKENBALANCESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=38651,
-  serialized_end=39336,
+  serialized_start=38977,
+  serialized_end=39662,
 )
 
 
@@ -10640,8 +10735,8 @@ _GETIDENTITIESTOKENBALANCESREQUEST_GETIDENTITIESTOKENBALANCESREQUESTV0 = _descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=39488,
-  serialized_end=39580,
+  serialized_start=39814,
+  serialized_end=39906,
 )
 
 _GETIDENTITIESTOKENBALANCESREQUEST = _descriptor.Descriptor(
@@ -10676,8 +10771,8 @@ _GETIDENTITIESTOKENBALANCESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=39339,
-  serialized_end=39591,
+  serialized_start=39665,
+  serialized_end=39917,
 )
 
 
@@ -10720,8 +10815,8 @@ _GETIDENTITIESTOKENBALANCESRESPONSE_GETIDENTITIESTOKENBALANCESRESPONSEV0_IDENTIT
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=40059,
-  serialized_end=40141,
+  serialized_start=40385,
+  serialized_end=40467,
 )
 
 _GETIDENTITIESTOKENBALANCESRESPONSE_GETIDENTITIESTOKENBALANCESRESPONSEV0_IDENTITYTOKENBALANCES = _descriptor.Descriptor(
@@ -10751,8 +10846,8 @@ _GETIDENTITIESTOKENBALANCESRESPONSE_GETIDENTITIESTOKENBALANCESRESPONSEV0_IDENTIT
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=40144,
-  serialized_end=40327,
+  serialized_start=40470,
+  serialized_end=40653,
 )
 
 _GETIDENTITIESTOKENBALANCESRESPONSE_GETIDENTITIESTOKENBALANCESRESPONSEV0 = _descriptor.Descriptor(
@@ -10801,8 +10896,8 @@ _GETIDENTITIESTOKENBALANCESRESPONSE_GETIDENTITIESTOKENBALANCESRESPONSEV0 = _desc
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=39747,
-  serialized_end=40337,
+  serialized_start=40073,
+  serialized_end=40663,
 )
 
 _GETIDENTITIESTOKENBALANCESRESPONSE = _descriptor.Descriptor(
@@ -10837,8 +10932,8 @@ _GETIDENTITIESTOKENBALANCESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=39594,
-  serialized_end=40348,
+  serialized_start=39920,
+  serialized_end=40674,
 )
 
 
@@ -10883,8 +10978,8 @@ _GETIDENTITYTOKENINFOSREQUEST_GETIDENTITYTOKENINFOSREQUESTV0 = _descriptor.Descr
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=40485,
-  serialized_end=40572,
+  serialized_start=40811,
+  serialized_end=40898,
 )
 
 _GETIDENTITYTOKENINFOSREQUEST = _descriptor.Descriptor(
@@ -10919,8 +11014,8 @@ _GETIDENTITYTOKENINFOSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=40351,
-  serialized_end=40583,
+  serialized_start=40677,
+  serialized_end=40909,
 )
 
 
@@ -10951,8 +11046,8 @@ _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0_TOKENIDENTITYINFO
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=40997,
-  serialized_end=41037,
+  serialized_start=41323,
+  serialized_end=41363,
 )
 
 _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0_TOKENINFOENTRY = _descriptor.Descriptor(
@@ -10994,8 +11089,8 @@ _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0_TOKENINFOENTRY = 
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=41040,
-  serialized_end=41216,
+  serialized_start=41366,
+  serialized_end=41542,
 )
 
 _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0_TOKENINFOS = _descriptor.Descriptor(
@@ -11025,8 +11120,8 @@ _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0_TOKENINFOS = _des
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=41219,
-  serialized_end=41357,
+  serialized_start=41545,
+  serialized_end=41683,
 )
 
 _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0 = _descriptor.Descriptor(
@@ -11075,8 +11170,8 @@ _GETIDENTITYTOKENINFOSRESPONSE_GETIDENTITYTOKENINFOSRESPONSEV0 = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=40724,
-  serialized_end=41367,
+  serialized_start=41050,
+  serialized_end=41693,
 )
 
 _GETIDENTITYTOKENINFOSRESPONSE = _descriptor.Descriptor(
@@ -11111,8 +11206,8 @@ _GETIDENTITYTOKENINFOSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=40586,
-  serialized_end=41378,
+  serialized_start=40912,
+  serialized_end=41704,
 )
 
 
@@ -11157,8 +11252,8 @@ _GETIDENTITIESTOKENINFOSREQUEST_GETIDENTITIESTOKENINFOSREQUESTV0 = _descriptor.D
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=41521,
-  serialized_end=41610,
+  serialized_start=41847,
+  serialized_end=41936,
 )
 
 _GETIDENTITIESTOKENINFOSREQUEST = _descriptor.Descriptor(
@@ -11193,8 +11288,8 @@ _GETIDENTITIESTOKENINFOSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=41381,
-  serialized_end=41621,
+  serialized_start=41707,
+  serialized_end=41947,
 )
 
 
@@ -11225,8 +11320,8 @@ _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0_TOKENIDENTITY
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=40997,
-  serialized_end=41037,
+  serialized_start=41323,
+  serialized_end=41363,
 )
 
 _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0_TOKENINFOENTRY = _descriptor.Descriptor(
@@ -11268,8 +11363,8 @@ _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0_TOKENINFOENTR
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=42108,
-  serialized_end=42291,
+  serialized_start=42434,
+  serialized_end=42617,
 )
 
 _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0_IDENTITYTOKENINFOS = _descriptor.Descriptor(
@@ -11299,8 +11394,8 @@ _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0_IDENTITYTOKEN
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=42294,
-  serialized_end=42445,
+  serialized_start=42620,
+  serialized_end=42771,
 )
 
 _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0 = _descriptor.Descriptor(
@@ -11349,8 +11444,8 @@ _GETIDENTITIESTOKENINFOSRESPONSE_GETIDENTITIESTOKENINFOSRESPONSEV0 = _descriptor
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=41768,
-  serialized_end=42455,
+  serialized_start=42094,
+  serialized_end=42781,
 )
 
 _GETIDENTITIESTOKENINFOSRESPONSE = _descriptor.Descriptor(
@@ -11385,8 +11480,8 @@ _GETIDENTITIESTOKENINFOSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=41624,
-  serialized_end=42466,
+  serialized_start=41950,
+  serialized_end=42792,
 )
 
 
@@ -11424,8 +11519,8 @@ _GETTOKENSTATUSESREQUEST_GETTOKENSTATUSESREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=42588,
-  serialized_end=42649,
+  serialized_start=42914,
+  serialized_end=42975,
 )
 
 _GETTOKENSTATUSESREQUEST = _descriptor.Descriptor(
@@ -11460,8 +11555,8 @@ _GETTOKENSTATUSESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=42469,
-  serialized_end=42660,
+  serialized_start=42795,
+  serialized_end=42986,
 )
 
 
@@ -11504,8 +11599,8 @@ _GETTOKENSTATUSESRESPONSE_GETTOKENSTATUSESRESPONSEV0_TOKENSTATUSENTRY = _descrip
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=43050,
-  serialized_end=43118,
+  serialized_start=43376,
+  serialized_end=43444,
 )
 
 _GETTOKENSTATUSESRESPONSE_GETTOKENSTATUSESRESPONSEV0_TOKENSTATUSES = _descriptor.Descriptor(
@@ -11535,8 +11630,8 @@ _GETTOKENSTATUSESRESPONSE_GETTOKENSTATUSESRESPONSEV0_TOKENSTATUSES = _descriptor
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=43121,
-  serialized_end=43257,
+  serialized_start=43447,
+  serialized_end=43583,
 )
 
 _GETTOKENSTATUSESRESPONSE_GETTOKENSTATUSESRESPONSEV0 = _descriptor.Descriptor(
@@ -11585,8 +11680,8 @@ _GETTOKENSTATUSESRESPONSE_GETTOKENSTATUSESRESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=42786,
-  serialized_end=43267,
+  serialized_start=43112,
+  serialized_end=43593,
 )
 
 _GETTOKENSTATUSESRESPONSE = _descriptor.Descriptor(
@@ -11621,8 +11716,8 @@ _GETTOKENSTATUSESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=42663,
-  serialized_end=43278,
+  serialized_start=42989,
+  serialized_end=43604,
 )
 
 
@@ -11660,8 +11755,8 @@ _GETTOKENDIRECTPURCHASEPRICESREQUEST_GETTOKENDIRECTPURCHASEPRICESREQUESTV0 = _de
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=43436,
-  serialized_end=43509,
+  serialized_start=43762,
+  serialized_end=43835,
 )
 
 _GETTOKENDIRECTPURCHASEPRICESREQUEST = _descriptor.Descriptor(
@@ -11696,8 +11791,8 @@ _GETTOKENDIRECTPURCHASEPRICESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=43281,
-  serialized_end=43520,
+  serialized_start=43607,
+  serialized_end=43846,
 )
 
 
@@ -11735,8 +11830,8 @@ _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_PRI
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=44010,
-  serialized_end=44061,
+  serialized_start=44336,
+  serialized_end=44387,
 )
 
 _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_PRICINGSCHEDULE = _descriptor.Descriptor(
@@ -11766,8 +11861,8 @@ _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_PRI
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=44064,
-  serialized_end=44231,
+  serialized_start=44390,
+  serialized_end=44557,
 )
 
 _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_TOKENDIRECTPURCHASEPRICEENTRY = _descriptor.Descriptor(
@@ -11816,8 +11911,8 @@ _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_TOK
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=44234,
-  serialized_end=44462,
+  serialized_start=44560,
+  serialized_end=44788,
 )
 
 _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_TOKENDIRECTPURCHASEPRICES = _descriptor.Descriptor(
@@ -11847,8 +11942,8 @@ _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0_TOK
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=44465,
-  serialized_end=44665,
+  serialized_start=44791,
+  serialized_end=44991,
 )
 
 _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0 = _descriptor.Descriptor(
@@ -11897,8 +11992,8 @@ _GETTOKENDIRECTPURCHASEPRICESRESPONSE_GETTOKENDIRECTPURCHASEPRICESRESPONSEV0 = _
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=43682,
-  serialized_end=44675,
+  serialized_start=44008,
+  serialized_end=45001,
 )
 
 _GETTOKENDIRECTPURCHASEPRICESRESPONSE = _descriptor.Descriptor(
@@ -11933,8 +12028,8 @@ _GETTOKENDIRECTPURCHASEPRICESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=43523,
-  serialized_end=44686,
+  serialized_start=43849,
+  serialized_end=45012,
 )
 
 
@@ -11972,8 +12067,8 @@ _GETTOKENCONTRACTINFOREQUEST_GETTOKENCONTRACTINFOREQUESTV0 = _descriptor.Descrip
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=44820,
-  serialized_end=44884,
+  serialized_start=45146,
+  serialized_end=45210,
 )
 
 _GETTOKENCONTRACTINFOREQUEST = _descriptor.Descriptor(
@@ -12008,8 +12103,8 @@ _GETTOKENCONTRACTINFOREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=44689,
-  serialized_end=44895,
+  serialized_start=45015,
+  serialized_end=45221,
 )
 
 
@@ -12047,8 +12142,8 @@ _GETTOKENCONTRACTINFORESPONSE_GETTOKENCONTRACTINFORESPONSEV0_TOKENCONTRACTINFODA
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=45307,
-  serialized_end=45384,
+  serialized_start=45633,
+  serialized_end=45710,
 )
 
 _GETTOKENCONTRACTINFORESPONSE_GETTOKENCONTRACTINFORESPONSEV0 = _descriptor.Descriptor(
@@ -12097,8 +12192,8 @@ _GETTOKENCONTRACTINFORESPONSE_GETTOKENCONTRACTINFORESPONSEV0 = _descriptor.Descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=45033,
-  serialized_end=45394,
+  serialized_start=45359,
+  serialized_end=45720,
 )
 
 _GETTOKENCONTRACTINFORESPONSE = _descriptor.Descriptor(
@@ -12133,8 +12228,8 @@ _GETTOKENCONTRACTINFORESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=44898,
-  serialized_end=45405,
+  serialized_start=45224,
+  serialized_end=45731,
 )
 
 
@@ -12189,8 +12284,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQUEST_GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQ
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=45838,
-  serialized_end=45992,
+  serialized_start=46164,
+  serialized_end=46318,
 )
 
 _GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQUEST_GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQUESTV0 = _descriptor.Descriptor(
@@ -12251,8 +12346,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQUEST_GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQ
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=45582,
-  serialized_end=46020,
+  serialized_start=45908,
+  serialized_end=46346,
 )
 
 _GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQUEST = _descriptor.Descriptor(
@@ -12287,8 +12382,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=45408,
-  serialized_end=46031,
+  serialized_start=45734,
+  serialized_end=46357,
 )
 
 
@@ -12326,8 +12421,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRE
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=46542,
-  serialized_end=46604,
+  serialized_start=46868,
+  serialized_end=46930,
 )
 
 _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSEV0_TOKENTIMEDDISTRIBUTIONENTRY = _descriptor.Descriptor(
@@ -12364,8 +12459,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRE
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=46607,
-  serialized_end=46819,
+  serialized_start=46933,
+  serialized_end=47145,
 )
 
 _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSEV0_TOKENDISTRIBUTIONS = _descriptor.Descriptor(
@@ -12395,8 +12490,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRE
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=46822,
-  serialized_end=47017,
+  serialized_start=47148,
+  serialized_end=47343,
 )
 
 _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSEV0 = _descriptor.Descriptor(
@@ -12445,8 +12540,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE_GETTOKENPREPROGRAMMEDDISTRIBUTIONSRE
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=46212,
-  serialized_end=47027,
+  serialized_start=46538,
+  serialized_end=47353,
 )
 
 _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE = _descriptor.Descriptor(
@@ -12481,8 +12576,8 @@ _GETTOKENPREPROGRAMMEDDISTRIBUTIONSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=46034,
-  serialized_end=47038,
+  serialized_start=46360,
+  serialized_end=47364,
 )
 
 
@@ -12520,8 +12615,8 @@ _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMREQUEST_CONTRACTTOKENINFO = _descriptor.D
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=47227,
-  serialized_end=47300,
+  serialized_start=47553,
+  serialized_end=47626,
 )
 
 _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMREQUEST_GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMREQUESTV0 = _descriptor.Descriptor(
@@ -12577,8 +12672,8 @@ _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMREQUEST_GETTOKENPERPETUALDISTRIBUTIONLAST
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=47303,
-  serialized_end=47544,
+  serialized_start=47629,
+  serialized_end=47870,
 )
 
 _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMREQUEST = _descriptor.Descriptor(
@@ -12613,8 +12708,8 @@ _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=47041,
-  serialized_end=47555,
+  serialized_start=47367,
+  serialized_end=47881,
 )
 
 
@@ -12671,8 +12766,8 @@ _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMRESPONSE_GETTOKENPERPETUALDISTRIBUTIONLAS
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=48076,
-  serialized_end=48196,
+  serialized_start=48402,
+  serialized_end=48522,
 )
 
 _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMRESPONSE_GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMRESPONSEV0 = _descriptor.Descriptor(
@@ -12721,8 +12816,8 @@ _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMRESPONSE_GETTOKENPERPETUALDISTRIBUTIONLAS
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=47748,
-  serialized_end=48206,
+  serialized_start=48074,
+  serialized_end=48532,
 )
 
 _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMRESPONSE = _descriptor.Descriptor(
@@ -12757,8 +12852,8 @@ _GETTOKENPERPETUALDISTRIBUTIONLASTCLAIMRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=47558,
-  serialized_end=48217,
+  serialized_start=47884,
+  serialized_end=48543,
 )
 
 
@@ -12796,8 +12891,8 @@ _GETTOKENTOTALSUPPLYREQUEST_GETTOKENTOTALSUPPLYREQUESTV0 = _descriptor.Descripto
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=48348,
-  serialized_end=48411,
+  serialized_start=48674,
+  serialized_end=48737,
 )
 
 _GETTOKENTOTALSUPPLYREQUEST = _descriptor.Descriptor(
@@ -12832,8 +12927,8 @@ _GETTOKENTOTALSUPPLYREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=48220,
-  serialized_end=48422,
+  serialized_start=48546,
+  serialized_end=48748,
 )
 
 
@@ -12878,8 +12973,8 @@ _GETTOKENTOTALSUPPLYRESPONSE_GETTOKENTOTALSUPPLYRESPONSEV0_TOKENTOTALSUPPLYENTRY
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=48843,
-  serialized_end=48963,
+  serialized_start=49169,
+  serialized_end=49289,
 )
 
 _GETTOKENTOTALSUPPLYRESPONSE_GETTOKENTOTALSUPPLYRESPONSEV0 = _descriptor.Descriptor(
@@ -12928,8 +13023,8 @@ _GETTOKENTOTALSUPPLYRESPONSE_GETTOKENTOTALSUPPLYRESPONSEV0 = _descriptor.Descrip
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=48557,
-  serialized_end=48973,
+  serialized_start=48883,
+  serialized_end=49299,
 )
 
 _GETTOKENTOTALSUPPLYRESPONSE = _descriptor.Descriptor(
@@ -12964,8 +13059,8 @@ _GETTOKENTOTALSUPPLYRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=48425,
-  serialized_end=48984,
+  serialized_start=48751,
+  serialized_end=49310,
 )
 
 
@@ -13010,8 +13105,8 @@ _GETGROUPINFOREQUEST_GETGROUPINFOREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=49094,
-  serialized_end=49186,
+  serialized_start=49420,
+  serialized_end=49512,
 )
 
 _GETGROUPINFOREQUEST = _descriptor.Descriptor(
@@ -13046,8 +13141,8 @@ _GETGROUPINFOREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=48987,
-  serialized_end=49197,
+  serialized_start=49313,
+  serialized_end=49523,
 )
 
 
@@ -13085,8 +13180,8 @@ _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0_GROUPMEMBERENTRY = _descriptor.Desc
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=49555,
-  serialized_end=49607,
+  serialized_start=49881,
+  serialized_end=49933,
 )
 
 _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0_GROUPINFOENTRY = _descriptor.Descriptor(
@@ -13123,8 +13218,8 @@ _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0_GROUPINFOENTRY = _descriptor.Descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=49610,
-  serialized_end=49762,
+  serialized_start=49936,
+  serialized_end=50088,
 )
 
 _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0_GROUPINFO = _descriptor.Descriptor(
@@ -13159,8 +13254,8 @@ _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0_GROUPINFO = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=49765,
-  serialized_end=49903,
+  serialized_start=50091,
+  serialized_end=50229,
 )
 
 _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0 = _descriptor.Descriptor(
@@ -13209,8 +13304,8 @@ _GETGROUPINFORESPONSE_GETGROUPINFORESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=49311,
-  serialized_end=49913,
+  serialized_start=49637,
+  serialized_end=50239,
 )
 
 _GETGROUPINFORESPONSE = _descriptor.Descriptor(
@@ -13245,8 +13340,8 @@ _GETGROUPINFORESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=49200,
-  serialized_end=49924,
+  serialized_start=49526,
+  serialized_end=50250,
 )
 
 
@@ -13284,8 +13379,8 @@ _GETGROUPINFOSREQUEST_STARTATGROUPCONTRACTPOSITION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=50037,
-  serialized_end=50154,
+  serialized_start=50363,
+  serialized_end=50480,
 )
 
 _GETGROUPINFOSREQUEST_GETGROUPINFOSREQUESTV0 = _descriptor.Descriptor(
@@ -13346,8 +13441,8 @@ _GETGROUPINFOSREQUEST_GETGROUPINFOSREQUESTV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=50157,
-  serialized_end=50409,
+  serialized_start=50483,
+  serialized_end=50735,
 )
 
 _GETGROUPINFOSREQUEST = _descriptor.Descriptor(
@@ -13382,8 +13477,8 @@ _GETGROUPINFOSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=49927,
-  serialized_end=50420,
+  serialized_start=50253,
+  serialized_end=50746,
 )
 
 
@@ -13421,8 +13516,8 @@ _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0_GROUPMEMBERENTRY = _descriptor.De
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=49555,
-  serialized_end=49607,
+  serialized_start=49881,
+  serialized_end=49933,
 )
 
 _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0_GROUPPOSITIONINFOENTRY = _descriptor.Descriptor(
@@ -13466,8 +13561,8 @@ _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0_GROUPPOSITIONINFOENTRY = _descrip
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=50841,
-  serialized_end=51036,
+  serialized_start=51167,
+  serialized_end=51362,
 )
 
 _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0_GROUPINFOS = _descriptor.Descriptor(
@@ -13497,8 +13592,8 @@ _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0_GROUPINFOS = _descriptor.Descript
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=51039,
-  serialized_end=51169,
+  serialized_start=51365,
+  serialized_end=51495,
 )
 
 _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0 = _descriptor.Descriptor(
@@ -13547,8 +13642,8 @@ _GETGROUPINFOSRESPONSE_GETGROUPINFOSRESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=50537,
-  serialized_end=51179,
+  serialized_start=50863,
+  serialized_end=51505,
 )
 
 _GETGROUPINFOSRESPONSE = _descriptor.Descriptor(
@@ -13583,8 +13678,8 @@ _GETGROUPINFOSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=50423,
-  serialized_end=51190,
+  serialized_start=50749,
+  serialized_end=51516,
 )
 
 
@@ -13622,8 +13717,8 @@ _GETGROUPACTIONSREQUEST_STARTATACTIONID = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=51309,
-  serialized_end=51385,
+  serialized_start=51635,
+  serialized_end=51711,
 )
 
 _GETGROUPACTIONSREQUEST_GETGROUPACTIONSREQUESTV0 = _descriptor.Descriptor(
@@ -13698,8 +13793,8 @@ _GETGROUPACTIONSREQUEST_GETGROUPACTIONSREQUESTV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=51388,
-  serialized_end=51716,
+  serialized_start=51714,
+  serialized_end=52042,
 )
 
 _GETGROUPACTIONSREQUEST = _descriptor.Descriptor(
@@ -13735,8 +13830,8 @@ _GETGROUPACTIONSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=51193,
-  serialized_end=51767,
+  serialized_start=51519,
+  serialized_end=52093,
 )
 
 
@@ -13786,8 +13881,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_MINTEVENT = _descriptor.Descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=52149,
-  serialized_end=52240,
+  serialized_start=52475,
+  serialized_end=52566,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_BURNEVENT = _descriptor.Descriptor(
@@ -13836,8 +13931,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_BURNEVENT = _descriptor.Descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=52242,
-  serialized_end=52333,
+  serialized_start=52568,
+  serialized_end=52659,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_FREEZEEVENT = _descriptor.Descriptor(
@@ -13879,8 +13974,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_FREEZEEVENT = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=52335,
-  serialized_end=52409,
+  serialized_start=52661,
+  serialized_end=52735,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UNFREEZEEVENT = _descriptor.Descriptor(
@@ -13922,8 +14017,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UNFREEZEEVENT = _descriptor.D
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=52411,
-  serialized_end=52487,
+  serialized_start=52737,
+  serialized_end=52813,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_DESTROYFROZENFUNDSEVENT = _descriptor.Descriptor(
@@ -13972,8 +14067,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_DESTROYFROZENFUNDSEVENT = _de
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=52489,
-  serialized_end=52591,
+  serialized_start=52815,
+  serialized_end=52917,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_SHAREDENCRYPTEDNOTE = _descriptor.Descriptor(
@@ -14017,8 +14112,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_SHAREDENCRYPTEDNOTE = _descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=52593,
-  serialized_end=52693,
+  serialized_start=52919,
+  serialized_end=53019,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_PERSONALENCRYPTEDNOTE = _descriptor.Descriptor(
@@ -14062,8 +14157,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_PERSONALENCRYPTEDNOTE = _desc
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=52695,
-  serialized_end=52818,
+  serialized_start=53021,
+  serialized_end=53144,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_EMERGENCYACTIONEVENT = _descriptor.Descriptor(
@@ -14106,8 +14201,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_EMERGENCYACTIONEVENT = _descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=52821,
-  serialized_end=53054,
+  serialized_start=53147,
+  serialized_end=53380,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_TOKENCONFIGUPDATEEVENT = _descriptor.Descriptor(
@@ -14149,8 +14244,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_TOKENCONFIGUPDATEEVENT = _des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=53056,
-  serialized_end=53156,
+  serialized_start=53382,
+  serialized_end=53482,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UPDATEDIRECTPURCHASEPRICEEVENT_PRICEFORQUANTITY = _descriptor.Descriptor(
@@ -14187,8 +14282,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UPDATEDIRECTPURCHASEPRICEEVEN
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=44010,
-  serialized_end=44061,
+  serialized_start=44336,
+  serialized_end=44387,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UPDATEDIRECTPURCHASEPRICEEVENT_PRICINGSCHEDULE = _descriptor.Descriptor(
@@ -14218,8 +14313,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UPDATEDIRECTPURCHASEPRICEEVEN
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=53448,
-  serialized_end=53620,
+  serialized_start=53774,
+  serialized_end=53946,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UPDATEDIRECTPURCHASEPRICEEVENT = _descriptor.Descriptor(
@@ -14273,8 +14368,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_UPDATEDIRECTPURCHASEPRICEEVEN
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=53159,
-  serialized_end=53645,
+  serialized_start=53485,
+  serialized_end=53971,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_GROUPACTIONEVENT = _descriptor.Descriptor(
@@ -14323,8 +14418,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_GROUPACTIONEVENT = _descripto
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=53648,
-  serialized_end=54028,
+  serialized_start=53974,
+  serialized_end=54354,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_DOCUMENTEVENT = _descriptor.Descriptor(
@@ -14359,8 +14454,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_DOCUMENTEVENT = _descriptor.D
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=54031,
-  serialized_end=54170,
+  serialized_start=54357,
+  serialized_end=54496,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_DOCUMENTCREATEEVENT = _descriptor.Descriptor(
@@ -14390,8 +14485,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_DOCUMENTCREATEEVENT = _descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=54172,
-  serialized_end=54219,
+  serialized_start=54498,
+  serialized_end=54545,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_CONTRACTUPDATEEVENT = _descriptor.Descriptor(
@@ -14421,8 +14516,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_CONTRACTUPDATEEVENT = _descri
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=54221,
-  serialized_end=54268,
+  serialized_start=54547,
+  serialized_end=54594,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_CONTRACTEVENT = _descriptor.Descriptor(
@@ -14457,8 +14552,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_CONTRACTEVENT = _descriptor.D
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=54271,
-  serialized_end=54410,
+  serialized_start=54597,
+  serialized_end=54736,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_TOKENEVENT = _descriptor.Descriptor(
@@ -14542,8 +14637,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_TOKENEVENT = _descriptor.Desc
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=54413,
-  serialized_end=55390,
+  serialized_start=54739,
+  serialized_end=55716,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_GROUPACTIONENTRY = _descriptor.Descriptor(
@@ -14580,8 +14675,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_GROUPACTIONENTRY = _descripto
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=55393,
-  serialized_end=55540,
+  serialized_start=55719,
+  serialized_end=55866,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_GROUPACTIONS = _descriptor.Descriptor(
@@ -14611,8 +14706,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0_GROUPACTIONS = _descriptor.De
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=55543,
-  serialized_end=55675,
+  serialized_start=55869,
+  serialized_end=56001,
 )
 
 _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0 = _descriptor.Descriptor(
@@ -14661,8 +14756,8 @@ _GETGROUPACTIONSRESPONSE_GETGROUPACTIONSRESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=51890,
-  serialized_end=55685,
+  serialized_start=52216,
+  serialized_end=56011,
 )
 
 _GETGROUPACTIONSRESPONSE = _descriptor.Descriptor(
@@ -14697,8 +14792,8 @@ _GETGROUPACTIONSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=51770,
-  serialized_end=55696,
+  serialized_start=52096,
+  serialized_end=56022,
 )
 
 
@@ -14757,8 +14852,8 @@ _GETGROUPACTIONSIGNERSREQUEST_GETGROUPACTIONSIGNERSREQUESTV0 = _descriptor.Descr
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=55834,
-  serialized_end=56040,
+  serialized_start=56160,
+  serialized_end=56366,
 )
 
 _GETGROUPACTIONSIGNERSREQUEST = _descriptor.Descriptor(
@@ -14794,8 +14889,8 @@ _GETGROUPACTIONSIGNERSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=55699,
-  serialized_end=56091,
+  serialized_start=56025,
+  serialized_end=56417,
 )
 
 
@@ -14833,8 +14928,8 @@ _GETGROUPACTIONSIGNERSRESPONSE_GETGROUPACTIONSIGNERSRESPONSEV0_GROUPACTIONSIGNER
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=56523,
-  serialized_end=56576,
+  serialized_start=56849,
+  serialized_end=56902,
 )
 
 _GETGROUPACTIONSIGNERSRESPONSE_GETGROUPACTIONSIGNERSRESPONSEV0_GROUPACTIONSIGNERS = _descriptor.Descriptor(
@@ -14864,8 +14959,8 @@ _GETGROUPACTIONSIGNERSRESPONSE_GETGROUPACTIONSIGNERSRESPONSEV0_GROUPACTIONSIGNER
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=56579,
-  serialized_end=56724,
+  serialized_start=56905,
+  serialized_end=57050,
 )
 
 _GETGROUPACTIONSIGNERSRESPONSE_GETGROUPACTIONSIGNERSRESPONSEV0 = _descriptor.Descriptor(
@@ -14914,8 +15009,8 @@ _GETGROUPACTIONSIGNERSRESPONSE_GETGROUPACTIONSIGNERSRESPONSEV0 = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=56232,
-  serialized_end=56734,
+  serialized_start=56558,
+  serialized_end=57060,
 )
 
 _GETGROUPACTIONSIGNERSRESPONSE = _descriptor.Descriptor(
@@ -14950,8 +15045,8 @@ _GETGROUPACTIONSIGNERSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=56094,
-  serialized_end=56745,
+  serialized_start=56420,
+  serialized_end=57071,
 )
 
 
@@ -14989,8 +15084,8 @@ _GETADDRESSINFOREQUEST_GETADDRESSINFOREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=56861,
-  serialized_end=56918,
+  serialized_start=57187,
+  serialized_end=57244,
 )
 
 _GETADDRESSINFOREQUEST = _descriptor.Descriptor(
@@ -15025,8 +15120,8 @@ _GETADDRESSINFOREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=56748,
-  serialized_end=56929,
+  serialized_start=57074,
+  serialized_end=57255,
 )
 
 
@@ -15069,8 +15164,8 @@ _ADDRESSINFOENTRY = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=56932,
-  serialized_end=57065,
+  serialized_start=57258,
+  serialized_end=57391,
 )
 
 
@@ -15108,8 +15203,8 @@ _BALANCEANDNONCE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=57067,
-  serialized_end=57116,
+  serialized_start=57393,
+  serialized_end=57442,
 )
 
 
@@ -15140,8 +15235,8 @@ _ADDRESSINFOENTRIES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=57118,
-  serialized_end=57213,
+  serialized_start=57444,
+  serialized_end=57539,
 )
 
 
@@ -15191,8 +15286,8 @@ _ADDRESSBALANCECHANGE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=57215,
-  serialized_end=57324,
+  serialized_start=57541,
+  serialized_end=57650,
 )
 
 
@@ -15230,8 +15325,8 @@ _BLOCKADDRESSBALANCECHANGES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=57326,
-  serialized_end=57446,
+  serialized_start=57652,
+  serialized_end=57772,
 )
 
 
@@ -15262,8 +15357,8 @@ _ADDRESSBALANCEUPDATEENTRIES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=57448,
-  serialized_end=57555,
+  serialized_start=57774,
+  serialized_end=57881,
 )
 
 
@@ -15313,8 +15408,8 @@ _GETADDRESSINFORESPONSE_GETADDRESSINFORESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=57675,
-  serialized_end=57900,
+  serialized_start=58001,
+  serialized_end=58226,
 )
 
 _GETADDRESSINFORESPONSE = _descriptor.Descriptor(
@@ -15349,8 +15444,8 @@ _GETADDRESSINFORESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=57558,
-  serialized_end=57911,
+  serialized_start=57884,
+  serialized_end=58237,
 )
 
 
@@ -15388,8 +15483,8 @@ _GETADDRESSESINFOSREQUEST_GETADDRESSESINFOSREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=58036,
-  serialized_end=58098,
+  serialized_start=58362,
+  serialized_end=58424,
 )
 
 _GETADDRESSESINFOSREQUEST = _descriptor.Descriptor(
@@ -15424,8 +15519,8 @@ _GETADDRESSESINFOSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=57914,
-  serialized_end=58109,
+  serialized_start=58240,
+  serialized_end=58435,
 )
 
 
@@ -15475,8 +15570,8 @@ _GETADDRESSESINFOSRESPONSE_GETADDRESSESINFOSRESPONSEV0 = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=58238,
-  serialized_end=58470,
+  serialized_start=58564,
+  serialized_end=58796,
 )
 
 _GETADDRESSESINFOSRESPONSE = _descriptor.Descriptor(
@@ -15511,8 +15606,8 @@ _GETADDRESSESINFOSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=58112,
-  serialized_end=58481,
+  serialized_start=58438,
+  serialized_end=58807,
 )
 
 
@@ -15536,8 +15631,8 @@ _GETADDRESSESTRUNKSTATEREQUEST_GETADDRESSESTRUNKSTATEREQUESTV0 = _descriptor.Des
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=58621,
-  serialized_end=58654,
+  serialized_start=58947,
+  serialized_end=58980,
 )
 
 _GETADDRESSESTRUNKSTATEREQUEST = _descriptor.Descriptor(
@@ -15572,8 +15667,8 @@ _GETADDRESSESTRUNKSTATEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=58484,
-  serialized_end=58665,
+  serialized_start=58810,
+  serialized_end=58991,
 )
 
 
@@ -15611,8 +15706,8 @@ _GETADDRESSESTRUNKSTATERESPONSE_GETADDRESSESTRUNKSTATERESPONSEV0 = _descriptor.D
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=58809,
-  serialized_end=58955,
+  serialized_start=59135,
+  serialized_end=59281,
 )
 
 _GETADDRESSESTRUNKSTATERESPONSE = _descriptor.Descriptor(
@@ -15647,8 +15742,8 @@ _GETADDRESSESTRUNKSTATERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=58668,
-  serialized_end=58966,
+  serialized_start=58994,
+  serialized_end=59292,
 )
 
 
@@ -15693,8 +15788,8 @@ _GETADDRESSESBRANCHSTATEREQUEST_GETADDRESSESBRANCHSTATEREQUESTV0 = _descriptor.D
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=59109,
-  serialized_end=59198,
+  serialized_start=59435,
+  serialized_end=59524,
 )
 
 _GETADDRESSESBRANCHSTATEREQUEST = _descriptor.Descriptor(
@@ -15729,8 +15824,8 @@ _GETADDRESSESBRANCHSTATEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=58969,
-  serialized_end=59209,
+  serialized_start=59295,
+  serialized_end=59535,
 )
 
 
@@ -15761,8 +15856,8 @@ _GETADDRESSESBRANCHSTATERESPONSE_GETADDRESSESBRANCHSTATERESPONSEV0 = _descriptor
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=59355,
-  serialized_end=59410,
+  serialized_start=59681,
+  serialized_end=59736,
 )
 
 _GETADDRESSESBRANCHSTATERESPONSE = _descriptor.Descriptor(
@@ -15797,8 +15892,8 @@ _GETADDRESSESBRANCHSTATERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=59212,
-  serialized_end=59421,
+  serialized_start=59538,
+  serialized_end=59747,
 )
 
 
@@ -15843,8 +15938,8 @@ _GETRECENTADDRESSBALANCECHANGESREQUEST_GETRECENTADDRESSBALANCECHANGESREQUESTV0 =
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=59585,
-  serialized_end=59699,
+  serialized_start=59911,
+  serialized_end=60025,
 )
 
 _GETRECENTADDRESSBALANCECHANGESREQUEST = _descriptor.Descriptor(
@@ -15879,8 +15974,8 @@ _GETRECENTADDRESSBALANCECHANGESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=59424,
-  serialized_end=59710,
+  serialized_start=59750,
+  serialized_end=60036,
 )
 
 
@@ -15930,8 +16025,8 @@ _GETRECENTADDRESSBALANCECHANGESRESPONSE_GETRECENTADDRESSBALANCECHANGESRESPONSEV0
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=59878,
-  serialized_end=60142,
+  serialized_start=60204,
+  serialized_end=60468,
 )
 
 _GETRECENTADDRESSBALANCECHANGESRESPONSE = _descriptor.Descriptor(
@@ -15966,8 +16061,8 @@ _GETRECENTADDRESSBALANCECHANGESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=59713,
-  serialized_end=60153,
+  serialized_start=60039,
+  serialized_end=60479,
 )
 
 
@@ -16005,8 +16100,8 @@ _BLOCKHEIGHTCREDITENTRY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=60155,
-  serialized_end=60226,
+  serialized_start=60481,
+  serialized_end=60552,
 )
 
 
@@ -16056,8 +16151,8 @@ _COMPACTEDADDRESSBALANCECHANGE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=60229,
-  serialized_end=60405,
+  serialized_start=60555,
+  serialized_end=60731,
 )
 
 
@@ -16088,8 +16183,8 @@ _ADDTOCREDITSOPERATIONS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=60407,
-  serialized_end=60499,
+  serialized_start=60733,
+  serialized_end=60825,
 )
 
 
@@ -16134,8 +16229,8 @@ _COMPACTEDBLOCKADDRESSBALANCECHANGES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=60502,
-  serialized_end=60676,
+  serialized_start=60828,
+  serialized_end=61002,
 )
 
 
@@ -16166,8 +16261,8 @@ _COMPACTEDADDRESSBALANCEUPDATEENTRIES = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=60679,
-  serialized_end=60814,
+  serialized_start=61005,
+  serialized_end=61140,
 )
 
 
@@ -16205,8 +16300,8 @@ _GETRECENTCOMPACTEDADDRESSBALANCECHANGESREQUEST_GETRECENTCOMPACTEDADDRESSBALANCE
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=61006,
-  serialized_end=61103,
+  serialized_start=61332,
+  serialized_end=61429,
 )
 
 _GETRECENTCOMPACTEDADDRESSBALANCECHANGESREQUEST = _descriptor.Descriptor(
@@ -16241,8 +16336,8 @@ _GETRECENTCOMPACTEDADDRESSBALANCECHANGESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=60817,
-  serialized_end=61114,
+  serialized_start=61143,
+  serialized_end=61440,
 )
 
 
@@ -16292,8 +16387,8 @@ _GETRECENTCOMPACTEDADDRESSBALANCECHANGESRESPONSE_GETRECENTCOMPACTEDADDRESSBALANC
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=61310,
-  serialized_end=61602,
+  serialized_start=61636,
+  serialized_end=61928,
 )
 
 _GETRECENTCOMPACTEDADDRESSBALANCECHANGESRESPONSE = _descriptor.Descriptor(
@@ -16328,8 +16423,8 @@ _GETRECENTCOMPACTEDADDRESSBALANCECHANGESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=61117,
-  serialized_end=61613,
+  serialized_start=61443,
+  serialized_end=61939,
 )
 
 
@@ -16374,8 +16469,8 @@ _GETSHIELDEDENCRYPTEDNOTESREQUEST_GETSHIELDEDENCRYPTEDNOTESREQUESTV0 = _descript
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=61762,
-  serialized_end=61849,
+  serialized_start=62088,
+  serialized_end=62175,
 )
 
 _GETSHIELDEDENCRYPTEDNOTESREQUEST = _descriptor.Descriptor(
@@ -16410,8 +16505,8 @@ _GETSHIELDEDENCRYPTEDNOTESREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=61616,
-  serialized_end=61860,
+  serialized_start=61942,
+  serialized_end=62186,
 )
 
 
@@ -16463,8 +16558,8 @@ _GETSHIELDEDENCRYPTEDNOTESRESPONSE_GETSHIELDEDENCRYPTEDNOTESRESPONSEV0_ENCRYPTED
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=62307,
-  serialized_end=62394,
+  serialized_start=62633,
+  serialized_end=62720,
 )
 
 _GETSHIELDEDENCRYPTEDNOTESRESPONSE_GETSHIELDEDENCRYPTEDNOTESRESPONSEV0_ENCRYPTEDNOTES = _descriptor.Descriptor(
@@ -16494,8 +16589,8 @@ _GETSHIELDEDENCRYPTEDNOTESRESPONSE_GETSHIELDEDENCRYPTEDNOTESRESPONSEV0_ENCRYPTED
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=62397,
-  serialized_end=62542,
+  serialized_start=62723,
+  serialized_end=62868,
 )
 
 _GETSHIELDEDENCRYPTEDNOTESRESPONSE_GETSHIELDEDENCRYPTEDNOTESRESPONSEV0 = _descriptor.Descriptor(
@@ -16544,8 +16639,8 @@ _GETSHIELDEDENCRYPTEDNOTESRESPONSE_GETSHIELDEDENCRYPTEDNOTESRESPONSEV0 = _descri
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=62013,
-  serialized_end=62552,
+  serialized_start=62339,
+  serialized_end=62878,
 )
 
 _GETSHIELDEDENCRYPTEDNOTESRESPONSE = _descriptor.Descriptor(
@@ -16580,8 +16675,8 @@ _GETSHIELDEDENCRYPTEDNOTESRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=61863,
-  serialized_end=62563,
+  serialized_start=62189,
+  serialized_end=62889,
 )
 
 
@@ -16612,8 +16707,8 @@ _GETSHIELDEDANCHORSREQUEST_GETSHIELDEDANCHORSREQUESTV0 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=62691,
-  serialized_end=62735,
+  serialized_start=63017,
+  serialized_end=63061,
 )
 
 _GETSHIELDEDANCHORSREQUEST = _descriptor.Descriptor(
@@ -16648,8 +16743,8 @@ _GETSHIELDEDANCHORSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=62566,
-  serialized_end=62746,
+  serialized_start=62892,
+  serialized_end=63072,
 )
 
 
@@ -16680,8 +16775,8 @@ _GETSHIELDEDANCHORSRESPONSE_GETSHIELDEDANCHORSRESPONSEV0_ANCHORS = _descriptor.D
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=63135,
-  serialized_end=63161,
+  serialized_start=63461,
+  serialized_end=63487,
 )
 
 _GETSHIELDEDANCHORSRESPONSE_GETSHIELDEDANCHORSRESPONSEV0 = _descriptor.Descriptor(
@@ -16730,8 +16825,8 @@ _GETSHIELDEDANCHORSRESPONSE_GETSHIELDEDANCHORSRESPONSEV0 = _descriptor.Descripto
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=62878,
-  serialized_end=63171,
+  serialized_start=63204,
+  serialized_end=63497,
 )
 
 _GETSHIELDEDANCHORSRESPONSE = _descriptor.Descriptor(
@@ -16766,8 +16861,8 @@ _GETSHIELDEDANCHORSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=62749,
-  serialized_end=63182,
+  serialized_start=63075,
+  serialized_end=63508,
 )
 
 
@@ -16798,8 +16893,8 @@ _GETMOSTRECENTSHIELDEDANCHORREQUEST_GETMOSTRECENTSHIELDEDANCHORREQUESTV0 = _desc
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=63337,
-  serialized_end=63390,
+  serialized_start=63663,
+  serialized_end=63716,
 )
 
 _GETMOSTRECENTSHIELDEDANCHORREQUEST = _descriptor.Descriptor(
@@ -16834,8 +16929,8 @@ _GETMOSTRECENTSHIELDEDANCHORREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=63185,
-  serialized_end=63401,
+  serialized_start=63511,
+  serialized_end=63727,
 )
 
 
@@ -16885,8 +16980,8 @@ _GETMOSTRECENTSHIELDEDANCHORRESPONSE_GETMOSTRECENTSHIELDEDANCHORRESPONSEV0 = _de
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=63560,
-  serialized_end=63741,
+  serialized_start=63886,
+  serialized_end=64067,
 )
 
 _GETMOSTRECENTSHIELDEDANCHORRESPONSE = _descriptor.Descriptor(
@@ -16921,8 +17016,8 @@ _GETMOSTRECENTSHIELDEDANCHORRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=63404,
-  serialized_end=63752,
+  serialized_start=63730,
+  serialized_end=64078,
 )
 
 
@@ -16953,8 +17048,8 @@ _GETSHIELDEDPOOLSTATEREQUEST_GETSHIELDEDPOOLSTATEREQUESTV0 = _descriptor.Descrip
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=63886,
-  serialized_end=63932,
+  serialized_start=64212,
+  serialized_end=64258,
 )
 
 _GETSHIELDEDPOOLSTATEREQUEST = _descriptor.Descriptor(
@@ -16989,8 +17084,8 @@ _GETSHIELDEDPOOLSTATEREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=63755,
-  serialized_end=63943,
+  serialized_start=64081,
+  serialized_end=64269,
 )
 
 
@@ -17040,8 +17135,8 @@ _GETSHIELDEDPOOLSTATERESPONSE_GETSHIELDEDPOOLSTATERESPONSEV0 = _descriptor.Descr
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=64081,
-  serialized_end=64266,
+  serialized_start=64407,
+  serialized_end=64592,
 )
 
 _GETSHIELDEDPOOLSTATERESPONSE = _descriptor.Descriptor(
@@ -17076,8 +17171,8 @@ _GETSHIELDEDPOOLSTATERESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=63946,
-  serialized_end=64277,
+  serialized_start=64272,
+  serialized_end=64603,
 )
 
 
@@ -17108,8 +17203,8 @@ _GETSHIELDEDNOTESCOUNTREQUEST_GETSHIELDEDNOTESCOUNTREQUESTV0 = _descriptor.Descr
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=64414,
-  serialized_end=64461,
+  serialized_start=64740,
+  serialized_end=64787,
 )
 
 _GETSHIELDEDNOTESCOUNTREQUEST = _descriptor.Descriptor(
@@ -17144,8 +17239,8 @@ _GETSHIELDEDNOTESCOUNTREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=64280,
-  serialized_end=64472,
+  serialized_start=64606,
+  serialized_end=64798,
 )
 
 
@@ -17195,8 +17290,8 @@ _GETSHIELDEDNOTESCOUNTRESPONSE_GETSHIELDEDNOTESCOUNTRESPONSEV0 = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=64613,
-  serialized_end=64803,
+  serialized_start=64939,
+  serialized_end=65129,
 )
 
 _GETSHIELDEDNOTESCOUNTRESPONSE = _descriptor.Descriptor(
@@ -17231,8 +17326,8 @@ _GETSHIELDEDNOTESCOUNTRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=64475,
-  serialized_end=64814,
+  serialized_start=64801,
+  serialized_end=65140,
 )
 
 
@@ -17270,8 +17365,8 @@ _GETSHIELDEDNULLIFIERSREQUEST_GETSHIELDEDNULLIFIERSREQUESTV0 = _descriptor.Descr
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=64951,
-  serialized_end=65018,
+  serialized_start=65277,
+  serialized_end=65344,
 )
 
 _GETSHIELDEDNULLIFIERSREQUEST = _descriptor.Descriptor(
@@ -17306,8 +17401,8 @@ _GETSHIELDEDNULLIFIERSREQUEST = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=64817,
-  serialized_end=65029,
+  serialized_start=65143,
+  serialized_end=65355,
 )
 
 
@@ -17345,8 +17440,8 @@ _GETSHIELDEDNULLIFIERSRESPONSE_GETSHIELDEDNULLIFIERSRESPONSEV0_NULLIFIERSTATUS =
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=65458,
-  serialized_end=65512,
+  serialized_start=65784,
+  serialized_end=65838,
 )
 
 _GETSHIELDEDNULLIFIERSRESPONSE_GETSHIELDEDNULLIFIERSRESPONSEV0_NULLIFIERSTATUSES = _descriptor.Descriptor(
@@ -17376,8 +17471,8 @@ _GETSHIELDEDNULLIFIERSRESPONSE_GETSHIELDEDNULLIFIERSRESPONSEV0_NULLIFIERSTATUSES
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=65515,
-  serialized_end=65657,
+  serialized_start=65841,
+  serialized_end=65983,
 )
 
 _GETSHIELDEDNULLIFIERSRESPONSE_GETSHIELDEDNULLIFIERSRESPONSEV0 = _descriptor.Descriptor(
@@ -17426,8 +17521,8 @@ _GETSHIELDEDNULLIFIERSRESPONSE_GETSHIELDEDNULLIFIERSRESPONSEV0 = _descriptor.Des
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=65170,
-  serialized_end=65667,
+  serialized_start=65496,
+  serialized_end=65993,
 )
 
 _GETSHIELDEDNULLIFIERSRESPONSE = _descriptor.Descriptor(
@@ -17462,8 +17557,8 @@ _GETSHIELDEDNULLIFIERSRESPONSE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=65032,
-  serialized_end=65678,
+  serialized_start=65358,
+  serialized_end=66004,
 )
 
 _GETIDENTITYREQUEST_GETIDENTITYREQUESTV0.containing_type = _GETIDENTITYREQUEST
@@ -17913,10 +18008,23 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS.fields_by_name['aggr
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS.oneofs_by_name['variant'].fields.append(
   _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS.fields_by_name['entries'])
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS.fields_by_name['entries'].containing_oneof = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS.oneofs_by_name['variant']
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.containing_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.oneofs_by_name['value'].fields.append(
+  _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['count'])
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['count'].containing_oneof = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.oneofs_by_name['value']
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.oneofs_by_name['value'].fields.append(
+  _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['sum'])
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['sum'].containing_oneof = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.oneofs_by_name['value']
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.oneofs_by_name['value'].fields.append(
+  _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['avg_fixed_point'])
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['avg_fixed_point'].containing_oneof = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.oneofs_by_name['value']
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRIES.fields_by_name['entries'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRIES.containing_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['documents'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_DOCUMENTS
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['counts'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_COUNTRESULTS
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['sums'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_SUMRESULTS
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['averages'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGERESULTS
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['ranked'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRIES
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.containing_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.oneofs_by_name['variant'].fields.append(
   _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['documents'])
@@ -17930,6 +18038,9 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['sums'].c
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.oneofs_by_name['variant'].fields.append(
   _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['averages'])
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['averages'].containing_oneof = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.oneofs_by_name['variant']
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.oneofs_by_name['variant'].fields.append(
+  _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['ranked'])
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.fields_by_name['ranked'].containing_oneof = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA.oneofs_by_name['variant']
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1.fields_by_name['data'].message_type = _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1.fields_by_name['proof'].message_type = _PROOF
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1.fields_by_name['metadata'].message_type = _RESPONSEMETADATA
@@ -20074,6 +20185,20 @@ GetDocumentsResponse = _reflection.GeneratedProtocolMessageType('GetDocumentsRes
       })
     ,
 
+    'RankedEntry' : _reflection.GeneratedProtocolMessageType('RankedEntry', (_message.Message,), {
+      'DESCRIPTOR' : _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY,
+      '__module__' : 'platform_pb2'
+      # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry)
+      })
+    ,
+
+    'RankedEntries' : _reflection.GeneratedProtocolMessageType('RankedEntries', (_message.Message,), {
+      'DESCRIPTOR' : _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRIES,
+      '__module__' : 'platform_pb2'
+      # @@protoc_insertion_point(class_scope:org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries)
+      })
+    ,
+
     'ResultData' : _reflection.GeneratedProtocolMessageType('ResultData', (_message.Message,), {
       'DESCRIPTOR' : _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RESULTDATA,
       '__module__' : 'platform_pb2'
@@ -20104,6 +20229,8 @@ _sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
 _sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries)
 _sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate)
 _sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.AverageResults)
+_sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry)
+_sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries)
 _sym_db.RegisterMessage(GetDocumentsResponse.GetDocumentsResponseV1.ResultData)
 
 GetDocumentHistoryRequest = _reflection.GeneratedProtocolMessageType('GetDocumentHistoryRequest', (_message.Message,), {
@@ -22382,6 +22509,8 @@ _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEENTRY.fields_by_name['count'
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEENTRY.fields_by_name['sum']._options = None
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEAGGREGATE.fields_by_name['count']._options = None
 _GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_AVERAGEAGGREGATE.fields_by_name['sum']._options = None
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['count']._options = None
+_GETDOCUMENTSRESPONSE_GETDOCUMENTSRESPONSEV1_RANKEDENTRY.fields_by_name['sum']._options = None
 _GETDOCUMENTHISTORYREQUEST_GETDOCUMENTHISTORYREQUESTV0.fields_by_name['start_at_ms']._options = None
 _GETDOCUMENTHISTORYRESPONSE_GETDOCUMENTHISTORYRESPONSEV0_DOCUMENTHISTORYENTRY.fields_by_name['date']._options = None
 _GETEPOCHSINFORESPONSE_GETEPOCHSINFORESPONSEV0_EPOCHINFO.fields_by_name['first_block_height']._options = None
@@ -22435,8 +22564,8 @@ _PLATFORM = _descriptor.ServiceDescriptor(
   index=0,
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_start=65773,
-  serialized_end=74555,
+  serialized_start=66099,
+  serialized_end=74881,
   methods=[
   _descriptor.MethodDescriptor(
     name='broadcastStateTransition',

@@ -27016,6 +27016,530 @@ $root.org = (function() {
                                 return AverageResults;
                             })();
 
+                            GetDocumentsResponseV1.RankedEntry = (function() {
+
+                                /**
+                                 * Properties of a RankedEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IRankedEntry
+                                 * @property {Uint8Array|null} [key] RankedEntry key
+                                 * @property {number|Long|null} [count] RankedEntry count
+                                 * @property {number|Long|null} [sum] RankedEntry sum
+                                 * @property {Uint8Array|null} [avgFixedPoint] RankedEntry avgFixedPoint
+                                 */
+
+                                /**
+                                 * Constructs a new RankedEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a RankedEntry.
+                                 * @implements IRankedEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry=} [properties] Properties to set
+                                 */
+                                function RankedEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * RankedEntry key.
+                                 * @member {Uint8Array} key
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                RankedEntry.prototype.key = $util.newBuffer([]);
+
+                                /**
+                                 * RankedEntry count.
+                                 * @member {number|Long} count
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                RankedEntry.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * RankedEntry sum.
+                                 * @member {number|Long} sum
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                RankedEntry.prototype.sum = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                                /**
+                                 * RankedEntry avgFixedPoint.
+                                 * @member {Uint8Array} avgFixedPoint
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                RankedEntry.prototype.avgFixedPoint = $util.newBuffer([]);
+
+                                // OneOf field names bound to virtual getters and setters
+                                var $oneOfFields;
+
+                                /**
+                                 * RankedEntry value.
+                                 * @member {"count"|"sum"|"avgFixedPoint"|undefined} value
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 */
+                                Object.defineProperty(RankedEntry.prototype, "value", {
+                                    get: $util.oneOfGetter($oneOfFields = ["count", "sum", "avgFixedPoint"]),
+                                    set: $util.oneOfSetter($oneOfFields)
+                                });
+
+                                /**
+                                 * Creates a new RankedEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} RankedEntry instance
+                                 */
+                                RankedEntry.create = function create(properties) {
+                                    return new RankedEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified RankedEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry} message RankedEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                RankedEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.key);
+                                    if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.count);
+                                    if (message.sum != null && Object.hasOwnProperty.call(message, "sum"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).sint64(message.sum);
+                                    if (message.avgFixedPoint != null && Object.hasOwnProperty.call(message, "avgFixedPoint"))
+                                        writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.avgFixedPoint);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified RankedEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry} message RankedEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                RankedEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a RankedEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} RankedEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                RankedEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.key = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.count = reader.uint64();
+                                            break;
+                                        case 3:
+                                            message.sum = reader.sint64();
+                                            break;
+                                        case 4:
+                                            message.avgFixedPoint = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a RankedEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} RankedEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                RankedEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a RankedEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                RankedEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    var properties = {};
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                            return "key: buffer expected";
+                                    if (message.count != null && message.hasOwnProperty("count")) {
+                                        properties.value = 1;
+                                        if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                            return "count: integer|Long expected";
+                                    }
+                                    if (message.sum != null && message.hasOwnProperty("sum")) {
+                                        if (properties.value === 1)
+                                            return "value: multiple values";
+                                        properties.value = 1;
+                                        if (!$util.isInteger(message.sum) && !(message.sum && $util.isInteger(message.sum.low) && $util.isInteger(message.sum.high)))
+                                            return "sum: integer|Long expected";
+                                    }
+                                    if (message.avgFixedPoint != null && message.hasOwnProperty("avgFixedPoint")) {
+                                        if (properties.value === 1)
+                                            return "value: multiple values";
+                                        properties.value = 1;
+                                        if (!(message.avgFixedPoint && typeof message.avgFixedPoint.length === "number" || $util.isString(message.avgFixedPoint)))
+                                            return "avgFixedPoint: buffer expected";
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a RankedEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} RankedEntry
+                                 */
+                                RankedEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry();
+                                    if (object.key != null)
+                                        if (typeof object.key === "string")
+                                            $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                        else if (object.key.length >= 0)
+                                            message.key = object.key;
+                                    if (object.count != null)
+                                        if ($util.Long)
+                                            (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                        else if (typeof object.count === "string")
+                                            message.count = parseInt(object.count, 10);
+                                        else if (typeof object.count === "number")
+                                            message.count = object.count;
+                                        else if (typeof object.count === "object")
+                                            message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                    if (object.sum != null)
+                                        if ($util.Long)
+                                            (message.sum = $util.Long.fromValue(object.sum)).unsigned = false;
+                                        else if (typeof object.sum === "string")
+                                            message.sum = parseInt(object.sum, 10);
+                                        else if (typeof object.sum === "number")
+                                            message.sum = object.sum;
+                                        else if (typeof object.sum === "object")
+                                            message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
+                                    if (object.avgFixedPoint != null)
+                                        if (typeof object.avgFixedPoint === "string")
+                                            $util.base64.decode(object.avgFixedPoint, message.avgFixedPoint = $util.newBuffer($util.base64.length(object.avgFixedPoint)), 0);
+                                        else if (object.avgFixedPoint.length >= 0)
+                                            message.avgFixedPoint = object.avgFixedPoint;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a RankedEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} message RankedEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                RankedEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults)
+                                        if (options.bytes === String)
+                                            object.key = "";
+                                        else {
+                                            object.key = [];
+                                            if (options.bytes !== Array)
+                                                object.key = $util.newBuffer(object.key);
+                                        }
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                    if (message.count != null && message.hasOwnProperty("count")) {
+                                        if (typeof message.count === "number")
+                                            object.count = options.longs === String ? String(message.count) : message.count;
+                                        else
+                                            object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                        if (options.oneofs)
+                                            object.value = "count";
+                                    }
+                                    if (message.sum != null && message.hasOwnProperty("sum")) {
+                                        if (typeof message.sum === "number")
+                                            object.sum = options.longs === String ? String(message.sum) : message.sum;
+                                        else
+                                            object.sum = options.longs === String ? $util.Long.prototype.toString.call(message.sum) : options.longs === Number ? new $util.LongBits(message.sum.low >>> 0, message.sum.high >>> 0).toNumber() : message.sum;
+                                        if (options.oneofs)
+                                            object.value = "sum";
+                                    }
+                                    if (message.avgFixedPoint != null && message.hasOwnProperty("avgFixedPoint")) {
+                                        object.avgFixedPoint = options.bytes === String ? $util.base64.encode(message.avgFixedPoint, 0, message.avgFixedPoint.length) : options.bytes === Array ? Array.prototype.slice.call(message.avgFixedPoint) : message.avgFixedPoint;
+                                        if (options.oneofs)
+                                            object.value = "avgFixedPoint";
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this RankedEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                RankedEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return RankedEntry;
+                            })();
+
+                            GetDocumentsResponseV1.RankedEntries = (function() {
+
+                                /**
+                                 * Properties of a RankedEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IRankedEntries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry>|null} [entries] RankedEntries entries
+                                 */
+
+                                /**
+                                 * Constructs a new RankedEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a RankedEntries.
+                                 * @implements IRankedEntries
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries=} [properties] Properties to set
+                                 */
+                                function RankedEntries(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * RankedEntries entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @instance
+                                 */
+                                RankedEntries.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new RankedEntries instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries} RankedEntries instance
+                                 */
+                                RankedEntries.create = function create(properties) {
+                                    return new RankedEntries(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified RankedEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries} message RankedEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                RankedEntries.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified RankedEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries} message RankedEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                RankedEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a RankedEntries message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries} RankedEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                RankedEntries.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a RankedEntries message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries} RankedEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                RankedEntries.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a RankedEntries message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                RankedEntries.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a RankedEntries message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries} RankedEntries
+                                 */
+                                RankedEntries.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a RankedEntries message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries} message RankedEntries
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                RankedEntries.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this RankedEntries to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                RankedEntries.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return RankedEntries;
+                            })();
+
                             GetDocumentsResponseV1.ResultData = (function() {
 
                                 /**
@@ -27026,6 +27550,7 @@ $root.org = (function() {
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults|null} [counts] ResultData counts
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults|null} [sums] ResultData sums
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults|null} [averages] ResultData averages
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries|null} [ranked] ResultData ranked
                                  */
 
                                 /**
@@ -27075,17 +27600,25 @@ $root.org = (function() {
                                  */
                                 ResultData.prototype.averages = null;
 
+                                /**
+                                 * ResultData ranked.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntries|null|undefined} ranked
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                ResultData.prototype.ranked = null;
+
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
                                 /**
                                  * ResultData variant.
-                                 * @member {"documents"|"counts"|"sums"|"averages"|undefined} variant
+                                 * @member {"documents"|"counts"|"sums"|"averages"|"ranked"|undefined} variant
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
                                  * @instance
                                  */
                                 Object.defineProperty(ResultData.prototype, "variant", {
-                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "sums", "averages"]),
+                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "sums", "averages", "ranked"]),
                                     set: $util.oneOfSetter($oneOfFields)
                                 });
 
@@ -27121,6 +27654,8 @@ $root.org = (function() {
                                         $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.encode(message.sums, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                                     if (message.averages != null && Object.hasOwnProperty.call(message, "averages"))
                                         $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.encode(message.averages, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                    if (message.ranked != null && Object.hasOwnProperty.call(message, "ranked"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.encode(message.ranked, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
                                     return writer;
                                 };
 
@@ -27166,6 +27701,9 @@ $root.org = (function() {
                                             break;
                                         case 4:
                                             message.averages = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.decode(reader, reader.uint32());
+                                            break;
+                                        case 5:
+                                            message.ranked = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.decode(reader, reader.uint32());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -27241,6 +27779,16 @@ $root.org = (function() {
                                                 return "averages." + error;
                                         }
                                     }
+                                    if (message.ranked != null && message.hasOwnProperty("ranked")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.verify(message.ranked);
+                                            if (error)
+                                                return "ranked." + error;
+                                        }
+                                    }
                                     return null;
                                 };
 
@@ -27275,6 +27823,11 @@ $root.org = (function() {
                                         if (typeof object.averages !== "object")
                                             throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.averages: object expected");
                                         message.averages = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.fromObject(object.averages);
+                                    }
+                                    if (object.ranked != null) {
+                                        if (typeof object.ranked !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.ranked: object expected");
+                                        message.ranked = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.fromObject(object.ranked);
                                     }
                                     return message;
                                 };
@@ -27311,6 +27864,11 @@ $root.org = (function() {
                                         object.averages = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.toObject(message.averages, options);
                                         if (options.oneofs)
                                             object.variant = "averages";
+                                    }
+                                    if (message.ranked != null && message.hasOwnProperty("ranked")) {
+                                        object.ranked = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries.toObject(message.ranked, options);
+                                        if (options.oneofs)
+                                            object.variant = "ranked";
                                     }
                                     return object;
                                 };
