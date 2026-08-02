@@ -404,10 +404,17 @@ mod tests {
         server.join().expect("mock quorum server must finish");
     }
 
-    fn custom_contract(id_byte: u8, version: u32) -> DataContract {
-        let mut contract =
-            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
-                .expect("DPNS contract fixture should load");
+    /// Build the fixture at the SDK's own platform version. A contract fetched
+    /// through the mock is deserialized at that version, and document types
+    /// differ between versions, so a fixture pinned to `latest` would never
+    /// compare equal to the round-tripped one.
+    fn custom_contract(
+        id_byte: u8,
+        version: u32,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS contract fixture should load");
         contract.set_id(Identifier::new([id_byte; 32]));
         contract.set_version(version);
         contract
@@ -415,9 +422,9 @@ mod tests {
 
     #[tokio::test]
     async fn should_cache_a_referenced_contract_missing_from_the_context() {
-        let expected = custom_contract(0x66, 1);
-        let contract_id = expected.id();
         let mut inner_sdk = Sdk::new_mock();
+        let expected = custom_contract(0x66, 1, inner_sdk.version());
+        let contract_id = expected.id();
         inner_sdk
             .mock()
             .expect_fetch(contract_id, Some(expected.clone()))
@@ -453,12 +460,11 @@ mod tests {
         // cannot serve it, so preparation has to fetch it like any other
         // contract or document verification fails on an unknown contract.
         let withdrawals_id = SystemDataContract::Withdrawals.id();
-        let mut expected =
-            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
-                .expect("DPNS contract fixture should load");
+        let mut inner_sdk = Sdk::new_mock();
+        let mut expected = load_system_data_contract(SystemDataContract::DPNS, inner_sdk.version())
+            .expect("DPNS contract fixture should load");
         expected.set_id(withdrawals_id);
 
-        let mut inner_sdk = Sdk::new_mock();
         inner_sdk
             .mock()
             .expect_fetch(withdrawals_id, Some(expected.clone()))

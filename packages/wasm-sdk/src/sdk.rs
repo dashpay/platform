@@ -522,10 +522,17 @@ mod tests {
             .collect()
     }
 
-    fn custom_contract(id_byte: u8, version: u32) -> DataContract {
-        let mut contract =
-            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
-                .expect("DPNS contract fixture should load");
+    /// Build the fixture at the SDK's own platform version. A contract fetched
+    /// through the mock is deserialized at that version, and document types
+    /// differ between versions, so a fixture pinned to `latest` would never
+    /// compare equal to the round-tripped one.
+    fn custom_contract(
+        id_byte: u8,
+        version: u32,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let mut contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS contract fixture should load");
         contract.set_id(dash_sdk::platform::Identifier::new([id_byte; 32]));
         contract.set_version(version);
         contract
@@ -657,9 +664,9 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_contract_caches_a_missing_custom_contract() {
-        let expected = custom_contract(0x44, 1);
-        let contract_id = expected.id();
         let mut inner_sdk = Sdk::new_mock();
+        let expected = custom_contract(0x44, 1, inner_sdk.version());
+        let contract_id = expected.id();
         inner_sdk
             .mock()
             .expect_fetch(contract_id, Some(expected.clone()))
@@ -688,13 +695,13 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_contract_replaces_a_stale_cached_version() {
-        let stale = custom_contract(0x55, 1);
-        let expected = custom_contract(0x55, 2);
+        let mut inner_sdk = Sdk::new_mock();
+        let stale = custom_contract(0x55, 1, inner_sdk.version());
+        let expected = custom_contract(0x55, 2, inner_sdk.version());
         let contract_id = expected.id();
         let context = WasmTrustedContext::for_testing(vec![]);
         context.add_known_contract(stale);
 
-        let mut inner_sdk = Sdk::new_mock();
         inner_sdk
             .mock()
             .expect_fetch(contract_id, Some(expected.clone()))
