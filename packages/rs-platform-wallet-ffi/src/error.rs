@@ -172,13 +172,15 @@ pub enum PlatformWalletFFIResultCode {
     /// rejected the transaction, so its UTXO reservation was released and the
     /// host may safely retry after addressing the rejection reason.
     ErrorTransactionBroadcastRejected = 26,
-    /// `platform_wallet_manager_destroy` could not join every background
-    /// coordinator thread cleanly, even after a retry: a loop panicked,
-    /// exceeded its join budget, or stayed detached. The manager handle is
-    /// still freed, but a worker may outlive `destroy` and fire a host
-    /// callback through the about-to-be-freed context, so the host should
-    /// treat this as a real teardown fault (log / surface) rather than a
-    /// silent success. Swift mirror: `PlatformWalletResultCode.errorShutdownIncomplete`.
+    /// A quiesce/drain barrier did not complete within its budget: an
+    /// in-flight sync pass was still running when a Clear / reset /
+    /// sync-stop needed it provably drained. The operation failed closed
+    /// (no state was wiped) and the host should retry once sync is idle.
+    /// NOT returned by `platform_wallet_manager_destroy` — with owned
+    /// callback contexts (`release_fn`) a straggling worker keeps its
+    /// context alive and releases it on exit, so destroy logs a non-clean
+    /// join instead of erroring. Swift mirror:
+    /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors

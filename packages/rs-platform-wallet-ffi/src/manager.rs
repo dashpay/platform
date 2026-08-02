@@ -40,8 +40,18 @@ fn persistence_capabilities_declaration(
 /// that cbindgen cannot expose without dragging the entire crate's
 /// internal layout into the C ABI.
 ///
-/// `persistence` and `event_handler` are callback vtables whose `context`
-/// pointers must remain valid for the lifetime of the manager.
+/// `persistence` and `event_handler` are callback vtables. When a vtable
+/// sets its `release_fn`, ownership of its `context` pointer transfers to
+/// Rust: the manager keeps the context alive for exactly as long as any
+/// internal worker can still invoke a callback, and calls `release_fn`
+/// once — possibly on a background thread, possibly *after* a later
+/// `destroy` returns if a worker straggles — when the last reference
+/// drops. When `release_fn` is null the legacy borrowed contract applies:
+/// the host must keep the context valid for the lifetime of the manager
+/// and every worker it spawned.
+///
+/// On a non-`Success` return Rust has NOT taken ownership of either
+/// context; a host that pre-retained them must release them itself.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_create(
     sdk_ptr: *const c_void,
@@ -422,50 +432,44 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 }
 
 /// Destroy a PlatformWalletManager handle.
+///
+/// Runs the full lifecycle shutdown (bounded: quiesce + join every
+/// coordinator, SPV, the payment-hook tasks, and the event adapter) and
+/// removes the handle. Always returns `Success` for a live handle.
+///
+/// A non-clean shutdown — a worker that outlived its join budget — is
+/// logged, **not** surfaced as an error, because it is no longer a
+/// safety problem the host could act on: a straggling worker holds a
+/// strong reference to the callback vtables, so with owned contexts
+/// (`release_fn` set) the host objects stay alive until that worker
+/// exits, at which point Rust releases them. Nothing dangles, nothing
+/// needs a retry, nothing needs a deliberate leak on the host side.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
         // Run the full lifecycle shutdown to completion, not just the
-        // platform-address sync. Every background task (identity sync,
-        // shielded sync, the wallet-event adapter) can fire callbacks
-        // through the host-owned `context` pointer; once `destroy`
-        // returns the host may free that context, so no task may be
-        // left alive to fire a callback against freed memory.
-        // `shutdown()` is idempotent, so this is safe even if the host
-        // already stopped some sync managers before calling destroy.
+        // platform-address sync. `shutdown()` is idempotent, so this is
+        // safe even if the host already stopped some sync managers
+        // before calling destroy.
         let report = runtime().block_on(manager.shutdown());
         if !report.all_clean() {
-            // A coordinator thread panicked, exceeded its join budget, or
-            // stayed detached — possibly a loop that raced this teardown and
-            // installed its cancellation after our first quiesce. Retry once:
-            // `shutdown()` re-quiesces (cancelling any now-installed loop) and
-            // re-joins, which clears that race. The host frees its callback
-            // context after we return, so a still-live worker is a real UAF
-            // hazard, not just noise.
+            // A worker panicked, exceeded its join budget, or stayed
+            // detached. Its persister/event-handler Arcs keep the host
+            // callback contexts alive until it actually exits, so this
+            // is diagnostic, not a UAF hazard.
             tracing::warn!(
                 ?report,
-                "platform wallet manager shutdown did not join every coordinator \
-                 thread cleanly on the first pass; retrying"
+                "platform wallet manager shutdown did not join every worker \
+                 cleanly; stragglers keep their callback contexts alive and \
+                 release them on exit"
             );
-            let retry = runtime().block_on(manager.shutdown());
-            let merged = report.merged_with_retry(retry);
-            if !merged.all_clean() {
-                tracing::error!(
-                    ?merged,
-                    "platform wallet manager shutdown still could not join every \
-                     coordinator thread after a retry; a worker may outlive destroy"
-                );
-                return PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
-                    format!(
-                        "shutdown could not cleanly join all coordinator threads after \
-                         a retry: {merged:?}"
-                    ),
-                );
-            }
         }
+        // Dropping the manager here releases its persister/event-handler
+        // references; the host contexts are released (via `release_fn`)
+        // as soon as the last worker's reference drops — typically right
+        // now, or later if a straggler is still draining.
     }
     PlatformWalletFFIResult::ok()
 }
@@ -534,7 +538,76 @@ mod tests {
             on_shielded_sync_completed_fn: None,
             on_shielded_sync_progress_fn: None,
             on_shielded_tree_progress_fn: None,
+            release_fn: None,
         }
+    }
+
+    /// Counts invocations through a `*mut AtomicUsize` context — stands in
+    /// for the host's release trampoline.
+    unsafe extern "C" fn counting_release(context: *mut c_void) {
+        if let Some(counter) = (context as *const std::sync::atomic::AtomicUsize).as_ref() {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// The owned-context contract end to end through the public FFI: when
+    /// both vtables set `release_fn`, destroying the manager releases each
+    /// context exactly once — after shutdown has joined every worker, so
+    /// the release IS the proof that nothing can call back into the host
+    /// anymore. This is the contract that lets Swift `passRetained` /
+    /// JNI box-transfer their callback objects instead of leaking them
+    /// whenever teardown is not provably clean.
+    #[test]
+    fn destroy_releases_owned_callback_contexts_exactly_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let persistence_releases = AtomicUsize::new(0);
+        let event_releases = AtomicUsize::new(0);
+
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let mut callbacks = persistence_callbacks();
+        callbacks.context = &persistence_releases as *const AtomicUsize as *mut c_void;
+        callbacks.release_fn = Some(counting_release);
+        let mut event_cbs = event_callbacks();
+        event_cbs.context = &event_releases as *const AtomicUsize as *mut c_void;
+        event_cbs.release_fn = Some(counting_release);
+
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_cbs,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            persistence_releases.load(Ordering::SeqCst),
+            0,
+            "context must stay alive while the manager lives"
+        );
+        assert_eq!(event_releases.load(Ordering::SeqCst), 0);
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+
+        assert_eq!(
+            persistence_releases.load(Ordering::SeqCst),
+            1,
+            "destroy must release the persistence context exactly once"
+        );
+        assert_eq!(
+            event_releases.load(Ordering::SeqCst),
+            1,
+            "destroy must release the event context exactly once"
+        );
+
+        // Destroying a stale handle must not double-release.
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(persistence_releases.load(Ordering::SeqCst), 1);
+        assert_eq!(event_releases.load(Ordering::SeqCst), 1);
     }
 
     fn query(handle: Handle) -> PersistenceCapabilitiesFFI {

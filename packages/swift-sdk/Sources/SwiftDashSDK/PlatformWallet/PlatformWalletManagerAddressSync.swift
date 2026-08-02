@@ -38,14 +38,11 @@ public struct PlatformAddressSyncEvent: Sendable {
 }
 
 /// `@unchecked Sendable`, matching `PlatformWalletPersistenceHandler`: this
-/// object *is* a cross-thread callback context by construction — Rust holds
-/// an `Unmanaged.passUnretained` pointer to it and invokes the callbacks
-/// below from its own background threads. `manager` is written once at
-/// `init` and only read afterwards (weak loads are atomic), and every
-/// touch of the main-actor manager already hops through
-/// `Task { @MainActor }`. The conformance is also what lets
-/// `PlatformWalletManager.deinit` — which is nonisolated — retain this
-/// owner when Rust reports an incomplete shutdown.
+/// object *is* a cross-thread callback context by construction — Rust owns
+/// a retained reference to it and invokes the callbacks below from its own
+/// background threads. `manager` is written once at `init` and only read
+/// afterwards (weak loads are atomic), and every touch of the main-actor
+/// manager already hops through `Task { @MainActor }`.
 final class PlatformWalletEventHandler: @unchecked Sendable {
     weak var manager: PlatformWalletManager?
 
@@ -53,9 +50,25 @@ final class PlatformWalletEventHandler: @unchecked Sendable {
         self.manager = manager
     }
 
+    /// Build `EventHandlerCallbacks` that point to this handler.
+    ///
+    /// **Transfers ownership of a strong reference to Rust**: the context
+    /// is `passRetained`, and `release_fn` balances that retain exactly
+    /// once — when the Rust manager and every worker that can still
+    /// dispatch an event have dropped their references (possibly on a
+    /// Rust thread, possibly after `destroy` returns if a worker
+    /// straggles). ARC therefore cannot free this handler while any Rust
+    /// worker can still call back into it.
+    ///
+    /// If manager creation fails, Rust never took the reference — the
+    /// caller must balance the retain itself (see `configure`).
     func makeCallbacks() -> EventHandlerCallbacks {
         var callbacks = EventHandlerCallbacks()
-        callbacks.context = Unmanaged.passUnretained(self).toOpaque()
+        callbacks.context = Unmanaged.passRetained(self).toOpaque()
+        callbacks.release_fn = { context in
+            guard let context else { return }
+            Unmanaged<PlatformWalletEventHandler>.fromOpaque(context).release()
+        }
         callbacks.on_platform_address_sync_completed_fn = platformAddressSyncCompletedCallback
         callbacks.on_shielded_sync_completed_fn = shieldedSyncCompletedCallback
         callbacks.on_shielded_sync_progress_fn = shieldedSyncProgressCallback

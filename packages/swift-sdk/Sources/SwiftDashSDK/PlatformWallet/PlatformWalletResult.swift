@@ -69,12 +69,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// Core definitively rejected the transaction. Its reserved inputs were
     /// released and a corrected transaction may be submitted again.
     case errorTransactionBroadcastRejected = 26
-    /// `platform_wallet_manager_destroy` could not join every background sync
-    /// coordinator thread cleanly, even after a retry: a loop panicked,
-    /// exceeded its join budget, or stayed detached. The manager handle is
-    /// still freed, but a lingering coordinator may fire one final callback
-    /// through the about-to-be-freed context — treat this as a real teardown
-    /// fault (log / surface), not a silent success.
+    /// A quiesce/drain barrier did not complete within its budget: an
+    /// in-flight sync pass was still running when a Clear / reset /
+    /// sync-stop needed it provably drained. The operation failed closed —
+    /// no state was wiped — and the caller should retry once sync is idle.
+    /// (Not returned by `destroy`: Rust owns the callback contexts, so a
+    /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
     case notFound = 98
     case errorUnknown = 99
@@ -259,10 +259,9 @@ public enum PlatformWalletError: LocalizedError {
     /// to retry, and the retry re-fetches the address nonce so the mismatch
     /// self-heals. The submitted/expected nonce values are in the message.
     case addressNonceMismatch(String)
-    /// `destroy` completed but a background coordinator thread did not exit
-    /// cleanly (panic / join-budget timeout / detached). The host should
-    /// treat its callback context as potentially still in use by a lingering
-    /// coordinator that may fire one final callback.
+    /// A quiesce/drain barrier (Clear / reset / sync-stop) timed out with a
+    /// sync pass still in flight. The operation failed closed — retry once
+    /// sync is idle.
     case shutdownIncomplete(String)
     case notFound(String)
     case unknown(String)
