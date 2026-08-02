@@ -1507,6 +1507,74 @@ mod tests {
         );
     }
 
+    /// dashpay/platform#4184 review: `funding_path` selects WHICH account
+    /// supplies the money, so the absent-vs-invalid distinction at the C
+    /// boundary is load-bearing. Absent (null pointer or zero length)
+    /// deliberately means "default BIP44 source"; malformed input must fail
+    /// CLOSED with `ErrorInvalidParameter` rather than degrading to that
+    /// default and silently spending a different account's coins.
+    #[test]
+    fn parse_optional_derivation_path_treats_absent_as_default_source() {
+        let null = unsafe { parse_optional_derivation_path(std::ptr::null(), 0) }
+            .expect("a null pointer is absence, not an error");
+        assert!(
+            null.is_none(),
+            "a null funding_path must select the default BIP44 source"
+        );
+
+        // Non-null pointer, zero length: the length must win, so hosts that
+        // pass an empty string get the default rather than a parse error.
+        let buf = b"m/44'/5'/0'";
+        let empty = unsafe { parse_optional_derivation_path(buf.as_ptr(), 0) }
+            .expect("zero length is absence, not an error");
+        assert!(
+            empty.is_none(),
+            "a zero-length funding_path must select the default BIP44 source \
+             even when the pointer is non-null"
+        );
+    }
+
+    #[test]
+    fn parse_optional_derivation_path_accepts_account_level_path() {
+        use std::str::FromStr;
+
+        let text = "m/44'/5'/0'";
+        let parsed = unsafe { parse_optional_derivation_path(text.as_ptr(), text.len()) }
+            .expect("a well-formed account-level path must parse")
+            .expect("a well-formed path must be present");
+        assert_eq!(
+            parsed,
+            key_wallet::bip32::DerivationPath::from_str(text).expect("reference path"),
+            "the parsed path must be exactly the caller's account-level path"
+        );
+    }
+
+    #[test]
+    fn parse_optional_derivation_path_rejects_invalid_utf8() {
+        // 0xFF is never a valid UTF-8 leading byte.
+        let bytes = [0xffu8, 0xfe, 0x2f];
+        let err = unsafe { parse_optional_derivation_path(bytes.as_ptr(), bytes.len()) }
+            .expect_err("invalid UTF-8 must be rejected");
+        assert_eq!(
+            err.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "invalid UTF-8 must fail closed, not fall back to the default account"
+        );
+    }
+
+    #[test]
+    fn parse_optional_derivation_path_rejects_malformed_syntax() {
+        let text = "m/44'/not-an-index'/0'";
+        let err = unsafe { parse_optional_derivation_path(text.as_ptr(), text.len()) }
+            .expect_err("a malformed derivation path must be rejected");
+        assert_eq!(
+            err.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a malformed funding_path must fail closed, not fall back to the \
+             default account"
+        );
+    }
+
     /// Pin the fee estimator to the on-chain ground-truth values observed at the current platform
     /// version with 2 actions (single-note spend + change). These are the exact credits the
     /// builder carves and the consensus gate validates, so the host's "Estimated Fee" must match.
