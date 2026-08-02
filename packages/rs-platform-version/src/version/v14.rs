@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v9::DRIVE_ABCI_VALIDATION_VERSIONS_V9;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v8::DRIVE_VERSION_V8;
+use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v2::SYSTEM_DATA_CONTRACT_VERSIONS_V2;
@@ -30,17 +30,34 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// Introduced as the activation gate for the shared-prefix aggregate index
-/// fix (v2 document index walkers: an aggregating countable / summable index
-/// whose terminal property also prefixes a compound index registers today
-/// but rejects document inserts). Functionally identical to v13 at
-/// introduction — the same component version structs, no behavior change.
-/// The consensus change that consumes this gate (a bumped drive document
-/// methods struct) lands in a follow-up; keeping v14 == v13 here lets
-/// mixed-version validators agree until that change activates.
+/// v14 fixes the shared-prefix aggregate index defect: a data contract
+/// declaring an aggregating (countable / summable) index that terminates at
+/// a property which is also the prefix of a compound index (e.g. summable
+/// `[a]` next to `[a, b]`) registered successfully but rejected every
+/// document insert for most flag combinations, because Drive could not
+/// legally hang the compound continuation tree under the aggregating
+/// per-value tree.
+///
+/// `DRIVE_VERSION_V9` (via `DRIVE_DOCUMENT_METHOD_VERSIONS_V4`) bumps the
+/// four document index walkers (insert/delete x top-level/recursive) to v2:
+/// tree types derive through a shared continuation-demotion helper (provable
+/// count-bearing value trees with compound continuations demote to
+/// `CountSumTree`, since grovedb rejects count-suppressed children under
+/// provable count parents by design) and continuation inserts route through
+/// the completed zero-contribution wrapper matrix (`NonCounted` for non-sum
+/// continuations under count-sum parents, unwrapped inserts under sum-only
+/// parents, and so on). No state migration is needed: shapes without
+/// compound continuations produce bit-identical operations, the broken
+/// shapes could never hold documents, and the one previously-insertable
+/// shape the demotion changes (a provable count-bearing value tree whose
+/// continuations were all sum-bearing — insertable pre-v14 only through an
+/// unenforced grovedb batch guard) simply gets `CountSumTree` value trees
+/// for values first seen at v14+, which readers treat identically.
+///
+/// Everything else matches v13.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V8,
+    drive: DRIVE_VERSION_V9, // changed: v2 index walkers — shared-prefix aggregate indexes become insertable
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
