@@ -154,10 +154,12 @@ internal fun initializePlatformWalletNativeManager(
  * ## Lifecycle
  *
  * [AutoCloseable]. [close] stops the sync loops, destroys the native
- * bundle (which runs the Rust `shutdown()` — quiescing every callback
- * before its context `GlobalRef`s are freed), then closes the resolver +
- * signer children. Order matters: the native manager must be torn down
- * before the children whose bridges its callbacks reference.
+ * bundle (which runs the Rust `shutdown()` — a bounded quiesce + join of
+ * every callback-firing task; the context `GlobalRef`s themselves are
+ * owned and freed by the native manager when its last worker reference
+ * drops), then closes the resolver + signer children. Order matters: the
+ * native manager must be torn down before the children whose bridges its
+ * callbacks reference.
  *
  * Blocking natives are wrapped `suspend` / [withContext] `(Dispatchers.IO)`
  * and errors pass through `mapNativeErrors` at the public boundary.

@@ -39,9 +39,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Boxed context for the event-handler vtable. Holds the Kotlin
 /// `NativeWalletEventBridge` as a `GlobalRef` so it survives across the
-/// vtable's lifetime and across threads. Owned by the manager bundle in
-/// [`crate::wallet_manager`]; dropped only after the native manager's
-/// `shutdown()` has quiesced every callback-firing task.
+/// vtable's lifetime and across threads. Ownership transfers to the
+/// native manager at create (the vtable's `release_fn` is
+/// [`release_event_ctx`]): Rust frees the box — and with it the
+/// `GlobalRef` — exactly once, when the manager and every worker that
+/// could still dispatch an event have dropped their references.
 pub(crate) struct KotlinEventCtx {
     pub(crate) bridge: GlobalRef,
 }
@@ -309,5 +311,21 @@ pub(crate) fn build_event_vtable(context: *mut c_void) -> EventHandlerCallbacks 
         on_shielded_sync_completed_fn: Some(tramp_shielded_sync_completed),
         on_shielded_sync_progress_fn: Some(tramp_shielded_sync_progress),
         on_shielded_tree_progress_fn: Some(tramp_shielded_tree_progress),
+        release_fn: Some(release_event_ctx),
+    }
+}
+
+/// `release_fn` for the event vtable: frees the boxed [`KotlinEventCtx`]
+/// when the native manager's last event-handler reference drops. The FFI
+/// guarantees exactly one call, which may land on any Rust thread —
+/// `GlobalRef`'s own `Drop` attaches that thread to the JVM before
+/// deleting the reference, so no manual attach is needed here.
+///
+/// # Safety
+/// `context` must be the live boxed [`KotlinEventCtx`] this vtable was
+/// built around, never freed elsewhere.
+unsafe extern "C" fn release_event_ctx(context: *mut c_void) {
+    if !context.is_null() {
+        drop(Box::from_raw(context as *mut KotlinEventCtx));
     }
 }
