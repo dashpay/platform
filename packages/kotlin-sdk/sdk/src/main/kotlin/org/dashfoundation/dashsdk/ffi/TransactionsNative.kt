@@ -168,7 +168,8 @@ internal object TransactionsNative {
      * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
      * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
      * [ownerId], signed via [signerHandle]. Bridges
-     * `platform_wallet_create_encrypted_document_with_signer`.
+     * the Rust-ABI composite
+     * `create_encrypted_document_with_deferred_payload`.
      *
      * The Rust side selects the identity's ENCRYPTION key id (the `keyIndex`
      * field), derives the AES key from the wallet HD tree, and seals [payload]
@@ -180,15 +181,24 @@ internal object TransactionsNative {
      *   required (non-zero) for external-signable wallets — the app's shape —
      *   whose txMetadata AES key derives on demand through the resolver.
      *   Ignored for wallets with resident private keys.
-     * @param encryptionKeyIndex the per-document index, OR `-1` to let the SDK
-     *   allocate it in Rust from authoritative Platform state
-     *   (dashpay/platform#4186 follow-up). A non-negative value routes to the
-     *   explicit-index FFI export (migration / tests); `-1` routes to
-     *   `platform_wallet_create_encrypted_document_with_signer_auto_index`, which
-     *   omits the index. Values `< -1` are rejected.
-     * @param version payload version byte (`1` = protobuf, as the wallet writes).
+     * @param encryptionKeyIndex an explicit per-document index (migration /
+     *   tests), OR `-1` to let the SDK allocate one from authoritative Platform
+     *   state. Both forms enter one Rust operation. For `-1`, Rust settles the
+     *   index before asking JNI to copy this array into native memory — the
+     *   allocation query has no request timeout, so copying first would retain
+     *   plaintext throughout an unbounded wait. Rust then takes ownership of
+     *   the native copy and scrubs it as soon as the properties are sealed,
+     *   before broadcast.
+     *   Values `< -1` are rejected. `-1` rather than a boxed `Integer?` keeps
+     *   this signature on primitives.
+     * @param version payload version byte. This layer narrows it to a byte and
+     *   nothing more: which values are meaningful is decided by the wallet core,
+     *   which rejects an unsupported one before anything is sealed.
      * @param payload the already-serialized opaque plaintext (a protobuf
-     *   `TxMetadataBatch`); the SDK does not parse it.
+     *   `TxMetadataBatch`); the SDK does not parse it. The native copies made of
+     *   it are zeroized, but this `ByteArray` and any JVM copies of it are
+     *   plaintext-equivalent and cannot be scrubbed by the SDK — see
+     *   [org.dashfoundation.dashsdk.documents.DocumentTransactions.createEncryptedDocument].
      * @return the confirmed document's canonical JSON (its 32-byte id is the
      *   base58 `$id` field).
      */
@@ -218,7 +228,12 @@ internal object TransactionsNative {
      * @return a JSON array; each element is `{ "id", "ownerId" (base58),
      *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
      *   "payload" (base64 of the decrypted opaque plaintext) }`. Documents that
-     *   fail to decrypt are skipped Rust-side.
+     *   fail to decrypt, and documents carrying an unsupported wire version,
+     *   are skipped Rust-side. A payload that IS returned is not authenticated:
+     *   the envelope is AES-256-CBC with PKCS7 and no integrity tag, so a wrong
+     *   key or modified ciphertext usually fails the unpad but can occasionally
+     *   unpad cleanly and surface opaque garbage. Parse each payload strictly
+     *   and discard what does not parse.
      *
      * SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
      * deallocation. The returned host `String` is plaintext-equivalent; its

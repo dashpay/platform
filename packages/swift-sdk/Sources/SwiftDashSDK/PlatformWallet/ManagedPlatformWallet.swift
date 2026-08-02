@@ -3432,30 +3432,35 @@ extension ManagedPlatformWallet {
     /// create-with-signer path. The written document is decryptable by the
     /// legacy `org.dashj.platform` stack and vice versa. The resolved master
     /// xprv is wiped BETWEEN the (synchronous) derivation and the (async)
-    /// broadcast, so no key material crosses the network `.await`
-    /// (dashpay/platform#4091).
+    /// broadcast, so no key material crosses the network `.await`.
     ///
-    /// The `encryptionKeyIndex` is no longer a host parameter: Rust allocates
-    /// it (dashpay/platform#4195), matching the Android auto-index path where
-    /// Kotlin's `createEncryptedDocument` omits it (`encryptionKeyIndex =
-    /// null`). Host-side index assignment risked cross-device collisions, so
-    /// both platforms now defer to the Rust-side allocator.
+    /// The `encryptionKeyIndex` is not a host parameter: Rust allocates it,
+    /// matching the Android path where Kotlin's `createEncryptedDocument`
+    /// omits it. Host-side index assignment risks cross-device collisions, so
+    /// both platforms defer to the Rust-side allocator.
     ///
     /// Batching stays app-side: the caller serializes its items into
-    /// `payload` (a protobuf `TxMetadataBatch` for `version == 1`). The
-    /// plaintext `payload` is copied directly into a Rust-owned `Zeroizing`
-    /// buffer
-    /// (scrubbed on drop, before the broadcast await) — this wrapper keeps
-    /// no extra Swift-side copy, the same handling as the seed bytes that
-    /// flow through `MnemonicResolver`. Callers that hold sensitive
-    /// plaintext should scrub their own buffer after the call returns.
+    /// `payload` (a protobuf `TxMetadataBatch` for `version == 1`). This wrapper
+    /// makes no intentional payload copy before the FFI call; it presents a
+    /// temporary byte view that Rust copies into a `Zeroizing` buffer. Swift's
+    /// runtime may still materialize or copy `Data` storage, as documented
+    /// below.
     ///
-    /// `version` MUST be `0` (CBOR) or `1` (protobuf): `seal_tx_metadata`
-    /// writes the byte verbatim and the legacy dashj `decryptTxMetadata`
-    /// switches on exactly those two values, so an out-of-range byte would
-    /// silently seal a document the legacy stack can't decode. The guard
-    /// runs before any FFI call (mirrors the Kotlin
-    /// `DocumentTransactions.createEncryptedDocument` `require`).
+    /// `version` is the wire byte, passed through as-is. Which values are
+    /// meaningful is decided by the wallet core, which rejects an unsupported
+    /// one before anything is sealed and surfaces it as an invalid-parameter
+    /// error.
+    ///
+    /// ### What is not scrubbed
+    /// The SDK zeroizes the native copies Rust makes of `payload`. It cannot
+    /// scrub `payload` itself: `Data` is caller-owned, its backing storage may
+    /// be shared, and copy-on-write or a runtime move can leave further copies
+    /// the SDK never sees. Treat `payload` and everything derived from it as
+    /// plaintext-equivalent for as long as it is reachable: keep it
+    /// short-lived, never log it, and overwrite your own buffer once this call
+    /// returns where that is feasible. Overwriting the `Data` you hold does not
+    /// reach any copy its storage was shared into, so this reduces exposure
+    /// rather than eliminating it.
     ///
     /// # Key source: chosen by wallet capability (Rust-side)
     ///
@@ -3464,7 +3469,11 @@ extension ManagedPlatformWallet {
     /// external-signable / Keychain-backed wallet (the app's shape)
     /// derives on demand through the resolver. The resolver is pinned
     /// across the synchronous FFI call with `withExtendedLifetime`, same as
-    /// `previewIdentityRegistrationKeys`.
+    /// `previewIdentityRegistrationKeys`. Rust calls it back on the thread that
+    /// entered the export, after the index allocation has returned and before
+    /// the broadcast starts — never on a runtime worker. That thread belongs to
+    /// the detached task this method runs in, so a resolver that waits on
+    /// Keychain blocks neither the UI thread nor an actor's executor.
     ///
     /// Lifetime contract: the `signer` instance MUST stay alive for the
     /// duration of the synchronous FFI call (Rust holds a `passUnretained`
@@ -3479,15 +3488,6 @@ extension ManagedPlatformWallet {
         signer: KeychainSigner,
         storage: WalletStorage = WalletStorage()
     ) async throws -> (Identifier, String) {
-        // Reject wire-meaningless version bytes before touching the FFI so
-        // a bad byte never seals a document the legacy stack can't decode
-        // (dashpay/platform#4091). Mirrors the Kotlin `require`.
-        guard version == 0 || version == 1 else {
-            throw PlatformWalletError.invalidParameter(
-                "version must be 0 (CBOR) or 1 (protobuf), got \(version)"
-            )
-        }
-
         let handle = self.handle
         let signerHandle = signer.handle
         // Rust pulls the BIP-39 mnemonic on demand for external-signable
@@ -3509,25 +3509,38 @@ extension ManagedPlatformWallet {
 
             // Pin BOTH the signer and the resolver for the whole FFI call
             // (see `createDocument` / `previewIdentityRegistrationKeys` for
-            // why a bare `_ = signer` is unreliable under -O). Rust
-            // dereferences both ctx pointers synchronously inside
-            // `block_on_worker`.
+            // why a bare `_ = signer` is unreliable under -O). They are
+            // dereferenced at different moments and on different threads, so
+            // one pin spanning the entire synchronous call is what keeps both
+            // valid. Rust consults the resolver on the thread that entered the
+            // export — this one — after the index-allocation worker has
+            // returned, and dereferences the signer later, on the worker that
+            // runs the broadcast. Because this runs in a detached task, "the
+            // export-entry thread" is a cooperative-pool thread rather than the
+            // UI thread or any actor's executor, so a resolver callback that
+            // waits on Keychain blocks only here.
             let result = withExtendedLifetime(resolver) {
                 withExtendedLifetime(signer) {
                     ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                         contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
                             documentType.withCString { typePtr -> PlatformWalletFFIResult in
-                                // Borrow the plaintext bytes in place — no
-                                // extra Swift copy. `baseAddress` is nil for
-                                // an empty payload, which the FFI accepts
-                                // only when `payload_len == 0`.
+                                // Borrow a temporary byte view; this wrapper
+                                // makes no intentional explicit copy.
+                                // `baseAddress` is nil for an empty payload,
+                                // which the FFI accepts only when
+                                // `payload_len == 0`.
                                 payload.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
                                     let payloadPtr = raw.bindMemory(to: UInt8.self).baseAddress
                                     return documentIdBytes.withUnsafeMutableBufferPointer { outBp in
                                         // Auto-index export: Rust allocates the
                                         // per-document `encryptionKeyIndex` from
                                         // Platform state, so no index argument is
-                                        // passed (dashpay/platform#4195).
+                                        // passed. This host can hand over a
+                                        // pointer to memory it already owns, so
+                                        // the single-call export is correct here.
+                                        // Hosts whose plaintext lives in a
+                                        // runtime-managed buffer use a Rust-ABI
+                                        // composite with deferred materialization.
                                         platform_wallet_create_encrypted_document_with_signer_auto_index(
                                             handle,
                                             resolverHandle,
@@ -3549,15 +3562,20 @@ extension ManagedPlatformWallet {
                 }
             }
 
-            try result.check()
-            // Take ownership of the JSON and release the Rust allocation.
+            // Registered BEFORE the throwing check: the export publishes a null
+            // sentinel on failure, but a non-null output must be released on
+            // every path out of this scope, including one that throws. A defer
+            // placed after the check would leak whatever the call had already
+            // written. The create output is canonical JSON — ciphertext and
+            // metadata, no plaintext — so it is released with the ordinary free.
             defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            try result.check()
             // On a successful broadcast the Rust side always writes the
             // canonical JSON; a null pointer here is an FFI/ABI contract
             // violation. Fail loudly rather than persist an empty body.
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "create_encrypted_document_with_signer returned no canonical document JSON"
+                    "create_encrypted_document_with_signer_auto_index returned no canonical document JSON"
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
@@ -3573,29 +3591,48 @@ extension ManagedPlatformWallet {
     /// `getTxMetaData(since, key)` — bridges
     /// `platform_wallet_fetch_encrypted_documents`. Each document's
     /// `encryptedMetadata` blob is decrypted with the identity's derived
-    /// key; documents that can't be derived/decrypted are skipped Rust-side
+    /// key. Decryption is NOT authentication: the envelope is AES-256-CBC with
+    /// PKCS7 and no integrity tag, so a wrong key or modified ciphertext
+    /// usually fails the unpad and is skipped, but can occasionally unpad
+    /// cleanly and surface opaque garbage. Parse every `payload` strictly —
+    /// CBOR for `version` 0, protobuf for 1 — and discard what does not parse.
+    ///
+    /// Documents that can't be derived/decrypted are skipped Rust-side
     /// (a bad document never aborts the fetch).
     ///
     /// Each element of the returned array is
     /// `{ "id": base58, "ownerId": base58, "keyIndex": UInt32,
     /// "encryptionKeyIndex": UInt32, "version": UInt8,
     /// "updatedAt": UInt64|null, "payload": base64 }`, where `payload` is
-    /// the decrypted opaque plaintext the caller parses itself (a protobuf
-    /// `TxMetadataBatch` for `version == 1`).
+    /// the decrypted opaque plaintext the caller parses itself. Callers MUST
+    /// dispatch on `version`: `0` is a CBOR payload, `1` a protobuf
+    /// `TxMetadataBatch`. Those are the only versions the legacy format
+    /// defines; a document carrying anything else is skipped by the SDK and
+    /// never appears in this array.
     ///
-    /// SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
-    /// deallocation. The returned host `String` is plaintext-equivalent; its
-    /// runtime-managed storage, copies, and parsed-object copies cannot be
-    /// reliably overwritten by the SDK. Parse it promptly, do not log it, and
-    /// do not retain or persist it longer than required.
+    /// ### What is not scrubbed
+    /// The SDK zeroizes the native decrypted-payload and JSON buffers it owns.
+    /// It cannot scrub the returned `String`: that is a runtime-managed object,
+    /// as are every copy of it and every object parsed out of it, and the
+    /// runtime may have moved or copied its storage. Treat it and everything
+    /// derived from it as plaintext-equivalent for as long as it is reachable:
+    /// parse promptly, never log it, and do not retain or persist it longer
+    /// than required. Unlike a `Data` buffer there is no overwrite to attempt
+    /// here at all, so short retention is the only control the caller has.
     ///
     /// # Key source: chosen by wallet capability (Rust-side)
     ///
     /// A `MnemonicResolver` is always passed, but Rust consults it only
     /// when the in-process wallet lacks resident keys (the app's
-    /// external-signable shape). The resolver is pinned across the
+    /// external-signable shape) AND the paginated scan actually found
+    /// candidates — an empty or failed fetch never calls back, which matters
+    /// where that callback prompts the user. The resolver is pinned across the
     /// synchronous FFI call with `withExtendedLifetime`, same as
-    /// `previewIdentityRegistrationKeys`.
+    /// `previewIdentityRegistrationKeys`. Rust calls it back on the thread that
+    /// entered the export, after the scan worker has returned — never on a
+    /// runtime worker. That thread belongs to the detached task this method
+    /// runs in, so a resolver that waits on Keychain blocks neither the UI
+    /// thread nor an actor's executor.
     public func fetchEncryptedDocuments(
         ownerIdentityId: Identifier,
         contractId: Identifier,
@@ -3617,8 +3654,13 @@ extension ManagedPlatformWallet {
             // `platform_wallet_sensitive_string_free` below.
             var documentsJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
-            // Pin the resolver for the whole FFI call — Rust dereferences
-            // its ctx pointer synchronously inside `block_on_worker`.
+            // Pin the resolver for the whole FFI call. Rust consults it on the
+            // thread that entered the export — this one — after the paginated
+            // scan worker has returned, and only when that scan actually found
+            // candidates, so an empty or failed fetch never calls back at all.
+            // Because this runs in a detached task, that thread is a
+            // cooperative-pool thread rather than the UI thread or any actor's
+            // executor.
             let result = withExtendedLifetime(resolver) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in

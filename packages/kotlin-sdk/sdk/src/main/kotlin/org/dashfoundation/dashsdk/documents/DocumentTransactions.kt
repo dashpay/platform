@@ -253,36 +253,50 @@ class DocumentTransactions internal constructor(
      * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
      * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
      * [ownerId] — signed via [signerHandle]. Implements the create half of the
-     * legacy `BlockchainIdentity.publishTxMetaData` retirement
-     * (dashpay/platform#4086): the SDK derives the identity encryption key,
-     * seals [payload] into the legacy `version ‖ IV ‖ AES-256-CBC` blob, and
-     * writes `{keyIndex, encryptionKeyIndex, encryptedMetadata}`.
+     * legacy `BlockchainIdentity.publishTxMetaData` retirement: the SDK derives
+     * the identity encryption key, seals [payload] into the legacy
+     * `version ‖ IV ‖ AES-256-CBC` blob, and writes
+     * `{keyIndex, encryptionKeyIndex, encryptedMetadata}`.
      *
      * Batching stays app-side: the caller serializes its items into [payload]
      * (a protobuf `TxMetadataBatch`). The identity encryption key id (the
      * `keyIndex` field) is chosen SDK-side to match the legacy stack, so the key
      * never crosses the FFI boundary.
      *
-     * ### `encryptionKeyIndex` allocation (dashpay/platform#4186 follow-up)
+     * ### `encryptionKeyIndex` allocation
      * Leave [encryptionKeyIndex] `null` (the default) to let the SDK allocate
      * the per-document index in Rust from authoritative Platform state — the
-     * host-thin path. Rust counts the identity's existing txMetadata documents
-     * on Platform and uses `1 + count` (matching dash-wallet's retired
-     * `1 + countAllRequests()` semantics EXACTLY), serialized under the wallet's
-     * allocator mutex so concurrent creates through the same process never pick
-     * the same index. The index is best-effort unique PER DEVICE; a cross-device
-     * duplicate is not data-loss (each document stores its own index and the
-     * reader derives that document's key from it, so both decrypt independently).
+     * host-thin path. Rust counts the identity's existing documents of this
+     * contract and document type on Platform and uses `1 + count`, the same
+     * series the legacy stack produced, serialized in process so concurrent
+     * creates never pick the same index. The index is best-effort unique PER
+     * DEVICE; a cross-device duplicate is not data loss, because each document
+     * stores its own index and the reader derives that document's key from it,
+     * so both decrypt independently. It follows that the index is an
+     * encryption-key selector, NOT a document sequence number: do not order,
+     * count, address, or gap-check documents by it.
      *
      * Passing an explicit non-negative [encryptionKeyIndex] is retained ONLY for
-     * migration / tests and is discouraged: the host must NOT reintroduce a
-     * caller-supplied `1 + countAllRequests()` counter (concurrent callers /
-     * devices could collide, and it violates the host-thin key-index rule).
+     * migration / tests and is discouraged: a caller-supplied counter can
+     * collide across concurrent callers and devices, and choosing the index is
+     * the SDK's job.
+     *
+     * ### What is not scrubbed
+     * The SDK zeroizes the native copies it makes of [payload]. It cannot
+     * scrub [payload] itself: that is a JVM `ByteArray` the caller owns, as are
+     * any buffers that produced it, and the runtime may have copied it while
+     * compacting the heap. Treat it and every JVM copy as plaintext-equivalent
+     * for as long as they are reachable: keep them short-lived, never log them,
+     * and overwrite your own array once this call returns where that is
+     * feasible. Overwriting the array you hold does not reach any copy the
+     * runtime made of it, so this reduces exposure rather than eliminating it.
      *
      * @param encryptionKeyIndex `null` to let the SDK allocate the index
      *   (preferred); or an explicit non-negative per-document index
      *   (migration / tests only).
-     * @param version payload version byte (`1` = protobuf, as the wallet writes).
+     * @param version payload version byte. Which values are meaningful is
+     *   decided by the wallet core; an unsupported one is rejected there and
+     *   surfaced as a platform-wallet invalid-parameter error.
      * @param payload already-serialized opaque plaintext; the SDK does not
      *   parse it.
      * [mnemonicResolverHandle] is the host mnemonic-resolver handle
@@ -310,14 +324,6 @@ class DocumentTransactions internal constructor(
         require(encryptionKeyIndex == null || encryptionKeyIndex >= 0) {
             "encryptionKeyIndex, when supplied, must be non-negative, got $encryptionKeyIndex"
         }
-        // Only 0 (CBOR) and 1 (protobuf) are wire-meaningful: `seal_tx_metadata`
-        // writes this byte verbatim into the envelope and the legacy dashj stack
-        // (decryptTxMetadata) switches on exactly those two values. Accepting 2..255
-        // would silently seal a document the legacy stack can't decode, breaking the
-        // bidirectional wire-compat guarantee (dashpay/platform#4091).
-        require(version == 0 || version == 1) {
-            "version must be 0 (CBOR) or 1 (protobuf), got $version"
-        }
         mapNativeErrors {
             TransactionsNative.documentCreateEncrypted(
                 walletHandle,
@@ -338,24 +344,41 @@ class DocumentTransactions internal constructor(
      * Fetch + DECRYPT every encrypted wallet-contract document owned by
      * [ownerId] on [contractId]'s [documentType] updated at or after [sinceMs]
      * (epoch-millis). Implements the read half of the legacy
-     * `BlockchainIdentity.getTxMetaData(since, key)` retirement
-     * (dashpay/platform#4087): the SDK fetches the owner-scoped, since-timestamp
-     * documents and decrypts each with the identity's derived key. Documents
-     * that fail to decrypt are skipped Rust-side (a bad document never aborts
-     * the fetch).
+     * `BlockchainIdentity.getTxMetaData(since, key)` retirement: the SDK fetches
+     * the owner-scoped, since-timestamp documents and decrypts each with the
+     * identity's derived key. Documents that fail to decrypt, and documents
+     * carrying an unsupported wire version, are skipped Rust-side — a bad
+     * document never aborts the fetch.
+     *
+     * ### Decryption is not authentication
+     * The envelope is AES-256-CBC with PKCS7 and carries no integrity tag, so a
+     * successful decrypt does not mean the bytes are genuine. A wrong key or a
+     * modified ciphertext usually fails the unpad and is skipped, but PKCS7
+     * accepts a wrong plaintext often enough that an element can carry opaque
+     * garbage. Parse every `payload` strictly — CBOR for `version` 0, protobuf
+     * for 1 — and discard anything that does not parse, rather than trusting it
+     * because it appeared in the array.
      *
      * @return a JSON array; each element is `{ "id", "ownerId" (base58),
      *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
      *   "payload" (base64 of the decrypted opaque plaintext) }`. The caller
-     *   parses each `payload` itself (a protobuf `TxMetadataBatch` for
-     *   `version == 1`) and reconciles memo / taxCategory / exchangeRate /
-     *   service / giftCard fields into its local store.
+     *   parses each `payload` itself and MUST dispatch on `version`: `0` is a
+     *   CBOR payload, `1` a protobuf `TxMetadataBatch`. Those are the only
+     *   versions the legacy format defines; a document carrying anything else
+     *   is skipped by the SDK and never reaches this array. Reconcile memo /
+     *   taxCategory / exchangeRate / service / giftCard fields into the local
+     *   store from the parsed payload.
      *
-     * SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
-     * deallocation. The returned host `String` is plaintext-equivalent; its
-     * runtime-managed storage, copies, and parsed-object copies cannot be
-     * reliably overwritten by the SDK. Parse it promptly, do not log it, and
-     * do not retain or persist it longer than required.
+     * ### What is not scrubbed
+     * The SDK zeroizes the native decrypted-payload and JSON buffers it owns.
+     * It cannot scrub the returned `String`: that is a JVM object the runtime
+     * manages, as are every copy of it and every object parsed out of it, and
+     * the runtime may have copied it while compacting the heap. Treat it and
+     * everything derived from it as plaintext-equivalent for as long as they
+     * are reachable: parse promptly, never log them, and do not retain or
+     * persist them longer than required. Unlike a `ByteArray` there is no
+     * overwrite to attempt here at all, so short retention is the only control
+     * the caller has.
      *
      * [mnemonicResolverHandle] is the host mnemonic-resolver handle
      * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]):

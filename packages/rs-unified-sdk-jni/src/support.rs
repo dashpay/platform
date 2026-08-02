@@ -75,19 +75,53 @@ pub fn take_pwffi_error(env: &mut JNIEnv, mut result: PlatformWalletFFIResult) -
             .to_string_lossy()
             .into_owned()
     };
-    // Diagnostic breadcrumb (warn-level so it provably reaches logcat): the
-    // raw platform-wallet code, the offset code Kotlin will see, and the full
-    // message — visible even when the Kotlin caller contains the exception.
+    // Diagnostic breadcrumb (warn-level so it provably reaches logcat): the raw
+    // platform-wallet code and the offset code Kotlin will see. The message
+    // itself is NOT logged — it is an unbounded native string that can carry
+    // caller-supplied text, query shapes or contract internals, and a device log
+    // is readable by any process holding the log permission and is captured in
+    // bug reports. The caller still receives it on the exception, so nothing is
+    // lost; the two codes are enough to line a report up against either side of
+    // the mapping.
     log::warn!(
-        "take_pwffi_error: platform-wallet code {} (thrown as DashSDKException code {}): {}",
-        result.code as i32,
-        result.code as i32 + PWFFI_CODE_OFFSET,
-        message
+        "{}",
+        platform_wallet_error_breadcrumb(result.code as i32, &message)
     );
     throw_sdk_exception(env, result.code as i32 + PWFFI_CODE_OFFSET, &message);
     // SAFETY: `result` is a fresh PlatformWalletFFIResult; free its message.
     unsafe { platform_wallet_ffi_result_free(&mut result) };
     true
+}
+
+/// The breadcrumb recorded when a platform-wallet result is converted into a
+/// Kotlin exception.
+///
+/// Records the raw platform-wallet code and the offset code the caller will see,
+/// and deliberately renders neither the message nor anything derived from it.
+/// The message is an unbounded native string that can carry caller-supplied
+/// text, query shapes or contract internals; a device log is readable by any
+/// process holding the log permission and is captured in bug reports. The
+/// caller still receives the message on the exception itself, so keeping both
+/// codes is enough to line a report up against either side of the mapping
+/// without carrying anything unbounded.
+pub(crate) fn platform_wallet_error_breadcrumb(
+    platform_wallet_code: i32,
+    _message: &str,
+) -> String {
+    format!(
+        "take_pwffi_error: platform_wallet_code={} thrown_code={}",
+        platform_wallet_code,
+        platform_wallet_code + PWFFI_CODE_OFFSET
+    )
+}
+
+/// The breadcrumb recorded when an exception is thrown to Kotlin.
+///
+/// Same reasoning as [`platform_wallet_error_breadcrumb`]: the message reaches
+/// the caller on the exception, so the log records which error was raised
+/// rather than what it said.
+pub(crate) fn thrown_exception_breadcrumb(code: i32, _message: &str) -> String {
+    format!("throw_sdk_exception: code={code}")
 }
 
 /// The process-wide JVM, cached in [`crate::JNI_OnLoad`]. Callback
@@ -103,8 +137,9 @@ pub const SDK_EXCEPTION_CLASS: &str = "org/dashfoundation/dashsdk/ffi/DashSDKExc
 pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
     // Diagnostic breadcrumb (warn-level so it provably reaches logcat): every
     // native→Kotlin error conversion is visible even when the Kotlin caller
-    // contains the exception into a status line.
-    log::warn!("throw_sdk_exception: code={code} message={message}");
+    // contains the exception into a status line. Only the code is recorded —
+    // see [`platform_wallet_error_breadcrumb`] for why the message is not.
+    log::warn!("{}", thrown_exception_breadcrumb(code, message));
     // If an exception is already pending we must not call further JNI
     // functions that would themselves throw.
     if env.exception_check().unwrap_or(false) {
@@ -147,8 +182,63 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 
 #[cfg(test)]
 mod tests {
-    use super::{generic_asset_lock_recovery_allowed, net_from_ord};
+    use super::{
+        generic_asset_lock_recovery_allowed, net_from_ord, platform_wallet_error_breadcrumb,
+        thrown_exception_breadcrumb, PWFFI_CODE_OFFSET,
+    };
     use dash_network::ffi::FFINetwork;
+
+    /// A message shaped like the worst thing a native error can carry: a marker
+    /// standing in for caller-supplied or contract-internal text, and an
+    /// embedded newline that would forge an additional log line.
+    const HOSTILE_MESSAGE: &str =
+        "failed for ownerId 5Dc…\nFORGED WARN line s3cr3t-marker-do-not-log";
+    const MARKER: &str = "s3cr3t-marker-do-not-log";
+
+    /// The breadcrumb that accompanies every native→Kotlin error conversion
+    /// records the two codes and nothing from the message.
+    ///
+    /// The message is unbounded and can carry caller-supplied text, query shapes
+    /// or contract internals; the caller still receives it on the exception, so
+    /// nothing is lost by keeping it out of a device log.
+    #[test]
+    fn the_platform_wallet_error_breadcrumb_records_codes_and_never_the_message() {
+        let line = platform_wallet_error_breadcrumb(6, HOSTILE_MESSAGE);
+
+        assert!(
+            !line.contains(MARKER),
+            "the message body must never reach the log: {line}"
+        );
+        assert!(
+            !line.contains('\n'),
+            "an embedded newline would let an error body forge further log lines: {line}"
+        );
+        assert!(
+            line.contains("platform_wallet_code=6"),
+            "the raw platform-wallet code must be recorded: {line}"
+        );
+        assert!(
+            line.contains(&format!("thrown_code={}", 6 + PWFFI_CODE_OFFSET)),
+            "the offset code the caller will see must be recorded so a report can \
+             be lined up against either side of the mapping: {line}"
+        );
+    }
+
+    /// Same contract on the throw path, which every JNI export reaches.
+    #[test]
+    fn the_thrown_exception_breadcrumb_records_the_code_and_never_the_message() {
+        let line = thrown_exception_breadcrumb(1042, HOSTILE_MESSAGE);
+
+        assert!(
+            !line.contains(MARKER),
+            "the message body must never reach the log: {line}"
+        );
+        assert!(!line.contains('\n'), "no forged log lines: {line}");
+        assert_eq!(
+            line, "throw_sdk_exception: code=1042",
+            "the breadcrumb is the stage label plus the numeric code, nothing else"
+        );
+    }
 
     #[test]
     fn generic_asset_lock_recovery_rejects_invitation_authority() {

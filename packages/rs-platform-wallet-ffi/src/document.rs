@@ -1,6 +1,7 @@
 //! FFI bindings for document create operations on `IdentityWallet`.
 
 use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
@@ -9,6 +10,7 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
 use key_wallet::bip32::ExtendedPrivKey;
+use platform_wallet::wallet::identity::crypto::tx_metadata::ensure_tx_metadata_create_inputs_valid;
 use platform_wallet::{PlatformWalletError, TxMetadataKeySource};
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 use zeroize::Zeroizing;
@@ -17,17 +19,23 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, try_block_on_worker};
 use crate::tx_metadata_json::serialize_decrypted_documents;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
 /// RAII guard scrubbing a resolved master xprv's secret scalar on drop.
-/// `ExtendedPrivKey` has no `Drop`/`Zeroize` of its own, so a resolved master
-/// would otherwise linger on the stack past its use — and a manual
-/// `non_secure_erase()` placed after an `.await` is skipped on panic / early
-/// return. Wrapping the master here scrubs it on EVERY exit path
-/// (dashpay/platform#4091). Mirrors `WipingSecretKey` in `utils.rs`.
+///
+/// The pinned `ExtendedPrivKey` zeroizes itself on drop. This guard narrows the
+/// private scalar's lifetime to the explicit operation boundary and keeps that
+/// boundary stable across later lexical refactors: ordinary return, error
+/// return, and unwinding panic all erase it here before the value's own full
+/// zeroizing drop runs.
+///
+/// It does NOT cover `panic = "abort"`, which the iOS profiles use: an abort
+/// runs no destructor, so nothing scrubs the master there. Nor is the write
+/// itself absolute — it cannot reach a register copy or one the optimizer
+/// already made. Mirrors `WipingSecretKey` in `utils.rs`.
 struct WipingMaster(ExtendedPrivKey);
 
 impl Drop for WipingMaster {
@@ -48,8 +56,9 @@ impl Drop for WipingMaster {
 ///   resolver: the wallet's mnemonic is resolved on demand (keyed by the
 ///   wallet's own id) and returned as a master xprv (`Ok(Some(master))`).
 ///   The CALLER must wipe it once the derive is done — wrap it in
-///   [`WipingMaster`] so its scalar is scrubbed on every exit path (normal,
-///   early return, panic), not only after a manual `non_secure_erase()`. When
+///   [`WipingMaster`] so its scalar is scrubbed on ordinary return, on an error
+///   return and on an unwinding panic, rather than only after a manual
+///   `non_secure_erase()`. An abort runs no destructor and is not covered. When
 ///   the resolver handle is null for this shape, errors with a hint naming the
 ///   requirement.
 ///
@@ -103,10 +112,257 @@ unsafe fn tx_metadata_key_master_for_wallet(
     }
 }
 
+/// The whole txMetadata create-argument policy as an FFI result.
+///
+/// A Rust helper, not a C symbol, shared by the C exports, standalone allocator,
+/// deferred-payload composite, and their tests so every entry point applies one
+/// implementation of what makes a create request valid.
+///
+/// Every caller runs this BEFORE copying plaintext, consulting the host key
+/// resolver, reaching the network, or reserving an index — including the index
+/// allocator, which must not spend an index on a request that a later stage will
+/// reject anyway. `encryption_key_index` is `None` when an index is about to be
+/// allocated.
+///
+/// `signer_present` carries the one precondition that is not wallet-protocol
+/// policy: a create broadcasts through a signer, so a request without one cannot
+/// succeed no matter what the other arguments say. It lives here rather than
+/// only at a C wrapper so the C exports, standalone allocator, and Rust-ABI
+/// deferred-payload composite all reject the same requests before materializing
+/// plaintext or reserving an index.
+pub fn tx_metadata_create_preflight_result(
+    payload_len: usize,
+    version: u8,
+    encryption_key_index: Option<u32>,
+    signer_present: bool,
+) -> PlatformWalletFFIResult {
+    if !signer_present {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "signer_handle ptr is null",
+        );
+    }
+    match ensure_tx_metadata_create_inputs_valid(payload_len, version, encryption_key_index) {
+        Ok(()) => PlatformWalletFFIResult::ok(),
+        Err(error) => error.into(),
+    }
+}
+
+/// Sequence an encrypted create's index resolution ahead of its plaintext copy.
+///
+/// Resolving the index can wait on the network (the SDK-allocated path counts
+/// the identity's documents on Platform) and needs only the payload's length,
+/// while materializing produces an owned copy of the caller's plaintext. Running
+/// them in this order is what keeps a native plaintext copy from existing while
+/// that round trip is in flight — a window with no bound, since the SDK sets no
+/// request timeout. A failed resolution returns before `materialize` runs at all,
+/// so a doomed request never copies the plaintext either.
+///
+/// The order is expressed as a function rather than as adjacent statements
+/// because it is a security property, not a stylistic one: a later edit that
+/// reorders it has to change this call, and the ordering test pinning it.
+///
+/// This private seam is used by the shared create orchestration for both
+/// borrowed C input and deferred host materialization, so neither host bridge
+/// decides the ordering.
+fn allocate_before_materializing<T>(
+    resolve_index: impl FnOnce() -> Result<u32, PlatformWalletFFIResult>,
+    materialize: impl FnOnce() -> T,
+) -> Result<(u32, T), PlatformWalletFFIResult> {
+    let resolved_index = resolve_index()?;
+    Ok((resolved_index, materialize()))
+}
+
+/// Resolve an index, materialize the native plaintext exactly once, and verify
+/// that the callback honored the declared-length contract.
+fn settle_index_and_materialize_payload(
+    declared_len: usize,
+    resolve_index: impl FnOnce() -> Result<u32, PlatformWalletFFIResult>,
+    materialize: impl FnOnce() -> Result<Zeroizing<Vec<u8>>, PlatformWalletFFIResult>,
+) -> Result<(u32, Zeroizing<Vec<u8>>), PlatformWalletFFIResult> {
+    let (resolved_index, materialized) = allocate_before_materializing(resolve_index, materialize)?;
+    let payload = materialized?;
+    if payload.len() != declared_len {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "materialized payload length {} did not match declared length {declared_len}",
+                payload.len()
+            ),
+        ));
+    }
+    Ok((resolved_index, payload))
+}
+
+/// Seal the plaintext, release every SDK-owned secret, and only THEN broadcast.
+///
+/// Broadcasting is an unbounded network wait — the SDK sets no request timeout —
+/// so whatever is still alive when it starts stays alive for however long the
+/// network takes. Sealing needs the plaintext and the resolved key material;
+/// broadcasting needs neither, only the ciphertext-bearing properties. Ending
+/// both lifetimes strictly between the two stages is what keeps them off that
+/// wait, and a seal that fails releases them without reaching the network at
+/// all.
+///
+/// The order is expressed as a function rather than as adjacent statements
+/// because it is a security property, not a stylistic one: a later edit that
+/// reorders it has to change this call, and the ordering tests pinning it.
+///
+/// It is also what carries the guarantee across the SDK's own boundary. A host
+/// that cannot lend its plaintext hands over a bridge-created native copy
+/// instead; that copy becomes `payload` here, so the release below erases that
+/// native copy rather than merely erasing a second copy made inside the SDK.
+/// Any runtime-managed host object remains outside Rust's control.
+fn seal_and_release_before_broadcasting<Payload, Secret, Sealed, Broadcast, Failure>(
+    payload: Payload,
+    secret: Secret,
+    seal: impl FnOnce(&Payload, &Secret) -> Result<Sealed, Failure>,
+    broadcast: impl FnOnce(Sealed) -> Broadcast,
+) -> Result<Broadcast, Failure> {
+    // Released explicitly on BOTH paths rather than left to end-of-scope, so
+    // the point at which each lifetime ends is stated here rather than implied
+    // by declaration order.
+    let sealed = match seal(&payload, &secret) {
+        Ok(sealed) => sealed,
+        Err(failure) => {
+            drop(payload);
+            drop(secret);
+            return Err(failure);
+        }
+    };
+    drop(payload);
+    drop(secret);
+    Ok(broadcast(sealed))
+}
+
+/// Where an encrypted create's plaintext comes from and — inseparably — how its
+/// `encryptionKeyIndex` was settled.
+///
+/// The two shapes exist because hosts differ in what they can lend. A host that
+/// owns its plaintext outright lends a pointer to it for the synchronous call
+/// (Swift's `Data.withUnsafeBytes`), so the SDK copies it internally and is free
+/// to settle the index itself first. A host whose plaintext lives in a
+/// runtime-managed object that cannot be pinned across a network round trip (a
+/// JVM `byte[]`) instead gives Rust a deferred materializer. Rust settles the
+/// index first and invokes that callback only when it is ready to take ownership
+/// of the native plaintext copy.
+///
+/// Pairing the declared length, optional index, and materializer keeps the
+/// ordering in this shared Rust operation rather than in either host bridge.
+type DeferredPayloadMaterializer<'a> =
+    Box<dyn FnOnce() -> Result<Zeroizing<Vec<u8>>, PlatformWalletFFIResult> + 'a>;
+
+enum PayloadSource<'a> {
+    /// Caller memory borrowed for the synchronous call, copied into an owned
+    /// zeroizing buffer only once the index is settled — either by using the
+    /// index the host supplied (`Some`) or by allocating one (`None`).
+    Borrowed {
+        ptr: *const u8,
+        len: usize,
+        index: Option<u32>,
+        borrow: PhantomData<&'a [u8]>,
+    },
+    /// A native copy that Rust asks the host bridge to make only after the
+    /// index is settled. The callback runs synchronously on the thread that
+    /// entered this Rust-ABI helper and returns ownership of the copy.
+    Deferred {
+        len: usize,
+        index: Option<u32>,
+        materialize: DeferredPayloadMaterializer<'a>,
+    },
+}
+
+impl PayloadSource<'_> {
+    /// The plaintext length. On the borrowed shape this is the DECLARED length,
+    /// which is what lets an over-large request be refused without the pointer
+    /// ever being read.
+    fn len(&self) -> usize {
+        match self {
+            PayloadSource::Borrowed { len, .. } => *len,
+            PayloadSource::Deferred { len, .. } => *len,
+        }
+    }
+
+    /// The caller-supplied index, or `None` when the SDK is about to allocate
+    /// one before materialization.
+    fn settled_index(&self) -> Option<u32> {
+        match self {
+            PayloadSource::Borrowed { index, .. } => *index,
+            PayloadSource::Deferred { index, .. } => *index,
+        }
+    }
+}
+
+/// Run an encrypted export's Rust-ABI inner function so a panic in it cannot
+/// reach the `extern "C"` frame.
+///
+/// Where unwinding exists, an escaping panic would unwind into a frame declared
+/// with the non-unwinding C ABI; the compiler stops that with a forced abort,
+/// killing the host. Catching here turns it into an ordinary result instead.
+///
+/// Under `panic = "abort"` a panic aborts where it is raised, so no catch is
+/// possible and the inner function is called directly. What that profile gains
+/// is narrower and comes from elsewhere: the known runtime and worker-join
+/// failures are handled as VALUES (see [`crate::runtime::WorkerFailure`]) and
+/// so never become panics at all. Arbitrary panics remain fatal there.
+///
+/// The caught payload is deliberately dropped: an FFI message must stay bounded
+/// and free of anything caller-derived.
+fn contain_panics(inner: impl FnOnce() -> PlatformWalletFFIResult) -> PlatformWalletFFIResult {
+    #[cfg(panic = "unwind")]
+    {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(inner)) {
+            Ok(result) => result,
+            Err(_) => PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorUnknown,
+                "encrypted document operation failed unexpectedly",
+            ),
+        }
+    }
+    #[cfg(not(panic = "unwind"))]
+    {
+        inner()
+    }
+}
+
+/// Map a shared-runtime failure to an FFI result.
+///
+/// Neither stage is the caller's fault, so both surface as the unknown-failure
+/// code carrying the failure's own fixed, stage-only text.
+fn worker_failure_result(failure: crate::runtime::WorkerFailure) -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorUnknown,
+        failure.to_string(),
+    )
+}
+
+// One-shot, thread-scoped panic injection for the encrypted create inner
+// function, used to prove the containment above. Consumed by the first check on
+// the calling thread, leaving no state behind.
+#[cfg(test)]
+thread_local! {
+    static FORCED_INNER_PANIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Make the next encrypted create inner call on THIS thread panic.
+#[cfg(test)]
+pub(crate) fn force_inner_panic_once() {
+    FORCED_INNER_PANIC.with(|flag| flag.set(true));
+}
+
+#[cfg(test)]
+fn take_forced_inner_panic() {
+    if FORCED_INNER_PANIC.with(|flag| flag.replace(false)) {
+        panic!("forced inner panic");
+    }
+}
+
+#[cfg(not(test))]
+fn take_forced_inner_panic() {}
+
 /// The key-source outcome of the capability + resolver-handle check, factored
 /// out of [`tx_metadata_key_master_for_wallet`] as a pure decision so the
-/// dispatch is unit-testable without a live `PlatformWallet`
-/// (dashpay/platform#4091).
+/// dispatch is decidable without a live `PlatformWallet`.
 #[derive(Debug, PartialEq, Eq)]
 enum KeySourceDecision {
     /// Resident-key wallet — derive in-process; the resolver handle is ignored
@@ -283,7 +539,7 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` via the generic
 /// `create_document_with_signer`. The resolved master xprv is wiped BETWEEN the
 /// (synchronous) derivation and the (async) broadcast, so no key material
-/// crosses the network `.await` (dashpay/platform#4091). The written document is
+/// crosses the network `.await`. The written document is
 /// decryptable by the legacy `org.dashj.platform` stack and vice versa.
 ///
 /// The AES key source is selected by the wallet's capability: a key-resident
@@ -301,12 +557,42 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// hosts should prefer the ABI-additive sibling
 /// [`platform_wallet_create_encrypted_document_with_signer_auto_index`], which
 /// omits `encryption_key_index` and lets Rust allocate it from authoritative
-/// Platform state (dashpay/platform#4186 follow-up) — moving the index-selection
+/// Platform state — moving the index-selection
 /// policy off the host.
 ///
 /// On success the confirmed document's 32-byte id is written to
 /// `out_document_id` and its canonical query-side JSON to `*out_document_json`
 /// (release with `platform_wallet_string_free`; left null on any error).
+///
+/// # Safety
+/// Every pointer below must stay valid for the whole synchronous duration of
+/// this call; the call borrows them and retains none of them afterwards.
+///
+/// - `owner_identity_id` and `contract_id` must each point to 32 readable bytes.
+/// - `document_type_name` must be a valid NUL-terminated C string of UTF-8.
+/// - `payload` and `payload_len` are one unit: `payload` must point to
+///   `payload_len` readable bytes. `payload` may be null ONLY when
+///   `payload_len == 0`; a null pointer with a non-zero length is rejected from
+///   the arguments and never dereferenced. The bytes are copied into an owned
+///   zeroizing buffer, so the caller may free or overwrite its own buffer as
+///   soon as this returns — the caller's buffer is never scrubbed by the SDK.
+/// - `signer_handle` must be a live handle for the duration of the call and must
+///   not be null; a create cannot broadcast without one. `mnemonic_resolver_handle`
+///   may be null for a wallet with resident private keys, and must be live and
+///   non-null for an external-signable wallet.
+/// - `out_document_id` must point to 32 writable bytes. It is written only on
+///   success.
+/// - `out_document_json` must point to writable storage for one `char *`. It is
+///   set to null before any other fallible work, so on EVERY error path the
+///   caller is left holding null and must free nothing. On success it receives
+///   ownership of a NUL-terminated C string that the caller MUST release with
+///   `platform_wallet_string_free` — the ordinary free. This output is canonical
+///   document JSON (ciphertext and metadata, no plaintext); do NOT pass it to
+///   `platform_wallet_sensitive_string_free`, which pairs with the fetch
+///   export's output instead.
+///
+/// The returned `PlatformWalletFFIResult` owns its message and must be released
+/// with `platform_wallet_ffi_result_free`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
@@ -323,28 +609,40 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    // ABI-stable explicit-index entry point: the host supplies the per-document
-    // encryptionKeyIndex (migration / tests). Delegates to the shared impl with
-    // `Some(index)`.
-    create_encrypted_document_impl(
-        wallet_handle,
-        mnemonic_resolver_handle,
-        owner_identity_id,
-        contract_id,
-        document_type_name,
-        Some(encryption_key_index),
-        version,
-        payload,
-        payload_len,
-        signer_handle,
-        out_document_id,
-        out_document_json,
-    )
+    // Validate the output-parameter ADDRESS and publish the documented null
+    // sentinel before any other fallible input or lookup, so every later
+    // rejection leaves the caller holding null rather than whatever the
+    // variable happened to contain. A caller that follows the documented
+    // contract would otherwise free a pointer this call never owned. This runs
+    // in the `extern "C"` frame itself, so the sentinel is published even if
+    // the inner function later fails in any way.
+    check_ptr!(out_document_json);
+    *out_document_json = ptr::null_mut();
+
+    contain_panics(|| {
+        create_encrypted_document_inner(
+            wallet_handle,
+            mnemonic_resolver_handle,
+            owner_identity_id,
+            contract_id,
+            document_type_name,
+            version,
+            PayloadSource::Borrowed {
+                ptr: payload,
+                len: payload_len,
+                index: Some(encryption_key_index),
+                borrow: PhantomData,
+            },
+            signer_handle,
+            out_document_id,
+            out_document_json,
+        )
+    })
 }
 
 /// Create + broadcast an encrypted `txMetadata` document, letting RUST allocate
 /// the per-document `encryptionKeyIndex` from authoritative Platform state
-/// (dashpay/platform#4186 follow-up). ABI-additive sibling of
+///. ABI-additive sibling of
 /// [`platform_wallet_create_encrypted_document_with_signer`] — IDENTICAL
 /// parameters minus `encryption_key_index`.
 ///
@@ -374,160 +672,431 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    // Rust-allocated-index entry point: the host omits encryptionKeyIndex, so
-    // the shared impl allocates it from Platform state (`None`).
-    create_encrypted_document_impl(
-        wallet_handle,
-        mnemonic_resolver_handle,
-        owner_identity_id,
-        contract_id,
-        document_type_name,
-        None,
-        version,
-        payload,
-        payload_len,
-        signer_handle,
-        out_document_id,
-        out_document_json,
-    )
+    // Same out-pointer contract as the explicit-index export: the address is
+    // validated and its null sentinel published in the `extern "C"` frame,
+    // before any other fallible input.
+    check_ptr!(out_document_json);
+    *out_document_json = ptr::null_mut();
+
+    contain_panics(|| {
+        create_encrypted_document_inner(
+            wallet_handle,
+            mnemonic_resolver_handle,
+            owner_identity_id,
+            contract_id,
+            document_type_name,
+            version,
+            PayloadSource::Borrowed {
+                ptr: payload,
+                len: payload_len,
+                index: None,
+                borrow: PhantomData,
+            },
+            signer_handle,
+            out_document_id,
+            out_document_json,
+        )
+    })
 }
 
-/// Shared implementation behind the explicit-index
-/// ([`platform_wallet_create_encrypted_document_with_signer`], `Some`) and
-/// Rust-allocated
-/// ([`platform_wallet_create_encrypted_document_with_signer_auto_index`],
-/// `None`) encrypted-document create exports.
+/// Create + broadcast an encrypted `txMetadata` document while deferring the
+/// caller's native plaintext copy until Rust has settled the index.
 ///
-/// When `index` is `None` the per-document `encryptionKeyIndex` is allocated
-/// from Platform state via `IdentityWallet::allocate_encryption_key_index`
-/// (serialized under the wallet's allocator mutex) BEFORE any key material is
-/// resolved — the allocation touches no secrets and never crosses the broadcast
-/// await with the master in scope. That allocation first runs the deterministic,
-/// network-free payload-size gate, so an oversized payload fails without
-/// reserving (and thus without consuming) an index — no allocator gap
-/// (dashpay/platform#4186 review).
+/// A Rust-ABI helper, not a C symbol: the JNI layer links this crate as an rlib
+/// and calls it directly, so this adds no export to the C header and no second
+/// implementation of the create — it converges on the same orchestration the
+/// two C exports run.
+///
+/// It exists because a JVM `byte[]` cannot be pinned across the automatic index
+/// query. JNI supplies only its declared length and a synchronous callback.
+/// Rust validates the request, settles the explicit or automatic index, and
+/// only then invokes `materialize_payload` exactly once. The returned
+/// `Zeroizing<Vec<u8>>` is consumed by the shared create path and scrubbed as
+/// soon as the encrypted properties are sealed, before broadcast begins.
+///
+/// Keeping that sequence in one Rust operation makes JNI a marshaling layer:
+/// it never calls the allocator separately and never owns a native plaintext
+/// copy while a network allocation query is in flight.
 ///
 /// # Safety
-/// All pointers must be valid for the duration of the call; `payload` may be
-/// null only when `payload_len == 0`.
+/// Same pointer contract as
+/// [`platform_wallet_create_encrypted_document_with_signer`], minus the payload:
+/// `materialize_payload` must return exactly `payload_len` bytes. The helper
+/// rejects a mismatch and drops the returned zeroizing allocation without key
+/// resolution or broadcast. `out_document_json` must point to writable storage
+/// for one `char *`; it is nulled before any other fallible work and, on success,
+/// receives a string the caller MUST release with `platform_wallet_string_free`
+/// (the ordinary free — this output is canonical document JSON, ciphertext and
+/// metadata, no plaintext).
 #[allow(clippy::too_many_arguments)]
-unsafe fn create_encrypted_document_impl(
+pub unsafe fn create_encrypted_document_with_deferred_payload<'a>(
     wallet_handle: Handle,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
-    index: Option<u32>,
+    encryption_key_index: Option<u32>,
     version: u8,
-    payload: *const u8,
     payload_len: usize,
+    materialize_payload: impl FnOnce() -> Result<Zeroizing<Vec<u8>>, PlatformWalletFFIResult> + 'a,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
+    // Same out-pointer contract as the C exports: the address is validated and
+    // its null sentinel published before any other fallible input, so a caller
+    // following the documented contract never frees a pointer this call did not
+    // own.
+    check_ptr!(out_document_json);
+    *out_document_json = ptr::null_mut();
+
+    // Contained for the same reason as at the C exports, even though the
+    // immediate caller is Rust. The deferred callback is owned by this closure,
+    // so it is dropped without being called on any earlier rejection and any
+    // materialized zeroizing payload is released during an unwind.
+    contain_panics(move || {
+        create_encrypted_document_inner(
+            wallet_handle,
+            mnemonic_resolver_handle,
+            owner_identity_id,
+            contract_id,
+            document_type_name,
+            version,
+            PayloadSource::Deferred {
+                len: payload_len,
+                index: encryption_key_index,
+                materialize: Box::new(materialize_payload),
+            },
+            signer_handle,
+            out_document_id,
+            out_document_json,
+        )
+    })
+}
+
+/// Allocate the next `encryptionKeyIndex` for `owner_identity_id` on
+/// `contract_id`'s `document_type_name`, without creating a document.
+///
+/// This exists so a host whose plaintext lives in a runtime-managed buffer — a
+/// JVM `byte[]`, for example — can settle the index BEFORE copying that
+/// plaintext anywhere native. Allocating waits on Platform, and the SDK sets no
+/// request timeout, so a host that copied first would keep a plaintext copy
+/// alive for an unbounded wait. Hosts that can pass a pointer to memory they
+/// already own should use
+/// [`platform_wallet_create_encrypted_document_with_signer_auto_index`] instead,
+/// which sequences the same allocation internally and makes one call of it.
+///
+/// It takes the SAME create arguments as the export it precedes, minus the
+/// payload bytes themselves, and applies the SAME argument policy to them. That
+/// is deliberate: an index is a one-way reservation, so allocating one for a
+/// request that a later stage would reject anyway burns it for nothing. Passing
+/// `version`, `payload_len` and `signer_handle` here is what lets those
+/// rejections happen before the allocation rather than after it — the caller
+/// cannot ask for an index without supplying everything needed to know the
+/// create could succeed.
+///
+/// `payload_len` is the plaintext length of the document about to be created;
+/// nothing about the payload other than its length is needed. `signer_handle` is
+/// not used for signing here — only its presence is checked, since a create
+/// without a signer cannot proceed.
+///
+/// The returned index is a reservation, not a promise: it has been handed out
+/// and will not be handed out again in this process, so abandoning it leaves an
+/// unused index rather than a duplicate. The caller passes it to
+/// [`platform_wallet_create_encrypted_document_with_signer`].
+///
+/// # Safety
+/// `owner_identity_id` and `contract_id` must each point to 32 readable bytes,
+/// `document_type_name` must be a valid NUL-terminated C string, and `out_index`
+/// must point to writable `u32` storage. `*out_index` is left untouched on any
+/// error.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_allocate_encryption_key_index(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    version: u8,
+    payload_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_index: *mut u32,
+) -> PlatformWalletFFIResult {
+    contain_panics(|| {
+        allocate_encryption_key_index_inner(
+            wallet_handle,
+            owner_identity_id,
+            contract_id,
+            document_type_name,
+            version,
+            payload_len,
+            signer_handle,
+            out_index,
+        )
+    })
+}
+
+/// Rust-ABI body of [`platform_wallet_allocate_encryption_key_index`], split out
+/// so a panic in it is caught before the `extern "C"` frame.
+///
+/// # Safety
+/// Same contract as the `extern "C"` wrapper.
+#[allow(clippy::too_many_arguments)]
+unsafe fn allocate_encryption_key_index_inner(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    version: u8,
+    payload_len: usize,
+    signer_handle: *mut SignerHandle,
+    out_index: *mut u32,
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
     check_ptr!(document_type_name);
-    check_ptr!(out_document_id);
-    check_ptr!(out_document_json);
+    check_ptr!(out_index);
 
-    *out_document_json = ptr::null_mut();
+    // The same argument policy the create export applies, through the same
+    // helper, run BEFORE the allocator or the network is touched. An index is a
+    // one-way reservation, so a request that a later stage must reject has to be
+    // rejected here rather than after it has spent one. `None` because this call
+    // is what produces the index.
+    let preflight =
+        tx_metadata_create_preflight_result(payload_len, version, None, !signer_handle.is_null());
+    if preflight.code != PlatformWalletFFIResultCode::Success {
+        return preflight;
+    }
 
     let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
     let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
     let document_type_str =
         unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
 
-    // Copy the payload into an owned buffer. Null is allowed only for a
-    // zero-length payload. It is wrapped in `Zeroizing` so the native plaintext
-    // copy is scrubbed on drop, and it is dropped explicitly the instant the
-    // encrypted properties are prepared (below) — the plaintext must NOT linger
-    // in scope across the broadcast `.await` (dashpay/platform#4091).
-    let payload_vec: Zeroizing<Vec<u8>> = Zeroizing::new(if payload_len == 0 {
-        Vec::new()
-    } else {
-        check_ptr!(payload);
-        slice::from_raw_parts(payload, payload_len).to_vec()
+    // Clone the identity handle out of the shared handle storage before the
+    // network round trip, so the process-wide guard is not held across it.
+    let cloned =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(cloned);
+
+    let allocated = try_block_on_worker(async move {
+        identity_wallet
+            .allocate_encryption_key_index(
+                &owner_id,
+                &contract_id_value,
+                &document_type_str,
+                payload_len,
+            )
+            .await
     });
+    let index = match allocated {
+        Ok(result) => unwrap_result_or_return!(result),
+        Err(failure) => return worker_failure_result(failure),
+    };
+
+    *out_index = index;
+    PlatformWalletFFIResult::ok()
+}
+
+/// Rust-ABI body shared by every encrypted-document create entry point: the
+/// explicit-index C export
+/// ([`platform_wallet_create_encrypted_document_with_signer`]), the
+/// SDK-allocated C export
+/// ([`platform_wallet_create_encrypted_document_with_signer_auto_index`]), and
+/// the deferred-payload Rust helper
+/// ([`create_encrypted_document_with_deferred_payload`]).
+///
+/// Split out so a panic raised in here is caught before the `extern "C"` frame
+/// (see [`contain_panics`]). Every caller has already validated
+/// `out_document_json` and published its null sentinel.
+///
+/// The three differ only in where the plaintext comes from and how the index was
+/// settled, which [`PayloadSource`] carries. When it reports no settled index
+/// the per-document `encryptionKeyIndex` is allocated from Platform state before
+/// the caller's plaintext is copied and before any key material is resolved, so
+/// the allocation never crosses the broadcast await with a master in scope and
+/// an oversized payload fails without reserving an index. Whichever route was
+/// taken, the owned plaintext is released before the broadcast begins.
+///
+/// # Safety
+/// Same contract as the `extern "C"` wrappers: every non-null pointer argument
+/// must be valid for the duration of the call, a borrowed payload's pointer may
+/// be null only when its length is `0`, and `out_document_json` must already
+/// point to writable storage.
+#[allow(clippy::too_many_arguments)]
+unsafe fn create_encrypted_document_inner(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    version: u8,
+    payload: PayloadSource<'_>,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+    out_document_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    take_forced_inner_panic();
+
+    check_ptr!(document_type_name);
+    check_ptr!(out_document_id);
+
+    // Everything decidable from the arguments alone — signer presence, payload
+    // size, wire version, and a settled index's derivability — is checked
+    // before the resolver, the network, the allocator, or any copy of the
+    // caller's plaintext. A borrowed payload reports its DECLARED length, so an
+    // over-large request is refused without its pointer ever being read; an
+    // unsettled index is derivable by construction.
+    let payload_len = payload.len();
+    let preflight = tx_metadata_create_preflight_result(
+        payload_len,
+        version,
+        payload.settled_index(),
+        !signer_handle.is_null(),
+    );
+    if preflight.code != PlatformWalletFFIResultCode::Success {
+        return preflight;
+    }
+
+    // A borrowed payload's ADDRESS is validated here, before anything is
+    // allocated: a non-null pointer is required for a non-empty payload, and
+    // null is valid only for a zero-length one. A deferred payload has no
+    // address to check until its host callback returns owned bytes.
+    if let PayloadSource::Borrowed { ptr, len, .. } = &payload {
+        if *len != 0 && ptr.is_null() {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                "payload ptr is null",
+            );
+        }
+    }
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
 
     let signer_addr = signer_handle as usize;
     let owner_id_for_async = owner_id;
     let contract_id_for_async = contract_id_value;
 
-    // `move` so the closure OWNS `payload_vec` and can drop it (scrubbing the
-    // plaintext) before the broadcast `.await`; the other captures are Copy or
-    // already moved into the nested `async move` block.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
-        let identity_wallet = wallet.identity().clone();
+    // Resolve the handle before any network wait or plaintext materialization.
+    // The stored value is an `Arc`, so the process-wide storage guard is gone
+    // before either stage begins and an invalid handle never causes a host copy.
+    let Some(wallet_arc) = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, std::sync::Arc::clone)
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "requested wallet handle not found",
+        );
+    };
+    let identity_wallet = wallet_arc.identity().clone();
+    let identity_wallet_for_broadcast = identity_wallet.clone();
 
-        // Resolve the per-document encryptionKeyIndex FIRST, before any key
-        // material is in scope: the host either supplies it explicitly
-        // (`Some`, migration / tests) or omits it (`None`), in which case Rust
-        // allocates the next index from authoritative Platform state, serialized
-        // under the wallet's allocator mutex (dashpay/platform#4186 follow-up).
-        // The allocation touches no secrets, so it can run on the worker before
-        // the master is resolved. `allocate_encryption_key_index` runs the
-        // deterministic payload-size gate (network-free) BEFORE reserving, so an
-        // oversized payload fails without consuming an index — no allocator gap
-        // (dashpay/platform#4186 review).
-        let resolved_index: u32 = match index {
-            Some(i) => i,
+    // Settle the per-document encryptionKeyIndex and obtain the owned plaintext.
+    //
+    // A borrowed pointer and a deferred host materializer converge here. The
+    // host either supplied the index, or the SDK allocates it from Platform.
+    // Allocating is a network round trip that needs only the payload's LENGTH,
+    // so it is sequenced strictly ahead of the copy: no owned plaintext exists
+    // while that round trip is in flight. Being ahead of the copy also puts it
+    // ahead of every key resolution, so it cannot strand a resolved master.
+    let (declared_len, index, materialize): (usize, Option<u32>, DeferredPayloadMaterializer<'_>) =
+        match payload {
+            PayloadSource::Borrowed {
+                ptr, len, index, ..
+            } => (
+                len,
+                index,
+                Box::new(move || {
+                    // The pointer was validated above and is dereferenced only once
+                    // the index is settled. The owned copy is scrubbed on drop.
+                    Ok(Zeroizing::new(if len == 0 {
+                        Vec::new()
+                    } else {
+                        slice::from_raw_parts(ptr, len).to_vec()
+                    }))
+                }),
+            ),
+            PayloadSource::Deferred {
+                len,
+                index,
+                materialize,
+            } => (len, index, materialize),
+        };
+
+    let identity_wallet_for_alloc = identity_wallet.clone();
+    let sequenced = settle_index_and_materialize_payload(
+        declared_len,
+        || match index {
+            Some(supplied) => Ok(supplied),
             None => {
-                let iw = identity_wallet.clone();
-                let doc_type = document_type_str.clone();
-                let payload_len = payload_vec.len();
-                block_on_worker(async move {
-                    iw.allocate_encryption_key_index(
-                        &owner_id_for_async,
-                        &contract_id_for_async,
-                        &doc_type,
-                        payload_len,
-                    )
-                    .await
-                })
-                .map_err(PlatformWalletFFIResult::from)?
+                let document_type_for_alloc = document_type_str.clone();
+                match try_block_on_worker(async move {
+                    identity_wallet_for_alloc
+                        .allocate_encryption_key_index(
+                            &owner_id_for_async,
+                            &contract_id_for_async,
+                            &document_type_for_alloc,
+                            declared_len,
+                        )
+                        .await
+                }) {
+                    Ok(allocated) => allocated.map_err(PlatformWalletFFIResult::from),
+                    Err(failure) => Err(worker_failure_result(failure)),
+                }
             }
-        };
+        },
+        materialize,
+    );
+    let (resolved_index, payload_vec) = match sequenced {
+        Ok(sequenced) => sequenced,
+        Err(failure) => return failure,
+    };
 
-        // Key-source selection by wallet capability (may synchronously call
-        // back into the host mnemonic resolver for external-signable
-        // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
-        // master is wrapped in a Drop-wiping guard.
-        let master_opt =
-            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
-                .map(WipingMaster);
+    // Key-source selection by wallet capability (may synchronously call
+    // back into the host mnemonic resolver for external-signable
+    // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
+    // master is wrapped in a Drop-wiping guard.
+    let master_opt = match tx_metadata_key_master_for_wallet(&wallet_arc, mnemonic_resolver_handle)
+    {
+        Ok(master) => master.map(WipingMaster),
+        Err(failure) => return failure,
+    };
 
-        // Derive the AES key + seal the wire blob SYNCHRONOUSLY, then wipe the
-        // master BEFORE any network `.await`: the master xprv never crosses the
-        // broadcast await (dashpay/platform#4091). Only the sealed properties
-        // (ciphertext, no key material) cross into the async block below.
-        let key_source = match master_opt.as_ref() {
-            Some(master) => TxMetadataKeySource::Master(&master.0),
-            None => TxMetadataKeySource::ResidentWallet,
-        };
-        let properties_json = identity_wallet
-            .prepare_encrypted_txmetadata_properties(
-                &owner_id_for_async,
-                resolved_index,
-                version,
-                &payload_vec,
-                key_source,
-            )
-            .map_err(PlatformWalletFFIResult::from)?;
-        // The plaintext is now sealed inside `properties_json` (ciphertext
-        // only). Scrub the native plaintext copy AND the master immediately —
-        // neither may cross the broadcast `.await` below. `payload_vec` is
-        // `Zeroizing`, so the drop also wipes its bytes (dashpay/platform#4091).
-        drop(payload_vec);
-        drop(master_opt);
-
-        let result: Result<(Identifier, String), PlatformWalletError> =
-            block_on_worker(async move {
+    // Derive the AES key + seal the wire blob SYNCHRONOUSLY; release the
+    // plaintext and the master; only then broadcast. Neither the plaintext —
+    // whether this call copied it or the host handed it over — nor the master
+    // xprv crosses the broadcast await; only the sealed properties (ciphertext,
+    // no key material) do.
+    let broadcast_outcome = seal_and_release_before_broadcasting(
+        payload_vec,
+        master_opt,
+        |plaintext, master_opt| {
+            let key_source = match master_opt.as_ref() {
+                Some(master) => TxMetadataKeySource::Master(&master.0),
+                None => TxMetadataKeySource::ResidentWallet,
+            };
+            identity_wallet
+                .prepare_encrypted_txmetadata_properties(
+                    &owner_id_for_async,
+                    resolved_index,
+                    version,
+                    plaintext,
+                    key_source,
+                )
+                .map_err(PlatformWalletFFIResult::from)
+        },
+        |properties_json| {
+            // Fallible worker entry: a runtime that cannot be built, or a
+            // worker that does not complete, becomes a value this export maps
+            // instead of a panic that would reach the C frame.
+            try_block_on_worker(async move {
                 let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
                 // Generic create path (no key material in scope): fetches the
                 // contract, sanitizes the hex `encryptedMetadata` into `Bytes`,
                 // auto-selects the AUTHENTICATION signing key, and broadcasts on
                 // the 8 MB worker stack.
-                let confirmed: Document = identity_wallet
+                let confirmed: Document = identity_wallet_for_broadcast
                     .create_document_with_signer(
                         &owner_id_for_async,
                         &contract_id_for_async,
@@ -538,10 +1107,14 @@ unsafe fn create_encrypted_document_impl(
                     .await?;
                 let json_string = confirmed_document_to_json(&confirmed)?;
                 Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
-            });
-        result.map_err(PlatformWalletFFIResult::from)
-    });
-    let result = unwrap_option_or_return!(option);
+            })
+        },
+    );
+    let result: Result<(Identifier, String), PlatformWalletError> = match broadcast_outcome {
+        Ok(Ok(result)) => result,
+        Ok(Err(failure)) => return worker_failure_result(failure),
+        Err(failure) => return failure,
+    };
     let (document_id, document_json) = unwrap_result_or_return!(result);
 
     let json_cstring = unwrap_result_or_return!(CString::new(document_json));
@@ -557,17 +1130,38 @@ unsafe fn create_encrypted_document_impl(
 /// `owner_identity_id` on `contract_id`'s `document_type_name` updated at or
 /// after `since_ms` (epoch-millis).
 ///
-/// Goes through `IdentityWallet::fetch_encrypted_documents` — the wire-
-/// compatible read counterpart of the legacy `getTxMetaData(since, key)`. Each
-/// document's `encryptedMetadata` blob is decrypted with the identity's derived
-/// key; documents that can't be derived/decrypted are skipped (never abort the
-/// fetch).
+/// The wire-compatible read counterpart of the legacy
+/// `getTxMetaData(since, key)`, run in three deliberate stages. The staging is
+/// a security guarantee, not an implementation detail:
 ///
-/// The AES key source is selected by the wallet's capability: a key-resident
-/// wallet derives in-process; an external-signable / watch-only wallet (the
-/// Android/iOS apps) derives through `mnemonic_resolver_handle` — required
-/// non-null for that shape, ignored otherwise (see
-/// `tx_metadata_key_master_for_wallet`).
+/// 1. `IdentityWallet::fetch_raw_encrypted_documents` on a worker thread —
+///    contract resolution and the paginated scan, with NO key material in
+///    scope. A scan that fails or returns nothing ends here.
+/// 2. Only if that scan produced candidates, the AES key source is acquired on
+///    the ORIGINAL calling thread, so a host resolver callback runs on the
+///    thread that entered this export rather than a runtime worker.
+/// 3. `IdentityWallet::decrypt_fetched_documents` — synchronous derive and
+///    decrypt, after which the resolved master is erased immediately.
+///
+/// Nothing secret is therefore alive across the contract fetch or the paginated
+/// walk, both of which are unbounded waits (the SDK sets no request timeout),
+/// and a fetch with nothing to decrypt never consults the host at all — which
+/// matters where that consultation prompts the user.
+///
+/// The key source is selected by the wallet's capability: a key-resident wallet
+/// derives in-process; an external-signable / watch-only wallet (the Android
+/// and iOS apps) derives through `mnemonic_resolver_handle` — required non-null
+/// for that shape, ignored otherwise (see `tx_metadata_key_master_for_wallet`).
+///
+/// Documents that cannot be derived or decrypted, and documents carrying an
+/// unsupported wire version, are skipped and never abort the fetch.
+///
+/// A returned `payload` is NOT authenticated. The envelope is AES-256-CBC with
+/// PKCS7 and no integrity tag, so a wrong key or modified ciphertext usually
+/// fails the unpad and is skipped — but PKCS7 accepts a wrong plaintext often
+/// enough that an element can carry opaque garbage. The caller must strictly
+/// parse each `payload` (CBOR for `version` 0, protobuf for 1) and discard
+/// anything that does not parse, rather than trusting its presence here.
 ///
 /// On success `*out_documents_json` receives an owned NUL-terminated JSON array
 /// containing decrypted, plaintext-equivalent data (release with
@@ -577,7 +1171,33 @@ unsafe fn create_encrypted_document_impl(
 /// `{ "id": base58, "ownerId": base58, "keyIndex": u32, "encryptionKeyIndex":
 /// u32, "version": u8, "updatedAt": u64|null, "payload": base64 }`, where
 /// `payload` is the decrypted, opaque plaintext the caller parses (a protobuf
-/// `TxMetadataBatch` for `version == 1`).
+/// `TxMetadataBatch` for `version == 1`). Documents whose blob is malformed,
+/// wrong-keyed, or carries an unsupported wire version are skipped rather than
+/// failing the whole fetch.
+///
+/// # Safety
+/// Every pointer below must stay valid for the whole synchronous duration of
+/// this call; the call borrows them and retains none of them afterwards.
+///
+/// - `owner_identity_id` and `contract_id` must each point to 32 readable bytes.
+/// - `document_type_name` must be a valid NUL-terminated C string of UTF-8.
+/// - `mnemonic_resolver_handle` may be null for a wallet with resident private
+///   keys, and must be live and non-null for an external-signable wallet.
+///   There is no signer on this path: a fetch broadcasts nothing.
+/// - `out_documents_json` must point to writable storage for one `char *`. It is
+///   set to null before any other fallible work, so on EVERY error path the
+///   caller is left holding null and must free nothing. On success it receives
+///   ownership of a NUL-terminated C string.
+///
+/// That output carries DECRYPTED plaintext and MUST be released with
+/// `platform_wallet_sensitive_string_free`, which wipes the allocation through
+/// its terminating NUL. Passing it to the ordinary `platform_wallet_string_free`
+/// would free the plaintext without scrubbing it. Pass the original, unmodified
+/// pointer — the release function computes the length from it — and treat the
+/// allocation as read-only until then.
+///
+/// The returned `PlatformWalletFFIResult` owns its message and must be released
+/// with `platform_wallet_ffi_result_free`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     wallet_handle: Handle,
@@ -588,10 +1208,49 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     since_ms: u64,
     out_documents_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(document_type_name);
+    // The sensitive out-parameter's ADDRESS is validated and its null sentinel
+    // published before ANY other fallible input, so every later rejection —
+    // including a bad document type or identifier — leaves the caller holding
+    // null. This output carries decrypted plaintext and is released with
+    // `platform_wallet_sensitive_string_free`, so a caller following the
+    // documented contract must never be handed a stale pointer to free. This
+    // runs in the `extern "C"` frame itself, so the sentinel is published even
+    // if the inner function later fails in any way.
     check_ptr!(out_documents_json);
-
     *out_documents_json = ptr::null_mut();
+
+    contain_panics(|| {
+        fetch_encrypted_documents_inner(
+            wallet_handle,
+            mnemonic_resolver_handle,
+            owner_identity_id,
+            contract_id,
+            document_type_name,
+            since_ms,
+            out_documents_json,
+        )
+    })
+}
+
+/// Rust-ABI inner for [`platform_wallet_fetch_encrypted_documents`], so a panic
+/// in the decrypt path cannot reach the non-unwinding C frame.
+///
+/// The caller has already validated `out_documents_json`'s address and published
+/// its null sentinel, so every return from here leaves the caller holding null
+/// unless the sensitive JSON was successfully written.
+///
+/// # Safety
+/// Same contract as the export.
+unsafe fn fetch_encrypted_documents_inner(
+    wallet_handle: Handle,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    since_ms: u64,
+    out_documents_json: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(document_type_name);
 
     let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
     let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
@@ -601,48 +1260,74 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     let owner_id_for_async = owner_id;
     let contract_id_for_async = contract_id_value;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
+    // Take an owned handle out of the shared storage and let the read guard go,
+    // for the same reason as the create path: that guard is shared by every
+    // wallet handle in the process, and the resolver call plus the paginated
+    // fetch below are unbounded waits.
+    let Some(wallet_arc) = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, std::sync::Arc::clone)
+    else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "requested wallet handle not found",
+        );
+    };
+    let identity_wallet = wallet_arc.identity().clone();
 
-        // Key-source selection by wallet capability (may synchronously call
-        // back into the host mnemonic resolver for external-signable
-        // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
-        // master is wrapped in a Drop-wiping guard.
-        let master_opt =
-            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
-                .map(WipingMaster);
+    // Phase 1 — NETWORK ONLY, on a worker. No key material exists yet: no host
+    // resolver has been consulted and no master is in scope, so a scan that
+    // fails or finds nothing costs the caller no prompt and leaves no secret
+    // alive across the contract fetch or the paginated walk (both unbounded —
+    // the SDK sets no request timeout).
+    let raw_for_async = identity_wallet.clone();
+    let document_type_for_async = document_type_str.clone();
+    let raw_result: Result<Vec<(dpp::prelude::Identifier, Option<Document>)>, PlatformWalletError> =
+        match try_block_on_worker(async move {
+            raw_for_async
+                .fetch_raw_encrypted_documents(
+                    &owner_id_for_async,
+                    &contract_id_for_async,
+                    &document_type_for_async,
+                    since_ms,
+                )
+                .await
+        }) {
+            Ok(result) => result,
+            Err(failure) => return worker_failure_result(failure),
+        };
+    // Carried through unchanged, including entries the SDK could not
+    // materialize: the decrypt stage records each skip, so an all-unmaterialized
+    // page stays distinguishable from a page that was genuinely empty.
+    let raw_docs = unwrap_result_or_return!(raw_result);
 
-        let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
-            block_on_worker(async move {
-                // TRADEOFF (dashpay/platform#4091): unlike create, a document's
-                // (keyIndex, encryptionKeyIndex) are only known AFTER its page is
-                // fetched, so the master cannot be fully pre-derived before the
-                // network work. It therefore stays resident across the pagination
-                // awaits — but inside the `WipingMaster` Drop guard, so a panic or
-                // early return still scrubs its scalar (a manual post-await erase
-                // would be skipped on those paths). Per-document key derivation is
-                // itself synchronous, between page fetches (see
-                // `fetch_encrypted_documents`).
-                let key_source = match master_opt.as_ref() {
-                    Some(master) => TxMetadataKeySource::Master(&master.0),
-                    None => TxMetadataKeySource::ResidentWallet,
-                };
-                let fetched = identity_wallet
-                    .fetch_encrypted_documents(
-                        &owner_id_for_async,
-                        &contract_id_for_async,
-                        &document_type_str,
-                        since_ms,
-                        key_source,
-                    )
-                    .await;
-                drop(master_opt); // scrub as soon as the fetch completes
-                fetched
-            });
-        result.map_err(PlatformWalletFFIResult::from)
-    });
-    let result = unwrap_option_or_return!(option);
-    let docs = unwrap_result_or_return!(result);
+    // Nothing to decrypt: return the empty array without ever touching a key.
+    if raw_docs.is_empty() {
+        let sensitive_json = unwrap_result_or_return!(serialize_decrypted_documents(&[]));
+        *out_documents_json = sensitive_json.into_raw();
+        return PlatformWalletFFIResult::ok();
+    }
+
+    // Phase 2 — key acquisition, on the ORIGINAL calling thread. The host
+    // mnemonic resolver is a caller-supplied callback; invoking it from the
+    // thread that entered this export keeps it on the thread the host's own
+    // contract was written for, rather than a Tokio worker.
+    let master_opt = match tx_metadata_key_master_for_wallet(&wallet_arc, mnemonic_resolver_handle)
+    {
+        Ok(master) => master.map(WipingMaster),
+        Err(failure) => return failure,
+    };
+
+    // Phase 3 — SYNCHRONOUS derive + decrypt, then wipe. No await separates the
+    // acquisition above from the drop below, so the master is never live across
+    // a network round trip. The guard scrubs on ordinary return, on an error
+    // return and on an unwinding panic; an abort runs no destructor and is not
+    // covered, and the write cannot reach a register copy the optimizer made.
+    let key_source = match master_opt.as_ref() {
+        Some(master) => TxMetadataKeySource::Master(&master.0),
+        None => TxMetadataKeySource::ResidentWallet,
+    };
+    let decrypted = identity_wallet.decrypt_fetched_documents(&owner_id, &raw_docs, key_source);
+    drop(master_opt);
+    let docs = unwrap_result_or_return!(decrypted);
 
     let sensitive_json = unwrap_result_or_return!(serialize_decrypted_documents(&docs));
     *out_documents_json = sensitive_json.into_raw();
@@ -1065,7 +1750,7 @@ mod tests {
         );
     }
 
-    // ── tx_metadata_key_master_for_wallet dispatch (dashpay/platform#4091) ──
+    // ── tx_metadata_key_master_for_wallet dispatch ──
     //
     // `tx_metadata_key_master_for_wallet` needs a live `PlatformWallet` (wallet
     // manager + SDK), which a unit test can't cheaply build, so its load-bearing
@@ -1110,5 +1795,1190 @@ mod tests {
             KeySourceDecision::ResolverRequired,
             "external-signable / watch-only wallet + null resolver must error, not derive"
         );
+    }
+
+    // ── Boundary contracts of the encrypted exports ─────────────────────────
+    //
+    // Every case below uses a wallet handle guaranteed absent from the storage
+    // map, so the export's lookup misses (`NotFound`) and no resolver callback,
+    // key derivation, allocator or broadcast ever runs. That miss is what makes
+    // ordering observable: whichever check reports first is the check that ran
+    // first. No invalid pointer is dereferenced — arguments that must be
+    // non-null point at real test-owned storage the export only null-checks.
+
+    /// A wallet handle guaranteed absent from the storage map.
+    const UNKNOWN_WALLET_HANDLE: Handle = u64::MAX;
+
+    /// A non-null pointer to real, test-owned storage, used where the export
+    /// only checks for null and never dereferences.
+    fn opaque_non_null<T>(storage: &mut u8) -> *mut T {
+        storage as *mut u8 as *mut T
+    }
+
+    fn platform_wallet_ffi_max_plaintext_len() -> usize {
+        platform_wallet::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN
+    }
+
+    /// The shared argument gate pins both sides of the index ceiling, the
+    /// version set, and the signer precondition.
+    #[test]
+    fn the_shared_argument_gate_pins_both_sides_of_the_index_ceiling() {
+        use platform_wallet::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_ENCRYPTION_KEY_INDEX;
+
+        assert_eq!(
+            tx_metadata_create_preflight_result(
+                8,
+                1,
+                Some(MAX_TX_METADATA_ENCRYPTION_KEY_INDEX),
+                true
+            )
+            .code,
+            PlatformWalletFFIResultCode::Success,
+            "the maximum derivable index is a valid argument and must pass"
+        );
+        assert_eq!(
+            tx_metadata_create_preflight_result(
+                8,
+                1,
+                Some(MAX_TX_METADATA_ENCRYPTION_KEY_INDEX + 1),
+                true
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "one past the maximum has no derivable key and must be refused"
+        );
+        assert_eq!(
+            tx_metadata_create_preflight_result(8, 1, None, true).code,
+            PlatformWalletFFIResultCode::Success,
+            "an index about to be allocated is derivable by construction"
+        );
+        assert_eq!(
+            tx_metadata_create_preflight_result(8, 2, Some(1), true).code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a version the legacy stack cannot decode must be refused"
+        );
+        assert_eq!(
+            tx_metadata_create_preflight_result(
+                platform_wallet_ffi_max_plaintext_len() + 1,
+                1,
+                Some(1),
+                true
+            )
+            .code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a payload that cannot be sealed must be refused"
+        );
+        assert_eq!(
+            tx_metadata_create_preflight_result(8, 1, Some(1), false).code,
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "a create with no signer cannot broadcast, so the gate must refuse it \
+             alongside the wallet-protocol arguments"
+        );
+        assert_eq!(
+            tx_metadata_create_preflight_result(
+                platform_wallet_ffi_max_plaintext_len(),
+                1,
+                Some(1),
+                true
+            )
+            .code,
+            PlatformWalletFFIResultCode::Success,
+            "the largest sealable payload is a valid argument"
+        );
+    }
+
+    /// Drive the allocation-only export with one argument varied.
+    fn allocate_index_with(
+        version: u8,
+        payload_len: usize,
+        signer: Option<&mut u8>,
+    ) -> (PlatformWalletFFIResult, u32) {
+        let doc_type = CString::new("txMetadata").expect("no interior NUL");
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let mut out_index: u32 = u32::MAX;
+
+        let signer_ptr = match signer {
+            Some(storage) => opaque_non_null(storage),
+            None => ptr::null_mut(),
+        };
+        let result = unsafe {
+            platform_wallet_allocate_encryption_key_index(
+                UNKNOWN_WALLET_HANDLE,
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                version,
+                payload_len,
+                signer_ptr,
+                &mut out_index,
+            )
+        };
+        (result, out_index)
+    }
+
+    /// An undecodable wire version must not reserve an index.
+    #[test]
+    fn allocation_rejects_an_unsupported_version_before_allocating() {
+        let mut signer_storage = 0u8;
+        let (result, out_index) = allocate_index_with(2, 8, Some(&mut signer_storage));
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a version the core cannot seal must be rejected before an index is \
+             reserved; reaching the allocator would report a handle error instead"
+        );
+        assert_eq!(
+            out_index,
+            u32::MAX,
+            "the output must be left untouched when no index was allocated"
+        );
+    }
+
+    /// A missing signer must not reserve an index.
+    #[test]
+    fn allocation_rejects_a_missing_signer_before_allocating() {
+        let (result, out_index) = allocate_index_with(1, 8, None);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "a create that has no signer cannot succeed, so it must not reserve an \
+             index; reaching the allocator would report a handle error instead"
+        );
+        assert_eq!(out_index, u32::MAX, "the output must be left untouched");
+    }
+
+    /// An over-large payload must not reserve an index.
+    #[test]
+    fn allocation_rejects_an_oversized_payload_before_allocating() {
+        let mut signer_storage = 0u8;
+        let (result, out_index) = allocate_index_with(
+            1,
+            platform_wallet_ffi_max_plaintext_len() + 1,
+            Some(&mut signer_storage),
+        );
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "a payload that cannot be sealed must not reserve an index"
+        );
+        assert_eq!(out_index, u32::MAX, "the output must be left untouched");
+    }
+
+    /// A request whose arguments are all valid gets past the argument gate and
+    /// on to the wallet lookup — proving the rejections above are the gate's
+    /// doing and not an unconditional refusal.
+    #[test]
+    fn allocation_with_valid_arguments_reaches_the_wallet_lookup() {
+        let mut signer_storage = 0u8;
+        let (result, _) = allocate_index_with(1, 8, Some(&mut signer_storage));
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::NotFound,
+            "with every argument valid the call must get as far as resolving the \
+             wallet handle, which is unknown here"
+        );
+    }
+
+    /// The index is resolved before the plaintext is copied, not after.
+    ///
+    /// Recorded through the same sequencing helper production uses, so the order
+    /// asserted here is the order the export runs: swapping the two statements
+    /// changes this recording.
+    #[test]
+    fn the_index_is_resolved_before_the_plaintext_is_copied() {
+        let order = std::cell::RefCell::new(Vec::new());
+
+        let sequenced = allocate_before_materializing(
+            || {
+                order.borrow_mut().push("resolve-index");
+                Ok(7)
+            },
+            || {
+                order.borrow_mut().push("copy-plaintext");
+            },
+        );
+
+        assert!(sequenced.is_ok(), "both steps succeed in this case");
+        assert_eq!(
+            order.into_inner(),
+            vec!["resolve-index", "copy-plaintext"],
+            "the plaintext must not be copied into a native buffer until the index \
+             is settled; copying first leaves it resident across an unbounded \
+             Platform round trip"
+        );
+    }
+
+    /// A failed index resolution copies nothing at all.
+    #[test]
+    fn a_failed_index_resolution_never_copies_the_plaintext() {
+        let copied = std::cell::Cell::new(false);
+
+        let sequenced = allocate_before_materializing(
+            || {
+                Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUnknown,
+                    "allocation failed",
+                ))
+            },
+            || copied.set(true),
+        );
+
+        assert!(sequenced.is_err(), "the resolution failure must propagate");
+        assert!(
+            !copied.get(),
+            "a request that cannot proceed must not copy the caller's plaintext"
+        );
+    }
+
+    /// The deferred payload seam owns the complete ordering contract used by
+    /// runtime-managed hosts: allocation succeeds before materialization, and
+    /// the materializer is consumed exactly once.
+    #[test]
+    fn deferred_payload_is_materialized_once_after_index_resolution() {
+        let order = std::cell::RefCell::new(Vec::new());
+
+        let (index, payload) = settle_index_and_materialize_payload(
+            3,
+            || {
+                order.borrow_mut().push("resolve-index");
+                Ok(7)
+            },
+            || {
+                order.borrow_mut().push("materialize");
+                Ok(Zeroizing::new(vec![1, 2, 3]))
+            },
+        )
+        .expect("both stages succeed");
+
+        assert_eq!(index, 7);
+        assert_eq!(payload.as_slice(), [1, 2, 3]);
+        assert_eq!(
+            order.into_inner(),
+            vec!["resolve-index", "materialize"],
+            "the plaintext copy must happen once and only after index resolution"
+        );
+    }
+
+    /// A failed allocation must leave the deferred materializer untouched.
+    #[test]
+    fn deferred_payload_is_not_materialized_when_index_resolution_fails() {
+        let materialize_calls = std::cell::Cell::new(0);
+
+        let outcome = settle_index_and_materialize_payload(
+            3,
+            || {
+                Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUnknown,
+                    "allocation failed",
+                ))
+            },
+            || {
+                materialize_calls.set(materialize_calls.get() + 1);
+                Ok(Zeroizing::new(vec![1, 2, 3]))
+            },
+        );
+
+        assert!(outcome.is_err());
+        assert_eq!(materialize_calls.get(), 0);
+    }
+
+    /// The declared length is part of the deferred-materialization contract.
+    /// A mismatched buffer is rejected before key resolution or broadcast.
+    #[test]
+    fn deferred_payload_rejects_a_materialized_length_mismatch() {
+        let materialize_calls = std::cell::Cell::new(0);
+
+        let outcome = settle_index_and_materialize_payload(
+            3,
+            || Ok(7),
+            || {
+                materialize_calls.set(materialize_calls.get() + 1);
+                Ok(Zeroizing::new(vec![1, 2]))
+            },
+        );
+
+        assert_eq!(
+            outcome
+                .expect_err("the materialized length must match")
+                .code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(materialize_calls.get(), 1);
+    }
+
+    // ── The owned plaintext dies before the broadcast begins ────────────────
+    //
+    // A host that cannot pin its own buffer across the call (the JVM bridge)
+    // hands its ONLY native plaintext copy over by value. What makes that
+    // transfer worth anything is what happens to the copy next: it must be
+    // sealed, released, and only THEN broadcast. The broadcast is an unbounded
+    // network wait — the SDK sets no request timeout — so a copy still alive
+    // when it starts is a copy alive for however long the network takes.
+    //
+    // Recorded through the same seam production runs, so the order asserted
+    // here is the order the exports run.
+
+    /// The owned plaintext copy, standing in for `Zeroizing<Vec<u8>>` and
+    /// recording the moment its storage is released.
+    struct ReleaseRecorder<'a> {
+        events: &'a std::cell::RefCell<Vec<&'static str>>,
+        label: &'static str,
+    }
+
+    impl Drop for ReleaseRecorder<'_> {
+        fn drop(&mut self) {
+            self.events.borrow_mut().push(self.label);
+        }
+    }
+
+    /// The plaintext and the resolved key material are both gone before the
+    /// broadcast starts.
+    #[test]
+    fn the_owned_plaintext_is_released_before_the_broadcast_begins() {
+        let events = std::cell::RefCell::new(Vec::new());
+
+        let outcome = seal_and_release_before_broadcasting(
+            ReleaseRecorder {
+                events: &events,
+                label: "release-plaintext",
+            },
+            ReleaseRecorder {
+                events: &events,
+                label: "release-secret",
+            },
+            |_plaintext, _secret| {
+                events.borrow_mut().push("seal");
+                Ok::<_, PlatformWalletFFIResult>("ciphertext")
+            },
+            |sealed| {
+                events.borrow_mut().push("broadcast");
+                sealed
+            },
+        );
+
+        assert_eq!(
+            outcome.expect("both stages succeed in this case"),
+            "ciphertext"
+        );
+        assert_eq!(
+            events.into_inner(),
+            vec!["seal", "release-plaintext", "release-secret", "broadcast"],
+            "the plaintext and the resolved key material must both be released \
+             BEFORE the broadcast begins; releasing them after it returns keeps \
+             them resident for the whole of an unbounded network wait"
+        );
+    }
+
+    /// A seal that fails releases both secrets and broadcasts nothing.
+    #[test]
+    fn a_failed_seal_releases_the_plaintext_and_never_broadcasts() {
+        let events = std::cell::RefCell::new(Vec::new());
+
+        let outcome = seal_and_release_before_broadcasting(
+            ReleaseRecorder {
+                events: &events,
+                label: "release-plaintext",
+            },
+            ReleaseRecorder {
+                events: &events,
+                label: "release-secret",
+            },
+            |_plaintext, _secret| {
+                Err::<&str, _>(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    "derivation failed",
+                ))
+            },
+            |sealed| {
+                events.borrow_mut().push("broadcast");
+                sealed
+            },
+        );
+
+        assert!(outcome.is_err(), "the seal failure must propagate");
+        assert_eq!(
+            events.into_inner(),
+            vec!["release-plaintext", "release-secret"],
+            "a create that cannot seal must still release what it holds, and must \
+             not reach the network at all"
+        );
+    }
+
+    /// A null payload with a non-zero length is rejected from the arguments
+    /// alone — before an index is consumed and before the network is touched.
+    #[test]
+    fn create_encrypted_auto_index_rejects_a_null_payload_before_allocating() {
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let mut out_id = [0u8; 32];
+        let doc_type = CString::new("txMetadata").expect("no interior NUL");
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let mut signer_storage = 0u8;
+
+        let result = unsafe {
+            platform_wallet_create_encrypted_document_with_signer_auto_index(
+                UNKNOWN_WALLET_HANDLE,
+                ptr::null_mut(),
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                1,
+                ptr::null(),
+                8,
+                opaque_non_null(&mut signer_storage),
+                out_id.as_mut_ptr(),
+                &mut out_json,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "a null payload with a non-zero length must be rejected from the \
+             arguments, not after an index has been allocated"
+        );
+        assert!(out_json.is_null());
+    }
+
+    /// The create export publishes its documented null sentinel before any
+    /// other fallible validation, so a caller following the contract never frees
+    /// a pointer this call did not own.
+    #[test]
+    fn create_encrypted_publishes_null_json_out_before_other_validation() {
+        let mut sentinel_storage: c_char = 0x7f;
+        let mut out_json: *mut c_char = &mut sentinel_storage;
+        let mut out_id = [0u8; 32];
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let mut signer_storage = 0u8;
+
+        // A NULL document type trips a check that runs after the sentinel is
+        // published, so the sentinel must already have been cleared.
+        let result = unsafe {
+            platform_wallet_create_encrypted_document_with_signer(
+                UNKNOWN_WALLET_HANDLE,
+                ptr::null_mut(),
+                owner.as_ptr(),
+                contract.as_ptr(),
+                ptr::null(),
+                1,
+                1,
+                ptr::null(),
+                0,
+                opaque_non_null(&mut signer_storage),
+                out_id.as_mut_ptr(),
+                &mut out_json,
+            )
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(
+            out_json.is_null(),
+            "the out pointer must be nulled before any other fallible input is \
+             validated, not only on the success path"
+        );
+    }
+
+    /// Same contract on the auto-index export.
+    #[test]
+    fn create_encrypted_auto_index_publishes_null_json_out_before_other_validation() {
+        let mut sentinel_storage: c_char = 0x7f;
+        let mut out_json: *mut c_char = &mut sentinel_storage;
+        let mut out_id = [0u8; 32];
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let mut signer_storage = 0u8;
+
+        let result = unsafe {
+            platform_wallet_create_encrypted_document_with_signer_auto_index(
+                UNKNOWN_WALLET_HANDLE,
+                ptr::null_mut(),
+                owner.as_ptr(),
+                contract.as_ptr(),
+                ptr::null(),
+                1,
+                ptr::null(),
+                0,
+                opaque_non_null(&mut signer_storage),
+                out_id.as_mut_ptr(),
+                &mut out_json,
+            )
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(out_json.is_null());
+    }
+
+    /// The fetch export's output carries decrypted plaintext and is released
+    /// with the sensitive free, so its sentinel must be published before every
+    /// other fallible input too.
+    #[test]
+    fn fetch_encrypted_publishes_null_json_out_before_other_validation() {
+        let mut sentinel_storage: c_char = 0x7f;
+        let mut out_json: *mut c_char = &mut sentinel_storage;
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+
+        let result = unsafe {
+            platform_wallet_fetch_encrypted_documents(
+                UNKNOWN_WALLET_HANDLE,
+                ptr::null_mut(),
+                owner.as_ptr(),
+                contract.as_ptr(),
+                ptr::null(),
+                0,
+                &mut out_json,
+            )
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(
+            out_json.is_null(),
+            "a stale non-null pointer here would be freed with the sensitive free \
+             by a caller following the documented contract"
+        );
+    }
+
+    /// An oversized length is rejected without the payload pointer ever being
+    /// read, so a caller that passes a length larger than its buffer is refused
+    /// rather than over-read.
+    #[test]
+    fn create_encrypted_rejects_oversized_length_before_touching_the_payload_pointer() {
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let mut out_id = [0u8; 32];
+        let doc_type = CString::new("txMetadata").expect("no interior NUL");
+        let owner = [1u8; 32];
+        let contract = [2u8; 32];
+        let mut signer_storage = 0u8;
+        // One real byte, with a declared length far beyond it. The size gate
+        // rejects from the length alone, so this is never dereferenced.
+        let one_byte = [0u8; 1];
+
+        let result = unsafe {
+            platform_wallet_create_encrypted_document_with_signer_auto_index(
+                UNKNOWN_WALLET_HANDLE,
+                ptr::null_mut(),
+                owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                1,
+                one_byte.as_ptr(),
+                platform_wallet_ffi_max_plaintext_len() + 1,
+                opaque_non_null(&mut signer_storage),
+                out_id.as_mut_ptr(),
+                &mut out_json,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "the declared length alone must decide this, before any read"
+        );
+        assert!(out_json.is_null());
+    }
+
+    // ── Runtime and worker failures are values, not panics ──────────────────
+
+    /// A runtime that cannot be built surfaces as a mapped result rather than a
+    /// panic crossing the C frame.
+    #[test]
+    fn a_runtime_init_failure_maps_to_a_result_instead_of_panicking() {
+        crate::runtime::force_runtime_init_failure_once();
+        let outcome = try_block_on_worker(async { 1u8 });
+
+        let failure = outcome.expect_err("the forced failure must be reported");
+        assert_eq!(failure, crate::runtime::WorkerFailure::RuntimeInit);
+        assert_eq!(
+            worker_failure_result(failure).code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "neither stage is the caller's fault, so both map to the unknown code"
+        );
+
+        // The forcing is one-shot: the shared runtime is untouched and the next
+        // call still works.
+        assert_eq!(
+            try_block_on_worker(async { 2u8 }).expect("the next call must succeed"),
+            2
+        );
+    }
+
+    /// A worker that does not complete surfaces the same way.
+    #[test]
+    fn a_worker_join_failure_maps_to_a_result_instead_of_panicking() {
+        crate::runtime::force_worker_join_failure_once();
+        let outcome = try_block_on_worker(async { 1u8 });
+
+        let failure = outcome.expect_err("the forced failure must be reported");
+        assert_eq!(failure, crate::runtime::WorkerFailure::WorkerJoin);
+        assert_eq!(
+            worker_failure_result(failure).code,
+            PlatformWalletFFIResultCode::ErrorUnknown
+        );
+        assert_eq!(
+            try_block_on_worker(async { 3u8 }).expect("the next call must succeed"),
+            3
+        );
+    }
+
+    /// A panic inside an inner function is contained before the `extern "C"`
+    /// frame, where unwinding into a non-unwinding frame would abort the host.
+    ///
+    /// Only meaningful where unwinding exists: under `panic = "abort"` the
+    /// process is gone at the point of the panic and nothing can catch it.
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn an_inner_panic_is_contained_before_the_extern_c_boundary() {
+        let result = contain_panics(|| {
+            take_forced_inner_panic();
+            PlatformWalletFFIResult::ok()
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "with no panic forced, the inner result passes through unchanged"
+        );
+
+        force_inner_panic_once();
+        let contained = contain_panics(|| {
+            take_forced_inner_panic();
+            PlatformWalletFFIResult::ok()
+        });
+        assert_eq!(
+            contained.code,
+            PlatformWalletFFIResultCode::ErrorUnknown,
+            "a panic must become an ordinary error value rather than unwinding \
+             into the C frame"
+        );
+    }
+
+    // ── The host resolver is consulted only when there is something to decrypt ──
+    //
+    // A wallet registered through the manager is stored external-signable, so its
+    // txMetadata key must come from the host mnemonic resolver — on a device that
+    // callback can prompt the user. The fetch export must therefore run its
+    // network scan FIRST and consult the resolver only if that scan produced
+    // candidates. Counting the callback is what makes the ordering observable:
+    // if acquisition ran before the scan, the count would be 1 in every case
+    // below, including the ones that never had anything to decrypt.
+
+    /// Host-side resolver context: the phrase to hand back, plus a count of how
+    /// many times the host was consulted.
+    struct ResolverContext {
+        /// Derived at runtime from all-zero entropy so no recovery phrase is
+        /// committed to the repository.
+        phrase: String,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    unsafe extern "C" fn counting_resolve(
+        ctx: *const std::ffi::c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        let context = &*(ctx as *const ResolverContext);
+        context
+            .calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let phrase = context.phrase.as_bytes();
+        if phrase.len() + 1 > out_capacity {
+            return rs_sdk_ffi::mnemonic_resolver_result::BUFFER_TOO_SMALL;
+        }
+        ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+        *out_buf.add(phrase.len()) = 0;
+        *out_len = phrase.len();
+        rs_sdk_ffi::mnemonic_resolver_result::SUCCESS
+    }
+
+    unsafe extern "C" fn noop_destroy(_ctx: *mut std::ffi::c_void) {}
+
+    /// The identity the fixture owns, and the id the export is called with.
+    const FIXTURE_OWNER: [u8; 32] = [3u8; 32];
+
+    struct ResolverFixture {
+        wallet_handle: Handle,
+        resolver: *mut MnemonicResolverHandle,
+        context: *mut ResolverContext,
+        manager_handle: Handle,
+        sdk: Box<dash_sdk::Sdk>,
+    }
+
+    impl ResolverFixture {
+        fn resolver_calls(&self) -> usize {
+            unsafe {
+                (*self.context)
+                    .calls
+                    .load(std::sync::atomic::Ordering::SeqCst)
+            }
+        }
+    }
+
+    impl Drop for ResolverFixture {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = crate::wallet::platform_wallet_destroy(self.wallet_handle);
+                let _ = crate::manager::platform_wallet_manager_destroy(self.manager_handle);
+                rs_sdk_ffi::dash_sdk_mnemonic_resolver_destroy(self.resolver);
+                drop(Box::from_raw(self.context));
+            }
+        }
+    }
+
+    /// An identity carrying the ECDSA key the txMetadata derivation selects.
+    fn fixture_identity() -> dpp::identity::Identity {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        });
+        let mut public_keys = BTreeMap::new();
+        public_keys.insert(2, key);
+
+        dpp::identity::Identity::V0(IdentityV0 {
+            id: Identifier::from(FIXTURE_OWNER),
+            public_keys,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Build a manager on a mock SDK, register a wallet through the real FFI
+    /// path (which stores it external-signable), give it a resident identity
+    /// slot, and wire a counting host resolver.
+    fn resolver_fixture() -> ResolverFixture {
+        use key_wallet::mnemonic::{Language, Mnemonic};
+        use std::ffi::c_void;
+
+        unsafe extern "C" fn begin_changeset(_ctx: *mut c_void, _wallet_id: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end_changeset(
+            _ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            0
+        }
+
+        let mnemonic =
+            Mnemonic::from_entropy(&[0u8; 16], Language::English).expect("16 bytes of entropy");
+        let phrase = mnemonic.phrase().to_string();
+
+        // Pin the protocol version so a registered query expectation encodes the
+        // same way the production scan encodes its request.
+        let sdk = Box::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(dpp::version::PlatformVersion::latest())
+                .build()
+                .expect("mock sdk builds"),
+        );
+        let persistence = crate::PersistenceCallbacks {
+            on_changeset_begin_fn: Some(begin_changeset),
+            on_changeset_end_fn: Some(end_changeset),
+            ..Default::default()
+        };
+        let events = crate::EventHandlerCallbacks {
+            context: ptr::null_mut(),
+            on_wallet_event_fn: None,
+            on_error_fn: None,
+            on_platform_address_sync_completed_fn: None,
+            on_shielded_sync_completed_fn: None,
+            on_shielded_sync_progress_fn: None,
+            on_shielded_tree_progress_fn: None,
+        };
+
+        let mut manager_handle: Handle = 0;
+        let result = unsafe {
+            crate::manager::platform_wallet_manager_create(
+                &*sdk as *const dash_sdk::Sdk as *const c_void,
+                &persistence,
+                &events,
+                &mut manager_handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+
+        let mnemonic_c = CString::new(phrase.clone()).expect("no interior NUL");
+        let mut wallet_handle: Handle = 0;
+        let mut wallet_id = [0u8; 32];
+        let result = unsafe {
+            crate::manager::platform_wallet_manager_create_wallet_from_mnemonic(
+                manager_handle,
+                mnemonic_c.as_ptr(),
+                crate::FFINetwork::Testnet,
+                0,
+                &mut wallet_handle,
+                &mut wallet_id,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+
+        PLATFORM_WALLET_STORAGE
+            .with_item(wallet_handle, |wallet| {
+                let persister = wallet.persister().clone();
+                let id = wallet.wallet_id();
+                let mut wm = wallet.wallet_manager().blocking_write();
+                let info = wm.get_wallet_info_mut(&id).expect("registered wallet info");
+                info.identity_manager
+                    .add_identity(fixture_identity(), 0, id, &persister)
+                    .expect("add the fixture identity");
+            })
+            .expect("wallet handle is live");
+
+        let context = Box::into_raw(Box::new(ResolverContext {
+            phrase,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        }));
+        let resolver = unsafe {
+            rs_sdk_ffi::dash_sdk_mnemonic_resolver_create(
+                context as *mut std::ffi::c_void,
+                counting_resolve,
+                noop_destroy,
+            )
+        };
+
+        ResolverFixture {
+            wallet_handle,
+            resolver,
+            context,
+            manager_handle,
+            sdk,
+        }
+    }
+
+    /// Drive the real fetch export, returning the result and the JSON the export
+    /// produced (`None` when it left the sensitive out-pointer null). The
+    /// allocation is released through the sensitive free before returning.
+    fn fetch_encrypted_with(
+        fixture: &ResolverFixture,
+    ) -> (PlatformWalletFFIResult, Option<String>) {
+        let mut out_json: *mut c_char = ptr::null_mut();
+        let doc_type = CString::new("txMetadata").expect("no interior NUL");
+        let contract = [4u8; 32];
+
+        let result = unsafe {
+            platform_wallet_fetch_encrypted_documents(
+                fixture.wallet_handle,
+                fixture.resolver,
+                FIXTURE_OWNER.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                0,
+                &mut out_json,
+            )
+        };
+        let json = if out_json.is_null() {
+            None
+        } else {
+            let rendered = unsafe { CStr::from_ptr(out_json) }
+                .to_str()
+                .expect("the serializer guarantees ASCII")
+                .to_string();
+            unsafe { crate::types::platform_wallet_sensitive_string_free(out_json) };
+            Some(rendered)
+        };
+        (result, json)
+    }
+
+    /// A scan that FAILS must never have consulted the host resolver.
+    ///
+    /// No contract fetch is registered on the mock, so the very first network
+    /// step fails. If key acquisition ran before the scan the count would be 1
+    /// here, and a device user would have been prompted for a fetch that could
+    /// never return anything.
+    #[test]
+    fn a_failing_fetch_never_consults_the_host_resolver() {
+        let fixture = resolver_fixture();
+
+        let (result, json) = fetch_encrypted_with(&fixture);
+
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "the scan cannot succeed with no registered contract"
+        );
+        assert!(
+            json.is_none(),
+            "the sensitive out pointer stays null on error"
+        );
+        assert_eq!(
+            fixture.resolver_calls(),
+            0,
+            "a failed scan must not have prompted the host for key material"
+        );
+    }
+
+    /// A scan that returns NOTHING must never have consulted the host resolver.
+    ///
+    /// The contract resolves and the page comes back empty, so the export gets
+    /// all the way through its network work and then has nothing to decrypt.
+    #[test]
+    fn an_empty_fetch_never_consults_the_host_resolver() {
+        let mut fixture = resolver_fixture();
+
+        let contract = std::sync::Arc::new(
+            dpp::tests::fixtures::get_data_contract_fixture(None, 0, dpp::version::LATEST_VERSION)
+                .data_contract_owned(),
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("registration runtime");
+        runtime.block_on(async {
+            fixture
+                .sdk
+                .mock()
+                .expect_fetch(Identifier::from([4u8; 32]), Some((*contract).clone()))
+                .await
+                .expect("register the contract fetch");
+            // The exact query the production loop issues, answered with a short
+            // (empty) page so the scan completes rather than failing.
+            let empty: dash_sdk::query_types::Documents = Default::default();
+            fixture
+                .sdk
+                .mock()
+                .expect_fetch_many(
+                    empty_page_query(std::sync::Arc::clone(&contract)),
+                    Some(empty),
+                )
+                .await
+                .expect("register the empty page");
+        });
+
+        let (result, json) = fetch_encrypted_with(&fixture);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "a scan that completes with no documents is a success, not an error"
+        );
+        assert_eq!(
+            json.as_deref(),
+            Some("[]"),
+            "the export must still publish an owned, empty JSON array"
+        );
+        assert_eq!(
+            fixture.resolver_calls(),
+            0,
+            "a scan that produced no candidate documents must not have prompted \
+             the host for key material"
+        );
+    }
+
+    /// A non-empty scan consults the host resolver exactly once, and only after
+    /// the scan itself has run.
+    ///
+    /// The page is sealed under the SAME seed the counting resolver hands back,
+    /// so the export's own derivation opens it — which means the decrypt stage
+    /// genuinely ran rather than being skipped. Together with the two cases
+    /// above (which prove a failing or empty scan consults the host zero times)
+    /// this pins the ordering: acquisition happens on the candidates-exist path
+    /// and on no other.
+    #[test]
+    fn a_non_empty_fetch_consults_the_host_resolver_exactly_once_after_the_scan() {
+        use platform_wallet::wallet::identity::crypto::tx_metadata::{
+            derive_tx_metadata_key_from_master, seal_tx_metadata,
+        };
+
+        const ENCRYPTION_KEY_INDEX: u32 = 1;
+        const PLAINTEXT: &[u8] = b"memo=ffi-round-trip";
+
+        let mut fixture = resolver_fixture();
+        let network = fixture.sdk.network;
+
+        // Seal with the resolver's own seed, in a block so the sealing secrets
+        // do not outlive it. The master zeroizes on drop; the explicit erase
+        // additionally narrows the scalar's lifetime within this block.
+        let blob = {
+            use key_wallet::bip32::ExtendedPrivKey;
+            use key_wallet::mnemonic::{Language, Mnemonic};
+
+            let seed = zeroize::Zeroizing::new(
+                Mnemonic::from_entropy(&[0u8; 16], Language::English)
+                    .expect("16 bytes of entropy")
+                    .to_seed(""),
+            );
+            let mut master = ExtendedPrivKey::new_master(network, seed.as_ref())
+                .expect("master from the resolver's own seed");
+            // Slot 0 and key id 2 are what `fixture_identity` registers, so this
+            // is the derivation the export will re-run.
+            let aes_key =
+                derive_tx_metadata_key_from_master(&master, network, 0, 2, ENCRYPTION_KEY_INDEX)
+                    .expect("derive");
+            let iv = [0x6Du8; 16];
+            let sealed = seal_tx_metadata(&aes_key, 1, &iv, PLAINTEXT).expect("seal");
+            master.private_key.non_secure_erase();
+            sealed
+        };
+
+        let contract = std::sync::Arc::new(
+            dpp::tests::fixtures::get_data_contract_fixture(None, 0, dpp::version::LATEST_VERSION)
+                .data_contract_owned(),
+        );
+        let doc_id = Identifier::from([0x77u8; 32]);
+        let mut properties: BTreeMap<String, dpp::platform_value::Value> = Default::default();
+        properties.insert("keyIndex".to_string(), dpp::platform_value::Value::U32(2));
+        properties.insert(
+            "encryptionKeyIndex".to_string(),
+            dpp::platform_value::Value::U32(ENCRYPTION_KEY_INDEX),
+        );
+        properties.insert(
+            "encryptedMetadata".to_string(),
+            dpp::platform_value::Value::Bytes(blob),
+        );
+        let document = Document::V0(dpp::document::DocumentV0 {
+            id: doc_id,
+            owner_id: Identifier::from(FIXTURE_OWNER),
+            properties,
+            revision: Some(1),
+            created_at: None,
+            updated_at: Some(1_700_000_000_000),
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        });
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("registration runtime");
+        runtime.block_on(async {
+            fixture
+                .sdk
+                .mock()
+                .expect_fetch(Identifier::from([4u8; 32]), Some((*contract).clone()))
+                .await
+                .expect("register the contract fetch");
+            let mut page: dash_sdk::query_types::Documents = Default::default();
+            page.insert(doc_id, Some(document));
+            fixture
+                .sdk
+                .mock()
+                .expect_fetch_many(
+                    empty_page_query(std::sync::Arc::clone(&contract)),
+                    Some(page),
+                )
+                .await
+                .expect("register the single-document page");
+        });
+
+        assert_eq!(
+            fixture.resolver_calls(),
+            0,
+            "nothing has consulted the host before the export is entered"
+        );
+
+        let (result, json) = fetch_encrypted_with(&fixture);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::Success,
+            "the page was sealed under the resolver's own seed, so it must decrypt"
+        );
+        let json = json.expect("a successful fetch publishes an owned JSON array");
+        // The registered query was consumed and its document decrypted: the
+        // payload only appears if the decrypt stage ran on what the scan
+        // returned.
+        let expected_payload = base64_of(PLAINTEXT);
+        assert!(
+            json.contains(&expected_payload),
+            "the decrypted payload must reach the caller; got {json}"
+        );
+        assert_eq!(
+            fixture.resolver_calls(),
+            1,
+            "the host must be consulted exactly once, and only because the scan \
+             produced a candidate — a second call would mean the key was acquired \
+             per document rather than once for the batch"
+        );
+    }
+
+    /// Standard base64 of `bytes`, matching the serializer's payload encoding.
+    fn base64_of(bytes: &[u8]) -> String {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    }
+
+    /// The exact `DocumentQuery` the production scan issues for its first page.
+    fn empty_page_query(
+        contract: std::sync::Arc<dpp::prelude::DataContract>,
+    ) -> dash_sdk::platform::DocumentQuery {
+        use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+        use dpp::platform_value::platform_value;
+
+        dash_sdk::platform::DocumentQuery {
+            select: dash_sdk::drive::query::SelectProjection::documents(),
+            data_contract: contract,
+            document_type_name: "txMetadata".to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: platform_value!(Identifier::from(FIXTURE_OWNER)),
+                },
+                WhereClause {
+                    field: "$updatedAt".to_string(),
+                    operator: WhereOperator::GreaterThanOrEquals,
+                    value: platform_value!(0u64),
+                },
+            ],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![OrderClause {
+                field: "$updatedAt".to_string(),
+                ascending: true,
+            }],
+            limit: 100,
+            start: None,
+        }
+    }
+
+    /// The fetch path's output is built by the sensitive serializer and is
+    /// released by the sensitive free — not by the ordinary string free.
+    ///
+    /// This is what keeps decrypted plaintext in an allocation that is wiped on
+    /// release. Routing it back through an ordinary `CString` would leave the
+    /// plaintext in a non-zeroizing allocation, so the ownership is asserted
+    /// here rather than left to the export's call site alone.
+    #[test]
+    fn the_fetch_output_is_owned_and_released_by_the_sensitive_contract() {
+        let serialized =
+            serialize_decrypted_documents(&[]).expect("an empty document set serializes");
+        let raw = serialized.into_raw();
+        assert!(!raw.is_null(), "the serializer hands back an owned pointer");
+
+        let rendered = unsafe { CStr::from_ptr(raw) }
+            .to_str()
+            .expect("the serializer guarantees ASCII");
+        assert_eq!(
+            rendered, "[]",
+            "the wire shape is the same JSON array the ordinary path produced"
+        );
+
+        // Released through the sensitive free, which wipes the allocation
+        // including its terminator. The ordinary free must never be used here.
+        unsafe { crate::types::platform_wallet_sensitive_string_free(raw) };
     }
 }

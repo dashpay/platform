@@ -102,6 +102,14 @@ public class WalletStorage {
     ///
     /// Returning raw bytes lets security-sensitive call sites avoid
     /// materializing a Swift `String` unless they truly need one.
+    ///
+    /// The returned `Data` is still runtime-managed and plaintext-equivalent.
+    /// Keychain hands its result back as a `Data`, so this cannot be avoided,
+    /// and the SDK cannot overwrite it: its storage may be shared, and a
+    /// runtime copy or move leaves copies nothing here can reach. Callers
+    /// should mask or consume it immediately — see `MnemonicResolver` — and
+    /// treat scrubbing their own derived buffers as exposure reduction rather
+    /// than erasure.
     public func retrieveMnemonicUTF8Bytes(for walletId: Data) throws -> Data {
         let account = perWalletMnemonicAccount(for: walletId)
         let query: [String: Any] = [

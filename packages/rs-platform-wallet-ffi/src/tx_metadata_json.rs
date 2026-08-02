@@ -366,6 +366,11 @@ mod tests {
 
     #[test]
     fn should_write_into_mutable_owned_bytes_before_cstring_transfer() {
+        // Deliberately `&Box<[u8]>` rather than `&[u8]`: the whole point is to
+        // pin `inner`'s type as an OWNED, mutable heap allocation the serializer
+        // writes into before ownership transfers to the C string. Taking a slice
+        // here would accept a borrow of anything and assert nothing.
+        #[allow(clippy::borrowed_box)]
         fn assert_mutable_byte_owner(_: &Box<[u8]>) {}
 
         let mut serialized = SensitiveCString::new(6).expect("allocate");

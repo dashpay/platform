@@ -117,9 +117,8 @@ const ENCRYPTED_METADATA_FIELD_MAX: usize = 4096;
 ///
 /// Note the envelope for the maximum plaintext is 4081 bytes, not 4096: the
 /// gap 4082..=4096 is unreachable because the next plaintext byte (4064) forces
-/// a fresh padding block that jumps straight to 4097. (The 4063/4064 boundary
-/// itself matches the reviewer's figure; the "4063 → 4096" envelope size in the
-/// review does not — see the module tests, which pin the real 4081-byte blob.)
+/// a fresh padding block that jumps straight to 4097. The module tests pin the
+/// real 4081-byte blob, so the distinction stays checked rather than asserted.
 pub const MAX_TX_METADATA_PLAINTEXT_LEN: usize = {
     // Largest whole ciphertext (a multiple of the AES block) that still fits
     // the field alongside the version+IV header.
@@ -145,6 +144,76 @@ pub fn ensure_tx_metadata_payload_fits(payload_len: usize) -> Result<(), Platfor
             len: payload_len,
             max: MAX_TX_METADATA_PLAINTEXT_LEN,
         });
+    }
+    Ok(())
+}
+
+/// The largest `encryptionKeyIndex` a txMetadata key can be derived at.
+///
+/// The index is the last element of the derivation path and is HARDENED
+/// ([`tx_metadata_derivation_path`]), and a hardened BIP32 child number carries
+/// only 31 bits — the top bit is the hardening flag. An index above this has no
+/// derivable key at all, so it can never seal or open a document. Pinned against
+/// the derivation itself by unit test rather than restated from the spec.
+pub const MAX_TX_METADATA_ENCRYPTION_KEY_INDEX: u32 = 0x7fff_ffff;
+
+/// Reject an `encryptionKeyIndex` that has no derivable key.
+///
+/// Decidable from the argument alone. Without this the failure surfaces deep in
+/// key derivation — after the plaintext has been copied and after the host key
+/// resolver has run, which on some hosts prompts the user — and arrives as an
+/// opaque invalid-data error rather than as the caller-input error it is.
+pub fn ensure_tx_metadata_encryption_key_index_derivable(
+    index: u32,
+) -> Result<(), PlatformWalletError> {
+    if index > MAX_TX_METADATA_ENCRYPTION_KEY_INDEX {
+        return Err(
+            PlatformWalletError::TxMetadataEncryptionKeyIndexNotDerivable {
+                index,
+                max: MAX_TX_METADATA_ENCRYPTION_KEY_INDEX,
+            },
+        );
+    }
+    Ok(())
+}
+
+/// Reject a `txMetadata` wire version byte the legacy stack cannot decode.
+///
+/// Decidable from the argument alone, so entry points run it before touching a
+/// payload, a wallet, a host key resolver or the network: consulting a device
+/// keychain — which on some hosts prompts the user — for a request that can
+/// never be sealed is work nobody asked for. [`seal_tx_metadata`] keeps the
+/// same check as its choke-point last line of defense, so a caller that skips
+/// the early gate still cannot produce an undecodable document.
+pub fn ensure_tx_metadata_version_supported(version: u8) -> Result<(), PlatformWalletError> {
+    if version != VERSION_CBOR && version != VERSION_PROTOBUF {
+        return Err(PlatformWalletError::UnsupportedTxMetadataVersion { version });
+    }
+    Ok(())
+}
+
+/// Everything about an encrypted-document create that is decidable from the
+/// arguments alone, in one place.
+///
+/// Every entry point — the core preparation choke point, both C exports, and
+/// the index allocator — runs exactly this before doing anything expensive or
+/// irreversible: copying the caller's plaintext, consulting the host key
+/// resolver, reaching the network, or reserving an index. Grouping the checks
+/// is what keeps a request that must fail from doing any of that, and keeps the
+/// policy itself in Rust rather than duplicated per host.
+///
+/// `encryption_key_index` is `None` when the SDK is about to allocate one; there
+/// is nothing to validate in that case, because an allocated index is derivable
+/// by construction.
+pub fn ensure_tx_metadata_create_inputs_valid(
+    payload_len: usize,
+    version: u8,
+    encryption_key_index: Option<u32>,
+) -> Result<(), PlatformWalletError> {
+    ensure_tx_metadata_payload_fits(payload_len)?;
+    ensure_tx_metadata_version_supported(version)?;
+    if let Some(index) = encryption_key_index {
+        ensure_tx_metadata_encryption_key_index_derivable(index)?;
     }
     Ok(())
 }
@@ -220,10 +289,27 @@ pub fn derive_tx_metadata_key(
     let path =
         tx_metadata_derivation_path(network, identity_index, key_index, encryption_key_index)?;
 
-    let ext = wallet.derive_extended_private_key(&path).map_err(|e| {
+    let mut ext = wallet.derive_extended_private_key(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!("Failed to derive txMetadata key: {e}"))
     })?;
-    Ok(Zeroizing::new(ext.private_key.secret_bytes()))
+    Ok(take_and_erase_secret(&mut ext.private_key))
+}
+
+/// Copy a derived scalar into zeroizing storage and erase the source.
+///
+/// The pinned `ExtendedPrivKey` zeroizes its private key and chain code on drop,
+/// while a bare `secp256k1::SecretKey` does not erase itself. Explicitly erasing
+/// the source immediately after copying narrows the scalar's lifetime instead
+/// of relying on the enclosing extended key's later lexical drop.
+///
+/// "Non-secure" names the guarantee honestly: the write is best-effort against
+/// a compiler that may keep a register copy or a value the optimizer already
+/// duplicated. It removes the long-lived stack residue, which is the exposure
+/// worth removing here; it does not promise every byte is unrecoverable.
+fn take_and_erase_secret(secret: &mut dashcore::secp256k1::SecretKey) -> Zeroizing<[u8; 32]> {
+    let copy = Zeroizing::new(secret.secret_bytes());
+    secret.non_secure_erase();
+    copy
 }
 
 /// Derive the AES-256 key for one `txMetadata` document from a caller-supplied
@@ -237,8 +323,9 @@ pub fn derive_tx_metadata_key(
 /// watch-only, the FFI layer resolves the wallet's mnemonic on demand via the
 /// host `MnemonicResolverHandle`, builds the master xprv, calls this, and
 /// wipes the master (`master.private_key.non_secure_erase()`) before
-/// returning — atomic derive + use + zeroize. The returned scalar is
-/// [`Zeroizing`], so the key itself is scrubbed on drop as well.
+/// returning — atomic derive + use + erase. The returned scalar is
+/// [`Zeroizing`], so the copy handed to the caller is scrubbed on drop, and the
+/// intermediate derived scalar is erased here before this function returns.
 pub fn derive_tx_metadata_key_from_master(
     master: &ExtendedPrivKey,
     network: Network,
@@ -252,16 +339,14 @@ pub fn derive_tx_metadata_key_from_master(
         tx_metadata_derivation_path(network, identity_index, key_index, encryption_key_index)?;
 
     let secp = Secp256k1::new();
-    // `ExtendedPrivKey` has no `Drop`/`Zeroize`; its inner
-    // `secp256k1::SecretKey` memzeroes on drop, and the scalar copy we
-    // return is wrapped in `Zeroizing` (same hygiene note as
-    // `derive_ecdsa_identity_auth_keypair_from_master`).
-    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+    // The derived `ExtendedPrivKey` zeroizes on drop. Erase its inner scalar
+    // immediately after copying so it does not remain live until scope exit.
+    let mut derived = master.derive_priv(&secp, &path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive txMetadata key from master: {e}"
         ))
     })?;
-    Ok(Zeroizing::new(derived.private_key.secret_bytes()))
+    Ok(take_and_erase_secret(&mut derived.private_key))
 }
 
 /// Seal an already-serialized `txMetadata` payload into the stored
@@ -275,10 +360,10 @@ pub fn derive_tx_metadata_key_from_master(
 /// `version` MUST be [`VERSION_CBOR`] (0) or [`VERSION_PROTOBUF`] (1) — the only
 /// two values the legacy dashj `decryptTxMetadata` switches on. Sealing any
 /// other byte would produce a document that installs fine but the legacy stack
-/// cannot decode, silently breaking the bidirectional wire-compat guarantee, so
-/// it is rejected HERE, at the one choke point every layer (JNI, FFI, resident
-/// wallet) funnels through — not only in the Kotlin `require`
-/// (dashpay/platform#4091).
+/// cannot decode, silently breaking the bidirectional wire-compat guarantee. It
+/// is rejected HERE, at the one choke point every layer funnels through, so no
+/// caller can produce such a document by reaching this function directly; entry
+/// points reject it earlier via [`ensure_tx_metadata_version_supported`].
 ///
 /// `payload` must be at most [`MAX_TX_METADATA_PLAINTEXT_LEN`] bytes: a larger
 /// plaintext seals into a blob that overflows the `encryptedMetadata` field and
@@ -292,16 +377,11 @@ pub fn seal_tx_metadata(
     iv: &[u8; 16],
     payload: &[u8],
 ) -> Result<Vec<u8>, PlatformWalletError> {
-    if version != VERSION_CBOR && version != VERSION_PROTOBUF {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "txMetadata version byte {version} is not wire-decodable; only \
-             {VERSION_CBOR} (CBOR) and {VERSION_PROTOBUF} (protobuf) are understood \
-             by the legacy decryptTxMetadata"
-        )));
-    }
-    // Choke-point size guard: reject a plaintext that would overflow the
-    // encryptedMetadata field once framed (typed error, not an opaque DPP
-    // failure at broadcast).
+    // Choke-point guards. Entry points reject both conditions earlier, from the
+    // arguments alone; repeating them here means a caller that reaches this
+    // function by another route still cannot seal an undecodable or oversized
+    // document.
+    ensure_tx_metadata_version_supported(version)?;
     ensure_tx_metadata_payload_fits(payload.len())?;
     let ciphertext = platform_encryption::encrypt_aes_256_cbc(key, iv, payload);
     let mut blob = Vec::with_capacity(BLOB_HEADER_LEN + ciphertext.len());
@@ -343,9 +423,34 @@ impl std::fmt::Debug for OpenedTxMetadata {
 /// AES-256-CBC-decrypt the remainder, returning the version + opaque payload.
 ///
 /// Errors (never panics) on a malformed blob — too short, a ciphertext length
-/// that is not a positive multiple of the AES block size, or a decrypt/unpad
-/// failure (e.g. the wrong key, which PKCS7 rejects). A malformed or
-/// wrong-keyed document must be skipped by the caller, not abort a sync.
+/// that is not a positive multiple of the AES block size, an unsupported
+/// leading version byte, or a decrypt/unpad failure. A document that errors
+/// must be skipped by the caller, not abort a sync.
+///
+/// ## Success is not authentication
+/// This envelope is AES-256-CBC with PKCS7 and NO integrity tag, so `Ok` means
+/// only that the bytes unpadded cleanly — not that they are genuine. A wrong
+/// key, or ciphertext someone modified, usually fails the unpad, but PKCS7
+/// accepts a wrong plaintext often enough that it must not be treated as a
+/// check: the caller can be handed opaque garbage under a valid-looking
+/// envelope. Nothing here detects that, and nothing here can — the format
+/// carries no MAC.
+///
+/// Callers must therefore fully validate the payload they get back (parse the
+/// CBOR or protobuf strictly, reject unexpected shapes) and treat a parse
+/// failure as a skipped document rather than as corruption to repair. Do not
+/// act on a payload merely because `open_tx_metadata` returned `Ok`.
+///
+/// The version is validated here, symmetrically with [`seal_tx_metadata`]:
+/// [`VERSION_CBOR`] (0) and [`VERSION_PROTOBUF`] (1) are the only envelope
+/// versions the legacy format defines, so an unsupported byte labels a payload
+/// no reader can correctly interpret. Such a document is refused here and
+/// SKIPPED by the fetch orchestration rather than surfaced.
+///
+/// The returned `version` is meaningful and callers MUST dispatch on it: `0`
+/// carries a CBOR payload and `1` a protobuf `TxMetadataBatch`. The PAYLOAD
+/// stays opaque to this crate — it does not parse either — but the ENVELOPE
+/// version is a closed set, not a pass-through.
 pub fn open_tx_metadata(
     key: &[u8; 32],
     blob: &[u8],
@@ -366,7 +471,13 @@ pub fn open_tx_metadata(
         )));
     }
 
+    // Judged BEFORE the ciphertext is touched: an unsupported version means no
+    // reader in this stack can interpret what is inside, so decrypting it would
+    // only produce plaintext nobody may act on. Sealing refuses the same set, so
+    // a document carrying one of these bytes cannot have been written here.
     let version = blob[0];
+    ensure_tx_metadata_version_supported(version)?;
+
     let iv: [u8; 16] = blob[1..BLOB_HEADER_LEN]
         .try_into()
         .expect("slice [1..17) is exactly 16 bytes");
@@ -409,6 +520,203 @@ mod tests {
         assert_ne!(*a, *diff_key, "keyIndex must change the derived key");
     }
 
+    /// `OpenedTxMetadata`'s `Debug` never renders the decrypted plaintext.
+    ///
+    /// `Debug` is hand-written precisely so a stray `{:?}`, `dbg!()` or tracing
+    /// statement cannot leak financial plaintext into a log. A derive would
+    /// print the payload verbatim, so the redaction needs its own assertion —
+    /// and it has to remain useful, which is why the length is still expected to
+    /// appear.
+    #[test]
+    fn opened_tx_metadata_debug_redacts_the_plaintext() {
+        const MARKER: &str = "s3cr3t-memo-marker";
+        let payload = format!("memo={MARKER}").into_bytes();
+        let opened = OpenedTxMetadata {
+            version: VERSION_PROTOBUF,
+            payload: Zeroizing::new(payload.clone()),
+        };
+
+        let rendered = format!("{opened:?}");
+
+        assert!(
+            !rendered.contains(MARKER),
+            "Debug leaked the decrypted plaintext: {rendered}"
+        );
+        assert!(
+            !rendered.contains(&format!("{:?}", payload.as_slice())),
+            "Debug leaked the raw payload bytes: {rendered}"
+        );
+        assert!(
+            rendered.contains(&payload.len().to_string()),
+            "the redaction must keep the length, which is what makes it useful: {rendered}"
+        );
+        assert!(
+            rendered.contains("version"),
+            "non-secret metadata must survive redaction: {rendered}"
+        );
+    }
+
+    /// A blob whose version byte was changed to an unsupported value is refused
+    /// rather than opened.
+    ///
+    /// The ciphertext here is intact and decrypts perfectly — only the leading
+    /// version byte has been changed — so nothing except an explicit check can
+    /// stop it. Returning it would hand the caller a payload labelled with a
+    /// version the legacy format never defined. Callers dispatch on the byte —
+    /// `0` is CBOR, `1` is protobuf — so an unrecognised value has no branch to
+    /// take, and the most likely outcome is that it is guessed at. Refusing it
+    /// is what keeps that guess from happening.
+    ///
+    /// Sealing already refuses these bytes, so a document carrying one cannot
+    /// have been written by this stack; accepting it on read would be an
+    /// asymmetry with nothing behind it.
+    #[test]
+    fn open_rejects_a_blob_whose_version_was_changed_to_an_unsupported_byte() {
+        let key = [0x33u8; 32];
+        let iv = [0x44u8; 16];
+        let payload = b"real metadata".to_vec();
+
+        let sealed = seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload).expect("seal");
+        // Sanity: untouched, it opens and round-trips.
+        let opened = open_tx_metadata(&key, &sealed).expect("the untouched blob opens");
+        assert_eq!(opened.version, VERSION_PROTOBUF);
+        assert_eq!(opened.payload.as_slice(), payload.as_slice());
+
+        for unsupported in [2u8, 3, 200, 255] {
+            let mut mutated = sealed.clone();
+            mutated[0] = unsupported;
+
+            match open_tx_metadata(&key, &mutated) {
+                Err(PlatformWalletError::UnsupportedTxMetadataVersion { version }) => {
+                    assert_eq!(version, unsupported, "the rejection names the byte it saw");
+                }
+                Ok(opened) => panic!(
+                    "version {unsupported} must not open; returning it hands the caller a \
+                     payload labelled with a version no reader understands (got version {} \
+                     and {} payload bytes)",
+                    opened.version,
+                    opened.payload.len()
+                ),
+                Err(other) => panic!(
+                    "version {unsupported} must be refused as UnsupportedTxMetadataVersion, \
+                     got {other:?}"
+                ),
+            }
+        }
+    }
+
+    /// The intermediate derived scalar is erased once its bytes are copied.
+    ///
+    /// `secp256k1::SecretKey` does not erase itself on drop, so without an
+    /// explicit erase the scalar the derivation produced stays in its stack slot
+    /// after the call returns while only the returned copy is scrubbed. The
+    /// erase is what removes that residue, and nothing about the returned key
+    /// would change if it were dropped — so it needs its own assertion.
+    #[test]
+    fn the_derived_scalar_is_erased_after_its_bytes_are_copied() {
+        let wallet = test_wallet();
+        let path = tx_metadata_derivation_path(Network::Testnet, 0, 3, 1).expect("path");
+        let mut ext = wallet
+            .derive_extended_private_key(&path)
+            .expect("derive extended private key");
+
+        let original = ext.private_key.secret_bytes();
+        assert_ne!(
+            original, [0u8; 32],
+            "the fixture must derive a real scalar for this to prove anything"
+        );
+
+        let copied = take_and_erase_secret(&mut ext.private_key);
+
+        assert_eq!(
+            *copied, original,
+            "the caller's copy must be the scalar that was derived"
+        );
+        assert_ne!(
+            ext.private_key.secret_bytes(),
+            original,
+            "the source scalar must not still hold the derived key after the copy; \
+             secp256k1::SecretKey does not erase on drop, so leaving it intact \
+             leaves key material in the stack slot the derivation wrote it to"
+        );
+    }
+
+    /// The declared index ceiling is exactly where derivation stops working.
+    ///
+    /// [`MAX_TX_METADATA_ENCRYPTION_KEY_INDEX`] is a claim about BIP32 hardened
+    /// child numbers, and the allocator, both C exports and both hosts all trust
+    /// it. Restating the spec value would be worth nothing, so this asserts it
+    /// against the derivation itself: the maximum derives, and one past it does
+    /// not. If the path ever stops hardening this element, the constant is wrong
+    /// and this test says so.
+    #[test]
+    fn the_index_ceiling_is_the_last_derivable_hardened_child() {
+        let wallet = test_wallet();
+
+        tx_metadata_derivation_path(Network::Testnet, 0, 3, MAX_TX_METADATA_ENCRYPTION_KEY_INDEX)
+            .expect("the declared maximum must be a derivable hardened child");
+        derive_tx_metadata_key(
+            &wallet,
+            Network::Testnet,
+            0,
+            3,
+            MAX_TX_METADATA_ENCRYPTION_KEY_INDEX,
+        )
+        .expect("and a key must actually derive at it");
+
+        let past_the_end = MAX_TX_METADATA_ENCRYPTION_KEY_INDEX + 1;
+        assert!(
+            tx_metadata_derivation_path(Network::Testnet, 0, 3, past_the_end).is_err(),
+            "one past the declared maximum must not be derivable; if it is, the \
+             ceiling is set too low and callers are being denied usable indices"
+        );
+
+        // The gate agrees with the derivation on both sides of the boundary.
+        assert!(
+            ensure_tx_metadata_encryption_key_index_derivable(MAX_TX_METADATA_ENCRYPTION_KEY_INDEX)
+                .is_ok(),
+            "the gate must accept every index that derives"
+        );
+        match ensure_tx_metadata_encryption_key_index_derivable(past_the_end) {
+            Err(PlatformWalletError::TxMetadataEncryptionKeyIndexNotDerivable { index, max }) => {
+                assert_eq!(index, past_the_end);
+                assert_eq!(max, MAX_TX_METADATA_ENCRYPTION_KEY_INDEX);
+            }
+            other => panic!("expected a typed not-derivable rejection, got {other:?}"),
+        }
+    }
+
+    /// The aggregate create gate rejects each bad argument on its own, and
+    /// treats an about-to-be-allocated index as nothing to check.
+    #[test]
+    fn the_create_gate_covers_size_version_and_index() {
+        ensure_tx_metadata_create_inputs_valid(0, VERSION_PROTOBUF, Some(1))
+            .expect("a valid request passes");
+        ensure_tx_metadata_create_inputs_valid(0, VERSION_PROTOBUF, None)
+            .expect("an index about to be allocated is derivable by construction");
+
+        assert!(matches!(
+            ensure_tx_metadata_create_inputs_valid(
+                MAX_TX_METADATA_PLAINTEXT_LEN + 1,
+                VERSION_PROTOBUF,
+                Some(1)
+            ),
+            Err(PlatformWalletError::TxMetadataPayloadTooLarge { .. })
+        ));
+        assert!(matches!(
+            ensure_tx_metadata_create_inputs_valid(0, 2, Some(1)),
+            Err(PlatformWalletError::UnsupportedTxMetadataVersion { version: 2 })
+        ));
+        assert!(matches!(
+            ensure_tx_metadata_create_inputs_valid(
+                0,
+                VERSION_PROTOBUF,
+                Some(MAX_TX_METADATA_ENCRYPTION_KEY_INDEX + 1)
+            ),
+            Err(PlatformWalletError::TxMetadataEncryptionKeyIndexNotDerivable { .. })
+        ));
+    }
+
     /// Full seal → open round-trip across both version bytes.
     #[test]
     fn seal_open_round_trips() {
@@ -428,7 +736,7 @@ mod tests {
         }
     }
 
-    /// Rust-side wire-version guard (dashpay/platform#4091):
+    /// Rust-side wire-version guard:
     /// `seal_tx_metadata` accepts only the two
     /// versions the legacy `decryptTxMetadata` understands (0 = CBOR, 1 =
     /// protobuf) and rejects everything else, so the guard holds even when a
@@ -444,20 +752,31 @@ mod tests {
         assert!(seal_tx_metadata(&key, VERSION_PROTOBUF, &iv, &payload).is_ok());
 
         // Every other byte (2..=255) is rejected — none can be produced by
-        // sealing, so a non-decodable document can never reach the wire.
+        // sealing, so a non-decodable document can never reach the wire. The
+        // rejection carries the dedicated typed variant, which is what lets the
+        // FFI boundary surface it as a caller-input error instead of flattening
+        // it into the generic unknown-failure code.
         for version in 2u8..=255 {
-            assert!(
-                seal_tx_metadata(&key, version, &iv, &payload).is_err(),
-                "version {version} must be rejected as non-wire-decodable"
-            );
+            match seal_tx_metadata(&key, version, &iv, &payload) {
+                Err(PlatformWalletError::UnsupportedTxMetadataVersion { version: reported }) => {
+                    assert_eq!(
+                        reported, version,
+                        "the rejection must report the version it rejected"
+                    );
+                }
+                other => panic!(
+                    "version {version} must be rejected as UnsupportedTxMetadataVersion, \
+                     got {other:?}"
+                ),
+            }
         }
     }
 
-    /// Payload-size boundary (dashpay/platform#4091): the largest plaintext the
+    /// Payload-size boundary: the largest plaintext the
     /// `encryptedMetadata` field (`maxItems` 4096) can hold once framed is
     /// [`MAX_TX_METADATA_PLAINTEXT_LEN`] = 4063, and 4064 is the first rejected
-    /// length. Pins the REAL PKCS7 envelope math against the code, not the
-    /// reviewer's "4063 → 4096" arithmetic: because PKCS7 adds a whole padding
+    /// length. Pins the REAL PKCS7 envelope math against the code rather than a
+    /// "4063 → 4096" approximation: because PKCS7 adds a whole padding
     /// block when the plaintext is block-aligned, a 4063-byte plaintext frames to
     /// a 4081-byte blob (1 version + 16 IV + 4064 ciphertext), and a 4064-byte
     /// plaintext jumps to 4097 (4080 ciphertext) — overflowing the field.
@@ -610,11 +929,10 @@ mod tests {
 
     /// The external-signable wallet shape (the Android/iOS apps: NO resident
     /// private keys — every key derives host-side through the mnemonic
-    /// resolver): the in-wallet derive must fail (this exact failure zeroed
-    /// the on-device decrypt-proof), and the resolver-master path — fed by a
-    /// stub "resolver" supplying the test mnemonic — must decrypt a blob the
-    /// resident stack sealed. Round-trips seal(resident) → open(master) and
-    /// seal(master) → open(resident), proving an external-signable device
+    /// resolver): the in-wallet derive must fail, and the resolver-master path
+    /// — fed by a stub resolver supplying the test mnemonic — must decrypt a
+    /// blob the resident stack sealed. Round-trips seal(resident) → open(master)
+    /// and seal(master) → open(resident), proving an external-signable device
     /// wallet reads and writes documents interchangeably with a key-resident
     /// wallet on the same mnemonic.
     #[test]
@@ -752,7 +1070,7 @@ mod tests {
     /// (`keyId = 2`, `encryptionKeyIndex = 1`) independently of anything this
     /// crate constructs, and it produced exactly `4a2eaec1…`. So this vector's
     /// path is proven by the legacy library, not merely mirrored back from
-    /// Rust's own `tx_metadata_derivation_path` (dashpay/platform#4091).
+    /// Rust's own `tx_metadata_derivation_path`.
     /// Note the factory has NO identity-index argument — the
     /// legacy tx-metadata path is fixed at the primary identity, which is why
     /// wire-compat is defined here and only here.
@@ -861,39 +1179,33 @@ mod tests {
         );
     }
 
-    /// **Independent legacy-INSTALL wire-compat vector (dashpay/platform#4186,
-    /// reviewer shumkov's "one independent check — decrypting a blob produced by
-    /// a real legacy dash-wallet install" ask).**
+    /// **Independent legacy-INSTALL wire-compat vector: one check that decrypts
+    /// a blob produced by a real legacy dash-wallet install.**
     ///
     /// Unlike [`legacy_dashj_wire_compat_vector`] and
     /// [`nonzero_identity_index_derivation_slot_is_internally_consistent`] —
-    /// which this repo generated by driving dashj-core's crypto primitives from a
-    /// JVM scratch program (`tests/legacy_wire_compat/LegacyKeyN.java`) — this
-    /// vector was NOT produced by this repo at all. It is a blob a real
+    /// which are generated by driving dashj-core's crypto primitives from a JVM
+    /// scratch program (`tests/legacy_wire_compat/LegacyKeyN.java`) — this
+    /// vector was not produced by this repo at all. It is a blob a real
     /// **dash-wallet 11.9 Android install** (the shipping dashj crypto path)
-    /// created on TESTNET, encrypted, and published to Dash Platform. It was then
-    /// fetched back off testnet and decrypted here with the NEW Rust crypto,
-    /// closing the loop the JVM-generated vectors cannot: those prove Rust ⟷
-    /// dashj-core agree on primitives this repo invokes; THIS proves the new Rust
-    /// `open` path decrypts a document that a stock legacy app, running end to
-    /// end, actually wrote to the network.
+    /// created on TESTNET, encrypted, and published to Dash Platform. It closes
+    /// the loop the JVM-generated vectors cannot: those prove Rust ⟷ dashj-core
+    /// agree on primitives this repo invokes; THIS proves the Rust `open` path
+    /// decrypts a document that a stock legacy app, running end to end, actually
+    /// wrote to the network.
     ///
-    /// ## Provenance (how the blob was captured — reproducible)
+    /// ## Provenance
     ///
-    /// The wallet is a DESIGNATED THROWAWAY, testnet-only, provided by the owner
-    /// explicitly for this fixture; its recovery phrase is public by intent. On a
+    /// The wallet is a testnet-only throwaway used solely for this fixture. On a
     /// stock dash-wallet 11.9 testnet install it registered the DPNS username
-    /// `yabba2`, did a send + a receive, and saved transaction metadata; the app
-    /// encrypted that metadata and published one `txMetadata` document to
-    /// Platform. The manual, testnet-gated helper
-    /// `capture_legacy_yabba2_txmetadata_blobs` in `tests/txmetadata_fetch.rs`
-    /// resolves `yabba2` via DPNS to identity
-    /// `ESR1nfF3bj4TR2ZkLmDuSeu6r7VzpTurYi47BV6XwsoP`, runs the exact production
-    /// query ([`super::super::network::query_owned_encrypted_documents`]), and
-    /// prints the blob hex + `keyIndex`/`encryptionKeyIndex` + decrypted
-    /// plaintext hard-coded below. Captured document: `keyIndex = 2`
-    /// (the identity's registered ENCRYPTION/MEDIUM key), `encryptionKeyIndex =
-    /// 1`, `$updatedAt = 1784666696610`, blob version byte `1` (protobuf).
+    /// `yabba2`, did a send and a receive, and saved transaction metadata; the
+    /// app encrypted that metadata and published one `txMetadata` document to
+    /// Platform under identity
+    /// `ESR1nfF3bj4TR2ZkLmDuSeu6r7VzpTurYi47BV6XwsoP`. That document was fetched
+    /// from testnet once and its values hard-coded below, so this test needs no
+    /// network and no recovery phrase: `keyIndex = 2` (the identity's registered
+    /// ENCRYPTION/MEDIUM key), `encryptionKeyIndex = 1`,
+    /// `$updatedAt = 1784666696610`, blob version byte `1` (protobuf).
     ///
     /// ## What the decrypted plaintext is (real metadata, not a scratch string)
     ///
@@ -906,19 +1218,23 @@ mod tests {
     /// does not depend on the protobuf schema (the payload is opaque to this
     /// crate), so it stays green regardless of future proto field changes.
     ///
-    /// The key is derived from the throwaway recovery phrase with THIS branch's
+    /// The key is derived from the throwaway recovery phrase with this crate's
     /// own [`derive_tx_metadata_key`] at `identity_index = 0` (the only slot a
     /// legacy `createTxMetadata` flow writes — see [`derive_tx_metadata_key`]),
-    /// using the document's own `keyIndex`/`encryptionKeyIndex`. This is entirely
-    /// network-free: the blob is the real captured bytes, and decryption
-    /// succeeding under PKCS7 is itself the proof the derivation matches the
-    /// legacy install byte-for-byte.
+    /// using the document's own `keyIndex`/`encryptionKeyIndex`. This is
+    /// entirely network-free: the blob is the real captured bytes, and the
+    /// byte-for-byte plaintext equality asserted below is what proves the
+    /// derivation matches the legacy install. Decryption merely returning `Ok`
+    /// would prove nothing — this envelope has no integrity tag.
     #[test]
     fn legacy_install_yabba2_wire_compat_vector() {
         use key_wallet::mnemonic::{Language, Mnemonic};
 
-        // The DESIGNATED THROWAWAY testnet wallet the legacy dash-wallet 11.9
-        // install ran under (public by intent for this fixture).
+        // The testnet-only throwaway wallet the legacy dash-wallet 11.9 install
+        // ran under. It exists solely to make this vector reproducible: the
+        // derivation is half of what the test proves, so the phrase has to be
+        // here rather than a pre-derived key. It guards no value and must never
+        // be reused for anything.
         const PHRASE: &str =
             "across jungle only rocket promote mule behave siren crush pole awful deposit";
 
@@ -988,7 +1304,7 @@ mod tests {
     }
 
     /// **Internal derivation-slot consistency at a nonzero `identity_index` —
-    /// NOT a legacy wire-compat claim** (dashpay/platform#4091). This
+    /// NOT a legacy wire-compat claim**. This
     /// exercises that the `identity_index` parameter lands in
     /// the correct path slot and is deterministic across both key sources, so a
     /// refactor that dropped, swapped, or misplaced it would fail loudly. It does

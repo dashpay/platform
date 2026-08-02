@@ -85,6 +85,14 @@ mod tests {
     use secp256k1::rand::{thread_rng, RngCore};
 
     #[test]
+    fn should_zeroize_encryptor_and_decryptor_state_on_drop() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        assert_zeroize_on_drop::<Aes256CbcEnc>();
+        assert_zeroize_on_drop::<Aes256CbcDec>();
+    }
+
+    #[test]
     fn test_aes_encryption_decryption() {
         let key = [0u8; 32];
         let mut iv = [0u8; 16];

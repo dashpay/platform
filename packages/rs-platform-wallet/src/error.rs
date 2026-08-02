@@ -47,6 +47,61 @@ pub enum PlatformWalletError {
     )]
     TxMetadataPayloadTooLarge { len: usize, max: usize },
 
+    /// The txMetadata `encryptionKeyIndex` series for one identity, contract and
+    /// document type has no next derivable value left.
+    ///
+    /// The index is a hardened derivation-path element, so the series ends at
+    /// [`crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_ENCRYPTION_KEY_INDEX`].
+    /// Continuing past it could only hand out an index with no derivable key, or
+    /// repeat one already in use — so the allocation fails instead. Reaching this
+    /// requires over two billion documents for one identity on one document type.
+    #[error(
+        "txMetadata encryptionKeyIndex space is exhausted for this identity, \
+         contract and document type; no further index can be allocated that is \
+         both derivable and unused"
+    )]
+    TxMetadataEncryptionKeyIndexExhausted,
+
+    /// A caller-supplied `encryptionKeyIndex` with no derivable key.
+    ///
+    /// The index is the hardened last element of the txMetadata derivation path,
+    /// which carries only 31 bits, so anything above `max` addresses no key at
+    /// all. Typed (rather than a generic invalid-data error) so hosts can tell a
+    /// bad argument from a wallet or network failure, and so the rejection can
+    /// happen from the arguments alone — before the plaintext is copied and
+    /// before the host key resolver runs.
+    #[error(
+        "txMetadata encryptionKeyIndex {index} has no derivable key; the index is \
+         a hardened derivation element and must be at most {max}"
+    )]
+    TxMetadataEncryptionKeyIndexNotDerivable { index: u32, max: u32 },
+
+    /// A caller-supplied txMetadata wire version byte outside the set the
+    /// legacy `decryptTxMetadata` stack can decode. Sealing it would write a
+    /// document no reader could open, so it is rejected before the envelope is
+    /// built. Typed (rather than a generic invalid-data error) so hosts can
+    /// distinguish it at the FFI boundary and need no version list of their own.
+    #[error(
+        "txMetadata wire version {version} is not decodable by the legacy stack; \
+         only 0 (CBOR) and 1 (protobuf) are understood"
+    )]
+    UnsupportedTxMetadataVersion { version: u8 },
+
+    /// A paginated encrypted-document scan stopped advancing: a full page
+    /// produced a cursor that had already been used, so continuing would
+    /// refetch the same documents without end.
+    ///
+    /// Reported rather than silently truncated — a caller cannot tell a partial
+    /// history from a complete one, and for transaction metadata that
+    /// difference matters. `pages` is the number of pages read before the
+    /// repeat was seen; the cursor itself is a document identifier and is
+    /// deliberately not carried here.
+    #[error(
+        "encrypted-document pagination stopped advancing after {pages} page(s): \
+         the source repeated a page cursor"
+    )]
+    EncryptedDocumentPaginationStalled { pages: usize },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing

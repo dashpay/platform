@@ -456,9 +456,9 @@ impl PlatformWallet {
             sdk_writer: Arc::new(
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
-            // Fresh, empty allocator: encryptionKeyIndex high-water is seeded
-            // lazily per owner-identity from Platform state on the first
-            // host-omitted create (dashpay/platform#4186 follow-up).
+            // Fresh, empty allocator: the encryptionKeyIndex high-water is
+            // seeded lazily per scope from Platform state on the first
+            // host-omitted create.
             enc_key_index_allocator: Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),

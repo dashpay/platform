@@ -14,6 +14,16 @@ private func scrubBytes(_ bytes: inout [UInt8]) {
 /// Best-effort in-memory obfuscation for mnemonic UTF-8 bytes while
 /// they sit on the Swift heap between the Keychain read and the final
 /// copy into Rust's `Zeroizing` buffer.
+///
+/// "Best-effort" is meant literally, and the limit is upstream of this type.
+/// The bytes arrive as a `Data` that `WalletStorage` obtained from Keychain —
+/// a runtime-managed value whose storage may be shared and which the SDK has
+/// no way to overwrite. This masks its own copy and scrubs every explicit
+/// `[UInt8]` buffer it makes, including the plaintext it derives from that
+/// `Data`; it cannot reach the `Data` itself or anything the runtime copied
+/// out of it. What this bounds is the window in which an unobfuscated copy
+/// exists in storage the SDK controls, not the existence of plaintext on the
+/// heap.
 private final class MaskedMnemonicUTF8 {
     private var maskedBytes: [UInt8]
     private var maskBytes: [UInt8]
@@ -68,10 +78,17 @@ private final class MaskedMnemonicUTF8 {
 /// `dash_sdk_sign_with_mnemonic_resolver_and_path`) calls back
 /// into Swift via this resolver to fetch the BIP-39 mnemonic for
 /// the wallet whose identity keys it's deriving. The mnemonic is
-/// copied directly into a Rust-owned `Zeroizing` stack buffer; it
-/// never round-trips back to Swift after this single read. On the
-/// Swift side the bytes are masked while idle, then deobfuscated only
-/// long enough to copy into the FFI output buffer.
+/// written into a Rust-owned `Zeroizing` buffer and never round-trips
+/// back to Swift after this single read. On the Swift side the bytes
+/// are masked while idle, then deobfuscated only long enough to copy
+/// into the FFI output buffer.
+///
+/// That copy is not made from Keychain memory directly. `WalletStorage`
+/// necessarily returns a Swift `Data`, and the masked form is derived from
+/// it, so a runtime-managed intermediate exists no matter how narrow this
+/// path is written. The explicit `[UInt8]` buffers here are scrubbed; that
+/// `Data` and any copy the runtime made of it are not — Swift offers no way
+/// to overwrite them. Treat the residual exposure as reduced, not removed.
 ///
 /// # Lifetime contract
 ///
