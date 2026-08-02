@@ -76,7 +76,9 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
 
                 let json = format!(
                     r#"{{"version":{},"network":"{}","blockHeight":{},"coreHeight":{}}}"#,
-                    10, // Protocol version
+                    // The current epoch's protocol version, straight off the
+                    // verified proof — not a hard-coded guess.
+                    epoch.protocol_version(),
                     network_str,
                     block_height,
                     core_height
@@ -84,10 +86,12 @@ fn get_platform_status(sdk_handle: *const SDKHandle) -> Result<String, String> {
                 Ok(json)
             }
             Err(dash_sdk::Error::EpochNotFound) => {
-                // If no epochs found, return default values
+                // No epoch to read a version off, so fall back to the highest
+                // version the SDK has verified so far.
                 let json = format!(
                     r#"{{"version":{},"network":"{}","blockHeight":0,"coreHeight":0}}"#,
-                    10, network_str
+                    sdk.protocol_version_number(),
+                    network_str
                 );
                 Ok(json)
             }
@@ -174,7 +178,8 @@ mod tests {
     }
 
     /// With both `fetch_current` queries answered, the FFI entry point must
-    /// report the fetched epoch's heights rather than the zeroed fallback.
+    /// report the fetched epoch's protocol version and heights rather than the
+    /// zeroed fallback.
     #[test]
     fn test_get_platform_status() {
         let handle = create_mock_sdk_handle_with_current_epoch();
@@ -196,6 +201,13 @@ mod tests {
             assert!(
                 json.contains(&format!(r#""coreHeight":{}"#, MOCK_EPOCH_CORE_HEIGHT)),
                 "unexpected json: {json}"
+            );
+            assert!(
+                json.contains(&format!(
+                    r#""version":{}"#,
+                    dash_sdk::dpp::version::LATEST_VERSION
+                )),
+                "the reported version must come from the fetched epoch: {json}"
             );
 
             let _ = CString::from_raw(result.data as *mut c_char);

@@ -13,6 +13,7 @@ use crate::{
     platform::{Fetch, FetchMany, LimitQuery, Query},
     Error, Sdk,
 };
+use std::collections::BTreeMap;
 
 /// Epoch type used in the SDK.
 pub type Epoch = ExtendedEpochInfo;
@@ -113,30 +114,33 @@ async fn resolve_current_epoch(
         )
         .await?;
 
-        let mut started = epochs
+        // `ExtendedEpochInfos` is insertion-ordered, so select by index rather
+        // than by position.
+        let mut started: BTreeMap<EpochIndex, ExtendedEpochInfo> = epochs
             .into_iter()
-            .filter_map(|(index, info)| info.map(|info| (index, info)));
+            .filter_map(|(index, info)| info.map(|info| (index, info)))
+            .collect();
 
-        // Nothing at or above the candidate has started: the query landed in
-        // Drive's pre-created empty epoch window.
-        let Some((index, info)) = started.next() else {
-            return Err(Error::EpochNotFound);
-        };
-
-        match started.next() {
-            // Only the candidate came back, so the proof also covers the epoch
-            // above it and shows it as not started: the candidate is current.
-            None if index == candidate => return Ok((info, metadata, proof)),
-            // Epochs are initialized contiguously, so a gap at the candidate with
-            // a started epoch above it cannot happen in a well-formed state.
-            None => {
-                return Err(Error::InvalidProvedResponse(format!(
-                    "epoch {candidate} is not started but epoch {index} is; \
-                     epochs must be initialized contiguously"
-                )))
+        match started.keys().next_back().copied() {
+            // Nothing at or above the candidate has started: the query landed in
+            // Drive's pre-created empty epoch window.
+            None => return Err(Error::EpochNotFound),
+            // The candidate is the newest epoch the proof shows as started, so
+            // the proof also covers the epoch above it and shows it as not
+            // started: the candidate is current.
+            Some(newest) if newest == candidate => {
+                let info = started.remove(&candidate).expect("key just observed");
+                return Ok((info, metadata, proof));
             }
             // The hint was below the chain tip; retry from the proven epoch.
-            Some((newer_index, _)) => candidate = newer_index,
+            Some(newest) if newest > candidate => candidate = newest,
+            // The query range starts at the candidate, so a verified proof
+            // cannot contain anything below it.
+            Some(newest) => {
+                return Err(Error::InvalidProvedResponse(format!(
+                    "epoch query from {candidate} returned epoch {newest}, below its own start"
+                )))
+            }
         }
     }
 
@@ -373,6 +377,46 @@ mod mock_tests {
             .expect("fetch current epoch");
 
         assert_eq!(epoch.index(), 0);
+    }
+
+    /// `ExtendedEpochInfos` is an insertion-ordered `IndexMap`, so which epoch
+    /// is "first" is a property of how the response was built, not of the epoch
+    /// indices. Selection must go by index: fed a response listing the newer
+    /// epoch first, the fetch must still recognise the hint as stale and
+    /// advance, rather than mistake the ordering for a malformed proof.
+    #[tokio::test]
+    async fn should_ignore_the_order_epochs_arrive_in() {
+        let mut sdk = SdkBuilder::new_mock().build().expect("build mock sdk");
+        sdk.mock()
+            .expect_fetch::<ExtendedEpochInfo, _>(
+                current_epoch_probe_query(),
+                Some(epoch_at(GENESIS_EPOCH_INDEX)),
+            )
+            .await
+            .expect("register probe expectation");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                current_epoch_confirmation_query(0),
+                Some(ExtendedEpochInfos::from_iter([
+                    (1, Some(epoch_at(1))),
+                    (0, Some(epoch_at(0))),
+                ])),
+            )
+            .await
+            .expect("register out-of-order confirmation expectation");
+        sdk.mock()
+            .expect_fetch_many::<_, ExtendedEpochInfo, _, ExtendedEpochInfos>(
+                current_epoch_confirmation_query(1),
+                Some(ExtendedEpochInfos::from_iter([(1, Some(epoch_at(1)))])),
+            )
+            .await
+            .expect("register confirmation expectation");
+
+        let epoch = ExtendedEpochInfo::fetch_current(&sdk)
+            .await
+            .expect("fetch current epoch");
+
+        assert_eq!(epoch.index(), 1);
     }
 
     /// The hint is one epoch stale — an epoch turning over mid-fetch, or a node
