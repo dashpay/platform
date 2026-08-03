@@ -384,6 +384,15 @@ mod tests {
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
 
+    const YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX: &str = concat!(
+        "0089fd6ddba75136a4fea02dc7d89ef0ca5bcc32ccf12fb8da6a1a03740567ae72",
+        "01010200060200020000145e24e38a86e720f61757647996957e322686abb70000",
+        "07000103000021035e8cfb0785b54e8902a3dc17bdaad8a5738c6019a18ebc527f",
+        "79d1c64a27826a4120dc911df1d1e6cccf8c95ec0d423c928433397933de6dd9ad",
+        "006bc40dc0334d6d270d50c6d5e2dcdc5560e40487ddfe28bd1066d0729fad4b26",
+        "f92ae33f12a04b00000000"
+    );
+
     fn fixture_transition_bytes() -> Vec<u8> {
         let identity_id = Identifier::from([0x11; 32]);
         let contract_id = Identifier::from([0x44; 32]);
@@ -469,6 +478,81 @@ mod tests {
 
     #[test]
     fn parses_yappr_tagless_identity_update_transition() {
+        let tagless = hex::decode(YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX)
+            .expect("valid Yappr fixture hex");
+        let mut out = ParsedIdentityUpdateFFI::default();
+
+        let result = unsafe {
+            platform_wallet_parse_identity_update_transition(
+                tagless.as_ptr(),
+                tagless.len(),
+                &mut out,
+            )
+        };
+
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            out.identity_id.as_slice(),
+            hex::decode("89fd6ddba75136a4fea02dc7d89ef0ca5bcc32ccf12fb8da6a1a03740567ae72")
+                .expect("valid identity id hex")
+                .as_slice()
+        );
+        assert_eq!(out.disable_public_key_ids_count, 0);
+        assert_eq!(out.add_public_keys_count, 2);
+
+        let keys = unsafe { slice::from_raw_parts(out.add_public_keys, out.add_public_keys_count) };
+
+        assert_eq!(keys[0].key_id, 6);
+        assert_eq!(
+            Purpose::try_from(keys[0].purpose).expect("recognized purpose"),
+            Purpose::AUTHENTICATION
+        );
+        assert_eq!(
+            SecurityLevel::try_from(keys[0].security_level).expect("recognized security level"),
+            SecurityLevel::HIGH
+        );
+        assert_eq!(
+            KeyType::try_from(keys[0].key_type).expect("recognized key type"),
+            KeyType::ECDSA_HASH160
+        );
+        assert_eq!(keys[0].contract_bounds_kind, 0);
+        let key0_data = unsafe { slice::from_raw_parts(keys[0].data_ptr, keys[0].data_len) };
+        assert_eq!(
+            key0_data,
+            hex::decode("5e24e38a86e720f61757647996957e322686abb7")
+                .expect("valid authentication key hex")
+                .as_slice()
+        );
+
+        assert_eq!(keys[1].key_id, 7);
+        assert_eq!(
+            Purpose::try_from(keys[1].purpose).expect("recognized purpose"),
+            Purpose::ENCRYPTION
+        );
+        assert_eq!(
+            SecurityLevel::try_from(keys[1].security_level).expect("recognized security level"),
+            SecurityLevel::MEDIUM
+        );
+        assert_eq!(
+            KeyType::try_from(keys[1].key_type).expect("recognized key type"),
+            KeyType::ECDSA_SECP256K1
+        );
+        // The real DashConnect ENCRYPTION key is intentionally unbounded, so
+        // this guards the decoder widening that now accepts absent bounds.
+        assert_eq!(keys[1].contract_bounds_kind, 0);
+        let key1_data = unsafe { slice::from_raw_parts(keys[1].data_ptr, keys[1].data_len) };
+        assert_eq!(
+            key1_data,
+            hex::decode("035e8cfb0785b54e8902a3dc17bdaad8a5738c6019a18ebc527f79d1c64a27826a")
+                .expect("valid encryption key hex")
+                .as_slice()
+        );
+
+        unsafe { platform_wallet_parse_identity_update_transition_free(&mut out) };
+    }
+
+    #[test]
+    fn parses_tagless_framing_by_prepending_the_variant_tag() {
         let tagged = fixture_transition_bytes();
         let tagless = tagged[1..].to_vec();
         let mut out = ParsedIdentityUpdateFFI::default();

@@ -100,11 +100,13 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         func sign(data: Data, network: Network) -> Result<Data, KeychainSigner.Error> {
             do {
                 return .success(
-                    try RawKeySigner.sign(
-                        data: data,
-                        privateKey: Data(privateKeyBytes),
-                        network: network
-                    )
+                    try privateKeyBytes.withUnsafeBufferPointer { buffer in
+                        try RawKeySigner.sign(
+                            data: data,
+                            privateKeyBuffer: buffer,
+                            network: network
+                        )
+                    }
                 )
             } catch KeyManagerError.signerCreationFailed(let message) {
                 return .failure(.ffiSignerCreationFailed(message: message))

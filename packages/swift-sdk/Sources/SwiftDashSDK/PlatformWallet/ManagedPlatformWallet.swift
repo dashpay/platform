@@ -173,11 +173,11 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         /// secp256k1; 48 for BLS; etc.).
         public let pubkeyBytes: Data
         public let readOnly: Bool
-        /// Optional contract-bounds restriction. Required for
-        /// Encryption / Decryption keys (Drive scopes those keys
-        /// to a specific contract / document type so a key issued
-        /// for App A cannot decrypt App B's payloads). `nil` for
-        /// every other purpose.
+        /// Optional contract-bounds restriction. Bounds are valid
+        /// for any purpose only when present and only if consensus
+        /// allows that purpose / contract / document-type shape.
+        /// `nil` is valid for every purpose, including Encryption /
+        /// Decryption keys.
         public let contractBounds: ContractBounds?
 
         public init(

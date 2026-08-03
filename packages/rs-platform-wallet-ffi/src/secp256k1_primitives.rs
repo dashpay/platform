@@ -2,7 +2,8 @@
 
 use std::slice;
 
-use dashcore::secp256k1::{PublicKey, Scalar, Secp256k1, SecretKey};
+use dashcore::secp256k1::ecdh::shared_secret_point;
+use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -16,24 +17,9 @@ impl Drop for WipingSecretKey {
     }
 }
 
-struct WipingScalar(Scalar);
-
-impl Drop for WipingScalar {
-    fn drop(&mut self) {
-        self.0.non_secure_erase();
-    }
-}
-
 fn invalid_parameter(message: impl Into<String>) -> PlatformWalletFFIResult {
     PlatformWalletFFIResult::err(
         PlatformWalletFFIResultCode::ErrorInvalidParameter,
-        message.into(),
-    )
-}
-
-fn wallet_operation(message: impl Into<String>) -> PlatformWalletFFIResult {
-    PlatformWalletFFIResult::err(
-        PlatformWalletFFIResultCode::ErrorWalletOperation,
         message.into(),
     )
 }
@@ -123,17 +109,12 @@ pub unsafe extern "C" fn platform_wallet_secp256k1_ecdh_shared_x(
     let secret_key = unwrap_result_or_return!(parse_secret_key(seckey, seckey_len));
     let public_key = unwrap_result_or_return!(parse_compressed_public_key(pubkey, pubkey_len));
 
-    let secp = Secp256k1::new();
-    let scalar_bytes = Zeroizing::new(secret_key.0.secret_bytes());
-    let scalar = unwrap_result_or_return!(Scalar::from_be_bytes(*scalar_bytes)
-        .map(WipingScalar)
-        .map_err(|error| invalid_parameter(format!("Invalid secp256k1 scalar: {error}"))));
-
-    let shared_point = unwrap_result_or_return!(public_key
-        .mul_tweak(&secp, &scalar.0)
-        .map_err(|_| wallet_operation("ECDH produced the point at infinity")));
-    let uncompressed = shared_point.serialize_uncompressed();
-    std::ptr::copy_nonoverlapping(uncompressed[1..33].as_ptr(), out_shared_x, 32);
+    // `shared_secret_point` uses libsecp256k1's constant-time ECDH path:
+    // the scalar here is the wallet's private ephemeral key and the point
+    // comes from the peer, so the multiplication must not branch on the
+    // secret. Returns `x || y`; DashConnect wants the raw, unhashed X.
+    let shared_point = Zeroizing::new(shared_secret_point(&public_key, &secret_key.0));
+    std::ptr::copy_nonoverlapping(shared_point.as_ptr(), out_shared_x, 32);
     PlatformWalletFFIResult::ok()
 }
 
