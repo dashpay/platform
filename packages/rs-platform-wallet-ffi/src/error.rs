@@ -235,6 +235,27 @@ pub enum PlatformWalletFFIResultCode {
     /// wallet-operation failure. Not retryable as-is — the key must be
     /// (re-)derived first.
     ErrorSigningKeyUnavailable = 31,
+    /// Maps `PlatformWalletError::ShieldedInviteAlreadyClaimed`. A one-time-key
+    /// (shielded invitation) claim found the invitation note's nullifier already
+    /// spent on chain, and could NOT produce positive evidence that this claim's
+    /// Type-20 transition created an identity — either an identity owns the
+    /// submitted MASTER auth key hash but carries a different id than this
+    /// claim's nullifiers derive (the chargeable `UnshieldAction` fallback: the
+    /// spend was finalized, the value went to the creation-failure address and no
+    /// identity was created), or an identity exists at this claim's derived id
+    /// but under someone else's keys (another holder of the same bearer one-time
+    /// key won the race), or the id is not re-derivable at all.
+    ///
+    /// TERMINAL and NOT retryable — unlike
+    /// [`Self::ErrorShieldedBroadcastUnconfirmed`], which means "executed, not yet
+    /// resolvable, retry later". The note is consumed, so no retry can spend it
+    /// again. `out_identity_id` is NOT written: this wallet has no identity to
+    /// hold a slot for, and writing one would be the very false-ownership claim
+    /// this code exists to prevent. Hosts should surface the invitation as spent
+    /// rather than registering any identity.
+    ///
+    /// Code 32: 27-30 stay reserved for the in-flight branches noted above.
+    ErrorShieldedInviteAlreadyClaimed = 32,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -366,6 +387,14 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShieldedSpendUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
             }
+            // Terminal, and deliberately NOT flattened into the retryable
+            // unconfirmed code: the invitation note is spent and this wallet
+            // could not prove its claim created an identity, so a host that
+            // retried (or registered an identity) would be acting on exactly the
+            // false-ownership signal this variant exists to replace.
+            PlatformWalletError::ShieldedInviteAlreadyClaimed { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedInviteAlreadyClaimed
+            }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
             }
@@ -425,7 +454,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        PlatformWalletFFIResult::err(code, error.to_string())
+        // Classification above already consumed the machine prefix; strip it so
+        // the internal token does not reach user-visible host error text.
+        PlatformWalletFFIResult::err(code, strip_signer_machine_prefix(&error.to_string()))
     }
 }
 
@@ -540,8 +571,33 @@ impl From<dpp::ProtocolError> for PlatformWalletFFIResult {
         } else {
             PlatformWalletFFIResultCode::ErrorWalletOperation
         };
-        Self::err(code, format!("DPP protocol error: {msg}"))
+        Self::err(
+            code,
+            format!("DPP protocol error: {}", strip_signer_machine_prefix(&msg)),
+        )
     }
+}
+
+/// Remove the signer's internal machine prefix
+/// ([`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`]) from a rendered
+/// error message.
+///
+/// The prefix is a transport detail: it exists only so the typed
+/// `SigningKeyUnavailable` completion code survives being flattened into
+/// `ProtocolError::Generic`'s string (dashpay/platform#4060 finding 7). Once the
+/// code has been restored it has done its job, and leaving it in place would
+/// surface an internal token in user-visible Kotlin/Swift error text.
+///
+/// Both call sites read the prefix to pick the code BEFORE calling this, so
+/// stripping never costs classification. `replace` rather than `strip_prefix`:
+/// on the catch-all `From<PlatformWalletError>` path the prefix sits mid-string
+/// inside the nested `Sdk(Protocol(..))` `Display` rendering, not at position 0.
+///
+/// The host-side fallback matcher keys on the human tail (`"no private key
+/// stored for"`, `DashSdkError.MESSAGE_MARKER`), not on this prefix, so it is
+/// unaffected.
+fn strip_signer_machine_prefix(message: &str) -> String {
+    message.replace(rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX, "")
 }
 
 impl From<&str> for PlatformWalletFFIResult {

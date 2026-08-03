@@ -488,7 +488,7 @@ open class KeystoreManager(
         return try {
             decrypt(blob, KEYS_ALIAS_DEVICE_BOUND).fill(0)
             true
-        } catch (e: GeneralSecurityException) {
+        } catch (_: GeneralSecurityException) {
             false
         }
     }
