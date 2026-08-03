@@ -668,6 +668,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // on the selected funds account so its inputs are immediately
                 // reselectable, rather than stranded until the reservation-TTL
                 // backstop.
+                //
+                // PRIVACY-DOMAIN-OK: selects no coins. The iteration LOOKS UP
+                // the single account whose derivation path equals the
+                // already-chosen `funding_path`, releases that one account's
+                // reservation, and `break`s — the inverse of a funding union,
+                // undoing a reservation the single-account build already placed.
+                // key-wallet exposes no by-path accessor, so walking the funds
+                // accounts is the only way to reach the owning account's
+                // `release_reservation`. See `wallet::funding_privacy`.
                 let mut released = false;
                 for acc in info.core_wallet.accounts.all_funding_accounts() {
                     if acc
