@@ -189,6 +189,22 @@ mod tests {
     /// because it is the whole reason generations 0/1/2 can stay byte-identical
     /// to what consensus already ran: a historical block replayed at v13 is
     /// parsed by a generation that has never heard of the ranked keywords.
+    /// The grove v4 cleanup gates (batch overwrite inspection + delete-tree
+    /// actual-type cleanup) exist for the indexed trees that ranked indexes
+    /// lay down, so v14 must select grove protocol 4 while v13 stays on 3 —
+    /// both for the cleanup semantics and for the gates' documented per-op
+    /// read cost, which the fee-constant tests pin on both sides of the
+    /// boundary. Platform flows cannot themselves overwrite a ranked index
+    /// (the flags are immutable on contract update and new indexes cannot be
+    /// added to an existing document type), so the cleanup behavior itself is
+    /// exercised by grovedb's own overwrite suites at the pinned revision;
+    /// this test pins that v14 actually activates them.
+    #[test]
+    fn grove_v4_cleanup_gates_activate_at_v14() {
+        assert_eq!(PLATFORM_V13.drive.grove_version.protocol_version, 3);
+        assert_eq!(PLATFORM_V14.drive.grove_version.protocol_version, 4);
+    }
+
     #[test]
     fn ranked_grammar_gets_its_own_parser_generation() {
         assert_eq!(
