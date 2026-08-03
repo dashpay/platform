@@ -2925,12 +2925,13 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  *   other shapes return `Unsupported` (see supported-shape table
  *   below).
  *
- * `having` is wire-reserved for a future server capability. Any
- * non-empty `having` list currently returns
- * `Unsupported("HAVING clause is not yet implemented")`
- * regardless of `select` / `group_by`. The wire shape is
- * `repeated WhereClause` so when execution lands the surface is
- * already typed end-to-end and callers don't need to re-encode.
+ * `having` is served from protocol v14: a single clause whose right
+ * operand is a ranking (`TOP(n)` / `BOTTOM(n)`, via the `in` operator,
+ * or `=` when n = 1) routes to the ranked executor and returns
+ * `ResultData.ranked`. `MAX` / `MIN` and value-comparison right
+ * operands (e.g. `AVG(x) > 4`) return `Unsupported`. Protocol v13 and
+ * earlier reject every non-empty `having` with
+ * `Unsupported("HAVING clause is not yet implemented")`.
  *
  * **Supported shapes** (everything else rejects with a typed
  * `QuerySyntaxError::Unsupported` so callers can detect un-wired

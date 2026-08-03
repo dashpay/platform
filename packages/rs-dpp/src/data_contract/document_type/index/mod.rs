@@ -438,6 +438,9 @@ pub struct Index {
     /// `ranked_countable: true` requires [`Index::range_countable`] (which in
     /// turn requires [`Index::countable`]): the ranking secondary is built from
     /// the per-group counts the range-count layout already maintains.
+    ///
+    /// See `book/src/drive/document-ranked-trees.md` and
+    /// `book/src/drive/ranked-index-examples.md` for the worked example.
     //
     // `serde(default)`: added after the struct's serde shape was in the wild
     // (see the note on `countable` above), so pre-existing JSON must still
@@ -451,6 +454,9 @@ pub struct Index {
     ///
     /// Requires [`Index::range_summable`] (which in turn requires
     /// [`Index::summable`]).
+    ///
+    /// See `book/src/drive/document-ranked-trees.md` and
+    /// `book/src/drive/ranked-index-examples.md` for the worked example.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub ranked_summable: bool,
     /// Average-axis counterpart of [`Index::ranked_countable`]: the terminal
@@ -466,6 +472,9 @@ pub struct Index {
     /// The three ranking axes are **independent**: `ranked_averageable` does
     /// NOT imply `ranked_countable` or `ranked_summable`. Each axis costs its
     /// own ordered secondary tree, so each is opted into explicitly.
+    ///
+    /// See `book/src/drive/document-ranked-trees.md` and
+    /// `book/src/drive/ranked-index-examples.md` for the worked example.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub ranked_averageable: bool,
 }

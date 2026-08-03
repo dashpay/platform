@@ -1388,8 +1388,10 @@ mod tests {
 
     /// A `review` doctype with one index over `restaurantId`, averageable on
     /// `grade`, optionally carrying ranked keywords. Written so the v3
-    /// meta-schema's `dependentRequired` chain is satisfied
-    /// (`rankedAverageable` → `rangeAverageable` → `averageable`).
+    /// meta-schema's prerequisite rules are satisfied: the ranked
+    /// `if`/`then` conditionals demand the literal range keys, and the
+    /// `dependentRequired` chain covers the rest
+    /// (`rangeAverageable` → `averageable`).
     fn ranked_review_schema(ranked_keys: Vec<(&str, bool)>) -> Value {
         let mut index_entry: Vec<(Value, Value)> = vec![
             (
@@ -1547,19 +1549,21 @@ mod tests {
         );
     }
 
-    /// The meta-schema's `dependentRequired` is the declarative half of the
-    /// structural "ranking needs its range axis" rule: `rankedCountable`
-    /// without `rangeCountable` fails meta validation at PV14.
+    /// The meta-schema's ranked `if`/`then` conditionals are the declarative
+    /// half of the structural "ranking needs its range axis" rule:
+    /// `rankedCountable: true` without `rangeCountable` fails meta
+    /// validation at PV14.
     #[test]
     fn ranked_countable_without_range_countable_rejected_by_meta_schema() {
         // `averageable` + `rangeAverageable` give the index its range axes in
-        // *effect*, but `rangeCountable` is not literally present, so
-        // `dependentRequired: {rankedCountable: ["rangeCountable"]}` fails.
+        // *effect*, but `rangeCountable` is not literally present, so the
+        // `if rankedCountable == true then require rangeCountable`
+        // conditional fails.
         let schema = ranked_review_schema(vec![("rankedCountable", true)]);
         let result = parse_with(schema, PlatformVersion::latest(), true);
         assert!(
             result.is_err(),
-            "meta-schema v3 dependentRequired must demand rangeCountable alongside \
+            "meta-schema v3 must demand rangeCountable alongside a true \
              rankedCountable"
         );
     }
