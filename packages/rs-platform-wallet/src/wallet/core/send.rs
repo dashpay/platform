@@ -755,15 +755,14 @@ mod tests {
     use crate::test_support::{
         funded_wallet_manager, split_funded_wallet_manager, AlwaysRejectedBroadcaster,
     };
-    use crate::wallet::core::balance::WalletBalance;
-    use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::{CoreWallet, WalletGeneration};
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletError;
 
     use super::SignedCorePayment;
 
     /// A `CoreWallet` over a manager fixture. The send path never broadcasts,
-    /// so the broadcaster is irrelevant (and the balance handle is unused by
+    /// so the broadcaster is irrelevant (and the generation handle is unused by
     /// build — a fresh one is fine for the split fixtures that don't return it).
     fn core_wallet(
         wallet_manager: Arc<
@@ -774,7 +773,7 @@ mod tests {
             >,
         >,
         wallet_id: WalletId,
-        balance: Arc<WalletBalance>,
+        generation: Arc<WalletGeneration>,
     ) -> CoreWallet<AlwaysRejectedBroadcaster> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         CoreWallet::new(
@@ -782,7 +781,7 @@ mod tests {
             wallet_manager,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            balance,
+            generation,
         )
     }
 
@@ -905,7 +904,7 @@ mod tests {
     async fn default_funding_never_selects_other_domains() {
         // 0.09 DASH on BIP44, 0.09 on CoinJoin; ask 0.15 → only a union covers it.
         let (wm, wallet_id, signer) = split_funded_wallet_manager(9_000_000, 9_000_000).await;
-        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletGeneration::new()));
 
         let result = core
             .build_signed_payment(vec![(recipient(7), 15_000_000)], None, &signer, None)
@@ -942,7 +941,7 @@ mod tests {
         let (bip44_ops, coinjoin_ops, _) =
             split_account_outpoints_and_coinjoin_path(&wm, &wallet_id).await;
 
-        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletGeneration::new()));
         let payment = core
             .build_signed_payment(vec![(recipient(7), 15_000_000)], None, &signer, None)
             .await
@@ -977,7 +976,7 @@ mod tests {
         let (bip44_ops, coinjoin_ops, coinjoin_path) =
             split_account_outpoints_and_coinjoin_path(&wm, &wallet_id).await;
 
-        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletGeneration::new()));
         let payment = core
             .build_signed_payment(
                 vec![(recipient(7), 15_000_000)],
@@ -1020,7 +1019,7 @@ mod tests {
         let (wm, wallet_id, signer) = split_funded_wallet_manager(9_000_000, 9_000_000).await;
         let (_, _, coinjoin_path) =
             split_account_outpoints_and_coinjoin_path(&wm, &wallet_id).await;
-        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletGeneration::new()));
 
         let result = core
             .build_signed_payment(
@@ -1141,7 +1140,7 @@ mod tests {
                 .expect("insert watch-only external account");
         }
 
-        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletGeneration::new()));
 
         // Ask for 0.5 DASH: covered only if the 1.0-DASH watch-only UTXO were
         // spendable. It is on a different domain from the default BIP44 funding
@@ -1678,7 +1677,7 @@ mod tests {
         let (wm, wallet_id, signer) = split_funded_wallet_manager(9_000_000, 20_000_000).await;
         let (_, _, coinjoin_path) =
             split_account_outpoints_and_coinjoin_path(&wm, &wallet_id).await;
-        let core = core_wallet(Arc::clone(&wm), wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(Arc::clone(&wm), wallet_id, Arc::new(WalletGeneration::new()));
 
         // Fund from CoinJoin, then try to release against the BIP44 default.
         let payment = core
