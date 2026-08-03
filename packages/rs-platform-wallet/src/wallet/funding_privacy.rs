@@ -129,8 +129,8 @@ mod guardrail {
     use dashcore::{Address as DashAddress, Network, OutPoint};
 
     use crate::test_support::{split_funded_wallet_manager, AlwaysRejectedBroadcaster};
-    use crate::wallet::core::WalletGeneration;
     use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::WalletGeneration;
     use crate::PlatformWalletError;
 
     // -- static guard --------------------------------------------------------
