@@ -50,11 +50,15 @@ jobs:
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
       swift-sdk-changed: ${{ steps.override.outputs.swift-sdk-changed || steps.filter-swift-sdk.outputs.swift-sdk-changed }}
       version-changed: ${{ steps.override.outputs.version-changed || steps.filter-version.outputs.version-changed }}
+      e2e-tests-changed: ${{ steps.override.outputs.e2e-tests-changed || steps.filter-e2e.outputs.e2e-tests-changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Verify self-hosted Swift runner policy
+        run: python3 .github/scripts/check-swift-self-hosted-runner.py
 
       - uses: dorny/paths-filter@v4
         id: filter-js
@@ -85,6 +89,37 @@ jobs:
               - .github/workflows/tests-rs-doctests.yml
               - .github/workflows/tests.yml
               - .github/scripts/check-wallet-closure.py
+
+      - uses: dorny/paths-filter@v4
+        id: filter-e2e
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        with:
+          filters: |
+            e2e-tests-changed:
+              - packages/platform-test-suite/**
+              - packages/dashmate/**
+              - packages/js-dapi-client/**
+              - packages/js-dash-sdk/**
+              - packages/wallet-lib/**
+              - packages/wasm-sdk/**
+              - packages/dapi/.env.example
+              - packages/rs-drive-abci/.env.local
+              - .github/actions/aws_ecr_login/**
+              - .github/actions/docker/**
+              - .github/actions/local-network/**
+              - .github/actions/nodejs/**
+              - .github/actions/rust/**
+              - .github/actions/sccache/**
+              - .github/workflows/tests.yml
+              - .github/workflows/tests-build-js.yml
+              - .github/workflows/tests-build-image.yml
+              - .github/workflows/tests-test-suite.yml
+              - .github/workflows/tests-packges-functional.yml
+              - .github/workflows/tests-dashmate.yml
+              - scripts/setup_local_network.sh
+              - scripts/configure_test_suite.sh
+              - scripts/configure_dotenv.sh
+              - scripts/dashmate/volumes/**
 
       - name: Check for platform version change
         id: filter-version
@@ -184,10 +219,12 @@ jobs:
         with:
           filters: |
             swift-sdk-changed:
+              - .github/workflows/swift-sdk-build.yml
               - packages/swift-sdk/**
               - packages/dapi-grpc/**
               - packages/dashpay-contract/**
               - packages/data-contracts/**
+              - packages/document-history-contract/**
               - packages/dpns-contract/**
               - packages/keyword-search-contract/**
               - packages/masternode-reward-shares-contract/**
@@ -261,12 +298,13 @@ jobs:
           echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
           echo 'swift-sdk-changed=true' >> "$GITHUB_OUTPUT"
           echo 'version-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'e2e-tests-changed=true' >> "$GITHUB_OUTPUT"
 
   build-js:
     name: Build JS packages
     needs:
       - changes
-    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.changes.outputs.js-packages != '[]' || needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     secrets: inherit
     uses: ./.github/workflows/tests-build-js.yml
 
@@ -275,10 +313,10 @@ jobs:
     needs:
       - check-secrets
       - changes
-    # Build Docker images on version change, nightly schedule, or manual dispatch
+    # Build Docker images for platform E2E changes, version changes, nightly schedules, or manual dispatches
     if: >-
       needs.check-secrets.outputs.has_ecr == 'true' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     secrets: inherit
     strategy:
       fail-fast: false
@@ -342,7 +380,17 @@ jobs:
     # At most one of the two Rust jobs runs (none for e.g. Swift-only PRs);
     # skipped jobs report result 'skipped', not 'failure', so this only
     # blocks on a Rust job that actually ran and failed.
-    if: ${{ always() && needs.changes.outputs.swift-sdk-changed == 'true' && needs.changes.result != 'failure' && needs.rs-workspace-tests.result != 'failure' && needs.rs-wallet-tests.result != 'failure' }}
+    # Untrusted fork PRs must not reach the self-hosted Swift runner — same
+    # trusted-fork policy as the callee guard in swift-sdk-build.yml.
+    if: >-
+      ${{ always()
+      && (github.event_name != 'pull_request'
+          || github.event.pull_request.head.repo.full_name == github.repository
+          || github.event.pull_request.head.repo.owner.login == 'thepastaclaw')
+      && needs.changes.outputs.swift-sdk-changed == 'true'
+      && needs.changes.result != 'failure'
+      && needs.rs-workspace-tests.result != 'failure'
+      && needs.rs-wallet-tests.result != 'failure' }}
     secrets: inherit
     uses: ./.github/workflows/swift-sdk-build.yml
 
@@ -360,8 +408,9 @@ jobs:
     uses: ./.github/workflows/tests-js-package.yml
     with:
       package: ${{ matrix.js-package }}
-      test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
-      skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
+      # The platform test suite's default command drives a live network, so it
+      # runs from the E2E jobs. Its unit tests need nothing and run here.
+      test-command: ${{ (matrix.js-package == 'dashmate' || contains(matrix.js-package, 'platform-test-suite')) && 'test:unit' || 'test' }}
       direct-packages: ${{ needs.changes.outputs.js-packages-direct }}
 
   js-deps-versions:
@@ -412,8 +461,9 @@ jobs:
     if: >-
       always() &&
       needs.check-secrets.outputs.has_ecr == 'true' &&
+      needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
 
   test-suite:
     name: Test Suite
@@ -428,7 +478,7 @@ jobs:
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     strategy:
       fail-fast: false
       matrix:
@@ -465,5 +515,5 @@ jobs:
       needs.check-secrets.outputs.has_ecr == 'true' &&
       needs.build-js.result == 'success' &&
       needs.build-images.result == 'success' &&
-      (needs.changes.outputs.version-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     uses: ./.github/workflows/tests-packges-functional.yml

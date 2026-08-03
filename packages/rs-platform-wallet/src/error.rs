@@ -4,6 +4,8 @@ use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::AddressNonce;
 use key_wallet::account::StandardAccountType;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
 
 /// Errors that can occur in platform wallet operations
@@ -91,6 +93,18 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    /// Atomic Core finalization could not select enough unreserved funds.
+    #[error(
+        "insufficient unreserved Core funds on {account_type:?} account {account_index}: \
+         available {available:?}, required {required:?}"
+    )]
+    CoreInsufficientFunds {
+        account_type: AccountTypePreference,
+        account_index: u32,
+        available: Option<u64>,
+        required: Option<u64>,
+    },
+
     #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
     NoSpendableInputs {
         account_type: StandardAccountType,
@@ -100,6 +114,33 @@ pub enum PlatformWalletError {
 
     #[error("Asset lock proof waiting failed: {0}")]
     AssetLockProofWait(String),
+
+    /// The caller supplied an outpoint that this wallet does not own/track.
+    /// Kept distinct from proof-wait failures so FFI hosts can classify a
+    /// stale or foreign recovery request without parsing text.
+    #[error("Asset lock {0} is not tracked by this wallet")]
+    AssetLockNotTracked(dashcore::OutPoint),
+
+    /// A one-shot asset lock has already funded a successful Platform
+    /// transition and cannot be resumed again.
+    #[error("Asset lock {0} has already been consumed")]
+    AssetLockAlreadyConsumed(dashcore::OutPoint),
+
+    /// A tracked outpoint belongs to another funding family or identity
+    /// index. Resuming it for the requested destination would spend the
+    /// one-shot output on the wrong operation.
+    #[error(
+        "Asset lock {out_point} is ineligible for {expected_funding_type:?} index \
+         {expected_identity_index}: tracked as {actual_funding_type:?} index \
+         {actual_identity_index}"
+    )]
+    AssetLockFundingMismatch {
+        out_point: dashcore::OutPoint,
+        expected_funding_type: AssetLockFundingType,
+        expected_identity_index: u32,
+        actual_funding_type: AssetLockFundingType,
+        actual_identity_index: u32,
+    },
 
     /// The operation was issued through an `AssetLockManager` whose wallet
     /// has since been removed from the `PlatformWalletManager`.
@@ -311,6 +352,16 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
+
+    /// A background sync pass did not drain within its quiesce budget, so
+    /// the operation that required a "no more persister stores" barrier
+    /// (manager shutdown, `clear_shielded`, a sync-state reset) aborted
+    /// fail-closed. The wedged pass may still fire persistence / event
+    /// callbacks; the host must keep its callback context alive and must
+    /// not commit any wipe it was about to pair with this call.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
+    #[error("Background sync did not quiesce: {0}")]
+    ShutdownIncomplete(String),
 
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),

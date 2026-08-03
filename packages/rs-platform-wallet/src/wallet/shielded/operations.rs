@@ -586,8 +586,11 @@ pub async fn shield<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: OrchardPr
         }
     }
 
+    // A shield proof authenticates the input addresses' post-state, not this
+    // exact shield's execution — accept the affected-state snapshot; a
+    // consensus rejection still surfaces as an error here.
     if let Err(wait_err) = state_transition
-        .wait_for_response::<StateTransitionProofResult>(sdk, None)
+        .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
         .await
     {
         if carries_consensus_rejection(&wait_err) {
@@ -1351,8 +1354,11 @@ where
         //     `StateTransitionBroadcastError`s — DAPI encodes its own wait-side failures
         //     (timeouts, internal errors) that way, with empty consensus data. Fall back to
         //     fetching the identity by its pre-derived id before deciding it doesn't exist.
+        // An identity-create-from-shielded-pool proof authenticates the spent
+        // nullifiers and resulting identity as a snapshot; it cannot bind the
+        // complete Orchard request, so accept the affected-state outcome.
         let proof_result = match st
-            .wait_for_response::<StateTransitionProofResult>(sdk, None)
+            .wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
             .await
         {
             Ok(result) => result,

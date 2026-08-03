@@ -93,14 +93,12 @@ dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 wasm-dpp2 = { path = "../wasm-dpp2" }
 
 [dev-dependencies]
-wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }
+# Self-dependency to enable `mocks` for the lib under test. Do not add
+# system-contract features here: Cargo unifies them into the tested lib, so
+# `all-system-contracts` would let the trusted context resolve every contract
+# and silently defeat the tests that assert an uncompiled one is fetched.
+wasm-sdk = { path = ".", features = ["mocks"] }
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
-
-[profile.release]
-opt-level = "z"
-panic = "abort"
-debug = false
-lto = "fat"
 
 [package.metadata.wasm-pack]
 wasm-opt = false

@@ -3,6 +3,7 @@ use versioned_feature_core::FeatureVersion;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -45,6 +46,7 @@ pub struct DriveDocumentEstimationCostsMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentInsertMethodVersions {
     pub add_document: FeatureVersion,
+    pub add_history_operations: FeatureVersion,
     pub add_document_for_contract: FeatureVersion,
     pub add_document_for_contract_apply_and_add_to_operations: FeatureVersion,
     pub add_document_for_contract_operations: FeatureVersion,

@@ -28,6 +28,8 @@ run:
   - packages/dpns-contract/**
   - packages/withdrawals-contract/**
   - packages/token-history-contract/**
+  - packages/document-history-contract/**
+  - packages/keyword-search-contract/**
   - packages/wallet-utils-contract/**
   # Local network scripts and action
   - .github/actions/local-network/**

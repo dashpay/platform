@@ -111,6 +111,15 @@ class ChainStore extends EventEmitter {
     this.state.lastSyncedHeaderHeight = height;
   }
 
+  resetBlockHeaders() {
+    Object.assign(this.state, {
+      blockHeaders: [],
+      lastSyncedHeaderHeight: -1,
+      headersMetadata: new Map(),
+      hashesByHeight: new Map(),
+    });
+  }
+
   updateLastSyncedBlockHeight(height) {
     if (height < this.state.lastSyncedBlockHeight) {
       throw new Error(`Cannot update lastSyncedBlockHeight to a lower value ${height} < ${this.state.lastSyncedBlockHeight}`);

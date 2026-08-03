@@ -50,9 +50,5 @@ wasm-bindgen-futures = "0.4.58"
 async-trait = "0.1.59"
 bincode = { version = "=2.0.1" }
 
-[profile.release]
-lto = true
-opt-level = 'z'
-
 [package.metadata.cargo-machete]
 ignored = ["wasm-bindgen-futures"]

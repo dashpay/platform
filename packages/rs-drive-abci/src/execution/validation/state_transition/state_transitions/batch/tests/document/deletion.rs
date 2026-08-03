@@ -49,7 +49,12 @@ mod deletion_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -585,7 +590,12 @@ mod deletion_tests {
 
         let (other_identity, ..) = setup_identity(&mut platform, 495, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let contact_request_document_type = dashpay_contract
@@ -754,7 +764,12 @@ mod deletion_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -1217,7 +1232,12 @@ mod deletion_tests {
         let (other_identity, other_signer, other_key) =
             setup_identity(&mut platform, 495, dash_to_credits!(0.1));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder_document_type = dpns_contract

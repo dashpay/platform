@@ -261,14 +261,24 @@ pub struct DriveDocumentSumQuery<'a> {
     pub sum_property: String,
 }
 
+/// Storage-walk shape for a server-side range sum.
+#[cfg(feature = "server")]
+#[derive(Clone, Copy, Debug, Default)]
+pub enum RangeSumWalkMode {
+    /// Return one aggregate sum for the range.
+    #[default]
+    Aggregate,
+    /// Return distinct sums, bounded by the supplied storage-walk limit.
+    Distinct(u16),
+}
+
 /// Server-side range-sum executor options, parallels
 /// [`crate::query::drive_document_count_query::RangeCountOptions`].
 #[cfg(feature = "server")]
 #[derive(Clone, Debug, Default)]
 pub struct RangeSumOptions {
-    /// When `true`, emit one `SumEntry` per distinct in-range value
-    /// rather than a single `Aggregate(i64)`.
-    pub return_distinct_sums_in_range: bool,
+    /// Select aggregate execution or a compile-time bounded distinct walk.
+    pub walk_mode: RangeSumWalkMode,
     /// `Some(n)` caps the carrier walk for compound `(In, range)`
     /// shapes at n entries. `None` accepts the platform-wide
     /// `MAX_CARRIER_AGGREGATE_OUTER_RANGE_LIMIT`.

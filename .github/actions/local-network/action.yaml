@@ -34,7 +34,7 @@ runs:
           ${{ env.HOME }}/.dashmate
           **/.env
           dashmate_volumes_dump
-        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}/${{ hashFiles('.github/actions/local-network/action.yaml', 'packages/dapi/.env.example', 'packages/rs-drive-abci/.env.local', 'scripts/setup_local_network.sh', 'scripts/configure_test_suite.sh', 'scripts/configure_dotenv.sh', 'scripts/dashmate/volumes/**') }}
 
     - name: Restore dashmate volumes
       run: ./scripts/dashmate/volumes/restore.sh
@@ -69,7 +69,7 @@ runs:
           ${{ env.HOME }}/.dashmate
           **/.env
           dashmate_volumes_dump
-        key: local-network-volumes/${{ steps.dashmate-fingerprint.outputs.sha }}
+        key: ${{ steps.local-network-data.outputs.cache-primary-key }}
       if: steps.local-network-data.outputs.cache-hit != 'true'
 
     - name: Configure pre-built docker images
@@ -82,8 +82,19 @@ runs:
         docker pull ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG
         docker tag ${{ inputs.image_org }}/dashmate-helper:$SHA_TAG dashpay/dashmate-helper:$VERSION
 
-        # Replace Drive and RS-DAPI images with new org and tag in dashmate config
-        sed -i -E "s/dashpay\/(drive|rs-dapi):[^\"]+/${{ inputs.image_org }}\/\1:${SHA_TAG}/g" ${{ env.HOME }}/.dashmate/config.json
+        # Point Drive and RS-DAPI at the images built for this commit. Set them
+        # through dashmate rather than editing config.json: these options are
+        # stored unset by default, meaning "use the line this dashmate build
+        # ships", so there is no image string in the file for a pattern to match.
+        #
+        # Every config in the local group, not the standalone `local` template:
+        # `dashmate setup local` puts local_1..N and local_seed in the group, and
+        # `yarn start` runs `dashmate group start`, so the template is never
+        # started and pinning it alone would silently test the published images.
+        while IFS= read -r config_name; do
+          yarn dashmate config set --config="$config_name" platform.drive.abci.docker.image "${{ inputs.image_org }}/drive:${SHA_TAG}"
+          yarn dashmate config set --config="$config_name" platform.dapi.rsDapi.docker.image "${{ inputs.image_org }}/rs-dapi:${SHA_TAG}"
+        done < <(jq -r '.configs | to_entries[] | select(.value.group == "local") | .key' "${HOME}/.dashmate/config.json")
 
 
     - name: Start local network

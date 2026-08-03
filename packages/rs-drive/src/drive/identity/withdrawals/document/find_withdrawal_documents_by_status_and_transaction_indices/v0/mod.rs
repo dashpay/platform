@@ -61,7 +61,10 @@ impl Drive {
             },
         );
 
-        let contract = self.cache.system_data_contracts.load_withdrawals();
+        let contract = self
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)?;
 
         let document_type = contract.document_type_for_name(withdrawal::NAME)?;
 
@@ -122,7 +125,11 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let data_contract = drive.cache.system_data_contracts.load_withdrawals();
+        let data_contract = drive
+            .cache
+            .system_data_contracts
+            .load_withdrawals(platform_version)
+            .expect("expected the withdrawals contract");
 
         setup_system_data_contract(&drive, &data_contract, Some(&transaction));
 

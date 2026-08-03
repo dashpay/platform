@@ -8,6 +8,7 @@ use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use drive::drive::Drive;
 use std::fmt::{Debug, Formatter};
 
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
@@ -41,6 +42,8 @@ pub struct Platform<C> {
     pub config: PlatformConfig,
     /// Core RPC Client
     pub core_rpc: C,
+    /// CheckTx-only proof-verification admission control
+    pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
 }
 
 // @append_only
@@ -144,15 +147,6 @@ impl<C> Platform<C> {
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
-        if let Some(initial_protocol_version) = initial_protocol_version {
-            if initial_protocol_version > 1 {
-                drive
-                    .cache
-                    .system_data_contracts
-                    .reload_system_contracts(PlatformVersion::get(initial_protocol_version)?)?;
-            }
-        }
-
         if let Some(platform_version) = current_platform_version {
             let Some(execution_state) =
                 Platform::<C>::fetch_platform_state(&drive, None, platform_version)?
@@ -161,12 +155,6 @@ impl<C> Platform<C> {
                     "execution state should be stored as well as protocol version".to_string(),
                 )));
             };
-            if platform_version.protocol_version > 1 {
-                drive
-                    .cache
-                    .system_data_contracts
-                    .reload_system_contracts(platform_version)?;
-            }
 
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
@@ -252,6 +240,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         };
 
         Ok(platform)
@@ -285,6 +274,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            check_tx_proof_verifier: CheckTxProofVerifier::default(),
         })
     }
 }

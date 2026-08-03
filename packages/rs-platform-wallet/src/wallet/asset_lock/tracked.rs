@@ -1,7 +1,9 @@
 //! Asset lock tracking.
 //!
 //! Tracks asset lock transactions from build through finality (IS/CL).
-//! Once consumed by a successful identity operation, the lock is removed.
+//! Once consumed by a successful identity operation, the lock remains as a
+//! terminal tombstone so exact-outpoint retries stay distinguishable from
+//! foreign or never-tracked locks, including after a wallet restart.
 //!
 //! Private keys are NOT stored here — they are re-derived from
 //! `funding_type` + `identity_index` via the key-wallet's `Wallet`.

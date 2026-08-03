@@ -64,7 +64,12 @@ mod creation_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -249,7 +254,12 @@ mod creation_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -492,7 +502,8 @@ mod creation_tests {
                     processing_fee: 526140,
                     fee_refunds: FeeRefunds::default(),
                     removed_bytes_from_system: 0
-                }
+                },
+                address_balance_changes: std::collections::BTreeMap::new()
             }
         );
 
@@ -522,7 +533,12 @@ mod creation_tests {
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, 93, dash_to_credits!(0.5));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -980,7 +996,12 @@ mod creation_tests {
         let (identity_1, signer_1, key_1) =
             setup_identity(&mut platform, 958, dash_to_credits!(0.5));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -1254,7 +1275,12 @@ mod creation_tests {
         let (identity_1, signer_1, key_1) =
             setup_identity(&mut platform, 958, dash_to_credits!(0.5));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -1521,7 +1547,12 @@ mod creation_tests {
         let (identity_2, signer_2, key_2) =
             setup_identity(&mut platform, 93, dash_to_credits!(0.5));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -2592,7 +2623,8 @@ mod creation_tests {
             .drive
             .cache
             .system_data_contracts
-            .load_keyword_search();
+            .load_keyword_search(platform_version)
+            .expect("expected the keyword_search system contract");
 
         platform
             .drive

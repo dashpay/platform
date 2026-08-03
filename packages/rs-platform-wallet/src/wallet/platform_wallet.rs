@@ -114,6 +114,18 @@ pub struct PlatformWallet {
     /// cloned wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// Set once this wallet has been removed from the manager, to stop
+    /// a handle that outlives the removal from binding shielded state
+    /// back onto the coordinator. Callers resolve an
+    /// `Arc<PlatformWallet>` and then hold it across a bind that can
+    /// take arbitrarily long (it may resolve a mnemonic through the
+    /// host), so a removal can complete in the middle; without this
+    /// flag the bind would re-register the wallet the removal just
+    /// detached, and the next sync pass would re-fetch and re-persist
+    /// shielded history the host believes it deleted. `Arc` so cloned
+    /// wallet handles observe the one flag.
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_detached: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl PlatformWallet {
@@ -468,6 +480,8 @@ impl PlatformWallet {
             shielded_keys: Arc::new(RwLock::new(None)),
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -505,11 +519,29 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, OrchardKeySet, SubwalletId};
+        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded seedless restart requires persistence capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
                 "shielded wallet requires at least one account".to_string(),
             ));
         }
+        // Before anything is read or written: a wallet the manager has
+        // dropped must not persist viewing keys the host can no longer
+        // delete (see `ensure_shielded_attached`).
+        self.ensure_shielded_attached()?;
+        // Sampled before the load below so the install can tell that the
+        // snapshot predates a Clear.
+        let snapshot_generation = coordinator.clear_generation();
         let network = self.sdk.network;
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
@@ -522,11 +554,40 @@ impl PlatformWallet {
             account_views.insert(account, ks.viewing_keys());
         }
 
-        // Persist the viewing keys while the seed is legitimately
-        // present, so every later launch can rebind seedlessly. A
-        // queue failure is logged inside the persister wrapper and
-        // does not fail the bind — the next seed-backed bind
-        // re-emits the same bytes.
+        // Refuse to overwrite a persisted viewing key with a different
+        // one. The durable notes, activity and sync watermark this
+        // wallet already has are keyed by `(wallet_id, account_index)`
+        // alone — nothing records which key produced them — so a row
+        // written under the old key is indistinguishable from one
+        // written under the new. Upserting the new key would leave the
+        // old key's notes attributed to it (unspendable, yet counted)
+        // and its watermark in force (hiding the new key's own
+        // history). No legitimate flow re-keys an account in place, so
+        // treat it like the malformed-row case below: surface it rather
+        // than silently mixing two keys' state. The recovery is a
+        // shielded Clear, which drops both sides at once.
+        let start = self.persister.load().map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "persister load failed while binding shielded viewing keys: {e}"
+            ))
+        })?;
+        for (account, views) in &account_views {
+            let id = SubwalletId::new(self.wallet_id, *account);
+            if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
+                if persisted.as_slice() != views.to_fvk_bytes().as_slice() {
+                    return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                        "persisted shielded viewing key for account {account} differs from the \
+                         one derived from this seed; clear shielded state before binding a \
+                         re-keyed account"
+                    )));
+                }
+            }
+        }
+
+        // Persist the viewing keys while the seed is legitimately present, so
+        // every later launch can rebind seedlessly. Do not install the in-memory
+        // keys when persistence rejects the write: that would advertise a
+        // working shielded bind that cannot survive restart.
         let mut cs = crate::changeset::ShieldedChangeSet::default();
         for (account, views) in &account_views {
             cs.record_viewing_key(
@@ -534,22 +595,23 @@ impl PlatformWallet {
                 views.to_fvk_bytes(),
             );
         }
-        if let Err(e) = self
-            .persister
+        self.persister
             .store(crate::changeset::PlatformWalletChangeSet {
                 shielded: Some(cs),
                 ..Default::default()
             })
-        {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                error = %e,
-                "Failed to queue shielded viewing keys for persistence; \
-                 the next seed-backed bind will retry"
-            );
-        }
+            .map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "failed to persist shielded viewing keys before bind: {e}"
+                ))
+            })?;
 
-        self.install_shielded_views(account_views, coordinator, None)
+        // Hand the snapshot loaded above to the install step. It predates
+        // the viewing-key upsert just made, which is safe precisely
+        // because the loop above proved the derived keys equal the
+        // persisted ones: the rows the restore filters on are unchanged
+        // by that write.
+        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
             .await
     }
 
@@ -573,11 +635,26 @@ impl PlatformWallet {
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<bool, PlatformWalletError> {
         use super::shielded::{AccountViewingKeys, SubwalletId};
+        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded seedless restart requires persistence capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
                 "shielded wallet requires at least one account".to_string(),
             ));
         }
+        self.ensure_shielded_attached()?;
+        // Sampled before the load so the install can tell that the
+        // snapshot predates a Clear.
+        let snapshot_generation = coordinator.clear_generation();
         let start = self.persister.load().map_err(|e| {
             PlatformWalletError::ShieldedBuildError(format!(
                 "persister load failed while rebinding shielded viewing keys: {e}"
@@ -600,69 +677,145 @@ impl PlatformWallet {
         }
         // Hand the already-loaded snapshot to the install step so the
         // restore doesn't pay a second full persister load.
-        self.install_shielded_views(account_views, coordinator, Some(start))
+        self.install_shielded_views(account_views, coordinator, start, snapshot_generation)
             .await?;
         Ok(true)
     }
 
     /// Shared tail of the two bind paths: store the viewing-grade
     /// map on this handle, replace this wallet's registration on
-    /// the coordinator, and rehydrate persisted notes / watermarks.
-    /// `preloaded` reuses a start-state snapshot the caller already
-    /// fetched (the persisted-keys path); `None` loads one here.
+    /// the coordinator, and rehydrate persisted notes / watermarks
+    /// from `start` — the snapshot both callers have already loaded
+    /// (one to reconstruct the viewing keys, the other to check them
+    /// against the seed), so the restore never pays a second load.
+    ///
+    /// Runs as one coordinator install transaction, so a concurrent
+    /// bind, wallet removal or Clear either happens entirely before or
+    /// entirely after it — never between the key-slot write and the
+    /// registration (which would leave sync decrypting under one key
+    /// while addresses and spends use another), nor between the
+    /// restore's registration check and its store write.
     #[cfg(feature = "shielded")]
     async fn install_shielded_views(
         &self,
         account_views: std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys>,
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
-        preloaded: Option<crate::changeset::ClientStartState>,
+        start: crate::changeset::ClientStartState,
+        snapshot_generation: u64,
     ) -> Result<(), PlatformWalletError> {
+        let install = coordinator.begin_install(self.wallet_id).await;
+
+        // A wallet the manager has already removed must not be able to
+        // re-register itself. Callers reach a bind through an
+        // `Arc<PlatformWallet>` they resolved earlier and keep across
+        // the (possibly seed-resolving, so arbitrarily long) bind, so
+        // the removal can land in between; re-registering here would
+        // resurrect the wallet on the coordinator, and the next sync
+        // pass would re-fetch and re-persist shielded history the host
+        // believes it deleted. Checked inside the transaction, which
+        // `remove_wallet`'s unregister also has to take, so the two
+        // cannot interleave.
+        self.ensure_shielded_attached()?;
+
+        // Refuse to re-key a bound account. Durable per-subwallet state
+        // (notes, activity, watermark) is keyed by
+        // `(wallet_id, account_index)` alone, so it cannot be attributed
+        // to the key that produced it: installing a different key for an
+        // account that already has state would leave notes the new
+        // spend key cannot spend, and a watermark that makes the scan
+        // skip the range where the new key's own notes live. There is no
+        // legitimate flow that changes an account's key in place — see
+        // `ShieldedChangeSet::viewing_keys` — so this is corruption or a
+        // derivation change, and the host has to Clear (which wipes both
+        // sides) before binding the new key.
+        if let Some(account) = install.conflicting_account(&account_views).await {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                "account {account} is already bound to a different shielded viewing key; \
+                 clear shielded state before binding a re-keyed account"
+            )));
+        }
+
         let mut slot = self.shielded_keys.write().await;
         *slot = Some(account_views.clone());
         drop(slot);
 
-        // Rebind is replace-not-merge (the doc contract above).
-        // `register_wallet` replaces the coordinator's `accounts`
-        // entries for this wallet, but it does NOT touch the
-        // store's per-`SubwalletId` state — so a same-process
-        // rebind would otherwise leave stale watermarks, orphaned
-        // accounts dropped from the new bind set, and abandoned
-        // `pending_nullifiers` reservations behind (the latter can
-        // make note selection skip spendable notes). Unregister
-        // first to purge that state; it's a no-op on first bind.
-        coordinator.unregister_wallet(self.wallet_id).await;
+        // Compute idempotence BEFORE registering — after
+        // register_wallet the registration always matches.
+        let identical = install.registration_matches(&account_views).await;
 
-        // Register on the coordinator BEFORE restoring so the
-        // restore path's "is this account registered?" gate
-        // sees this wallet's subwallets.
-        coordinator
-            .register_wallet(self.wallet_id, account_views, self.persister.clone())
+        // (Re-)register on the coordinator. This is non-destructive
+        // by construction: the persister handle is replaced, never
+        // removed (a sync pass finishing mid-bind always finds one),
+        // and per-subwallet store state is purged only for accounts
+        // this registration DROPS or re-keys — accounts that remain
+        // bound with the same viewing key keep their in-memory notes
+        // and watermark. A re-bind racing an in-flight sync pass can
+        // therefore no longer wipe the pass's results (the former
+        // unregister-then-register cycle here purged the whole
+        // wallet behind the pass's store lock and then restored a
+        // pre-pass snapshot — the "note discovered by sync is
+        // unspendable until app restart" / "every pass rescans from
+        // 0" failure). Registration also runs BEFORE the restore so
+        // the restore path's "is this account registered?" gate sees
+        // this wallet's subwallets.
+        install
+            .register(account_views, self.persister.clone())
             .await;
+
+        // Idempotent re-bind fast path: hosts re-run bind liberally
+        // (launch fires it twice — a direct call plus the wallet-set
+        // observer — and again on Sync Now / wallet navigation). When
+        // the registration is unchanged AND a prior hydration
+        // succeeded, the coordinator's in-memory state is strictly
+        // fresher than any persister snapshot (the snapshot's rows
+        // were produced FROM it), so re-running the restore could
+        // only re-apply older data — skip it. The hydration flag is
+        // load-bearing: a matching registration alone doesn't prove
+        // the store was ever hydrated (the first bind's load/restore
+        // may have failed transiently and is only logged), and
+        // skipping on registration match alone would leave notes and
+        // the watermark absent until a full rescan or restart.
+        if identical && install.is_hydrated().await {
+            return Ok(());
+        }
 
         // Rehydrate per-subwallet notes / sync watermarks from
         // the persister's start state if any are present for
-        // this wallet. The lookup is cheap: load() is the
-        // boot-time snapshot, indexed by SubwalletId. Errors are
-        // logged but not fatal — first-launch wallets simply
-        // see no persisted state.
-        match preloaded.map(Ok).unwrap_or_else(|| self.persister.load()) {
-            Ok(start) => {
-                if let Err(e) = coordinator
-                    .restore_for_wallet(self.wallet_id, &start.shielded)
-                    .await
-                {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(self.wallet_id),
-                        error = %e,
-                        "Failed to restore shielded snapshot at bind time"
-                    );
-                }
-            }
+        // this wallet. The restore is additive and monotonic
+        // (`restore_for_wallet` never rewinds a watermark or
+        // overwrites a known note), so applying a snapshot on top
+        // of retained live state is safe. Errors are logged but
+        // not fatal — first-launch wallets simply see no persisted
+        // state; the hydration flag stays unset on failure so the
+        // next re-bind retries the restore instead of fast-pathing
+        // over an unhydrated store. (A snapshot that cannot be READ
+        // is fatal, but earlier: both bind paths need it before they
+        // can decide what to install.)
+        // A Clear that completed after `start` was read wiped both the
+        // store and (once it returned) the host's own rows, so this
+        // snapshot describes state the user asked to be deleted.
+        // Restoring it would put the notes back and re-arm the pre-Clear
+        // watermark, which reports caught-up and suppresses the cold
+        // rebuild Clear promises. Register (done above) but restore
+        // nothing, and leave hydration unset so the next bind hydrates
+        // from the host's post-Clear rows.
+        if install.snapshot_predates_clear(snapshot_generation) {
+            install.mark_hydrated(false).await;
+            tracing::info!(
+                wallet_id = %hex::encode(self.wallet_id),
+                "Skipped shielded snapshot restore: shielded state was cleared while binding"
+            );
+            return Ok(());
+        }
+
+        match install.restore(&start.shielded).await {
+            Ok(()) => install.mark_hydrated(true).await,
             Err(e) => {
+                install.mark_hydrated(false).await;
                 tracing::warn!(
                     wallet_id = %hex::encode(self.wallet_id),
                     error = %e,
-                    "persister.load() failed at shielded bind time"
+                    "Failed to restore shielded snapshot at bind time"
                 );
             }
         }
@@ -686,12 +839,57 @@ impl PlatformWallet {
         account: u32,
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{OrchardKeySet, SubwalletId};
-        let mut slot = self.shielded_keys.write().await;
-        let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
-        if keys.contains_key(&account) {
-            return Ok(());
+        let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
+        let capabilities = self.persister.persistence_capabilities();
+        if !capabilities.contains(required) {
+            let missing = capabilities.missing(required);
+            return Err(PlatformWalletError::Persistence(format!(
+                "shielded account persistence requires capabilities {:?} \
+                 (missing mask 0x{:x})",
+                missing.names(),
+                missing.bits(),
+            )));
+        }
+        self.ensure_shielded_attached()?;
+        // Everything that calls into the host — the snapshot read below
+        // and the viewing-key write further down — stays OUTSIDE the key
+        // slot's lock. A host callback invoked while this write guard is
+        // held would deadlock against a concurrent bind, which takes the
+        // coordinator's lifecycle mutex and then this same slot: the
+        // callback re-enters the FFI, waits on the lifecycle mutex, and
+        // the bind holding it waits on the slot the callback's caller
+        // never released. It also keeps the slot free for the address /
+        // balance reads that run constantly while this does host I/O.
+        {
+            let slot = self.shielded_keys.read().await;
+            let keys = slot.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
+            if keys.contains_key(&account) {
+                return Ok(());
+            }
         }
         let views = OrchardKeySet::from_seed(seed, self.sdk.network, account)?.viewing_keys();
+        // This is the other writer of a subwallet's viewing-key row, so
+        // it owes the same refusal `bind_shielded` makes: an account
+        // absent from the in-memory map can still have durable rows from
+        // an earlier session, and overwriting its key would leave those
+        // notes and their watermark attributed to a key that did not
+        // produce them, undetectably (a later seedless bind derives its
+        // keys FROM this row, so nothing downstream can see the swap).
+        let start = self.persister.load().map_err(|e| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "persister load failed while adding shielded account {account}: {e}"
+            ))
+        })?;
+        let id = SubwalletId::new(self.wallet_id, account);
+        if let Some(persisted) = start.shielded.viewing_keys.get(&id) {
+            if persisted.as_slice() != views.to_fvk_bytes().as_slice() {
+                return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "persisted shielded viewing key for account {account} differs from the one \
+                     derived from this seed; clear shielded state before binding a re-keyed \
+                     account"
+                )));
+            }
+        }
         // Persist the new account's viewing key alongside the
         // in-memory insert, mirroring `bind_shielded`, so the
         // seedless rebind path covers it on the next launch.
@@ -700,20 +898,25 @@ impl PlatformWallet {
             SubwalletId::new(self.wallet_id, account),
             views.to_fvk_bytes(),
         );
-        if let Err(e) = self
-            .persister
+        self.persister
             .store(crate::changeset::PlatformWalletChangeSet {
                 shielded: Some(cs),
                 ..Default::default()
             })
-        {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                account,
-                error = %e,
-                "Failed to queue shielded viewing key for persistence"
-            );
-        }
+            .map_err(|e| {
+                PlatformWalletError::Persistence(format!(
+                    "failed to persist shielded viewing key for account {account}: {e}"
+                ))
+            })?;
+        // Re-check detachment before mutating the handle: the host I/O
+        // above can take arbitrarily long, and a removal completing in
+        // that window means this account must not be installed.
+        self.ensure_shielded_attached()?;
+        let mut slot = self.shielded_keys.write().await;
+        let keys = slot.as_mut().ok_or(PlatformWalletError::ShieldedNotBound)?;
+        // Idempotent against a bind that added this account while the
+        // host I/O above was in flight: same seed and index derive the
+        // same key, so re-inserting is a no-op either way.
         keys.insert(account, views);
         // NOTE: this only updates the per-wallet keys slot — the
         // coordinator's `accounts` registry isn't refreshed here.
@@ -728,6 +931,46 @@ impl PlatformWallet {
     #[cfg(feature = "shielded")]
     pub async fn is_shielded_bound(&self) -> bool {
         self.shielded_keys.read().await.is_some()
+    }
+
+    /// `Err` once this wallet has been removed from the manager.
+    ///
+    /// The install transaction performs the authoritative check, but the
+    /// bind paths also write to the HOST persister (viewing-key rows)
+    /// before they get there, and hosts delete their own wallet data
+    /// after `remove_wallet` returns — so a bind that only failed at the
+    /// end would still leave a full viewing key on disk for a wallet the
+    /// user deleted, with the mnemonic already gone. An FVK discloses
+    /// every incoming and outgoing note of its account, so the bind
+    /// paths check here first, before writing anything.
+    #[cfg(feature = "shielded")]
+    fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+        if self
+            .shielded_detached
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(PlatformWalletError::WalletNotFound(format!(
+                "{} was removed from the manager; shielded bind refused",
+                hex::encode(self.wallet_id)
+            )));
+        }
+        Ok(())
+    }
+
+    /// Mark this wallet as removed from the manager, so any handle that
+    /// outlives the removal can no longer bind shielded state onto the
+    /// coordinator.
+    ///
+    /// Must be called **before** the coordinator's
+    /// `unregister_wallet`: that call takes the same install
+    /// transaction a bind holds, so setting the flag first makes every
+    /// bind either commit fully before the unregister purges it, or see
+    /// the flag and refuse. Setting it afterwards would leave the
+    /// window this closes.
+    #[cfg(feature = "shielded")]
+    pub(crate) fn mark_shielded_detached(&self) {
+        self.shielded_detached
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Bound ZIP-32 account indices on the shielded sub-wallet,
@@ -1204,21 +1447,33 @@ impl PlatformWallet {
             select_shield_inputs(candidates, amount, FEE_RESERVE_CREDITS)?
         };
 
-        let guard = self.shielded_keys.read().await;
-        let keys = guard
-            .as_ref()
-            .ok_or(PlatformWalletError::ShieldedNotBound)?;
-        let keyset = keys.get(&shielded_account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {shielded_account} not bound"
-            ))
-        })?;
+        // Clone the account's viewing keys and release the slot before
+        // the proof: `shield` runs a Halo 2 proof plus a broadcast, and
+        // holding the read guard across it would block the bind path's
+        // slot write for that whole window — which, because a bind holds
+        // the coordinator's lifecycle mutex while waiting for it, would
+        // stall wallet removal and Clear for every wallet on the network
+        // (tokio's RwLock is write-preferring, so queued readers pile up
+        // behind that write too).
+        let keyset = {
+            let guard = self.shielded_keys.read().await;
+            let keys = guard
+                .as_ref()
+                .ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.get(&shielded_account)
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedKeyDerivation(format!(
+                        "shielded account {shielded_account} not bound"
+                    ))
+                })?
+                .clone()
+        };
         super::shielded::operations::shield(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            keyset,
+            &keyset,
             shielded_account,
             inputs,
             amount,
@@ -1354,6 +1609,8 @@ impl Clone for PlatformWallet {
             shielded_keys: self.shielded_keys.clone(),
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
+            #[cfg(feature = "shielded")]
+            shielded_detached: self.shielded_detached.clone(),
         }
     }
 }

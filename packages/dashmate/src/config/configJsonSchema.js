@@ -54,7 +54,9 @@ export default {
       type: 'object',
       properties: {
         image: {
-          type: 'string',
+          // null means "use the image line this dashmate build ships"; an
+          // explicit string is an operator override. See config/derivedDefaults.js
+          type: ['string', 'null'],
           minLength: 1,
         },
         build: {
@@ -162,6 +164,7 @@ export default {
     },
     group: {
       type: ['string', 'null'],
+      pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$',
     },
     docker: {
       type: 'object',
@@ -427,6 +430,7 @@ export default {
             filePath: {
               type: ['null', 'string'],
               minLength: 1,
+              pattern: '^(?:/|[A-Za-z]:[\\\\/])[^\\u0000\\r\\n]+$',
               description: 'Write logs only to stdout if null. Provide an absolute file path on'
                 + ' the host machine to also write to a log file there. Use a log file if logs must be'
                 + ' retained since stdout logs are stored inside the docker container'
@@ -834,6 +838,7 @@ export default {
                           path: {
                             type: 'string',
                             minLength: 1,
+                            pattern: '^(?:/|[A-Za-z]:[\\\\/])[^\\u0000\\r\\n]+$',
                           },
                           template: true,
                         },
@@ -892,7 +897,7 @@ export default {
                   type: 'object',
                   properties: {
                     image: {
-                      type: 'string',
+                      type: ['string', 'null'],
                       minLength: 1,
                     },
                     deploy: {
@@ -978,6 +983,7 @@ export default {
                       destination: {
                         type: 'string',
                         minLength: 1,
+                        pattern: '^(?:stdout|stderr|/[^\\u0000\\r\\n]+|[A-Za-z]:[\\\\/][^\\u0000\\r\\n]+)$',
                         description: 'stdout, stderr or absolute path to log file',
                       },
                       level: {
@@ -1271,6 +1277,7 @@ export default {
                     path: {
                       type: ['string', 'null'],
                       minLength: 1,
+                      pattern: '^(?:/|[A-Za-z]:[\\\\/])[^\\u0000\\r\\n]+$',
                       description: 'Write to stdout only if null or to stdout and specified log'
                         + ' file (absolute file path on host machine)',
                     },

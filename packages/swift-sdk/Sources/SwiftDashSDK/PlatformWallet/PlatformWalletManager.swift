@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import Combine
 import DashSDKFFI
+import os.log
 
 /// Lock-guarded monotonic generation counter, safe to read and bump from
 /// any thread. Used to drop sync completion events that belong to a
@@ -45,6 +46,32 @@ public struct DashPayUnlockStatus: Equatable {
     public var hasSignal: Bool { seedMismatch || draining || pendingAccountBuilds > 0 }
 }
 
+/// Effective persistence contract reported by the native manager after it
+/// intersects the host declaration with the callbacks actually installed.
+public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
+    public static let version1: UInt32 = 1
+    public static let atomicChangesets: UInt64 = 1 << 0
+    public static let invitations: UInt64 = 1 << 1
+    public static let assetLockFundingIndices: UInt64 = 1 << 2
+    public static let shieldedViewingKeys: UInt64 = 1 << 3
+    public static let providerTransactions: UInt64 = 1 << 4
+    public static let unsignedTokenStorage: UInt64 = 1 << 5
+    public static let pendingContactCrypto: UInt64 = 1 << 6
+    public static let walletRestore: UInt64 = 1 << 7
+
+    public let version: UInt32
+    public let bits: UInt64
+
+    public init(version: UInt32 = 0, bits: UInt64 = 0) {
+        self.version = version
+        self.bits = bits
+    }
+
+    public func contains(_ capability: UInt64) -> Bool {
+        bits & capability == capability
+    }
+}
+
 /// The one thing SwiftUI needs for all wallet operations.
 ///
 /// Owns the Rust-side `PlatformWalletManager` handle which drives:
@@ -59,10 +86,19 @@ public struct DashPayUnlockStatus: Equatable {
 /// class in the middle.
 @MainActor
 public class PlatformWalletManager: ObservableObject {
+    fileprivate nonisolated static let log = Logger(
+        subsystem: "dashpay.SwiftDashSDK",
+        category: "PlatformWallet"
+    )
+
     // MARK: - Published observables
 
     /// Whether [`configure`] has been called successfully.
     @Published public private(set) var isConfigured: Bool = false
+
+    /// Initialization diagnostic for the effective persistence backend.
+    @Published public private(set) var persistenceCapabilities =
+        PlatformWalletPersistenceCapabilities()
 
     /// The current SPV sync progress. Updated by the polling task
     /// started in [`configure`].
@@ -196,8 +232,10 @@ public class PlatformWalletManager: ObservableObject {
     /// FFI handle; `NULL_HANDLE` until [`configure`] is called.
     internal private(set) var handle: Handle = NULL_HANDLE
 
-    /// Retained for the lifetime of the FFI handle so the callback
-    /// context pointer remains valid.
+    /// Convenience access for Swift-side callers (e.g. `persistence`).
+    /// Lifetime for the FFI callback context is NOT this reference's job:
+    /// Rust holds its own retained reference (transferred at `configure`)
+    /// and releases it when its last worker drops.
     private var persistenceHandler: PlatformWalletPersistenceHandler?
 
     /// SwiftData container + network captured at `configure`, used to build a
@@ -207,8 +245,9 @@ public class PlatformWalletManager: ObservableObject {
     private var modelContainer: ModelContainer?
     private var signerNetwork: Network?
 
-    /// Retained for the lifetime of the FFI handle so the event-handler
-    /// context pointer remains valid.
+    /// Convenience reference; the FFI callback context's lifetime is
+    /// owned by Rust (retained reference transferred at `configure`,
+    /// released when its last worker drops), not by this property.
     private var eventHandler: PlatformWalletEventHandler?
 
     /// Background task that polls SPV progress.
@@ -229,10 +268,25 @@ public class PlatformWalletManager: ObservableObject {
     deinit {
         progressPollTask?.cancel()
         if handle != NULL_HANDLE {
+            // Stop the network event source first as defense in depth for
+            // the teardown order; Rust's destroy path provides the
+            // authoritative join barrier.
+            platform_wallet_manager_spv_stop(handle).discard()
             platform_wallet_manager_platform_address_sync_stop(handle).discard()
             platform_wallet_manager_shielded_sync_stop(handle).discard()
             platform_wallet_manager_dashpay_sync_stop(handle).discard()
-            platform_wallet_manager_destroy(handle).discard()
+            // Rust OWNS the persistence/event callback handlers (they were
+            // handed over retained at `configure`, with a `release_fn`):
+            // any worker that outlives destroy keeps its handler alive
+            // through that retain and Rust releases it when the worker
+            // exits. Nothing to leak, retain, or gate on here — ARC
+            // releasing this class's own references below is always safe.
+            let destroyResult = PlatformWalletResult(platform_wallet_manager_destroy(handle))
+            if !destroyResult.isSuccess {
+                Self.log.error(
+                    "Platform wallet manager teardown failed with \(String(describing: destroyResult.code), privacy: .public): \(destroyResult.message ?? "<no detail from Rust>", privacy: .public)"
+                )
+            }
         }
     }
 
@@ -275,32 +329,72 @@ public class PlatformWalletManager: ObservableObject {
 
         let handler: PlatformWalletPersistenceHandler?
         var persistence: PersistenceCallbacks
+        var declaredCapabilities: PersistenceCapabilitiesFFI
         if let container = modelContainer {
             let h = PlatformWalletPersistenceHandler(
                 modelContainer: container,
                 network: network
             )
             persistence = h.makeCallbacks()
+            declaredCapabilities = h.makePersistenceCapabilities()
             handler = h
         } else {
             persistence = PersistenceCallbacks()
+            declaredCapabilities = PersistenceCapabilitiesFFI(
+                version: 0,
+                reserved: 0,
+                bits: 0
+            )
             handler = nil
         }
 
         let eventHandler = PlatformWalletEventHandler(manager: self)
         var eventHandlerCallbacks = eventHandler.makeCallbacks()
 
-        try platform_wallet_manager_create(
-            sdkPointer,
-            &persistence,
-            &eventHandlerCallbacks,
-            &handle
-        ).check()
+        do {
+            try platform_wallet_manager_create_with_persistence_capabilities(
+                sdkPointer,
+                &persistence,
+                &eventHandlerCallbacks,
+                &declaredCapabilities,
+                &handle
+            ).check()
+        } catch {
+            // A failed create never took ownership of the retained callback
+            // contexts (`makeCallbacks` pre-retains for the transfer), so
+            // balance the retains here or the handlers leak.
+            if let context = persistence.context {
+                Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).release()
+            }
+            if let context = eventHandlerCallbacks.context {
+                Unmanaged<PlatformWalletEventHandler>.fromOpaque(context).release()
+            }
+            throw error
+        }
+
+        var effectiveCapabilities = PersistenceCapabilitiesFFI(
+            version: 0,
+            reserved: 0,
+            bits: 0
+        )
+        do {
+            try platform_wallet_manager_persistence_capabilities(
+                handle,
+                &effectiveCapabilities
+            ).check()
+        } catch {
+            _ = platform_wallet_manager_destroy(handle)
+            throw error
+        }
 
         self.handle = handle
         self.persistenceHandler = handler
         self.eventHandler = eventHandler
         self.modelContainer = modelContainer
+        self.persistenceCapabilities = PlatformWalletPersistenceCapabilities(
+            version: effectiveCapabilities.version,
+            bits: effectiveCapabilities.bits
+        )
         self.signerNetwork = network
         self.isConfigured = true
 

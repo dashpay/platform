@@ -147,7 +147,7 @@ impl PlatformAddressWallet {
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
-        AS: ::key_wallet::signer::Signer + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx.

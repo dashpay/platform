@@ -21,6 +21,45 @@ describe('ChainStore - class', () => {
     expect(testnetChainStore.state.instantLocks).to.deep.equal(new Map());
     expect(testnetChainStore.state.addresses).to.deep.equal(new Map());
   });
+
+  it('should reset only block header synchronization state', () => {
+    const chainStore = new ChainStore('testnet');
+    const transactions = new Map([['transaction-id', { transaction: true }]]);
+    chainStore.state.chainHeight = 42;
+    chainStore.state.lastSyncedBlockHeight = 40;
+    chainStore.state.blockHeaders = [{ hash: 'header-hash' }];
+    chainStore.state.lastSyncedHeaderHeight = 41;
+    chainStore.state.headersMetadata = new Map([['header-hash', { height: 41 }]]);
+    chainStore.state.hashesByHeight = new Map([[41, 'header-hash']]);
+    chainStore.state.transactions = transactions;
+
+    chainStore.resetBlockHeaders();
+
+    expect(chainStore.state.blockHeaders).to.deep.equal([]);
+    expect(chainStore.state.lastSyncedHeaderHeight).to.equal(-1);
+    expect(chainStore.state.headersMetadata).to.deep.equal(new Map());
+    expect(chainStore.state.hashesByHeight).to.deep.equal(new Map());
+    expect(chainStore.state.chainHeight).to.equal(42);
+    expect(chainStore.state.lastSyncedBlockHeight).to.equal(40);
+    expect(chainStore.state.transactions).to.equal(transactions);
+  });
+
+  it('should preserve unsynced height sentinels when exporting a short chain', () => {
+    const chainStore = new ChainStore('regtest');
+    chainStore.state.chainHeight = 0;
+
+    const exportedState = chainStore.exportState();
+
+    expect(exportedState.lastSyncedHeaderHeight).to.equal(-1);
+    expect(exportedState.lastSyncedBlockHeight).to.equal(-1);
+
+    const importedChainStore = new ChainStore('regtest');
+    importedChainStore.importState(exportedState);
+
+    expect(importedChainStore.state.lastSyncedHeaderHeight).to.equal(-1);
+    expect(importedChainStore.state.lastSyncedBlockHeight).to.equal(-1);
+  });
+
   it('should be able to import transactions with metadata', () => {
     const { transactions, txMetadata, lastSyncedBlockHeight, lastSyncedHeaderHeight, chainHeight } = fixtures1;
 

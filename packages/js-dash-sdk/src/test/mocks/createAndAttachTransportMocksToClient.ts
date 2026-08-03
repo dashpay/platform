@@ -101,7 +101,12 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   txStreamMock.emit(TxStreamMock.EVENTS.end);
 
   // Wait for account to resolve
-  await accountPromise;
+  const account = await accountPromise;
+
+  // The stream emits synthetic InstantLocks. Opt this test harness into the
+  // wallet's trusted-verifier seam; production remains fail-closed when no
+  // verifier backed by quorum history is configured.
+  account.plugins.workers.transactionssyncworker.verifyInstantLock = async () => true;
 
   // Putting data in transport stubs
   transportMock.getIdentityByPublicKeyHash

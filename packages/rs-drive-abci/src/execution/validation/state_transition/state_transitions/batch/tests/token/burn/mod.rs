@@ -1050,6 +1050,273 @@ mod token_burn_tests {
     }
 
     #[tokio::test]
+    async fn test_token_burn_below_base_supply_allowed() {
+        // base_supply is purely the INITIAL mint at contract creation; there is no guard
+        // anywhere preventing burns from dropping total_supply below base_supply. This is
+        // allowed by design. This test locks in that invariant: burning
+        // 60_000 from a base supply of 100_000 leaves a total of 40_000, below base.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        let total_supply_before = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply_before, Some(100000));
+
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            60000,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        // Supply dropped below the original base_supply (100_000) and that is allowed.
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(40000));
+
+        let total_supply_after = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply_after, Some(40000));
+    }
+
+    #[tokio::test]
+    async fn test_token_burn_entire_supply_then_mint_again() {
+        // Burning the entire supply to zero must leave the supply entry at Some(0) (not
+        // absent), so a subsequent mint resumes correctly rather than hitting a
+        // CorruptedDriveState "total supply not found". Existing depletion coverage only
+        // checks that a *further burn* fails; this checks that a mint after depletion
+        // works.
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity, signer, key) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity.id(),
+            None::<fn(&mut TokenConfiguration)>,
+            None,
+            None,
+            None,
+            platform_version,
+        );
+
+        // Burn the entire base supply (100_000) to zero.
+        let burn_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            100000,
+            None,
+            None,
+            &key,
+            2,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create burn transition");
+
+        let serialized = burn_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(0));
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(0));
+
+        // Now mint again from the depleted (but present) supply entry.
+        let mint_transition = BatchTransition::new_token_mint_transition(
+            token_id,
+            identity.id(),
+            contract.id(),
+            0,
+            500,
+            Some(identity.id()),
+            None,
+            None,
+            &key,
+            3,
+            0,
+            &signer,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expect to create mint transition");
+
+        let serialized = mint_transition
+            .serialize_to_bytes()
+            .expect("expected serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let total_supply = platform
+            .drive
+            .fetch_token_total_supply(token_id.to_buffer(), None, platform_version)
+            .expect("expected to fetch total supply");
+        assert_eq!(total_supply, Some(500));
+
+        let balance = platform
+            .drive
+            .fetch_identity_token_balance(
+                token_id.to_buffer(),
+                identity.id().to_buffer(),
+                None,
+                platform_version,
+            )
+            .expect("expected to fetch balance");
+        assert_eq!(balance, Some(500));
+    }
+
+    #[tokio::test]
     async fn test_token_burn_with_public_note_succeeds() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
@@ -3685,9 +3952,13 @@ mod token_burn_tests {
     /// (see commit message of the version bump for the recorded delta).
     #[tokio::test]
     async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads() {
+        // PROTOCOL_VERSION_13: 4_367_880 (up from 4_319_240 at PV12) — the
+        // PV13 genesis registers the document history contract and stores the
+        // larger DPNS v2 schema, which changes the contracts-subtree node
+        // sizes and therefore the byte-billed group-action contract reads.
         run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            4_319_240,
+            4_367_880,
         )
         .await;
     }

@@ -47,7 +47,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -209,7 +214,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -558,7 +568,12 @@ mod replacement_tests {
 
         let (other_identity, ..) = setup_identity(&mut platform, 495, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let contact_request_document_type = dashpay_contract
@@ -744,7 +759,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.5));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         // Use the mutable `profile` doc type — same contract-and-doc-type that
@@ -923,6 +943,7 @@ mod replacement_tests {
             &platform_ref,
             replayed_state_transition,
             CheckTxLevel::FirstTimeCheck,
+            &platform.check_tx_proof_verifier,
             platform_version,
         )
         .expect("expected check_tx to not return an Err");
@@ -1194,7 +1215,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -1318,7 +1344,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -1534,7 +1565,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -1795,7 +1831,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
@@ -2052,7 +2093,12 @@ mod replacement_tests {
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
         let dashpay_contract = dashpay.clone();
 
         let profile = dashpay_contract
