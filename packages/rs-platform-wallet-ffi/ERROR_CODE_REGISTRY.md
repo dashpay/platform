@@ -45,13 +45,22 @@ branch's diff.
    that are still only proposed (unmerged) may be renumbered to resolve a
    collision; codes on `v4.2-dev` may not.
 4. **Do not reuse a retired integer.** Mark it reserved and move on.
-5. **Update the mirrors in the same PR**: the Rust enum, the Swift
-   `PlatformWalletResultCode` + its `init(result:)` switch, and — where the code
-   deserves typed handling — the Kotlin `fromPlatformWalletNative` mapping and
-   `DashSdkErrorTest`. Kotlin is allowed to be non-exhaustive: unmapped codes
-   fall through to `PlatformWallet.Generic(code, …)`, which preserves the
-   integer. Swift is exhaustive; an unmirrored code surfaces as
-   `.errorUnknown` there and loses its identity.
+5. **Update the mirrors in the same PR.** Swift needs **three** edits, not one,
+   and they fail in different ways:
+   1. `PlatformWalletResultCode` — the raw case.
+   2. `PlatformWalletResultCode.init(ffi:)` — the arm mapping the generated C
+      constant. This switch has a `default:` that yields `.errorUnknown`, so
+      omitting the arm compiles fine and silently loses the code's identity
+      *before* any typed handling sees it.
+   3. `PlatformWalletError` — the typed case, **and** its `init(result:)` arm.
+      That switch is exhaustive with no `default:`, so adding a raw case in (1)
+      without the matching arm here makes it non-exhaustive and the Swift
+      package stops compiling.
+
+   Then, where the code deserves typed handling, the Kotlin
+   `fromPlatformWalletNative` mapping and `DashSdkErrorTest`. Kotlin is allowed
+   to be non-exhaustive: unmapped codes fall through to
+   `PlatformWallet.Generic(code, …)`, which preserves the integer.
 6. **Blocks 98–99 are terminal sentinels** (`NotFound`, `ErrorUnknown`) and are
    not an allocation frontier. New codes go after the highest allocated value
    below them.
@@ -115,7 +124,7 @@ this file.
 | 31 | `ErrorSigningKeyUnavailable` | #4183 | In review (also carried by #4204, #4259) |
 | 32 | `ErrorTransactionBuild` | #4247 | In review (also carried by #4256) |
 | 33 | `ErrorTransactionSigning` | #4256 | In review |
-| 34 | `ErrorStaleReservationToken` | #4185 | In review — **moved 27 → 34** (also carried by #4256; #4196 inherits on restack) |
+| 34 | `ErrorStaleReservationToken` | #4185 | In review — **moved 27 → 34** (also carried by #4256 and, post-restack, #4196) |
 | 35 | `ErrorReservationTokenConsumed` | #4185 | In review — **moved 28 → 35** (also carried by #4256) |
 | 36 | `ErrorReservationWalletMismatch` | #4185 | In review — **moved 30 → 36** (also carried by #4256) |
 | 37 | `ErrorShieldedInviteAlreadyClaimed` | #4204 | In review — **moved 32 → 37** (collided with #4247's `ErrorTransactionBuild`; see below) |
@@ -150,7 +159,8 @@ on the number:
 PR `#4196` also claims no new integer: it adds a token-less
 `PlatformWalletError::StaleReservation` variant and deliberately routes it
 through the **existing** `ErrorStaleReservationToken`, so it allocates nothing
-and only has to follow that code's number (see below).
+and only has to follow that code's number. As of 2026-08-03 it has restacked
+onto #4185 and follows 34 (see below).
 
 ### Non-conforming allocations (withdraw and reissue)
 
@@ -253,17 +263,22 @@ That is the whole reason this file exists.
 ### 30 — vacated, then RESERVED (not free)
 
 `ErrorAssetLockCrossDomainConsentRequired` is named as the holder of 30 in
-in-tree comments on #4204 and on #4247/#4256's numbering rationale. It is
-**not defined anywhere** — #4184, the PR that would have introduced it, does not
-contain it after a re-scope.
+in-tree comments on #4183 and #4204, and in #4256's pre-renumber numbering
+rationale. It is **not defined anywhere** — #4184, the PR that would have
+introduced it, does not contain it after a re-scope.
 
 Verified 2026-08-01 by reading `packages/rs-platform-wallet-ffi/src/error.rs` at
-the head of **every one of the 62 open PRs**: no PR anywhere defines a code 30.
-30 was therefore genuinely free at that moment, and #4185 took it — then vacated
-it again on 2026-08-02 when the trio moved to 34–36. Vacating is not the same as
-freeing: **30 is now RESERVED and must not be reissued** (see the collision
-history below for why). The stale "reserved for the consent code" comments
-should be dropped by whichever PR touches them next.
+the head of **every one of the 62 open PRs**. Stated precisely, because the
+unqualified version of this sentence is false: **no PR unrelated to #4185
+defines a code 30.** #4185 itself, and #4256 downstream of it, did define
+`ErrorReservationWalletMismatch = 30` at their surveyed heads — that was the
+allocation, not a competing claim. So nothing contested 30, #4185's claim stood,
+and the stale consent-code reservation never conflicted with it.
+
+PR #4185 then vacated 30 on 2026-08-02 when the trio moved to 34–36. Vacating
+is not the same as freeing: **30 is now RESERVED and must not be reissued** (see
+the collision history below for why). The stale "reserved for the consent code"
+comments should be dropped by whichever PR touches them next.
 
 Three branches have now done so:
 
@@ -314,50 +329,51 @@ PR `#3968` needs a rebase onto current `v4.2-dev` **and** fresh integers from
 the frontier (**38+**). It must leave 26 alone; 27 is no longer available to it
 either (merged ABI now), and neither are the reserved 28 and 30.
 
-### 26 — #4196's trio collides with merged ABI (and is now two moves behind)
+### 26 — RESOLVED: #4196 restacked onto #4185 and is on 34 / 35 / 36
 
-PR #4196 (stacked on #4185) branched before `26 = ErrorTransactionBroadcastRejected`
-merged, and its head still numbers the reservation trio **26 / 27 / 28**. It is
-now two moves behind: merging it as it stands would give 26 two meanings, give 27
-two meanings against #4268's merged `ErrorShutdownIncomplete`, and contradict
-the #4185 numbering of **34 / 35 / 36** for the same three names. It needs a
-rebase and must adopt whatever numbering #4185 lands with. No new integers are
-needed for it.
+**Closed out 2026-08-03.** PR #4196 (stacked on #4185) branched before
+`26 = ErrorTransactionBroadcastRejected` merged, and for most of this file's
+life its head still numbered the reservation trio **26 / 27 / 28** — two moves
+behind, in a state where merging it would have given 26 two meanings, given 27
+two meanings against #4268's merged `ErrorShutdownIncomplete`, and contradicted
+the **34 / 35 / 36** of #4185 for the same three names.
 
-**All three of those numbers come from the copy of #4185 that #4196 carries, not
-from #4196's own commits.** Restacking onto #4185's head therefore fixes the
-trio for free — including the two moves #4196 never had to make itself. The one
-number #4196 does own is a doc reference: its `StaleReservation` variant and the
-matching Kotlin KDoc both cite `ErrorStaleReservationToken` as **26**, and that
-becomes **34** post-restack. So the number #4196 must chase is 34.
+That is no longer the case. At head `12492e8c54` the restack is done:
+`ErrorStaleReservationToken = 34`, `ErrorReservationTokenConsumed = 35`,
+`ErrorReservationWalletMismatch = 36`, `ErrorShutdownIncomplete = 27` present
+from the merged base, #4185's head `8813e98533` is an ancestor, and the PR is
+MERGEABLE against `v4.2-dev`. It still allocates no integer of its own.
 
-**The restack is not mechanical — it is blocked on a redesign.** Rebasing
-the three commits #4196 owns (`2d29451d06`, `c64af1a6eb`, `ea4f783490`) onto
-the #4185 head (`6c37e8679e` when this was measured; now `8813e98533`) conflicts
-in three files (10 hunks): `error.rs` (3),
-`wallet/core/broadcast.rs` (1), `wallet/signed_payment_registry.rs` (6). The
-`error.rs` hunks are genuinely mechanical. The other two are not, because #4185
-redesigned the registry underneath #4196 after it branched:
+The numeric references #4196 owns were carried along with it. Verified at
+`12492e8c54`:
 
-* `registered_height` changed from `Option<u32>` to a mandatory `u32`. #4196's
-  age guard is built around the `None` case meaning "guard disabled"; that case
-  no longer exists.
+* `DashSdkError.kt` — the `StaleReservationToken` KDoc reads "native code 34",
+  and `fromPlatformWalletNative` maps `34 -> PlatformWallet.StaleReservationToken`.
+* `ManagedCoreWallet.kt` — its V2 broadcast KDoc reads "native code 34, shared
+  with the deferred-token surface"; the remaining mentions are symbolic
+  `[StaleReservationToken]` links carrying no number.
+* `PlatformWalletError::StaleReservation` — refers to the FFI code symbolically
+  and has never contained a number, so it needed no update.
+
+**Kept for the record, because the delay was the interesting part.** The restack
+was not mechanical. Rebasing the three commits #4196 owned onto #4185's head
+conflicted in three files (10 hunks): `error.rs` (3),
+`wallet/core/broadcast.rs` (1), `wallet/signed_payment_registry.rs` (6). Only
+the `error.rs` hunks were mechanical, because #4185 had redesigned the registry
+underneath #4196 after it branched:
+
+* `registered_height` changed from `Option<u32>` to a mandatory `u32`, and
+  #4196's age guard was built around the `None` case meaning "guard disabled".
 * #4185 added a `SignedPaymentError::WalletRemoved` variant and an
-  owner-stamped `funding_reservation_token` field. #4196 predates both.
-* #4196 wants to *move* `RESERVATION_MAX_AGE_BLOCKS` and `reservation_expired`
-  into `wallet/reservations.rs` so the V2 handle path can share them. #4185 has
-  since rewritten both in place, with new generation-binding rationale.
-* #4196's V2 guard documents "leave the stale reservation for the TTL rather
-  than release by outpoint". #4185 now releases by owner-guarded *token*, which
-  changes that rationale rather than conflicting with it textually.
+  owner-stamped `funding_reservation_token` field, both of which #4196 predated.
+* #4196 wanted to *move* `RESERVATION_MAX_AGE_BLOCKS` and `reservation_expired`
+  into `wallet/reservations.rs`; #4185 had since rewritten both in place.
+* #4196's V2 guard documented "leave the stale reservation for the TTL rather
+  than release by outpoint", while #4185 now releases by owner-guarded *token*.
 
-Resolving this means re-deriving #4196's age guard against the new registry
-shape, with real semantic decisions to make (does the V2 guard now release by
-owner token? what replaces the `None`-disables-the-guard branch?). That is
-author work, not conflict resolution, and it is why this was left rather than
-forced through. shumkov's 07-24 request to restack onto #4185's post-renumber
-head is actionable in the sense that the base now exists — but the restack
-itself needs #4196's author.
+Re-deriving the age guard against the new registry shape was author work, not
+conflict resolution — which is why this sat for as long as it did rather than
+being forced through by whoever was maintaining this file.
 
 ### 31 vs 33 — two signing-related codes, deliberately distinct
 
@@ -455,6 +471,7 @@ decide whether it belongs in the no-new-code inventory above. It confirmed:
 * 37 is #4204's post-renumber `ErrorShieldedInviteAlreadyClaimed`, mirrored in
   Kotlin and half-mirrored in Swift (see the code-32 section);
 * nothing in flight has taken 28, 30, or 38;
+* #4196 has restacked onto #4185 and now carries 34/35/36 rather than 26/27/28;
 * #4247's head now also carries the 34/35/36 trio, inherited from #4185 (which
   it is stacked on) rather than claimed a second time.
 
@@ -471,7 +488,7 @@ PR heads of record, all read on 2026-08-03:
 | #4191 | `8acb0bd14c` | Touches only `dashpay.rs` in this crate |
 | #4194 | `1d812c7297` | |
 | #4195 | `c471dc9fe6` | |
-| #4196 | `ea4f783490` | Still 26/27/28; restack blocked, see above |
+| #4196 | `12492e8c54` | **Restacked onto #4185 on 2026-08-03**; trio now 34/35/36, MERGEABLE |
 | #4204 | `d78b940a03` | Post-renumber 32 → 37; pre-#4268 base |
 | #4240 | `3c19977a5a` | No file under this crate |
 | #4243 | `f4be5b32f0` | Modifies `error.rs`, claims no integer |
