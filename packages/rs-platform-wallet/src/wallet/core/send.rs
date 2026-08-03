@@ -1677,7 +1677,11 @@ mod tests {
         let (wm, wallet_id, signer) = split_funded_wallet_manager(9_000_000, 20_000_000).await;
         let (_, _, coinjoin_path) =
             split_account_outpoints_and_coinjoin_path(&wm, &wallet_id).await;
-        let core = core_wallet(Arc::clone(&wm), wallet_id, Arc::new(WalletGeneration::new()));
+        let core = core_wallet(
+            Arc::clone(&wm),
+            wallet_id,
+            Arc::new(WalletGeneration::new()),
+        );
 
         // Fund from CoinJoin, then try to release against the BIP44 default.
         let payment = core
