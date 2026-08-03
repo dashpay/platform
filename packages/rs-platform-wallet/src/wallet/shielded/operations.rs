@@ -56,6 +56,7 @@ use dpp::shielded::builder::{
 };
 use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::identity_id_from_nullifiers;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
@@ -1677,32 +1678,40 @@ where
     // previously-created identity by the invitee's own re-derivable MASTER auth key
     // hash (`discover_inner`'s unique-hash probe) and return it as success.
     let selected_nullifiers: Vec<[u8; 32]> = selected_notes.iter().map(|n| n.nullifier).collect();
+
+    // The id that an identity created by THIS claim must carry — the single
+    // handle that ties a recovered identity back to this claim's spend, and the
+    // reason a MASTER-key-hash hit alone is not evidence of a successful claim
+    // (see `recovered_identity_matches_claim`).
+    //
+    // Consensus derives the new identity id as `double_sha256` over the SORTED
+    // set of PUBLISHED action nullifiers (`derive_identity_id_from_actions`) and
+    // rejects a transition whose declared id differs, so this is a binding, not a
+    // guess.
+    //
+    // `None` for a single-spend claim: the builder pads to Orchard's 2-action
+    // minimum (`num_actions = spends.len().max(2)`) and the padding action's
+    // dummy nullifier is randomly generated per build, so it participates in the
+    // derivation but cannot be reproduced on a retry. With two or more real
+    // spends no padding is added and the published set is exactly
+    // `selected_nullifiers`.
+    let expected_identity_id =
+        (selected_notes.len() >= 2).then(|| identity_id_from_nullifiers(&selected_nullifiers));
+
+    // Idempotent-retry preflight. If this one-time key's selected note(s) are
+    // ALREADY spent on chain, this claim can never execute — rebuilding and
+    // rebroadcasting would only earn a `NullifierAlreadySpent` rejection and burn
+    // a Halo 2 proof. Hand off to the reconciler, which decides between "this
+    // claim created that identity" (both bindings verified), "the invitation is
+    // gone" (terminal), and "executed but not yet indexed" (retryable).
     if any_nullifier_spent_on_chain(sdk, &selected_nullifiers).await {
-        if let Some(key_hash) = master_key_hash {
-            if let Some(mut identity) =
-                fetch_identity_by_key_hash_with_retries(sdk, key_hash).await
-            {
-                info!(
-                    identity_id = %identity.id(),
-                    "IdentityCreateFromOneTimeKey: one-time key already spent on chain — recovered \
-                     the previously-created identity by its master auth key hash (idempotent retry; \
-                     skipped rebuild/rebroadcast)"
-                );
-                if identity.public_keys().is_empty() {
-                    identity.set_public_keys(submitted_public_keys.clone());
-                }
-                return Ok((identity.id(), identity));
-            }
-        }
-        // Spent, but not yet resolvable by key hash (indexing lag) — or no master
-        // key was present. Fall through to the normal build path; its broadcast
-        // returns `NullifierAlreadySpent`, which is handled below as
-        // executed-and-recover (that path additionally has the deterministically
-        // derived identity id as a recovery handle).
-        warn!(
-            "IdentityCreateFromOneTimeKey: one-time key note already spent on chain but identity \
-             not yet recoverable by key hash; proceeding to the idempotent broadcast path"
-        );
+        return recover_executed_one_time_claim(
+            sdk,
+            master_key_hash,
+            expected_identity_id,
+            "the selected note's nullifier is already spent on chain (pre-broadcast preflight)",
+        )
+        .await;
     }
 
     // Witness the selected notes against a Platform-recorded anchor from the
@@ -1753,9 +1762,8 @@ where
             return recover_executed_one_time_claim(
                 sdk,
                 master_key_hash,
-                identity_id,
-                &submitted_public_keys,
-                &e,
+                expected_identity_id,
+                &format!("broadcast returned NullifierAlreadySpent: {e}"),
             )
             .await;
         }
@@ -1793,9 +1801,8 @@ where
             return recover_executed_one_time_claim(
                 sdk,
                 master_key_hash,
-                identity_id,
-                &submitted_public_keys,
-                &wait_err,
+                expected_identity_id,
+                &format!("result wait returned NullifierAlreadySpent: {wait_err}"),
             )
             .await;
         }
@@ -1811,11 +1818,48 @@ where
             );
             match fetch_identity_with_retries(sdk, identity_id).await {
                 Some(mut identity) => {
+                    // `identity_id` is the id THIS build derived. Whether finding
+                    // an identity under it proves this transition created it
+                    // depends on whether the bundle was padded:
+                    //
+                    // - **Padded (single spend)** — the id embeds a locally
+                    //   generated random dummy nullifier that no other party can
+                    //   reproduce, so an identity at this id can only have come
+                    //   from this transition. The id alone is proof.
+                    // - **Not padded (>= 2 spends)** — the id is derived from the
+                    //   invitation's real nullifiers alone, so any other holder of
+                    //   the same bearer one-time key derives the SAME id under
+                    //   their own keys. The on-chain MASTER auth key must be
+                    //   checked before this can be called ours.
+                    if expected_identity_id.is_some()
+                        && !recovered_identity_matches_claim(
+                            &identity,
+                            expected_identity_id,
+                            master_key_hash,
+                        )
+                    {
+                        warn!(
+                            derived_id = %identity_id,
+                            "IdentityCreateFromOneTimeKey: an identity exists at this claim's \
+                             derived id but does not carry the submitted master auth key; another \
+                             holder of the same one-time key claimed the invitation first"
+                        );
+                        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                            reason: format!(
+                                "identity {identity_id} was created from this invitation's notes \
+                                 but does not carry the submitted master authentication key, so it \
+                                 belongs to another holder of the one-time key: {wait_err}"
+                            ),
+                        });
+                    }
                     info!(
                         derived_id = %identity_id,
                         "IdentityCreateFromOneTimeKey: result confirmation failed but the identity \
                          was found on chain by its derived id; treating as success"
                     );
+                    // Only reached once the identity is proven to be this claim's,
+                    // so back-filling the keys this transition itself submitted is
+                    // a local-row convenience, not an unproven ownership claim.
                     if identity.public_keys().is_empty() {
                         identity.set_public_keys(submitted_public_keys.clone());
                     }
@@ -2781,17 +2825,15 @@ fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
 /// the normal build+broadcast path then reconciles via the
 /// `NullifierAlreadySpent` broadcast verdict, so a transient query failure only
 /// costs a (harmless, idempotent) rebuild, never a wrong answer.
-async fn any_nullifier_spent_on_chain(
-    sdk: &Arc<dash_sdk::Sdk>,
-    nullifiers: &[[u8; 32]],
-) -> bool {
+async fn any_nullifier_spent_on_chain(sdk: &Arc<dash_sdk::Sdk>, nullifiers: &[[u8; 32]]) -> bool {
     use dash_sdk::platform::Fetch;
     use dash_sdk::query_types::{ShieldedNullifierStatuses, ShieldedNullifiersQuery};
 
     if nullifiers.is_empty() {
         return false;
     }
-    match ShieldedNullifierStatuses::fetch(sdk, ShieldedNullifiersQuery(nullifiers.to_vec())).await {
+    match ShieldedNullifierStatuses::fetch(sdk, ShieldedNullifiersQuery(nullifiers.to_vec())).await
+    {
         Ok(Some(statuses)) => statuses.0.iter().any(|s| s.is_spent),
         Ok(None) => false,
         Err(e) => {
@@ -2826,6 +2868,75 @@ fn master_auth_public_key_hash(
                 && key.security_level() == SecurityLevel::MASTER
         })
         .and_then(|key| key.public_key_hash().ok())
+}
+
+/// Positive evidence that `identity` was created by **this** claim's Type-20
+/// transition.
+///
+/// Two independent bindings must BOTH hold. Each one alone is satisfied by a
+/// real on-chain outcome in which this claim did *not* create the identity, so
+/// neither is sufficient on its own:
+///
+/// 1. **Id binding** — `identity.id()` equals `expected_identity_id`, the id
+///    derived from this claim's published spend nullifiers
+///    (`identity_id_from_nullifiers`). Consensus re-derives the id the same way
+///    and rejects any transition whose declared id differs (see
+///    `derive_identity_id_from_actions` in the Type-20 state validation), so an
+///    identity carrying this id can only have been created by a transition that
+///    published exactly this claim's nullifier set.
+///
+///    Without it, the MASTER-key-hash lookup accepts the **pre-existing**
+///    identity that a chargeable `UnshieldAction` fallback collided with: when a
+///    submitted unique key hash is already registered, Type-20 finalizes the
+///    spend as an `UnshieldTransitionAction` (`chargeable_failure: true`) and
+///    creates no identity, yet the nullifier is consumed and the colliding
+///    identity *is* findable under our own key hash.
+///
+/// 2. **Key binding** — the identity's **on-chain** key set contains this
+///    claim's submitted MASTER authentication key hash.
+///
+///    Without it, the derived-id lookup accepts an identity created by a
+///    *different* holder of the same bearer one-time key: the id is derived from
+///    nullifiers only, never from identity keys, so two holders racing the same
+///    invitation derive the same id under different keys.
+///
+/// The key binding is checked against the keys the fetch actually returned — an
+/// identity that comes back without public keys fails closed rather than being
+/// topped up with locally-submitted keys that were never proven to exist on
+/// chain.
+///
+/// `expected_identity_id == None` means the id is not re-derivable for this
+/// claim, so binding 1 cannot be established and this returns `false`. That is
+/// the single-spend case: `BundleType::DEFAULT` pads a one-action bundle to
+/// Orchard's 2-action minimum and the padding action's **randomly generated**
+/// dummy nullifier participates in the id derivation, so a retry cannot
+/// reproduce the original id.
+fn recovered_identity_matches_claim(
+    identity: &Identity,
+    expected_identity_id: Option<Identifier>,
+    master_key_hash: Option<[u8; 20]>,
+) -> bool {
+    use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
+    use dpp::identity::{Purpose, SecurityLevel};
+
+    // Both handles must be available; a missing one is not evidence.
+    let (Some(expected_id), Some(expected_hash)) = (expected_identity_id, master_key_hash) else {
+        return false;
+    };
+
+    // Binding 1: the id must be the one derived from this claim's nullifiers.
+    if identity.id() != expected_id {
+        return false;
+    }
+
+    // Binding 2: the on-chain key set must carry this claim's MASTER auth key.
+    identity.public_keys().values().any(|key| {
+        key.purpose() == Purpose::AUTHENTICATION
+            && key.security_level() == SecurityLevel::MASTER
+            && key
+                .public_key_hash()
+                .is_ok_and(|hash| hash == expected_hash)
+    })
 }
 
 /// Recover the identity a claim created by looking it up under its MASTER auth
@@ -2866,59 +2977,120 @@ async fn fetch_identity_by_key_hash_with_retries(
     None
 }
 
-/// The one-time-key claim already executed on chain (its note's nullifier is
-/// spent / the broadcast returned `NullifierAlreadySpent`). Recover the created
-/// identity so a retry returns success instead of a stranding error.
+/// This one-time-key claim's note is already spent on chain (the spent-nullifier
+/// preflight saw it, or the broadcast/wait returned `NullifierAlreadySpent`).
+/// Decide what that actually means and return the matching outcome.
 ///
-/// Recovery reuses two existing, re-derivable-from-the-invite handles, each with
-/// bounded retries for DAPI indexing lag:
+/// A spent nullifier proves only that *something* consumed the invitation note —
+/// **not** that this claim created an identity. Type-20 also consumes the note on
+/// its chargeable `UnshieldAction` fallback, which creates no identity at all.
+/// So every candidate identity found here must clear both ownership bindings in
+/// [`recovered_identity_matches_claim`] before it can be reported as this
+/// claim's result.
+///
+/// Two lookup handles are tried, each with bounded retries for DAPI indexing lag:
 /// 1. the invitee's MASTER auth key hash (`discover_inner`'s unique-hash probe),
-/// 2. the deterministically-derived identity id (`fetch_identity_with_retries`).
+/// 2. the id derived from this claim's published nullifiers.
 ///
-/// If neither resolves yet, surface `ShieldedBroadcastUnconfirmed` carrying the
-/// derived id — unchanged behavior for the app (which already writes that id out
-/// and can retry), and a further retry reconciles once indexing catches up.
+/// Outcomes:
+/// - **`Ok`** — a fetched identity cleared both bindings: this claim created it.
+/// - **[`PlatformWalletError::ShieldedInviteAlreadyClaimed`]** — an identity was
+///   fetched but failed a binding (chargeable fallback, or a competing holder of
+///   the same bearer key), *or* the id is not re-derivable so no binding can ever
+///   be established. Terminal: the note is spent, so retrying cannot help.
+/// - **[`PlatformWalletError::ShieldedBroadcastUnconfirmed`]** — nothing resolved
+///   yet, but the id *is* re-derivable, so a later retry can still reconcile once
+///   indexing catches up. Only reachable when `expected_identity_id` is `Some`,
+///   so the carried id is always the one this claim's nullifiers derive.
 async fn recover_executed_one_time_claim(
     sdk: &Arc<dash_sdk::Sdk>,
     master_key_hash: Option<[u8; 20]>,
-    identity_id: Identifier,
-    submitted_public_keys: &BTreeMap<u32, IdentityPublicKey>,
-    evidence: &dash_sdk::Error,
+    expected_identity_id: Option<Identifier>,
+    evidence: &str,
 ) -> Result<(Identifier, Identity), PlatformWalletError> {
     warn!(
-        derived_id = %identity_id,
-        error = %evidence,
-        "IdentityCreateFromOneTimeKey: claim already executed on chain (nullifier spent); \
-         recovering the previously-created identity instead of failing"
+        ?expected_identity_id,
+        evidence,
+        "IdentityCreateFromOneTimeKey: invitation note already spent on chain; checking whether \
+         this claim actually created an identity"
     );
 
+    // The id is not re-derivable (single-spend bundle padded with a random dummy
+    // nullifier), so no candidate identity can ever be bound to this claim.
+    // Report the invitation as claimed rather than inventing a success.
+    let Some(expected_id) = expected_identity_id else {
+        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+            reason: format!(
+                "the note was spent by an earlier transition whose identity id cannot be \
+                 re-derived (single-spend bundles are padded with a randomly generated dummy \
+                 nullifier that participates in the id derivation): {evidence}"
+            ),
+        });
+    };
+
+    // Handle 1: the invitee's own MASTER auth key hash.
     if let Some(key_hash) = master_key_hash {
-        if let Some(mut identity) = fetch_identity_by_key_hash_with_retries(sdk, key_hash).await {
-            info!(
-                identity_id = %identity.id(),
-                "IdentityCreateFromOneTimeKey: recovered the executed claim's identity by its \
-                 master auth key hash"
-            );
-            if identity.public_keys().is_empty() {
-                identity.set_public_keys(submitted_public_keys.clone());
+        if let Some(identity) = fetch_identity_by_key_hash_with_retries(sdk, key_hash).await {
+            if recovered_identity_matches_claim(&identity, expected_identity_id, master_key_hash) {
+                info!(
+                    identity_id = %identity.id(),
+                    "IdentityCreateFromOneTimeKey: recovered this claim's identity by its master \
+                     auth key hash (id and key bindings both verified)"
+                );
+                return Ok((identity.id(), identity));
             }
-            return Ok((identity.id(), identity));
+            // Found under our key hash but NOT created by this claim — the
+            // chargeable-`UnshieldAction` outcome: the spend was finalized, the
+            // value went to the fallback address, and this pre-existing identity
+            // merely owns the colliding key hash.
+            warn!(
+                found_id = %identity.id(),
+                expected_id = %expected_id,
+                "IdentityCreateFromOneTimeKey: an identity owns this claim's master auth key hash \
+                 but its id is not the one this claim's nullifiers derive; the spend was finalized \
+                 as a chargeable failure and created no identity"
+            );
+            return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+                reason: format!(
+                    "identity {} owns the submitted master auth key hash but was not created by \
+                     this claim (expected id {}); the shielded spend was finalized as a chargeable \
+                     failure and its value went to the creation-failure address: {evidence}",
+                    identity.id(),
+                    expected_id
+                ),
+            });
         }
     }
 
-    if let Some(mut identity) = fetch_identity_with_retries(sdk, identity_id).await {
-        info!(
-            derived_id = %identity_id,
-            "IdentityCreateFromOneTimeKey: recovered the executed claim's identity by its derived id"
-        );
-        if identity.public_keys().is_empty() {
-            identity.set_public_keys(submitted_public_keys.clone());
+    // Handle 2: the id derived from this claim's published nullifiers.
+    if let Some(identity) = fetch_identity_with_retries(sdk, expected_id).await {
+        if recovered_identity_matches_claim(&identity, expected_identity_id, master_key_hash) {
+            info!(
+                derived_id = %expected_id,
+                "IdentityCreateFromOneTimeKey: recovered this claim's identity by its derived id \
+                 (id and key bindings both verified)"
+            );
+            return Ok((identity.id(), identity));
         }
-        return Ok((identity.id(), identity));
+        // The id matches (same nullifier set) but the on-chain keys are not ours:
+        // another holder of the same bearer one-time key won the race.
+        warn!(
+            derived_id = %expected_id,
+            "IdentityCreateFromOneTimeKey: an identity exists at this claim's derived id but does \
+             not carry the submitted master auth key; another holder of the same one-time key \
+             claimed the invitation first"
+        );
+        return Err(PlatformWalletError::ShieldedInviteAlreadyClaimed {
+            reason: format!(
+                "identity {expected_id} was created from this invitation's notes but does not \
+                 carry the submitted master authentication key, so it belongs to another holder \
+                 of the one-time key: {evidence}"
+            ),
+        });
     }
 
     Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
-        identity_id,
+        identity_id: expected_id,
         reason: format!(
             "one-time-key claim executed (nullifier already spent) but the identity is not yet \
              resolvable by key hash or derived id: {evidence}"
@@ -4073,6 +4245,275 @@ mod one_time_key_tests {
             anchor.to_bytes(),
             root_depth0,
             "the spend is built against the Platform-recorded anchor"
+        );
+    }
+}
+
+/// Regression tests for one-time-key (shielded invitation) claim RECOVERY
+/// ownership evidence.
+///
+/// A spent invitation nullifier proves only that *something* consumed the note.
+/// It does **not** prove that this claim's Type-20 transition created an
+/// identity, and these tests pin the two on-chain outcomes where the pre-fix
+/// rule — "the nullifier is spent and an identity is findable under the
+/// submitted MASTER auth key hash" — reported a successful claim that never
+/// happened.
+#[cfg(test)]
+mod one_time_claim_evidence_tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::version::PlatformVersion;
+
+    /// This claim's submitted MASTER auth key hash.
+    const OUR_MASTER_HASH: [u8; 20] = [0xA1; 20];
+    /// Some other key's hash — used for the competing-claimant identity.
+    const OTHER_MASTER_HASH: [u8; 20] = [0xB2; 20];
+
+    /// The two real note nullifiers this claim spends.
+    fn our_nullifiers() -> Vec<[u8; 32]> {
+        vec![[0x11; 32], [0x22; 32]]
+    }
+
+    /// An `ECDSA_HASH160` key whose `public_key_hash()` is exactly `hash` —
+    /// `KeyType::ECDSA_HASH160` returns its 20-byte `data` verbatim, so the test
+    /// controls the hash precisely without generating real key material.
+    fn key_with_hash(
+        id: u32,
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        hash: [u8; 20],
+    ) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose,
+            security_level,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(hash.to_vec()),
+            disabled_at: None,
+        })
+    }
+
+    fn identity_with_keys(id: Identifier, keys: Vec<IdentityPublicKey>) -> Identity {
+        let map: BTreeMap<u32, IdentityPublicKey> = keys.into_iter().map(|k| (k.id(), k)).collect();
+        Identity::new_with_id_and_keys(id, map, PlatformVersion::latest())
+            .expect("test identity builds")
+    }
+
+    /// The MASTER auth key this claim submits.
+    fn our_master_key() -> IdentityPublicKey {
+        key_with_hash(
+            0,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::MASTER,
+            OUR_MASTER_HASH,
+        )
+    }
+
+    /// The **pre-fix** acceptance rule, encoded here as the behavior these tests
+    /// exist to reject.
+    ///
+    /// Before the fix, both recovery handles returned `Ok((identity.id(),
+    /// identity))` for *whatever* identity the lookup produced — the fetched
+    /// identity was never inspected. So the old rule accepted unconditionally
+    /// once a lookup succeeded, and every case below that asserts
+    /// `recovered_identity_matches_claim(..) == false` is a case the old code
+    /// returned as a successful claim.
+    fn pre_fix_rule_accepts(_identity: &Identity) -> bool {
+        true
+    }
+
+    /// BLOCKER 1 — chargeable `UnshieldAction` fallback must not read as success.
+    ///
+    /// When a submitted unique public-key hash is already registered, Type-20
+    /// finalizes the shielded spend as an `UnshieldTransitionAction` with
+    /// `chargeable_failure: true`: the nullifier IS consumed, the invitation
+    /// value goes to the creation-failure address, and **no identity is
+    /// created**. A retry then finds the *pre-existing* identity that owns the
+    /// colliding key hash. Its id is not the one this claim's nullifiers derive,
+    /// so the id binding must reject it.
+    #[test]
+    fn chargeable_unshield_fallback_identity_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+
+        // The pre-existing identity: it genuinely owns our MASTER key hash (that
+        // is exactly why the unique-key-hash collision fired), but it was created
+        // by some unrelated earlier transition, so it carries an unrelated id.
+        let pre_existing = identity_with_keys(Identifier::from([0xEE; 32]), vec![our_master_key()]);
+
+        assert!(
+            pre_existing.id() != expected_id,
+            "precondition: the colliding identity is not the one this claim derives"
+        );
+        assert!(
+            pre_fix_rule_accepts(&pre_existing),
+            "the pre-fix rule accepted this identity as a successful claim"
+        );
+        assert!(
+            !recovered_identity_matches_claim(
+                &pre_existing,
+                Some(expected_id),
+                Some(OUR_MASTER_HASH)
+            ),
+            "an identity that merely owns the submitted master auth key hash must NOT be \
+             reported as this claim's result: the spend was finalized as a chargeable failure \
+             and created no identity"
+        );
+    }
+
+    /// BLOCKER 2 — a competing holder of the same bearer key must not read as
+    /// success.
+    ///
+    /// The identity id is derived from published nullifiers only, never from
+    /// identity keys. With two or more real spends no randomized padding action
+    /// is added, so another holder of the same one-time key spending the same
+    /// notes derives the SAME id under THEIR keys. The key binding must reject
+    /// it — otherwise the foreign identity is registered at this wallet's
+    /// caller-supplied identity index.
+    #[test]
+    fn competing_bearer_key_holder_identity_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+
+        // Same notes => same nullifiers => same derived id, but the winner
+        // registered their own master key.
+        let foreign = identity_with_keys(
+            expected_id,
+            vec![key_with_hash(
+                0,
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+                OTHER_MASTER_HASH,
+            )],
+        );
+
+        assert_eq!(
+            foreign.id(),
+            expected_id,
+            "precondition: the race winner's identity shares this claim's derived id"
+        );
+        assert!(
+            pre_fix_rule_accepts(&foreign),
+            "the pre-fix rule accepted this identity as a successful claim"
+        );
+        assert!(
+            !recovered_identity_matches_claim(&foreign, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "an identity at this claim's derived id that does not carry the submitted master \
+             auth key belongs to another holder of the one-time key and must NOT be returned"
+        );
+    }
+
+    /// A keyless fetch must fail closed rather than be topped up with the
+    /// locally-submitted keys — those were never proven to exist on chain.
+    #[test]
+    fn identity_fetched_without_public_keys_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let keyless = identity_with_keys(expected_id, vec![]);
+
+        assert!(
+            pre_fix_rule_accepts(&keyless),
+            "the pre-fix rule accepted this identity and then inserted the submitted keys locally"
+        );
+        assert!(
+            !recovered_identity_matches_claim(&keyless, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "an identity fetched without public keys cannot prove the key binding"
+        );
+    }
+
+    /// A single-spend claim's id is not re-derivable (the bundle is padded to
+    /// Orchard's 2-action minimum with a randomly generated dummy nullifier that
+    /// participates in the derivation), so no candidate can ever be bound to it.
+    #[test]
+    fn unre_derivable_id_is_rejected() {
+        let identity = identity_with_keys(Identifier::from([0xEE; 32]), vec![our_master_key()]);
+
+        assert!(
+            !recovered_identity_matches_claim(&identity, None, Some(OUR_MASTER_HASH)),
+            "without a re-derivable id there is no evidence this claim created the identity"
+        );
+    }
+
+    /// A missing MASTER auth key hash is not evidence either.
+    #[test]
+    fn absent_master_key_hash_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let identity = identity_with_keys(expected_id, vec![our_master_key()]);
+
+        assert!(
+            !recovered_identity_matches_claim(&identity, Some(expected_id), None),
+            "without a submitted master auth key hash the key binding cannot be established"
+        );
+    }
+
+    /// A key with the right hash but the wrong purpose/security level does not
+    /// satisfy the key binding — the binding is specifically on the MASTER
+    /// AUTHENTICATION key, which is the uniquely Platform-indexed handle.
+    #[test]
+    fn non_master_key_with_matching_hash_is_rejected() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let identity = identity_with_keys(
+            expected_id,
+            vec![
+                key_with_hash(
+                    0,
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::HIGH,
+                    OUR_MASTER_HASH,
+                ),
+                key_with_hash(
+                    1,
+                    Purpose::TRANSFER,
+                    SecurityLevel::CRITICAL,
+                    OUR_MASTER_HASH,
+                ),
+            ],
+        );
+
+        assert!(
+            !recovered_identity_matches_claim(&identity, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "only a MASTER AUTHENTICATION key satisfies the key binding"
+        );
+    }
+
+    /// The positive case: both bindings hold, so this claim provably created the
+    /// identity and recovery returns it.
+    #[test]
+    fn identity_with_matching_id_and_master_key_is_accepted() {
+        let expected_id = identity_id_from_nullifiers(&our_nullifiers());
+        let ours = identity_with_keys(
+            expected_id,
+            vec![
+                our_master_key(),
+                key_with_hash(1, Purpose::TRANSFER, SecurityLevel::CRITICAL, [0xC3; 20]),
+            ],
+        );
+
+        assert!(
+            recovered_identity_matches_claim(&ours, Some(expected_id), Some(OUR_MASTER_HASH)),
+            "an identity carrying this claim's derived id AND its submitted master auth key was \
+             created by this claim"
+        );
+    }
+
+    /// The id binding is only meaningful because the derivation is over the
+    /// claim's own nullifier set: a different note selection derives a different
+    /// id, so it cannot be passed off as this claim's result.
+    #[test]
+    fn a_different_nullifier_set_derives_a_different_id() {
+        let ours = identity_id_from_nullifiers(&our_nullifiers());
+        let theirs = identity_id_from_nullifiers(&[[0x11; 32], [0x33; 32]]);
+
+        assert_ne!(
+            ours, theirs,
+            "the derived id is a function of the published nullifier set"
+        );
+
+        let identity = identity_with_keys(theirs, vec![our_master_key()]);
+        assert!(
+            !recovered_identity_matches_claim(&identity, Some(ours), Some(OUR_MASTER_HASH)),
+            "an identity created from a different nullifier set is not this claim's identity"
         );
     }
 }

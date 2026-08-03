@@ -362,6 +362,37 @@ pub enum PlatformWalletError {
     #[error("Shielded spend cannot use a Platform-recorded anchor: {0}")]
     ShieldedNoRecordedAnchor(String),
 
+    /// A one-time-key (shielded invitation) claim could not be completed: the invitation note's
+    /// nullifier is already spent on chain, and the wallet could **not** produce positive evidence
+    /// that *this* claim's Type-20 transition created an identity.
+    ///
+    /// This is a **terminal** outcome for the invitation — the note is consumed, so no retry can
+    /// spend it again — and it is deliberately distinct from
+    /// [`Self::ShieldedBroadcastUnconfirmed`] (retryable: executed, not yet resolvable) and from
+    /// success. It is returned instead of a success whenever the recovered identity fails either
+    /// ownership binding checked by `recovered_identity_matches_claim`, which covers two real
+    /// on-chain outcomes that a naive "nullifier spent + a key matches" test reports as success:
+    ///
+    /// 1. **Chargeable `UnshieldAction` fallback.** When a submitted unique public-key hash is
+    ///    already registered, Type-20 finalizes the shielded spend as an `UnshieldTransitionAction`
+    ///    with `chargeable_failure: true` and creates **no** identity, crediting the invitation
+    ///    value to `send_to_address_on_creation_failure` minus a penalty. The nullifier is spent and
+    ///    the *pre-existing* colliding identity is findable under the submitted MASTER auth key
+    ///    hash, so key-hash existence alone would report a successful claim that never happened.
+    /// 2. **A competing holder of the same bearer key.** The identity id is derived from published
+    ///    nullifiers only, never from identity keys, so when two or more real notes are spent (no
+    ///    randomized padding action) another holder of the same one-time key produces the *same*
+    ///    derived id under *their* keys. Returning that identity would register a foreign identity
+    ///    at this wallet's identity index.
+    ///
+    /// `reason` carries which binding failed, for diagnostics.
+    #[error(
+        "Shielded invitation already claimed: its note is spent on chain but this wallet cannot \
+         prove that this claim created an identity ({reason}); the invitation cannot be claimed \
+         again"
+    )]
+    ShieldedInviteAlreadyClaimed { reason: String },
+
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
 
