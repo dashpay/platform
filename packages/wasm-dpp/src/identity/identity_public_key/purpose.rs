@@ -2,6 +2,7 @@ use dpp::identity::Purpose;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name = KeyPurpose)]
+#[allow(non_camel_case_types)]
 pub enum PurposeWasm {
     /// at least one authentication key must be registered for all security levels
     AUTHENTICATION = 0,

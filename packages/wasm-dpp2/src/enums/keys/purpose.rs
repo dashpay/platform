@@ -36,6 +36,7 @@ impl TryFrom<PurposeLikeJs> for Purpose {
 }
 
 #[wasm_bindgen(js_name = "Purpose")]
+#[allow(non_camel_case_types)]
 pub enum PurposeWasm {
     AUTHENTICATION = 0,
     ENCRYPTION = 1,
