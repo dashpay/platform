@@ -78,7 +78,7 @@ These are shipped ABI. Do not renumber.
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
 **Next free integer: 37** — 27–36 are claimed (27 merged; 29, 31–36 in the
-proposed table below). **28 and 30 are free**: #4185 and #4256 vacated them when
+proposed table below). **28 and 30 are RESERVED (do not reissue)**: #4185 and #4256 vacated them when
 the reservation trio moved to 34–36, but they are deliberately left unclaimed
 rather than back-filled, so that the trio stays contiguous and no number is
 reused within a single review cycle. A new code should take 37 unless it has a
@@ -91,9 +91,9 @@ this file.
 
 | Code | Name | Owning PR | Status |
 | ---: | --- | --- | --- |
-| 28 | *(free)* | — | Vacated by #4185/#4256 on 2026-08-02; not reissued |
+| 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 29 | `ErrorAssetLockInsufficientFunds` | #4184 | In review — **keeps 29** (collision resolved) |
-| 30 | *(free)* | — | Vacated by #4185/#4256 on 2026-08-02; not reissued |
+| 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 31 | `ErrorSigningKeyUnavailable` | #4183 | In review (also carried by #4204, #4259) |
 | 32 | `ErrorTransactionBuild` | #4247 | In review (also carried by #4256) |
 | 33 | `ErrorTransactionSigning` | #4256 | In review |
@@ -151,7 +151,7 @@ to 30.**
 
 **#4184's 29 is settled and has not moved.** #4185's third code moved to 30 to
 clear it, and then — with the rest of the trio — to **36** when #4268 merged 27
-(see the collision history above). 30 is free again as a result. Nothing about
+(see the collision history above). 30 is vacated (reserved, not reissuable) as a result. Nothing about
 this section's resolution changed: 29 is #4184's.
 
 Note that neither #4184 nor #4256 was ever blocked by CI on this. Both are
@@ -162,7 +162,7 @@ That is the whole reason this file exists.
 
 **Still outstanding:** #4196 (see below).
 
-### 30 — free again; the old "consent code" reservation was stale
+### 30 — vacated (reserved, not reissuable); the old "consent code" reservation was stale
 
 `ErrorAssetLockCrossDomainConsentRequired` is named as the holder of 30 in
 in-tree comments on #4183, #4204, and #4247/#4256's numbering rationale. It is
