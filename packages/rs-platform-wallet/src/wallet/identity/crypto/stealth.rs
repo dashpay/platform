@@ -315,8 +315,13 @@ mod tests {
         )
         .expect("platform");
 
-        let core_hash = match core_dest {
-            OneTimeDestination::Core(addr) => addr.pubkey_hash().expect("p2pkh").to_byte_array(),
+        let core_hash: [u8; 20] = match core_dest {
+            OneTimeDestination::Core(addr) => addr
+                .script_pubkey()
+                .p2pkh_public_key_hash_bytes()
+                .expect("p2pkh output")
+                .try_into()
+                .expect("20-byte hash"),
             _ => panic!("expected core"),
         };
         let platform_hash = match platform_dest {
