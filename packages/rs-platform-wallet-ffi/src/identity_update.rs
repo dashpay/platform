@@ -457,6 +457,8 @@ mod tests {
 
         let keys = unsafe { slice::from_raw_parts(out.add_public_keys, out.add_public_keys_count) };
         assert_eq!(keys[0].key_id, 17);
+        assert!(!keys[0].read_only);
+        assert!(keys[1].read_only);
         assert_eq!(keys[1].contract_bounds_kind, 2);
         assert_eq!(keys[1].contract_bounds_id, [0x44; 32]);
         let doc_type = unsafe {
@@ -515,6 +517,7 @@ mod tests {
             KeyType::try_from(keys[0].key_type).expect("recognized key type"),
             KeyType::ECDSA_HASH160
         );
+        assert!(!keys[0].read_only);
         assert_eq!(keys[0].contract_bounds_kind, 0);
         let key0_data = unsafe { slice::from_raw_parts(keys[0].data_ptr, keys[0].data_len) };
         assert_eq!(
@@ -537,6 +540,7 @@ mod tests {
             KeyType::try_from(keys[1].key_type).expect("recognized key type"),
             KeyType::ECDSA_SECP256K1
         );
+        assert!(!keys[1].read_only);
         // The real DashConnect ENCRYPTION key is intentionally unbounded, so
         // this guards the decoder widening that now accepts absent bounds.
         assert_eq!(keys[1].contract_bounds_kind, 0);

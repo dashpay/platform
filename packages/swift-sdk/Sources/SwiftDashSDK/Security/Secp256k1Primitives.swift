@@ -42,25 +42,28 @@ public enum Secp256k1Primitives {
 
     /// The 32-byte raw affine X coordinate of `privateKey * publicKey`.
     public static func ecdhSharedX(privateKey: Data, publicKey: Data) throws -> Data {
-        var output = [UInt8](repeating: 0, count: 32)
+        // The FFI writes the shared secret directly into the returned buffer:
+        // a separate scratch array would leave a second, unscrubbed copy of
+        // the session secret in allocator memory once it was copied into `Data`.
+        var output = Data(count: 32)
 
-        let result = privateKey.withUnsafeBytes { privateBuffer -> PlatformWalletFFIResult in
-            let privateBytes = privateBuffer.bindMemory(to: UInt8.self)
-            return publicKey.withUnsafeBytes { publicBuffer in
-                let publicBytes = publicBuffer.bindMemory(to: UInt8.self)
-                return output.withUnsafeMutableBufferPointer { outputBuffer in
-                    platform_wallet_secp256k1_ecdh_shared_x(
+        let result = output.withUnsafeMutableBytes { outputBuffer -> PlatformWalletFFIResult in
+            privateKey.withUnsafeBytes { privateBuffer in
+                publicKey.withUnsafeBytes { publicBuffer in
+                    let privateBytes = privateBuffer.bindMemory(to: UInt8.self)
+                    let publicBytes = publicBuffer.bindMemory(to: UInt8.self)
+                    return platform_wallet_secp256k1_ecdh_shared_x(
                         privateBytes.baseAddress,
                         UInt(privateBytes.count),
                         publicBytes.baseAddress,
                         UInt(publicBytes.count),
-                        outputBuffer.baseAddress
+                        outputBuffer.bindMemory(to: UInt8.self).baseAddress
                     )
                 }
             }
         }
 
         try result.check()
-        return Data(output)
+        return output
     }
 }

@@ -10,6 +10,7 @@ use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
 use tracing::{debug, warn};
+use zeroize::Zeroizing;
 
 /// A simple signer that uses a single private key
 /// This is designed for WASM and other single-key use cases
@@ -34,9 +35,9 @@ impl SingleKeySigner {
         if private_key_data.len() != 32 {
             return Err("Private key must be 32 bytes".to_string());
         }
-        let mut arr = [0u8; 32];
+        let mut arr = Zeroizing::new([0u8; 32]);
         arr.copy_from_slice(private_key_data);
-        let private_key = PrivateKey::from_byte_array(&arr, network)
+        let private_key = PrivateKey::from_byte_array(&*arr, network)
             .map_err(|e| format!("Invalid private key: {}", e))?;
         Ok(Self { private_key })
     }
@@ -83,6 +84,15 @@ impl SingleKeySigner {
     }
 }
 
+impl Drop for SingleKeySigner {
+    /// `secp256k1::SecretKey` is `Copy` and does not erase itself, and this
+    /// signer is built per FFI call for keys that are deliberately never
+    /// persisted, so the scalar is cleared when the handle is destroyed.
+    fn drop(&mut self) {
+        self.private_key.inner.non_secure_erase();
+    }
+}
+
 #[async_trait]
 impl Signer<IdentityPublicKey> for SingleKeySigner {
     async fn sign(
@@ -95,7 +105,8 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 // Do not log private key material. Log data fingerprint only.
                 debug!(data_hex = %hex::encode(data), "SingleKeySigner: signing data");
-                let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
+                let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
+                let signature = signer::sign(data, &secret_bytes[..])?;
                 Ok(signature.to_vec().into())
             }
             _ => {
@@ -137,12 +148,12 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 => {
                 // Compare full public key
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
-                    &self.private_key.inner.secret_bytes(),
-                ) {
-                    Ok(sk) => sk,
-                    Err(_) => return false,
-                };
+                let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
+                let secret_key =
+                    match dashcore::secp256k1::SecretKey::from_byte_array(&*secret_bytes) {
+                        Ok(sk) => sk,
+                        Err(_) => return false,
+                    };
                 let public_key =
                     dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
                 let public_key_bytes = public_key.serialize();
@@ -154,12 +165,12 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
                 use dpp::dashcore::hashes::{hash160, Hash};
 
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
-                    &self.private_key.inner.secret_bytes(),
-                ) {
-                    Ok(sk) => sk,
-                    Err(_) => return false,
-                };
+                let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
+                let secret_key =
+                    match dashcore::secp256k1::SecretKey::from_byte_array(&*secret_bytes) {
+                        Ok(sk) => sk,
+                        Err(_) => return false,
+                    };
                 let public_key =
                     dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
                 let public_key_bytes = public_key.serialize();

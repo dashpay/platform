@@ -7192,6 +7192,7 @@ dependencies = [
  "dpp",
  "hex",
  "tracing",
+ "zeroize",
 ]
 
 [[package]]
