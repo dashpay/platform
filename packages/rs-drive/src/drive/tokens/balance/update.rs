@@ -157,7 +157,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 385160,
+                    processing_fee: 389460,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }
@@ -239,7 +239,7 @@ mod tests {
                 fee_result,
                 FeeResult {
                     storage_fee: 0,
-                    processing_fee: 260540,
+                    processing_fee: 264840,
                     removed_bytes_from_system: 0,
                     ..Default::default()
                 }

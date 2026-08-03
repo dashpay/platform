@@ -144,11 +144,11 @@ pub enum HavingRightOperand {
     /// list of candidates for `In`.
     Value(Value),
     /// Cross-group ranking reference. Operator compatibility:
-    /// scalar comparison operators work with `Top(1)` /
-    /// `Bottom(1)`; `In` works with `Top(N)` / `Bottom(N)`
-    /// (membership in the top-N / bottom-N set). `Min` / `Max` are
-    /// wire-stable but rejected by evaluation whatever the
-    /// operator — see [`HavingRankingKind::Min`].
+    /// `=` (Equal) works with `Top(1)` / `Bottom(1)` only; `In`
+    /// works with `Top(N)` / `Bottom(N)` (membership in the top-N /
+    /// bottom-N set). No other operator is accepted with a ranking.
+    /// `Min` / `Max` are wire-stable but rejected by evaluation
+    /// whatever the operator — see [`HavingRankingKind::Min`].
     Ranking(HavingRanking),
 }
 

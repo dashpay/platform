@@ -20,7 +20,7 @@ use crate::version::drive_versions::{
     DriveProveMethodVersions, DriveSavedBlockTransactionsMethodVersions,
     DriveSystemEstimationCostsMethodVersions, DriveVersion,
 };
-use grovedb_version::version::v3::GROVE_V3;
+use grovedb_version::version::v4::GROVE_V4;
 
 /// Drive version 9.
 /// Introduced in protocol v14, carrying both of v14's drive-side changes:
@@ -142,5 +142,11 @@ pub const DRIVE_VERSION_V9: DriveVersion = DriveVersion {
         },
     },
     grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
-    grove_version: GROVE_V3, // changed in v7: upgraded for shielded transaction support
+    // changed in v9: GROVE_V4 activates the indexed-tree batch cleanup
+    // gates (overwrite inspection + delete-tree actual-type cleanup).
+    // Indexed trees only exist from protocol v14, so activating the
+    // stricter cleanup with them costs older versions nothing; staying
+    // on V3 would let a batch overwrite of a ranked index orphan its
+    // per-axis secondary storage.
+    grove_version: GROVE_V4,
 };
