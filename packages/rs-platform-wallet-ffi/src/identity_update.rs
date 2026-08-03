@@ -74,44 +74,42 @@ impl Default for ParsedIdentityUpdateFFI {
     }
 }
 
-fn deserialize_state_transition(bytes: &[u8]) -> Result<StateTransition, PlatformWalletFFIResult> {
-    StateTransition::deserialize_from_bytes(bytes).map_err(|error| {
-        PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorDeserialization,
-            format!("Failed to deserialize IdentityUpdateTransition: {error}"),
-        )
-    })
-}
-
 fn parse_identity_update_transition_bytes(
     bytes: &[u8],
 ) -> Result<
     dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
     PlatformWalletFFIResult,
 > {
-    let state_transition = if bytes.first().copied() == Some(IDENTITY_UPDATE_VARIANT_TAG) {
-        deserialize_state_transition(bytes)?
-    } else {
-        let mut prefixed = Vec::with_capacity(bytes.len() + 1);
-        prefixed.push(IDENTITY_UPDATE_VARIANT_TAG);
-        prefixed.extend_from_slice(bytes);
+    let mut prefixed = Vec::with_capacity(bytes.len() + 1);
+    prefixed.push(IDENTITY_UPDATE_VARIANT_TAG);
+    prefixed.extend_from_slice(bytes);
 
-        match StateTransition::deserialize_from_bytes(&prefixed) {
+    // A leading variant tag usually means the payload is already framed as a
+    // state transition, and Yappr's tagless framing needs the tag prepended.
+    // Neither test is conclusive — a tagless body can start with the tag byte
+    // by coincidence — so the likelier framing is only tried first, and the
+    // other one is still tried before the payload is rejected.
+    let (first, first_label, second, second_label) =
+        if bytes.first().copied() == Some(IDENTITY_UPDATE_VARIANT_TAG) {
+            (bytes, "as-is", prefixed.as_slice(), "variant tag prepended")
+        } else {
+            (prefixed.as_slice(), "variant tag prepended", bytes, "as-is")
+        };
+
+    let state_transition = match StateTransition::deserialize_from_bytes(first) {
+        Ok(state_transition) => state_transition,
+        Err(first_error) => match StateTransition::deserialize_from_bytes(second) {
             Ok(state_transition) => state_transition,
-            Err(prefixed_error) => match StateTransition::deserialize_from_bytes(bytes) {
-                Ok(state_transition) => state_transition,
-                Err(tagged_error) => {
-                    return Err(PlatformWalletFFIResult::err(
-                        PlatformWalletFFIResultCode::ErrorDeserialization,
-                        format!(
-                            "Failed to deserialize IdentityUpdateTransition in either framing \
-                             (Yappr tagless + prefix 6 first: {prefixed_error}; tagged fallback: \
-                             {tagged_error})"
-                        ),
-                    ));
-                }
-            },
-        }
+            Err(second_error) => {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorDeserialization,
+                    format!(
+                        "Failed to deserialize IdentityUpdateTransition in either framing \
+                         ({first_label}: {first_error}; {second_label}: {second_error})"
+                    ),
+                ));
+            }
+        },
     };
 
     match state_transition {
@@ -123,49 +121,95 @@ fn parse_identity_update_transition_bytes(
     }
 }
 
-fn encode_contract_bounds(bounds: Option<&ContractBounds>) -> (u8, [u8; 32], *mut c_char) {
+/// Reporting a narrower bound than the transition declares would let the user
+/// approve a broader scope than the one they were shown, so a document type
+/// that cannot cross the FFI as a C string is an error rather than a fallback
+/// to the contract-only bound.
+fn encode_contract_bounds(
+    bounds: Option<&ContractBounds>,
+) -> Result<(u8, [u8; 32], *mut c_char), PlatformWalletFFIResult> {
     match bounds {
-        Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null_mut()),
+        Some(ContractBounds::SingleContract { id }) => Ok((1u8, id.to_buffer(), ptr::null_mut())),
         Some(ContractBounds::SingleContractDocumentType {
             id,
             document_type_name,
         }) => match CString::new(document_type_name.as_str()) {
-            Ok(value) => (2u8, id.to_buffer(), value.into_raw()),
-            Err(_) => (1u8, id.to_buffer(), ptr::null_mut()),
+            Ok(value) => Ok((2u8, id.to_buffer(), value.into_raw())),
+            Err(error) => Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!(
+                    "Contract-bounds document type name cannot be represented as a C string: \
+                     {error}"
+                ),
+            )),
         },
-        None => (0u8, [0u8; 32], ptr::null_mut()),
+        None => Ok((0u8, [0u8; 32], ptr::null_mut())),
+    }
+}
+
+/// Frees the owned buffers behind already-projected keys. Shared by the free
+/// entry point and the error path in [`project_parsed_identity_update`], which
+/// has to release what it allocated before the caller ever sees the struct.
+///
+/// # Safety
+/// Every non-null `data_ptr` / `contract_bounds_document_type` must be a
+/// pointer this module allocated and has not freed yet.
+unsafe fn free_parsed_public_keys(keys: &mut [ParsedIdentityUpdatePublicKeyFFI]) {
+    for key in keys.iter_mut() {
+        if !key.data_ptr.is_null() && key.data_len > 0 {
+            let data_slice = slice::from_raw_parts_mut(key.data_ptr, key.data_len);
+            let _ = Box::from_raw(data_slice as *mut [u8]);
+            key.data_ptr = ptr::null_mut();
+            key.data_len = 0;
+        }
+
+        if !key.contract_bounds_document_type.is_null() {
+            let _ = CString::from_raw(key.contract_bounds_document_type);
+            key.contract_bounds_document_type = ptr::null_mut();
+        }
     }
 }
 
 fn project_parsed_identity_update(
     transition: &dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
-) -> ParsedIdentityUpdateFFI {
+) -> Result<ParsedIdentityUpdateFFI, PlatformWalletFFIResult> {
     let identity_id = transition.identity_id().to_buffer();
 
-    let add_public_keys_vec: Vec<ParsedIdentityUpdatePublicKeyFFI> = transition
-        .public_keys_to_add()
-        .iter()
-        .map(|public_key| {
-            let data = public_key.data().as_slice().to_vec().into_boxed_slice();
-            let data_len = data.len();
-            let data_ptr = Box::into_raw(data) as *mut u8;
-            let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
-                encode_contract_bounds(public_key.contract_bounds());
+    let public_keys_to_add = transition.public_keys_to_add();
+    let mut add_public_keys_vec: Vec<ParsedIdentityUpdatePublicKeyFFI> =
+        Vec::with_capacity(public_keys_to_add.len());
 
-            ParsedIdentityUpdatePublicKeyFFI {
-                key_id: public_key.id(),
-                key_type: public_key.key_type() as u8,
-                purpose: public_key.purpose() as u8,
-                security_level: public_key.security_level() as u8,
-                read_only: public_key.read_only(),
-                data_ptr,
-                data_len,
-                contract_bounds_kind,
-                contract_bounds_id,
-                contract_bounds_document_type,
-            }
-        })
-        .collect();
+    for public_key in public_keys_to_add.iter() {
+        // Encoded before the key data is boxed, so a rejected bound leaves
+        // nothing of this key to release.
+        let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
+            match encode_contract_bounds(public_key.contract_bounds()) {
+                Ok(bounds) => bounds,
+                Err(error) => {
+                    // The caller never receives this struct, so nothing else
+                    // will ever free the keys projected so far.
+                    unsafe { free_parsed_public_keys(&mut add_public_keys_vec) };
+                    return Err(error);
+                }
+            };
+
+        let data = public_key.data().as_slice().to_vec().into_boxed_slice();
+        let data_len = data.len();
+        let data_ptr = Box::into_raw(data) as *mut u8;
+
+        add_public_keys_vec.push(ParsedIdentityUpdatePublicKeyFFI {
+            key_id: public_key.id(),
+            key_type: public_key.key_type() as u8,
+            purpose: public_key.purpose() as u8,
+            security_level: public_key.security_level() as u8,
+            read_only: public_key.read_only(),
+            data_ptr,
+            data_len,
+            contract_bounds_kind,
+            contract_bounds_id,
+            contract_bounds_document_type,
+        });
+    }
 
     let add_public_keys_count = add_public_keys_vec.len();
     let add_public_keys = if add_public_keys_count == 0 {
@@ -183,13 +227,13 @@ fn project_parsed_identity_update(
         Box::into_raw(disable_public_key_ids_vec.into_boxed_slice()) as *mut u32
     };
 
-    ParsedIdentityUpdateFFI {
+    Ok(ParsedIdentityUpdateFFI {
         identity_id,
         add_public_keys,
         add_public_keys_count,
         disable_public_key_ids,
         disable_public_key_ids_count,
-    }
+    })
 }
 
 /// Deserializes a raw `IdentityUpdateTransition` (as carried by a DashConnect
@@ -214,7 +258,7 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition(
 
     let bytes = slice::from_raw_parts(transition_bytes, transition_len);
     let transition = unwrap_result_or_return!(parse_identity_update_transition_bytes(bytes));
-    *out = project_parsed_identity_update(&transition);
+    *out = unwrap_result_or_return!(project_parsed_identity_update(&transition));
     PlatformWalletFFIResult::ok()
 }
 
@@ -232,20 +276,7 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 
     if !parsed.add_public_keys.is_null() && parsed.add_public_keys_count > 0 {
         let keys = slice::from_raw_parts_mut(parsed.add_public_keys, parsed.add_public_keys_count);
-        for key in keys.iter_mut() {
-            if !key.data_ptr.is_null() && key.data_len > 0 {
-                let data_slice = slice::from_raw_parts_mut(key.data_ptr, key.data_len);
-                let _ = Box::from_raw(data_slice as *mut [u8]);
-                key.data_ptr = ptr::null_mut();
-                key.data_len = 0;
-            }
-
-            if !key.contract_bounds_document_type.is_null() {
-                let _ = CString::from_raw(key.contract_bounds_document_type);
-                key.contract_bounds_document_type = ptr::null_mut();
-            }
-        }
-
+        free_parsed_public_keys(keys);
         let _ = Box::from_raw(keys as *mut [ParsedIdentityUpdatePublicKeyFFI]);
     }
 
@@ -474,6 +505,52 @@ mod tests {
         assert!(out.disable_public_key_ids.is_null());
         assert_eq!(out.add_public_keys_count, 0);
         assert_eq!(out.disable_public_key_ids_count, 0);
+    }
+
+    #[test]
+    fn rejects_contract_bounds_document_type_that_cannot_cross_the_ffi() {
+        // A document type carrying an interior NUL cannot be handed over as a
+        // C string. Reporting the contract-only bound instead would show the
+        // user a broader scope than the transition declares, so this is an
+        // error rather than a narrowing.
+        let transition =
+            dpp::state_transition::identity_update_transition::IdentityUpdateTransition::V0(
+                IdentityUpdateTransitionV0 {
+                    signature: BinaryData::new(vec![0x99; 65]),
+                    signature_public_key_id: 3,
+                    identity_id: Identifier::from([0x11; 32]),
+                    revision: 7,
+                    nonce: 9,
+                    add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                        id: 17,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        purpose: Purpose::ENCRYPTION,
+                        security_level: SecurityLevel::MEDIUM,
+                        read_only: false,
+                        data: BinaryData::new(vec![0x02; 33]),
+                        signature: BinaryData::new(vec![0xaa; 65]),
+                        contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                            id: Identifier::from([0x44; 32]),
+                            document_type_name: "pro\0file".to_string(),
+                        }),
+                    }
+                    .into()],
+                    disable_public_keys: vec![],
+                    user_fee_increase: 0,
+                },
+            );
+
+        // `ParsedIdentityUpdateFFI` is a raw-pointer C struct with no `Debug`,
+        // so the success case is rejected by hand rather than with `expect_err`.
+        let error = match project_parsed_identity_update(&transition) {
+            Ok(_) => panic!("a document type with an interior NUL must not be narrowed"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
     }
 
     #[test]
