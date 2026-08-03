@@ -23,6 +23,70 @@ use crate::error::PlatformWalletError;
 const DASH_COIN_TYPE_MAINNET: u32 = 5;
 const DASH_COIN_TYPE_TESTNET: u32 = 1;
 
+/// Scrub-on-drop containment for an Orchard SECRET that provides no
+/// `Zeroize` support — orchard 0.14's [`SpendingKey`] and
+/// [`SpendAuthorizingKey`] are `Copy` types with neither a `Zeroize` impl
+/// nor a scrubbing `Drop`, so a plain local holding one leaves the complete
+/// spend-authority representation in its stack frame after use (#4204
+/// review finding 1ee08ba70627).
+///
+/// The guard owns the value (`Deref` for use) and volatile-overwrites its
+/// raw bytes on drop, then fences, so the scrub is not elided as a dead
+/// store and runs on EVERY exit path (`?`, early return, panic-unwind).
+/// Call sites additionally `drop()` the guard right after the secret's
+/// final use so it never survives into long-lived async frames across
+/// network awaits.
+///
+/// The safety argument is the `needs_drop` gate below: scrubbing is only
+/// performed for types with no drop glue (both Orchard key types qualify —
+/// `SpendingKey` is `Copy`; `SpendAuthorizingKey` is a plain scalar wrapper
+/// with no `Drop`), so overwriting the bytes in place cannot double-free or
+/// corrupt owned indirections. A type WITH drop glue is left untouched
+/// (its own `Drop` still runs normally) — that would be a silent no-scrub,
+/// so the guard is only for the two key types named above. (What no bound
+/// can rule out is the caller having made further copies — the guard
+/// contains the representation it owns; avoiding stray copies is the call
+/// site's job.)
+pub(crate) struct ScrubOnDrop<T>(pub(crate) T);
+
+impl<T> Drop for ScrubOnDrop<T> {
+    fn drop(&mut self) {
+        // Const-folded: for the Orchard key types this is `false` and the
+        // scrub always runs. Overwriting a value that still has drop glue
+        // to execute would be unsound — skip (see the type-level docs).
+        if core::mem::needs_drop::<T>() {
+            return;
+        }
+        let ptr = &mut self.0 as *mut T as *mut u8;
+        for i in 0..core::mem::size_of::<T>() {
+            // Volatile per-byte overwrite: not removable as a dead store.
+            unsafe { core::ptr::write_volatile(ptr.add(i), 0) };
+        }
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl<T> core::ops::Deref for ScrubOnDrop<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+mod scrub_tests {
+    use super::*;
+
+    /// Both Orchard secret types must stay scrubbable: drop glue appearing on
+    /// either (an orchard upgrade adding `Drop`) would silently disable the
+    /// scrub, and this is the tripwire that turns that into a test failure.
+    #[test]
+    fn orchard_secret_types_have_no_drop_glue() {
+        assert!(!core::mem::needs_drop::<SpendingKey>());
+        assert!(!core::mem::needs_drop::<SpendAuthorizingKey>());
+    }
+}
+
 /// ZIP-32 derived Orchard key hierarchy.
 ///
 /// Contains the key material needed for shielded sync and address
@@ -87,22 +151,27 @@ impl OrchardKeySet {
             ))
         })?;
 
-        let sk = SpendingKey::from_zip32_seed(seed, coin_type, account_id).map_err(|e| {
-            PlatformWalletError::ShieldedKeyDerivation(format!("ZIP-32 derivation failed: {}", e))
-        })?;
+        let sk = ScrubOnDrop(SpendingKey::from_zip32_seed(seed, coin_type, account_id).map_err(
+            |e| {
+                PlatformWalletError::ShieldedKeyDerivation(format!(
+                    "ZIP-32 derivation failed: {}",
+                    e
+                ))
+            },
+        )?);
 
-        let fvk = FullViewingKey::from(&sk);
-        let ask = SpendAuthorizingKey::from(&sk);
+        let fvk = FullViewingKey::from(&*sk);
+        let ask = SpendAuthorizingKey::from(&*sk);
         let ivk = fvk.to_ivk(Scope::External);
         let ovk = fvk.to_ovk(Scope::External);
         let default_address = fvk.address_at(0u32, Scope::External);
-        // `sk` falls out of scope here. The FVK / ASK / IVK / OVK
-        // already capture every quantity the wallet needs; spend
-        // authorization is re-derived transiently from the wallet
-        // seed via the host signer at sign time. (Orchard
-        // `SpendingKey` is `Copy`, so explicit zeroization of this
-        // local would require wrapping in `Zeroizing`; revisit when
-        // the spend signer lands.)
+        // The master spending key's final use is behind us: scrub its bytes
+        // NOW (the [`ScrubOnDrop`] guard volatile-zeroes them) rather than
+        // letting the representation ride the rest of this frame. The
+        // FVK / ASK / IVK / OVK already capture every quantity the wallet
+        // needs; spend authorization is re-derived transiently from the
+        // wallet seed via the host signer at sign time.
+        drop(sk);
 
         Ok(Self {
             full_viewing_key: fvk,
@@ -241,14 +310,22 @@ pub const ORCHARD_RAW_ADDRESS_LEN: usize = 43;
 /// is not a valid Orchard `SpendingKey` scalar — the same validity gate
 /// `identity_create_from_one_time_key` applies to a claimed key.
 pub fn orchard_address_from_spending_key(
-    sk_bytes: [u8; 32],
+    sk_bytes: &[u8; 32],
 ) -> Result<[u8; ORCHARD_RAW_ADDRESS_LEN], PlatformWalletError> {
-    let sk: SpendingKey = Option::from(SpendingKey::from_bytes(sk_bytes)).ok_or_else(|| {
-        PlatformWalletError::ShieldedKeyDerivation(
-            "spending key is not a valid Orchard SpendingKey".to_string(),
-        )
-    })?;
-    let fvk = FullViewingKey::from(&sk);
+    // By-reference parameter: the caller's (typically `Zeroizing`) buffer is
+    // not repeated as a plain by-value array at this boundary. The one
+    // unavoidable transient copy is the `from_bytes` argument itself
+    // (orchard's API takes the array by value); the RESULT is contained in a
+    // [`ScrubOnDrop`] guard so the non-zeroizing `SpendingKey` representation
+    // is volatile-scrubbed on every exit path (#4204 finding 1ee08ba70627).
+    let sk = ScrubOnDrop(
+        Option::<SpendingKey>::from(SpendingKey::from_bytes(*sk_bytes)).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(
+                "spending key is not a valid Orchard SpendingKey".to_string(),
+            )
+        })?,
+    );
+    let fvk = FullViewingKey::from(&*sk);
     Ok(fvk.address_at(0u32, Scope::External).to_raw_address_bytes())
 }
 
@@ -301,7 +378,12 @@ pub fn generate_one_time_orchard_key(
             ))
         })?;
         if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(*sk_bytes)) {
-            let fvk = FullViewingKey::from(&sk);
+            // Contain the accepted draw's non-zeroizing `SpendingKey`
+            // representation too — the byte buffer is already `Zeroizing`,
+            // but this derived form would otherwise die unscrubbed
+            // (#4204 finding 1ee08ba70627).
+            let sk = ScrubOnDrop(sk);
+            let fvk = FullViewingKey::from(&*sk);
             let address = fvk.address_at(0u32, Scope::External).to_raw_address_bytes();
             return Ok((sk_bytes, address));
         }
@@ -509,7 +591,7 @@ mod tests {
     #[test]
     fn one_time_key_generate_roundtrips_to_its_address() {
         let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
-        let rederived = orchard_address_from_spending_key(*sk)
+        let rederived = orchard_address_from_spending_key(&sk)
             .expect("a freshly generated sk is a valid Orchard SpendingKey");
         assert_eq!(
             address, rederived,
@@ -588,8 +670,8 @@ mod tests {
     #[test]
     fn address_from_spending_key_is_deterministic() {
         let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
-        let a = orchard_address_from_spending_key(*sk).expect("valid sk");
-        let b = orchard_address_from_spending_key(*sk).expect("valid sk");
+        let a = orchard_address_from_spending_key(&sk).expect("valid sk");
+        let b = orchard_address_from_spending_key(&sk).expect("valid sk");
         assert_eq!(a, b, "same sk must derive the same address");
         assert_eq!(
             a, address,

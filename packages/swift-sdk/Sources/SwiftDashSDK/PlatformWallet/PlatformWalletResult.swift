@@ -298,6 +298,13 @@ public enum PlatformWalletError: LocalizedError {
     /// (dashpay/platform#4060 finding 7); route to key repair. Kotlin
     /// parity: `DashSdkError.PlatformWallet.SigningKeyUnavailable`.
     case signingKeyUnavailable(String)
+    /// A one-time-key (shielded invitation) claim found the invitation
+    /// note's nullifier already spent on chain, with no positive evidence
+    /// that this claim created an identity. TERMINAL and NOT retryable —
+    /// the note is consumed, so no retry can spend it again, and no
+    /// identity id is produced. Surface the invitation as spent. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.ShieldedInviteAlreadyClaimed`.
+    case shieldedInviteAlreadyClaimed(String)
     case notFound(String)
     case unknown(String)
 
@@ -322,6 +329,7 @@ public enum PlatformWalletError: LocalizedError {
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
              .signingKeyUnavailable(let m),
+             .shieldedInviteAlreadyClaimed(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -367,6 +375,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .shutdownIncomplete(detail)
         case .errorSigningKeyUnavailable:
             self = .signingKeyUnavailable(detail)
+        case .errorShieldedInviteAlreadyClaimed:
+            self = .shieldedInviteAlreadyClaimed(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

@@ -1606,14 +1606,30 @@ where
     // Derive the Orchard key material from the one-time spending key. `from_bytes`
     // returns a `CtOption`; an invalid scalar means the caller handed us a
     // non-key, which is a hard input error.
-    let sk: SpendingKey = Option::from(SpendingKey::from_bytes(*one_time_sk)).ok_or_else(|| {
-        PlatformWalletError::ShieldedKeyDerivation(
-            "one-time spending key is not a valid Orchard SpendingKey".to_string(),
-        )
-    })?;
-    let fvk = FullViewingKey::from(&sk);
-    let ask = SpendAuthorizingKey::from(&sk);
+    //
+    // KEY HYGIENE (#4204 finding 1ee08ba70627): orchard 0.14's `SpendingKey`
+    // and `SpendAuthorizingKey` are `Copy` types with no `Zeroize` support, so
+    // holding them as plain locals would leave complete spend-authority
+    // representations in this LONG-LIVED async frame across every network
+    // await below. Both are contained in [`super::keys::ScrubOnDrop`] guards
+    // (volatile-scrubbed on every exit path) and explicitly dropped at their
+    // final use: `sk` right after the derivations here, `ask` right after the
+    // bundle build. The `*one_time_sk` deref feeding `from_bytes` is the one
+    // unavoidable transient copy (orchard's API takes the array by value); the
+    // `Zeroizing` parameter itself scrubs the wallet-layer buffer on drop.
+    let sk = super::keys::ScrubOnDrop(
+        Option::<SpendingKey>::from(SpendingKey::from_bytes(*one_time_sk)).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(
+                "one-time spending key is not a valid Orchard SpendingKey".to_string(),
+            )
+        })?,
+    );
+    let fvk = FullViewingKey::from(&*sk);
+    let ask = super::keys::ScrubOnDrop(SpendAuthorizingKey::from(&*sk));
     let ivk = fvk.to_ivk(Scope::External);
+    // The spending key's final use is behind us — scrub it before any network
+    // work; only the spend-auth key must survive to the bundle build.
+    drop(sk);
 
     // Advisory only: the shielded tree has no height→note-index oracle (a chunk's
     // block_height is the proof-tip height, not per-note inclusion height), so the
@@ -1734,6 +1750,10 @@ where
     )
     .await
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    // The spend-auth key's final use (the bundle build + spend-auth
+    // signatures above) is behind us — scrub it before the broadcast and
+    // result wait keep this frame alive across the network.
+    drop(ask);
 
     let identity_id = build.identity_id;
 
@@ -1758,11 +1778,21 @@ where
         // consumed on chain). Recover the created identity instead of stranding
         // the retry. Checked before the generic `broadcast_definitely_failed` arm,
         // which would otherwise classify this consensus rejection as a hard failure.
+        //
+        // POST-BUILD, the reconciler gets `Some(identity_id)` — the id THIS
+        // transition committed — never the pre-build `expected_identity_id`
+        // (which is deliberately `None` for a padded single-note bundle). The
+        // SDK's broadcast internally retries requests, so an accepted first
+        // request whose acknowledgement was lost legitimately produces
+        // `NullifierAlreadySpent` on the retry; with `None` the reconciler
+        // would declare our own successfully created identity permanently
+        // lost (`ShieldedInviteAlreadyClaimed`) instead of recovering it by
+        // its exact id (#4204 review finding a00cee018e73).
         Err(e) if is_nullifier_already_spent(&e) => {
             return recover_executed_one_time_claim(
                 sdk,
                 master_key_hash,
-                expected_identity_id,
+                Some(identity_id),
                 &format!("broadcast returned NullifierAlreadySpent: {e}"),
             )
             .await;
@@ -1796,17 +1826,48 @@ where
         // verdict surfacing at wait time proves the claim executed, so recover the
         // identity rather than reporting a broadcast failure. Ordered before the
         // generic consensus-rejection arm below (which would classify it as a
-        // failure).
+        // failure). Same post-build rule as the broadcast arm: pass the id THIS
+        // transition committed, never the padding-lossy pre-build one (#4204
+        // review finding a00cee018e73).
         Err(wait_err) if is_nullifier_already_spent(&wait_err) => {
             return recover_executed_one_time_claim(
                 sdk,
                 master_key_hash,
-                expected_identity_id,
+                Some(identity_id),
                 &format!("result wait returned NullifierAlreadySpent: {wait_err}"),
             )
             .await;
         }
         Err(dash_sdk::Error::StateTransitionBroadcastError(e)) if e.cause.is_some() => {
+            // A populated cause is a consensus verdict — but for Type 20 a
+            // verdict is NOT proof of non-execution: a duplicate unique-key
+            // hash makes Drive APPLY the chargeable `UnshieldAction` fallback
+            // (the invitation nullifiers are consumed, the fallback address is
+            // credited minus the penalty) and record a `PaidConsensusError`,
+            // which reaches this arm exactly like a plain rejection. Declaring
+            // `ShieldedBroadcastFailed` then would hand the host code 16 —
+            // documented as definitive non-execution and safe to retry — for
+            // an invitation that is already consumed, and every retry would
+            // burn a ~30s proof to earn `NullifierAlreadySpent`. Check the
+            // selected nullifiers first: consumed notes prove the transition
+            // (or its fallback) APPLIED, so hand off to the reconciler for
+            // the terminal claimed/fallback verdict — it distinguishes "this
+            // claim created the identity" (recovered as success) from the
+            // chargeable fallback / competing claim (terminal
+            // `ShieldedInviteAlreadyClaimed`) (#4204 review finding
+            // 8d020115b274).
+            if any_nullifier_spent_on_chain(sdk, &selected_nullifiers).await {
+                return recover_executed_one_time_claim(
+                    sdk,
+                    master_key_hash,
+                    Some(identity_id),
+                    &format!(
+                        "result wait returned an executed consensus verdict (the invitation \
+                         notes are spent — applied claim or chargeable fallback): {e}"
+                    ),
+                )
+                .await;
+            }
             return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
         }
         Err(wait_err) => {
