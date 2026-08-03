@@ -77,11 +77,11 @@ These are shipped ABI. Do not renumber.
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next free integer: 37** — 27–36 are claimed (27 merged; 29, 31–36 in the
+**Next free integer: 38** — 27–37 are claimed (27 merged; 29, 31–37 in the
 proposed table below). **28 and 30 are RESERVED (do not reissue)**: #4185 and #4256 vacated them when
 the reservation trio moved to 34–36, but they are deliberately left unclaimed
 rather than back-filled, so that the trio stays contiguous and no number is
-reused within a single review cycle. A new code should take 37 unless it has a
+reused within a single review cycle. A new code should take 38 unless it has a
 reason to sit next to something.
 
 ## Proposed allocations (open PRs)
@@ -100,6 +100,7 @@ this file.
 | 34 | `ErrorStaleReservationToken` | #4185 | In review — **moved 27 → 34** (also carried by #4256; #4196 inherits on restack) |
 | 35 | `ErrorReservationTokenConsumed` | #4185 | In review — **moved 28 → 35** (also carried by #4256) |
 | 36 | `ErrorReservationWalletMismatch` | #4185 | In review — **moved 30 → 36** (also carried by #4256) |
+| 37 | `ErrorShieldedInviteAlreadyClaimed` | #4204 | In review — **moved 32 → 37** (collided with #4247's `ErrorTransactionBuild`; see below) |
 
 Open PRs that touch `rs-platform-wallet-ffi` but claim **no** new code: #4186,
 #4191, #4194, #4195, #4240, #4251, #4258.
@@ -142,6 +143,40 @@ persister codes. Its 27 is now doubly wrong: 27 is merged ABI
 (`ErrorShutdownIncomplete`), so rule 3 protects it too.
 
 ## Contested and pending
+
+### 32 — RESOLVED: #4204 moved to 37 (first collision this file actually caught)
+
+Found 2026-08-03 while assembling the `v41int13` QA integration. #4204's head
+commit `b6992a5dbc` — a review round, not the original feature work — added
+`ErrorShieldedInviteAlreadyClaimed = 32` with **no row in this file**, in
+direct violation of rule 2. 32 is allocated to `ErrorTransactionBuild` (#4247,
+also carried by #4256).
+
+Unlike every other entry in this section, this one was not a paper conflict:
+merging #4204 into an integration that already carried
+`ErrorReservationWalletMismatch = 32` produced a hard
+`error[E0081]: discriminant value 32 assigned more than once`. Resolution of
+record: **#4204 moves 32 → 37**, the frontier. `ErrorTransactionBuild` keeps 32.
+
+The numbering was the lesser half of the defect. The code was **unmirrored on
+both hosts** — absent from Swift's `PlatformWalletResultCode` and from Kotlin's
+`fromPlatformWalletNative`. Per rule 5 that means Swift rendered it
+`.errorUnknown` (identity lost), while Kotlin fell through to `Generic(32, …)`
+— and in any tree carrying #4185's `ErrorReservationWalletMismatch = 32`,
+Kotlin actively **misclassified** "shielded invite already claimed" as
+"reservation wallet mismatch". That is the exact silently-wrong-error-on-every-host
+failure this file's preamble describes, and it landed on the shielded-invite
+claim-recovery path (the error is raised from four sites in
+`wallet/shielded/operations.rs`, three of them inside the recovery function).
+
+Fixed on #4204 together with the renumber: typed
+`PlatformWallet.ShieldedInviteAlreadyClaimed` (terminal, `isRetryable = false`),
+the Swift case and its `init(ffi:)` arm, and a `DashSdkErrorTest` assertion that
+pins 37 so a future move off the frontier fails the suite instead of the hosts.
+
+**Lesson for rule 2:** the violation entered on a *review-round* commit, well
+after the PR's numbering had been reviewed and recorded as settled. Re-check
+discriminants on every push that touches `error.rs`, not only at first review.
 
 ### 29 — RESOLVED: #4184 keeps 29 (#4185 moved away, twice)
 
