@@ -134,6 +134,20 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// yet have collected its pool snapshot.
     #[cfg(test)]
     pub(super) build_serial_gate: std::sync::atomic::AtomicUsize,
+    /// Test-only gauge of tasks currently BLOCKED on
+    /// [`build_persist_serial`](Self::build_persist_serial): incremented
+    /// before the `lock().await` and RAII-decremented the moment it is
+    /// acquired (see
+    /// [`lock_build_persist_serial`](Self::lock_build_persist_serial)).
+    ///
+    /// Distinct from [`build_serial_gate`](Self::build_serial_gate),
+    /// which counts builds at *or past* the gate for the whole of
+    /// `broadcast_funded_asset_lock`. This one answers the narrower
+    /// "who is still queued and cannot get past the boundary while the
+    /// current holder keeps the lock" — the arrival signal the retirement
+    /// barrier test rendezvous on, in place of a sleep.
+    #[cfg(test)]
+    pub(super) build_serial_waiters: std::sync::atomic::AtomicUsize,
     /// Serializes every asset-lock **status mutation + persistence
     /// enqueue** pair, so the order in which rows are mutated in memory
     /// is the order in which their snapshots reach the persister.
@@ -308,6 +322,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             #[cfg(test)]
             build_serial_gate: std::sync::atomic::AtomicUsize::new(0),
             #[cfg(test)]
+            build_serial_waiters: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
             resume_pre_promote_gate: std::sync::Mutex::new(None),
             #[cfg(test)]
             promote_post_cas_gate: std::sync::Mutex::new(None),
@@ -355,6 +371,43 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         guard
     }
 
+    /// Acquire [`build_persist_serial`](Self::build_persist_serial).
+    ///
+    /// Every build→persist unit goes through here rather than locking
+    /// the field directly, so the test-only
+    /// [`build_serial_waiters`](Self::build_serial_waiters) gauge sees
+    /// every arrival at the boundary. In non-test builds this compiles
+    /// to the bare `lock().await`.
+    pub(super) async fn lock_build_persist_serial(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        // RAII for the same reason as `lock_status_persist_serial`: a
+        // future dropped while queued must not leave the gauge
+        // permanently non-zero.
+        #[cfg(test)]
+        struct WaiterGauge<'a>(&'a std::sync::atomic::AtomicUsize);
+        #[cfg(test)]
+        impl Drop for WaiterGauge<'_> {
+            fn drop(&mut self) {
+                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        #[cfg(test)]
+        let waiting = {
+            self.build_serial_waiters
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            WaiterGauge(&self.build_serial_waiters)
+        };
+
+        let guard = self.build_persist_serial.lock().await;
+
+        // Dropped on acquisition, not on release: the gauge answers
+        // "who is still queued at the boundary", so the holder must not
+        // count itself.
+        #[cfg(test)]
+        drop(waiting);
+
+        guard
+    }
+
     /// Retire this manager: no later operation may mutate or persist
     /// asset-lock state through it.
     ///
@@ -367,27 +420,49 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `wallet_id`. See [`active`](Self::active) for why a manager can
     /// outlive its wallet at all.
     ///
-    /// The flag is flipped while HOLDING
-    /// [`status_persist_serial`](Self::status_persist_serial), which is
+    /// The flag is flipped while HOLDING **both** ordering mutexes —
+    /// [`build_persist_serial`](Self::build_persist_serial) and
+    /// [`status_persist_serial`](Self::status_persist_serial) — which is
     /// what makes the retirement a barrier rather than a hint:
     ///
-    /// - it cannot take the mutex until any in-flight mutate→enqueue
-    ///   unit has released it, so removal never interrupts one halfway
-    ///   (mutated in memory, changeset not yet handed to the persister);
+    /// - it cannot take either mutex until any in-flight unit has
+    ///   released it, so removal never interrupts one halfway (a build
+    ///   that allocated a funding index but has not persisted the pool;
+    ///   a row mutated in memory whose changeset has not reached the
+    ///   persister);
     /// - once it returns, every subsequent acquirer — including
     ///   operations that had already started and were parked on
-    ///   `broadcast` / `wait_for_proof` — sees `false` at
+    ///   `broadcast` / `wait_for_proof`, or queued at either boundary —
+    ///   sees `false` at
     ///   [`ensure_active_under_serial`](Self::ensure_active_under_serial)
-    ///   before it touches the wallet row or the persister.
+    ///   or
+    ///   [`ensure_active_under_build_serial`](Self::ensure_active_under_build_serial)
+    ///   before it touches the wallet, a row, or the persister.
     ///
-    /// Idempotent: a second call is a no-op (it still takes the mutex,
-    /// so it still waits out any in-flight unit).
+    /// Both are needed because the two units are guarded separately and
+    /// neither subsumes the other: builds mutate `Wallet` /
+    /// `ManagedWalletInfo` (deriving a top-up account, consuming a
+    /// funding address, reserving inputs) without ever taking
+    /// `status_persist_serial`, so retiring under the status mutex alone
+    /// would leave a queued build free to run against the replacement
+    /// wallet a same-mnemonic re-import installs under the same
+    /// deterministic id.
+    ///
+    /// Acquisition order is `build_persist_serial` then
+    /// `status_persist_serial`, and it is the only place both are held:
+    /// `broadcast_funded_asset_lock` drops the build guard before
+    /// `track_asset_lock` takes the status one, so nothing ever holds
+    /// them in the opposite order and no cycle exists.
+    ///
+    /// Idempotent: a second call is a no-op (it still takes both
+    /// mutexes, so it still waits out any in-flight unit).
     ///
     /// Must NOT be called while holding the `wallet_manager` lock — the
-    /// mutate→enqueue units this waits on acquire `wallet_manager`
-    /// themselves, so doing so would invert the documented
-    /// `status_persist_serial → wallet_manager` order and deadlock.
+    /// units this waits on acquire `wallet_manager` themselves, so doing
+    /// so would invert the documented `serial → wallet_manager` order
+    /// and deadlock.
     pub(crate) async fn deactivate(&self) {
+        let _build = self.lock_build_persist_serial().await;
         let _serial = self.lock_status_persist_serial().await;
         let was_active = self.active.swap(false, Ordering::SeqCst);
         if was_active {
@@ -414,6 +489,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     pub(super) fn ensure_active_under_serial(
         &self,
         _serial: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(), PlatformWalletError> {
+        self.ensure_active()
+    }
+
+    /// The authoritative stale-handle check for the *build* unit, taken
+    /// after acquiring
+    /// [`build_persist_serial`](Self::build_persist_serial) and BEFORE
+    /// the `wallet_manager` write lock.
+    ///
+    /// Same argument as
+    /// [`ensure_active_under_serial`](Self::ensure_active_under_serial),
+    /// against the other mutex: a build mutates the wallet itself
+    /// (deriving a top-up account, consuming a funding address,
+    /// reserving inputs) without ever touching a status row, so the
+    /// status mutex says nothing about it. Because
+    /// [`deactivate`](Self::deactivate) must take this mutex too, a
+    /// `true` observed here holds for the rest of the build: either the
+    /// retirement landed before us and we refuse, or it is queued behind
+    /// us and the wallet we are about to mutate is still ours.
+    pub(super) fn ensure_active_under_build_serial(
+        &self,
+        _build_serial: &tokio::sync::MutexGuard<'_, ()>,
     ) -> Result<(), PlatformWalletError> {
         self.ensure_active()
     }
@@ -467,6 +564,33 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
              (saw {}) — either the competing task never reached the ordering \
              boundary, or the code under test no longer acquires the mutex there",
             self.status_serial_waiters
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
+    }
+
+    /// Test-only: wait until at least `n` tasks are blocked on
+    /// [`build_persist_serial`](Self::build_persist_serial).
+    ///
+    /// [`await_status_serial_waiters`](Self::await_status_serial_waiters)
+    /// for the other ordering mutex; same contract, same reason for
+    /// polling.
+    #[cfg(test)]
+    pub(super) async fn await_build_serial_waiters(&self, n: usize) {
+        for _ in 0..2_000 {
+            if self
+                .build_serial_waiters
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= n
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        panic!(
+            "timed out waiting for {n} task(s) to block on build_persist_serial \
+             (saw {}) — either the competing task never reached the ordering \
+             boundary, or the code under test no longer acquires the mutex there",
+            self.build_serial_waiters
                 .load(std::sync::atomic::Ordering::SeqCst)
         );
     }

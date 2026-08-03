@@ -54,6 +54,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   from `platform-wallet-ffi` — built on top of the
     ///   Keychain-resolver vtable so private keys never cross the FFI
     ///   boundary.
+    ///
+    /// Serialized on [`build_persist_serial`] and refuses on a retired
+    /// manager — see [`build_asset_lock_transaction_locked`] for why the
+    /// check has to happen under that mutex.
+    ///
+    /// [`build_persist_serial`]: AssetLockManager::build_persist_serial
+    /// [`build_asset_lock_transaction_locked`]: AssetLockManager::build_asset_lock_transaction_locked
     pub async fn build_asset_lock_transaction<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
@@ -62,11 +69,61 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
+        // Cheap early-out so an obviously-stale handle fails without
+        // queueing behind an unrelated in-flight build.
+        self.ensure_active()?;
+
+        let build_serial = self.lock_build_persist_serial().await;
+        self.build_asset_lock_transaction_locked(
+            amount_duffs,
+            account_index,
+            funding_type,
+            identity_index,
+            signer,
+            &build_serial,
+        )
+        .await
+    }
+
+    /// [`build_asset_lock_transaction`](Self::build_asset_lock_transaction)
+    /// for callers that already hold
+    /// [`build_persist_serial`](Self::build_persist_serial) — namely
+    /// [`broadcast_funded_asset_lock`](Self::broadcast_funded_asset_lock),
+    /// which holds it across build→pool-persist so a funding index can
+    /// never be allocated and lost. Taking it again here would
+    /// self-deadlock, hence the split.
+    ///
+    /// The activity check lives here, under the mutex, rather than in
+    /// the public wrapper alone. Wallet ids are deterministic in (seed,
+    /// network), so removing a wallet and re-importing the same mnemonic
+    /// produces the *same* id over a fresh `PlatformWalletInfo`. A
+    /// handle retained across that boundary — an `Arc<PlatformWallet>`
+    /// the FFI still holds, or an operation already parked on an await —
+    /// resolves `self.wallet_id` to the replacement generation. Without
+    /// this check it would happily derive a top-up account into it,
+    /// consume one of its funding addresses, and reserve its UTXOs on
+    /// behalf of a wallet the user deleted. Because
+    /// [`deactivate`](Self::deactivate) must take this same mutex to
+    /// flip the flag, a pass here holds for the whole critical section.
+    pub(super) async fn build_asset_lock_transaction_locked<S: ExtendedPubKeySigner>(
+        &self,
+        amount_duffs: u64,
+        account_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+        build_serial: &tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
         if amount_duffs == 0 {
             return Err(PlatformWalletError::AssetLockTransaction(
                 "Amount must be greater than zero".to_string(),
             ));
         }
+
+        // Authoritative: must precede the `wallet_manager` write lock,
+        // because everything past it mutates the wallet this id now
+        // resolves to.
+        self.ensure_active_under_build_serial(build_serial)?;
 
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
@@ -619,10 +676,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // a dismissed sheet's unstructured task keeps running).
         // Fail a stale handle before spending a build (which allocates a
         // funding index and reserves inputs) on a wallet that is gone.
-        // Advisory only — the authoritative refusal is the same check
-        // under `status_persist_serial` inside `track_asset_lock` and
+        // Advisory only — the authoritative refusals are the same check
+        // under `build_persist_serial` inside
+        // `build_asset_lock_transaction_locked` and under
+        // `status_persist_serial` inside `track_asset_lock` and
         // `promote_built_to_broadcast`, since a removal can land during
-        // the build or the broadcast await below.
+        // the queue below, the build, or the broadcast await.
         self.ensure_active()?;
 
         // Test-only occupancy gauge for the serialization gate (see
@@ -642,16 +701,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             GateGauge(&self.build_serial_gate)
         };
-        let build_persist_guard = self.build_persist_serial.lock().await;
+        let build_persist_guard = self.lock_build_persist_serial().await;
 
-        // 1. Build the asset lock transaction.
+        // 1. Build the asset lock transaction. `_locked` because we
+        //    already hold `build_persist_serial`; it re-checks activity
+        //    under that guard, which is the authoritative refusal for a
+        //    removal that landed while we were queued above.
         let (tx, path) = self
-            .build_asset_lock_transaction(
+            .build_asset_lock_transaction_locked(
                 amount_duffs,
                 account_index,
                 funding_type,
                 identity_index,
                 signer,
+                &build_persist_guard,
             )
             .await?;
 
@@ -3263,6 +3326,209 @@ mod tests {
             durable.proof.as_ref(),
             Some(&chain_proof_high),
             "the refreshed proof must be the durable one"
+        );
+    }
+
+    /// Whether a per-index `IdentityTopUp` account exists for
+    /// `identity_index`, on BOTH halves of the wallet.
+    ///
+    /// The probe the two regression tests below use, because deriving
+    /// that account is the FIRST thing a build mutates
+    /// (`ensure_identity_topup_account`, before any address is consumed
+    /// or any input reserved). Still absent after a refused build means
+    /// the build never touched the wallet at all, not that it touched it
+    /// and rolled back.
+    async fn topup_account_present<B: TransactionBroadcaster + ?Sized>(
+        manager: &AssetLockManager<B>,
+        identity_index: u32,
+    ) -> (bool, bool) {
+        let wm = manager.wallet_manager.read().await;
+        let (wallet, info) = wm
+            .get_wallet_and_info(&manager.wallet_id)
+            .expect("wallet present");
+        (
+            wallet.accounts.identity_topup.contains_key(&identity_index),
+            info.core_wallet
+                .accounts
+                .identity_topup
+                .contains_key(&identity_index),
+        )
+    }
+
+    /// Regression: a retired manager must refuse to BUILD, not only to
+    /// mutate status rows.
+    ///
+    /// Wallet ids are deterministic in (seed, network), so deleting a
+    /// wallet and re-importing the same mnemonic produces the SAME id
+    /// over a fresh `PlatformWalletInfo` and a fresh `AssetLockManager`.
+    /// A handle retained across that boundary — an `Arc<PlatformWallet>`
+    /// the FFI still holds and can call
+    /// `dash_platform_wallet_build_asset_lock_transaction` on — resolves
+    /// `self.wallet_id` to the REPLACEMENT generation. `build_asset_lock_
+    /// transaction` used to go straight to `wallet_manager.write()` with
+    /// no activity check at all, so the retired handle would derive a
+    /// top-up account into the replacement, consume one of its funding
+    /// addresses, and reserve its UTXOs — on behalf of a wallet the user
+    /// deleted. The consumed index is durable and unrecoverable: these
+    /// accounts fund OP_RETURN-payload credit outputs that never appear
+    /// as on-chain UTXOs, so SPV can never rediscover them.
+    ///
+    /// Retirement is what the removal path installs, so this drives it
+    /// directly. The wallet still resolvable under the id afterwards
+    /// stands in for the replacement generation — the manager cannot
+    /// tell the two apart, which is precisely why the flag has to be the
+    /// gate.
+    #[tokio::test]
+    async fn a_retired_manager_refuses_to_build_against_the_wallet_under_its_id() {
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysOkBroadcaster)).await;
+
+        const TOPUP_INDEX: u32 = 7;
+        assert_eq!(
+            topup_account_present(&manager, TOPUP_INDEX).await,
+            (false, false),
+            "precondition: the per-index top-up account must not exist yet, \
+             or a refused build touching the wallet would be invisible"
+        );
+        let queued_before = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
+        // The removal-side retirement.
+        manager.deactivate().await;
+
+        let built = manager
+            .build_asset_lock_transaction(
+                1_000_000,
+                0,
+                AssetLockFundingType::IdentityTopUp,
+                TOPUP_INDEX,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(built, Err(PlatformWalletError::AssetLockManagerInactive(_))),
+            "a build on a retired handle must be refused — the wallet under \
+             this id is no longer the one this manager was built for; got {built:?}"
+        );
+
+        assert_eq!(
+            topup_account_present(&manager, TOPUP_INDEX).await,
+            (false, false),
+            "the refused build must not have derived a top-up account into \
+             the wallet now registered under this id"
+        );
+        assert_eq!(
+            persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len(),
+            queued_before,
+            "the refused build must not have queued an address-pool snapshot — \
+             a retired manager sharing the persister can overwrite the \
+             replacement wallet's durable pool"
+        );
+    }
+
+    /// Regression (the race the flag alone does not close): a build that
+    /// was already queued at the build→persist boundary when the removal
+    /// landed must refuse, and the retirement must not cut ahead of a
+    /// build already past it.
+    ///
+    /// An advisory `ensure_active()` before the mutex proves nothing: it
+    /// passes, the task then parks on `build_persist_serial`, and the
+    /// removal completes during that park. Only a check taken UNDER the
+    /// mutex that `deactivate` must itself acquire is authoritative —
+    /// which is why `deactivate` now holds `build_persist_serial` (then
+    /// `status_persist_serial`, the only place both are held, and always
+    /// in that order) while it flips the flag.
+    ///
+    /// Interleave, with no sleep standing in for a signal:
+    ///
+    /// 1. the test holds `build_persist_serial`, standing in for a build
+    ///    that is past the boundary and mid-flight;
+    /// 2. `deactivate` is spawned and rendezvous'd on the production
+    ///    `build_serial_waiters` gauge — an arrival observed while the
+    ///    test provably holds the mutex is an arrival that cannot have
+    ///    flipped the flag;
+    /// 3. a build is spawned and rendezvous'd the same way, so it is
+    ///    provably queued BEHIND the retirement. `tokio::sync::Mutex` is
+    ///    FIFO-fair, so releasing hands the mutex to the retirement
+    ///    first — the ordering this test needs is established by the two
+    ///    rendezvous, not assumed.
+    #[tokio::test]
+    async fn a_build_queued_behind_a_retirement_refuses_instead_of_running() {
+        let (manager, signer, persistence) =
+            funded_asset_lock_manager(Arc::new(AlwaysOkBroadcaster)).await;
+
+        const TOPUP_INDEX: u32 = 7;
+        let queued_before = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
+        // 1. Stand in for a build holding the boundary.
+        let in_flight_build = manager.lock_build_persist_serial().await;
+
+        // 2. The retirement must come to rest at the boundary.
+        let manager_deactivate = Arc::clone(&manager);
+        let deactivator = tokio::spawn(async move { manager_deactivate.deactivate().await });
+        manager.await_build_serial_waiters(1).await;
+        assert!(
+            manager.active.load(Ordering::SeqCst),
+            "`deactivate` must not retire the manager while a build still \
+             holds `build_persist_serial` — it would strand a build that has \
+             already allocated a funding index with its pool snapshot refused"
+        );
+
+        // 3. A build enters after the retirement queued. Its advisory
+        //    pre-check passes (the flag is still set, per the assertion
+        //    above) and it parks — the exact window the bug lived in.
+        let manager_builder = Arc::clone(&manager);
+        let builder_signer = signer.clone();
+        let builder = tokio::spawn(async move {
+            manager_builder
+                .build_asset_lock_transaction(
+                    1_000_000,
+                    0,
+                    AssetLockFundingType::IdentityTopUp,
+                    TOPUP_INDEX,
+                    &builder_signer,
+                )
+                .await
+        });
+        manager.await_build_serial_waiters(2).await;
+
+        // 4. Release; FIFO order gives the mutex to the retirement, then
+        //    the build.
+        drop(in_flight_build);
+        deactivator.await.expect("deactivator task joined");
+        let built = builder.await.expect("builder task joined");
+
+        assert!(
+            matches!(built, Err(PlatformWalletError::AssetLockManagerInactive(_))),
+            "a build that was queued at the boundary when the removal landed \
+             must refuse — resuming it would mutate the replacement wallet a \
+             same-mnemonic re-import installs under this same id; got {built:?}"
+        );
+        assert_eq!(
+            topup_account_present(&manager, TOPUP_INDEX).await,
+            (false, false),
+            "the refused build must not have derived a top-up account"
+        );
+        assert_eq!(
+            persistence
+                .stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .len(),
+            queued_before,
+            "the refused build must not have queued anything to the shared \
+             persister"
         );
     }
 }
