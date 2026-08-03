@@ -61,10 +61,9 @@
       },
       "corePaymentAddress": {
         "type": "string",
-        "pattern": "^[1-9A-HJ-NP-Za-km-z]{26,34}$",
         "minLength": 26,
         "maxLength": 34,
-        "description": "Base58Check P2PKH/P2SH Core chain address for public payments. Payments to it are publicly linkable to this profile.",
+        "description": "Base58Check P2PKH/P2SH Core chain address for public payments. Consensus constrains only the length; clients MUST validate the Base58Check checksum and network byte before paying. Payments to it are publicly linkable to this profile.",
         "position": 5
       },
       "platformPaymentAddress": {

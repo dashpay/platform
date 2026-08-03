@@ -306,7 +306,7 @@ mod tests {
             // payment address fields, changing the contract's serialized bytes
             // and therefore the root hash after insertion.
             9..=13 => "14d9e2cdc3f25d1dfd079c1f9dd0d44db5bf73d397b04258449231a2d5bafda7",
-            _ => "bb14f6422954f6719b83363891f0e2c8a0ac31dfba0c3935d7a8d31b142481da",
+            _ => "b755e5c7f339e823d3eb76c286a8643707b892a91ff905a5a33f41c3cc8fc34d",
         };
 
         assert_eq!(
