@@ -129,7 +129,7 @@ mod guardrail {
     use dashcore::{Address as DashAddress, Network, OutPoint};
 
     use crate::test_support::{split_funded_wallet_manager, AlwaysRejectedBroadcaster};
-    use crate::wallet::core::balance::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::core::CoreWallet;
     use crate::PlatformWalletError;
 
@@ -267,7 +267,7 @@ mod guardrail {
             wm,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            Arc::new(WalletBalance::new()),
+            Arc::new(WalletGeneration::new()),
         );
         let payment = core
             .build_signed_payment(
@@ -331,7 +331,7 @@ mod guardrail {
             wm,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            Arc::new(WalletBalance::new()),
+            Arc::new(WalletGeneration::new()),
         );
         let payment = core
             .build_signed_payment(
