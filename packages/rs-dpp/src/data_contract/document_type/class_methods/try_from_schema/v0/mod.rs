@@ -54,7 +54,6 @@ use crate::identity::SecurityLevel;
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::{
     DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
-    DOCUMENT_META_SCHEMA_V3,
 };
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -147,12 +146,11 @@ impl DocumentTypeV0 {
                 0 => &*DOCUMENT_META_SCHEMA_V0,
                 1 => &*DOCUMENT_META_SCHEMA_V1,
                 2 => &*DOCUMENT_META_SCHEMA_V2,
-                3 => &*DOCUMENT_META_SCHEMA_V3,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentTypeV0::try_from_schema (document_type_schema)"
                             .to_string(),
-                        known_versions: vec![0, 1, 2, 3],
+                        known_versions: vec![0, 1, 2],
                         received: version,
                     })
                 }
@@ -651,12 +649,21 @@ mod tests {
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
+    /// Generation-specific tests must pin a protocol version that actually
+    /// selects their own generation: `PlatformVersion::latest()` silently
+    /// retargets these tests onto a different parser generation and a
+    /// different document meta-schema whenever LATEST moves. PV8 is the
+    /// highest protocol version whose `try_from_schema` selects generation 0.
+    fn generation_0_platform_version() -> &'static PlatformVersion {
+        PlatformVersion::get(8).expect("protocol version 8 exists")
+    }
+
     mod document_type_name {
         use super::*;
 
         #[test]
         fn should_be_valid() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -689,7 +696,7 @@ mod tests {
 
         #[test]
         fn should_no_be_empty() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -733,7 +740,7 @@ mod tests {
 
         #[test]
         fn should_no_be_longer_than_64_chars() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -777,7 +784,7 @@ mod tests {
 
         #[test]
         fn should_no_be_alphanumeric() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -852,14 +859,14 @@ mod tests {
         use super::*;
 
         fn default_config() -> DataContractConfig {
-            DataContractConfig::default_for_version(PlatformVersion::latest())
+            DataContractConfig::default_for_version(generation_0_platform_version())
                 .expect("should create a default config")
         }
 
         // -------- MissingPositionsInDocumentTypePropertiesError --------
         #[test]
         fn non_continuous_positions_returns_missing_positions_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             // positions 0 and 2 — 1 is missing
             let schema = platform_value!({
                 "type": "object",
@@ -897,7 +904,7 @@ mod tests {
         // -------- DuplicateIndexNameError --------
         #[test]
         fn duplicate_index_name_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -943,7 +950,7 @@ mod tests {
         // -------- UndefinedIndexPropertyError --------
         #[test]
         fn undefined_index_property_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -984,7 +991,7 @@ mod tests {
         // -------- InvalidIndexedPropertyConstraintError: string maxLength too large --------
         #[test]
         fn indexed_string_exceeding_max_length_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1032,7 +1039,7 @@ mod tests {
         // -------- InvalidIndexedPropertyConstraintError: byte-array maxItems too large --------
         #[test]
         fn indexed_byte_array_exceeding_max_items_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1081,7 +1088,7 @@ mod tests {
         // -------- Valid: indexed string at the size limit succeeds --------
         #[test]
         fn indexed_string_at_exact_max_length_is_accepted() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1118,7 +1125,7 @@ mod tests {
         // -------- Valid: full_validation=false skips all validation --------
         #[test]
         fn skip_validation_accepts_invalid_name_when_full_validation_false() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1151,7 +1158,7 @@ mod tests {
         // -------- schema_map error path: schema must be object --------
         #[test]
         fn non_object_schema_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!("not_an_object");
 
             let result = DocumentTypeV0::try_from_schema(
@@ -1176,7 +1183,7 @@ mod tests {
         // -------- System properties and required_fields interplay --------
         #[test]
         fn required_fields_are_tracked_on_successful_build() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1207,7 +1214,7 @@ mod tests {
         // -------- transient_fields handling --------
         #[test]
         fn transient_fields_are_tracked_on_successful_build() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1238,7 +1245,7 @@ mod tests {
         // -------- Nested object properties produce flattened + nested ----
         #[test]
         fn nested_object_properties_are_both_flattened_and_nested() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1279,7 +1286,7 @@ mod tests {
         // -------- TRANSFERABLE u8 conversion --------
         #[test]
         fn invalid_transferable_integer_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_0_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 // 3 is not a valid Transferable value (only 0 or 1)

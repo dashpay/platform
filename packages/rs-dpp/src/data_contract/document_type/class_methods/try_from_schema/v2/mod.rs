@@ -287,28 +287,8 @@ impl DocumentTypeV2 {
             ));
         }
 
-        // The ranked-aggregate index keywords (`rankedCountable` /
-        // `rankedSummable` / `rankedAverageable`) are only part of the index
-        // grammar from document meta-schema v3 (protocol version 14). Below
-        // that they are unknown property names and the index parser rejects
-        // them, exactly as a pre-v14 node does. The meta-schema also rejects
-        // the keys (v2 has `additionalProperties: false` on index entries),
-        // but only under `full_validation` — this flag is what stops a
-        // non-validating parse (check_tx, cache warm-up, restore) from
-        // admitting a ranked index on a node that has no way to lay one out
-        // on disk. It is decided here, in the only parser generation that can
-        // run on a meta-schema-v3 platform version; the generation-1 entry
-        // point hardcodes `false`.
-        let ranked_aggregates_allowed = platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .document_type_schema
-            >= 3;
-
         // Delegate core parsing to V1
-        let v1 = DocumentTypeV1::try_from_schema_internal(
+        let v1 = DocumentTypeV1::try_from_schema(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
@@ -320,7 +300,6 @@ impl DocumentTypeV2 {
             full_validation,
             validation_operations,
             platform_version,
-            ranked_aggregates_allowed,
         )?;
 
         // Convert to V2 and set the new fields
@@ -532,6 +511,17 @@ mod tests {
     use super::*;
     use platform_value::platform_value;
 
+    /// Generation-specific tests must pin a protocol version that actually
+    /// selects their own generation: `PlatformVersion::latest()` silently
+    /// retargets these tests onto a different parser generation and a
+    /// different document meta-schema whenever LATEST moves. PV13 is the
+    /// highest protocol version whose `try_from_schema` selects generation 2,
+    /// and its `document_type_schema` is 2 — the same meta-schema `latest()`
+    /// resolved to before generation 3 existed, so behavior here is unchanged.
+    fn generation_2_platform_version() -> &'static PlatformVersion {
+        PlatformVersion::get(13).expect("protocol version 13 exists")
+    }
+
     /// Build a minimal v2-shaped document-type schema with
     /// `documentsAverageable: "score"` and the supplied
     /// `rangeAverageable` / `rangeCountable` / `rangeSummable`
@@ -600,20 +590,9 @@ mod tests {
     }
 
     fn parse(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
-        parse_with(schema, PlatformVersion::latest(), true)
-    }
-
-    /// `parse` with the platform version and validation mode spelled out —
-    /// needed by the ranked-keyword gating tests, which have to exercise both
-    /// the meta-schema path (`full_validation: true`) and the structural path
-    /// (`full_validation: false`) on both sides of the PV14 boundary.
-    fn parse_with(
-        schema: Value,
-        platform_version: &PlatformVersion,
-        full_validation: bool,
-    ) -> Result<DocumentTypeV2, ProtocolError> {
+        let platform_version = generation_2_platform_version();
         let config = DataContractConfig::default_for_version(platform_version)
-            .expect("default config available on this platform version");
+            .expect("default config available on latest platform version");
         DocumentTypeV2::try_from_schema(
             Identifier::new([1; 32]),
             1,
@@ -623,7 +602,7 @@ mod tests {
             None,
             &BTreeMap::new(),
             &config,
-            full_validation,
+            true,
             &mut vec![],
             platform_version,
         )
@@ -980,317 +959,6 @@ mod tests {
             v2.documents_summable.as_deref(),
             Some("score"),
             "documents_summable must be carried into v2"
-        );
-    }
-
-    // -----------------------------------------------------------------------
-    // Ranked aggregate index keywords — version gating
-    //
-    // The keywords live on the *index*, not the document type, but the gate
-    // that admits them is the doctype's `document_type_schema` version (2 at
-    // PV13, 3 at PV14), so the tests belong on this parser. Two independent
-    // halves have to hold on the pre-PV14 side:
-    //
-    //   * `full_validation: true`  — the v2 meta-schema has
-    //     `additionalProperties: false` on index entries and rejects the key.
-    //   * `full_validation: false` — no meta-schema runs at all (check_tx,
-    //     cache warm-up, restore), so the *grammar* itself must not know the
-    //     keyword. That is the smuggling path, and the one worth pinning.
-    // -----------------------------------------------------------------------
-
-    /// A `review` doctype with one index over `restaurantId`, averageable on
-    /// `grade`, optionally carrying ranked keywords. Written so the v3
-    /// meta-schema's `dependentRequired` chain is satisfied
-    /// (`rankedAverageable` → `rangeAverageable` → `averageable`).
-    fn ranked_review_schema(ranked_keys: Vec<(&str, bool)>) -> Value {
-        let mut index_entry: Vec<(Value, Value)> = vec![
-            (
-                Value::Text("name".to_string()),
-                Value::Text("byRestaurant".to_string()),
-            ),
-            (
-                Value::Text("properties".to_string()),
-                Value::Array(vec![Value::Map(vec![(
-                    Value::Text("restaurantId".to_string()),
-                    Value::Text("asc".to_string()),
-                )])]),
-            ),
-            (
-                Value::Text("averageable".to_string()),
-                Value::Text("grade".to_string()),
-            ),
-            (
-                Value::Text("rangeAverageable".to_string()),
-                Value::Bool(true),
-            ),
-        ];
-        for (key, value) in ranked_keys {
-            index_entry.push((Value::Text(key.to_string()), Value::Bool(value)));
-        }
-
-        Value::Map(vec![
-            (
-                Value::Text("type".to_string()),
-                Value::Text("object".to_string()),
-            ),
-            (
-                Value::Text("properties".to_string()),
-                platform_value!({
-                    "restaurantId": {
-                        "type": "string",
-                        "maxLength": 63,
-                        "position": 0,
-                    },
-                    "grade": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 100,
-                        "position": 1,
-                    },
-                }),
-            ),
-            (
-                Value::Text("required".to_string()),
-                Value::Array(vec![
-                    Value::Text("restaurantId".to_string()),
-                    Value::Text("grade".to_string()),
-                ]),
-            ),
-            (
-                Value::Text("additionalProperties".to_string()),
-                Value::Bool(false),
-            ),
-            (
-                Value::Text("indices".to_string()),
-                Value::Array(vec![Value::Map(index_entry)]),
-            ),
-        ])
-    }
-
-    fn pv13() -> &'static PlatformVersion {
-        PlatformVersion::get(13).expect("protocol version 13 exists")
-    }
-
-    /// PV14 (document meta-schema v3) accepts the ranked keywords and carries
-    /// them onto the parsed index.
-    #[test]
-    fn ranked_keywords_accepted_at_pv14() {
-        let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema, PlatformVersion::latest(), true)
-            .expect("meta-schema v3 must accept the ranked index keywords");
-
-        let index = v2
-            .indices
-            .get("byRestaurant")
-            .expect("index parsed under its name");
-        assert!(index.ranked_averageable);
-        assert!(!index.ranked_countable);
-        assert!(!index.ranked_summable);
-        assert!(index.range_countable && index.range_summable);
-    }
-
-    /// PV13 + `full_validation`: the v2 meta-schema rejects the unknown index
-    /// key outright.
-    #[test]
-    fn ranked_keywords_rejected_at_pv13_under_full_validation() {
-        let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let result = parse_with(schema, pv13(), true);
-        assert!(
-            result.is_err(),
-            "meta-schema v2 must reject rankedAverageable (additionalProperties: false)"
-        );
-    }
-
-    /// PV13 without `full_validation`: no meta-schema runs, so the structural
-    /// grammar has to do the rejecting. Both `true` and `false` are rejected —
-    /// the key's mere presence is what a pre-PV14 node refuses, and matching
-    /// that exactly is what keeps replay of historical blocks identical.
-    #[test]
-    fn ranked_keywords_rejected_at_pv13_without_full_validation() {
-        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            for value in [true, false] {
-                let schema = ranked_review_schema(vec![(key, value)]);
-                let result = parse_with(schema, pv13(), false);
-                assert!(
-                    result.is_err(),
-                    "{key}: {value} must be rejected by the structural path at PV13 — the \
-                     meta-schema does not run here, so this is the only gate"
-                );
-                let msg = format!("{:?}", result.unwrap_err());
-                assert!(
-                    msg.contains("unexpected property name"),
-                    "PV13 must reject it as an unknown index key, exactly as a node without \
-                     the feature does; got {msg}"
-                );
-            }
-        }
-    }
-
-    /// Same schema, PV14, no full validation: accepted. Pins that the gate is
-    /// the schema *version* and not the validation mode.
-    #[test]
-    fn ranked_keywords_accepted_at_pv14_without_full_validation() {
-        let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema, PlatformVersion::latest(), false)
-            .expect("PV14 structural parse must accept the ranked keywords");
-        assert!(
-            v2.indices
-                .get("byRestaurant")
-                .expect("index parsed under its name")
-                .ranked_averageable
-        );
-    }
-
-    /// The meta-schema's `dependentRequired` is the declarative half of the
-    /// structural "ranking needs its range axis" rule: `rankedCountable`
-    /// without `rangeCountable` fails meta validation at PV14.
-    #[test]
-    fn ranked_countable_without_range_countable_rejected_by_meta_schema() {
-        // `averageable` + `rangeAverageable` give the index its range axes in
-        // *effect*, but `rangeCountable` is not literally present, so
-        // `dependentRequired: {rankedCountable: ["rangeCountable"]}` fails.
-        let schema = ranked_review_schema(vec![("rankedCountable", true)]);
-        let result = parse_with(schema, PlatformVersion::latest(), true);
-        assert!(
-            result.is_err(),
-            "meta-schema v3 dependentRequired must demand rangeCountable alongside \
-             rankedCountable"
-        );
-    }
-
-    /// An index over `restaurantId` carrying exactly one ranked keyword and
-    /// no aggregate layout whatsoever — the shape that separates "the key is
-    /// present" from "a ranking axis was asked for".
-    fn bare_ranked_index_schema(key: &str, value: bool) -> Value {
-        let index_entry = Value::Map(vec![
-            (
-                Value::Text("name".to_string()),
-                Value::Text("byRestaurant".to_string()),
-            ),
-            (
-                Value::Text("properties".to_string()),
-                Value::Array(vec![Value::Map(vec![(
-                    Value::Text("restaurantId".to_string()),
-                    Value::Text("asc".to_string()),
-                )])]),
-            ),
-            (Value::Text(key.to_string()), Value::Bool(value)),
-        ]);
-
-        Value::Map(vec![
-            (
-                Value::Text("type".to_string()),
-                Value::Text("object".to_string()),
-            ),
-            (
-                Value::Text("properties".to_string()),
-                platform_value!({
-                    "restaurantId": {
-                        "type": "string",
-                        "maxLength": 63,
-                        "position": 0,
-                    },
-                }),
-            ),
-            (
-                Value::Text("required".to_string()),
-                Value::Array(vec![Value::Text("restaurantId".to_string())]),
-            ),
-            (
-                Value::Text("additionalProperties".to_string()),
-                Value::Bool(false),
-            ),
-            (
-                Value::Text("indices".to_string()),
-                Value::Array(vec![index_entry]),
-            ),
-        ])
-    }
-
-    /// The ranked prerequisites are **value-sensitive**. `dependentRequired`
-    /// fires on key *presence*, so expressing the opt-out explicitly
-    /// (`"rankedCountable": false`) would have been made to demand a range
-    /// axis the index never uses — a contract that says "no ranking here"
-    /// rejected for not declaring the machinery of a ranking it declined.
-    /// The structural parser reads `false` as "no ranking axis"; full
-    /// validation at PV14 must agree.
-    #[test]
-    fn ranked_flags_written_out_as_false_do_not_require_a_range_axis() {
-        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let v2 = parse_with(
-                bare_ranked_index_schema(key, false),
-                PlatformVersion::latest(),
-                true,
-            )
-            .unwrap_or_else(|e| {
-                panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}")
-            });
-
-            let index = v2
-                .indices
-                .get("byRestaurant")
-                .expect("index parsed under its name");
-            assert!(
-                !index.ranked_countable && !index.ranked_summable && !index.ranked_averageable,
-                "`{key}: false` must leave every ranking axis off"
-            );
-            assert!(
-                !index.range_countable && !index.range_summable,
-                "`{key}: false` must not have conjured a range axis either"
-            );
-        }
-    }
-
-    /// The other half of the same rule: `true` without the matching range
-    /// axis is still refused under full validation, on every one of the three
-    /// axes. Making the prerequisite value-sensitive must not have made it
-    /// toothless.
-    #[test]
-    fn ranked_flags_set_true_still_require_their_range_axis() {
-        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let result = parse_with(
-                bare_ranked_index_schema(key, true),
-                PlatformVersion::latest(),
-                true,
-            );
-            assert!(
-                result.is_err(),
-                "`{key}: true` with no range axis must be rejected under full validation"
-            );
-        }
-    }
-
-    /// Structural counterpart of the check above, on the path where no
-    /// meta-schema runs: `rankedCountable` with neither `countable` nor
-    /// `rangeCountable` in effect is rejected by the index parser itself.
-    #[test]
-    fn ranked_countable_without_range_countable_rejected_structurally() {
-        let schema = platform_value!({
-            "type": "object",
-            "properties": {
-                "restaurantId": {
-                    "type": "string",
-                    "maxLength": 63,
-                    "position": 0,
-                },
-            },
-            "required": ["restaurantId"],
-            "additionalProperties": false,
-            "indices": [{
-                "name": "byRestaurant",
-                "properties": [{ "restaurantId": "asc" }],
-                "rankedCountable": true,
-            }],
-        });
-        let result = parse_with(schema, PlatformVersion::latest(), false);
-        assert!(
-            result.is_err(),
-            "rankedCountable with no range-count layout must be rejected structurally"
-        );
-        let msg = format!("{:?}", result.unwrap_err());
-        assert!(
-            msg.contains("rankedCountable") && msg.contains("rangeCountable"),
-            "error must name both flags; got {msg}"
         );
     }
 }

@@ -183,6 +183,34 @@ mod tests {
         );
     }
 
+    /// The ranked grammar lives in its own document-type parser generation
+    /// rather than behind a version gate inside a shipped one, so v14 must
+    /// select generation 3 while v13 stays on generation 2. Pinned here
+    /// because it is the whole reason generations 0/1/2 can stay byte-identical
+    /// to what consensus already ran: a historical block replayed at v13 is
+    /// parsed by a generation that has never heard of the ranked keywords.
+    #[test]
+    fn ranked_grammar_gets_its_own_parser_generation() {
+        assert_eq!(
+            PLATFORM_V13
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .class_method_versions
+                .try_from_schema,
+            2
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .class_method_versions
+                .try_from_schema,
+            3
+        );
+    }
+
     /// v14 introduces the slots but activates none of them yet. If a later
     /// change flips one of these, it must do so deliberately — and update this
     /// test — rather than by inheriting a default.

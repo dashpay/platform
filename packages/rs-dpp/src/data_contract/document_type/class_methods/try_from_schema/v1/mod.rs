@@ -72,7 +72,6 @@ use crate::tokens::token_amount_on_contract_token::{
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::{
     DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
-    DOCUMENT_META_SCHEMA_V3,
 };
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
@@ -80,14 +79,8 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 
 impl DocumentTypeV1 {
-    /// Parser-generation-1 entry point, selected by `try_from_schema: 1`.
-    /// A generation-1 document type can never carry ranked aggregates:
-    /// every protocol version on that generation predates document
-    /// meta-schema v3, so the ranked index keywords are rejected as unknown
-    /// properties — hence the hardcoded `false`. The v2 parser reuses
-    /// [`Self::try_from_schema_internal`] as its core (layering the V2
-    /// fields on top) and is the only caller that can be on a
-    /// meta-schema-v3 platform version, so it decides the flag itself.
+    // TODO: Split into multiple functions
+    #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
@@ -101,39 +94,6 @@ impl DocumentTypeV1 {
         full_validation: bool, // we don't need to validate if loaded from state
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        Self::try_from_schema_internal(
-            data_contract_id,
-            data_contract_system_version,
-            contract_config_version,
-            name,
-            schema,
-            schema_defs,
-            token_configurations,
-            data_contact_config,
-            full_validation,
-            validation_operations,
-            platform_version,
-            false,
-        )
-    }
-
-    // TODO: Split into multiple functions
-    #[allow(unused_variables)]
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn try_from_schema_internal(
-        data_contract_id: Identifier,
-        data_contract_system_version: u16,
-        contract_config_version: u16,
-        name: &str,
-        schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
-        data_contact_config: &DataContractConfig,
-        full_validation: bool, // we don't need to validate if loaded from state
-        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
-        platform_version: &PlatformVersion,
-        ranked_aggregates_allowed: bool,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
         let root_schema = DocumentType::enrich_with_base_schema(
@@ -205,12 +165,11 @@ impl DocumentTypeV1 {
                 0 => &*DOCUMENT_META_SCHEMA_V0,
                 1 => &*DOCUMENT_META_SCHEMA_V1,
                 2 => &*DOCUMENT_META_SCHEMA_V2,
-                3 => &*DOCUMENT_META_SCHEMA_V3,
                 version => {
                     return Err(ProtocolError::UnknownVersionMismatch {
                         method: "DocumentTypeV1::try_from_schema (document_type_schema)"
                             .to_string(),
-                        known_versions: vec![0, 1, 2, 3],
+                        known_versions: vec![0, 1, 2],
                         received: version,
                     })
                 }
@@ -417,14 +376,12 @@ impl DocumentTypeV1 {
                 index_values
                     .iter()
                     .map(|index_value| {
-                        let index: Index = Index::try_from_value_map(
-                            index_value
-                                .to_map()
-                                .map_err(consensus_or_protocol_value_error)?
-                                .as_slice(),
-                            ranked_aggregates_allowed,
-                        )
-                        .map_err(consensus_or_protocol_data_contract_error)?;
+                        let index: Index = index_value
+                            .to_map()
+                            .map_err(consensus_or_protocol_value_error)?
+                            .as_slice()
+                            .try_into()
+                            .map_err(consensus_or_protocol_data_contract_error)?;
 
                         #[cfg(feature = "validation")]
                         if full_validation {
@@ -846,6 +803,15 @@ mod tests {
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
+    /// Generation-specific tests must pin a protocol version that actually
+    /// selects their own generation: `PlatformVersion::latest()` silently
+    /// retargets these tests onto a different parser generation and a
+    /// different document meta-schema whenever LATEST moves. PV11 is the
+    /// highest protocol version whose `try_from_schema` selects generation 1.
+    fn generation_1_platform_version() -> &'static PlatformVersion {
+        PlatformVersion::get(11).expect("protocol version 11 exists")
+    }
+
     mod keeps_history_flags_version_gating {
         use super::*;
         use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -982,7 +948,7 @@ mod tests {
         }
 
         fn parse(schema: Value, full_validation: bool) -> Result<DocumentTypeV1, ProtocolError> {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
             DocumentTypeV1::try_from_schema(
@@ -1070,6 +1036,16 @@ mod tests {
     mod document_meta_schema_version {
         use super::*;
 
+        /// These two tests are about the document *meta-schema*, not the
+        /// parser generation: they are the strict-meta-schema half of the
+        /// contrast with `v0_schema_allows_unknown_properties` above. PV12 is
+        /// where `document_type_schema` is 1, so this is the pin that makes
+        /// the tests exercise the meta-schema version their names claim
+        /// (under `latest()` they silently drifted onto meta-schema v2).
+        fn meta_schema_v1_platform_version() -> &'static PlatformVersion {
+            PlatformVersion::get(12).expect("protocol version 12 exists")
+        }
+
         #[test]
         fn v0_schema_allows_unknown_properties() {
             let platform_version = PlatformVersion::first();
@@ -1112,7 +1088,7 @@ mod tests {
 
         #[test]
         fn v1_schema_rejects_unknown_properties() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = meta_schema_v1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -1160,7 +1136,7 @@ mod tests {
 
         #[test]
         fn v1_schema_accepts_known_properties() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = meta_schema_v1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -1205,7 +1181,7 @@ mod tests {
 
         #[test]
         fn should_be_valid() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -1239,7 +1215,7 @@ mod tests {
 
         #[test]
         fn should_no_be_empty() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -1284,7 +1260,7 @@ mod tests {
 
         #[test]
         fn should_no_be_longer_than_64_chars() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -1329,7 +1305,7 @@ mod tests {
 
         #[test]
         fn should_no_be_alphanumeric() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",
@@ -1406,14 +1382,14 @@ mod tests {
         use crate::data_contract::document_type::token_costs::accessors::TokenCostGettersV0;
 
         fn default_config() -> DataContractConfig {
-            DataContractConfig::default_for_version(PlatformVersion::latest())
+            DataContractConfig::default_for_version(generation_1_platform_version())
                 .expect("should create a default config")
         }
 
         // ---------- Index errors ----------
         #[test]
         fn duplicate_index_name_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1452,7 +1428,7 @@ mod tests {
 
         #[test]
         fn undefined_index_property_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1489,7 +1465,7 @@ mod tests {
 
         #[test]
         fn missing_positions_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1526,7 +1502,7 @@ mod tests {
 
         #[test]
         fn indexed_string_exceeding_max_length_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1566,7 +1542,7 @@ mod tests {
         // ---------- Token cost: InvalidTokenPositionError ----------
         #[test]
         fn token_cost_with_unknown_position_and_no_contract_id_errors() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
@@ -1609,7 +1585,7 @@ mod tests {
         // ---------- Token cost: RedundantDocumentPaidForByTokenWithContractId ----------
         #[test]
         fn token_cost_with_own_contract_id_errors_redundant() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let own_id = Identifier::new([42; 32]);
 
             let schema = platform_value!({
@@ -1656,7 +1632,7 @@ mod tests {
         // ---------- Token cost: BurnToken on external contract is not allowed ----------
         #[test]
         fn burn_token_on_external_contract_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let own_id = Identifier::new([42; 32]);
             let external_id = Identifier::new([99; 32]);
 
@@ -1705,7 +1681,7 @@ mod tests {
         // ---------- Token cost: valid external contract transfer is accepted ----------
         #[test]
         fn valid_token_cost_with_external_contract_is_accepted() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let own_id = Identifier::new([42; 32]);
             let external_id = Identifier::new([99; 32]);
 
@@ -1751,7 +1727,7 @@ mod tests {
         // ---------- With full_validation = false, token cost validations are skipped
         #[test]
         fn invalid_token_cost_without_validation_still_constructs() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let own_id = Identifier::new([42; 32]);
 
             let schema = platform_value!({
@@ -1790,7 +1766,7 @@ mod tests {
         // ---------- TRANSFERABLE u8 conversion failure path ----------
         #[test]
         fn invalid_transferable_integer_returns_error() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "transferable": 7_u64,
@@ -1818,7 +1794,7 @@ mod tests {
         // ---------- Non-object schema fails in .to_map() ----------
         #[test]
         fn non_object_schema_returns_error_without_validation() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!("not_an_object");
             let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
@@ -1839,7 +1815,7 @@ mod tests {
         // ---------- Valid schema with all optional configuration fields set ----------
         #[test]
         fn full_config_options_are_preserved_on_successful_build() {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
             let schema = platform_value!({
                 "type": "object",
                 "documentsKeepHistory": true,
@@ -1888,7 +1864,7 @@ mod tests {
             use crate::data_contract::TokenContractPosition;
             use platform_value::string_encoding::Encoding;
 
-            let platform_version = PlatformVersion::latest();
+            let platform_version = generation_1_platform_version();
 
             let schema = platform_value!({
                 "type": "object",

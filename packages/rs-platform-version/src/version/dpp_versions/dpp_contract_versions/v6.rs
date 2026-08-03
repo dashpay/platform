@@ -11,14 +11,18 @@ use versioned_feature_core::FeatureVersionBounds;
 // pre-activation validation is unchanged — under v2 those keys still fail an
 // index entry's `additionalProperties: false`.
 //
-// `document_type_schema` doubles as the *grammar* gate, not just the
-// meta-schema selector: the index parser only recognizes the ranked keywords
-// when this value is >= 3, so a non-validating parse (check_tx, cache warm-up,
-// restore) cannot smuggle them onto a pre-v14 node either.
+// `try_from_schema` moves to 3, selecting a new document-type parser
+// generation (`try_from_schema/v3`). New-protocol-version grammar gets its own
+// generation module rather than a version gate inside a shipped one, so the
+// generation-0/1/2 parsers stay byte-identical to the code consensus already
+// ran and replaying a historical block cannot pick up grammar that post-dates
+// it. Generation 3 admits the ranked keywords unconditionally — it exists if
+// and only if the meta-schema is v3, so it needs no version read of its own.
 //
-// `try_from_schema` deliberately stays at 2: the dispatcher reads the
-// meta-schema version out of `document_type_schema` rather than branching on
-// its own version, so pointing at meta-schema v3 needs no new dispatch arm.
+// `document_type_schema` moves to 3 in the same step: generation 3 and
+// meta-schema v3 are introduced together and pair by construction. Under v2 the
+// ranked keys still fail an index entry's `additionalProperties: false`, so v5
+// (protocol version 13) keeps pre-activation validation unchanged.
 pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
@@ -46,7 +50,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 2,
+            try_from_schema: 3, // changed: parser generation 3 — generation 2 plus the ranked index keywords
             create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,
