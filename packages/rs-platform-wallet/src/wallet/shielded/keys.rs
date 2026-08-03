@@ -257,7 +257,8 @@ pub fn orchard_address_from_spending_key(
 ///
 /// Returns `(spending_key_32, default_address_43)`:
 /// - `spending_key_32` — a uniformly random, valid 32-byte Orchard
-///   `SpendingKey` scalar. These are exactly the bytes
+///   `SpendingKey` scalar, wrapped in [`zeroize::Zeroizing`] so the bearer
+///   secret is scrubbed when the caller drops it. These are exactly the bytes
 ///   `identity_create_from_one_time_key` accepts as its one-time key: both
 ///   sides round-trip through `SpendingKey::from_bytes`, which stores the
 ///   scalar bytes verbatim, so `spending_key_32 == sk.to_bytes()`.
@@ -282,18 +283,24 @@ pub fn orchard_address_from_spending_key(
 /// [`PlatformWalletError::ShieldedKeyDerivation`] instead lets the FFI layer
 /// return a normal error to the host.
 pub fn generate_one_time_orchard_key(
-) -> Result<([u8; 32], [u8; ORCHARD_RAW_ADDRESS_LEN]), PlatformWalletError> {
+) -> Result<(zeroize::Zeroizing<[u8; 32]>, [u8; ORCHARD_RAW_ADDRESS_LEN]), PlatformWalletError> {
     use rand::{rngs::OsRng, RngCore};
 
     let mut rng = OsRng;
     loop {
-        let mut sk_bytes = [0u8; 32];
-        rng.try_fill_bytes(&mut sk_bytes).map_err(|e| {
+        // `Zeroizing` inside the loop, not just on the accepted draw: the
+        // acceptance loop can REJECT a draw, and a rejected 32-byte scalar is
+        // still fresh CSPRNG key material. A plain `[u8; 32]` would drop at the
+        // end of the iteration unscrubbed, leaving discarded near-keys in the
+        // stack frame. Wrapping here scrubs every draw — rejected and accepted
+        // alike — and carries the accepted one out to the caller still wrapped.
+        let mut sk_bytes = zeroize::Zeroizing::new([0u8; 32]);
+        rng.try_fill_bytes(sk_bytes.as_mut_slice()).map_err(|e| {
             PlatformWalletError::ShieldedKeyDerivation(format!(
                 "OS RNG entropy source failed while generating a one-time Orchard key: {e}"
             ))
         })?;
-        if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(sk_bytes)) {
+        if let Some(sk) = Option::<SpendingKey>::from(SpendingKey::from_bytes(*sk_bytes)) {
             let fvk = FullViewingKey::from(&sk);
             let address = fvk.address_at(0u32, Scope::External).to_raw_address_bytes();
             return Ok((sk_bytes, address));
@@ -502,7 +509,7 @@ mod tests {
     #[test]
     fn one_time_key_generate_roundtrips_to_its_address() {
         let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
-        let rederived = orchard_address_from_spending_key(sk)
+        let rederived = orchard_address_from_spending_key(*sk)
             .expect("a freshly generated sk is a valid Orchard SpendingKey");
         assert_eq!(
             address, rederived,
@@ -525,7 +532,7 @@ mod tests {
         let (sk_bytes, address_bytes) = generate_one_time_orchard_key().expect("OS RNG available");
 
         // Re-derive exactly the viewing keys a claimer would hold.
-        let sk: SpendingKey = Option::from(SpendingKey::from_bytes(sk_bytes))
+        let sk: SpendingKey = Option::from(SpendingKey::from_bytes(*sk_bytes))
             .expect("generated sk is a valid Orchard SpendingKey");
         let fvk = FullViewingKey::from(&sk);
         let ivk = fvk.to_ivk(Scope::External);
@@ -581,8 +588,8 @@ mod tests {
     #[test]
     fn address_from_spending_key_is_deterministic() {
         let (sk, address) = generate_one_time_orchard_key().expect("OS RNG available");
-        let a = orchard_address_from_spending_key(sk).expect("valid sk");
-        let b = orchard_address_from_spending_key(sk).expect("valid sk");
+        let a = orchard_address_from_spending_key(*sk).expect("valid sk");
+        let b = orchard_address_from_spending_key(*sk).expect("valid sk");
         assert_eq!(a, b, "same sk must derive the same address");
         assert_eq!(
             a, address,
@@ -596,7 +603,7 @@ mod tests {
     fn generate_produces_distinct_keys() {
         let (sk_a, addr_a) = generate_one_time_orchard_key().expect("OS RNG available");
         let (sk_b, addr_b) = generate_one_time_orchard_key().expect("OS RNG available");
-        assert_ne!(sk_a, sk_b, "distinct draws must differ");
+        assert_ne!(*sk_a, *sk_b, "distinct draws must differ");
         assert_ne!(
             addr_a, addr_b,
             "distinct keys must derive distinct addresses"

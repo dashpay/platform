@@ -1592,7 +1592,12 @@ pub unsafe extern "C" fn platform_wallet_generate_one_time_orchard_key(
     // this is a `#[no_mangle] extern "C"` export, so a panic would abort the
     // process across the C ABI before any JNI panic guard could convert it —
     // an OS RNG failure must surface as a normal error, never a hard abort.
-    let (mut sk, address) = match generate_one_time_orchard_key() {
+    // `sk` is a `Zeroizing<[u8; 32]>`: the generator now scrubs every draw it
+    // makes (including rejected ones) and hands the accepted key out still
+    // wrapped, so this native copy is wiped on drop once it has been handed to
+    // the caller's `out_sk_32` buffer — no explicit `zeroize()` needed, and the
+    // scrub also covers the early-return paths (#4204 key-hygiene).
+    let (sk, address) = match generate_one_time_orchard_key() {
         Ok(pair) => pair,
         Err(e) => {
             return PlatformWalletFFIResult::err(
@@ -1603,9 +1608,6 @@ pub unsafe extern "C" fn platform_wallet_generate_one_time_orchard_key(
     };
     std::ptr::copy_nonoverlapping(sk.as_ptr(), out_sk_32, 32);
     std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
-    // Wipe this native copy of the one-time spending key now that it has been
-    // handed to the caller's `out_sk_32` buffer (#4204 key-hygiene).
-    zeroize::Zeroize::zeroize(&mut sk);
     PlatformWalletFFIResult::ok()
 }
 
@@ -1632,10 +1634,15 @@ pub unsafe extern "C" fn platform_wallet_orchard_address_from_spending_key(
     check_ptr!(sk_bytes_32);
     check_ptr!(out_address_43);
 
-    let mut sk = [0u8; 32];
+    // Carry the caller-supplied bearer spending key in `Zeroizing` so THIS
+    // frame's copy is scrubbed on drop, on every return path (#4204 key
+    // hygiene). Note `orchard_address_from_spending_key` takes the key BY
+    // VALUE, so the callee still makes its own transient copy — this only
+    // scrubs the caller frame.
+    let mut sk = zeroize::Zeroizing::new([0u8; 32]);
     std::ptr::copy_nonoverlapping(sk_bytes_32, sk.as_mut_ptr(), 32);
 
-    match orchard_address_from_spending_key(sk) {
+    match orchard_address_from_spending_key(*sk) {
         Ok(address) => {
             std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
             PlatformWalletFFIResult::ok()

@@ -1024,7 +1024,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_orchard
     spending_key: JByteArray,
 ) -> jni::sys::jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        let Some(sk) = read_id32(env, &spending_key, "spendingKey") else {
+        // Same bearer-secret treatment as `oneTimeSk` above: a one-time Orchard
+        // spending key is spend authority, so read it through the `Zeroizing`
+        // helper (scrubbed on drop, intermediate JNI copy wiped) rather than the
+        // generic `read_id32`. `sk` derefs to `[u8; 32]`, so `sk.as_ptr()` below
+        // is unchanged.
+        let Some(sk) = read_key32_zeroizing(env, &spending_key, "spendingKey") else {
             return ptr::null_mut();
         };
         let mut addr = [0u8; 43];
