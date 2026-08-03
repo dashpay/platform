@@ -400,6 +400,16 @@ pub enum PlatformWalletError {
     #[error("Shielded sync failed: {0}")]
     ShieldedSyncFailed(String),
 
+    /// A background sync pass did not drain within its quiesce budget, so
+    /// the operation that required a "no more persister stores" barrier
+    /// (manager shutdown, `clear_shielded`, a sync-state reset) aborted
+    /// fail-closed. The wedged pass may still fire persistence / event
+    /// callbacks; the host must keep its callback context alive and must
+    /// not commit any wipe it was about to pair with this call.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
+    #[error("Background sync did not quiesce: {0}")]
+    ShutdownIncomplete(String),
+
     #[error("Shielded commitment tree update failed: {0}")]
     ShieldedTreeUpdateFailed(String),
 

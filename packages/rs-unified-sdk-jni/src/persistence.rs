@@ -77,7 +77,11 @@ use platform_wallet_ffi::shielded_persistence::{
 
 /// Boxed context handed to every trampoline via `callbacks.context`.
 /// Holds the Kotlin bridge as a `GlobalRef` so it survives across the
-/// vtable's lifetime and across threads.
+/// vtable's lifetime and across threads. Ownership transfers to the
+/// native manager at create (the vtable's `release_fn` is
+/// [`release_persistence_ctx`]): Rust frees the box — and with it the
+/// `GlobalRef` — exactly once, when the manager and every worker that
+/// cloned its persister have dropped their references.
 pub struct KotlinPersistenceCtx {
     pub(crate) bridge: GlobalRef,
 }
@@ -172,6 +176,23 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         // invitation flow refuses to run on Android rather than create a
         // non-durable voucher whose one-time key could be reused on restart.
         on_persist_invitations_fn: None,
+        release_fn: Some(release_persistence_ctx),
+    }
+}
+
+/// `release_fn` for the persistence vtable: frees the boxed
+/// [`KotlinPersistenceCtx`] when the native manager's last persister
+/// reference drops. The FFI guarantees exactly one call, which may land
+/// on any Rust thread — `GlobalRef`'s own `Drop` attaches that thread to
+/// the JVM before deleting the reference, so no manual attach is needed
+/// here.
+///
+/// # Safety
+/// `context` must be the live boxed [`KotlinPersistenceCtx`] this vtable
+/// was built around, never freed elsewhere.
+unsafe extern "C" fn release_persistence_ctx(context: *mut c_void) {
+    if !context.is_null() {
+        drop(Box::from_raw(context as *mut KotlinPersistenceCtx));
     }
 }
 

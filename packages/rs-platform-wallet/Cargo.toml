@@ -31,6 +31,7 @@ bimap = "0.6"
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12" }
+dash-async = { path = "../rs-dash-async" }
 
 # Logging. `log` sits alongside `tracing` for on-device (Android)
 # diagnostics: the JNI layer installs `android_logger` as the global `log`
