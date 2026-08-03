@@ -273,9 +273,9 @@ internal object WalletManagerNative {
      * `core_wallet_signed_payment_broadcast` — broadcast the payment behind
      * [token], reconciling its reservation on failure and consuming the token.
      * Rather than double-broadcasting, an unusable token throws one of three
-     * sibling codes — `ErrorStaleReservationToken` (27, aged out),
-     * `ErrorReservationTokenConsumed` (28, already consumed/unknown), or
-     * `ErrorReservationWalletMismatch` (30, different wallet generation).
+     * sibling codes — `ErrorStaleReservationToken` (34, aged out),
+     * `ErrorReservationTokenConsumed` (35, already consumed/unknown), or
+     * `ErrorReservationWalletMismatch` (36, different wallet generation).
      * [coreHandle] must resolve to the wallet the token was minted against.
      * Returns the txid as a lowercase hex string.
      */

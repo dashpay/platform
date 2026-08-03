@@ -116,9 +116,25 @@ class DashSdkErrorTest {
         // The message must warn against retrying (distinct from the anchor case).
         assertTrue(broadcastUnconfirmed.message!!.contains("do NOT retry"))
 
+        // Definitive broadcast rejection (26) must reach callers as its own type,
+        // NOT as Generic: it is the definitive counterpart to the ambiguous
+        // TransactionBroadcastUnconfirmed (20), and on the deferred path the
+        // reservation was released and the token consumed — so it is not
+        // retryable in place, it must be rebuilt.
+        val rejected = DashSdkError.fromNative(DashSDKException(offset + 26, "bad-txns-inputs-spent"))
+        assertTrue(
+            "code 26 must not fall through to Generic",
+            rejected is DashSdkError.PlatformWallet.TransactionBroadcastRejected,
+        )
+        assertFalse(
+            "TransactionBroadcastRejected must NOT be retryable in place (rebuild the payment)",
+            rejected.isRetryable,
+        )
+        assertEquals("bad-txns-inputs-spent", rejected.message)
+
         // Deferred build/broadcast: the three sibling reservation-token failures
         // map to three distinct typed errors, none retryable.
-        val agedOut = DashSdkError.fromNative(DashSDKException(offset + 27, "stale token 7"))
+        val agedOut = DashSdkError.fromNative(DashSDKException(offset + 34, "stale token 7"))
         assertTrue(agedOut is DashSdkError.PlatformWallet.StaleReservationToken)
         assertFalse(
             "StaleReservationToken must NOT be retryable (rebuild the payment)",
@@ -126,7 +142,7 @@ class DashSdkErrorTest {
         )
         assertEquals("stale token 7", agedOut.message)
 
-        val consumed = DashSdkError.fromNative(DashSDKException(offset + 28, "already broadcast"))
+        val consumed = DashSdkError.fromNative(DashSDKException(offset + 35, "already broadcast"))
         assertTrue(consumed is DashSdkError.PlatformWallet.ReservationTokenConsumed)
         assertFalse(
             "ReservationTokenConsumed must NOT be retryable (rebuild the payment)",
@@ -135,7 +151,7 @@ class DashSdkErrorTest {
         assertEquals("already broadcast", consumed.message)
 
         val walletMismatch =
-            DashSdkError.fromNative(DashSDKException(offset + 30, "different generation"))
+            DashSdkError.fromNative(DashSDKException(offset + 36, "different generation"))
         assertTrue(walletMismatch is DashSdkError.PlatformWallet.ReservationWalletMismatch)
         assertFalse(
             "ReservationWalletMismatch must NOT be retryable (rebuild the payment)",
