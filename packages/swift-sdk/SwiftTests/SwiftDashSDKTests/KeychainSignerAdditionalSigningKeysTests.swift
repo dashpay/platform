@@ -20,7 +20,7 @@ final class KeychainSignerAdditionalSigningKeysTests: XCTestCase {
             Data(hexString: KeychainManager.computePublicKeyHashHex(publicKey))
         )
 
-        try await signer.withAdditionalSigningKeys([
+        await signer.withAdditionalSigningKeys([
             (publicKey: publicKeyHash, privateKey: privateKey),
         ]) {
             XCTAssertTrue(
@@ -129,7 +129,7 @@ final class KeychainSignerAdditionalSigningKeysTests: XCTestCase {
             return XCTFail("expected baseline signature, got \(baseline)")
         }
 
-        try await signer.withAdditionalSigningKeys([
+        await signer.withAdditionalSigningKeys([
             (publicKey: persisted.publicKey, privateKey: persisted.privateKey),
         ]) {
             let scoped = signer.signOnDemand(

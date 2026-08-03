@@ -292,18 +292,24 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         }
     }
 
+    /// `isolation` keeps `body` running in the caller's actor context, so a
+    /// caller isolated to an actor (e.g. `@MainActor`) does not have to send a
+    /// non-`Sendable` closure across an isolation boundary to use the scope.
     public func withAdditionalSigningKeys<T>(
         _ keys: [(publicKey: Data, privateKey: Data)],
+        isolation: isolated (any Actor)? = #isolation,
         perform body: () async throws -> T
     ) async rethrows -> T {
         try await withAdditionalSigningKeys(
             makeAdditionalSigningKeyEntries(keys),
+            isolation: isolation,
             perform: body
         )
     }
 
     func withAdditionalSigningKeys<T>(
         _ entries: [AdditionalSigningKeyEntry],
+        isolation: isolated (any Actor)? = #isolation,
         perform body: () async throws -> T
     ) async rethrows -> T {
         pushAdditionalSigningKeys(entries)
@@ -372,6 +378,21 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             entry = additionalSigningKeys[publicKey]?.last
         }
         return entry
+    }
+
+    /// Looks the scoped key up and signs with it inside one critical section.
+    /// `popAdditionalSigningKeys` / `clearAdditionalSigningKeys` zero an
+    /// entry's bytes while holding `queue`, so releasing the lock between the
+    /// lookup and the signature would let a scope ending on another thread
+    /// zero the key mid-read and yield a garbage signature instead of a clean
+    /// failure. Returns `nil` when no scoped key matches.
+    func signWithScopedKey(publicKey: Data, data: Data) -> Result<Data, Error>? {
+        queue.sync {
+            guard let entry = additionalSigningKeys[publicKey]?.last else {
+                return nil
+            }
+            return entry.sign(data: data, network: network)
+        }
     }
 
     // MARK: key_type dispatch
@@ -568,8 +589,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         keyType: UInt8,
         data: Data
     ) -> Result<Data, Error> {
-        if let entry = additionalSigningKey(publicKey: publicKey) {
-            return entry.sign(data: data, network: network)
+        if let result = signWithScopedKey(publicKey: publicKey, data: data) {
+            return result
         }
 
         if keyType == Self.platformAddressHashKeyType {
