@@ -176,9 +176,27 @@ const BIP44_ACCOUNT_INDEX: u32 = 0;
 /// [`CoreWallet::abandon_payment`]. Dropping it without doing either strands the
 /// reservation until key-wallet's TTL backstop reclaims it.
 ///
+/// ## Not `Clone` — it is a linear obligation
+///
+/// The reservation it holds must be discharged exactly once. While this derived
+/// `Clone`, a safe caller could abandon one copy and register another, or mint
+/// two registry tokens able to broadcast the same transaction — one release
+/// would free inputs the other copy still believed it owned
+/// (dashpay/platform#4256 review). [`CoreWallet::abandon_payment`] now consumes
+/// the value for the same reason: abandoning it ends its life, so a
+/// register-after-abandon cannot compile.
+///
+/// The fields stay public: `register_funded_by` belongs to the reservation
+/// registry (dashpay/platform#4185) and still takes the transaction, funding
+/// ref, height and token as separate arguments, so making them private would
+/// only add accessors without closing the mismatched-pieces hole. Folding those
+/// four parameters into one consuming `register(payment)` — the shape
+/// `register` already has for `SignedCoreTransaction` — is the real fix and
+/// belongs on #4185, which owns that API.
+///
 /// [`SignedPaymentRegistry::register_funded_by`]:
 ///     crate::SignedPaymentRegistry::register_funded_by
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct FinalizedCorePayment {
     /// The signed transaction.
     pub transaction: Transaction,
@@ -728,7 +746,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // if a TTL sweep and an unrelated re-reservation had interleaved.
         let signed_size = payment.transaction.size();
         if signed_size > MAX_STANDARD_TX_SIZE {
-            self.abandon_payment(&payment).await;
+            self.abandon_payment(payment).await;
             return Err(PlatformWalletError::TransactionBuild(format!(
                 "the signed transaction is {signed_size} bytes, over the \
                  {MAX_STANDARD_TX_SIZE}-byte standard transaction limit; it would not relay. \
@@ -895,7 +913,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// on any failure between the build and a successful
     /// [`register_funded_by`](crate::SignedPaymentRegistry::register_funded_by);
     /// once registered, the registry owns the release instead.
-    pub async fn abandon_payment(&self, payment: &FinalizedCorePayment) {
+    pub async fn abandon_payment(&self, payment: FinalizedCorePayment) {
         self.release_reservation_for(
             &payment.funding,
             &payment.transaction,
@@ -1725,6 +1743,72 @@ mod tests {
             .is_ok(),
             "a definitively rejected broadcast must release the receival \
              reservation for an immediate rebuild"
+        );
+    }
+
+    /// `abandon_payment` is the other way to discharge a finalized payment's
+    /// reservation — the one a host takes when marshalling fails between the
+    /// build and a successful `register_funded_by` (the FFI's `CString::new`
+    /// arm). It must give the receival account's inputs back without the
+    /// registry ever being involved.
+    ///
+    /// It also pins the linear contract: `abandon_payment` consumes the
+    /// payment, so registering it afterwards cannot compile
+    /// (dashpay/platform#4256 review).
+    #[tokio::test]
+    async fn abandon_payment_releases_the_reservation_without_the_registry() {
+        let (wm, wallet_id, signer) =
+            split_funded_wallet_manager_dashpay(9_000_000, 20_000_000, DashpayLeg::ReceivingFunds)
+                .await;
+        let (_, _, receival_path) = dashpay_outpoints_and_receival_path(&wm, &wallet_id).await;
+        let generation = wallet_generation(&wm, &wallet_id).await;
+        let core = core_wallet(wm, wallet_id, generation);
+
+        let payment = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(7), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await
+            .expect("first receival build succeeds");
+        assert!(
+            payment.reservation_token.is_some(),
+            "a funded build must stamp an owner token"
+        );
+
+        // Held: the receival account's only UTXO is reserved.
+        let blocked = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(8), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await;
+        assert!(
+            matches!(
+                blocked,
+                Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+            ),
+            "the reserved receival input must not be re-selectable, got {blocked:?}"
+        );
+
+        // Abandon consumes the payment and releases by RESOLVED path, so the
+        // inputs return to the receival account — not to BIP44.
+        core.abandon_payment(payment).await;
+
+        assert!(
+            core.finalize_signed_payment_from_funding_path(
+                vec![(recipient(9), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path),
+            )
+            .await
+            .is_ok(),
+            "abandon_payment must return the receival inputs to spendable"
         );
     }
 

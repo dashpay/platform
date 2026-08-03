@@ -316,7 +316,7 @@ pub unsafe extern "C" fn core_wallet_build_signed_payment_with_token(
     let c_txid = match CString::new(payment.transaction.txid().to_string()) {
         Ok(s) => s,
         Err(_) => {
-            runtime().block_on(core.abandon_payment(&payment));
+            runtime().block_on(core.abandon_payment(payment));
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorUtf8Conversion,
                 "txid string contained an interior NUL".to_string(),
