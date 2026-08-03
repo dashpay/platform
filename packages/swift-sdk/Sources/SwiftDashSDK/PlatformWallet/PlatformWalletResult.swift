@@ -97,6 +97,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// retry fails identically — the caller must change it. Nothing was
     /// reserved or broadcast.
     case errorTransactionBuild = 32
+    /// The request was valid and the transaction was fully assembled — only the
+    /// input signatures could not be produced (a locked or missing
+    /// Keychain/Keystore mnemonic, an unresolved input derivation path, a
+    /// sighash failure). Unlike `errorTransactionBuild` the REQUEST is fine:
+    /// the native layer released this build's owner-stamped input reservation
+    /// before returning, so once the signer is usable the IDENTICAL request may
+    /// be resubmitted. Surface as "unlock to continue", never "payment invalid".
+    case errorTransactionSigning = 33
     /// A deferred (BIP70/BIP270) reservation token has outlived its funding
     /// reservation's lifetime: key-wallet's TTL may already have swept and
     /// re-selected the inputs, so acting on it could touch a newer, unrelated
@@ -198,6 +206,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorSigningKeyUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_BUILD:
             self = .errorTransactionBuild
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_TRANSACTION_SIGNING:
+            self = .errorTransactionSigning
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_STALE_RESERVATION_TOKEN:
             self = .errorStaleReservationToken
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_RESERVATION_TOKEN_CONSUMED:
@@ -324,6 +334,11 @@ public enum PlatformWalletError: LocalizedError {
     /// malformed recipients blob. The REQUEST is at fault: a verbatim retry
     /// fails identically. Nothing was reserved or broadcast.
     case transactionBuild(String)
+    /// The transaction was assembled but its inputs could not be signed —
+    /// typically a locked or missing Keychain/Keystore mnemonic. The build's
+    /// input reservation was released, so the identical request may be
+    /// resubmitted once the signer is usable.
+    case transactionSigning(String)
     /// Definitively-failed address-nonce race (shield, or identity
     /// top-up-from-addresses): Platform rejected the transition because the
     /// submitted address nonce raced its expected value. The transition did
@@ -384,7 +399,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedNoRecordedAnchor(let m),
              .transactionBroadcastUnconfirmed(let m),
              .transactionBroadcastRejected(let m),
-             .transactionBuild(let m),
+             .transactionBuild(let m), .transactionSigning(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
              .signingKeyUnavailable(let m),
@@ -431,6 +446,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .transactionBroadcastRejected(detail)
         case .errorTransactionBuild:
             self = .transactionBuild(detail)
+        case .errorTransactionSigning:
+            self = .transactionSigning(detail)
         case .errorAddressNonceMismatch:
             self = .addressNonceMismatch(detail)
         case .errorShutdownIncomplete:
