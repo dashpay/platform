@@ -215,13 +215,6 @@ pub enum PlatformWalletFFIResultCode {
     /// join instead of erroring. Swift mirror:
     /// `PlatformWalletResultCode.errorShutdownIncomplete`.
     ErrorShutdownIncomplete = 27,
-    // Codes 28-30 are NOT claimed here. 28 and 30 are reserved (vacated by the
-    // deferred-payment reservation-token trio on dashpay/platform#4185/#4256
-    // when it moved to 34-36) and 29 belongs to ErrorAssetLockInsufficientFunds
-    // on the asset-lock funding branch (dashpay/platform#4184). Allocating any
-    // of them here too would merge without a textual conflict and silently
-    // misclassify across hosts. See
-    // packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — the stored blob is
     /// missing, stranded, or written under a different Keystore/Keychain
@@ -235,6 +228,22 @@ pub enum PlatformWalletFFIResultCode {
     /// wallet-operation failure. Not retryable as-is — the key must be
     /// (re-)derived first.
     ErrorSigningKeyUnavailable = 31,
+
+    // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
+    // The deferred-token trio below therefore occupies the contiguous block
+    // 34-36. Current owners (see ERROR_CODE_REGISTRY.md, dashpay/platform#4261):
+    //
+    //   27  ErrorShutdownIncomplete         MERGED on v4.2-dev (dashpay/platform#4268)
+    //   28  (free — vacated by this PR)
+    //   29  ErrorAssetLockInsufficientFunds dashpay/platform#4184
+    //   30  (free — vacated by this PR)
+    //   31  ErrorSigningKeyUnavailable      dashpay/platform#4183, #4259
+    //   32  ErrorTransactionBuild           dashpay/platform#4247, #4256
+    //   33  ErrorTransactionSigning         dashpay/platform#4256
+    //
+    // This trio previously sat at 26-28, then 27/28/30. It moved to 34-36 after
+    // #4268 merged `ErrorShutdownIncomplete = 27` into the v4.2-dev ABI; the
+    // contiguous block above every current claim ends the renumbering churn.
     /// Maps `SignedPaymentError::StaleReservationToken` from the deferred
     /// build → broadcast/release core-send lifecycle (`core_wallet_signed_payment_*`):
     /// the token has outlived the registry's `RESERVATION_MAX_AGE_BLOCKS` bound
@@ -264,6 +273,7 @@ pub enum PlatformWalletFFIResultCode {
     /// reservation lives in that other generation's `ReservationSet`. Did NOT
     /// touch the network and did NOT consume the rightful owner's token; NOT
     /// retryable through this handle (rebuild the payment).
+    ///
     ErrorReservationWalletMismatch = 36,
 
     /// The named thing does not exist.
@@ -280,7 +290,7 @@ pub enum PlatformWalletFFIResultCode {
     /// refuses to register a payment whose wallet was removed while it was being
     /// signed — reconciling that build's reservation before returning. Neither
     /// touched the network. Contrast [`Self::ErrorReservationWalletMismatch`]
-    /// (30), where a DIFFERENT live generation answers to the same wallet id;
+    /// (36), where a DIFFERENT live generation answers to the same wallet id;
     /// here there is no live generation at all, so there is nothing to retry
     /// against (`dashpay/platform#4185`).
     NotFound = 98,

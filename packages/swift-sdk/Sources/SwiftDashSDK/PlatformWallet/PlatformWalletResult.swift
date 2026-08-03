@@ -76,15 +76,20 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
-    // Raw values 28-30 are NOT claimed here: 28 and 30 are reserved (vacated by
-    // the deferred-payment reservation-token trio on dashpay/platform#4185 /
-    // #4256 when it moved to 34-36) and 29 belongs to the asset-lock funding
-    // shortfall on dashpay/platform#4184.
     /// A state transition could not be signed because the signer has no
     /// usable private key for the requested public key — restored from the
     /// structured signer completion code (dashpay/platform#4060 finding 7).
     /// Route to key repair; not retryable as-is.
     case errorSigningKeyUnavailable = 31
+    // Codes 27-33 are claimed outside this PR and must not be reused here:
+    // 27 errorShutdownIncomplete (dashpay/platform#4268, merged), 29
+    // errorAssetLockInsufficientFunds (#4184), 31 errorSigningKeyUnavailable
+    // (#4183/#4259), 32 errorTransactionBuild (#4247/#4256), 33
+    // errorTransactionSigning (#4256); 28 and 30 are free. The deferred-token
+    // trio therefore occupies the contiguous block 34-36. These raw values
+    // MUST match `PlatformWalletFFIResultCode` in
+    // packages/rs-platform-wallet-ffi/src/error.rs — there is no compile-time
+    // check across the ABI. See ERROR_CODE_REGISTRY.md (#4261).
     /// A deferred (BIP70/BIP270) reservation token has outlived its funding
     /// reservation's lifetime: key-wallet's TTL may already have swept and
     /// re-selected the inputs, so acting on it could touch a newer, unrelated
