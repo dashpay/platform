@@ -49,7 +49,19 @@ pub struct PlatformWalletInfo {
     /// This wallet generation's shared state: the lock-free balance for UI reads
     /// (updated from `ManagedWalletInfo` after each SPV block/mempool processing
     /// and RPC refresh) and the generation's lifecycle gate.
-    pub generation: Arc<WalletGeneration>,
+    ///
+    /// Deliberately `pub(crate)`, not `pub`: this `Arc` *is* the generation
+    /// identity that `Arc::ptr_eq` compares, and `PlatformWalletInfo` is
+    /// reachable mutably from outside the crate through
+    /// [`PlatformWallet::state_mut`] / [`PlatformWallet::state_mut_blocking`].
+    /// A public field would let safe downstream code drop a fresh `Arc` in here
+    /// while `PlatformWallet` and `CoreWallet` keep the original, splitting the
+    /// identity: `is_current_generation()` would then reject the still-live
+    /// wallet, generation-bound reservation cleanup would become a no-op, and
+    /// teardown would exclude through a different lifecycle gate than the
+    /// payment operations it has to fence. Read it through
+    /// [`PlatformWallet::generation`]; it is assigned only at construction.
+    pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
 }

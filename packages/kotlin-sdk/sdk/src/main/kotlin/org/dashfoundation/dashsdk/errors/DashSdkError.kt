@@ -240,7 +240,25 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorStaleReservationToken` (native code 26). A deferred
+         * `ErrorTransactionBroadcastRejected` (native code 26). Core
+         * DEFINITIVELY rejected the core transaction: it is not on the network
+         * and will not get there. The build's UTXO reservation was released and,
+         * on the deferred (BIP70/BIP270) path, the token was consumed at the
+         * same time — so the inputs are spendable again and the token is gone.
+         *
+         * The definitive counterpart to [TransactionBroadcastUnconfirmed] (20),
+         * whose outcome is AMBIGUOUS and which therefore keeps its inputs
+         * reserved. Because the reservation and token are already gone, this is
+         * NOT retryable in place: address the rejection reason carried in the
+         * message, then rebuild with
+         * [buildSignedPayment][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.buildSignedPayment]
+         * (deferred) or re-issue the send.
+         */
+        class TransactionBroadcastRejected(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorStaleReservationToken` (native code 34). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
          * token has outlived its funding reservation's lifetime: key-wallet's
          * TTL may already have swept and re-selected the inputs, so acting on it
@@ -257,7 +275,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorReservationTokenConsumed` (native code 28). A deferred
+         * `ErrorReservationTokenConsumed` (native code 35). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
          * token is unknown, already broadcast, or already released — the guard
          * that turns a double-broadcast (or a broadcast after release) into a
@@ -270,7 +288,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorReservationWalletMismatch` (native code 30). A deferred
+         * `ErrorReservationWalletMismatch` (native code 36). A deferred
          * (BIP70/BIP270) [broadcastSigned][org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.broadcastSigned]
          * token was minted against a different wallet *generation* than the one
          * broadcasting it (e.g. a wallet re-created under the same id); its
@@ -402,6 +420,13 @@ sealed class DashSdkError(
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
+            26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            // The deferred-token trio sits at the contiguous block 34-36 because
+            // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
+            // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
+            // (#4184), 31 ErrorSigningKeyUnavailable (#4183/#4259), 32
+            // ErrorTransactionBuild (#4247/#4256), 33 ErrorTransactionSigning
+            // (#4256). See packages/rs-platform-wallet-ffi/ERROR_CODE_REGISTRY.md.
             34 -> PlatformWallet.StaleReservationToken(message, cause) // ErrorStaleReservationToken
             35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
             36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
