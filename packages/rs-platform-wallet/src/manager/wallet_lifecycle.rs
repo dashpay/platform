@@ -340,6 +340,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         wallet.downgrade_to_external_signable();
 
+        // Everything from here to the `self.wallets` publish below is one
+        // lifecycle transition and must not interleave with another. The
+        // steps are individually locked but separately so: the wallet is
+        // live in `wallet_manager` from `insert_wallet` onward, yet
+        // absent from `wallets` until the very end, and the rollback arms
+        // in between undo only the former.
+        //
+        // A concurrent `remove_wallet` of the SAME deterministic id would
+        // read that torn state — the id is registered, so it drops the
+        // `wallet_manager` entry out from under this in-flight
+        // registration, and its own `wallets.remove` then either misses
+        // (this registration has not published yet, so the removal
+        // reports `WalletNotFound` after having already destroyed the
+        // wallet-manager entry) or detaches the generation this call is
+        // about to return to its caller. Serializing the whole transition
+        // is what makes "registered" and "published" the same instant to
+        // every other lifecycle caller.
+        //
+        // Held across `persister.store` and `load_persisted` (both of
+        // which reenter the host synchronously on iOS) because the
+        // rollback arms they guard are part of the same transition;
+        // deliberately NOT across the best-effort `identity().sync()`
+        // network round-trip at the bottom, which is outside it.
+        let lifecycle = self.lock_wallet_lifecycle_serial().await;
+
         // Insert into WalletManager. A duplicate (same network-scoped
         // wallet id already registered) surfaces as the typed
         // `WalletAlreadyExists` so the create FFI / Swift call sites can
@@ -511,11 +536,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
         let platform_wallet = Arc::new(platform_wallet);
 
-        // Register the PlatformWallet handle.
+        // Register the PlatformWallet handle. This publish closes the
+        // lifecycle transition: from here the wallet is consistently
+        // present in both maps, so a queued `remove_wallet` sees a whole
+        // wallet rather than a half-built one.
         {
             let mut wallets = self.wallets.write().await;
             wallets.insert(wallet_id, Arc::clone(&platform_wallet));
         }
+        drop(lifecycle);
 
         // Re-seed the lock-free balance atomic from the wallet's inner
         // balance now that the wallet is in `self.wallets`.
@@ -605,6 +634,30 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// `wallet_manager.write()`; calling it under `wallet_manager` would
     /// invert the documented lock order and deadlock.
     ///
+    /// # Why retirement is not enough on its own
+    ///
+    /// `deactivate` is per-*instance*. It makes the handle a caller
+    /// already holds harmless; it says nothing about which generation
+    /// owns the map entry. The three steps below (retire → drop the
+    /// `WalletManager` entry → detach from `wallets`) take their locks
+    /// one at a time, and the moment the middle step completes the
+    /// deterministic `wallet_id` is free — so a concurrent
+    /// same-mnemonic `register_wallet` legitimately succeeds and
+    /// publishes a *replacement* generation into `wallets` before this
+    /// call reaches its own detach. The unqualified removal that
+    /// followed then took the replacement out: a live wallet, with a
+    /// live asset-lock manager, registered in `wallet_manager` but
+    /// invisible in `wallets` (so no balance update or sync coordinator
+    /// touches it) and un-removable, because the next `remove_wallet`
+    /// takes the `WalletNotFound` arm.
+    ///
+    /// The whole transition therefore runs under
+    /// [`wallet_lifecycle_serial`](PlatformWalletManager::wallet_lifecycle_serial),
+    /// which `register_wallet` and `load_from_persistor` also hold
+    /// across their own publish spans, and the detach is additionally
+    /// generation-checked (`Arc::ptr_eq` against the handle actually
+    /// retired) so no future path can reintroduce the swap silently.
+    ///
     /// Idempotency is unchanged: a wallet absent from `self.wallets` still
     /// returns [`PlatformWalletError::WalletNotFound`] after the shared
     /// `WalletManager` entry is cleaned up, and `deactivate` is itself a
@@ -613,7 +666,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        // Retire the asset-lock manager first, holding nothing else. Note
+        // The whole removal is one lifecycle transition: retire, drop the
+        // shared `WalletManager` entry, detach from `wallets`. Held from
+        // before the very first read so no registration of the same
+        // deterministic id can publish a replacement generation into the
+        // window this call walks through — see
+        // [`wallet_lifecycle_serial`](PlatformWalletManager::wallet_lifecycle_serial)
+        // for why retirement alone cannot cover it.
+        //
+        // Taken before `deactivate` (which takes the retired manager's
+        // `status_persist_serial`) and before either map lock, matching
+        // the documented outermost-first order.
+        let _lifecycle = self.lock_wallet_lifecycle_serial().await;
+
+        // Retire the asset-lock manager first, holding no map lock. Note
         // the read guard is dropped before `deactivate` awaits.
         let existing = {
             let wallets = self.wallets.read().await;
@@ -650,12 +716,55 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ids
         };
 
-        let removed = {
-            let mut wallets = self.wallets.write().await;
-            wallets
-                .remove(wallet_id)
-                .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
+        // Test-only pause point: the window a replacement generation
+        // could be published into. Consumed on arrival so a nested
+        // removal cannot re-park on it.
+        #[cfg(test)]
+        {
+            let gate = self
+                .remove_pre_detach_gate
+                .lock()
+                .expect("remove pre-detach gate mutex")
+                .take();
+            if let Some(gate) = gate {
+                gate.arrived.notify_one();
+                gate.release.notified().await;
+            }
+        }
+
+        // Detach the handle — but only the generation we actually
+        // retired above. `wallet_lifecycle_serial` already guarantees no
+        // replacement can have been published since, so a mismatch here
+        // means that invariant was broken by a future caller mutating
+        // `wallets` outside a lifecycle transition. Detaching blindly in
+        // that case is the damaging outcome (a live wallet vanishes from
+        // the map while staying registered in `wallet_manager`), so
+        // leave the current entry alone and hand back the generation
+        // this call retired.
+        let Some(retired) = existing else {
+            // Never present in `wallets`. Idempotency contract: report
+            // `WalletNotFound`, having still cleaned up the shared
+            // `WalletManager` entry above.
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)));
         };
+        {
+            let mut wallets = self.wallets.write().await;
+            match wallets.get(wallet_id) {
+                Some(current) if Arc::ptr_eq(current, &retired) => {
+                    wallets.remove(wallet_id);
+                }
+                Some(_) => {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "remove_wallet: a different wallet generation was published \
+                         under this id mid-removal — leaving it registered rather \
+                         than detaching a wallet this call never retired"
+                    );
+                }
+                None => {}
+            }
+        }
+        let removed = retired;
 
         // Detach the wallet's shielded state from the network
         // coordinator. After the Phase-2b refactor the coordinator
@@ -1244,5 +1353,274 @@ mod retained_asset_lock_manager_tests {
             "removing an unknown wallet must still surface WalletNotFound"
         );
         retained.deactivate().await;
+    }
+}
+
+/// Cross-*generation* lifecycle: a removal and a same-mnemonic
+/// re-import must not interleave, so a removal can never detach a
+/// replacement wallet it did not retire.
+#[cfg(test)]
+mod wallet_lifecycle_serialization_tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use dashcore::OutPoint;
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use key_wallet::Network;
+    use tokio::sync::Notify;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::manager::RemovePreDetachGate;
+    use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    // Canonical all-`abandon` BIP-39 test vector. Deterministic, which is
+    // the whole point: re-importing it yields the SAME wallet id, so the
+    // re-import genuinely collides with the removal in flight.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    #[derive(Default)]
+    struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// A synthetic tracked lock — used only to prove the replacement's
+    /// asset-lock manager is still live, so how it was funded is
+    /// irrelevant and nothing here broadcasts.
+    fn tracked_lock(out_point: OutPoint) -> TrackedAssetLock {
+        TrackedAssetLock {
+            out_point,
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount: 1_000_000,
+            status: AssetLockStatus::Built,
+            proof: None,
+        }
+    }
+
+    /// Regression: `remove_wallet` must not detach a wallet generation it
+    /// never retired.
+    ///
+    /// `remove_wallet` is three separately-locked steps — retire the
+    /// asset-lock manager, drop the shared `WalletManager` entry, detach
+    /// from `wallets`. The moment the middle step lands, the
+    /// deterministic `wallet_id` is free, so a concurrent same-mnemonic
+    /// `create_wallet_from_seed_bytes` legitimately succeeds and
+    /// publishes a *replacement* generation into `wallets`. The
+    /// unqualified `wallets.remove(wallet_id)` that followed then took
+    /// the replacement out and returned it as the wallet it had removed,
+    /// leaving a live wallet registered in `wallet_manager` but absent
+    /// from `wallets` — invisible to the balance handler and every sync
+    /// coordinator, and un-removable, because the next `remove_wallet`
+    /// takes the `WalletNotFound` arm.
+    ///
+    /// `AssetLockManager::deactivate` cannot cover this: it is
+    /// per-instance, and the replacement's manager is a different
+    /// instance. Retirement makes a stale handle harmless; it says
+    /// nothing about which generation owns the map entry.
+    ///
+    /// The rendezvous is on an arrival signal, never a sleep. With the
+    /// removal parked in the window, exactly one of two states must be
+    /// observed: the re-import PUBLISHED a second generation (the
+    /// unserialized behavior — the bug), or the re-import is QUEUED on
+    /// `wallet_lifecycle_serial` (the fix). A sleep distinguished
+    /// neither, since "no replacement yet" could just mean the re-import
+    /// had not been scheduled.
+    #[tokio::test]
+    async fn removal_cannot_detach_a_replacement_registered_mid_removal() {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(NoopPersister),
+            event_handler,
+        ));
+
+        let network = Network::Testnet;
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let seed_bytes = mnemonic.to_seed("");
+
+        // `Some(0)` skips the SPV birth-height lookup, so nothing here
+        // consults SPV or the network.
+        let original = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+        let wallet_id = original.wallet_id();
+
+        // 1. Park a removal between the `WalletManager` drop and the
+        //    `wallets` detach — the window in which the id is free.
+        let arrived = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        *manager
+            .remove_pre_detach_gate
+            .lock()
+            .expect("remove pre-detach gate mutex") = Some(RemovePreDetachGate {
+            arrived: Arc::clone(&arrived),
+            release: Arc::clone(&release),
+        });
+
+        let manager_remover = Arc::clone(&manager);
+        let remover = tokio::spawn(async move { manager_remover.remove_wallet(&wallet_id).await });
+        arrived.notified().await;
+
+        // 2. Re-import the SAME mnemonic while the removal is parked.
+        //    Runs in its own task: with the fix it BLOCKS on
+        //    `wallet_lifecycle_serial` until the removal completes, so
+        //    awaiting it inline would deadlock against the release below.
+        let manager_reimporter = Arc::clone(&manager);
+        let reimporter = tokio::spawn(async move {
+            manager_reimporter
+                .create_wallet_from_seed_bytes(
+                    network,
+                    &seed_bytes,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+        });
+
+        let mut published_mid_removal = false;
+        let mut queued = false;
+        for _ in 0..2_000 {
+            // A *different* Arc under the same id means a replacement
+            // generation was published; the original is still mapped at
+            // this point, so identity — not presence — is the signal.
+            published_mid_removal = manager
+                .wallets
+                .read()
+                .await
+                .get(&wallet_id)
+                .is_some_and(|current| !Arc::ptr_eq(current, &original));
+            queued = manager
+                .wallet_lifecycle_waiters
+                .load(std::sync::atomic::Ordering::SeqCst)
+                >= 1;
+            if published_mid_removal || queued {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            published_mid_removal || queued,
+            "timed out: the re-import neither published nor reached the \
+             lifecycle boundary — the test never exercised the race"
+        );
+        assert!(
+            !published_mid_removal,
+            "a re-import published a replacement generation while a removal \
+             was mid-flight; the removal's detach would take it back out"
+        );
+        assert!(
+            queued,
+            "the re-import must come to rest on wallet_lifecycle_serial while \
+             the removal holds it — otherwise the two transitions can still \
+             interleave"
+        );
+
+        // 3. Release the removal, then let the re-import complete.
+        release.notify_one();
+        let removed = remover
+            .await
+            .expect("remover task joined")
+            .expect("the removal must return the wallet it retired");
+        let replacement = reimporter
+            .await
+            .expect("reimporter task joined")
+            .expect("the re-import must succeed once the removal is done");
+
+        assert!(
+            Arc::ptr_eq(&removed, &original),
+            "the removal must hand back the generation it retired, not \
+             whatever happened to be mapped when it reached the detach"
+        );
+        assert_eq!(
+            replacement.wallet_id(),
+            wallet_id,
+            "the re-import must reuse the deterministic id — otherwise this \
+             test is not exercising the collision the fix is about"
+        );
+
+        // The replacement is whole: mapped in `wallets`, registered in
+        // the shared `WalletManager`, and driving a live asset-lock
+        // manager.
+        {
+            let wallets = manager.wallets.read().await;
+            let mapped = wallets
+                .get(&wallet_id)
+                .expect("the replacement must stay published in `wallets`");
+            assert!(
+                Arc::ptr_eq(mapped, &replacement),
+                "`wallets` must map the id to the replacement generation"
+            );
+        }
+        assert!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .is_some(),
+            "the replacement must stay registered in the shared WalletManager"
+        );
+        replacement
+            .asset_locks()
+            .track_asset_lock(tracked_lock(OutPoint::null()))
+            .await
+            .expect("the replacement's own asset-lock manager must be live");
+
+        // And the retired generation stays retired.
+        assert!(
+            matches!(
+                removed
+                    .asset_locks()
+                    .track_asset_lock(tracked_lock(OutPoint::null()))
+                    .await,
+                Err(PlatformWalletError::AssetLockManagerInactive(_))
+            ),
+            "the removed generation's asset-lock manager must remain retired"
+        );
     }
 }
