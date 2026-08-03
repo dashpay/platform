@@ -9,6 +9,21 @@ use crate::error::CryptoError;
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
 
+fn zeroizing_encryption_buffer(
+    data: &[u8],
+    observe_capacity_before_copy: impl FnOnce(usize),
+) -> Zeroizing<Vec<u8>> {
+    let padding_needed = 16 - (data.len() % 16);
+    let padded_len = data
+        .len()
+        .checked_add(padding_needed)
+        .expect("plaintext length overflow");
+    let mut buffer = Zeroizing::new(vec![padding_needed as u8; padded_len]);
+    observe_capacity_before_copy(buffer.capacity());
+    buffer[..data.len()].copy_from_slice(data);
+    buffer
+}
+
 /// Encrypt data using CBC-AES-256
 ///
 /// # Arguments
@@ -22,15 +37,10 @@ pub fn encrypt_aes_256_cbc(key: &[u8; 32], iv: &[u8; 16], data: &[u8]) -> Vec<u8
     use aes::cipher::BlockEncryptMut;
 
     let cipher = Aes256CbcEnc::new(key.into(), iv.into());
-    let mut buffer = Vec::new();
-    buffer.extend_from_slice(data);
-
-    // Add padding
-    let padding_needed = 16 - (data.len() % 16);
-    buffer.resize(data.len() + padding_needed, padding_needed as u8);
+    let mut buffer = zeroizing_encryption_buffer(data, |_| {});
 
     cipher
-        .encrypt_padded_mut::<Pkcs7>(&mut buffer, data.len())
+        .encrypt_padded_mut::<Pkcs7>(buffer.as_mut_slice(), data.len())
         .expect("encryption failed")
         .to_vec()
 }
@@ -90,6 +100,22 @@ mod tests {
 
         assert_zeroize_on_drop::<Aes256CbcEnc>();
         assert_zeroize_on_drop::<Aes256CbcDec>();
+    }
+
+    #[test]
+    fn encryption_staging_reserves_padding_before_copying_plaintext() {
+        let plaintext = b"txMetadata plaintext material";
+        let padding_needed = 16 - (plaintext.len() % 16);
+        let capacity_before_copy = std::cell::Cell::new(0);
+
+        let buffer =
+            zeroizing_encryption_buffer(plaintext, |capacity| capacity_before_copy.set(capacity));
+
+        assert!(
+            capacity_before_copy.get() >= plaintext.len() + padding_needed,
+            "the first plaintext copy must already have room for padding so resize cannot leave an unwiped allocation"
+        );
+        assert_eq!(&buffer[..plaintext.len()], plaintext);
     }
 
     #[test]

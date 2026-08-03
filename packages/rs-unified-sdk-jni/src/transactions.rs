@@ -1488,10 +1488,6 @@ mod tests {
             "the JVM array conversion must be the composite's deferred materializer argument"
         );
         assert!(
-            !export.contains("platform_wallet_allocate_encryption_key_index"),
-            "JNI must not stitch a standalone allocator into create"
-        );
-        assert!(
             !export.contains("platform_wallet_create_encrypted_document_with_signer("),
             "JNI must not stitch a second create call after allocation"
         );

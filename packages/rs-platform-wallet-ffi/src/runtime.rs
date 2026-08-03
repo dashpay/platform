@@ -264,6 +264,110 @@ mod tests {
         let out = run_on_big_stack_thread(|| recurse(1_000)).expect("spawn should succeed");
         assert!(out > 0);
     }
+
+    /// Runtime construction failure is a distinct outcome from a worker that
+    /// panicked, and forcing it must not leave the shared runtime poisoned or
+    /// replaced for anything else in the process.
+    #[test]
+    fn try_runtime_surfaces_construction_failure_as_error() {
+        force_runtime_init_failure_once();
+        assert!(
+            matches!(try_runtime(), Err(WorkerFailure::RuntimeInit)),
+            "a forced construction failure must surface as RuntimeInit"
+        );
+
+        assert!(
+            try_runtime().is_ok(),
+            "forcing the failure must not poison or replace the shared runtime"
+        );
+    }
+
+    /// A future that panics on the worker must reach the caller as a value, not
+    /// as an unwind. This is the outcome an encrypted C export maps to an
+    /// ordinary error code rather than letting it reach the C frame.
+    ///
+    /// Only meaningful where unwinding exists: under `panic = "abort"` the
+    /// worker panic aborts the process and there is nothing to observe.
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn try_block_on_worker_surfaces_a_real_worker_panic_as_join_failure() {
+        let outcome: Result<(), WorkerFailure> =
+            try_block_on_worker(async { panic!("worker panic under test") });
+
+        assert!(
+            matches!(outcome, Err(WorkerFailure::WorkerJoin)),
+            "a panicking worker future must be reported as WorkerJoin, not re-raised \
+             as a panic in the caller"
+        );
+    }
+
+    /// A failed initialization must not be remembered.
+    ///
+    /// Runtime construction can fail for reasons that pass, such as the OS
+    /// momentarily refusing threads. The cell must therefore stay empty until
+    /// an initializer succeeds and only then hold the runtime.
+    #[test]
+    fn runtime_cell_does_not_cache_a_failed_initializer() {
+        let cell: once_cell::sync::OnceCell<tokio::runtime::Runtime> =
+            once_cell::sync::OnceCell::new();
+
+        let first = get_or_try_init_runtime(&cell, || Err(WorkerFailure::RuntimeInit));
+        assert!(
+            matches!(first, Err(WorkerFailure::RuntimeInit)),
+            "a failing initializer must surface as RuntimeInit"
+        );
+        assert!(
+            cell.get().is_none(),
+            "a failed initialization must leave the cell empty so it can be retried"
+        );
+
+        let second = get_or_try_init_runtime(&cell, || {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| WorkerFailure::RuntimeInit)
+        });
+        assert!(
+            second.is_ok(),
+            "a later successful initializer must succeed"
+        );
+        assert!(
+            cell.get().is_some(),
+            "a successful initialization must populate the cell"
+        );
+    }
+
+    /// The ordinary path still returns the future's output untouched.
+    #[test]
+    fn try_block_on_worker_round_trips_a_normal_output() {
+        let out = try_block_on_worker(async { 41 + 1 }).expect("no failure was forced");
+        assert_eq!(out, 42);
+    }
+
+    /// The failure classification carries no future output and no panic payload
+    /// — only which stage failed — so nothing unbounded or caller-derived can
+    /// reach an FFI result message through it.
+    ///
+    /// This covers the returned value only. The default panic hook still runs
+    /// at the point of the panic and may print the payload on its own channel.
+    #[cfg(panic = "unwind")]
+    #[test]
+    fn worker_failure_message_is_bounded_and_stage_only() {
+        let forced: Result<(), WorkerFailure> =
+            try_block_on_worker(async { panic!("payload that must not be echoed") });
+        let failure = forced.expect_err("the worker panicked");
+
+        let rendered = failure.to_string();
+        assert!(
+            !rendered.contains("payload that must not be echoed"),
+            "the panic payload must not travel in the failure message: {rendered}"
+        );
+        assert!(
+            !rendered.is_empty() && rendered.len() <= 128,
+            "the failure message must be present and bounded, got {} chars",
+            rendered.len()
+        );
+    }
 }
 
 #[cfg(feature = "tokio-metrics")]

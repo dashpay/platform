@@ -174,8 +174,10 @@ jobs:
             --package rs-dapi \
             --package platform-wallet \
             --package platform-wallet-storage \
+            --package platform-encryption \
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
+            --package rs-unified-sdk-jni \
             --package rs-dapi-client \
             --package platform-serialization \
             --package dapi-grpc \
@@ -313,7 +315,7 @@ jobs:
         run: |
           sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
           sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
+          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml packages/rs-unified-sdk-jni/Cargo.toml
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
       - name: Setup Rust
@@ -357,8 +359,10 @@ jobs:
             --package rs-dapi \
             --package platform-wallet \
             --package platform-wallet-storage \
+            --package platform-encryption \
             --package rs-sdk-ffi \
             --package platform-wallet-ffi \
+            --package rs-unified-sdk-jni \
             --package rs-dapi-client \
             --package platform-serialization \
             --package dapi-grpc \
@@ -458,7 +462,7 @@ jobs:
         run: |
           sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
           sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
+          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml packages/rs-unified-sdk-jni/Cargo.toml
           sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
 
       - name: Setup Rust

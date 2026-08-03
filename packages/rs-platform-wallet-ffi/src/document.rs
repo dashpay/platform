@@ -114,22 +114,22 @@ unsafe fn tx_metadata_key_master_for_wallet(
 
 /// The whole txMetadata create-argument policy as an FFI result.
 ///
-/// A Rust helper, not a C symbol, shared by the C exports, standalone allocator,
-/// deferred-payload composite, and their tests so every entry point applies one
-/// implementation of what makes a create request valid.
+/// A Rust helper, not a C symbol, shared by the C exports, deferred-payload
+/// composite, and their tests so every entry point applies one implementation
+/// of what makes a create request valid.
 ///
 /// Every caller runs this BEFORE copying plaintext, consulting the host key
 /// resolver, reaching the network, or reserving an index — including the index
-/// allocator, which must not spend an index on a request that a later stage will
-/// reject anyway. `encryption_key_index` is `None` when an index is about to be
-/// allocated.
+/// allocation path, which must not spend an index on a request that a later stage
+/// will reject anyway. `encryption_key_index` is `None` when an index is about to
+/// be allocated.
 ///
 /// `signer_present` carries the one precondition that is not wallet-protocol
 /// policy: a create broadcasts through a signer, so a request without one cannot
 /// succeed no matter what the other arguments say. It lives here rather than
-/// only at a C wrapper so the C exports, standalone allocator, and Rust-ABI
-/// deferred-payload composite all reject the same requests before materializing
-/// plaintext or reserving an index.
+/// only at a C wrapper so the C exports and Rust-ABI deferred-payload composite
+/// all reject the same requests before materializing plaintext or reserving an
+/// index.
 pub fn tx_metadata_create_preflight_result(
     payload_len: usize,
     version: u8,
@@ -148,15 +148,16 @@ pub fn tx_metadata_create_preflight_result(
     }
 }
 
-/// Sequence an encrypted create's index resolution ahead of its plaintext copy.
+/// Sequence an encrypted create's index and key resolution ahead of its
+/// plaintext copy.
 ///
 /// Resolving the index can wait on the network (the SDK-allocated path counts
 /// the identity's documents on Platform) and needs only the payload's length,
 /// while materializing produces an owned copy of the caller's plaintext. Running
 /// them in this order is what keeps a native plaintext copy from existing while
-/// that round trip is in flight — a window with no bound, since the SDK sets no
-/// request timeout. A failed resolution returns before `materialize` runs at all,
-/// so a doomed request never copies the plaintext either.
+/// that round trip or a host-backed key lookup is in flight. A failed resolution
+/// returns before `materialize` runs at all, so a doomed request never copies the
+/// plaintext either.
 ///
 /// The order is expressed as a function rather than as adjacent statements
 /// because it is a security property, not a stylistic one: a later edit that
@@ -164,24 +165,18 @@ pub fn tx_metadata_create_preflight_result(
 ///
 /// This private seam is used by the shared create orchestration for both
 /// borrowed C input and deferred host materialization, so neither host bridge
-/// decides the ordering.
-fn allocate_before_materializing<T>(
-    resolve_index: impl FnOnce() -> Result<u32, PlatformWalletFFIResult>,
-    materialize: impl FnOnce() -> T,
-) -> Result<(u32, T), PlatformWalletFFIResult> {
-    let resolved_index = resolve_index()?;
-    Ok((resolved_index, materialize()))
-}
-
-/// Resolve an index, materialize the native plaintext exactly once, and verify
-/// that the callback honored the declared-length contract.
-fn settle_index_and_materialize_payload(
+/// decides the ordering. It resolves the index and key, materializes the native
+/// plaintext exactly once, and verifies that the callback honored the
+/// declared-length contract.
+fn settle_index_resolve_key_and_materialize_payload<Secret>(
     declared_len: usize,
     resolve_index: impl FnOnce() -> Result<u32, PlatformWalletFFIResult>,
+    resolve_key: impl FnOnce() -> Result<Secret, PlatformWalletFFIResult>,
     materialize: impl FnOnce() -> Result<Zeroizing<Vec<u8>>, PlatformWalletFFIResult>,
-) -> Result<(u32, Zeroizing<Vec<u8>>), PlatformWalletFFIResult> {
-    let (resolved_index, materialized) = allocate_before_materializing(resolve_index, materialize)?;
-    let payload = materialized?;
+) -> Result<(u32, Secret, Zeroizing<Vec<u8>>), PlatformWalletFFIResult> {
+    let resolved_index = resolve_index()?;
+    let key = resolve_key()?;
+    let payload = materialize()?;
     if payload.len() != declared_len {
         return Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -191,7 +186,7 @@ fn settle_index_and_materialize_payload(
             ),
         ));
     }
-    Ok((resolved_index, payload))
+    Ok((resolved_index, key, payload))
 }
 
 /// Seal the plaintext, release every SDK-owned secret, and only THEN broadcast.
@@ -700,7 +695,7 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
 }
 
 /// Create + broadcast an encrypted `txMetadata` document while deferring the
-/// caller's native plaintext copy until Rust has settled the index.
+/// caller's native plaintext copy until Rust has settled the index and key.
 ///
 /// A Rust-ABI helper, not a C symbol: the JNI layer links this crate as an rlib
 /// and calls it directly, so this adds no export to the C header and no second
@@ -709,25 +704,26 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
 ///
 /// It exists because a JVM `byte[]` cannot be pinned across the automatic index
 /// query. JNI supplies only its declared length and a synchronous callback.
-/// Rust validates the request, settles the explicit or automatic index, and
-/// only then invokes `materialize_payload` exactly once. The returned
+/// Rust validates the request, settles the explicit or automatic index,
+/// resolves the key source, and only then invokes `materialize_payload` exactly
+/// once. The returned
 /// `Zeroizing<Vec<u8>>` is consumed by the shared create path and scrubbed as
 /// soon as the encrypted properties are sealed, before broadcast begins.
 ///
-/// Keeping that sequence in one Rust operation makes JNI a marshaling layer:
-/// it never calls the allocator separately and never owns a native plaintext
-/// copy while a network allocation query is in flight.
+/// Keeping that sequence in one Rust operation makes JNI a marshaling layer: it
+/// never owns a native plaintext copy while a network allocation query or host
+/// key lookup is in flight.
 ///
 /// # Safety
 /// Same pointer contract as
 /// [`platform_wallet_create_encrypted_document_with_signer`], minus the payload:
 /// `materialize_payload` must return exactly `payload_len` bytes. The helper
-/// rejects a mismatch and drops the returned zeroizing allocation without key
-/// resolution or broadcast. `out_document_json` must point to writable storage
-/// for one `char *`; it is nulled before any other fallible work and, on success,
-/// receives a string the caller MUST release with `platform_wallet_string_free`
-/// (the ordinary free — this output is canonical document JSON, ciphertext and
-/// metadata, no plaintext).
+/// rejects a mismatch and drops both the returned zeroizing allocation and the
+/// resolved wiping key without broadcasting. `out_document_json` must point to
+/// writable storage for one `char *`; it is nulled before any other fallible work
+/// and, on success, receives a string the caller MUST release with
+/// `platform_wallet_string_free` (the ordinary free — this output is canonical
+/// document JSON, ciphertext and metadata, no plaintext).
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn create_encrypted_document_with_deferred_payload<'a>(
     wallet_handle: Handle,
@@ -772,129 +768,6 @@ pub unsafe fn create_encrypted_document_with_deferred_payload<'a>(
             out_document_json,
         )
     })
-}
-
-/// Allocate the next `encryptionKeyIndex` for `owner_identity_id` on
-/// `contract_id`'s `document_type_name`, without creating a document.
-///
-/// This exists so a host whose plaintext lives in a runtime-managed buffer — a
-/// JVM `byte[]`, for example — can settle the index BEFORE copying that
-/// plaintext anywhere native. Allocating waits on Platform, and the SDK sets no
-/// request timeout, so a host that copied first would keep a plaintext copy
-/// alive for an unbounded wait. Hosts that can pass a pointer to memory they
-/// already own should use
-/// [`platform_wallet_create_encrypted_document_with_signer_auto_index`] instead,
-/// which sequences the same allocation internally and makes one call of it.
-///
-/// It takes the SAME create arguments as the export it precedes, minus the
-/// payload bytes themselves, and applies the SAME argument policy to them. That
-/// is deliberate: an index is a one-way reservation, so allocating one for a
-/// request that a later stage would reject anyway burns it for nothing. Passing
-/// `version`, `payload_len` and `signer_handle` here is what lets those
-/// rejections happen before the allocation rather than after it — the caller
-/// cannot ask for an index without supplying everything needed to know the
-/// create could succeed.
-///
-/// `payload_len` is the plaintext length of the document about to be created;
-/// nothing about the payload other than its length is needed. `signer_handle` is
-/// not used for signing here — only its presence is checked, since a create
-/// without a signer cannot proceed.
-///
-/// The returned index is a reservation, not a promise: it has been handed out
-/// and will not be handed out again in this process, so abandoning it leaves an
-/// unused index rather than a duplicate. The caller passes it to
-/// [`platform_wallet_create_encrypted_document_with_signer`].
-///
-/// # Safety
-/// `owner_identity_id` and `contract_id` must each point to 32 readable bytes,
-/// `document_type_name` must be a valid NUL-terminated C string, and `out_index`
-/// must point to writable `u32` storage. `*out_index` is left untouched on any
-/// error.
-#[no_mangle]
-#[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn platform_wallet_allocate_encryption_key_index(
-    wallet_handle: Handle,
-    owner_identity_id: *const u8,
-    contract_id: *const u8,
-    document_type_name: *const c_char,
-    version: u8,
-    payload_len: usize,
-    signer_handle: *mut SignerHandle,
-    out_index: *mut u32,
-) -> PlatformWalletFFIResult {
-    contain_panics(|| {
-        allocate_encryption_key_index_inner(
-            wallet_handle,
-            owner_identity_id,
-            contract_id,
-            document_type_name,
-            version,
-            payload_len,
-            signer_handle,
-            out_index,
-        )
-    })
-}
-
-/// Rust-ABI body of [`platform_wallet_allocate_encryption_key_index`], split out
-/// so a panic in it is caught before the `extern "C"` frame.
-///
-/// # Safety
-/// Same contract as the `extern "C"` wrapper.
-#[allow(clippy::too_many_arguments)]
-unsafe fn allocate_encryption_key_index_inner(
-    wallet_handle: Handle,
-    owner_identity_id: *const u8,
-    contract_id: *const u8,
-    document_type_name: *const c_char,
-    version: u8,
-    payload_len: usize,
-    signer_handle: *mut SignerHandle,
-    out_index: *mut u32,
-) -> PlatformWalletFFIResult {
-    check_ptr!(signer_handle);
-    check_ptr!(document_type_name);
-    check_ptr!(out_index);
-
-    // The same argument policy the create export applies, through the same
-    // helper, run BEFORE the allocator or the network is touched. An index is a
-    // one-way reservation, so a request that a later stage must reject has to be
-    // rejected here rather than after it has spent one. `None` because this call
-    // is what produces the index.
-    let preflight =
-        tx_metadata_create_preflight_result(payload_len, version, None, !signer_handle.is_null());
-    if preflight.code != PlatformWalletFFIResultCode::Success {
-        return preflight;
-    }
-
-    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
-    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
-    let document_type_str =
-        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
-
-    // Clone the identity handle out of the shared handle storage before the
-    // network round trip, so the process-wide guard is not held across it.
-    let cloned =
-        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
-    let identity_wallet = unwrap_option_or_return!(cloned);
-
-    let allocated = try_block_on_worker(async move {
-        identity_wallet
-            .allocate_encryption_key_index(
-                &owner_id,
-                &contract_id_value,
-                &document_type_str,
-                payload_len,
-            )
-            .await
-    });
-    let index = match allocated {
-        Ok(result) => unwrap_result_or_return!(result),
-        Err(failure) => return worker_failure_result(failure),
-    };
-
-    *out_index = index;
-    PlatformWalletFFIResult::ok()
 }
 
 /// Rust-ABI body shared by every encrypted-document create entry point: the
@@ -992,14 +865,16 @@ unsafe fn create_encrypted_document_inner(
     let identity_wallet = wallet_arc.identity().clone();
     let identity_wallet_for_broadcast = identity_wallet.clone();
 
-    // Settle the per-document encryptionKeyIndex and obtain the owned plaintext.
+    // Settle the per-document encryptionKeyIndex and key source before obtaining
+    // the owned plaintext.
     //
     // A borrowed pointer and a deferred host materializer converge here. The
     // host either supplied the index, or the SDK allocates it from Platform.
     // Allocating is a network round trip that needs only the payload's LENGTH,
-    // so it is sequenced strictly ahead of the copy: no owned plaintext exists
-    // while that round trip is in flight. Being ahead of the copy also puts it
-    // ahead of every key resolution, so it cannot strand a resolved master.
+    // so it is sequenced strictly ahead of key resolution and the copy: no
+    // SDK-owned key master or plaintext copy is introduced during the network
+    // wait. Key resolution follows and may synchronously call a host resolver,
+    // so it too completes before the native plaintext allocation is created.
     let (declared_len, index, materialize): (usize, Option<u32>, DeferredPayloadMaterializer<'_>) =
         match payload {
             PayloadSource::Borrowed {
@@ -1025,7 +900,7 @@ unsafe fn create_encrypted_document_inner(
         };
 
     let identity_wallet_for_alloc = identity_wallet.clone();
-    let sequenced = settle_index_and_materialize_payload(
+    let sequenced = settle_index_resolve_key_and_materialize_payload(
         declared_len,
         || match index {
             Some(supplied) => Ok(supplied),
@@ -1046,20 +921,14 @@ unsafe fn create_encrypted_document_inner(
                 }
             }
         },
+        || {
+            tx_metadata_key_master_for_wallet(&wallet_arc, mnemonic_resolver_handle)
+                .map(|master| master.map(WipingMaster))
+        },
         materialize,
     );
-    let (resolved_index, payload_vec) = match sequenced {
+    let (resolved_index, master_opt, payload_vec) = match sequenced {
         Ok(sequenced) => sequenced,
-        Err(failure) => return failure,
-    };
-
-    // Key-source selection by wallet capability (may synchronously call
-    // back into the host mnemonic resolver for external-signable
-    // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
-    // master is wrapped in a Drop-wiping guard.
-    let master_opt = match tx_metadata_key_master_for_wallet(&wallet_arc, mnemonic_resolver_handle)
-    {
-        Ok(master) => master.map(WipingMaster),
         Err(failure) => return failure,
     };
 
@@ -1887,194 +1756,85 @@ mod tests {
         );
     }
 
-    /// Drive the allocation-only export with one argument varied.
-    fn allocate_index_with(
-        version: u8,
-        payload_len: usize,
-        signer: Option<&mut u8>,
-    ) -> (PlatformWalletFFIResult, u32) {
-        let doc_type = CString::new("txMetadata").expect("no interior NUL");
-        let owner = [1u8; 32];
-        let contract = [2u8; 32];
-        let mut out_index: u32 = u32::MAX;
-
-        let signer_ptr = match signer {
-            Some(storage) => opaque_non_null(storage),
-            None => ptr::null_mut(),
-        };
-        let result = unsafe {
-            platform_wallet_allocate_encryption_key_index(
-                UNKNOWN_WALLET_HANDLE,
-                owner.as_ptr(),
-                contract.as_ptr(),
-                doc_type.as_ptr(),
-                version,
-                payload_len,
-                signer_ptr,
-                &mut out_index,
-            )
-        };
-        (result, out_index)
-    }
-
-    /// An undecodable wire version must not reserve an index.
-    #[test]
-    fn allocation_rejects_an_unsupported_version_before_allocating() {
-        let mut signer_storage = 0u8;
-        let (result, out_index) = allocate_index_with(2, 8, Some(&mut signer_storage));
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "a version the core cannot seal must be rejected before an index is \
-             reserved; reaching the allocator would report a handle error instead"
-        );
-        assert_eq!(
-            out_index,
-            u32::MAX,
-            "the output must be left untouched when no index was allocated"
-        );
-    }
-
-    /// A missing signer must not reserve an index.
-    #[test]
-    fn allocation_rejects_a_missing_signer_before_allocating() {
-        let (result, out_index) = allocate_index_with(1, 8, None);
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorNullPointer,
-            "a create that has no signer cannot succeed, so it must not reserve an \
-             index; reaching the allocator would report a handle error instead"
-        );
-        assert_eq!(out_index, u32::MAX, "the output must be left untouched");
-    }
-
-    /// An over-large payload must not reserve an index.
-    #[test]
-    fn allocation_rejects_an_oversized_payload_before_allocating() {
-        let mut signer_storage = 0u8;
-        let (result, out_index) = allocate_index_with(
-            1,
-            platform_wallet_ffi_max_plaintext_len() + 1,
-            Some(&mut signer_storage),
-        );
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "a payload that cannot be sealed must not reserve an index"
-        );
-        assert_eq!(out_index, u32::MAX, "the output must be left untouched");
-    }
-
-    /// A request whose arguments are all valid gets past the argument gate and
-    /// on to the wallet lookup — proving the rejections above are the gate's
-    /// doing and not an unconditional refusal.
-    #[test]
-    fn allocation_with_valid_arguments_reaches_the_wallet_lookup() {
-        let mut signer_storage = 0u8;
-        let (result, _) = allocate_index_with(1, 8, Some(&mut signer_storage));
-
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::NotFound,
-            "with every argument valid the call must get as far as resolving the \
-             wallet handle, which is unknown here"
-        );
-    }
-
-    /// The index is resolved before the plaintext is copied, not after.
-    ///
-    /// Recorded through the same sequencing helper production uses, so the order
-    /// asserted here is the order the export runs: swapping the two statements
-    /// changes this recording.
-    #[test]
-    fn the_index_is_resolved_before_the_plaintext_is_copied() {
-        let order = std::cell::RefCell::new(Vec::new());
-
-        let sequenced = allocate_before_materializing(
-            || {
-                order.borrow_mut().push("resolve-index");
-                Ok(7)
-            },
-            || {
-                order.borrow_mut().push("copy-plaintext");
-            },
-        );
-
-        assert!(sequenced.is_ok(), "both steps succeed in this case");
-        assert_eq!(
-            order.into_inner(),
-            vec!["resolve-index", "copy-plaintext"],
-            "the plaintext must not be copied into a native buffer until the index \
-             is settled; copying first leaves it resident across an unbounded \
-             Platform round trip"
-        );
-    }
-
-    /// A failed index resolution copies nothing at all.
+    /// A failed index resolution resolves no key and copies no plaintext.
     #[test]
     fn a_failed_index_resolution_never_copies_the_plaintext() {
+        let key_resolved = std::cell::Cell::new(false);
         let copied = std::cell::Cell::new(false);
 
-        let sequenced = allocate_before_materializing(
+        let sequenced = settle_index_resolve_key_and_materialize_payload(
+            3,
             || {
                 Err(PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorUnknown,
                     "allocation failed",
                 ))
             },
-            || copied.set(true),
+            || {
+                key_resolved.set(true);
+                Ok(())
+            },
+            || {
+                copied.set(true);
+                Ok(Zeroizing::new(vec![1, 2, 3]))
+            },
         );
 
         assert!(sequenced.is_err(), "the resolution failure must propagate");
+        assert!(!key_resolved.get());
         assert!(
             !copied.get(),
             "a request that cannot proceed must not copy the caller's plaintext"
         );
     }
 
-    /// The deferred payload seam owns the complete ordering contract used by
-    /// runtime-managed hosts: allocation succeeds before materialization, and
-    /// the materializer is consumed exactly once.
+    /// Host-backed key resolution must finish before the native plaintext copy
+    /// is created, because the resolver may block on authentication or secure
+    /// storage access.
     #[test]
-    fn deferred_payload_is_materialized_once_after_index_resolution() {
+    fn key_is_resolved_before_the_plaintext_is_materialized() {
         let order = std::cell::RefCell::new(Vec::new());
 
-        let (index, payload) = settle_index_and_materialize_payload(
+        let (index, secret, payload) = settle_index_resolve_key_and_materialize_payload(
             3,
             || {
                 order.borrow_mut().push("resolve-index");
                 Ok(7)
             },
             || {
+                order.borrow_mut().push("resolve-key");
+                Ok(11)
+            },
+            || {
                 order.borrow_mut().push("materialize");
                 Ok(Zeroizing::new(vec![1, 2, 3]))
             },
         )
-        .expect("both stages succeed");
+        .expect("all stages succeed");
 
         assert_eq!(index, 7);
+        assert_eq!(secret, 11);
         assert_eq!(payload.as_slice(), [1, 2, 3]);
         assert_eq!(
             order.into_inner(),
-            vec!["resolve-index", "materialize"],
-            "the plaintext copy must happen once and only after index resolution"
+            vec!["resolve-index", "resolve-key", "materialize"]
         );
     }
 
-    /// A failed allocation must leave the deferred materializer untouched.
+    /// A resolver failure must return while the deferred host materializer is
+    /// still untouched, so no native plaintext copy is created for a request
+    /// that cannot be encrypted.
     #[test]
-    fn deferred_payload_is_not_materialized_when_index_resolution_fails() {
+    fn failed_key_resolution_never_materializes_plaintext() {
         let materialize_calls = std::cell::Cell::new(0);
 
-        let outcome = settle_index_and_materialize_payload(
+        let outcome = settle_index_resolve_key_and_materialize_payload(
             3,
+            || Ok(7),
             || {
-                Err(PlatformWalletFFIResult::err(
+                Err::<u8, _>(PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorUnknown,
-                    "allocation failed",
+                    "key resolution failed",
                 ))
             },
             || {
@@ -2087,15 +1847,40 @@ mod tests {
         assert_eq!(materialize_calls.get(), 0);
     }
 
+    /// A failed allocation must leave the deferred materializer untouched.
+    #[test]
+    fn deferred_payload_is_not_materialized_when_index_resolution_fails() {
+        let materialize_calls = std::cell::Cell::new(0);
+
+        let outcome = settle_index_resolve_key_and_materialize_payload(
+            3,
+            || {
+                Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUnknown,
+                    "allocation failed",
+                ))
+            },
+            || Ok(()),
+            || {
+                materialize_calls.set(materialize_calls.get() + 1);
+                Ok(Zeroizing::new(vec![1, 2, 3]))
+            },
+        );
+
+        assert!(outcome.is_err());
+        assert_eq!(materialize_calls.get(), 0);
+    }
+
     /// The declared length is part of the deferred-materialization contract.
-    /// A mismatched buffer is rejected before key resolution or broadcast.
+    /// A mismatched buffer drops the resolved key and is rejected before broadcast.
     #[test]
     fn deferred_payload_rejects_a_materialized_length_mismatch() {
         let materialize_calls = std::cell::Cell::new(0);
 
-        let outcome = settle_index_and_materialize_payload(
+        let outcome = settle_index_resolve_key_and_materialize_payload(
             3,
             || Ok(7),
+            || Ok(()),
             || {
                 materialize_calls.set(materialize_calls.get() + 1);
                 Ok(Zeroizing::new(vec![1, 2]))

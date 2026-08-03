@@ -188,6 +188,7 @@ jobs:
             --package platform-wallet \
             --package platform-wallet-storage \
             --package platform-wallet-ffi \
+            --package rs-unified-sdk-jni \
             --all-features \
             --locked \
             -E 'not test(~shield)'
