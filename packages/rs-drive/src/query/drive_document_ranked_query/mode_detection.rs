@@ -60,17 +60,17 @@ pub fn detect_ranked_mode(
 /// Accepts exactly:
 ///
 /// ```text
-/// SELECT COUNT(*)   GROUP BY p HAVING COUNT(*)   IN TOP(n) | IN BOTTOM(n) | EQ MAX | EQ MIN
-/// SELECT SUM(f)     GROUP BY p HAVING SUM(f)     IN TOP(n) | IN BOTTOM(n) | EQ MAX | EQ MIN
-/// SELECT AVG(f)     GROUP BY p HAVING AVG(f)     IN TOP(n) | IN BOTTOM(n) | EQ MAX | EQ MIN
+/// SELECT COUNT(*)   GROUP BY p HAVING COUNT(*)   IN TOP(n) | IN BOTTOM(n) | EQ TOP(1) | EQ BOTTOM(1)
+/// SELECT SUM(f)     GROUP BY p HAVING SUM(f)     IN TOP(n) | IN BOTTOM(n) | EQ TOP(1) | EQ BOTTOM(1)
+/// SELECT AVG(f)     GROUP BY p HAVING AVG(f)     IN TOP(n) | IN BOTTOM(n) | EQ TOP(1) | EQ BOTTOM(1)
 /// ```
 ///
 /// with no `WHERE`, no `LIMIT` / `OFFSET` / `START AT`, `1 ≤ n ≤`
 /// [`MAX_RANKED_LIMIT`], and the `HAVING` aggregate byte-equal to the
-/// `SELECT` projection. `EQ TOP(1)` / `EQ BOTTOM(1)` are accepted as
-/// synonyms of `EQ MAX` / `EQ MIN` because
-/// [`HavingRightOperand::Ranking`]'s own contract documents them as
-/// equivalent.
+/// `SELECT` projection. `EQ TOP(1)` / `EQ BOTTOM(1)` are accepted for the
+/// positional single best- or worst-ranked group. `MAX` and `MIN` are
+/// wire-decodable but rejected: they mean every group tied at the extreme,
+/// which the indexed top-k proof cannot attest (ties break by group key).
 ///
 /// Everything the grammar rejects is rejected *loudly* rather than
 /// normalized away: a caller who wrote a filter, a limit, or a mismatched
