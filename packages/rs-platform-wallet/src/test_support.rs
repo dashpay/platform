@@ -633,10 +633,10 @@ pub(crate) async fn split_funded_wallet_manager_dashpay(
         wallet: ctx.wallet.clone(),
     };
 
-    let balance = Arc::new(WalletBalance::new());
+    let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         core_wallet: ctx.managed_wallet,
-        balance,
+        generation,
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
     };

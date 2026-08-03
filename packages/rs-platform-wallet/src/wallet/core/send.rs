@@ -1473,16 +1473,16 @@ mod tests {
     /// `CoreWallet`'s balance `Arc` is pointer-equal to the one registered under
     /// the wallet id (`Arc::ptr_eq` in `release_reservation_for`). The split
     /// fixtures don't hand their balance back, so a `CoreWallet` built with a
-    /// fresh `WalletBalance::new()` is — correctly — treated as a *different*
+    /// fresh `WalletGeneration::new()` is — correctly — treated as a *different*
     /// generation and every release is skipped. Tests that assert release
     /// behaviour must therefore build on this handle, not a fresh one.
     async fn wallet_generation(
         wm: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
         wallet_id: &WalletId,
-    ) -> Arc<WalletBalance> {
+    ) -> Arc<WalletGeneration> {
         let guard = wm.read().await;
         let (_, info) = guard.get_wallet_and_info(wallet_id).expect("wallet present");
-        Arc::clone(&info.balance)
+        Arc::clone(&info.generation)
     }
 
     /// Snapshot a DashPay fixture's BIP44 outpoints, its DashPay
@@ -1540,7 +1540,7 @@ mod tests {
         let (bip44_ops, receival_ops, receival_path) =
             dashpay_outpoints_and_receival_path(&wm, &wallet_id).await;
 
-        let core = core_wallet(wm, wallet_id, Arc::new(WalletBalance::new()));
+        let core = core_wallet(wm, wallet_id, Arc::new(WalletGeneration::new()));
         let payment = core
             .finalize_signed_payment_from_funding_path(
                 vec![(recipient(7), 15_000_000)],
@@ -1647,7 +1647,7 @@ mod tests {
                 core.clone(),
                 payment.transaction.clone(),
                 payment.funding.clone(),
-                Some(payment.reservation_height),
+                payment.reservation_height,
                 payment.reservation_token,
             )
             .await;
@@ -1700,7 +1700,7 @@ mod tests {
                 core.clone(),
                 rebuilt.transaction.clone(),
                 rebuilt.funding.clone(),
-                Some(rebuilt.reservation_height),
+                rebuilt.reservation_height,
                 rebuilt.reservation_token,
             )
             .await;
@@ -1767,7 +1767,7 @@ mod tests {
                 core.clone(),
                 payment.transaction.clone(),
                 payment.funding.clone(),
-                Some(payment.reservation_height),
+                payment.reservation_height,
                 payment.reservation_token,
             )
             .await;
