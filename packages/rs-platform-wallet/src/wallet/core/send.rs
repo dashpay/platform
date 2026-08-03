@@ -1613,11 +1613,19 @@ mod tests {
     /// generation and every release is skipped. Tests that assert release
     /// behaviour must therefore build on this handle, not a fresh one.
     async fn wallet_generation(
-        wm: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
+        wm: &Arc<
+            tokio::sync::RwLock<
+                key_wallet_manager::WalletManager<
+                    crate::wallet::platform_wallet::PlatformWalletInfo,
+                >,
+            >,
+        >,
         wallet_id: &WalletId,
     ) -> Arc<WalletGeneration> {
         let guard = wm.read().await;
-        let (_, info) = guard.get_wallet_and_info(wallet_id).expect("wallet present");
+        let (_, info) = guard
+            .get_wallet_and_info(wallet_id)
+            .expect("wallet present");
         Arc::clone(&info.generation)
     }
 
@@ -1626,13 +1634,21 @@ mod tests {
     /// derivation path — the `funding_path` a caller round-trips from the
     /// account-balance enumeration to spend a receival balance.
     async fn dashpay_outpoints_and_receival_path(
-        wm: &Arc<tokio::sync::RwLock<key_wallet_manager::WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>>,
+        wm: &Arc<
+            tokio::sync::RwLock<
+                key_wallet_manager::WalletManager<
+                    crate::wallet::platform_wallet::PlatformWalletInfo,
+                >,
+            >,
+        >,
         wallet_id: &WalletId,
     ) -> (HashSet<OutPoint>, HashSet<OutPoint>, DerivationPath) {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
         let guard = wm.read().await;
-        let (_, info) = guard.get_wallet_and_info(wallet_id).expect("wallet present");
+        let (_, info) = guard
+            .get_wallet_and_info(wallet_id)
+            .expect("wallet present");
         let network = info.core_wallet.network();
         let bip44 = info
             .core_wallet

@@ -626,11 +626,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         }
         entry
             .core
-            .release_reservation_for(
-                &entry.funding,
-                &entry.tx,
-                entry.funding_reservation_token,
-            )
+            .release_reservation_for(&entry.funding, &entry.tx, entry.funding_reservation_token)
             .await;
     }
 
