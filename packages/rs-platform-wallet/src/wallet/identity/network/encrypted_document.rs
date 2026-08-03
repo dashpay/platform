@@ -794,6 +794,9 @@ impl IdentityWallet {
     /// zeroizing per-document AES key. A host bridge can therefore finish this
     /// operation, release any master xprv used to derive it, and only then
     /// materialize the payload for [`PreparedTxMetadataEncryption::seal`].
+    ///
+    /// **Crosses no `.await`** and resolves through `blocking_read`. Call from a
+    /// synchronous context only; calling it inside an async task panics.
     pub fn prepare_txmetadata_encryption(
         &self,
         owner_identity_id: &Identifier,
