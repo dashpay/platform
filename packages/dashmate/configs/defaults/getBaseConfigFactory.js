@@ -407,6 +407,9 @@ export default function getBaseConfigFactory() {
                 gossipSleepDuration: '100ms',
                 queryMaj23SleepDuration: '2s',
               },
+              verificationRateLimit: 300,
+              peerVoteRateLimit: 600,
+              peerDataRateLimit: 500,
               unsafeOverride: {
                 propose: {
                   timeout: null,

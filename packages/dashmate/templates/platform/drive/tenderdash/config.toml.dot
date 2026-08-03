@@ -478,6 +478,13 @@ create-empty-blocks-interval = "{{= it.platform.drive.tenderdash.consensus.creat
 peer-gossip-sleep-duration = "{{= it.platform.drive.tenderdash.consensus.peer.gossipSleepDuration }}"
 peer-query-maj23-sleep-duration = "{{= it.platform.drive.tenderdash.consensus.peer.queryMaj23SleepDuration }}"
 
+# Per-peer vote-channel budget (verification-work/sec). 0 disables.
+peer-vote-rate-limit = {{= it.platform.drive.tenderdash.consensus.peerVoteRateLimit }}
+# Node-wide BLS verification budget (ops/sec). Must be 0 or >= 33.
+verification-rate-limit = {{= it.platform.drive.tenderdash.consensus.verificationRateLimit }}
+# Per-peer data-channel budget (verification-work/sec). 0 disables.
+peer-data-rate-limit = {{= it.platform.drive.tenderdash.consensus.peerDataRateLimit }}
+
 ### Unsafe Timeout Overrides ###
 
 # These fields provide temporary overrides for the Timeout consensus parameters.

@@ -1211,6 +1211,18 @@ export default {
                       additionalProperties: false,
                       required: ['gossipSleepDuration', 'queryMaj23SleepDuration'],
                     },
+                    verificationRateLimit: {
+                      type: 'number',
+                      minimum: 0,
+                    },
+                    peerVoteRateLimit: {
+                      type: 'number',
+                      minimum: 0,
+                    },
+                    peerDataRateLimit: {
+                      type: 'number',
+                      minimum: 0,
+                    },
                     unsafeOverride: {
                       type: 'object',
                       properties: {
@@ -1259,7 +1271,7 @@ export default {
                     },
                   },
                   additionalProperties: false,
-                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval', 'peer', 'unsafeOverride'],
+                  required: ['createEmptyBlocks', 'createEmptyBlocksInterval', 'peer', 'unsafeOverride', 'verificationRateLimit', 'peerVoteRateLimit', 'peerDataRateLimit'],
                 },
                 log: {
                   type: 'object',

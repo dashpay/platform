@@ -1701,6 +1701,36 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '4.2.0': (configFile) => {
+        // Backfill the Tenderdash consensus rate-limit defaults so a regenerated
+        // config.toml carries the new [consensus] keys. The schema now requires
+        // them, so an existing config that predates them would fail validation
+        // until it gains the values.
+        //
+        // Keyed at the release that ships these keys: the runner skips a
+        // migration whose version equals the operator's current version, so a
+        // key equal to the version an operator already runs never fires and only
+        // configs written before this release are backfilled.
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            const consensus = options.platform?.drive?.tenderdash?.consensus;
+            if (!consensus) {
+              return;
+            }
+            if (typeof consensus.verificationRateLimit === 'undefined') {
+              consensus.verificationRateLimit = defaultConfig.getStored('platform.drive.tenderdash.consensus.verificationRateLimit');
+            }
+            if (typeof consensus.peerVoteRateLimit === 'undefined') {
+              consensus.peerVoteRateLimit = defaultConfig.getStored('platform.drive.tenderdash.consensus.peerVoteRateLimit');
+            }
+            if (typeof consensus.peerDataRateLimit === 'undefined') {
+              consensus.peerDataRateLimit = defaultConfig.getStored('platform.drive.tenderdash.consensus.peerDataRateLimit');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
