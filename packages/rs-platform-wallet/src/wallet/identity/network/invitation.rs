@@ -544,6 +544,10 @@ impl IdentityWallet {
         .await
         {
             Ok(identity) => identity,
+            // Coverage note (#4240 review): the unit tests pin proof assembly
+            // (IS primary + optional CL fallback) but not this resubmission arm
+            // itself — exercising it needs an injectable submission seam, so
+            // until one exists regressions here surface only in live claims.
             Err(e) if is_instant_lock_proof_invalid(&e) => {
                 let Some(chain_proof) = chain_fallback else {
                     // The islock was rejected but the funding tx is not yet
