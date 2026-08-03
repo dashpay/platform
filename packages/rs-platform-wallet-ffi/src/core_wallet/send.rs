@@ -7,7 +7,7 @@
 //! the **signed serialized transaction bytes** plus the computed fee and change
 //! amount. It does NOT broadcast and does NOT persist a debit — the caller
 //! commits/broadcasts the returned bytes itself (dashj during the Android
-//! transition; a later SDK-broadcast mode afterwards).
+//! transition; an SDK-broadcast mode afterwards).
 //!
 //! Coin selection never unions funding accounts: `funding_path` names exactly
 //! one, defaulting to the unmixed BIP44 account. See
