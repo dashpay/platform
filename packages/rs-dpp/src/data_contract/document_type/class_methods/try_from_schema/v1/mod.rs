@@ -81,12 +81,13 @@ use platform_value::{Identifier, Value};
 
 impl DocumentTypeV1 {
     /// Parser-generation-1 entry point, selected by `try_from_schema: 1`.
-    /// Every protocol version on that generation predates document
-    /// meta-schema v3, so the ranked-aggregate index keywords are never
-    /// admitted here — hence the hardcoded `false`. The v2 wrapper is the
-    /// only caller that can be on a meta-schema-v3 platform version, and it
-    /// decides the flag itself before delegating to
-    /// [`Self::try_from_schema_with_ranked_aggregates`].
+    /// A generation-1 document type can never carry ranked aggregates:
+    /// every protocol version on that generation predates document
+    /// meta-schema v3, so the ranked index keywords are rejected as unknown
+    /// properties — hence the hardcoded `false`. The v2 parser reuses
+    /// [`Self::try_from_schema_internal`] as its core (layering the V2
+    /// fields on top) and is the only caller that can be on a
+    /// meta-schema-v3 platform version, so it decides the flag itself.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
@@ -101,7 +102,7 @@ impl DocumentTypeV1 {
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        Self::try_from_schema_with_ranked_aggregates(
+        Self::try_from_schema_internal(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
@@ -120,7 +121,7 @@ impl DocumentTypeV1 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn try_from_schema_with_ranked_aggregates(
+    pub(super) fn try_from_schema_internal(
         data_contract_id: Identifier,
         data_contract_system_version: u16,
         contract_config_version: u16,

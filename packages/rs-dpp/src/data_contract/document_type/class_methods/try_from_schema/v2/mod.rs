@@ -308,7 +308,7 @@ impl DocumentTypeV2 {
             >= 3;
 
         // Delegate core parsing to V1
-        let v1 = DocumentTypeV1::try_from_schema_with_ranked_aggregates(
+        let v1 = DocumentTypeV1::try_from_schema_internal(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
