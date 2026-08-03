@@ -287,8 +287,28 @@ impl DocumentTypeV2 {
             ));
         }
 
+        // The ranked-aggregate index keywords (`rankedCountable` /
+        // `rankedSummable` / `rankedAverageable`) are only part of the index
+        // grammar from document meta-schema v3 (protocol version 14). Below
+        // that they are unknown property names and the index parser rejects
+        // them, exactly as a pre-v14 node does. The meta-schema also rejects
+        // the keys (v2 has `additionalProperties: false` on index entries),
+        // but only under `full_validation` — this flag is what stops a
+        // non-validating parse (check_tx, cache warm-up, restore) from
+        // admitting a ranked index on a node that has no way to lay one out
+        // on disk. It is decided here, in the only parser generation that can
+        // run on a meta-schema-v3 platform version; the generation-1 entry
+        // point hardcodes `false`.
+        let ranked_aggregates_allowed = platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .document_type_schema
+            >= 3;
+
         // Delegate core parsing to V1
-        let v1 = DocumentTypeV1::try_from_schema(
+        let v1 = DocumentTypeV1::try_from_schema_with_ranked_aggregates(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
@@ -300,6 +320,7 @@ impl DocumentTypeV2 {
             full_validation,
             validation_operations,
             platform_version,
+            ranked_aggregates_allowed,
         )?;
 
         // Convert to V2 and set the new fields

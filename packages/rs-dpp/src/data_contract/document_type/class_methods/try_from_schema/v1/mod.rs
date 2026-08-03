@@ -80,8 +80,13 @@ use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 
 impl DocumentTypeV1 {
-    // TODO: Split into multiple functions
-    #[allow(unused_variables)]
+    /// Parser-generation-1 entry point, selected by `try_from_schema: 1`.
+    /// Every protocol version on that generation predates document
+    /// meta-schema v3, so the ranked-aggregate index keywords are never
+    /// admitted here — hence the hardcoded `false`. The v2 wrapper is the
+    /// only caller that can be on a meta-schema-v3 platform version, and it
+    /// decides the flag itself before delegating to
+    /// [`Self::try_from_schema_with_ranked_aggregates`].
     #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
@@ -95,6 +100,39 @@ impl DocumentTypeV1 {
         full_validation: bool, // we don't need to validate if loaded from state
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        Self::try_from_schema_with_ranked_aggregates(
+            data_contract_id,
+            data_contract_system_version,
+            contract_config_version,
+            name,
+            schema,
+            schema_defs,
+            token_configurations,
+            data_contact_config,
+            full_validation,
+            validation_operations,
+            platform_version,
+            false,
+        )
+    }
+
+    // TODO: Split into multiple functions
+    #[allow(unused_variables)]
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn try_from_schema_with_ranked_aggregates(
+        data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
+        name: &str,
+        schema: Value,
+        schema_defs: Option<&BTreeMap<String, Value>>,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+        data_contact_config: &DataContractConfig,
+        full_validation: bool, // we don't need to validate if loaded from state
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+        platform_version: &PlatformVersion,
+        ranked_aggregates_allowed: bool,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
         let root_schema = DocumentType::enrich_with_base_schema(
@@ -358,25 +396,6 @@ impl DocumentTypeV1 {
         let index_values =
             Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
                 .map_err(consensus_or_protocol_value_error)?;
-
-        // The ranked-aggregate index keywords (`rankedCountable` /
-        // `rankedSummable` / `rankedAverageable`) are only part of the index
-        // grammar from document meta-schema v3 (protocol version 14). Below
-        // that they are unknown property names and the index parser rejects
-        // them, exactly as a pre-v14 node does. Same shape as the
-        // `document_type_schema >= 2` gate on the history-subscription flags
-        // above: the meta-schema also rejects the keys (v2 has
-        // `additionalProperties: false` on index entries), but only under
-        // `full_validation` — this gate is what stops a non-validating parse
-        // (check_tx, cache warm-up, restore) from admitting a ranked index on
-        // a node that has no way to lay one out on disk.
-        let ranked_aggregates_allowed = platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .document_type_schema
-            >= 3;
 
         #[cfg(feature = "validation")]
         let mut index_names: HashSet<String> = HashSet::new();
