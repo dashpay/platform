@@ -148,15 +148,16 @@ pub fn tx_metadata_create_preflight_result(
     }
 }
 
-/// Sequence an encrypted create's index and key resolution ahead of its
-/// plaintext copy.
+/// Sequence an encrypted create's index and complete encryption preparation
+/// ahead of its plaintext copy.
 ///
 /// Resolving the index can wait on the network (the SDK-allocated path counts
 /// the identity's documents on Platform) and needs only the payload's length,
 /// while materializing produces an owned copy of the caller's plaintext. Running
 /// them in this order is what keeps a native plaintext copy from existing while
-/// that round trip or a host-backed key lookup is in flight. A failed resolution
-/// returns before `materialize` runs at all, so a doomed request never copies the
+/// that round trip, a host-backed key lookup, managed-owner resolution, key
+/// selection, or AES derivation is in flight. A failed preparation returns
+/// before `materialize` runs at all, so a doomed request never copies the
 /// plaintext either.
 ///
 /// The order is expressed as a function rather than as adjacent statements
@@ -165,17 +166,17 @@ pub fn tx_metadata_create_preflight_result(
 ///
 /// This private seam is used by the shared create orchestration for both
 /// borrowed C input and deferred host materialization, so neither host bridge
-/// decides the ordering. It resolves the index and key, materializes the native
-/// plaintext exactly once, and verifies that the callback honored the
-/// declared-length contract.
-fn settle_index_resolve_key_and_materialize_payload<Secret>(
+/// decides the ordering. It resolves the index, prepares a zeroizing encryption
+/// context, materializes the native plaintext exactly once, and verifies that
+/// the callback honored the declared-length contract.
+fn settle_index_prepare_encryption_and_materialize_payload<Secret>(
     declared_len: usize,
     resolve_index: impl FnOnce() -> Result<u32, PlatformWalletFFIResult>,
-    resolve_key: impl FnOnce() -> Result<Secret, PlatformWalletFFIResult>,
+    prepare: impl FnOnce(u32) -> Result<Secret, PlatformWalletFFIResult>,
     materialize: impl FnOnce() -> Result<Zeroizing<Vec<u8>>, PlatformWalletFFIResult>,
 ) -> Result<(u32, Secret, Zeroizing<Vec<u8>>), PlatformWalletFFIResult> {
     let resolved_index = resolve_index()?;
-    let key = resolve_key()?;
+    let prepared = prepare(resolved_index)?;
     let payload = materialize()?;
     if payload.len() != declared_len {
         return Err(PlatformWalletFFIResult::err(
@@ -186,7 +187,7 @@ fn settle_index_resolve_key_and_materialize_payload<Secret>(
             ),
         ));
     }
-    Ok((resolved_index, key, payload))
+    Ok((resolved_index, prepared, payload))
 }
 
 /// Seal the plaintext, release every SDK-owned secret, and only THEN broadcast.
@@ -249,8 +250,8 @@ type DeferredPayloadMaterializer<'a> =
 
 enum PayloadSource<'a> {
     /// Caller memory borrowed for the synchronous call, copied into an owned
-    /// zeroizing buffer only once the index is settled — either by using the
-    /// index the host supplied (`Some`) or by allocating one (`None`).
+    /// zeroizing buffer only once the index and complete encryption context
+    /// are prepared.
     Borrowed {
         ptr: *const u8,
         len: usize,
@@ -258,8 +259,9 @@ enum PayloadSource<'a> {
         borrow: PhantomData<&'a [u8]>,
     },
     /// A native copy that Rust asks the host bridge to make only after the
-    /// index is settled. The callback runs synchronously on the thread that
-    /// entered this Rust-ABI helper and returns ownership of the copy.
+    /// index and complete encryption context are prepared. The callback runs
+    /// synchronously on the thread that entered this Rust-ABI helper and
+    /// returns ownership of the copy.
     Deferred {
         len: usize,
         index: Option<u32>,
@@ -527,15 +529,17 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// owned by `owner_identity_id`, signed via the external `signer_handle`.
 ///
 /// Prepares the document synchronously via
-/// `IdentityWallet::prepare_encrypted_txmetadata_properties` — the SDK selects
-/// the identity's ENCRYPTION key id (the `keyIndex` field), derives the AES key
-/// from the wallet HD tree, and seals the opaque `payload` into the legacy
-/// `version ‖ IV ‖ AES-256-CBC` blob — then broadcasts
+/// `IdentityWallet::prepare_txmetadata_encryption` — the SDK resolves the
+/// identity, selects its ENCRYPTION key id (the `keyIndex` field), and derives
+/// the AES key from the wallet HD tree before the host payload is copied. It
+/// then seals the opaque `payload` into the legacy
+/// `version ‖ IV ‖ AES-256-CBC` blob and broadcasts
 /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` via the generic
-/// `create_document_with_signer`. The resolved master xprv is wiped BETWEEN the
-/// (synchronous) derivation and the (async) broadcast, so no key material
-/// crosses the network `.await`. The written document is
-/// decryptable by the legacy `org.dashj.platform` stack and vice versa.
+/// `create_document_with_signer`. The resolved master xprv is wiped BEFORE the
+/// host payload is copied, and the derived key is dropped before the async
+/// broadcast, so no key material crosses the network `.await`. The written
+/// document is decryptable by the legacy `org.dashj.platform` stack and vice
+/// versa.
 ///
 /// The AES key source is selected by the wallet's capability: a key-resident
 /// wallet derives in-process; an external-signable / watch-only wallet (the
@@ -705,8 +709,8 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
 /// It exists because a JVM `byte[]` cannot be pinned across the automatic index
 /// query. JNI supplies only its declared length and a synchronous callback.
 /// Rust validates the request, settles the explicit or automatic index,
-/// resolves the key source, and only then invokes `materialize_payload` exactly
-/// once. The returned
+/// prepares the complete encryption context, and only then invokes
+/// `materialize_payload` exactly once. The returned
 /// `Zeroizing<Vec<u8>>` is consumed by the shared create path and scrubbed as
 /// soon as the encrypted properties are sealed, before broadcast begins.
 ///
@@ -719,9 +723,9 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
 /// [`platform_wallet_create_encrypted_document_with_signer`], minus the payload:
 /// `materialize_payload` must return exactly `payload_len` bytes. The helper
 /// rejects a mismatch and drops both the returned zeroizing allocation and the
-/// resolved wiping key without broadcasting. `out_document_json` must point to
-/// writable storage for one `char *`; it is nulled before any other fallible work
-/// and, on success, receives a string the caller MUST release with
+/// prepared zeroizing AES context without broadcasting. `out_document_json`
+/// must point to writable storage for one `char *`; it is nulled before any
+/// other fallible work and, on success, receives a string the caller MUST release with
 /// `platform_wallet_string_free` (the ordinary free — this output is canonical
 /// document JSON, ciphertext and metadata, no plaintext).
 #[allow(clippy::too_many_arguments)]
@@ -865,16 +869,17 @@ unsafe fn create_encrypted_document_inner(
     let identity_wallet = wallet_arc.identity().clone();
     let identity_wallet_for_broadcast = identity_wallet.clone();
 
-    // Settle the per-document encryptionKeyIndex and key source before obtaining
-    // the owned plaintext.
+    // Settle the per-document encryptionKeyIndex and prepare the complete
+    // encryption context before obtaining the owned plaintext.
     //
     // A borrowed pointer and a deferred host materializer converge here. The
     // host either supplied the index, or the SDK allocates it from Platform.
     // Allocating is a network round trip that needs only the payload's LENGTH,
     // so it is sequenced strictly ahead of key resolution and the copy: no
     // SDK-owned key master or plaintext copy is introduced during the network
-    // wait. Key resolution follows and may synchronously call a host resolver,
-    // so it too completes before the native plaintext allocation is created.
+    // wait. Key resolution follows and may synchronously call a host resolver;
+    // managed-owner lookup, key selection, and AES derivation also finish before
+    // the native plaintext allocation is created.
     let (declared_len, index, materialize): (usize, Option<u32>, DeferredPayloadMaterializer<'_>) =
         match payload {
             PayloadSource::Borrowed {
@@ -900,7 +905,7 @@ unsafe fn create_encrypted_document_inner(
         };
 
     let identity_wallet_for_alloc = identity_wallet.clone();
-    let sequenced = settle_index_resolve_key_and_materialize_payload(
+    let sequenced = settle_index_prepare_encryption_and_materialize_payload(
         declared_len,
         || match index {
             Some(supplied) => Ok(supplied),
@@ -921,38 +926,45 @@ unsafe fn create_encrypted_document_inner(
                 }
             }
         },
-        || {
-            tx_metadata_key_master_for_wallet(&wallet_arc, mnemonic_resolver_handle)
-                .map(|master| master.map(WipingMaster))
+        |resolved_index| {
+            let master_opt =
+                tx_metadata_key_master_for_wallet(&wallet_arc, mnemonic_resolver_handle)
+                    .map(|master| master.map(WipingMaster))?;
+            let prepared = {
+                let key_source = match master_opt.as_ref() {
+                    Some(master) => TxMetadataKeySource::Master(&master.0),
+                    None => TxMetadataKeySource::ResidentWallet,
+                };
+                identity_wallet.prepare_txmetadata_encryption(
+                    &owner_id_for_async,
+                    resolved_index,
+                    version,
+                    declared_len,
+                    key_source,
+                )
+            };
+            // The prepared context owns only the derived AES key. Erase the
+            // much more powerful master before the host payload is copied.
+            drop(master_opt);
+            prepared.map_err(PlatformWalletFFIResult::from)
         },
         materialize,
     );
-    let (resolved_index, master_opt, payload_vec) = match sequenced {
+    let (_resolved_index, prepared, payload_vec) = match sequenced {
         Ok(sequenced) => sequenced,
         Err(failure) => return failure,
     };
 
-    // Derive the AES key + seal the wire blob SYNCHRONOUSLY; release the
-    // plaintext and the master; only then broadcast. Neither the plaintext —
-    // whether this call copied it or the host handed it over — nor the master
-    // xprv crosses the broadcast await; only the sealed properties (ciphertext,
-    // no key material) do.
+    // Seal the wire blob SYNCHRONOUSLY; release the plaintext and prepared AES
+    // context; only then broadcast. Neither the plaintext — whether this call
+    // copied it or the host handed it over — nor any key material crosses the
+    // broadcast await; only the sealed properties (ciphertext) do.
     let broadcast_outcome = seal_and_release_before_broadcasting(
         payload_vec,
-        master_opt,
-        |plaintext, master_opt| {
-            let key_source = match master_opt.as_ref() {
-                Some(master) => TxMetadataKeySource::Master(&master.0),
-                None => TxMetadataKeySource::ResidentWallet,
-            };
-            identity_wallet
-                .prepare_encrypted_txmetadata_properties(
-                    &owner_id_for_async,
-                    resolved_index,
-                    version,
-                    plaintext,
-                    key_source,
-                )
+        prepared,
+        |plaintext, prepared| {
+            prepared
+                .seal(plaintext)
                 .map_err(PlatformWalletFFIResult::from)
         },
         |properties_json| {
@@ -1762,7 +1774,7 @@ mod tests {
         let key_resolved = std::cell::Cell::new(false);
         let copied = std::cell::Cell::new(false);
 
-        let sequenced = settle_index_resolve_key_and_materialize_payload(
+        let sequenced = settle_index_prepare_encryption_and_materialize_payload(
             3,
             || {
                 Err(PlatformWalletFFIResult::err(
@@ -1770,7 +1782,7 @@ mod tests {
                     "allocation failed",
                 ))
             },
-            || {
+            |_| {
                 key_resolved.set(true);
                 Ok(())
             },
@@ -1788,21 +1800,22 @@ mod tests {
         );
     }
 
-    /// Host-backed key resolution must finish before the native plaintext copy
-    /// is created, because the resolver may block on authentication or secure
-    /// storage access.
+    /// Complete encryption preparation must finish before the native plaintext
+    /// copy is created, because context resolution and derivation can fail or
+    /// block independently of the payload.
     #[test]
-    fn key_is_resolved_before_the_plaintext_is_materialized() {
+    fn encryption_is_prepared_before_the_plaintext_is_materialized() {
         let order = std::cell::RefCell::new(Vec::new());
 
-        let (index, secret, payload) = settle_index_resolve_key_and_materialize_payload(
+        let (index, secret, payload) = settle_index_prepare_encryption_and_materialize_payload(
             3,
             || {
                 order.borrow_mut().push("resolve-index");
                 Ok(7)
             },
-            || {
-                order.borrow_mut().push("resolve-key");
+            |resolved_index| {
+                order.borrow_mut().push("prepare-encryption");
+                assert_eq!(resolved_index, 7);
                 Ok(11)
             },
             || {
@@ -1817,24 +1830,24 @@ mod tests {
         assert_eq!(payload.as_slice(), [1, 2, 3]);
         assert_eq!(
             order.into_inner(),
-            vec!["resolve-index", "resolve-key", "materialize"]
+            vec!["resolve-index", "prepare-encryption", "materialize"]
         );
     }
 
-    /// A resolver failure must return while the deferred host materializer is
-    /// still untouched, so no native plaintext copy is created for a request
-    /// that cannot be encrypted.
+    /// An encryption-preparation failure must return while the deferred host
+    /// materializer is still untouched, so no native plaintext copy is created
+    /// for a request that cannot be encrypted.
     #[test]
-    fn failed_key_resolution_never_materializes_plaintext() {
+    fn failed_encryption_preparation_never_materializes_plaintext() {
         let materialize_calls = std::cell::Cell::new(0);
 
-        let outcome = settle_index_resolve_key_and_materialize_payload(
+        let outcome = settle_index_prepare_encryption_and_materialize_payload(
             3,
             || Ok(7),
-            || {
+            |_| {
                 Err::<u8, _>(PlatformWalletFFIResult::err(
                     PlatformWalletFFIResultCode::ErrorUnknown,
-                    "key resolution failed",
+                    "encryption preparation failed",
                 ))
             },
             || {
@@ -1852,7 +1865,7 @@ mod tests {
     fn deferred_payload_is_not_materialized_when_index_resolution_fails() {
         let materialize_calls = std::cell::Cell::new(0);
 
-        let outcome = settle_index_resolve_key_and_materialize_payload(
+        let outcome = settle_index_prepare_encryption_and_materialize_payload(
             3,
             || {
                 Err(PlatformWalletFFIResult::err(
@@ -1860,7 +1873,7 @@ mod tests {
                     "allocation failed",
                 ))
             },
-            || Ok(()),
+            |_| Ok(()),
             || {
                 materialize_calls.set(materialize_calls.get() + 1);
                 Ok(Zeroizing::new(vec![1, 2, 3]))
@@ -1877,10 +1890,10 @@ mod tests {
     fn deferred_payload_rejects_a_materialized_length_mismatch() {
         let materialize_calls = std::cell::Cell::new(0);
 
-        let outcome = settle_index_resolve_key_and_materialize_payload(
+        let outcome = settle_index_prepare_encryption_and_materialize_payload(
             3,
             || Ok(7),
-            || Ok(()),
+            |_| Ok(()),
             || {
                 materialize_calls.set(materialize_calls.get() + 1);
                 Ok(Zeroizing::new(vec![1, 2]))
@@ -2447,6 +2460,62 @@ mod tests {
             manager_handle,
             sdk,
         }
+    }
+
+    /// A create whose owner is not managed by the wallet must fail before the
+    /// deferred host payload is copied into native memory. The resolver is
+    /// deliberately valid so the request reaches owner-context resolution; a
+    /// null or failing resolver would make this pass without exercising the
+    /// plaintext-lifetime bug.
+    #[test]
+    fn a_missing_owner_context_never_materializes_deferred_plaintext() {
+        let fixture = resolver_fixture();
+        let missing_owner = [0x44u8; 32];
+        let contract = [0x55u8; 32];
+        let doc_type = CString::new("txMetadata").expect("no interior NUL");
+        let materialize_calls = std::cell::Cell::new(0);
+        let mut signer_storage = 0u8;
+        let mut out_id = [0u8; 32];
+        let mut out_json: *mut c_char = ptr::null_mut();
+
+        let result = unsafe {
+            create_encrypted_document_with_deferred_payload(
+                fixture.wallet_handle,
+                fixture.resolver,
+                missing_owner.as_ptr(),
+                contract.as_ptr(),
+                doc_type.as_ptr(),
+                Some(1),
+                1,
+                3,
+                || {
+                    materialize_calls.set(materialize_calls.get() + 1);
+                    Ok(Zeroizing::new(vec![1, 2, 3]))
+                },
+                opaque_non_null(&mut signer_storage),
+                out_id.as_mut_ptr(),
+                &mut out_json,
+            )
+        };
+
+        assert_ne!(result.code, PlatformWalletFFIResultCode::Success);
+        assert!(
+            !result.message.is_null(),
+            "the missing-owner error must carry its typed message"
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("wallet errors are valid UTF-8");
+        assert!(
+            message.contains("Identity not found"),
+            "the request must reach the missing-owner failure, not stop at the resolver: {message}"
+        );
+        assert_eq!(
+            materialize_calls.get(),
+            0,
+            "a request with no encryption context must not create a native plaintext copy"
+        );
+        assert!(out_json.is_null());
     }
 
     /// Drive the real fetch export, returning the result and the JSON the export

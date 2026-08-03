@@ -247,6 +247,152 @@ impl TxMetadataKeySource<'_> {
     }
 }
 
+/// A fully resolved txMetadata encryption operation that needs only the
+/// caller's plaintext to produce document properties.
+///
+/// Construction validates the declared payload shape, resolves the managed
+/// owner and encryption key id, and derives the per-document AES key. Keeping
+/// those fallible steps separate from [`Self::seal`] lets FFI callers finish
+/// all wallet and key work before they materialize a host-owned payload.
+///
+/// The AES key is private and zeroized on drop. This type is neither `Clone`
+/// nor `Copy`, and its manual `Debug` rendering never exposes the key.
+pub struct PreparedTxMetadataEncryption {
+    key_index: u32,
+    encryption_key_index: u32,
+    version: u8,
+    payload_len: usize,
+    aes_key: Zeroizing<[u8; 32]>,
+}
+
+impl std::fmt::Debug for PreparedTxMetadataEncryption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedTxMetadataEncryption")
+            .field("key_index", &self.key_index)
+            .field("encryption_key_index", &self.encryption_key_index)
+            .field("version", &self.version)
+            .field("payload_len", &self.payload_len)
+            .field("aes_key", &"<redacted>")
+            .finish()
+    }
+}
+
+impl PreparedTxMetadataEncryption {
+    /// Seal the exact payload shape this context was prepared for.
+    ///
+    /// A fresh IV is drawn for every call, so even an accidental repeated seal
+    /// with one context never reuses an AES-CBC key/IV pair. The context remains
+    /// zeroizing and its caller should drop it immediately after this returns.
+    pub fn seal(&self, payload: &[u8]) -> Result<String, PlatformWalletError> {
+        use dashcore::secp256k1::rand::{thread_rng, RngCore};
+
+        if payload.len() != self.payload_len {
+            return Err(PlatformWalletError::TxMetadataPayloadLengthMismatch {
+                declared: self.payload_len,
+                actual: payload.len(),
+            });
+        }
+
+        let mut iv = [0u8; 16];
+        thread_rng().fill_bytes(&mut iv);
+        let blob = seal_tx_metadata(&self.aes_key, self.version, &iv, payload)?;
+
+        // The generic document-create path sanitizes hex strings into the
+        // schema's byte-array field before broadcasting.
+        Ok(serde_json::json!({
+            FIELD_KEY_INDEX: self.key_index,
+            FIELD_ENCRYPTION_KEY_INDEX: self.encryption_key_index,
+            FIELD_ENCRYPTED_METADATA: hex::encode(&blob),
+        })
+        .to_string())
+    }
+}
+
+#[cfg(test)]
+mod prepared_encryption_tests {
+    use super::*;
+
+    fn prepared(payload_len: usize) -> PreparedTxMetadataEncryption {
+        PreparedTxMetadataEncryption {
+            key_index: 2,
+            encryption_key_index: 7,
+            version: 1,
+            payload_len,
+            aes_key: Zeroizing::new([0xa5; 32]),
+        }
+    }
+
+    #[test]
+    fn prepared_encryption_seals_wire_compatible_properties() {
+        let payload = b"txMetadata prepared-context payload";
+        let properties = prepared(payload.len()).seal(payload).expect("seal");
+        let properties: serde_json::Value =
+            serde_json::from_str(&properties).expect("properties JSON");
+
+        assert_eq!(properties[FIELD_KEY_INDEX], 2);
+        assert_eq!(properties[FIELD_ENCRYPTION_KEY_INDEX], 7);
+        let blob = hex::decode(
+            properties[FIELD_ENCRYPTED_METADATA]
+                .as_str()
+                .expect("encryptedMetadata is hex"),
+        )
+        .expect("valid hex");
+        let opened = open_tx_metadata(&[0xa5; 32], &blob).expect("open prepared blob");
+        assert_eq!(opened.version, 1);
+        assert_eq!(opened.payload.as_slice(), payload);
+    }
+
+    #[test]
+    fn prepared_encryption_rejects_a_different_materialized_length() {
+        let error = prepared(3)
+            .seal(&[1, 2])
+            .expect_err("the materializer must honor its declared length");
+
+        assert!(matches!(
+            error,
+            PlatformWalletError::TxMetadataPayloadLengthMismatch {
+                declared: 3,
+                actual: 2
+            }
+        ));
+    }
+
+    #[test]
+    fn prepared_encryption_draws_a_fresh_iv_for_every_seal() {
+        let payload = b"repeat seal";
+        let prepared = prepared(payload.len());
+        let blobs = [
+            prepared.seal(payload).expect("first seal"),
+            prepared.seal(payload).expect("second seal"),
+        ]
+        .map(|properties| {
+            let properties: serde_json::Value =
+                serde_json::from_str(&properties).expect("properties JSON");
+            hex::decode(
+                properties[FIELD_ENCRYPTED_METADATA]
+                    .as_str()
+                    .expect("encryptedMetadata is hex"),
+            )
+            .expect("valid hex")
+        });
+
+        assert_ne!(&blobs[0][1..17], &blobs[1][1..17]);
+        for blob in blobs {
+            let opened = open_tx_metadata(&[0xa5; 32], &blob).expect("open prepared blob");
+            assert_eq!(opened.payload.as_slice(), payload);
+        }
+    }
+
+    #[test]
+    fn prepared_encryption_debug_redacts_the_aes_key() {
+        let rendered = format!("{:?}", prepared(3));
+        let key_rendering = format!("{:?}", [0xa5u8; 32]);
+
+        assert!(rendered.contains("<redacted>"));
+        assert!(!rendered.contains(&key_rendering));
+    }
+}
+
 /// Wallet-contract document field names (wire-compatible with the legacy
 /// `TxMetadataDocument` schema — `wallet-utils-contract` `tx_metadata`).
 const FIELD_KEY_INDEX: &str = "keyIndex";
@@ -612,8 +758,8 @@ impl IdentityWallet {
     /// [`Self::resolve_encryption_context`], resolving
     /// `(identity, identity_index, wallet)` without crossing an `.await`. MUST
     /// be called from a sync context — never inside an async task (`blocking_read`
-    /// panics there). Used by [`Self::prepare_encrypted_txmetadata_properties`]
-    /// so the master xprv can be wiped BEFORE any network round-trip.
+    /// panics there). Used by [`Self::prepare_txmetadata_encryption`] so the
+    /// master xprv can be wiped BEFORE any network round-trip.
     fn resolve_encryption_context_blocking(
         &self,
         owner_identity_id: &Identifier,
@@ -641,6 +787,52 @@ impl IdentityWallet {
         Ok((identity, identity_index, wallet))
     }
 
+    /// Synchronously resolve every fallible input needed to encrypt one
+    /// txMetadata payload, without taking or copying the plaintext itself.
+    ///
+    /// The returned context contains the selected identity key id and a
+    /// zeroizing per-document AES key. A host bridge can therefore finish this
+    /// operation, release any master xprv used to derive it, and only then
+    /// materialize the payload for [`PreparedTxMetadataEncryption::seal`].
+    pub fn prepare_txmetadata_encryption(
+        &self,
+        owner_identity_id: &Identifier,
+        encryption_key_index: u32,
+        version: u8,
+        payload_len: usize,
+        key_source: TxMetadataKeySource<'_>,
+    ) -> Result<PreparedTxMetadataEncryption, PlatformWalletError> {
+        ensure_tx_metadata_create_inputs_valid(payload_len, version, Some(encryption_key_index))?;
+
+        let (identity, identity_index, wallet) =
+            self.resolve_encryption_context_blocking(owner_identity_id)?;
+        let key_index = Self::select_encryption_key_id(&identity)?;
+        let aes_key = key_source
+            .derive(
+                &wallet,
+                self.sdk.network,
+                identity_index,
+                key_index,
+                encryption_key_index,
+            )
+            .inspect_err(|e| {
+                breadcrumb_error(&format!(
+                    "prepare_txmetadata_encryption: key derivation failed \
+                     key_source={} error_kind={}",
+                    key_source.label(),
+                    error_kind(e)
+                ));
+            })?;
+
+        Ok(PreparedTxMetadataEncryption {
+            key_index,
+            encryption_key_index,
+            version,
+            payload_len,
+            aes_key,
+        })
+    }
+
     /// Synchronously derive the identity encryption key and seal `payload` into
     /// the wire-compatible `version ‖ IV ‖ AES-256-CBC` blob, returning the
     /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` properties JSON ready
@@ -649,8 +841,8 @@ impl IdentityWallet {
     ///
     /// **Crosses no `.await`** (resolves via `blocking_read`, derives, seals) so
     /// the FFI caller can WIPE the resolved master xprv before the network
-    /// broadcast: the master never lives across an await
-    /// Call from a sync context only. The subsequent
+    /// broadcast: the master never lives across an await. Call from a sync
+    /// context only. The subsequent
     /// generic [`Self::create_document_with_signer`] then broadcasts the returned
     /// properties with no key material in scope.
     ///
@@ -673,55 +865,14 @@ impl IdentityWallet {
         payload: &[u8],
         key_source: TxMetadataKeySource<'_>,
     ) -> Result<String, PlatformWalletError> {
-        use dashcore::secp256k1::rand::{thread_rng, RngCore};
-
-        // Every one of these is decidable from the arguments alone, so they are
-        // rejected before this call resolves an encryption context, selects a
-        // key, derives AES material or draws an IV. A payload that cannot fit
-        // the encryptedMetadata field, a version the legacy stack cannot decode,
-        // or an index with no derivable key would otherwise do all of that work
-        // and only then fail — the size case at broadcast with an opaque schema
-        // error, the other two at the derivation or sealing choke point.
-        ensure_tx_metadata_create_inputs_valid(payload.len(), version, Some(encryption_key_index))?;
-
-        let (identity, identity_index, wallet) =
-            self.resolve_encryption_context_blocking(owner_identity_id)?;
-        let key_index = Self::select_encryption_key_id(&identity)?;
-
-        // Derive the AES key and seal the payload into the wire blob — the only
-        // step that touches `key_source`'s master, done here synchronously so the
-        // caller can wipe it before broadcasting.
-        let aes_key = key_source
-            .derive(
-                &wallet,
-                self.sdk.network,
-                identity_index,
-                key_index,
-                encryption_key_index,
-            )
-            .inspect_err(|e| {
-                breadcrumb_error(&format!(
-                    "prepare_encrypted_txmetadata: key derivation failed \
-                     key_source={} error_kind={}",
-                    key_source.label(),
-                    error_kind(e)
-                ));
-            })?;
-        let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
-        // Rejects a non-wire-decodable version byte (only 0/1) before it can be
-        // sealed into a document the legacy stack can't decode, and enforces the
-        // payload-size limit as the choke-point last line of defense.
-        let blob = seal_tx_metadata(&aes_key, version, &iv, payload)?;
-
-        // Byte-array fields are accepted as hex strings by the generic create
-        // path, which sanitizes them into `Bytes` against the schema.
-        Ok(serde_json::json!({
-            FIELD_KEY_INDEX: key_index,
-            FIELD_ENCRYPTION_KEY_INDEX: encryption_key_index,
-            FIELD_ENCRYPTED_METADATA: hex::encode(&blob),
-        })
-        .to_string())
+        self.prepare_txmetadata_encryption(
+            owner_identity_id,
+            encryption_key_index,
+            version,
+            payload.len(),
+            key_source,
+        )?
+        .seal(payload)
     }
 
     /// The NETWORK half of the encrypted-document fetch: resolve the contract

@@ -352,13 +352,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
-            // A txMetadata plaintext too large to seal into the encryptedMetadata
-            // field. Surfaced as a caller-input error (the payload parameter is
-            // out of range) rather than flattening to ErrorUnknown; the typed
-            // Display carries the supplied length and the accepted maximum. Maps
-            // to the already-mirrored ErrorInvalidParameter so no new numeric
-            // code churns the Swift/Kotlin mirror enums.
-            PlatformWalletError::TxMetadataPayloadTooLarge { .. } => {
+            // A txMetadata plaintext length that either exceeds the contract
+            // field or differs from the shape used to prepare its key context.
+            // Both are caller-input/materialization-contract errors rather than
+            // wallet failures, so they map to the already-mirrored
+            // ErrorInvalidParameter without numeric Swift/Kotlin enum churn.
+            PlatformWalletError::TxMetadataPayloadTooLarge { .. }
+            | PlatformWalletError::TxMetadataPayloadLengthMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
             // A txMetadata wire version byte the legacy stack cannot decode.

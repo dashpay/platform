@@ -47,6 +47,17 @@ pub enum PlatformWalletError {
     )]
     TxMetadataPayloadTooLarge { len: usize, max: usize },
 
+    /// A deferred txMetadata payload did not honor the length used to prepare
+    /// its encryption context. The context has already derived the exact
+    /// per-document key, so accepting a different payload would break the
+    /// caller's materialization contract and make the early size validation
+    /// describe different bytes from the ones being sealed.
+    #[error(
+        "txMetadata payload length changed after encryption preparation: declared \
+         {declared} bytes, materialized {actual} bytes"
+    )]
+    TxMetadataPayloadLengthMismatch { declared: usize, actual: usize },
+
     /// The txMetadata `encryptionKeyIndex` series for one identity, contract and
     /// document type has no next derivable value left.
     ///
