@@ -295,7 +295,10 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// `isolation` keeps `body` running in the caller's actor context, so a
     /// caller isolated to an actor (e.g. `@MainActor`) does not have to send a
     /// non-`Sendable` closure across an isolation boundary to use the scope.
-    public func withAdditionalSigningKeys<T>(
+    /// `T` is `Sendable` because the result still leaves `body`'s context: the
+    /// SwiftExampleApp target compiles these sources without region-based
+    /// isolation, where returning a non-`Sendable` value is rejected outright.
+    public func withAdditionalSigningKeys<T: Sendable>(
         _ keys: [(publicKey: Data, privateKey: Data)],
         isolation: isolated (any Actor)? = #isolation,
         perform body: () async throws -> T
@@ -307,7 +310,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         )
     }
 
-    func withAdditionalSigningKeys<T>(
+    func withAdditionalSigningKeys<T: Sendable>(
         _ entries: [AdditionalSigningKeyEntry],
         isolation: isolated (any Actor)? = #isolation,
         perform body: () async throws -> T
