@@ -2387,6 +2387,7 @@ mod tests {
             on_shielded_sync_completed_fn: None,
             on_shielded_sync_progress_fn: None,
             on_shielded_tree_progress_fn: None,
+            release_fn: None,
         };
 
         let mut manager_handle: Handle = 0;
