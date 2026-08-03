@@ -254,8 +254,15 @@ pub enum PlatformWalletFFIResultCode {
     /// this code exists to prevent. Hosts should surface the invitation as spent
     /// rather than registering any identity.
     ///
-    /// Code 32: 27-30 stay reserved for the in-flight branches noted above.
-    ErrorShieldedInviteAlreadyClaimed = 32,
+    /// Code 37 — the next free integer per the allocation frontier in
+    /// `ERROR_CODE_REGISTRY.md` (dashpay/platform#4261). This variant briefly
+    /// held 32, which is allocated to `ErrorTransactionBuild`
+    /// (dashpay/platform#4247, also carried by #4256); the two collided as an
+    /// `E0081` the moment both were merged. 27-36 are all claimed (27
+    /// `ErrorShutdownIncomplete`, merged via #4268; 29 #4184; 31 #4183; 32/33
+    /// #4247/#4256; 34-36 the #4185 deferred-token trio), and 28/30 are vacated
+    /// but RESERVED, so 37 is the only correct allocation.
+    ErrorShieldedInviteAlreadyClaimed = 37,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
