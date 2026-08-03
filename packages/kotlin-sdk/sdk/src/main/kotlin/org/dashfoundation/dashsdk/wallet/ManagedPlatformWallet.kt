@@ -294,11 +294,14 @@ class ManagedPlatformWallet internal constructor(
      *
      * The returned [SignedCoreTransaction] OWNS the token: it is [AutoCloseable]
      * with a GC/[NativeCleaner] backstop, so a token that is neither broadcast
-     * nor released is never orphaned — even if the caller drops the object or a
-     * cancellation discards it after this call's blocking native registration
-     * already minted the token. The backstop releases the reservation on GC (or
-     * on an explicit [SignedCoreTransaction.close]); consuming the token via
-     * [broadcastSigned] / [releaseReservation] makes that release a native no-op.
+     * nor released is never orphaned. If a cancellation discards the result
+     * *after* the blocking native registration already minted the token, this
+     * call closes it deterministically on the way out (the gate's
+     * cancellation-cleanup handoff) rather than leaving the reservation to the
+     * GC backstop or the reservation TTL. Otherwise the backstop releases on GC,
+     * or the caller releases via an explicit [SignedCoreTransaction.close];
+     * consuming the token via [broadcastSigned] / [releaseReservation] makes
+     * that release a native no-op.
      *
      * Process-death note: the reservation is in-memory. An app crash between
      * this call and [broadcastSigned] drops the reservation on restart (the
@@ -314,7 +317,17 @@ class ManagedPlatformWallet internal constructor(
         coreSignerHandle: Long,
         accountType: AccountType = AccountType.BIP44,
         accountIndex: Int = 0,
-    ): SignedCoreTransaction = gate.op {
+    ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
+        // Native finalization mints the token and transfers reservation ownership
+        // to it before the blocking JNI call returns, so the token already exists
+        // by the time `withContext` dispatches back to the caller. That handoff is
+        // a prompt-cancellation point: if the caller was cancelled while JNI ran,
+        // the completed SignedCoreTransaction is discarded before anyone can hold
+        // it, leaving only the GC/NativeCleaner backstop — the reservation would
+        // then sit until an unpredictable GC cycle or the reservation TTL.
+        // Closing the discarded result releases the token deterministically.
+        cleanup = { payment: SignedCoreTransaction -> payment.close() },
+    ) {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) {
