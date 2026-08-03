@@ -84,6 +84,52 @@ import SwiftData
 /// current `passUnretained` shape removes the leak at the cost
 /// of the explicit keepalive contract above.
 public final class KeychainSigner: Signer, @unchecked Sendable {
+    final class AdditionalSigningKeyEntry: @unchecked Sendable {
+        let publicKey: Data
+        private var privateKeyBytes: [UInt8]
+
+        init(publicKey: Data, privateKey: Data) {
+            self.publicKey = publicKey
+            self.privateKeyBytes = Array(privateKey)
+        }
+
+        deinit {
+            zeroPrivateKey()
+        }
+
+        func sign(data: Data, network: Network) -> Result<Data, KeychainSigner.Error> {
+            do {
+                return .success(
+                    try RawKeySigner.sign(
+                        data: data,
+                        privateKey: Data(privateKeyBytes),
+                        network: network
+                    )
+                )
+            } catch KeyManagerError.signerCreationFailed(let message) {
+                return .failure(.ffiSignerCreationFailed(message: message))
+            } catch KeyManagerError.invalidKeyFormat(let message) {
+                return .failure(.ffiSignerCreationFailed(message: "invalid key format: \(message)"))
+            } catch KeyManagerError.signingFailed(let message) {
+                return .failure(.ffiSignFailed(message: message))
+            } catch {
+                return .failure(.ffiSignFailed(message: String(describing: error)))
+            }
+        }
+
+        func zeroPrivateKey() {
+            privateKeyBytes.withUnsafeMutableBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    memset_s(UnsafeMutableRawPointer(base), ptr.count, 0, ptr.count)
+                }
+            }
+        }
+
+        var isZeroedForTesting: Bool {
+            privateKeyBytes.allSatisfy { $0 == 0 }
+        }
+    }
+
     // MARK: Public surface
 
     /// FFI signer handle. Pass to any `*_with_signer` entry point;
@@ -183,6 +229,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// Raw pointer to the FFI signer handle. Boxed by Rust and freed
     /// in `deinit`.
     private var handlePtr: OpaquePointer!
+    private var additionalSigningKeys: [Data: [AdditionalSigningKeyEntry]] = [:]
 
     // MARK: Init
 
@@ -233,6 +280,7 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     }
 
     deinit {
+        clearAdditionalSigningKeys()
         // `dash_sdk_signer_destroy` drops the Rust handle box +
         // vtable allocation. The destroy trampoline is a no-op
         // (init used `passUnretained`, so there's nothing to
@@ -244,7 +292,87 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
         }
     }
 
+    public func withAdditionalSigningKeys<T>(
+        _ keys: [(publicKey: Data, privateKey: Data)],
+        perform body: () async throws -> T
+    ) async rethrows -> T {
+        try await withAdditionalSigningKeys(
+            makeAdditionalSigningKeyEntries(keys),
+            perform: body
+        )
+    }
+
+    func withAdditionalSigningKeys<T>(
+        _ entries: [AdditionalSigningKeyEntry],
+        perform body: () async throws -> T
+    ) async rethrows -> T {
+        pushAdditionalSigningKeys(entries)
+        defer { popAdditionalSigningKeys(entries) }
+        return try await body()
+    }
+
     // MARK: Trampoline-callable internals
+
+    func makeAdditionalSigningKeyEntries(
+        _ keys: [(publicKey: Data, privateKey: Data)]
+    ) -> [AdditionalSigningKeyEntry] {
+        keys.map { AdditionalSigningKeyEntry(publicKey: $0.publicKey, privateKey: $0.privateKey) }
+    }
+
+    func pushAdditionalSigningKeys(_ entries: [AdditionalSigningKeyEntry]) {
+        queue.sync {
+            for entry in entries {
+                additionalSigningKeys[entry.publicKey, default: []].append(entry)
+            }
+        }
+    }
+
+    func popAdditionalSigningKeys(_ entries: [AdditionalSigningKeyEntry]) {
+        queue.sync {
+            for entry in entries.reversed() {
+                guard var stack = additionalSigningKeys[entry.publicKey] else {
+                    entry.zeroPrivateKey()
+                    continue
+                }
+
+                if let last = stack.last, last === entry {
+                    stack.removeLast()
+                } else {
+                    stack.removeAll { $0 === entry }
+                }
+
+                if stack.isEmpty {
+                    additionalSigningKeys.removeValue(forKey: entry.publicKey)
+                } else {
+                    additionalSigningKeys[entry.publicKey] = stack
+                }
+
+                entry.zeroPrivateKey()
+            }
+        }
+    }
+
+    func clearAdditionalSigningKeys() {
+        queue.sync {
+            for entries in additionalSigningKeys.values {
+                for entry in entries {
+                    entry.zeroPrivateKey()
+                }
+            }
+            additionalSigningKeys.removeAll()
+        }
+    }
+
+    func additionalSigningKey(publicKey: Data) -> AdditionalSigningKeyEntry? {
+        var entry: AdditionalSigningKeyEntry?
+        queue.sync {
+            // HASH160 identity keys can be requested by their 20-byte hash160
+            // rather than the 33-byte compressed secp256k1 public key. The
+            // registry is therefore keyed by the exact bytes the FFI asks for.
+            entry = additionalSigningKeys[publicKey]?.last
+        }
+        return entry
+    }
 
     // MARK: key_type dispatch
     //
@@ -300,7 +428,8 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// private keys are NEVER persisted; they're derived per call
     /// from `(mnemonic, path)` inside Rust.
     fileprivate func lookupIdentityPrivateKey(
-        publicKey: Data
+        publicKey: Data,
+        keyType: UInt8
     ) -> Result<Data, Error> {
         var captured: Result<Data, Error> = .failure(.publicKeyNotFound)
         queue.sync {
@@ -328,6 +457,9 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
                 return
             }
 
+            print(
+                "⚠️ KEYCHAIN_SIGNER_PUBLIC_KEY_MISS keyType=\(keyType) requestedBytes=\(pubkeyHex)"
+            )
             captured = .failure(.publicKeyNotFound)
         }
         return captured
@@ -361,6 +493,10 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
     /// derive-and-sign FFI requires. We do NOT actually derive a key
     /// here; the check is purely "are the prerequisites in place".
     func canSign(publicKey: Data, keyType: UInt8) -> Bool {
+        if additionalSigningKey(publicKey: publicKey) != nil {
+            return true
+        }
+
         if keyType == Self.platformAddressHashKeyType {
             // Resolve the address row first (synchronous lookup);
             // mnemonic check is gated on having the wallet id.
@@ -422,6 +558,53 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             }
         }
         return found
+    }
+
+    /// Shared by the sign trampoline and tests: consult any scoped
+    /// in-memory registry first, then the existing platform-address /
+    /// breadcrumb / persisted-key paths.
+    func signOnDemand(
+        publicKey: Data,
+        keyType: UInt8,
+        data: Data
+    ) -> Result<Data, Error> {
+        if let entry = additionalSigningKey(publicKey: publicKey) {
+            return entry.sign(data: data, network: network)
+        }
+
+        if keyType == Self.platformAddressHashKeyType {
+            return signPlatformAddressOnDemand(
+                addressHash: publicKey,
+                keyType: keyType,
+                data: data
+            )
+        }
+
+        switch signIdentityKeyOnDemand(
+            publicKey: publicKey,
+            keyType: keyType,
+            data: data
+        ) {
+        case .success(let sig)?:
+            return .success(sig)
+        case .failure(.signWithMnemonicFailed(let tag))?
+        where tag == SignWithMnemonicResolverError.unsupportedKeyType.rawValue:
+            break
+        case .failure(let err)?:
+            print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
+        case nil:
+            print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
+        }
+
+        let privateKey: Data
+        switch lookupIdentityPrivateKey(publicKey: publicKey, keyType: keyType) {
+        case .failure(let err):
+            return .failure(err)
+        case .success(let priv):
+            privateKey = priv
+        }
+
+        return ffiSign(privateKey: privateKey, data: data)
     }
 
     /// Resolved context for a platform-address signing request:
@@ -790,68 +973,11 @@ private func keychainSignerSignAsyncTrampoline(
         }
     }
 
-    // Dispatch on key_type. Platform-address signing (`0xFF`) is a
-    // single-call derive-and-sign path — no separate key lookup,
-    // because the derived bytes never come back to Swift. Identity
-    // signing (`< 5`) prefers the same derive-sign-destroy path (from
-    // the key's stored breadcrumb) and falls back to the stored scalar
-    // when a key has no breadcrumb yet.
-    if keyType == KeychainSigner.platformAddressHashKeyType {
-        switch signer.signPlatformAddressOnDemand(
-            addressHash: pubkeyData,
-            keyType: keyType,
-            data: dataToSign
-        ) {
-        case .failure(let err):
-            reportError(err.localizedDescription)
-        case .success(let sig):
-            reportSuccess(sig)
-        }
-        return
-    }
-
-    // Identity signing (`keyType < 5`): derive-sign-destroy via the resolver
-    // when the key carries a derivation breadcrumb; otherwise fall back to the
-    // stored scalar. The fallback keeps already-materialized keys — and any not
-    // yet backfilled — signable, so the cutover is non-lockout by construction.
-    // Every fallback is logged so the zero-fallback acceptance gate can catch
-    // un-migrated rows or resolver failures before the stored scalar is removed.
-    //
-    // Rust owns the supported-key-type decision: we attempt the resolver for
-    // any identity key and treat its `UNSUPPORTED_KEY_TYPE` tag as the routing
-    // signal (fall through to the stored scalar silently, no fallback log —
-    // the resolver simply doesn't handle this type). This avoids mirroring the
-    // Rust ECDSA-only set in Swift, so a future Rust-derivable key type is
-    // automatically routed through the resolver without a matching Swift edit.
-    switch signer.signIdentityKeyOnDemand(
+    switch signer.signOnDemand(
         publicKey: pubkeyData,
         keyType: keyType,
         data: dataToSign
     ) {
-    case .success(let sig)?:
-        reportSuccess(sig)
-        return
-    case .failure(.signWithMnemonicFailed(let tag))?
-    where tag == SignWithMnemonicResolverError.unsupportedKeyType.rawValue:
-        // Rust does not derive-sign this key type — route to the stored
-        // scalar with no spurious fallback log.
-        break
-    case .failure(let err)?:
-        print("⚠️ IDENTITY_SIGN_FALLBACK resolver-failed: \(err.localizedDescription)")
-    case nil:
-        print("⚠️ IDENTITY_SIGN_FALLBACK no-breadcrumb")
-    }
-
-    let privateKey: Data
-    switch signer.lookupIdentityPrivateKey(publicKey: pubkeyData) {
-    case .failure(let err):
-        reportError(err.localizedDescription)
-        return
-    case .success(let priv):
-        privateKey = priv
-    }
-
-    switch signer.ffiSign(privateKey: privateKey, data: dataToSign) {
     case .failure(let err):
         reportError(err.localizedDescription)
     case .success(let sig):
