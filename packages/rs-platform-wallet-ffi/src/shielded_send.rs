@@ -995,6 +995,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_o
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-one-time-key failed: {e}"),
         ),
+        // TERMINAL consumed-invitation verdict: route through the blanket
+        // `From<PlatformWalletError>` conversion so the typed code
+        // (`ErrorShieldedInviteAlreadyClaimed`, 37) survives to the host —
+        // the catch-all below would flatten it to the generic
+        // `ErrorWalletOperation` (6), hiding the one discriminator that
+        // tells a claimer the invitation can never be claimed again
+        // (#4204 review finding 7be05fde0d09).
+        Err(e @ PlatformWalletError::ShieldedInviteAlreadyClaimed { .. }) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-one-time-key failed: {e}"),
@@ -1636,13 +1644,14 @@ pub unsafe extern "C" fn platform_wallet_orchard_address_from_spending_key(
 
     // Carry the caller-supplied bearer spending key in `Zeroizing` so THIS
     // frame's copy is scrubbed on drop, on every return path (#4204 key
-    // hygiene). Note `orchard_address_from_spending_key` takes the key BY
-    // VALUE, so the callee still makes its own transient copy — this only
-    // scrubs the caller frame.
+    // hygiene). `orchard_address_from_spending_key` now takes the key BY
+    // REFERENCE and contains its own derived `SpendingKey` in a scrub-on-drop
+    // guard, so no unsanitized copy of the scalar is repeated at this
+    // boundary (#4204 finding 1ee08ba70627).
     let mut sk = zeroize::Zeroizing::new([0u8; 32]);
     std::ptr::copy_nonoverlapping(sk_bytes_32, sk.as_mut_ptr(), 32);
 
-    match orchard_address_from_spending_key(*sk) {
+    match orchard_address_from_spending_key(&sk) {
         Ok(address) => {
             std::ptr::copy_nonoverlapping(address.as_ptr(), out_address_43, 43);
             PlatformWalletFFIResult::ok()
