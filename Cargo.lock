@@ -5119,6 +5119,7 @@ version = "4.1.0"
 dependencies = [
  "aes",
  "cbc",
+ "hex",
  "hmac",
  "secp256k1",
  "sha2",

@@ -7,6 +7,7 @@ pub mod auto_accept;
 pub mod contact_info;
 pub mod dip14;
 pub mod invitation;
+pub mod stealth;
 pub mod validation;
 
 pub use auto_accept::derive_auto_accept_private_key;
@@ -21,5 +22,10 @@ pub use dip14::{
 pub use invitation::{
     encode_invitation_uri, parse_invitation_uri, voucher_output_index, wif_network_matches,
     InviterInfo, ParsedInvitation,
+};
+pub use stealth::{
+    derive_one_time_destination, derive_one_time_secret_key, derive_payment_detection_secret_key,
+    payment_detection_derivation_path, recognize_one_time_destination, OneTimeDestination,
+    PaymentRail,
 };
 pub use validation::pubkey_binds_expected_key_data;

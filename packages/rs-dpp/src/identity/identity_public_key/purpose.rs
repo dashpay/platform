@@ -1,5 +1,6 @@
 use crate::identity::Purpose::{
-    AUTHENTICATION, DECRYPTION, ENCRYPTION, OWNER, SYSTEM, TRANSFER, VOTING,
+    AUTHENTICATION, DECRYPTION, ENCRYPTION, OWNER, PAYMENT_SCAN, PAYMENT_SPEND, SYSTEM, TRANSFER,
+    VOTING,
 };
 use anyhow::bail;
 use bincode::{Decode, Encode};
@@ -25,6 +26,7 @@ use std::convert::TryFrom;
     Default,
     strum::EnumIter,
 )]
+#[allow(non_camel_case_types)]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
     #[default]
@@ -42,6 +44,14 @@ pub enum Purpose {
     VOTING = 5,
     /// this key is used to prove ownership of a masternode or evonode
     OWNER = 6,
+    /// this key detects incoming stealth payments and decrypts payment
+    /// notifications (DIP-33); it cannot be used for signing state transitions
+    /// or documents. Accepted from protocol version 14.
+    PAYMENT_SCAN = 7,
+    /// this key is the spend base for stealth one-time payment addresses
+    /// (DIP-33); it cannot be used for signing state transitions or documents.
+    /// Accepted from protocol version 14.
+    PAYMENT_SPEND = 8,
 }
 
 impl From<Purpose> for [u8; 1] {
@@ -60,6 +70,8 @@ impl From<Purpose> for &'static [u8; 1] {
             SYSTEM => &[4],
             VOTING => &[5],
             OWNER => &[6],
+            PAYMENT_SCAN => &[7],
+            PAYMENT_SPEND => &[8],
         }
     }
 }
@@ -75,6 +87,8 @@ impl TryFrom<u8> for Purpose {
             4 => Ok(SYSTEM),
             5 => Ok(VOTING),
             6 => Ok(OWNER),
+            7 => Ok(PAYMENT_SCAN),
+            8 => Ok(PAYMENT_SPEND),
             value => bail!("unrecognized purpose: {}", value),
         }
     }
@@ -91,6 +105,8 @@ impl TryFrom<i32> for Purpose {
             4 => Ok(SYSTEM),
             5 => Ok(VOTING),
             6 => Ok(OWNER),
+            7 => Ok(PAYMENT_SCAN),
+            8 => Ok(PAYMENT_SPEND),
             value => bail!("unrecognized purpose: {}", value),
         }
     }
@@ -110,7 +126,7 @@ impl std::fmt::Display for Purpose {
 
 impl Purpose {
     /// The full range of purposes
-    pub fn full_range() -> [Purpose; 6] {
+    pub fn full_range() -> [Purpose; 8] {
         [
             AUTHENTICATION,
             ENCRYPTION,
@@ -118,15 +134,29 @@ impl Purpose {
             TRANSFER,
             VOTING,
             OWNER,
+            PAYMENT_SCAN,
+            PAYMENT_SPEND,
         ]
     }
     /// Just the authentication and withdraw purposes
+    ///
+    /// CONSENSUS-CRITICAL: this list defines the per-purpose key reference
+    /// trees created for every identity in grovedb. It must never change for
+    /// existing purposes, and new purposes may only be added together with a
+    /// versioned migration of the identity key query trees. PAYMENT_SCAN and
+    /// PAYMENT_SPEND are deliberately NOT searchable (DIP-33): they are found
+    /// by fetching the identity's keys, not by per-purpose search.
     pub fn searchable_purposes() -> [Purpose; 3] {
         [AUTHENTICATION, TRANSFER, VOTING]
     }
     /// Just the encryption and decryption purposes
     pub fn encryption_decryption() -> [Purpose; 2] {
         [ENCRYPTION, DECRYPTION]
+    }
+    /// The DIP-33 payment detection/spend purposes; at most one active key of
+    /// each may exist per identity
+    pub fn payment_purposes() -> [Purpose; 2] {
+        [PAYMENT_SCAN, PAYMENT_SPEND]
     }
 }
 
@@ -144,12 +174,14 @@ mod tests {
         assert_eq!(Purpose::try_from(4u8).unwrap(), SYSTEM);
         assert_eq!(Purpose::try_from(5u8).unwrap(), VOTING);
         assert_eq!(Purpose::try_from(6u8).unwrap(), OWNER);
+        assert_eq!(Purpose::try_from(7u8).unwrap(), PAYMENT_SCAN);
+        assert_eq!(Purpose::try_from(8u8).unwrap(), PAYMENT_SPEND);
     }
 
     // -- TryFrom<u8> invalid --
     #[test]
     fn test_purpose_try_from_u8_invalid() {
-        assert!(Purpose::try_from(7u8).is_err());
+        assert!(Purpose::try_from(9u8).is_err());
         assert!(Purpose::try_from(255u8).is_err());
     }
 
@@ -163,12 +195,14 @@ mod tests {
         assert_eq!(Purpose::try_from(4i32).unwrap(), SYSTEM);
         assert_eq!(Purpose::try_from(5i32).unwrap(), VOTING);
         assert_eq!(Purpose::try_from(6i32).unwrap(), OWNER);
+        assert_eq!(Purpose::try_from(7i32).unwrap(), PAYMENT_SCAN);
+        assert_eq!(Purpose::try_from(8i32).unwrap(), PAYMENT_SPEND);
     }
 
     #[test]
     fn test_purpose_try_from_i32_invalid() {
         assert!(Purpose::try_from(-1i32).is_err());
-        assert!(Purpose::try_from(7i32).is_err());
+        assert!(Purpose::try_from(9i32).is_err());
         assert!(Purpose::try_from(1_000_000i32).is_err());
     }
 
@@ -200,6 +234,10 @@ mod tests {
         assert_eq!(r, &[5u8]);
         let r: &'static [u8; 1] = OWNER.into();
         assert_eq!(r, &[6u8]);
+        let r: &'static [u8; 1] = PAYMENT_SCAN.into();
+        assert_eq!(r, &[7u8]);
+        let r: &'static [u8; 1] = PAYMENT_SPEND.into();
+        assert_eq!(r, &[8u8]);
     }
 
     // -- Display (via Debug) --
@@ -212,6 +250,8 @@ mod tests {
         assert_eq!(format!("{}", SYSTEM), "SYSTEM");
         assert_eq!(format!("{}", VOTING), "VOTING");
         assert_eq!(format!("{}", OWNER), "OWNER");
+        assert_eq!(format!("{}", PAYMENT_SCAN), "PAYMENT_SCAN");
+        assert_eq!(format!("{}", PAYMENT_SPEND), "PAYMENT_SPEND");
     }
 
     // -- Default --
@@ -225,14 +265,21 @@ mod tests {
     fn test_purpose_full_range_contents() {
         // NOTE: full_range() intentionally excludes SYSTEM.
         let full = Purpose::full_range();
-        assert_eq!(full.len(), 6);
+        assert_eq!(full.len(), 8);
         assert!(full.contains(&AUTHENTICATION));
         assert!(full.contains(&ENCRYPTION));
         assert!(full.contains(&DECRYPTION));
         assert!(full.contains(&TRANSFER));
         assert!(full.contains(&VOTING));
         assert!(full.contains(&OWNER));
+        assert!(full.contains(&PAYMENT_SCAN));
+        assert!(full.contains(&PAYMENT_SPEND));
         assert!(!full.contains(&SYSTEM));
+    }
+
+    #[test]
+    fn test_purpose_payment_purposes_contents() {
+        assert_eq!(Purpose::payment_purposes(), [PAYMENT_SCAN, PAYMENT_SPEND]);
     }
 
     #[test]
@@ -252,7 +299,7 @@ mod tests {
     // -- round-trip: Purpose -> u8 -> Purpose --
     #[test]
     fn test_purpose_round_trip_u8() {
-        for val in 0u8..=6 {
+        for val in 0u8..=8 {
             let p = Purpose::try_from(val).unwrap();
             assert_eq!(p as u8, val);
         }
@@ -267,5 +314,7 @@ mod tests {
         assert!(TRANSFER < SYSTEM);
         assert!(SYSTEM < VOTING);
         assert!(VOTING < OWNER);
+        assert!(OWNER < PAYMENT_SCAN);
+        assert!(PAYMENT_SCAN < PAYMENT_SPEND);
     }
 }

@@ -22,3 +22,4 @@ thiserror = "1.0"
 # Tests generate keypairs via secp256k1's RNG helpers (`generate_keypair`,
 # `secp256k1::rand`), gated behind the `rand` feature.
 secp256k1 = { version = "0.30.0", features = ["std", "rand"] }
+hex = "0.4"

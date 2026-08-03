@@ -20,6 +20,7 @@ use crate::execution::validation::state_transition::common::validate_identity_pu
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_dont_exist_in_state::validate_identity_public_key_ids_dont_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_identity_public_key_ids_exist_in_state::validate_identity_public_key_ids_exist_in_state;
 use crate::execution::validation::state_transition::common::validate_not_disabling_last_master_key::validate_master_key_uniqueness;
+use crate::execution::validation::state_transition::common::validate_payment_key_uniqueness::validate_payment_key_uniqueness_in_state;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_update) trait IdentityUpdateStateTransitionStateValidationV0
@@ -104,6 +105,34 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                 platform.state.last_committed_block_epoch_ref(),
                 tx,
                 &mut state_transition_execution_context,
+                platform_version,
+            )?
+            .errors,
+        );
+
+        if !validation_result.is_valid() {
+            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
+                BumpIdentityNonceAction::from_borrowed_identity_update_transition(self),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
+        }
+
+        // DIP-33 payment keys: the identity may end up with at most one active
+        // key of each payment purpose. This must run even when no keys are
+        // being disabled (a pure add-only update), unlike the master key
+        // uniqueness check below.
+        validation_result.add_errors(
+            validate_payment_key_uniqueness_in_state(
+                self.identity_id(),
+                self.public_keys_to_add(),
+                self.public_key_ids_to_disable(),
+                drive,
+                &mut state_transition_execution_context,
+                tx,
                 platform_version,
             )?
             .errors,

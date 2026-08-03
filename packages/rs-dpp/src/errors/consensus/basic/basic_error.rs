@@ -68,8 +68,9 @@ use crate::consensus::basic::identity::{
     InvalidIdentityPublicKeySecurityLevelError, InvalidIdentityUpdateTransitionDisableKeysError,
     InvalidIdentityUpdateTransitionEmptyError, InvalidInstantAssetLockProofError,
     InvalidInstantAssetLockProofSignatureError, InvalidKeyPurposeForContractBoundsError,
-    MissingMasterPublicKeyError, NotImplementedCreditWithdrawalTransitionPoolingError,
-    TooManyMasterPublicKeyError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
+    InvalidKeyPurposeKeyTypeError, MissingMasterPublicKeyError,
+    NotImplementedCreditWithdrawalTransitionPoolingError, TooManyMasterPublicKeyError,
+    TooManyPublicKeysOfPurposeError, WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
@@ -602,6 +603,12 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
+
+    #[error(transparent)]
+    InvalidKeyPurposeKeyTypeError(InvalidKeyPurposeKeyTypeError),
+
+    #[error(transparent)]
+    TooManyPublicKeysOfPurposeError(TooManyPublicKeysOfPurposeError),
 
     #[error(transparent)]
     StateTransitionNotActiveError(StateTransitionNotActiveError),

@@ -8,7 +8,7 @@ const TS_TYPES: &str = r#"
 /**
  * Flexible input type for Purpose - accepts the enum, string name, or numeric value.
  */
-export type PurposeLike = Purpose | "authentication" | "encryption" | "decryption" | "transfer" | "system" | "voting" | "owner" | 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type PurposeLike = Purpose | "authentication" | "encryption" | "decryption" | "transfer" | "system" | "voting" | "owner" | "paymentScan" | "paymentSpend" | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 "#;
 
 #[wasm_bindgen]
@@ -44,6 +44,8 @@ pub enum PurposeWasm {
     SYSTEM = 4,
     VOTING = 5,
     OWNER = 6,
+    PAYMENT_SCAN = 7,
+    PAYMENT_SPEND = 8,
 }
 
 impl TryFrom<&JsValue> for PurposeWasm {
@@ -59,6 +61,8 @@ impl TryFrom<&JsValue> for PurposeWasm {
                 "system" => Ok(PurposeWasm::SYSTEM),
                 "voting" => Ok(PurposeWasm::VOTING),
                 "owner" => Ok(PurposeWasm::OWNER),
+                "paymentscan" => Ok(PurposeWasm::PAYMENT_SCAN),
+                "paymentspend" => Ok(PurposeWasm::PAYMENT_SPEND),
                 _ => Err(WasmDppError::invalid_argument(format!(
                     "unsupported purpose value ({})",
                     enum_val
@@ -75,6 +79,8 @@ impl TryFrom<&JsValue> for PurposeWasm {
                 4 => Ok(PurposeWasm::SYSTEM),
                 5 => Ok(PurposeWasm::VOTING),
                 6 => Ok(PurposeWasm::OWNER),
+                7 => Ok(PurposeWasm::PAYMENT_SCAN),
+                8 => Ok(PurposeWasm::PAYMENT_SPEND),
                 _ => Err(WasmDppError::invalid_argument(format!(
                     "unsupported purpose value ({})",
                     enum_val
@@ -106,6 +112,8 @@ impl From<PurposeWasm> for String {
             PurposeWasm::SYSTEM => String::from("SYSTEM"),
             PurposeWasm::VOTING => String::from("VOTING"),
             PurposeWasm::OWNER => String::from("OWNER"),
+            PurposeWasm::PAYMENT_SCAN => String::from("PAYMENT_SCAN"),
+            PurposeWasm::PAYMENT_SPEND => String::from("PAYMENT_SPEND"),
         }
     }
 }
@@ -120,6 +128,8 @@ impl From<PurposeWasm> for Purpose {
             PurposeWasm::SYSTEM => Purpose::SYSTEM,
             PurposeWasm::VOTING => Purpose::VOTING,
             PurposeWasm::OWNER => Purpose::OWNER,
+            PurposeWasm::PAYMENT_SCAN => Purpose::PAYMENT_SCAN,
+            PurposeWasm::PAYMENT_SPEND => Purpose::PAYMENT_SPEND,
         }
     }
 }
@@ -134,6 +144,8 @@ impl From<Purpose> for PurposeWasm {
             Purpose::SYSTEM => PurposeWasm::SYSTEM,
             Purpose::VOTING => PurposeWasm::VOTING,
             Purpose::OWNER => PurposeWasm::OWNER,
+            Purpose::PAYMENT_SCAN => PurposeWasm::PAYMENT_SCAN,
+            Purpose::PAYMENT_SPEND => PurposeWasm::PAYMENT_SPEND,
         }
     }
 }
