@@ -244,11 +244,11 @@ Indexed trees need two batch behaviours that earlier grove versions don't have, 
 
 Without them, a batch overwrite of a ranked index would orphan its per-axis secondary storage. Indexed trees only exist from protocol v14, so activating the stricter cleanup alongside them costs older versions nothing.
 
-Both gates cost **one extra stored-element read per overwrite-capable operation** — which is why they could not be applied to released versions, and why v14's fee constants move. The shape of the change is worth internalising because it is easy to misread as a general fee increase:
+Both gates are **cost-neutral**: they derive the old element from data the merk apply already loads when it rewrites or deletes a key, so no extra stored-element read is charged and v14's fee constants match v13's. Three facts pin this:
 
-- **Fresh-key inserts pay nothing extra.** There is no stored element to inspect. In the address-funds-transfer fee regression suite the pins for simple single-input/single-output transfers, multisig spends and the user-fee-increase case are all **unchanged**; only the cases that overwrite existing keys move.
-- **Gated operations pay one stored-element read each: a seek (2 000 credits) plus 20 credits per byte of the element loaded** — so the delta varies with the size of the element at the overwritten key. The identity-balance and token-balance update pins both move by `+4 300` processing credits (`385 160 → 389 460`, `260 540 → 264 840`): one seek plus a 115-byte element. Storage fees are unchanged throughout — the delta is pure read cost.
-- **The boundary itself is pinned.** `run_chain_one_identity_in_solitude` sits exactly **2 000 credits** below its new protocol-version-13 sibling, which asserts the pre-grove-v4 figure — the gate cost for that run's single gated operation. The pair brackets the v13 → v14 transition, so a future change that moves either side has to say which one it meant to move.
+- **Fees are identical across the boundary.** The identity-balance, token-balance and state-transition processing-fee pins carry the same values at protocol v13 and v14, and `run_chain_one_identity_in_solitude` has a protocol-version-13 sibling asserting the identical end balance — the pair proves the v13 → v14 transition changes nothing about those runs' fees.
+- **Storage fees are untouched everywhere** — the gates only observe, never write.
+- **Cleanup still happens.** A batch overwrite of an indexed tree schedules its per-axis secondary storage for cleanup (or refuses the ambiguous case), and `DeleteTree` uses the actual stored type — covered by grovedb's own overwrite and delete-tree suites at the pinned revision.
 
 ## Interaction With the Shared-Prefix Aggregate Fix
 

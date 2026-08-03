@@ -428,7 +428,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1922960);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1919540);
 
         platform
             .drive
@@ -443,7 +443,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99913864040);
+        assert_eq!(identity_balance, 99913867460);
     }
 
     #[tokio::test]
@@ -877,7 +877,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2202680);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
 
         platform
             .drive
@@ -892,7 +892,7 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909254620); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
     }
 
     #[tokio::test]
@@ -1842,7 +1842,7 @@ mod tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2202680);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2195200);
 
         platform
             .drive
@@ -1857,6 +1857,6 @@ mod tests {
             .expect("expected to get identity balance")
             .expect("expected there to be an identity balance for this identity");
 
-        assert_eq!(identity_balance, 99909254620); // The identity balance is smaller than if there hadn't been any issue
+        assert_eq!(identity_balance, 99909262100); // The identity balance is smaller than if there hadn't been any issue
     }
 }

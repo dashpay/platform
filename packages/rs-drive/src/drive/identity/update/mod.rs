@@ -57,11 +57,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 14202000,
-                // Above the first-version figure: 2 extra loaded bytes (the
-                // token tree is no longer empty) at 20 credits each, plus the
-                // grove v4 overwrite-inspection stored-element read charged
-                // per overwrite-capable batch op from protocol v14.
-                processing_fee: 1102300,
+                // 2 extra loaded bytes because the token tree is no longer empty
+                // these 2 loaded bytes cost 20 credits each
+                processing_fee: 1098300,
                 ..Default::default()
             };
 
@@ -313,7 +311,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 347382000,
-                processing_fee: 6915260,
+                processing_fee: 6819260,
                 ..Default::default()
             };
 
@@ -438,7 +436,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 513000,
-                processing_fee: 878640,
+                processing_fee: 869380,
                 ..Default::default()
             };
             do_should_disable_a_few_keys(true, platform_version, expected_fee_result);
@@ -559,7 +557,7 @@ mod tests {
             };
             let expected_fee_result = FeeResult {
                 storage_fee: 486000,
-                processing_fee: 803680,
+                processing_fee: 794720,
                 ..Default::default()
             };
             estimated_costs_should_have_same_storage_cost(
@@ -666,7 +664,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 0,
-                processing_fee: 243120,
+                processing_fee: 238820,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };

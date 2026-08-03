@@ -644,7 +644,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002492770
+            24002489210
         );
 
         let check_result = platform
@@ -849,7 +849,7 @@ mod tests {
         // We have one invalid paid for state transition
         assert_eq!(processing_result.invalid_paid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 350220);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 346660);
 
         let check_result = platform
             .check_tx(
@@ -1159,7 +1159,7 @@ mod tests {
         // Plus we have 24_000_000_000 in base costs
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24004985540
+            24004978420
         );
 
         let check_result = platform
@@ -1634,7 +1634,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002492770
+            24002489210
         );
 
         platform
@@ -1721,7 +1721,7 @@ mod tests {
 
         assert_eq!(
             update_processing_result.aggregated_fees().processing_fee,
-            27002568170
+            27002504030
         );
 
         let check_result = platform
@@ -2093,7 +2093,7 @@ mod tests {
 
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            24002492770
+            24002489210
         );
 
         platform

@@ -23,7 +23,7 @@ mod dpns_tests {
     async fn test_dpns_contract_references_with_no_contested_unique_index() {
         run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            6_014_380,
+            6_010_380,
         )
         .await;
     }

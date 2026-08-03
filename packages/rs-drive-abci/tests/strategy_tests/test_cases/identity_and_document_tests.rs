@@ -187,16 +187,16 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99864007940)
+        assert_eq!(balance, 99864009940)
     }
 
     #[tokio::test]
     async fn run_chain_one_identity_in_solitude_protocol_version_13() {
-        // Pins the pre-grove-v4 fee shape at protocol version 13: the
-        // grove v4 cleanup gates charge one extra seek from protocol
-        // version 14, so this balance is exactly 2000 credits above the
-        // latest-version test's. Together the pair proves the cost
-        // change activates at the v13 -> v14 boundary and nowhere else.
+        // Pins the fee shape at protocol version 13. The grove v4 cleanup
+        // gates active from v14 derive their inspection from data the merk
+        // apply already loads, so they are cost-neutral: this balance is
+        // identical to the latest-version test's, and the pair proves the
+        // v13 -> v14 boundary changes nothing about this run's fees.
         // This is different because in the root tree we added GroupActions
         //                                                                                DataContract_Documents 64
         //                                 /                                                                                                       \

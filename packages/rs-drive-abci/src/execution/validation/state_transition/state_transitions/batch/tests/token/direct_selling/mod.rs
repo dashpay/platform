@@ -28,7 +28,7 @@ mod token_selling_tests {
         // delete-tree op.
         run_successful_direct_purchase_single_price_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            699_868_069_900,
+            699_868_073_580,
         )
         .await;
     }
