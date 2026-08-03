@@ -2486,6 +2486,29 @@ mod tests {
             core_chain_locked_height: 4016,
             out_point,
         });
+
+        // Sampled BEFORE the spawn, deliberately. A finalizer that got
+        // all the way to its enqueue before we sampled would fold that
+        // store into the baseline, after which `> baseline` can never
+        // become true — and `status_serial_waiters` has already fallen
+        // back to zero, so neither exit condition can ever fire. The
+        // rendezvous below would spin forever, reporting a harness
+        // timeout instead of the ordering inversion it exists to catch —
+        // and it is precisely when the serialization REGRESSES that the
+        // finalizer becomes free to enqueue early, so the sampling was
+        // blind in the one direction it has to be sharpest.
+        //
+        // Sampling after the spawn happened to hold only because nothing
+        // suspends between the two, so the finalizer cannot be polled
+        // first. Nothing enforced that: one `.await` above the sample —
+        // or this test moving to the `multi_thread` flavor already used
+        // elsewhere in this file — reintroduces the hang.
+        let queued_before_finalize = persistence
+            .stored
+            .lock()
+            .expect("capturing persistence mutex")
+            .len();
+
         let manager_finalizer = Arc::clone(&manager);
         let finalize_proof = chain_proof.clone();
         let finalizer = tokio::spawn(async move {
@@ -2518,12 +2541,15 @@ mod tests {
         // mean the finalizer had not been scheduled, so the pre-fix
         // implementation could enqueue in the non-regressing order after
         // the release and falsely pass.
-        let queued_before_finalize = persistence
-            .stored
-            .lock()
-            .expect("capturing persistence mutex")
-            .len();
-        loop {
+        //
+        // Bounded, and with a third exit for a finalizer that finished
+        // without producing either signal — it panicked before reaching
+        // the mutex, or a future edit made it return early. Either leaves
+        // both gauges reading exactly like "not scheduled yet" forever;
+        // breaking here hands the real cause to the joins below instead
+        // of hanging on a state that can no longer change.
+        let mut rendezvous = None;
+        for _ in 0..2_000 {
             let finalizer_enqueued = persistence
                 .stored
                 .lock()
@@ -2534,11 +2560,19 @@ mod tests {
                 .status_serial_waiters
                 .load(std::sync::atomic::Ordering::SeqCst)
                 >= 1;
-            if finalizer_enqueued || finalizer_blocked {
+            if finalizer_enqueued || finalizer_blocked || finalizer.is_finished() {
+                rendezvous = Some(finalizer_enqueued || finalizer_blocked);
                 break;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
+        let rendezvous = rendezvous.unwrap_or_else(|| {
+            panic!(
+                "timed out waiting for the finalizer to either enqueue or come \
+                 to rest on status_persist_serial — the promoter is parked \
+                 holding that mutex, so one of the two must happen"
+            )
+        });
 
         // 3. Release the stale promoter.
         release.notify_one();
@@ -2550,6 +2584,13 @@ mod tests {
             .await
             .expect("finalizer task joined")
             .expect("finalize must not error");
+        assert!(
+            rendezvous,
+            "the finalizer ran to completion without ever enqueueing or \
+             blocking on status_persist_serial, so this interleave never \
+             exercised the ordering it claims to assert — the joins above \
+             passed, so it returned Ok having queued nothing"
+        );
 
         (persistence.durable_asset_lock(&out_point), chain_proof)
     }
