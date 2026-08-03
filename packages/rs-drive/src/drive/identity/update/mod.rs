@@ -57,8 +57,10 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let expected_fee_result = FeeResult {
                 storage_fee: 14202000,
-                // 2 extra loaded bytes because the token tree is no longer empty
-                // these 2 loaded bytes cost 20 credits each
+                // Above the first-version figure: 2 extra loaded bytes (the
+                // token tree is no longer empty) at 20 credits each, plus the
+                // grove v4 overwrite-inspection stored-element read charged
+                // per overwrite-capable batch op from protocol v14.
                 processing_fee: 1102300,
                 ..Default::default()
             };

@@ -408,7 +408,7 @@ mod nft_tests {
             PlatformVersion::latest().protocol_version,
             126440160,
             2485600,
-            4092360,
+            4126900,
         )
         .await;
     }
@@ -829,7 +829,7 @@ mod nft_tests {
             141238960,
             2729120,
             2733160,
-            4357440,
+            4397020,
         )
         .await;
     }
@@ -1407,7 +1407,7 @@ mod nft_tests {
             PlatformVersion::latest().protocol_version,
             126440160,
             2485600,
-            4092360,
+            4126900,
         )
         .await;
     }

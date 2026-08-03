@@ -7769,8 +7769,8 @@ mod tests {
 
             // Assert exact values - 2 inputs should cost more processing than 1 input
             assert_eq!(
-                processing_fee, 589280,
-                "Processing fee changed! Was 589280, now {}",
+                processing_fee, 593080,
+                "Processing fee changed! Was 593080, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7779,8 +7779,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6664280,
-                "Total fee changed! Was 6664280, now {}",
+                total_fee, 6668080,
+                "Total fee changed! Was 6668080, now {}",
                 total_fee
             );
         }
@@ -8239,8 +8239,8 @@ mod tests {
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 2959680,
-                "Processing fee changed! Was 2959680, now {}",
+                processing_fee, 3035320,
+                "Processing fee changed! Was 3035320, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8249,8 +8249,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 9034680,
-                "Total fee changed! Was 9034680, now {}",
+                total_fee, 9110320,
+                "Total fee changed! Was 9110320, now {}",
                 total_fee
             );
         }
@@ -8394,8 +8394,8 @@ mod tests {
 
             // Assert exact values for existing address (much cheaper - only updates balance)
             assert_eq!(
-                total_fee_existing, 447400,
-                "Total fee to existing address changed! Was 447400, now {}",
+                total_fee_existing, 451180,
+                "Total fee to existing address changed! Was 451180, now {}",
                 total_fee_existing
             );
         }

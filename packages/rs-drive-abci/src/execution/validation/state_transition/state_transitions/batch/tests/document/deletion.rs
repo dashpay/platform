@@ -10,7 +10,7 @@ mod deletion_tests {
     async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1678920,
+            1699540,
         )
         .await;
     }
@@ -370,7 +370,7 @@ mod deletion_tests {
     async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
         run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            2778700,
+            2838880,
         )
         .await;
     }
