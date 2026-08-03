@@ -98,75 +98,65 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 
-impl DocumentTypeV1 {
-    /// The shared parsing core of generation 3 — a copy of the generation-1
-    /// core (`v1/mod.rs`), private to this module. It builds the
-    /// `DocumentTypeV1` value that [`DocumentTypeV2::try_from_schema_generation_3`]
-    /// then layers the generation-2 doctype-level aggregate fields onto.
-    ///
-    /// Copied rather than called so that `v1/mod.rs` stays byte-identical to
-    /// the shipped generation; see the module doc.
-    // TODO: Split into multiple functions
-    #[allow(unused_variables)]
-    #[allow(clippy::too_many_arguments)]
-    fn try_from_schema_generation_3_core(
-        data_contract_id: Identifier,
-        data_contract_system_version: u16,
-        contract_config_version: u16,
-        name: &str,
-        schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
-        data_contact_config: &DataContractConfig,
-        full_validation: bool, // we don't need to validate if loaded from state
-        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        // Create a full root JSON Schema from shorten contract document type schema
-        let root_schema = DocumentType::enrich_with_base_schema(
-            schema.clone(),
-            schema_defs.map(|defs| Value::from(defs.clone())),
-            platform_version,
-        )?;
+/// The shared parsing core of generation 3 — a copy of the generation-1
+/// core (`v1/mod.rs`), private to this module. It builds the
+/// `DocumentTypeV1` value that [`try_from_schema_generation_3`]
+/// then layers the generation-2 doctype-level aggregate fields onto.
+///
+/// Copied rather than called so that `v1/mod.rs` stays byte-identical to
+/// the shipped generation; see the module doc.
+// TODO: Split into multiple functions
+#[allow(unused_variables)]
+#[allow(clippy::too_many_arguments)]
+fn try_from_schema_generation_3_core(
+    data_contract_id: Identifier,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    name: &str,
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &DataContractConfig,
+    full_validation: bool, // we don't need to validate if loaded from state
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentTypeV1, ProtocolError> {
+    // Create a full root JSON Schema from shorten contract document type schema
+    let root_schema = DocumentType::enrich_with_base_schema(
+        schema.clone(),
+        schema_defs.map(|defs| Value::from(defs.clone())),
+        platform_version,
+    )?;
 
-        #[cfg(not(feature = "validation"))]
-        if full_validation {
-            // TODO we are silently dropping this error when we shouldn't be
-            // but returning this error causes tests to fail; investigate more.
-            "validation is not enabled but is being called on try_from_schema".to_string();
+    #[cfg(not(feature = "validation"))]
+    if full_validation {
+        // TODO we are silently dropping this error when we shouldn't be
+        // but returning this error causes tests to fail; investigate more.
+        "validation is not enabled but is being called on try_from_schema".to_string();
+    }
+
+    #[cfg(feature = "validation")]
+    let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+
+    #[cfg(feature = "validation")]
+    if full_validation {
+        // Make sure a document type name is compliant
+        if !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            || name.is_empty()
+            || name.len() > 64
+        {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                InvalidDocumentTypeNameError::new(name.to_string()).into(),
+            )));
         }
 
-        #[cfg(feature = "validation")]
-        let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
+        // Validate document schema depth
+        let mut result = validate_max_depth(&root_schema, platform_version)?;
 
-        #[cfg(feature = "validation")]
-        if full_validation {
-            // Make sure a document type name is compliant
-            if !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-                || name.is_empty()
-                || name.len() > 64
-            {
-                return Err(ProtocolError::ConsensusError(Box::new(
-                    InvalidDocumentTypeNameError::new(name.to_string()).into(),
-                )));
-            }
-
-            // Validate document schema depth
-            let mut result = validate_max_depth(&root_schema, platform_version)?;
-
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
-
-                let schema_size = result.into_data()?.size;
-
-                validation_operations.extend(std::iter::once(
-                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-                ));
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
+        if !result.is_valid() {
+            let error = result.errors.remove(0);
 
             let schema_size = result.into_data()?.size;
 
@@ -174,534 +164,535 @@ impl DocumentTypeV1 {
                 ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
             ));
 
-            // Make sure JSON Schema is compilable
-            let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
-                ProtocolError::ConsensusError(
-                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
-                )
-            })?;
-
-            // Select the appropriate document meta-schema based on platform version
-            let meta_schema = match platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions
-                .schema
-                .document_type_schema
-            {
-                0 => &*DOCUMENT_META_SCHEMA_V0,
-                1 => &*DOCUMENT_META_SCHEMA_V1,
-                2 => &*DOCUMENT_META_SCHEMA_V2,
-                3 => &*DOCUMENT_META_SCHEMA_V3,
-                version => {
-                    return Err(ProtocolError::UnknownVersionMismatch {
-                        method: "DocumentType::try_from_schema_v3 (document_type_schema)"
-                            .to_string(),
-                        known_versions: vec![0, 1, 2, 3],
-                        received: version,
-                    })
-                }
-            };
-
-            // Validate against JSON Schema
-            meta_schema
-                .validate(&root_json_schema)
-                .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
-
-            json_schema_validator.compile(&root_json_schema, platform_version)?;
+            return Err(ProtocolError::ConsensusError(Box::new(error)));
         }
 
-        // This has already been validated, but we leave the map_err here for consistency
-        let schema_map = schema.to_map().map_err(|err| {
-            consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
-                format!("document schema must be an object: {err}"),
-            ))
+        let schema_size = result.into_data()?.size;
+
+        validation_operations.extend(std::iter::once(
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
+        ));
+
+        // Make sure JSON Schema is compilable
+        let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
+            ProtocolError::ConsensusError(
+                ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
+            )
         })?;
 
-        // Do documents of this type keep history? (Overrides contract value)
-        let documents_keep_history: bool =
-            Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or(data_contact_config.documents_keep_history_contract_default());
-
-        // The document history subscription flags are only recognized from
-        // document meta-schema v2 (protocol version 13). Earlier meta-schema
-        // versions either accepted and ignored unknown top-level keys (v0) or
-        // rejected them outright (v1), so parsing them here for historical
-        // protocol versions would change replay validation: a pre-v12
-        // contract carrying e.g. a non-boolean value under one of these names
-        // validated fine on the base implementation and must keep doing so.
-        let (
-            documents_keep_transfer_history,
-            documents_keep_purchase_history,
-            documents_keep_pricing_history,
-        ): (bool, bool, bool) = if platform_version
+        // Select the appropriate document meta-schema based on platform version
+        let meta_schema = match platform_version
             .dpp
             .contract_versions
             .document_type_versions
             .schema
             .document_type_schema
-            >= 2
         {
-            (
-                // Are transfers of documents of this type recorded in the
-                // document history system contract?
-                Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
-                    .map_err(consensus_or_protocol_value_error)?
-                    .unwrap_or_default(),
-                // Are purchases of documents of this type recorded in the
-                // document history system contract?
-                Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
-                    .map_err(consensus_or_protocol_value_error)?
-                    .unwrap_or_default(),
-                // Are price updates on documents of this type recorded in the
-                // document history system contract?
-                Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
-                    .map_err(consensus_or_protocol_value_error)?
-                    .unwrap_or_default(),
-            )
-        } else {
-            (false, false, false)
+            0 => &*DOCUMENT_META_SCHEMA_V0,
+            1 => &*DOCUMENT_META_SCHEMA_V1,
+            2 => &*DOCUMENT_META_SCHEMA_V2,
+            3 => &*DOCUMENT_META_SCHEMA_V3,
+            version => {
+                return Err(ProtocolError::UnknownVersionMismatch {
+                    method: "DocumentType::try_from_schema_v3 (document_type_schema)".to_string(),
+                    known_versions: vec![0, 1, 2, 3],
+                    received: version,
+                })
+            }
         };
 
-        // Are documents of this type mutable? (Overrides contract value)
-        let documents_mutable: bool =
-            Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
+        // Validate against JSON Schema
+        meta_schema
+            .validate(&root_json_schema)
+            .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
+
+        json_schema_validator.compile(&root_json_schema, platform_version)?;
+    }
+
+    // This has already been validated, but we leave the map_err here for consistency
+    let schema_map = schema.to_map().map_err(|err| {
+        consensus_or_protocol_data_contract_error(DataContractError::InvalidContractStructure(
+            format!("document schema must be an object: {err}"),
+        ))
+    })?;
+
+    // Do documents of this type keep history? (Overrides contract value)
+    let documents_keep_history: bool =
+        Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
+            .map_err(consensus_or_protocol_value_error)?
+            .unwrap_or(data_contact_config.documents_keep_history_contract_default());
+
+    // The document history subscription flags are only recognized from
+    // document meta-schema v2 (protocol version 13). Earlier meta-schema
+    // versions either accepted and ignored unknown top-level keys (v0) or
+    // rejected them outright (v1), so parsing them here for historical
+    // protocol versions would change replay validation: a pre-v12
+    // contract carrying e.g. a non-boolean value under one of these names
+    // validated fine on the base implementation and must keep doing so.
+    let (
+        documents_keep_transfer_history,
+        documents_keep_purchase_history,
+        documents_keep_pricing_history,
+    ): (bool, bool, bool) = if platform_version
+        .dpp
+        .contract_versions
+        .document_type_versions
+        .schema
+        .document_type_schema
+        >= 2
+    {
+        (
+            // Are transfers of documents of this type recorded in the
+            // document history system contract?
+            Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or(data_contact_config.documents_mutable_contract_default());
-
-        // Can documents of this type be deleted? (Overrides contract value)
-        let documents_can_be_deleted: bool =
-            Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
+                .unwrap_or_default(),
+            // Are purchases of documents of this type recorded in the
+            // document history system contract?
+            Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or(data_contact_config.documents_can_be_deleted_contract_default());
-
-        // Are documents of this type transferable?
-        let documents_transferable_u8: u8 =
-            Value::inner_optional_integer_value(schema_map, TRANSFERABLE)
+                .unwrap_or_default(),
+            // Are price updates on documents of this type recorded in the
+            // document history system contract?
+            Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
                 .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
-
-        let documents_transferable = documents_transferable_u8.try_into()?;
-
-        // What is the trade mode of these documents
-        let documents_trade_mode_u8: u8 =
-            Value::inner_optional_integer_value(schema_map, TRADE_MODE)
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
-
-        let trade_mode = documents_trade_mode_u8.try_into()?;
-
-        // What is the creation restriction mode of this document type?
-        let documents_creation_restriction_mode_u8: u8 =
-            Value::inner_optional_integer_value(schema_map, CREATION_RESTRICTION_MODE)
-                .map_err(consensus_or_protocol_value_error)?
-                .unwrap_or_default();
-
-        let creation_restriction_mode = documents_creation_restriction_mode_u8.try_into()?;
-
-        // Extract the properties
-        let property_values = Value::inner_optional_index_map::<u64>(
-            schema_map,
-            property_names::PROPERTIES,
-            property_names::POSITION,
+                .unwrap_or_default(),
         )
+    } else {
+        (false, false, false)
+    };
+
+    // Are documents of this type mutable? (Overrides contract value)
+    let documents_mutable: bool = Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
+        .map_err(consensus_or_protocol_value_error)?
+        .unwrap_or(data_contact_config.documents_mutable_contract_default());
+
+    // Can documents of this type be deleted? (Overrides contract value)
+    let documents_can_be_deleted: bool =
+        Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
+            .map_err(consensus_or_protocol_value_error)?
+            .unwrap_or(data_contact_config.documents_can_be_deleted_contract_default());
+
+    // Are documents of this type transferable?
+    let documents_transferable_u8: u8 =
+        Value::inner_optional_integer_value(schema_map, TRANSFERABLE)
+            .map_err(consensus_or_protocol_value_error)?
+            .unwrap_or_default();
+
+    let documents_transferable = documents_transferable_u8.try_into()?;
+
+    // What is the trade mode of these documents
+    let documents_trade_mode_u8: u8 = Value::inner_optional_integer_value(schema_map, TRADE_MODE)
         .map_err(consensus_or_protocol_value_error)?
         .unwrap_or_default();
 
-        #[cfg(feature = "validation")]
-        if full_validation {
-            validation_operations.extend(std::iter::once(
-                ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
-                    property_values.values().len() as u64,
-                ),
-            ));
+    let trade_mode = documents_trade_mode_u8.try_into()?;
 
-            // We should validate that the positions are continuous
-            for (pos, value) in property_values.values().enumerate() {
-                if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
-                    return Err(ConsensusError::BasicError(
-                        BasicError::MissingPositionsInDocumentTypePropertiesError(
-                            MissingPositionsInDocumentTypePropertiesError::new(
-                                pos as u32,
-                                data_contract_id,
-                                name.to_string(),
-                            ),
-                        ),
-                    )
-                    .into());
-                }
-            }
-        }
-
-        // Prepare internal data for efficient querying
-        let mut flattened_document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
-        let mut document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
-
-        let required_fields = Value::inner_recursive_optional_array_of_strings(
-            schema_map,
-            "".to_string(),
-            property_names::PROPERTIES,
-            property_names::REQUIRED,
-        );
-
-        let transient_fields = Value::inner_recursive_optional_array_of_strings(
-            schema_map,
-            "".to_string(),
-            property_names::PROPERTIES,
-            property_names::TRANSIENT,
-        );
-
-        // Based on the property name, determine the type
-        for (property_key, property_value) in property_values {
-            // TODO: It's very inefficient. It must be done in one iteration and flattened properties
-            //  must keep a reference? We even could keep only one collection
-            insert_values(
-                &mut flattened_document_properties,
-                &required_fields,
-                &transient_fields,
-                None,
-                property_key.clone(),
-                property_value,
-                &root_schema,
-                data_contact_config,
-            )
-            .map_err(consensus_or_protocol_data_contract_error)?;
-
-            insert_values_nested(
-                &mut document_properties,
-                &required_fields,
-                &transient_fields,
-                property_key,
-                property_value,
-                &root_schema,
-                data_contact_config,
-            )
-            .map_err(consensus_or_protocol_data_contract_error)?;
-        }
-
-        // Initialize indices
-        let index_values =
-            Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
-                .map_err(consensus_or_protocol_value_error)?;
-
-        #[cfg(feature = "validation")]
-        let mut index_names: HashSet<String> = HashSet::new();
-        #[cfg(feature = "validation")]
-        let mut unique_indices_count = 0;
-
-        #[cfg(feature = "validation")]
-        let mut last_non_contested_unique_index_name: Option<String> = None;
-
-        #[cfg(feature = "validation")]
-        let mut last_contested_unique_index_name: Option<String> = None;
-
-        #[cfg(feature = "validation")]
-        let mut contested_indices_count = 0;
-
-        let indices: BTreeMap<String, Index> = index_values
-            .map(|index_values| {
-                index_values
-                    .iter()
-                    .map(|index_value| {
-                        // `true`: parser generation 3 exists if and only if the
-                        // document meta-schema is v3, which is what admits the
-                        // ranked keywords — so there is no version to read here.
-                        let index: Index = Index::try_from_value_map(
-                            index_value
-                                .to_map()
-                                .map_err(consensus_or_protocol_value_error)?
-                                .as_slice(),
-                            true,
-                        )
-                        .map_err(consensus_or_protocol_data_contract_error)?;
-
-                        #[cfg(feature = "validation")]
-                        if full_validation {
-                            // `countable` and `rangeCountable` index features
-                            // require GroveDB tree variants and query primitives
-                            // (CountTree / ProvableCountTree / NonCounted /
-                            // AggregateCountOnRange) that only exist from
-                            // protocol v12 onward. NOTE: at protocol v12+ the
-                            // dispatch routes to `try_from_schema_v2`, but v2
-                            // delegates to V1's parser internally for the
-                            // shared core — so this body IS reached at v12+
-                            // and the `< 12` check is load-bearing, not
-                            // defense-in-depth. Without it, v12 contracts
-                            // with countable / range_countable indexes would
-                            // be rejected here.
-                            if index.countable.is_countable()
-                                && platform_version.protocol_version < 12
-                            {
-                                return Err(ProtocolError::ConsensusError(Box::new(
-                                    UnsupportedFeatureError::new(
-                                        "count index".to_string(),
-                                        platform_version.protocol_version,
-                                    )
-                                    .into(),
-                                )));
-                            }
-                            if index.range_countable && platform_version.protocol_version < 12 {
-                                return Err(ProtocolError::ConsensusError(Box::new(
-                                    UnsupportedFeatureError::new(
-                                        "range-countable index".to_string(),
-                                        platform_version.protocol_version,
-                                    )
-                                    .into(),
-                                )));
-                            }
-
-                            validation_operations.extend(std::iter::once(
-                                ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
-                                    index.properties.len() as u64,
-                                    index.unique,
-                                ),
-                            ));
-
-                            // Unique indices produces significant load on the system during state validation
-                            // so we need to limit their number to prevent of spikes and DoS attacks
-                            if index.unique {
-                                unique_indices_count += 1;
-                                if unique_indices_count
-                                    > platform_version
-                                        .dpp
-                                        .validation
-                                        .document_type
-                                        .unique_index_limit
-                                {
-                                    return Err(ProtocolError::ConsensusError(Box::new(
-                                        UniqueIndicesLimitReachedError::new(
-                                            name.to_string(),
-                                            platform_version
-                                                .dpp
-                                                .validation
-                                                .document_type
-                                                .unique_index_limit,
-                                            false,
-                                        )
-                                        .into(),
-                                    )));
-                                }
-
-                                if let Some(last_contested_unique_index_name) =
-                                    last_contested_unique_index_name.as_ref()
-                                {
-                                    return Err(ProtocolError::ConsensusError(Box::new(
-                                        ContestedUniqueIndexWithUniqueIndexError::new(
-                                            name.to_string(),
-                                            last_contested_unique_index_name.clone(),
-                                            index.name,
-                                        )
-                                        .into(),
-                                    )));
-                                }
-
-                                if index.contested_index.is_none() {
-                                    last_non_contested_unique_index_name = Some(index.name.clone());
-                                }
-                            }
-
-                            if index.contested_index.is_some() {
-                                contested_indices_count += 1;
-                                if contested_indices_count
-                                    > platform_version
-                                        .dpp
-                                        .validation
-                                        .document_type
-                                        .contested_index_limit
-                                {
-                                    return Err(ProtocolError::ConsensusError(Box::new(
-                                        UniqueIndicesLimitReachedError::new(
-                                            name.to_string(),
-                                            platform_version
-                                                .dpp
-                                                .validation
-                                                .document_type
-                                                .contested_index_limit,
-                                            true,
-                                        )
-                                        .into(),
-                                    )));
-                                }
-
-                                if let Some(last_unique_index_name) =
-                                    last_non_contested_unique_index_name.as_ref()
-                                {
-                                    return Err(ProtocolError::ConsensusError(Box::new(
-                                        ContestedUniqueIndexWithUniqueIndexError::new(
-                                            name.to_string(),
-                                            index.name,
-                                            last_unique_index_name.clone(),
-                                        )
-                                        .into(),
-                                    )));
-                                }
-
-                                if documents_mutable {
-                                    return Err(ProtocolError::ConsensusError(Box::new(
-                                        ContestedUniqueIndexOnMutableDocumentTypeError::new(
-                                            name.to_string(),
-                                            index.name,
-                                        )
-                                        .into(),
-                                    )));
-                                }
-
-                                last_contested_unique_index_name = Some(index.name.clone());
-                            }
-
-                            // Index names must be unique for the document type
-                            if !index_names.insert(index.name.to_owned()) {
-                                return Err(ProtocolError::ConsensusError(Box::new(
-                                    DuplicateIndexNameError::new(name.to_string(), index.name)
-                                        .into(),
-                                )));
-                            }
-
-                            // Validate indexed properties
-                            index.properties.iter().try_for_each(|index_property| {
-                                // Do not allow to index already indexed system properties
-                                if NOT_ALLOWED_SYSTEM_PROPERTIES
-                                    .contains(&index_property.name.as_str())
-                                {
-                                    return Err(ProtocolError::ConsensusError(Box::new(
-                                        SystemPropertyIndexAlreadyPresentError::new(
-                                            name.to_owned(),
-                                            index.name.to_owned(),
-                                            index_property.name.to_owned(),
-                                        )
-                                        .into(),
-                                    )));
-                                }
-
-                                // Indexed property must be defined in user schema if it's not a system one
-                                if !DocumentType::system_properties_contains(
-                                    data_contract_system_version,
-                                    contract_config_version,
-                                    documents_transferable,
-                                    trade_mode,
-                                    index_property.name.as_str(),
-                                    platform_version,
-                                )? {
-                                    let property_definition = flattened_document_properties
-                                        .get(&index_property.name)
-                                        .ok_or_else(|| {
-                                            ProtocolError::ConsensusError(Box::new(
-                                                UndefinedIndexPropertyError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                )
-                                                .into(),
-                                            ))
-                                        })?;
-
-                                    // Validate indexed property type
-                                    match &property_definition.property_type {
-                                        // Array and objects aren't supported for indexing yet
-                                        DocumentPropertyType::Array(_)
-                                        | DocumentPropertyType::Object(_)
-                                        | DocumentPropertyType::VariableTypeArray(_) => {
-                                            Err(ProtocolError::ConsensusError(Box::new(
-                                                InvalidIndexPropertyTypeError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                    property_definition.property_type.name(),
-                                                )
-                                                .into(),
-                                            )))
-                                        }
-                                        // Indexed byte array size must be limited
-                                        DocumentPropertyType::ByteArray(sizes)
-                                            if sizes.max_size.is_none()
-                                                || sizes.max_size.unwrap()
-                                                    > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
-                                        {
-                                            Err(ProtocolError::ConsensusError(Box::new(
-                                                InvalidIndexedPropertyConstraintError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                    "maxItems".to_string(),
-                                                    format!(
-                                                        "should be less or equal {}",
-                                                        MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                                                    ),
-                                                )
-                                                .into(),
-                                            )))
-                                        }
-                                        // Indexed string length must be limited
-                                        DocumentPropertyType::String(sizes)
-                                            if sizes.max_length.is_none()
-                                                || sizes.max_length.unwrap()
-                                                    > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
-                                        {
-                                            Err(ProtocolError::ConsensusError(Box::new(
-                                                InvalidIndexedPropertyConstraintError::new(
-                                                    name.to_owned(),
-                                                    index.name.to_owned(),
-                                                    index_property.name.to_owned(),
-                                                    "maxLength".to_string(),
-                                                    format!(
-                                                        "should be less or equal {}",
-                                                        MAX_INDEXED_STRING_PROPERTY_LENGTH
-                                                    ),
-                                                )
-                                                .into(),
-                                            )))
-                                        }
-                                        _ => Ok(()),
-                                    }
-                                } else {
-                                    Ok(())
-                                }
-                            })?;
-                        }
-
-                        Ok((index.name.clone(), index))
-                    })
-                    .collect::<Result<BTreeMap<String, Index>, ProtocolError>>()
-            })
-            .transpose()?
+    // What is the creation restriction mode of this document type?
+    let documents_creation_restriction_mode_u8: u8 =
+        Value::inner_optional_integer_value(schema_map, CREATION_RESTRICTION_MODE)
+            .map_err(consensus_or_protocol_value_error)?
             .unwrap_or_default();
 
-        let index_structure =
-            IndexLevel::try_from_indices(indices.values(), name, platform_version)?;
+    let creation_restriction_mode = documents_creation_restriction_mode_u8.try_into()?;
 
-        // Collect binary and identifier properties
-        let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
-            &document_properties,
-            &platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions,
-        )?;
+    // Extract the properties
+    let property_values = Value::inner_optional_index_map::<u64>(
+        schema_map,
+        property_names::PROPERTIES,
+        property_names::POSITION,
+    )
+    .map_err(consensus_or_protocol_value_error)?
+    .unwrap_or_default();
 
-        let security_level_requirement = schema
-            .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)
-            .map_err(consensus_or_protocol_value_error)?
-            .map(SecurityLevel::try_from)
-            .transpose()?
-            .unwrap_or(SecurityLevel::HIGH);
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validation_operations.extend(std::iter::once(
+            ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
+                property_values.values().len() as u64,
+            ),
+        ));
 
-        let requires_identity_encryption_bounded_key = schema
-            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)
-            .map_err(consensus_or_protocol_value_error)?
-            .map(StorageKeyRequirements::try_from)
-            .transpose()?;
+        // We should validate that the positions are continuous
+        for (pos, value) in property_values.values().enumerate() {
+            if value.get_integer::<u32>(property_names::POSITION)? != pos as u32 {
+                return Err(ConsensusError::BasicError(
+                    BasicError::MissingPositionsInDocumentTypePropertiesError(
+                        MissingPositionsInDocumentTypePropertiesError::new(
+                            pos as u32,
+                            data_contract_id,
+                            name.to_string(),
+                        ),
+                    ),
+                )
+                .into());
+            }
+        }
+    }
 
-        let requires_identity_decryption_bounded_key = schema
-            .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)
-            .map_err(consensus_or_protocol_value_error)?
-            .map(StorageKeyRequirements::try_from)
-            .transpose()?;
+    // Prepare internal data for efficient querying
+    let mut flattened_document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
+    let mut document_properties: IndexMap<String, DocumentProperty> = IndexMap::new();
 
-        let token_costs_value = schema.get_optional_value("tokenCost")?;
+    let required_fields = Value::inner_recursive_optional_array_of_strings(
+        schema_map,
+        "".to_string(),
+        property_names::PROPERTIES,
+        property_names::REQUIRED,
+    );
 
-        let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
-            token_costs_value
+    let transient_fields = Value::inner_recursive_optional_array_of_strings(
+        schema_map,
+        "".to_string(),
+        property_names::PROPERTIES,
+        property_names::TRANSIENT,
+    );
+
+    // Based on the property name, determine the type
+    for (property_key, property_value) in property_values {
+        // TODO: It's very inefficient. It must be done in one iteration and flattened properties
+        //  must keep a reference? We even could keep only one collection
+        insert_values(
+            &mut flattened_document_properties,
+            &required_fields,
+            &transient_fields,
+            None,
+            property_key.clone(),
+            property_value,
+            &root_schema,
+            data_contact_config,
+        )
+        .map_err(consensus_or_protocol_data_contract_error)?;
+
+        insert_values_nested(
+            &mut document_properties,
+            &required_fields,
+            &transient_fields,
+            property_key,
+            property_value,
+            &root_schema,
+            data_contact_config,
+        )
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
+    // Initialize indices
+    let index_values = Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
+        .map_err(consensus_or_protocol_value_error)?;
+
+    #[cfg(feature = "validation")]
+    let mut index_names: HashSet<String> = HashSet::new();
+    #[cfg(feature = "validation")]
+    let mut unique_indices_count = 0;
+
+    #[cfg(feature = "validation")]
+    let mut last_non_contested_unique_index_name: Option<String> = None;
+
+    #[cfg(feature = "validation")]
+    let mut last_contested_unique_index_name: Option<String> = None;
+
+    #[cfg(feature = "validation")]
+    let mut contested_indices_count = 0;
+
+    let indices: BTreeMap<String, Index> = index_values
+        .map(|index_values| {
+            index_values
+                .iter()
+                .map(|index_value| {
+                    // `true`: parser generation 3 exists if and only if the
+                    // document meta-schema is v3, which is what admits the
+                    // ranked keywords — so there is no version to read here.
+                    let index: Index = Index::try_from_value_map(
+                        index_value
+                            .to_map()
+                            .map_err(consensus_or_protocol_value_error)?
+                            .as_slice(),
+                        true,
+                    )
+                    .map_err(consensus_or_protocol_data_contract_error)?;
+
+                    #[cfg(feature = "validation")]
+                    if full_validation {
+                        // `countable` and `rangeCountable` index features
+                        // require GroveDB tree variants and query primitives
+                        // (CountTree / ProvableCountTree / NonCounted /
+                        // AggregateCountOnRange) that only exist from
+                        // protocol v12 onward. NOTE: at protocol v12+ the
+                        // dispatch routes to `try_from_schema_v2`, but v2
+                        // delegates to V1's parser internally for the
+                        // shared core — so this body IS reached at v12+
+                        // and the `< 12` check is load-bearing, not
+                        // defense-in-depth. Without it, v12 contracts
+                        // with countable / range_countable indexes would
+                        // be rejected here.
+                        if index.countable.is_countable() && platform_version.protocol_version < 12
+                        {
+                            return Err(ProtocolError::ConsensusError(Box::new(
+                                UnsupportedFeatureError::new(
+                                    "count index".to_string(),
+                                    platform_version.protocol_version,
+                                )
+                                .into(),
+                            )));
+                        }
+                        if index.range_countable && platform_version.protocol_version < 12 {
+                            return Err(ProtocolError::ConsensusError(Box::new(
+                                UnsupportedFeatureError::new(
+                                    "range-countable index".to_string(),
+                                    platform_version.protocol_version,
+                                )
+                                .into(),
+                            )));
+                        }
+
+                        validation_operations.extend(std::iter::once(
+                            ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
+                                index.properties.len() as u64,
+                                index.unique,
+                            ),
+                        ));
+
+                        // Unique indices produces significant load on the system during state validation
+                        // so we need to limit their number to prevent of spikes and DoS attacks
+                        if index.unique {
+                            unique_indices_count += 1;
+                            if unique_indices_count
+                                > platform_version
+                                    .dpp
+                                    .validation
+                                    .document_type
+                                    .unique_index_limit
+                            {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    UniqueIndicesLimitReachedError::new(
+                                        name.to_string(),
+                                        platform_version
+                                            .dpp
+                                            .validation
+                                            .document_type
+                                            .unique_index_limit,
+                                        false,
+                                    )
+                                    .into(),
+                                )));
+                            }
+
+                            if let Some(last_contested_unique_index_name) =
+                                last_contested_unique_index_name.as_ref()
+                            {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    ContestedUniqueIndexWithUniqueIndexError::new(
+                                        name.to_string(),
+                                        last_contested_unique_index_name.clone(),
+                                        index.name,
+                                    )
+                                    .into(),
+                                )));
+                            }
+
+                            if index.contested_index.is_none() {
+                                last_non_contested_unique_index_name = Some(index.name.clone());
+                            }
+                        }
+
+                        if index.contested_index.is_some() {
+                            contested_indices_count += 1;
+                            if contested_indices_count
+                                > platform_version
+                                    .dpp
+                                    .validation
+                                    .document_type
+                                    .contested_index_limit
+                            {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    UniqueIndicesLimitReachedError::new(
+                                        name.to_string(),
+                                        platform_version
+                                            .dpp
+                                            .validation
+                                            .document_type
+                                            .contested_index_limit,
+                                        true,
+                                    )
+                                    .into(),
+                                )));
+                            }
+
+                            if let Some(last_unique_index_name) =
+                                last_non_contested_unique_index_name.as_ref()
+                            {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    ContestedUniqueIndexWithUniqueIndexError::new(
+                                        name.to_string(),
+                                        index.name,
+                                        last_unique_index_name.clone(),
+                                    )
+                                    .into(),
+                                )));
+                            }
+
+                            if documents_mutable {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    ContestedUniqueIndexOnMutableDocumentTypeError::new(
+                                        name.to_string(),
+                                        index.name,
+                                    )
+                                    .into(),
+                                )));
+                            }
+
+                            last_contested_unique_index_name = Some(index.name.clone());
+                        }
+
+                        // Index names must be unique for the document type
+                        if !index_names.insert(index.name.to_owned()) {
+                            return Err(ProtocolError::ConsensusError(Box::new(
+                                DuplicateIndexNameError::new(name.to_string(), index.name).into(),
+                            )));
+                        }
+
+                        // Validate indexed properties
+                        index.properties.iter().try_for_each(|index_property| {
+                            // Do not allow to index already indexed system properties
+                            if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&index_property.name.as_str())
+                            {
+                                return Err(ProtocolError::ConsensusError(Box::new(
+                                    SystemPropertyIndexAlreadyPresentError::new(
+                                        name.to_owned(),
+                                        index.name.to_owned(),
+                                        index_property.name.to_owned(),
+                                    )
+                                    .into(),
+                                )));
+                            }
+
+                            // Indexed property must be defined in user schema if it's not a system one
+                            if !DocumentType::system_properties_contains(
+                                data_contract_system_version,
+                                contract_config_version,
+                                documents_transferable,
+                                trade_mode,
+                                index_property.name.as_str(),
+                                platform_version,
+                            )? {
+                                let property_definition = flattened_document_properties
+                                    .get(&index_property.name)
+                                    .ok_or_else(|| {
+                                        ProtocolError::ConsensusError(Box::new(
+                                            UndefinedIndexPropertyError::new(
+                                                name.to_owned(),
+                                                index.name.to_owned(),
+                                                index_property.name.to_owned(),
+                                            )
+                                            .into(),
+                                        ))
+                                    })?;
+
+                                // Validate indexed property type
+                                match &property_definition.property_type {
+                                    // Array and objects aren't supported for indexing yet
+                                    DocumentPropertyType::Array(_)
+                                    | DocumentPropertyType::Object(_)
+                                    | DocumentPropertyType::VariableTypeArray(_) => {
+                                        Err(ProtocolError::ConsensusError(Box::new(
+                                            InvalidIndexPropertyTypeError::new(
+                                                name.to_owned(),
+                                                index.name.to_owned(),
+                                                index_property.name.to_owned(),
+                                                property_definition.property_type.name(),
+                                            )
+                                            .into(),
+                                        )))
+                                    }
+                                    // Indexed byte array size must be limited
+                                    DocumentPropertyType::ByteArray(sizes)
+                                        if sizes.max_size.is_none()
+                                            || sizes.max_size.unwrap()
+                                                > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
+                                    {
+                                        Err(ProtocolError::ConsensusError(Box::new(
+                                            InvalidIndexedPropertyConstraintError::new(
+                                                name.to_owned(),
+                                                index.name.to_owned(),
+                                                index_property.name.to_owned(),
+                                                "maxItems".to_string(),
+                                                format!(
+                                                    "should be less or equal {}",
+                                                    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                                                ),
+                                            )
+                                            .into(),
+                                        )))
+                                    }
+                                    // Indexed string length must be limited
+                                    DocumentPropertyType::String(sizes)
+                                        if sizes.max_length.is_none()
+                                            || sizes.max_length.unwrap()
+                                                > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
+                                    {
+                                        Err(ProtocolError::ConsensusError(Box::new(
+                                            InvalidIndexedPropertyConstraintError::new(
+                                                name.to_owned(),
+                                                index.name.to_owned(),
+                                                index_property.name.to_owned(),
+                                                "maxLength".to_string(),
+                                                format!(
+                                                    "should be less or equal {}",
+                                                    MAX_INDEXED_STRING_PROPERTY_LENGTH
+                                                ),
+                                            )
+                                            .into(),
+                                        )))
+                                    }
+                                    _ => Ok(()),
+                                }
+                            } else {
+                                Ok(())
+                            }
+                        })?;
+                    }
+
+                    Ok((index.name.clone(), index))
+                })
+                .collect::<Result<BTreeMap<String, Index>, ProtocolError>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+
+    let index_structure = IndexLevel::try_from_indices(indices.values(), name, platform_version)?;
+
+    // Collect binary and identifier properties
+    let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
+        &document_properties,
+        &platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions,
+    )?;
+
+    let security_level_requirement = schema
+        .get_optional_integer::<u8>(property_names::SECURITY_LEVEL_REQUIREMENT)
+        .map_err(consensus_or_protocol_value_error)?
+        .map(SecurityLevel::try_from)
+        .transpose()?
+        .unwrap_or(SecurityLevel::HIGH);
+
+    let requires_identity_encryption_bounded_key = schema
+        .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_ENCRYPTION_BOUNDED_KEY)
+        .map_err(consensus_or_protocol_value_error)?
+        .map(StorageKeyRequirements::try_from)
+        .transpose()?;
+
+    let requires_identity_decryption_bounded_key = schema
+        .get_optional_integer::<u8>(property_names::REQUIRES_IDENTITY_DECRYPTION_BOUNDED_KEY)
+        .map_err(consensus_or_protocol_value_error)?
+        .map(StorageKeyRequirements::try_from)
+        .transpose()?;
+
+    let token_costs_value = schema.get_optional_value("tokenCost")?;
+
+    let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
+        token_costs_value
                 .and_then(|v| v.get_optional_value(key).transpose())
                 .transpose()?
                 .map(|action_cost| {
@@ -780,477 +771,473 @@ impl DocumentTypeV1 {
                     })
                 })
                 .transpose()
-        };
+    };
 
-        // Note: documentsCountable / rangeCountable schema keys are intentionally
-        // ignored here. The v1 parser produces DocumentTypeV1 which has no countable
-        // fields. When protocol v12+ is active, the v2 parser is used instead, which
-        // reads these keys and produces DocumentTypeV2. The v1 parser should never
-        // reject unknown keys — it simply doesn't map them to its output type.
+    // Note: documentsCountable / rangeCountable schema keys are intentionally
+    // ignored here. The v1 parser produces DocumentTypeV1 which has no countable
+    // fields. When protocol v12+ is active, the v2 parser is used instead, which
+    // reads these keys and produces DocumentTypeV2. The v1 parser should never
+    // reject unknown keys — it simply doesn't map them to its output type.
 
-        let token_costs = TokenCostsV0 {
-            create: extract_cost("create")?,
-            replace: extract_cost("replace")?,
-            delete: extract_cost("delete")?,
-            transfer: extract_cost("transfer")?,
-            update_price: extract_cost("update_price")?,
-            purchase: extract_cost("purchase")?,
-        }
-        .into();
-
-        Ok(DocumentTypeV1 {
-            name: String::from(name),
-            schema,
-            indices,
-            index_structure,
-            flattened_properties: flattened_document_properties,
-            properties: document_properties,
-            identifier_paths,
-            binary_paths,
-            required_fields,
-            transient_fields,
-            documents_keep_history,
-            documents_keep_transfer_history,
-            documents_keep_purchase_history,
-            documents_keep_pricing_history,
-            documents_mutable,
-            documents_can_be_deleted,
-            documents_transferable,
-            trade_mode,
-            creation_restriction_mode,
-            data_contract_id,
-            requires_identity_encryption_bounded_key,
-            requires_identity_decryption_bounded_key,
-            security_level_requirement,
-            #[cfg(feature = "validation")]
-            json_schema_validator,
-            token_costs,
-        })
+    let token_costs = TokenCostsV0 {
+        create: extract_cost("create")?,
+        replace: extract_cost("replace")?,
+        delete: extract_cost("delete")?,
+        transfer: extract_cost("transfer")?,
+        update_price: extract_cost("update_price")?,
+        purchase: extract_cost("purchase")?,
     }
+    .into();
+
+    Ok(DocumentTypeV1 {
+        name: String::from(name),
+        schema,
+        indices,
+        index_structure,
+        flattened_properties: flattened_document_properties,
+        properties: document_properties,
+        identifier_paths,
+        binary_paths,
+        required_fields,
+        transient_fields,
+        documents_keep_history,
+        documents_keep_transfer_history,
+        documents_keep_purchase_history,
+        documents_keep_pricing_history,
+        documents_mutable,
+        documents_can_be_deleted,
+        documents_transferable,
+        trade_mode,
+        creation_restriction_mode,
+        data_contract_id,
+        requires_identity_encryption_bounded_key,
+        requires_identity_decryption_bounded_key,
+        security_level_requirement,
+        #[cfg(feature = "validation")]
+        json_schema_validator,
+        token_costs,
+    })
 }
 
-impl DocumentTypeV2 {
-    /// Parses a document type schema with the doctype-level aggregate fields
-    /// (`documentsCountable`, `rangeCountable`, `documentsSummable`,
-    /// `rangeSummable` and the `documentsAverageable` / `rangeAverageable`
-    /// shorthands), then wraps the parsed core in a `DocumentTypeV2` with those
-    /// fields set. A copy of the generation-2 wrapper; core parsing goes to
-    /// this module's own [`DocumentTypeV1::try_from_schema_generation_3_core`].
-    ///
-    /// This parser is only reachable from protocol version 14+ (via
-    /// CONTRACT_VERSIONS_V6).
-    #[allow(clippy::too_many_arguments)]
-    fn try_from_schema_generation_3(
-        data_contract_id: Identifier,
-        data_contract_system_version: u16,
-        contract_config_version: u16,
-        name: &str,
-        schema: Value,
-        schema_defs: Option<&BTreeMap<String, Value>>,
-        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
-        data_contact_config: &DataContractConfig,
-        full_validation: bool,
-        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        // Extract V2-specific fields before the V1 parser consumes the schema map.
-        //
-        // Note on pre-v12 contracts: contracts created before v12 used the v1 parser
-        // which ignores these fields. After v12 upgrade, deserialization uses the v2
-        // parser which will read them. This is safe because the contract update path
-        // runs through the v2 parser with full_validation=true, and the primary key
-        // tree type is set correctly at contract creation time. Pre-v12 contracts
-        // can only have these flags if they were explicitly set in the schema — the
-        // meta-schema allows them as optional boolean properties.
-        let schema_map_opt = schema.to_map().ok();
+/// Parses a document type schema with the doctype-level aggregate fields
+/// (`documentsCountable`, `rangeCountable`, `documentsSummable`,
+/// `rangeSummable` and the `documentsAverageable` / `rangeAverageable`
+/// shorthands), then wraps the parsed core in a `DocumentTypeV2` with those
+/// fields set. A copy of the generation-2 wrapper; core parsing goes to
+/// this module's own [`try_from_schema_generation_3_core`].
+///
+/// This parser is only reachable from protocol version 14+ (via
+/// CONTRACT_VERSIONS_V6).
+#[allow(clippy::too_many_arguments)]
+fn try_from_schema_generation_3(
+    data_contract_id: Identifier,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    name: &str,
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &DataContractConfig,
+    full_validation: bool,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentTypeV2, ProtocolError> {
+    // Extract V2-specific fields before the V1 parser consumes the schema map.
+    //
+    // Note on pre-v12 contracts: contracts created before v12 used the v1 parser
+    // which ignores these fields. After v12 upgrade, deserialization uses the v2
+    // parser which will read them. This is safe because the contract update path
+    // runs through the v2 parser with full_validation=true, and the primary key
+    // tree type is set correctly at contract creation time. Pre-v12 contracts
+    // can only have these flags if they were explicitly set in the schema — the
+    // meta-schema allows them as optional boolean properties.
+    let schema_map_opt = schema.to_map().ok();
 
-        let documents_countable = schema_map_opt
-            .as_ref()
-            .and_then(|schema_map| {
-                Value::inner_optional_bool_value(schema_map, DOCUMENTS_COUNTABLE)
-                    .map_err(consensus_or_protocol_value_error)
-                    .transpose()
-            })
-            .transpose()?
-            .unwrap_or(false);
+    let documents_countable = schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, DOCUMENTS_COUNTABLE)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false);
 
-        // Keep the raw `Option<bool>` so the averageable desugar below
-        // can distinguish "field absent (default false)" from
-        // "field explicit false" — same explicit-vs-default tracking
-        // the Index parser does for its range axes. `range_countable`
-        // (the resolved bool) flows into the rest of the logic.
-        let range_countable_opt = schema_map_opt
-            .as_ref()
-            .and_then(|schema_map| {
-                Value::inner_optional_bool_value(schema_map, RANGE_COUNTABLE)
-                    .map_err(consensus_or_protocol_value_error)
-                    .transpose()
-            })
-            .transpose()?;
-        let range_countable = range_countable_opt.unwrap_or(false);
+    // Keep the raw `Option<bool>` so the averageable desugar below
+    // can distinguish "field absent (default false)" from
+    // "field explicit false" — same explicit-vs-default tracking
+    // the Index parser does for its range axes. `range_countable`
+    // (the resolved bool) flows into the rest of the logic.
+    let range_countable_opt = schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, RANGE_COUNTABLE)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?;
+    let range_countable = range_countable_opt.unwrap_or(false);
 
-        // `documentsSummable` names the integer property whose values are
-        // summed across all documents of this type. When set, the primary
-        // key tree is a `SumTree` (or `ProvableSumTree` if `rangeSummable`
-        // is also true). Accepted shapes:
-        //   - absent / null → no sum tree
-        //   - non-empty string → property name
-        //   - empty string → rejected (ValueWrongType)
-        let documents_summable: Option<String> = schema_map_opt
-            .as_ref()
-            .and_then(|schema_map| {
-                schema_map
-                    .iter()
-                    .find(|(k, _)| k.as_text() == Some(DOCUMENTS_SUMMABLE))
-            })
-            .map(|(_, v)| match v {
-                Value::Null => Ok(None),
-                Value::Text(s) if !s.is_empty() => Ok(Some(s.clone())),
-                Value::Text(_) => Err(ProtocolError::DataContractError(
-                    DataContractError::ValueWrongType(
-                        "documentsSummable must be a non-empty string naming an integer \
+    // `documentsSummable` names the integer property whose values are
+    // summed across all documents of this type. When set, the primary
+    // key tree is a `SumTree` (or `ProvableSumTree` if `rangeSummable`
+    // is also true). Accepted shapes:
+    //   - absent / null → no sum tree
+    //   - non-empty string → property name
+    //   - empty string → rejected (ValueWrongType)
+    let documents_summable: Option<String> = schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            schema_map
+                .iter()
+                .find(|(k, _)| k.as_text() == Some(DOCUMENTS_SUMMABLE))
+        })
+        .map(|(_, v)| match v {
+            Value::Null => Ok(None),
+            Value::Text(s) if !s.is_empty() => Ok(Some(s.clone())),
+            Value::Text(_) => Err(ProtocolError::DataContractError(
+                DataContractError::ValueWrongType(
+                    "documentsSummable must be a non-empty string naming an integer \
                          property, or null"
-                            .to_string(),
-                    ),
-                )),
-                _ => Err(ProtocolError::DataContractError(
-                    DataContractError::ValueWrongType(
-                        "documentsSummable value must be a string or null".to_string(),
-                    ),
-                )),
-            })
-            .transpose()?
-            .flatten();
+                        .to_string(),
+                ),
+            )),
+            _ => Err(ProtocolError::DataContractError(
+                DataContractError::ValueWrongType(
+                    "documentsSummable value must be a string or null".to_string(),
+                ),
+            )),
+        })
+        .transpose()?
+        .flatten();
 
-        let range_summable_opt = schema_map_opt
-            .as_ref()
-            .and_then(|schema_map| {
-                Value::inner_optional_bool_value(schema_map, RANGE_SUMMABLE)
-                    .map_err(consensus_or_protocol_value_error)
-                    .transpose()
-            })
-            .transpose()?;
-        let range_summable = range_summable_opt.unwrap_or(false);
+    let range_summable_opt = schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, RANGE_SUMMABLE)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?;
+    let range_summable = range_summable_opt.unwrap_or(false);
 
-        // `documentsAverageable` is syntactic sugar for
-        // `documentsCountable: true` + `documentsSummable: "<prop>"`.
-        // `rangeAverageable` is shorthand for both range_* flags.
-        // Both desugar into the underlying flags below.
-        let documents_averageable: Option<String> = schema_map_opt
-            .as_ref()
-            .and_then(|schema_map| {
-                schema_map
-                    .iter()
-                    .find(|(k, _)| k.as_text() == Some(DOCUMENTS_AVERAGEABLE))
-            })
-            .map(|(_, v)| match v {
-                Value::Null => Ok(None),
-                Value::Text(s) if !s.is_empty() => Ok(Some(s.clone())),
-                Value::Text(_) => Err(ProtocolError::DataContractError(
-                    DataContractError::ValueWrongType(
-                        "documentsAverageable must be a non-empty string naming an integer \
+    // `documentsAverageable` is syntactic sugar for
+    // `documentsCountable: true` + `documentsSummable: "<prop>"`.
+    // `rangeAverageable` is shorthand for both range_* flags.
+    // Both desugar into the underlying flags below.
+    let documents_averageable: Option<String> = schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            schema_map
+                .iter()
+                .find(|(k, _)| k.as_text() == Some(DOCUMENTS_AVERAGEABLE))
+        })
+        .map(|(_, v)| match v {
+            Value::Null => Ok(None),
+            Value::Text(s) if !s.is_empty() => Ok(Some(s.clone())),
+            Value::Text(_) => Err(ProtocolError::DataContractError(
+                DataContractError::ValueWrongType(
+                    "documentsAverageable must be a non-empty string naming an integer \
                          property, or null"
-                            .to_string(),
-                    ),
-                )),
-                _ => Err(ProtocolError::DataContractError(
-                    DataContractError::ValueWrongType(
-                        "documentsAverageable value must be a string or null".to_string(),
-                    ),
-                )),
-            })
-            .transpose()?
-            .flatten();
+                        .to_string(),
+                ),
+            )),
+            _ => Err(ProtocolError::DataContractError(
+                DataContractError::ValueWrongType(
+                    "documentsAverageable value must be a string or null".to_string(),
+                ),
+            )),
+        })
+        .transpose()?
+        .flatten();
 
-        let range_averageable = schema_map_opt
-            .as_ref()
-            .and_then(|schema_map| {
-                Value::inner_optional_bool_value(schema_map, RANGE_AVERAGEABLE)
-                    .map_err(consensus_or_protocol_value_error)
-                    .transpose()
-            })
-            .transpose()?
-            .unwrap_or(false);
+    let range_averageable = schema_map_opt
+        .as_ref()
+        .and_then(|schema_map| {
+            Value::inner_optional_bool_value(schema_map, RANGE_AVERAGEABLE)
+                .map_err(consensus_or_protocol_value_error)
+                .transpose()
+        })
+        .transpose()?
+        .unwrap_or(false);
 
-        // Desugar averageable into count + sum flags. Conflict rules
-        // mirror the per-index dispatch: if both `averageable` and
-        // `documentsSummable` are set, the property names must match;
-        // `documentsCountable: false` alongside `averageable` is a
-        // contradiction.
-        let (documents_countable, documents_summable, range_countable, range_summable) =
-            if let Some(avg_prop) = &documents_averageable {
-                if let Some(sum_prop) = &documents_summable {
-                    if sum_prop != avg_prop {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(format!(
-                                "documentsAverageable=\"{}\" conflicts with \
+    // Desugar averageable into count + sum flags. Conflict rules
+    // mirror the per-index dispatch: if both `averageable` and
+    // `documentsSummable` are set, the property names must match;
+    // `documentsCountable: false` alongside `averageable` is a
+    // contradiction.
+    let (documents_countable, documents_summable, range_countable, range_summable) =
+        if let Some(avg_prop) = &documents_averageable {
+            if let Some(sum_prop) = &documents_summable {
+                if sum_prop != avg_prop {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::InvalidContractStructure(format!(
+                            "documentsAverageable=\"{}\" conflicts with \
                                  documentsSummable=\"{}\" on document type \"{}\": both name \
                                  the property aggregated into the primary-key sum tree, so \
                                  they must agree (or set only one — documentsAverageable is \
                                  shorthand for documentsCountable + documentsSummable on the \
                                  same property)",
-                                avg_prop, sum_prop, name,
-                            )),
-                        ));
-                    }
+                            avg_prop, sum_prop, name,
+                        )),
+                    ));
                 }
-                // averageable implies countable; explicit
-                // `documentsCountable: false` alongside is a contradiction.
-                if let Some(schema_map) = schema_map_opt.as_ref() {
-                    if let Some(explicit_countable) =
-                        Value::inner_optional_bool_value(schema_map, DOCUMENTS_COUNTABLE)
-                            .map_err(consensus_or_protocol_value_error)?
-                    {
-                        if !explicit_countable {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(format!(
-                                    "documentsAverageable=\"{}\" on document type \"{}\" \
+            }
+            // averageable implies countable; explicit
+            // `documentsCountable: false` alongside is a contradiction.
+            if let Some(schema_map) = schema_map_opt.as_ref() {
+                if let Some(explicit_countable) =
+                    Value::inner_optional_bool_value(schema_map, DOCUMENTS_COUNTABLE)
+                        .map_err(consensus_or_protocol_value_error)?
+                {
+                    if !explicit_countable {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(format!(
+                                "documentsAverageable=\"{}\" on document type \"{}\" \
                                      implies documentsCountable: true, but the schema \
                                      explicitly sets documentsCountable: false. Remove the \
                                      explicit false (or drop documentsAverageable in favor \
                                      of just documentsSummable).",
-                                    avg_prop, name,
-                                )),
-                            ));
-                        }
+                                avg_prop, name,
+                            )),
+                        ));
                     }
                 }
-                // When `rangeAverageable: true` is set, BOTH range axes
-                // are promoted. Reject explicit-`false` contradictions
-                // on either axis (silently flipping the author's
-                // explicit value would emit the wrong on-disk layout).
-                // Omitted / default-false → silently promoted.
-                if range_averageable {
-                    if range_countable_opt == Some(false) {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(format!(
-                                "rangeAverageable: true on document type \"{}\" conflicts \
+            }
+            // When `rangeAverageable: true` is set, BOTH range axes
+            // are promoted. Reject explicit-`false` contradictions
+            // on either axis (silently flipping the author's
+            // explicit value would emit the wrong on-disk layout).
+            // Omitted / default-false → silently promoted.
+            if range_averageable {
+                if range_countable_opt == Some(false) {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::InvalidContractStructure(format!(
+                            "rangeAverageable: true on document type \"{}\" conflicts \
                                  with explicit rangeCountable: false: rangeAverageable is \
                                  shorthand for rangeCountable + rangeSummable on the \
                                  averageable property. Remove the explicit \
                                  `rangeCountable: false` (or drop rangeAverageable in \
                                  favor of rangeSummable alone).",
-                                name,
-                            )),
-                        ));
-                    }
-                    if range_summable_opt == Some(false) {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(format!(
-                                "rangeAverageable: true on document type \"{}\" conflicts \
+                            name,
+                        )),
+                    ));
+                }
+                if range_summable_opt == Some(false) {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::InvalidContractStructure(format!(
+                            "rangeAverageable: true on document type \"{}\" conflicts \
                                  with explicit rangeSummable: false: rangeAverageable is \
                                  shorthand for rangeCountable + rangeSummable on the \
                                  averageable property. Remove the explicit \
                                  `rangeSummable: false` (or drop rangeAverageable in favor \
                                  of rangeCountable alone).",
-                                name,
-                            )),
-                        ));
-                    }
+                            name,
+                        )),
+                    ));
                 }
-                // Promote each range axis independently: `rangeAverageable`
-                // (shorthand) sets BOTH; explicit `rangeCountable` /
-                // `rangeSummable` only set their own axis. Mirrors the
-                // per-index parser at `index/mod.rs` (search for
-                // `if range_averageable {`) — without this split, the
-                // shorthand `documentsAverageable + rangeSummable: true`
-                // would silently flip `range_countable` to true, which
-                // diverges from the longhand `documentsCountable +
-                // documentsSummable + rangeSummable: true` form
-                // (`range_countable` stays false there) and emits a
-                // different on-disk tree shape than the author asked
-                // for.
-                let merged_range_countable = range_countable || range_averageable;
-                let merged_range_summable = range_summable || range_averageable;
-                (
-                    true,
-                    Some(avg_prop.clone()),
-                    merged_range_countable,
-                    merged_range_summable,
-                )
-            } else if range_averageable {
-                return Err(ProtocolError::DataContractError(
-                    DataContractError::InvalidContractStructure(format!(
-                        "rangeAverageable: true on document type \"{}\" requires \
+            }
+            // Promote each range axis independently: `rangeAverageable`
+            // (shorthand) sets BOTH; explicit `rangeCountable` /
+            // `rangeSummable` only set their own axis. Mirrors the
+            // per-index parser at `index/mod.rs` (search for
+            // `if range_averageable {`) — without this split, the
+            // shorthand `documentsAverageable + rangeSummable: true`
+            // would silently flip `range_countable` to true, which
+            // diverges from the longhand `documentsCountable +
+            // documentsSummable + rangeSummable: true` form
+            // (`range_countable` stays false there) and emits a
+            // different on-disk tree shape than the author asked
+            // for.
+            let merged_range_countable = range_countable || range_averageable;
+            let merged_range_summable = range_summable || range_averageable;
+            (
+                true,
+                Some(avg_prop.clone()),
+                merged_range_countable,
+                merged_range_summable,
+            )
+        } else if range_averageable {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure(format!(
+                    "rangeAverageable: true on document type \"{}\" requires \
                          documentsAverageable: \"<prop>\" to name the integer property to \
                          average; rangeAverageable on its own has no property to aggregate",
-                        name,
-                    )),
-                ));
-            } else {
-                (
-                    documents_countable,
-                    documents_summable,
-                    range_countable,
-                    range_summable,
-                )
-            };
+                    name,
+                )),
+            ));
+        } else {
+            (
+                documents_countable,
+                documents_summable,
+                range_countable,
+                range_summable,
+            )
+        };
 
-        // Cross-validation: `rangeSummable: true` requires
-        // `documentsSummable` to be set. (Mirrors count's
-        // `rangeCountable implies documentsCountable` rule at the
-        // doctype level.) This also catches the
-        // `rangeAverageable + no documentsAverageable + no documentsSummable`
-        // case above, but the earlier explicit error gives a better
-        // message for the averageable-specific path.
-        if range_summable && documents_summable.is_none() {
-            return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidContractStructure(
-                    "rangeSummable: true requires documentsSummable to name an integer \
+    // Cross-validation: `rangeSummable: true` requires
+    // `documentsSummable` to be set. (Mirrors count's
+    // `rangeCountable implies documentsCountable` rule at the
+    // doctype level.) This also catches the
+    // `rangeAverageable + no documentsAverageable + no documentsSummable`
+    // case above, but the earlier explicit error gives a better
+    // message for the averageable-specific path.
+    if range_summable && documents_summable.is_none() {
+        return Err(ProtocolError::DataContractError(
+            DataContractError::InvalidContractStructure(
+                "rangeSummable: true requires documentsSummable to name an integer \
                      property; range-sum queries on the primary key only make sense on \
                      a sum-bearing doctype"
-                        .to_string(),
-                ),
-            ));
-        }
+                    .to_string(),
+            ),
+        ));
+    }
 
-        // Delegate core parsing to this generation's own copy of the core
-        let v1 = DocumentTypeV1::try_from_schema_generation_3_core(
-            data_contract_id,
-            data_contract_system_version,
-            contract_config_version,
-            name,
-            schema,
-            schema_defs,
-            token_configurations,
-            data_contact_config,
-            full_validation,
-            validation_operations,
-            platform_version,
-        )?;
+    // Delegate core parsing to this generation's own copy of the core
+    let v1 = try_from_schema_generation_3_core(
+        data_contract_id,
+        data_contract_system_version,
+        contract_config_version,
+        name,
+        schema,
+        schema_defs,
+        token_configurations,
+        data_contact_config,
+        full_validation,
+        validation_operations,
+        platform_version,
+    )?;
 
-        // Convert to V2 and set the new fields
-        let mut v2: DocumentTypeV2 = v1.into();
-        v2.documents_countable = documents_countable || range_countable;
-        v2.range_countable = range_countable;
-        v2.documents_summable = documents_summable.clone();
-        v2.range_summable = range_summable;
+    // Convert to V2 and set the new fields
+    let mut v2: DocumentTypeV2 = v1.into();
+    v2.documents_countable = documents_countable || range_countable;
+    v2.range_countable = range_countable;
+    v2.documents_summable = documents_summable.clone();
+    v2.range_summable = range_summable;
 
-        // `documentsKeepHistory: true` + `documentsSummable: <prop>` IS
-        // supported (as of the keep-history sum-aware-reference change).
-        // Layout: the per-document subtree at `[..doctype, doc_id]`
-        // becomes a `SumTree` (was `NormalTree`); the version bodies
-        // under `[..doctype, doc_id, t_N]` stay plain `Item`s (NOT
-        // `ItemWithSumItem`) so historical versions don't double-count;
-        // the `[..doctype, doc_id, 0]` "current pointer" becomes a
-        // `ReferenceWithSumItem` carrying the current version's
-        // `sum_property` value. Aggregation walks:
-        //
-        //   - Per-doc SumTree aggregate = `0`-key's sum_value (= current
-        //     version's amount) + 0 from each history Item. Result: the
-        //     current version's contribution.
-        //   - Doctype-level SumTree aggregate = sum over per-doc SumTree
-        //     aggregates = total of CURRENT versions across all docs.
-        //
-        // On update, rewriting the `0`-key reference with the new
-        // version's sum_value triggers grovedb's standard
-        // delete-then-insert merk propagation, which carries the delta
-        // up to ancestors automatically. No separate shadow tree or
-        // parallel bookkeeping. Same `Element::ReferenceWithSumItem`
-        // primitive the per-index sum-tree path already uses (see
-        // `make_document_reference_with_sum_item` on the rs-drive side).
+    // `documentsKeepHistory: true` + `documentsSummable: <prop>` IS
+    // supported (as of the keep-history sum-aware-reference change).
+    // Layout: the per-document subtree at `[..doctype, doc_id]`
+    // becomes a `SumTree` (was `NormalTree`); the version bodies
+    // under `[..doctype, doc_id, t_N]` stay plain `Item`s (NOT
+    // `ItemWithSumItem`) so historical versions don't double-count;
+    // the `[..doctype, doc_id, 0]` "current pointer" becomes a
+    // `ReferenceWithSumItem` carrying the current version's
+    // `sum_property` value. Aggregation walks:
+    //
+    //   - Per-doc SumTree aggregate = `0`-key's sum_value (= current
+    //     version's amount) + 0 from each history Item. Result: the
+    //     current version's contribution.
+    //   - Doctype-level SumTree aggregate = sum over per-doc SumTree
+    //     aggregates = total of CURRENT versions across all docs.
+    //
+    // On update, rewriting the `0`-key reference with the new
+    // version's sum_value triggers grovedb's standard
+    // delete-then-insert merk propagation, which carries the delta
+    // up to ancestors automatically. No separate shadow tree or
+    // parallel bookkeeping. Same `Element::ReferenceWithSumItem`
+    // primitive the per-index sum-tree path already uses (see
+    // `make_document_reference_with_sum_item` on the rs-drive side).
 
-        // Cross-validate: every index with `summable` set must name the
-        // same property as `documents_summable` (if doctype-level
-        // summable is set). Reason: grovedb sum trees aggregate `i64`
-        // per merk node — there's no per-tree property tag, so all sum
-        // contributions feeding into a doctype's storage must come from
-        // the same document property. If one index claimed
-        // `summable: "fee"` while another claimed `summable: "amount"`
-        // they'd both write `ItemWithSumItem` contributions into the
-        // same merk hierarchy and produce a meaningless aggregation.
-        //
-        // We also enforce this when `documents_summable` is unset: in
-        // that case every per-index `summable` must agree with all
-        // other per-index `summable`s (the first one wins as the
-        // canonical name).
-        //
-        // These checks are structural invariants of the on-disk
-        // grovedb sum-tree layout, NOT optional schema lints — mixed
-        // sum properties corrupt ancestor aggregation, U64 summable
-        // values silently overflow grovedb's `i64` SumValue at insert,
-        // and non-required summable properties silently underflow
-        // ancestor sums on delete. They run regardless of
-        // `full_validation` because this function sits on the
-        // untrusted-contract boundary (restore / migration /
-        // cache-warmup / future query-side parsing paths may pass
-        // `full_validation: false` against attacker-controlled
-        // contract bytes — admitting malformed contracts there would
-        // let SUM/AVG queries compute over meaningless state while
-        // still looking structurally valid). `flattened_properties`
-        // and `required_fields` are populated by the V1 parser on
-        // both validation paths so the lookups below are safe to
-        // execute unconditionally.
-        let mut canonical: Option<String> = documents_summable.clone();
-        for index in v2.indices.values() {
-            if let Some(index_sum_property) = &index.summable {
-                match &canonical {
-                    Some(existing) if existing != index_sum_property => {
-                        return Err(ProtocolError::DataContractError(
-                            DataContractError::InvalidContractStructure(format!(
-                                "all `summable` declarations on document type \"{}\" \
+    // Cross-validate: every index with `summable` set must name the
+    // same property as `documents_summable` (if doctype-level
+    // summable is set). Reason: grovedb sum trees aggregate `i64`
+    // per merk node — there's no per-tree property tag, so all sum
+    // contributions feeding into a doctype's storage must come from
+    // the same document property. If one index claimed
+    // `summable: "fee"` while another claimed `summable: "amount"`
+    // they'd both write `ItemWithSumItem` contributions into the
+    // same merk hierarchy and produce a meaningless aggregation.
+    //
+    // We also enforce this when `documents_summable` is unset: in
+    // that case every per-index `summable` must agree with all
+    // other per-index `summable`s (the first one wins as the
+    // canonical name).
+    //
+    // These checks are structural invariants of the on-disk
+    // grovedb sum-tree layout, NOT optional schema lints — mixed
+    // sum properties corrupt ancestor aggregation, U64 summable
+    // values silently overflow grovedb's `i64` SumValue at insert,
+    // and non-required summable properties silently underflow
+    // ancestor sums on delete. They run regardless of
+    // `full_validation` because this function sits on the
+    // untrusted-contract boundary (restore / migration /
+    // cache-warmup / future query-side parsing paths may pass
+    // `full_validation: false` against attacker-controlled
+    // contract bytes — admitting malformed contracts there would
+    // let SUM/AVG queries compute over meaningless state while
+    // still looking structurally valid). `flattened_properties`
+    // and `required_fields` are populated by the V1 parser on
+    // both validation paths so the lookups below are safe to
+    // execute unconditionally.
+    let mut canonical: Option<String> = documents_summable.clone();
+    for index in v2.indices.values() {
+        if let Some(index_sum_property) = &index.summable {
+            match &canonical {
+                Some(existing) if existing != index_sum_property => {
+                    return Err(ProtocolError::DataContractError(
+                        DataContractError::InvalidContractStructure(format!(
+                            "all `summable` declarations on document type \"{}\" \
                                  must name the same property; saw \"{}\" and \"{}\". \
                                  Sum trees aggregate i64 per merk node and have no \
                                  per-tree property tag — mixed sum properties would \
                                  produce a meaningless aggregation.",
-                                name, existing, index_sum_property,
-                            )),
-                        ));
-                    }
-                    None => canonical = Some(index_sum_property.clone()),
-                    _ => {}
+                            name, existing, index_sum_property,
+                        )),
+                    ));
                 }
+                None => canonical = Some(index_sum_property.clone()),
+                _ => {}
             }
         }
+    }
 
-        // Also verify the named property is `type: integer` and
-        // listed in `required`. The integer check goes through
-        // `v2.flattened_properties` (set by the V1 parser, which
-        // resolves $ref). The required check goes through
-        // `v2.required_fields`.
-        if let Some(prop_name) = &canonical {
-            let prop = v2.flattened_properties.get(prop_name).ok_or_else(|| {
-                ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                    format!(
-                        "summable property \"{}\" referenced by document type \"{}\" \
+    // Also verify the named property is `type: integer` and
+    // listed in `required`. The integer check goes through
+    // `v2.flattened_properties` (set by the V1 parser, which
+    // resolves $ref). The required check goes through
+    // `v2.required_fields`.
+    if let Some(prop_name) = &canonical {
+        let prop = v2.flattened_properties.get(prop_name).ok_or_else(|| {
+            ProtocolError::DataContractError(DataContractError::InvalidContractStructure(format!(
+                "summable property \"{}\" referenced by document type \"{}\" \
                          does not exist on that document type",
-                        prop_name, name,
-                    ),
-                ))
-            })?;
-            // U64 is intentionally NOT accepted: grovedb's sum-tree
-            // aggregates `i64`, so a u64 value > i64::MAX would
-            // overflow the aggregator silently. Authors who want
-            // unbounded positive integers as summable should set
-            // the schema's `maximum` explicitly to `i64::MAX`
-            // (9_223_372_036_854_775_807) — that bound forces the
-            // property-type inference at
-            // `property/mod.rs::find_unsigned_integer_type_for_max_value`
-            // through `find_integer_type_for_min_and_max_values`'s
-            // unsigned branch (still U64 today because max > U32),
-            // BUT we also reject U64 unconditionally here so the
-            // rule is enforced regardless of the inference path.
-            //
-            // The accepted list (I64 + I32/U32 + I16/U16 + I8/U8) is
-            // the set of integer types that fit losslessly into
-            // grovedb's i64 sum value. Without an explicit `maximum
-            // <= i64::MAX` on the property, no integer schema
-            // currently infers I64 — authors must add either
-            // `maximum: 9223372036854775807` or pick a smaller
-            // signed/unsigned type that's not U64.
-            if !matches!(
-                prop.property_type,
-                DocumentPropertyType::I64
-                    | DocumentPropertyType::I32
-                    | DocumentPropertyType::U32
-                    | DocumentPropertyType::I16
-                    | DocumentPropertyType::U16
-                    | DocumentPropertyType::I8
-                    | DocumentPropertyType::U8
-            ) {
-                return Err(ProtocolError::DataContractError(
-                    DataContractError::InvalidContractStructure(format!(
-                        "summable property \"{}\" on document type \"{}\" must be an \
+                prop_name, name,
+            )))
+        })?;
+        // U64 is intentionally NOT accepted: grovedb's sum-tree
+        // aggregates `i64`, so a u64 value > i64::MAX would
+        // overflow the aggregator silently. Authors who want
+        // unbounded positive integers as summable should set
+        // the schema's `maximum` explicitly to `i64::MAX`
+        // (9_223_372_036_854_775_807) — that bound forces the
+        // property-type inference at
+        // `property/mod.rs::find_unsigned_integer_type_for_max_value`
+        // through `find_integer_type_for_min_and_max_values`'s
+        // unsigned branch (still U64 today because max > U32),
+        // BUT we also reject U64 unconditionally here so the
+        // rule is enforced regardless of the inference path.
+        //
+        // The accepted list (I64 + I32/U32 + I16/U16 + I8/U8) is
+        // the set of integer types that fit losslessly into
+        // grovedb's i64 sum value. Without an explicit `maximum
+        // <= i64::MAX` on the property, no integer schema
+        // currently infers I64 — authors must add either
+        // `maximum: 9223372036854775807` or pick a smaller
+        // signed/unsigned type that's not U64.
+        if !matches!(
+            prop.property_type,
+            DocumentPropertyType::I64
+                | DocumentPropertyType::I32
+                | DocumentPropertyType::U32
+                | DocumentPropertyType::I16
+                | DocumentPropertyType::U16
+                | DocumentPropertyType::I8
+                | DocumentPropertyType::U8
+        ) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure(format!(
+                    "summable property \"{}\" on document type \"{}\" must be an \
                          integer type whose values fit in i64 (i8..i64 / u8..u32); got \
                          {:?}. U64 is rejected because values above i64::MAX would \
                          overflow grovedb's i64 sum aggregator. To use a positive-only \
@@ -1259,25 +1246,24 @@ impl DocumentTypeV2 {
                          AND have it parse as i64 (today this requires a negative \
                          `minimum` to force the signed inference branch; tracked as a \
                          property-inference follow-up).",
-                        prop_name, name, prop.property_type,
-                    )),
-                ));
-            }
-            if !v2.required_fields.contains(prop_name) {
-                return Err(ProtocolError::DataContractError(
-                    DataContractError::InvalidContractStructure(format!(
-                        "summable property \"{}\" on document type \"{}\" must be \
+                    prop_name, name, prop.property_type,
+                )),
+            ));
+        }
+        if !v2.required_fields.contains(prop_name) {
+            return Err(ProtocolError::DataContractError(
+                DataContractError::InvalidContractStructure(format!(
+                    "summable property \"{}\" on document type \"{}\" must be \
                          listed in the document type's `required` array; a missing \
                          value at insert time would leave the reference with no sum \
                          contribution and silently underflow ancestor sums on delete.",
-                        prop_name, name,
-                    )),
-                ));
-            }
+                    prop_name, name,
+                )),
+            ));
         }
-
-        Ok(v2)
     }
+
+    Ok(v2)
 }
 
 impl DocumentType {
@@ -1296,7 +1282,7 @@ impl DocumentType {
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        DocumentTypeV2::try_from_schema_generation_3(
+        try_from_schema_generation_3(
             data_contract_id,
             data_contract_system_version,
             contract_config_version,
@@ -1346,7 +1332,7 @@ mod tests {
     ) -> Result<DocumentTypeV2, ProtocolError> {
         let config = DataContractConfig::default_for_version(platform_version)
             .expect("default config available on this platform version");
-        DocumentTypeV2::try_from_schema_generation_3(
+        try_from_schema_generation_3(
             Identifier::new([1; 32]),
             1,
             config.version(),
