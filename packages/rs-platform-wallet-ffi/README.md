@@ -213,7 +213,7 @@ consumers and must be called out here.
   parameter — a UTF-8 BIP32 derivation path selecting the single source
   account (a null pointer / zero length = the unmixed BIP44 account). Callers
   linking the old symbol must be recompiled against the regenerated header;
-  a null path reproduces the previous single-account behaviour. Adds result
+  a null path reproduces the previous single-account behavior. Adds result
   code `ERROR_ASSET_LOCK_INSUFFICIENT_FUNDS = 29`.
 
 ## License
