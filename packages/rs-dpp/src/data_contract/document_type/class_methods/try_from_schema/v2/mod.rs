@@ -576,4 +576,108 @@ mod tests {
             "documents_summable must be carried into v2"
         );
     }
+
+    /// Count-index admission flips at protocol version 12, and this parser
+    /// only ever reaches the check by delegating through
+    /// `DocumentTypeV1::try_from_schema` — so the boundary is pinned here,
+    /// through the delegation, rather than only where the gate is computed.
+    mod count_index_version_gating {
+        use super::*;
+
+        fn schema_with_count_index() -> Value {
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                },
+                "required": ["city"],
+                "additionalProperties": false,
+                "indices": [
+                    {
+                        "name": "byCity",
+                        "properties": [{ "city": "asc" }],
+                        "countable": true,
+                        "rangeCountable": true,
+                    },
+                ],
+            })
+        }
+
+        fn parse_v2_at_version(
+            schema: Value,
+            protocol_version: u32,
+        ) -> Result<DocumentTypeV2, ProtocolError> {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected platform version");
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            DocumentTypeV2::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+        }
+
+        /// PV12 is the first protocol version whose generation admits
+        /// `countable` / `rangeCountable`. The parsed index metadata must
+        /// survive the V1 → V2 wrap.
+        #[test]
+        fn count_index_admitted_at_pv12_flows_into_document_type_v2() {
+            let v2 = parse_v2_at_version(schema_with_count_index(), 12)
+                .expect("count index must be admitted at protocol version 12");
+            let index = v2
+                .indices
+                .get("byCity")
+                .expect("byCity index must be parsed");
+            assert!(
+                index.countable.is_countable(),
+                "countable: true must parse to a countable index"
+            );
+            assert!(
+                index.range_countable,
+                "rangeCountable: true must be carried into the parsed index"
+            );
+        }
+
+        /// The same schema one version earlier must be rejected under full
+        /// validation: PV11's meta-schema predates the count keywords and
+        /// the admission gate passes `admit_count_indexes: false` there.
+        /// (PV11 selects generation 1, so this drives the shared core
+        /// through `DocumentTypeV1` directly.)
+        #[test]
+        fn count_index_rejected_at_pv11() {
+            let platform_version = PlatformVersion::get(11).expect("protocol version 11 exists");
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+            let result = DocumentTypeV1::try_from_schema(
+                Identifier::new([1; 32]),
+                1,
+                config.version(),
+                "test_doc",
+                schema_with_count_index(),
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut vec![],
+                platform_version,
+            );
+            assert!(
+                result.is_err(),
+                "count index must be rejected under full validation at protocol version 11"
+            );
+        }
+    }
 }
