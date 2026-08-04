@@ -386,8 +386,19 @@ sealed class DashSdkError(
                 }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
-            // NotFound. Handle/Option lookup failures, plus the
-            // wallet-was-REMOVED case on BOTH deferred-send paths:
+            -> NotFound(message, cause)
+            // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option →
+            // result miss) stays inside the wallet-error family as the typed
+            // PlatformWallet.NotFound — exact Swift parity
+            // (PlatformWalletError.notFound) — rather than collapsing into the
+            // top-level NotFound that rs-sdk-ffi codes 7/8 map to. Dashpay's
+            // managed-identity local reads are unaffected: they intercept the
+            // RAW code via translateManagedIdentityNotFoundToZero (#4051)
+            // before this mapping ever runs. BREAKING for Kotlin hosts that
+            // caught DashSdkError.NotFound from platform-wallet operations.
+            //
+            // 98 is also what the wallet-was-REMOVED case returns on BOTH
+            // deferred-send paths:
             //  * deferred (BIP70/BIP270) TOKEN path — a signed-payment broadcast
             //    whose wallet is no longer registered in the manager, or a
             //    signed-payment finalize whose wallet was removed while it was
@@ -399,17 +410,6 @@ sealed class DashSdkError(
             // Nothing was broadcast, and unlike ReservationWalletMismatch (36)
             // no other live generation holds the payment either — so it is not
             // retryable. See dashpay/platform#4185.
-            98,
-            -> NotFound(message, cause)
-            // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option →
-            // result miss) stays inside the wallet-error family as the typed
-            // PlatformWallet.NotFound — exact Swift parity
-            // (PlatformWalletError.notFound) — rather than collapsing into the
-            // top-level NotFound that rs-sdk-ffi codes 7/8 map to. Dashpay's
-            // managed-identity local reads are unaffected: they intercept the
-            // RAW code via translateManagedIdentityNotFoundToZero (#4051)
-            // before this mapping ever runs. BREAKING for Kotlin hosts that
-            // caught DashSdkError.NotFound from platform-wallet operations.
             PLATFORM_WALLET_NOT_FOUND_CODE ->
                 PlatformWallet.NotFound(message, cause)
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
