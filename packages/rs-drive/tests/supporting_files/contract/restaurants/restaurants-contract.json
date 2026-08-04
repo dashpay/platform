@@ -1,0 +1,156 @@
+{
+  "$formatVersion": "0",
+  "id": "AY6xWncZUFv2GCrS5seqKthUfbW9yYyUXtF8diSuHQ3f",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "review": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRestaurant",
+          "properties": [
+            { "restaurantId": "asc" }
+          ],
+          "countable": "countable",
+          "summable": "grade",
+          "averageable": "grade",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "restaurantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 0
+        },
+        "grade": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "position": 1
+        }
+      },
+      "required": [
+        "restaurantId",
+        "grade"
+      ],
+      "additionalProperties": false
+    },
+    "visit": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRestaurantVisits",
+          "properties": [
+            { "restaurantId": "asc" }
+          ],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true
+        }
+      ],
+      "properties": {
+        "restaurantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 0
+        },
+        "guests": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "position": 1
+        }
+      },
+      "required": [
+        "restaurantId",
+        "guests"
+      ],
+      "additionalProperties": false
+    },
+    "tip": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRestaurantTips",
+          "properties": [
+            { "restaurantId": "asc" }
+          ],
+          "summable": "amount",
+          "rangeSummable": true,
+          "rankedSummable": true
+        }
+      ],
+      "properties": {
+        "restaurantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 0
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "position": 1
+        }
+      },
+      "required": [
+        "restaurantId",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "adjustment": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byRestaurantAdjustments",
+          "properties": [
+            { "restaurantId": "asc" }
+          ],
+          "countable": "countable",
+          "summable": "delta",
+          "averageable": "delta",
+          "rangeCountable": true,
+          "rangeSummable": true,
+          "rangeAverageable": true,
+          "rankedAverageable": true
+        }
+      ],
+      "properties": {
+        "restaurantId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "position": 0
+        },
+        "delta": {
+          "type": "integer",
+          "minimum": -1000,
+          "maximum": 1000,
+          "position": 1
+        }
+      },
+      "required": [
+        "restaurantId",
+        "delta"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

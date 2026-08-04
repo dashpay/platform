@@ -93,7 +93,12 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level);
+            // The delete walker writes nothing itself, but its
+            // estimation layers must describe the tree the insert path
+            // actually laid down — including the meta-schema-v3 ranked
+            // upgrade of the property-name tree — or dry-run delete fees
+            // drift from applied ones on ranked indexes.
+            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let value_tree_type = tree_types.value_tree_type;
 

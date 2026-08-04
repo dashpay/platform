@@ -5,6 +5,22 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
+/// V4 is protocol version 14's document-method table. It hosts two
+/// independent changes that both gate at v14.
+///
+/// ## 1. Contract-level ranked aggregates
+///
+/// `query.detect_ranked_mode` is the routing slot for ranked
+/// (`HAVING ... TOP/BOTTOM`) aggregate queries served from an indexed
+/// property-name tree. The slot exists in every version table so older
+/// protocol versions have a value; it is 0 here, and the ranked routing
+/// itself is unreachable before the meta-schema-v3 ranked contract
+/// grammar activates (which is also v14-gated, via
+/// `CONTRACT_VERSIONS_V6`). Pre-v14 protocol versions therefore cannot
+/// hold a ranked contract at all.
+///
+/// ## 2. The shared-prefix aggregate index fix
+///
 /// V4 differs from V3 in four method-version bumps that fix the
 /// shared-prefix aggregate index defect: a contract declaring an
 /// aggregating (countable / summable) index terminating at a property
@@ -36,6 +52,12 @@ use crate::version::drive_versions::drive_document_method_versions::{
 /// describe the exact on-disk shape the insert walkers write.
 ///
 /// v1 walkers stay consensus-locked for protocol v12/v13.
+///
+/// The two changes compose in the v2 walkers: the ranked upgrade decides
+/// the *property-name* tree type (plain → indexed mirror), the
+/// continuation demotion decides the *value* tree type, and the two
+/// levels never contend. See
+/// `packages/rs-drive/src/drive/document/index_level_tree_types.rs`.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
@@ -48,6 +70,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             prove_document_history: 0,
             detect_count_mode: 0,
             detect_sum_mode: 0,
+            detect_ranked_mode: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,

@@ -65,6 +65,19 @@ impl Drive {
     /// ref-bucket, never the structural overhead of sibling compound
     /// continuations.
     ///
+    /// v2 is also where the meta-schema-v3 `ranked*` grammar lands: the
+    /// shared helper resolves the property-name tree through
+    /// [`crate::drive::document::ranked_index_tree_type`], so a sub-level
+    /// that declares a ranking axis gets the matching *indexed* tree
+    /// (one ordered secondary Merk per axis) instead of the plain one.
+    /// The two fixes act one level apart — ranking decides the
+    /// property-name tree, the demotion decides the value trees beneath
+    /// it — and a demoted `CountSumTree` value tree contributes its
+    /// (count, sum) to an indexed parent exactly as the provable variant
+    /// did, so ranked secondaries stay correct on shared-prefix shapes.
+    /// `ranked_axes` is empty for every pre-v14 contract, making the
+    /// indexed path a bit-identical no-op for them.
+    ///
     /// See v1's docs for the underlying value-tree / property-name-tree
     /// design (what "countable" gates versus "range_countable", etc.);
     /// everything not listed above matches v1.
@@ -137,8 +150,9 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level);
+            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
+            let ranked_axes = tree_types.ranked_axes.as_slice();
             let value_tree_type = tree_types.value_tree_type;
 
             let property_name_apply_type = if estimated_costs_only_with_layer_info.is_none() {
@@ -186,10 +200,19 @@ impl Drive {
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
             if parent_value_tree_aggregates {
+                // A ranked terminal level reaching this branch is
+                // rejected inside the helper (it passes `ranked_axes`
+                // straight through): an indexed tree can neither be
+                // wrapped nor be inserted unwrapped under an
+                // aggregating parent, so the shape fails closed rather
+                // than silently degrading to a tree whose secondaries
+                // never exist. See `INDEXED_INNER_UNWRAPPABLE` in
+                // `fees::op`.
                 self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
                     path_key_info.clone(),
                     parent_value_tree_type,
                     property_name_tree_type,
+                    ranked_axes,
                     *storage_flags,
                     property_name_apply_type,
                     transaction,
@@ -198,9 +221,10 @@ impl Drive {
                     &platform_version.drive,
                 )?;
             } else {
-                self.batch_insert_empty_tree_if_not_exists(
+                self.batch_insert_empty_index_tree_if_not_exists(
                     path_key_info.clone(),
                     property_name_tree_type,
+                    ranked_axes,
                     *storage_flags,
                     property_name_apply_type,
                     transaction,
