@@ -99,9 +99,17 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 7 (provider restore): adds transaction block position and an
  * explicit transaction↔typed-account involvement table for payload-only
  * provider transactions.
+ *
+ * Version 8 (durable repair signal, dashpay/platform#4060): adds the
+ * nullable `public_keys.derivationIdentityIndex` / `derivationKeyIndex`
+ * derivation-breadcrumb columns, so identity keys whose private half is
+ * missing or undecryptable can re-seed the pending-repair state after a
+ * process restart. Room is the durability substrate deliberately: the
+ * wallet-deletion cascade removes these rows, so pending entries die with
+ * their wallet automatically (a DataStore side-table would leak).
  */
 @Database(
-    version = 7,
+    version = 8,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -450,6 +458,24 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v7 → v8: additive nullable derivation-breadcrumb columns on
+         * `public_keys` (dashpay/platform#4060 finding 5). NULL for every
+         * pre-existing row — correct, because a legacy row's breadcrumbs are
+         * unknown; the persist callback back-fills them on the next upsert of
+         * each key, after which the pending-repair reconstruction can see it.
+         */
+        val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationIdentityIndex` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationKeyIndex` INTEGER",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -464,6 +490,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
                 )
                 .build()
 

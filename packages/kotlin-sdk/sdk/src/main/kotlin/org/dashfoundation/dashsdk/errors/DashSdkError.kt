@@ -186,6 +186,69 @@ sealed class DashSdkError(
             )
 
         /**
+         * A state transition could not be signed because the signer has no
+         * usable private key for the requested public key — the stored blob
+         * is missing (never derived, wiped, or written under a different
+         * Keystore alias/policy) rather than the operation itself failing.
+         *
+         * Primary path (dashpay/platform#4060 finding 7): `KeystoreSigner`
+         * completes with the STRUCTURED
+         * `SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE`, which travels
+         * typed across the Rust boundary and returns as
+         * `PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable` (31) —
+         * mapped directly here, no message inspection involved. Hosts route
+         * users to key repair (e.g.
+         * `PlatformWalletManager.repairIdentityKey`) instead of treating it
+         * as an opaque [Generic] failure. Not retryable as-is — the key must
+         * be (re-)derived first.
+         */
+        class SigningKeyUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            companion object {
+                /**
+                 * Stable prefix of the `KeystoreSigner` "missing key"
+                 * completion error message. `KeystoreSigner` builds its
+                 * message from this constant, so the emitter and the matcher
+                 * cannot drift.
+                 *
+                 * DEPRECATED as a discriminator: superseded by the typed
+                 * code-31 mapping above. The marker match is retained for
+                 * the #4191 merge-order transition — a consumer pinned at
+                 * #4191's revision (marker classification, no native code
+                 * 31) or any Rust conversion path that flattens the signer
+                 * failure to text without the machine prefix still
+                 * classifies via the marker. It is NOT a mixed-artifact
+                 * escape hatch: an old native library paired with new
+                 * Kotlin is unsupported outright (the sign-completion JNI
+                 * arity changed from 3 to 4 args — every completion would
+                 * be a type-confused native call). Remove the fallback (and
+                 * this constant's matcher role) in the next minor release.
+                 */
+                const val MESSAGE_MARKER = "no private key stored for"
+            }
+        }
+
+        /**
+         * `PlatformWalletFFIResultCode::NotFound` (native code 98,
+         * [PLATFORM_WALLET_NOT_FOUND_CODE]) — the code the FFI's blanket
+         * `Option → result` conversion emits for every "requested <thing>
+         * not found" miss (an unknown wallet id, an identity the wallet
+         * does not manage, …). Typed inside the wallet-error family —
+         * parity with Swift's `PlatformWalletError.notFound`, which also
+         * keeps 98 in the wallet family — so callers can match a
+         * wallet-level absence without sniffing [Generic] codes, while
+         * staying distinct from the rs-sdk-ffi top-level
+         * [DashSdkError.NotFound] that codes 7/8 map to.
+         *
+         * Dashpay's managed-identity local reads never see this type:
+         * `translateManagedIdentityNotFoundToZero` intercepts the RAW
+         * code (offset + 98) on the [org.dashfoundation.dashsdk.ffi.DashSDKException]
+         * before [fromNative] runs and turns the miss into an absence.
+         */
+        class NotFound(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -205,6 +268,14 @@ sealed class DashSdkError(
          * with `support::PWFFI_CODE_OFFSET` in `rs-unified-sdk-jni`.
          */
         const val PLATFORM_WALLET_CODE_OFFSET = 1000
+
+        /**
+         * `PlatformWalletFFIResultCode::NotFound` (98) — the code the FFI's
+         * blanket `Option → result` conversion emits for every "requested
+         * <thing> not found" miss (e.g. an identity id that is not managed
+         * by the wallet). Mapped to the typed [PlatformWallet.NotFound].
+         */
+        const val PLATFORM_WALLET_NOT_FOUND_CODE = 98
 
         /** Map a native error code + message into the public hierarchy. */
         fun fromNative(e: DashSDKException): DashSdkError {
@@ -232,7 +303,14 @@ sealed class DashSdkError(
          * [PlatformWallet] subtree — mirror of Swift's
          * `PlatformWalletError(result:)` construction. Retry-semantics-bearing
          * codes get dedicated types; the rest fall through to
-         * [PlatformWallet.Generic].
+         * [PlatformWallet.Generic]. The `KeystoreSigner` "missing key"
+         * completion arrives TYPED as code 31
+         * (`ErrorSigningKeyUnavailable`, dashpay/platform#4060 finding 7);
+         * the legacy message-marker sniff on the catch-all codes is a
+         * deprecated fallback for the #4191 merge-order transition (never
+         * applied to the dedicated retry-semantics types, so those are
+         * never overridden; mixed old-native/new-Kotlin artifacts are
+         * unsupported — see [PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER]).
          */
         private fun fromPlatformWalletNative(
             code: Int,
@@ -242,11 +320,33 @@ sealed class DashSdkError(
             // PlatformWalletFFIResultCode variants (platform-wallet-ffi/src/error.rs)
             1 -> PlatformWallet.InvalidHandle(message, cause) // ErrorInvalidHandle
             2 -> PlatformWallet.InvalidParameter(message, cause) // ErrorInvalidParameter
-            6 -> PlatformWallet.WalletOperation(message, cause) // ErrorWalletOperation
+            6 -> // ErrorWalletOperation
+                // @Deprecated fallback: the marker sniff survives for the
+                // #4191 merge-order transition (and any conversion path
+                // that lost the machine prefix); the typed code 31 below is
+                // the real discriminator (#4060 finding 7). NOT for mixed
+                // old-native/new-Kotlin builds — those are unsupported (the
+                // completion JNI arity changed). Remove with
+                // MESSAGE_MARKER's matcher role next minor release.
+                if (isSigningKeyUnavailable(message)) {
+                    PlatformWallet.SigningKeyUnavailable(message, cause)
+                } else {
+                    PlatformWallet.WalletOperation(message, cause)
+                }
             7, // ErrorIdentityNotFound
             8, // ErrorContactNotFound
-            98, // NotFound (Option returned as an error)
             -> NotFound(message, cause)
+            // 98 (PlatformWalletFFIResultCode::NotFound, the blanket Option →
+            // result miss) stays inside the wallet-error family as the typed
+            // PlatformWallet.NotFound — exact Swift parity
+            // (PlatformWalletError.notFound) — rather than collapsing into the
+            // top-level NotFound that rs-sdk-ffi codes 7/8 map to. Dashpay's
+            // managed-identity local reads are unaffected: they intercept the
+            // RAW code via translateManagedIdentityNotFoundToZero (#4051)
+            // before this mapping ever runs. BREAKING for Kotlin hosts that
+            // caught DashSdkError.NotFound from platform-wallet operations.
+            PLATFORM_WALLET_NOT_FOUND_CODE ->
+                PlatformWallet.NotFound(message, cause)
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
@@ -255,8 +355,24 @@ sealed class DashSdkError(
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
-            else -> PlatformWallet.Generic(code, message, cause)
+            // ErrorSigningKeyUnavailable — the STRUCTURED signer
+            // discriminator (dashpay/platform#4060 finding 7): the typed
+            // completion code rides the whole Rust round-trip, no message
+            // sniffing involved. (Codes 26-30 are reserved by sibling PRs
+            // #4185 / #4184 — see PlatformWalletFFIResultCode.)
+            31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
+            else ->
+                // @Deprecated fallback — see the code-6 arm; code 31 is the
+                // real discriminator.
+                if (isSigningKeyUnavailable(message)) {
+                    PlatformWallet.SigningKeyUnavailable(message, cause)
+                } else {
+                    PlatformWallet.Generic(code, message, cause)
+                }
         }
+
+        private fun isSigningKeyUnavailable(message: String): Boolean =
+            message.contains(PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER)
     }
 }
 
