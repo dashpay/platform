@@ -295,10 +295,6 @@ mod tests {
         outputs: &[(DashAddress, u64)],
         signer: &WalletSigner,
     ) -> SignedCoreTransaction {
-        let mut builder = TransactionBuilder::new();
-        for (addr, amount) in outputs {
-            builder = builder.add_output(addr, *amount);
-        }
         try_finalize_tx(core, account_type, outputs, signer)
             .await
             .expect("finalize should succeed")

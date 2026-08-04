@@ -267,7 +267,11 @@ pub enum PlatformWalletFFIResultCode {
     /// the two surfaces intentionally share this one code. The V2 handle carries
     /// no numeric reservation token, hence a distinct (token-less) wallet-error
     /// variant behind the same FFI code. Abandon/free of a V2 handle never
-    /// surfaces this — releasing an aged reservation is always allowed.
+    /// surfaces this — abandon returns no result code, and past the age bound it
+    /// deliberately skips the by-outpoint release (dropping only the handle and
+    /// leaving the aged outpoint to key-wallet's TTL) precisely because
+    /// releasing an aged reservation could free an unrelated newer build's
+    /// reservation.
     ErrorStaleReservationToken = 34,
 
     /// Maps `SignedPaymentError::StaleToken`. The deferred reservation token is

@@ -101,7 +101,11 @@ pub enum PlatformWalletError {
     /// Broadcasting it could spend against a newer, unrelated reservation, so it
     /// is refused **before** touching the network — NOT retryable in place, the
     /// caller must rebuild the payment. Abandoning/freeing the handle stays
-    /// allowed at any age (releasing an old reservation is always safe).
+    /// allowed at any age, but past the bound `abandon_transaction` drops only
+    /// the handle and deliberately **skips** the by-outpoint reservation
+    /// release: the outpoint may already have been swept and re-reserved by an
+    /// unrelated build, so releasing it could free that newer reservation. The
+    /// aged outpoint is left for key-wallet's TTL to reclaim.
     ///
     /// This is the V2 handle-path sibling of the deferred registry-token
     /// [`SignedPaymentError::StaleReservationToken`](crate::SignedPaymentError::StaleReservationToken);
