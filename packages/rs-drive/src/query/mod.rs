@@ -24,7 +24,8 @@ pub use {
     // `RankedEntry` / `RankedEntryValue` as the verified result shape.
     drive_document_ranked_query::{
         DocumentRankedMode, DriveDocumentRankedQuery, RankedAxis, RankedEntry, RankedEntryValue,
-        RankedPaginationInputs, MAX_RANKED_LIMIT, RANKED_AVG_SCALE,
+        RankedPage, RankedPaginationInputs, MAX_RANKED_LIMIT, RANKED_AVG_SCALE,
+        RANKED_COUNT_ORDER_KEY,
     },
     // Sum-query verifier-shareable types: `SumEntry` is the per-key
     // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
@@ -33,8 +34,7 @@ pub use {
     drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
-        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
-        HavingRankingKind, HavingRightOperand,
+        HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
     },
     ordering::OrderClause,
     projection::{SelectFunction, SelectProjection},

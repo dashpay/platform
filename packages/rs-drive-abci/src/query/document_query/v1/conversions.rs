@@ -30,17 +30,15 @@ use crate::error::query::QueryError;
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value,
     get_documents_request_v1::{select, Select as ProtoSelect},
-    having_aggregate, having_clause, having_ranking, order_clause,
-    DocumentFieldValue as ProtoDocumentFieldValue, HavingAggregate as ProtoHavingAggregate,
-    HavingClause as ProtoHavingClause, HavingRanking as ProtoHavingRanking,
+    having_aggregate, having_clause, order_clause, DocumentFieldValue as ProtoDocumentFieldValue,
+    HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
     OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
     WhereOperator as ProtoWhereOperator,
 };
 use dpp::platform_value::Value;
 use drive::query::{
-    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
-    HavingRankingKind, HavingRightOperand, OrderClause, SelectFunction, SelectProjection,
-    WhereClause, WhereOperator,
+    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
+    OrderClause, SelectFunction, SelectProjection, WhereClause, WhereOperator,
 };
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
@@ -201,14 +199,14 @@ pub(super) fn order_clauses_from_proto(
     clauses.into_iter().map(order_clause_from_proto).collect()
 }
 
-// The `having_*_from_proto` family below is currently dead code:
-// the v1 handler short-circuits non-empty HAVING with
-// `not_yet_implemented` before decoding (see `query_documents_v1`).
-// The helpers stay in tree so HAVING execution can land with just
-// the gate-flip + a single call into `having_clauses_from_proto`;
-// no separate decoder needs to be written then. The
-// `#[allow(dead_code)]` is per-function rather than module-wide so
-// any future addition outside this family still trips the lint.
+// The `having_*_from_proto` family below decodes clauses the server
+// then refuses: `having` evaluation is not implemented, so every
+// non-empty HAVING is rejected at routing. Decoding still runs first
+// (see `query_documents_v1`) so wire-malformed clauses surface as
+// `InvalidArgument` rather than being masked by the capability
+// rejection. The inner helpers keep a per-function
+// `#[allow(dead_code)]` — rather than module-wide — so any future
+// addition outside this family still trips the lint.
 
 /// Map a wire [`having_aggregate::Function`] discriminant onto
 /// drive's [`HavingAggregateFunction`]. Unknown discriminants are
@@ -228,41 +226,6 @@ fn having_function_from_proto(function: i32) -> Result<HavingAggregateFunction, 
         having_aggregate::Function::Count => HavingAggregateFunction::Count,
         having_aggregate::Function::Sum => HavingAggregateFunction::Sum,
         having_aggregate::Function::Avg => HavingAggregateFunction::Avg,
-    })
-}
-
-/// Map a wire [`having_ranking::Kind`] discriminant onto drive's
-/// [`HavingRankingKind`].
-#[allow(dead_code)]
-fn having_ranking_kind_from_proto(kind: i32) -> Result<HavingRankingKind, QueryError> {
-    let proto = having_ranking::Kind::try_from(kind).map_err(|_| {
-        QueryError::InvalidArgument(format!(
-            "unknown HavingRanking.Kind discriminant: {} (valid values: 0..=3, see \
-             `get_documents_request::having_ranking::Kind`)",
-            kind
-        ))
-    })?;
-    Ok(match proto {
-        having_ranking::Kind::Min => HavingRankingKind::Min,
-        having_ranking::Kind::Max => HavingRankingKind::Max,
-        having_ranking::Kind::Top => HavingRankingKind::Top,
-        having_ranking::Kind::Bottom => HavingRankingKind::Bottom,
-    })
-}
-
-/// Map a wire [`ProtoHavingRanking`] onto drive's [`HavingRanking`].
-/// Which `(kind, n)` pairs are actually servable — `n` required for
-/// `Top` / `Bottom`, and `Min` / `Max` rejected outright because
-/// groups tied at the extreme are not provable — is decided by
-/// drive's `detect_ranked_mode`. Every wire-valid kind converts here,
-/// so the refusal carries drive's explanation instead of a decode
-/// error; this converter only enforces that the proto shape is
-/// well-formed.
-#[allow(dead_code)]
-fn having_ranking_from_proto(ranking: ProtoHavingRanking) -> Result<HavingRanking, QueryError> {
-    Ok(HavingRanking {
-        kind: having_ranking_kind_from_proto(ranking.kind)?,
-        n: ranking.n,
     })
 }
 
@@ -312,10 +275,18 @@ fn having_aggregate_from_proto(
 /// Map a wire [`ProtoHavingClause`] onto drive's structured
 /// [`HavingClause`]. Errors surface as
 /// [`QueryError::InvalidArgument`] for any wire-level
-/// malformation: unknown discriminant on the aggregate function,
-/// operator, or ranking kind; missing aggregate; missing right
-/// operand (oneof unset on the wire); inner value-shape failures
-/// on the literal-value branch.
+/// malformation: unknown discriminant on the aggregate function or
+/// operator; missing aggregate; missing right operand (oneof unset
+/// on the wire); inner value-shape failures on the literal-value
+/// branch.
+///
+/// The wire's `right.ranking` arm is a **retired** grammar: cross-group
+/// ranking used to be expressed as `HAVING <agg> IN TOP(n)`, and is now
+/// `ORDER BY <agg> DESC LIMIT n [OFFSET m]`. Drive has no type for it
+/// any more, so a clause still carrying one is refused here with the
+/// replacement spelled out. The proto field itself is removed in a
+/// follow-up; until then this arm is what stops a stale client from
+/// being silently misread.
 #[allow(dead_code)]
 pub(super) fn having_clause_from_proto(
     clause: ProtoHavingClause,
@@ -331,16 +302,23 @@ pub(super) fn having_clause_from_proto(
     let operator = having_operator_from_proto(clause.operator)?;
     let right = clause.right.ok_or_else(|| {
         QueryError::InvalidArgument(
-            "HavingClause has no right operand set; every clause must carry \
-             either a concrete `DocumentFieldValue` (`right.value`) or a \
-             cross-group ranking reference (`right.ranking`)"
+            "HavingClause has no right operand set; every clause must carry a \
+             concrete `DocumentFieldValue` (`right.value`)"
                 .to_string(),
         )
     })?;
     let right = match right {
         having_clause::Right::Value(v) => HavingRightOperand::Value(value_from_proto(v)?),
-        having_clause::Right::Ranking(r) => {
-            HavingRightOperand::Ranking(having_ranking_from_proto(r)?)
+        having_clause::Right::Ranking(_) => {
+            return Err(QueryError::InvalidArgument(
+                "HavingClause.right.ranking (`HAVING <aggregate> IN TOP(n)` / \
+                 `BOTTOM(n)` / `= MAX` / `= MIN`) is no longer part of the query \
+                 grammar. Cross-group ranking is expressed with SQL's own ordering \
+                 surface instead: `ORDER BY <the selected aggregate> DESC LIMIT n \
+                 [OFFSET m]` (use the field name `$count` when the projection is \
+                 `COUNT(*)`). `HAVING` is now purely a boolean per-group predicate."
+                    .to_string(),
+            ));
         }
     };
     Ok(HavingClause {

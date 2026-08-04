@@ -1318,6 +1318,261 @@ fn sum_axis_ranks_groups_by_running_sum() {
 }
 
 // ---------------------------------------------------------------------------
+// Offset pagination through the query surface
+// ---------------------------------------------------------------------------
+//
+// Everything above reads the secondaries straight through grovedb, which is
+// the right altitude for a *write-path* suite: it asserts what the insert
+// path put on disk without a query grammar in between. The three tests below
+// are the exception, and deliberately so — offset pagination is the one
+// ranked behaviour whose answer is not fully visible in the entries. "Which
+// groups came back" is observable from a raw read; "which *rank* they are"
+// only exists as the proof's attested skip count, and that is produced by the
+// query layer. So these run the documents through the same write path as
+// everything else here and then ask the public ranked query for a page,
+// end to end.
+
+/// `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT n
+/// OFFSET m` against the fixture, unproven. Returns the page.
+fn ranked_avg_page(
+    drive: &Drive,
+    contract: &DataContract,
+    limit: u32,
+    offset: u32,
+) -> crate::query::RankedPage {
+    use crate::query::{DocumentRankedRequest, DocumentRankedResponse};
+
+    let response = drive
+        .execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type: contract
+                    .document_type_for_name("review")
+                    .expect("review doctype exists"),
+                group_by: &[GROUP_PROPERTY.to_string()],
+                select: crate::query::SelectProjection::avg("grade"),
+                having: &[],
+                order_by: &[crate::query::OrderClause {
+                    field: "grade".to_string(),
+                    ascending: false,
+                }],
+                where_clauses: &[],
+                limit: Some(limit),
+                offset: Some(offset),
+                has_start_at: false,
+                prove: false,
+            },
+            None,
+            platform_version(),
+        )
+        .expect("the ranked read must succeed");
+    match response {
+        DocumentRankedResponse::Entries(page) => page,
+        DocumentRankedResponse::Proof(_) => unreachable!("prove = false"),
+    }
+}
+
+/// Prove the same page and verify it, returning the **attested** page —
+/// `skipped` here is re-derived by the verifier from the proof's counted
+/// subtree commitments, not echoed from the request.
+fn verified_ranked_avg_page(
+    drive: &Drive,
+    contract: &DataContract,
+    limit: u32,
+    offset: u32,
+) -> crate::query::RankedPage {
+    use crate::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
+    use crate::query::{
+        DocumentRankedRequest, DocumentRankedResponse, DriveDocumentRankedQuery, RankedAxis,
+    };
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+
+    let document_type = contract
+        .document_type_for_name("review")
+        .expect("review doctype exists");
+    let response = drive
+        .execute_document_ranked_request(
+            DocumentRankedRequest {
+                contract,
+                document_type,
+                group_by: &[GROUP_PROPERTY.to_string()],
+                select: crate::query::SelectProjection::avg("grade"),
+                having: &[],
+                order_by: &[crate::query::OrderClause {
+                    field: "grade".to_string(),
+                    ascending: false,
+                }],
+                where_clauses: &[],
+                limit: Some(limit),
+                offset: Some(offset),
+                has_start_at: false,
+                prove: true,
+            },
+            None,
+            platform_version(),
+        )
+        .expect("the ranked prove must succeed");
+    let proof = match response {
+        DocumentRankedResponse::Proof(proof) => proof,
+        DocumentRankedResponse::Entries(_) => unreachable!("prove = true"),
+    };
+
+    // Rebuild the query the way a client would — off the contract alone.
+    let indexes = contract
+        .document_types()
+        .get("review")
+        .expect("review doctype exists")
+        .indexes();
+    let query = DriveDocumentRankedQuery {
+        document_type,
+        contract_id: contract.id().to_buffer(),
+        document_type_name: "review".to_string(),
+        index: find_ranked_index_for_axis(indexes, GROUP_PROPERTY, RankedAxis::Avg, "grade")
+            .expect("the fixture declares rankedAverageable on grade"),
+        axis: RankedAxis::Avg,
+        descending: true,
+        k: limit as u16,
+        offset,
+    };
+    let (root_hash, page) = query
+        .verify_ranked_top_k_proof(&proof, platform_version())
+        .expect("the proof must verify");
+    assert_eq!(
+        root_hash,
+        drive
+            .grove
+            .root_hash(None, &platform_version().drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable"),
+        "the proof must reconstruct the live grovedb root hash"
+    );
+    page
+}
+
+/// Insert the five-restaurant Avg fixture used by the offset tests:
+/// `gamma(95) > alpha(85) > beta(60) > delta(30) > epsilon(10)`.
+fn insert_five_graded_restaurants(drive: &Drive, contract: &DataContract) {
+    insert_docs(
+        drive,
+        contract,
+        "review",
+        "grade",
+        &[
+            ("gamma", 95),
+            ("alpha", 90),
+            ("alpha", 80),
+            ("beta", 60),
+            ("delta", 30),
+            ("epsilon", 10),
+        ],
+    );
+}
+
+/// **"The 5th best grade"** — `LIMIT 1 OFFSET 4`.
+///
+/// The entry on its own carries no rank: `epsilon` looks identical whether
+/// it was returned as the 5th-best group or as the only group in the index.
+/// What makes the answer meaningful is the attested skip, which the proof
+/// re-derives from the counted subtree commitments rather than echoing from
+/// the request — so a server cannot answer "the 5th best" with a proof of
+/// "the best".
+#[test]
+fn offset_four_limit_one_returns_the_fifth_best_group_with_its_attested_rank() {
+    let (drive, contract) = setup_restaurants();
+    insert_five_graded_restaurants(&drive, &contract);
+
+    let page = ranked_avg_page(&drive, &contract, 1, 4);
+    assert_eq!(
+        page.entries
+            .iter()
+            .map(|entry| String::from_utf8(entry.key.clone()).expect("utf-8 group keys"))
+            .collect::<Vec<_>>(),
+        vec!["epsilon"],
+        "gamma > alpha > beta > delta > epsilon — rank 4 (0-based) is epsilon"
+    );
+    assert_eq!(
+        page.entries[0].value,
+        crate::query::RankedEntryValue::AvgFixedPoint(expected_avg_fixed_point(10, 1))
+    );
+
+    let verified = verified_ranked_avg_page(&drive, &contract, 1, 4);
+    assert_eq!(
+        verified.entries, page.entries,
+        "the proved page must equal the unproven one"
+    );
+    assert_eq!(
+        verified.skipped, 4,
+        "the proof attests that exactly four groups outrank this one"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A window that runs off the end of the ranking returns the tail, short —
+/// the same contract an unpaginated `LIMIT` larger than the group count has.
+/// `skipped` is still the requested offset, because the *skip* succeeded;
+/// only the take came up short.
+#[test]
+fn an_offset_window_spanning_the_end_returns_the_short_tail() {
+    let (drive, contract) = setup_restaurants();
+    insert_five_graded_restaurants(&drive, &contract);
+
+    let page = ranked_avg_page(&drive, &contract, 4, 3);
+    assert_eq!(
+        page.entries
+            .iter()
+            .map(|entry| String::from_utf8(entry.key.clone()).expect("utf-8 group keys"))
+            .collect::<Vec<_>>(),
+        vec!["delta", "epsilon"],
+        "four were asked for from rank 3, and only two exist"
+    );
+
+    let verified = verified_ranked_avg_page(&drive, &contract, 4, 3);
+    assert_eq!(verified.entries, page.entries);
+    assert_eq!(
+        verified.skipped, 3,
+        "three groups really were skipped, so the attested skip is the requested offset"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// **Paging past the end is a provable answer, not an error.**
+///
+/// The page comes back empty and `skipped` collapses below the requested
+/// offset — and *that shape* is the proof that the ranking holds exactly
+/// `skipped` groups in total, because the counted commitments cover the whole
+/// walk. It is the only way this surface reports a population, and the one
+/// place the proved and unproven paths differ: the unproven read cannot see
+/// the short walk (grovedb's read API returns an empty vector either way) and
+/// reports the requested offset.
+#[test]
+fn an_offset_past_the_end_returns_an_empty_page_whose_skip_attests_the_population() {
+    let (drive, contract) = setup_restaurants();
+    insert_five_graded_restaurants(&drive, &contract);
+
+    let page = ranked_avg_page(&drive, &contract, 3, 12);
+    assert!(
+        page.entries.is_empty(),
+        "there is no rank 12 in a five-group ranking"
+    );
+    assert_eq!(
+        page.skipped, 12,
+        "the unproven read echoes the requested offset — it has nothing to attest with"
+    );
+
+    let verified = verified_ranked_avg_page(&drive, &contract, 3, 12);
+    assert!(verified.entries.is_empty());
+    assert_eq!(
+        verified.skipped, 5,
+        "skipped < offset with an empty page is a proof that the ranking holds exactly \
+         five groups"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
+// ---------------------------------------------------------------------------
 // A ranked index sharing its property with a compound index
 // ---------------------------------------------------------------------------
 

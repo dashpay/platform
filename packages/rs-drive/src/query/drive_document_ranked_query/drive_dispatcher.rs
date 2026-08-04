@@ -1,4 +1,5 @@
-//! Top-level dispatcher for the ranked (`HAVING … TOP(n)`) request.
+//! Top-level dispatcher for the ranked
+//! (`ORDER BY <aggregate> LIMIT n OFFSET m`) request.
 //!
 //! Owns the pipeline: validate → resolve the ranking → pick the covering
 //! index → execute → wrap. The drive-abci handler builds a
@@ -14,12 +15,12 @@
 //! `pub mod drive_dispatcher;` declaration.
 
 use super::mode_detection::detect_ranked_mode;
-use super::{RankedEntry, RankedPaginationInputs};
+use super::{RankedPage, RankedPaginationInputs};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::query::having::HavingClause;
 use crate::query::projection::SelectProjection;
-use crate::query::WhereClause;
+use crate::query::{OrderClause, WhereClause};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -36,8 +37,8 @@ use grovedb::TransactionArg;
 /// canonicalized or rewritten the way count's where-clauses are, so
 /// taking ownership would just force the handler into a clone.
 ///
-/// `where_clauses`, `limit`, `offset` and `start_at` are carried even
-/// though a ranked request must leave all of them empty: drive owns the
+/// `where_clauses`, `having` and `start_at` are carried even though a
+/// ranked request must leave all of them empty: drive owns the
 /// rejection, so the contract is enforced identically no matter which
 /// upstream path built the request. See
 /// [`super::mode_detection::detect_ranked_mode_v0`] for why each is
@@ -53,15 +54,20 @@ pub struct DocumentRankedRequest<'a> {
     /// The projection being ranked: `COUNT(*)`, `SUM(field)` or
     /// `AVG(field)`.
     pub select: SelectProjection,
-    /// The `HAVING` clauses. Exactly one, carrying a
-    /// [`crate::query::HavingRanking`] right-operand whose aggregate
-    /// matches `select`.
+    /// The `HAVING` clauses. Must be empty — boolean per-group
+    /// predicates cannot yet be combined with an aggregate ordering.
     pub having: &'a [HavingClause],
+    /// The `ORDER BY` clauses. Exactly one, naming the selected
+    /// aggregate (`$count` for `COUNT(*)`, otherwise the select's
+    /// field); its direction is the ranking direction.
+    pub order_by: &'a [OrderClause],
     /// Structured `where` clauses. Must be empty.
     pub where_clauses: &'a [WhereClause],
-    /// Request `limit`. Must be unset — `n` comes from the ranking.
+    /// Request `limit` — the ranking's `k`. **Required**; there is no
+    /// server default a verifying client could reproduce.
     pub limit: Option<u32>,
-    /// Request `offset`. Must be unset.
+    /// Request `offset` — the rank the page starts at. Optional
+    /// (`None` ⇒ 0), unbounded above.
     pub offset: Option<u32>,
     /// Whether the request carried a `start_at` / `start_after` cursor.
     /// Must be `false`.
@@ -72,23 +78,24 @@ pub struct DocumentRankedRequest<'a> {
 
 /// Output shape of [`Drive::execute_document_ranked_request`].
 ///
-/// - `Entries(Vec<RankedEntry>)` — **in ranking order**; the abci
-///   handler maps this straight onto the wire's repeated entry field
-///   without re-sorting.
-/// - `Proof(Vec<u8>)` — grovedb indexed-axis proof bytes the client
-///   verifies with
-///   [`DriveDocumentRankedQuery::verify_ranked_top_k_proof`](crate::query::DriveDocumentRankedQuery::verify_ranked_top_k_proof).
+/// - `Entries(RankedPage)` — the page's entries **in ranking order**
+///   plus the rank it starts at; the abci handler maps this straight
+///   onto the wire without re-sorting.
+/// - `Proof(Vec<u8>)` — grovedb indexed-axis paginated proof bytes the
+///   client verifies with
+///   [`DriveDocumentRankedQuery::verify_ranked_top_k_proof`](crate::query::DriveDocumentRankedQuery::verify_ranked_top_k_proof),
+///   which recovers the same [`RankedPage`].
 ///
-/// There is deliberately no `Aggregate` variant: even `TOP(1)` returns a
-/// one-element entry list, because the caller needs the *group* as much
-/// as the value ("which restaurant is best", not just "what the best
-/// score is").
+/// There is deliberately no `Aggregate` variant: even `LIMIT 1` returns
+/// a one-element entry list, because the caller needs the *group* as
+/// much as the value ("which restaurant is best", not just "what the
+/// best score is").
 #[derive(Debug, Clone)]
 pub enum DocumentRankedResponse {
-    /// Ranked groups, best-first for `TOP(n)` and worst-first for
-    /// `BOTTOM(n)`.
-    Entries(Vec<RankedEntry>),
-    /// Grovedb indexed-axis top-k proof bytes.
+    /// One page of ranked groups, best-first for `DESC` and worst-first
+    /// for `ASC`, with the rank the page starts at.
+    Entries(RankedPage),
+    /// Grovedb indexed-axis paginated top-k proof bytes.
     Proof(Vec<u8>),
 }
 
@@ -96,15 +103,17 @@ impl Drive {
     /// Single entry point for a ranked document request.
     ///
     /// 1. [`detect_ranked_mode`] validates the request shape and resolves
-    ///    `(axis, descending, k, group property, aggregate field)`.
+    ///    `(axis, descending, k, offset, group property, aggregate
+    ///    field)`.
     /// 2. The matching executor picks the covering ranked index and runs
     ///    the read or the proof.
     /// 3. The result is wrapped in [`DocumentRankedResponse`].
     ///
     /// Errors:
-    /// - Request-shape failures (wrong `group_by` arity, `having` that
-    ///   does not match the `select`, `n` out of range, a `where` clause,
-    ///   a `limit`) come back as `Error::Query(QuerySyntaxError::*)` —
+    /// - Request-shape failures (wrong `group_by` arity, an `order_by`
+    ///   that does not name the `select`'s aggregate, a missing or
+    ///   out-of-range `limit`, a `where` clause, a `having`) come back
+    ///   as `Error::Query(QuerySyntaxError::*)` —
     ///   see [`super::mode_detection::detect_ranked_mode_v0`] for the
     ///   full grammar.
     /// - "No index declares this ranking axis" comes back as
@@ -122,6 +131,7 @@ impl Drive {
             &request.select,
             request.group_by,
             request.having,
+            request.order_by,
             request.where_clauses,
             RankedPaginationInputs {
                 limit: request.limit,

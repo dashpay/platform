@@ -1,11 +1,12 @@
 //! Request-shape validation for the ranked query, and the versioned
-//! `(select, group_by, having)` → [`DocumentRankedMode`] resolution.
+//! `(select, group_by, order_by, limit, offset)` → [`DocumentRankedMode`]
+//! resolution.
 //!
 //! Pure functions on the request shape — no Drive, no contract, no
 //! indexes. Available under `server` (the dispatcher validates before
 //! executing) and `verify` (the SDK validates the same way before
 //! attempting proof verification), so both sides agree on which requests
-//! are well-formed and on the `(axis, descending, k)` triple a
+//! are well-formed and on the `(axis, descending, k, offset)` tuple a
 //! well-formed one resolves to. Index-dependent validation ("does an
 //! index actually cover this axis?") needs the document type's index map
 //! and lives in [`super::index_picker`].
@@ -19,14 +20,15 @@
 //! land behind a method-version bump rather than changing what an
 //! already-deployed protocol version accepts.
 
-use super::{DocumentRankedMode, RankedAxis, RankedPaginationInputs, MAX_RANKED_LIMIT};
+use super::{
+    DocumentRankedMode, RankedAxis, RankedPaginationInputs, MAX_RANKED_LIMIT,
+    RANKED_COUNT_ORDER_KEY,
+};
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::having::{
-    HavingAggregateFunction, HavingClause, HavingOperator, HavingRankingKind, HavingRightOperand,
-};
+use crate::query::having::HavingClause;
 use crate::query::projection::{SelectFunction, SelectProjection};
-use crate::query::WhereClause;
+use crate::query::{OrderClause, WhereClause};
 use dpp::version::PlatformVersion;
 
 /// Versioned entry point. Routes through
@@ -37,6 +39,7 @@ pub fn detect_ranked_mode(
     select: &SelectProjection,
     group_by: &[String],
     having: &[HavingClause],
+    order_by: &[OrderClause],
     where_clauses: &[WhereClause],
     pagination: RankedPaginationInputs,
     platform_version: &PlatformVersion,
@@ -48,10 +51,31 @@ pub fn detect_ranked_mode(
         .query
         .detect_ranked_mode
     {
-        0 => detect_ranked_mode_v0(select, group_by, having, where_clauses, pagination),
+        0 => detect_ranked_mode_v0(
+            select,
+            group_by,
+            having,
+            order_by,
+            where_clauses,
+            pagination,
+        ),
         version => Err(Error::Query(QuerySyntaxError::Unsupported(format!(
             "detect_ranked_mode: unknown method version {version}; only 0 is supported"
         )))),
+    }
+}
+
+/// The `ORDER BY` field name that names a given select's aggregate.
+///
+/// `SUM(f)` / `AVG(f)` are ordered by naming `f` — the same field the
+/// projection aggregates, which is how SQL's `ORDER BY avg(grade)`
+/// reads once the aggregate function is already fixed by the `SELECT`.
+/// `COUNT(*)` has no field, so it is named by the
+/// [`RANKED_COUNT_ORDER_KEY`] sentinel.
+fn ranked_order_key(select: &SelectProjection) -> &str {
+    match select.function {
+        SelectFunction::Count if select.field.is_empty() => RANKED_COUNT_ORDER_KEY,
+        _ => select.field.as_str(),
     }
 }
 
@@ -60,26 +84,45 @@ pub fn detect_ranked_mode(
 /// Accepts exactly:
 ///
 /// ```text
-/// SELECT COUNT(*)   GROUP BY p HAVING COUNT(*)   IN TOP(n) | IN BOTTOM(n) | EQ TOP(1) | EQ BOTTOM(1)
-/// SELECT SUM(f)     GROUP BY p HAVING SUM(f)     IN TOP(n) | IN BOTTOM(n) | EQ TOP(1) | EQ BOTTOM(1)
-/// SELECT AVG(f)     GROUP BY p HAVING AVG(f)     IN TOP(n) | IN BOTTOM(n) | EQ TOP(1) | EQ BOTTOM(1)
+/// SELECT COUNT(*)  GROUP BY p  ORDER BY $count [ASC|DESC]  LIMIT n [OFFSET m]
+/// SELECT SUM(f)    GROUP BY p  ORDER BY f      [ASC|DESC]  LIMIT n [OFFSET m]
+/// SELECT AVG(f)    GROUP BY p  ORDER BY f      [ASC|DESC]  LIMIT n [OFFSET m]
 /// ```
 ///
-/// with no `WHERE`, no `LIMIT` / `OFFSET` / `START AT`, `1 ≤ n ≤`
-/// [`MAX_RANKED_LIMIT`], and the `HAVING` aggregate byte-equal to the
-/// `SELECT` projection. `EQ TOP(1)` / `EQ BOTTOM(1)` are accepted for the
-/// positional single best- or worst-ranked group. `MAX` and `MIN` are
-/// wire-decodable but rejected: they mean every group tied at the extreme,
-/// which the indexed top-k proof cannot attest (ties break by group key).
+/// with no `WHERE`, no `HAVING`, no `START AT` / `START AFTER`, exactly
+/// one `GROUP BY` property, exactly one `ORDER BY` clause naming the
+/// selected aggregate, `1 ≤ n ≤` [`MAX_RANKED_LIMIT`], and any
+/// `m ≥ 0`.
+///
+/// `DESC` walks the axis from the largest aggregate down (the "top n"
+/// reading), `ASC` from the smallest up (the "bottom n" reading).
+///
+/// Worked examples:
+///
+/// ```text
+/// -- the three best restaurants by average grade
+/// SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 3
+///
+/// -- the single worst restaurant by average grade
+/// SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade ASC LIMIT 1
+///
+/// -- the *5th* best grade: skip the four above it, take one
+/// SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4
+///
+/// -- the busiest ten restaurants, second page
+/// SELECT COUNT(*) GROUP BY restaurantId ORDER BY $count DESC LIMIT 10 OFFSET 10
+/// ```
 ///
 /// Everything the grammar rejects is rejected *loudly* rather than
-/// normalized away: a caller who wrote a filter, a limit, or a mismatched
-/// aggregate asked for something this executor cannot deliver, and
-/// silently answering a different question is worse than an error.
+/// normalized away: a caller who wrote a filter, a `having`, or an
+/// ordering on a property the select does not aggregate asked for
+/// something this executor cannot deliver, and silently answering a
+/// different question is worse than an error.
 pub fn detect_ranked_mode_v0(
     select: &SelectProjection,
     group_by: &[String],
     having: &[HavingClause],
+    order_by: &[OrderClause],
     where_clauses: &[WhereClause],
     pagination: RankedPaginationInputs,
 ) -> Result<DocumentRankedMode, Error> {
@@ -133,124 +176,72 @@ pub fn detect_ranked_mode_v0(
         }
     };
 
-    // ---- HAVING: exactly one clause, matching the select ------------
-    let clause = match having {
+    // ---- ORDER BY: exactly one clause, naming the selected aggregate -
+    //
+    // This clause *is* the ranking. One clause, because the secondary
+    // is a single-key ordering: a second sort key would need a second
+    // axis the storage does not maintain (ties are already resolved,
+    // by group key, as a property of the directional scan).
+    let expected_order_key = ranked_order_key(select);
+    let order_clause = match order_by {
         [only] => only,
         _ => {
             return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
-                "ranked queries require exactly one `having` clause carrying the ranking \
-                 (`IN TOP(n)`, `IN BOTTOM(n)`, `EQ MAX` or `EQ MIN`); got {}. Multiple \
-                 having clauses are implicitly ANDed, and there is no ranked primitive \
-                 for an intersection of two rankings.",
-                having.len()
+                "ranked queries require exactly one `order_by` clause — the one that names \
+                 the selected aggregate (`ORDER BY {expected_order_key}`); got {}. The axis \
+                 secondary is a single-key ordering, so there is no second sort key to \
+                 apply; ties are broken by group key in the direction of the walk.",
+                order_by.len()
             ))));
         }
     };
-
-    let having_function_matches = matches!(
-        (clause.aggregate.function, axis),
-        (HavingAggregateFunction::Count, RankedAxis::Count)
-            | (HavingAggregateFunction::Sum, RankedAxis::Sum)
-            | (HavingAggregateFunction::Avg, RankedAxis::Avg)
-    );
-    if !having_function_matches || clause.aggregate.field != aggregate_field {
-        return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
-            "the `having` aggregate must be the same aggregate as the `select`: select is \
-             {:?}({:?}), having is {:?}({:?}). A ranked query ranks the selected \
-             aggregate; ranking one aggregate while projecting another would need a \
-             second axis the storage does not maintain.",
-            select.function, select.field, clause.aggregate.function, clause.aggregate.field
+    if order_clause.field != expected_order_key {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "`GROUP BY {group_by_property} ORDER BY {}` is not supported: with a `GROUP BY` \
+             present, the only ordering the ranked storage can serve is one on the selected \
+             aggregate itself — write `ORDER BY {expected_order_key}` for \
+             `SELECT {:?}({})`{}. Ordering groups by anything else (a raw document property, \
+             or a second aggregate) would need a sort the axis secondary does not maintain.",
+            order_clause.field,
+            select.function,
+            if select.field.is_empty() {
+                "*"
+            } else {
+                select.field.as_str()
+            },
+            if axis == RankedAxis::Count {
+                format!(
+                    " (`{RANKED_COUNT_ORDER_KEY}` is the sentinel for COUNT(*), which has no \
+                     field of its own; the `$` prefix is DPP's system namespace so it cannot \
+                     collide with a schema property)"
+                )
+            } else {
+                String::new()
+            }
         ))));
     }
+    // `ORDER BY <agg> DESC` is the "highest first" reading, so
+    // descending is the negation of the clause's ascending flag.
+    let descending = !order_clause.ascending;
 
-    // ---- HAVING right operand: the ranking --------------------------
-    let ranking = match &clause.right {
-        HavingRightOperand::Ranking(ranking) => *ranking,
-        HavingRightOperand::Value(_) => {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(
-                "`HAVING <aggregate> <op> <value>` (a threshold comparison) is not \
-                 implemented; ranked queries take a cross-group ranking right-operand \
-                 (`TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`). Thresholds need a range walk \
-                 over the axis secondary, which is a separate primitive."
-                    .to_string(),
-            )));
-        }
-    };
-
-    // Direction comes from the ranking kind; `k` comes from `n`.
+    // ---- HAVING: must be absent -------------------------------------
     //
-    // MAX / MIN are rejected rather than mapped to `TOP(1)` / `BOTTOM(1)`:
-    // `HAVING <agg> = MAX` selects *every* group whose aggregate equals the
-    // extreme scalar, but the axis secondary breaks ties by group key, so a
-    // k = 1 read silently drops all but one tied group and the proof cannot
-    // express "and nothing else ties". Serving MAX/MIN honestly needs a
-    // value-bounded walk ("all entries with sort key == the extreme"), a
-    // primitive the indexed trees do not offer yet. `TOP(1)` / `BOTTOM(1)`
-    // remain available for the positional "single best-ranked group"
-    // semantics, where dropping ties is the documented meaning.
-    let descending = match ranking.kind {
-        HavingRankingKind::Top => true,
-        HavingRankingKind::Bottom => false,
-        HavingRankingKind::Max | HavingRankingKind::Min => {
-            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                "`{:?}` ranking is not supported: it selects every group tied at the \
-                 extreme aggregate, which the ranked storage cannot prove (ties are \
-                 broken by group key, so a bounded read would silently omit tied \
-                 groups). Use `TOP(1)` / `BOTTOM(1)` for the positional single \
-                 best-ranked group instead.",
-                ranking.kind
-            ))));
-        }
-    };
-
-    let k = match ranking.kind {
-        // Unreachable — rejected above — but keep the match exhaustive so a
-        // future kind addition is a compile error here.
-        HavingRankingKind::Max | HavingRankingKind::Min => unreachable!("rejected above"),
-        HavingRankingKind::Top | HavingRankingKind::Bottom => {
-            let n = ranking.n.ok_or_else(|| {
-                Error::Query(QuerySyntaxError::InvalidParameter(format!(
-                    "`{:?}(n)` ranking requires `n`; use n = 1 for the single \
-                     best-ranked group",
-                    ranking.kind
-                )))
-            })?;
-            if n == 0 {
-                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                    "`{:?}(0)` selects nothing; ranked queries require 1 ≤ n ≤ {}",
-                    ranking.kind, MAX_RANKED_LIMIT
-                ))));
-            }
-            if n > MAX_RANKED_LIMIT as u64 {
-                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-                    "`{:?}({n})` exceeds the ranked-query ceiling of {}; the proof commits \
-                     one secondary entry per returned group, so its size grows linearly \
-                     in n. Narrow the request — the ceiling is a hard limit, not a clamp, \
-                     because `k` is echoed in the proof envelope and re-checked by the \
-                     verifier.",
-                    ranking.kind, MAX_RANKED_LIMIT
-                ))));
-            }
-            // `IN TOP(n)` is the canonical membership form; `= TOP(1)` is
-            // accepted as the positional "the single best-ranked group"
-            // (NOT `= MAX` — MAX is value-based and rejected above because
-            // ties at the extreme cannot be proved).
-            match clause.operator {
-                HavingOperator::In => {}
-                HavingOperator::Equal if n == 1 => {}
-                other => {
-                    return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
-                        "`{:?}(n)` ranking is supported with the `in` having operator \
-                         (membership in the top/bottom set), or with `=` when n = 1; got \
-                         {other:?} with n = {n}",
-                        ranking.kind
-                    ))));
-                }
-            }
-            // Bounded by MAX_RANKED_LIMIT (a u16) immediately above.
-            n as u16
-        }
-    };
+    // `having` is a boolean per-group predicate. Composing one with an
+    // aggregate ordering means "rank only the groups that pass the
+    // filter", and the axis secondary cannot do that: it is ordered by
+    // aggregate, and there is no way to skip non-matching groups
+    // without walking (and proving) every one of them, which destroys
+    // the O(log n + k) bound the surface exists for.
+    if !having.is_empty() {
+        return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "boolean `having` cannot yet be combined with an aggregate `order_by`: got {} \
+             having clause(s) alongside `ORDER BY {expected_order_key}`. Ranking reads a \
+             pre-sorted axis secondary; filtering groups first would require walking every \
+             group to test the predicate, which is exactly the cost the ranked surface \
+             exists to avoid. Drop the `having`, or use a non-ranked grouped aggregate.",
+            having.len()
+        ))));
+    }
 
     // ---- WHERE: must be absent --------------------------------------
     //
@@ -271,24 +262,58 @@ pub fn detect_ranked_mode_v0(
         ));
     }
 
-    // ---- Pagination: must be absent ---------------------------------
-    if let Some(limit) = pagination.limit {
+    // ---- LIMIT: required, 1 ..= MAX_RANKED_LIMIT ---------------------
+    //
+    // Required rather than defaulted: `k` is echoed inside the proof
+    // envelope and re-checked by the verifier, so a server-chosen
+    // default would be a number the client never agreed to and could
+    // not reproduce when rebuilding the query to verify.
+    let limit = pagination.limit.ok_or_else(|| {
+        Error::Query(QuerySyntaxError::InvalidLimit(format!(
+            "ranked queries require an explicit `limit` (1 ..= {MAX_RANKED_LIMIT}): it is \
+             the number of groups the walk returns, and it is echoed in the proof envelope \
+             and re-checked by the verifier, so there is no server-side default a client \
+             could reproduce. Write `ORDER BY {expected_order_key} DESC LIMIT 1` for the \
+             single best-ranked group."
+        )))
+    })?;
+    if limit == 0 {
         return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-            "ranked queries do not accept `limit` (got {limit}); the result size is the \
-             `n` of the `having` ranking. Change `TOP(n)` / `BOTTOM(n)` instead."
+            "`LIMIT 0` selects nothing; ranked queries require 1 ≤ limit ≤ {MAX_RANKED_LIMIT}"
         ))));
     }
-    if let Some(offset) = pagination.offset {
+    if limit > MAX_RANKED_LIMIT as u32 {
         return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
-            "ranked queries do not accept `offset` (got {offset}); offset-paginated \
-             ranking is a separate grovedb primitive that is not exposed yet."
+            "`LIMIT {limit}` exceeds the ranked-query ceiling of {MAX_RANKED_LIMIT}; the \
+             proof commits one secondary entry per returned group, so its size grows \
+             linearly in the limit. Narrow the request — the ceiling is a hard limit, not \
+             a clamp, because `k` is echoed in the proof envelope and re-checked by the \
+             verifier. Deep results are reached with `OFFSET`, which costs nothing."
         ))));
     }
+    // Bounded by MAX_RANKED_LIMIT (a u16) immediately above.
+    let k = limit as u16;
+
+    // ---- OFFSET: optional, unbounded --------------------------------
+    //
+    // No ceiling, and that is a deliberate statement about cost rather
+    // than an oversight: grovedb's paginated prover attests the skipped
+    // region from the counted subtree commitments instead of walking
+    // it, so proving `OFFSET 4` and `OFFSET 4_000_000_000` are the same
+    // O(log n + k) work and the same proof size. There is no
+    // denial-of-service lever here to cap, and an arbitrary cap would
+    // only break honest deep pagination. An offset past the end is a
+    // provable answer (empty page, `skipped` attesting the population),
+    // not an error.
+    let offset = pagination.offset.unwrap_or(0);
+
+    // ---- START AT: must be absent -----------------------------------
     if pagination.has_start_at {
         return Err(Error::Query(QuerySyntaxError::InvalidLimit(
             "ranked queries do not accept `start_at` / `start_after`: the cursor names a \
              document id, but a ranked walk iterates an aggregate-ordered keyspace in \
-             which document ids do not appear."
+             which document ids do not appear. Paginate with `OFFSET` instead — it is \
+             O(log n + k) at any depth."
                 .to_string(),
         )));
     }
@@ -297,6 +322,7 @@ pub fn detect_ranked_mode_v0(
         axis,
         descending,
         k,
+        offset,
         group_by_property,
         aggregate_field,
     })

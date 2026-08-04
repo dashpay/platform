@@ -64,5 +64,6 @@ pub(super) fn ranked_query_for_mode<'a>(
         axis: mode.axis,
         descending: mode.descending,
         k: mode.k,
+        offset: mode.offset,
     })
 }

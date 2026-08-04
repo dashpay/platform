@@ -1,8 +1,8 @@
-//! Ranked executor for `prove = false` — reads the top / bottom `k`
-//! groups straight out of the axis secondary and returns them in ranking
-//! order.
+//! Ranked executor for `prove = false` — reads one page of `k` groups
+//! straight out of the axis secondary, starting at rank `offset`, and
+//! returns them in ranking order.
 
-use super::super::{DocumentRankedMode, RankedEntry};
+use super::super::{DocumentRankedMode, RankedPage};
 use super::ranked_query_for_mode;
 use crate::drive::Drive;
 use crate::error::Error;
@@ -12,7 +12,7 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Top / bottom `k` groups on a ranked index, unproven.
+    /// One page of `k` groups on a ranked index, unproven.
     ///
     /// Entry order is the ranking order; callers must not re-sort.
     pub fn execute_document_ranked_top_k_no_proof(
@@ -23,7 +23,7 @@ impl Drive {
         mode: &DocumentRankedMode,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Vec<RankedEntry>, Error> {
+    ) -> Result<RankedPage, Error> {
         let indexes = document_type.indexes();
         let ranked_query = ranked_query_for_mode(
             contract_id,

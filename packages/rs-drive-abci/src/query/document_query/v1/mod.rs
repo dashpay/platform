@@ -78,17 +78,19 @@ pub(super) fn not_yet_implemented(feature: &str) -> QueryError {
     )))
 }
 
-/// Validate the `select` × `group_by` × `having` combination
-/// against the supported-shape table (see the message-level
-/// docstring on `GetDocumentsRequestV1` in `platform.proto`).
-/// Returns the routing decision so the handler knows whether to
-/// dispatch to the documents-fetch path or the count path, and
-/// which response shape to produce.
+/// Validate the `select` × `group_by` × `order_by` × `having`
+/// combination against the supported-shape table (see the
+/// message-level docstring on `GetDocumentsRequestV1` in
+/// `platform.proto`). Returns the routing decision so the handler
+/// knows whether to dispatch to the documents-fetch path, the count
+/// path or the ranked path, and which response shape to produce.
+#[allow(clippy::too_many_arguments)]
 fn validate_and_route(
     select: &SelectProjection,
     limit: Option<u32>,
     having: &[HavingClause],
     group_by: &[String],
+    order_by: &[OrderClause],
     where_clauses: &[WhereClause],
     platform_version: &PlatformVersion,
 ) -> Result<RoutingDecision, QueryError> {
@@ -127,12 +129,12 @@ fn validate_and_route(
     }
 
     // HAVING is only ever meaningful for an aggregate projection:
-    // it constrains (or, for a ranking operand, orders) the groups a
-    // `COUNT` / `SUM` / `AVG` produces. Those three functions route
-    // through the versioned `compute_aggregate_mode_and_check_limit`
-    // helper below, which is where the ranked gate lives — under the
-    // v0 table every non-empty HAVING is still rejected, under v1 a
-    // ranking operand routes to the ranked executor.
+    // it is a boolean predicate over the groups a `COUNT` / `SUM` /
+    // `AVG` produces. Those three functions route through the
+    // versioned `compute_aggregate_mode_and_check_limit` helper below,
+    // which rejects non-empty HAVING on both tables (evaluation is not
+    // implemented) but with wording that depends on whether the
+    // request is otherwise a ranked one.
     //
     // For every other SELECT there is no aggregate for a HAVING to
     // talk about, so the rejection stays here and stays unversioned.
@@ -209,8 +211,10 @@ fn validate_and_route(
                 ));
             }
             match compute_aggregate_mode_and_check_limit(
+                select,
                 group_by,
                 where_clauses,
+                order_by,
                 limit,
                 having,
                 "SUM",
@@ -251,8 +255,10 @@ fn validate_and_route(
                 ));
             }
             match compute_aggregate_mode_and_check_limit(
+                select,
                 group_by,
                 where_clauses,
+                order_by,
                 limit,
                 having,
                 "AVG",
@@ -269,15 +275,15 @@ fn validate_and_route(
             "SELECT MIN (the wire surface accepts MIN(field) so callers \
              can encode it ahead of server support landing, but the \
              server doesn't yet evaluate per-group MIN; semantically \
-             distinct from `HavingRanking::Min` which is a cross-group \
-             ranking primitive)",
+             distinct from asking for the lowest-ranked group, which is \
+             `ORDER BY <the selected aggregate> ASC LIMIT 1`)",
         )),
         SelectFunction::Max => Err(not_yet_implemented(
             "SELECT MAX (the wire surface accepts MAX(field) so callers \
              can encode it ahead of server support landing, but the \
              server doesn't yet evaluate per-group MAX; semantically \
-             distinct from `HavingRanking::Max` which is a cross-group \
-             ranking primitive)",
+             distinct from asking for the highest-ranked group, which is \
+             `ORDER BY <the selected aggregate> DESC LIMIT 1`)",
         )),
         SelectFunction::Count => {
             if !select.field.is_empty() {
@@ -309,8 +315,10 @@ fn validate_and_route(
             // logic doesn't bake in an assumption that could go
             // stale if that validator's contract ever relaxes.
             match compute_aggregate_mode_and_check_limit(
+                select,
                 group_by,
                 where_clauses,
+                order_by,
                 limit,
                 having,
                 "COUNT",
@@ -353,22 +361,51 @@ enum RoutingDecision {
         sum_property: String,
         mode: CountMode,
     },
-    /// Ranked routing: a `COUNT` / `SUM` / `AVG` select whose single
-    /// `HAVING` clause carries a ranking right operand. Routing does
-    /// not read the ranking kind: `MAX` / `MIN` route here too and are
-    /// then refused by drive, which owns that judgement. Dispatches to
-    /// [`Self::dispatch_ranked_v1`] → `Drive::execute_document_ranked_request`
-    /// and emits the `RankedEntries` proto message.
+    /// Ranked routing: a `COUNT` / `SUM` / `AVG` select with a
+    /// `GROUP BY` whose single `ORDER BY` clause names the selected
+    /// aggregate. Routing does not read the direction, the limit or the
+    /// offset — those are drive's to resolve and to refuse. Dispatches
+    /// to [`Self::dispatch_ranked_v1`] →
+    /// `Drive::execute_document_ranked_request` and emits the
+    /// `RankedEntries` proto message.
     ///
     /// Carries nothing, unlike its `Sum` / `Average` siblings: those
     /// pass the projected property forward because their drive
     /// request takes it as a separate field, whereas the ranked drive
-    /// request takes the whole `(select, group_by, having)` triple and
-    /// resolves the axis, direction and `k` itself. The handler still
-    /// owns all three after routing, so there is nothing to carry and
-    /// no opportunity for the routing layer's reading of the ranking
-    /// to drift from drive's.
+    /// request takes the whole `(select, group_by, order_by, limit,
+    /// offset)` set and resolves the axis, direction, `k` and skip
+    /// itself. The handler still owns all of them after routing, so
+    /// there is nothing to carry and no opportunity for the routing
+    /// layer's reading of the ranking to drift from drive's.
     Ranked,
+}
+
+/// The `OFFSET` gate, applied **after** routing.
+///
+/// Offset pagination exists on exactly one path: the ranked executor,
+/// where `OFFSET m` is the rank the returned page starts at and costs
+/// nothing to prove (grovedb attests the skipped region from counted
+/// subtree commitments rather than walking it). Every other v1 shape —
+/// documents, and the grouped count / sum / average modes — has no
+/// offset primitive behind it and keeps the rejection it has always
+/// had, **message for message**: those callers paginate with
+/// `start_after` / `start_at`, or by narrowing the range clause.
+///
+/// The message below is load-bearing and must not be reworded: clients
+/// match on it, and on a protocol version whose routing table has no
+/// ranked path (v13 and earlier) it is the *only* answer an offset can
+/// get, exactly as it was before the ranked surface existed.
+fn reject_offset_off_the_ranked_path(
+    offset: Option<u32>,
+    decision: &RoutingDecision,
+) -> Result<(), QueryError> {
+    if offset.is_some() && !matches!(decision, RoutingDecision::Ranked) {
+        return Err(not_yet_implemented(
+            "OFFSET pagination (use cursor pagination via `start_after` / \
+             `start_at` instead)",
+        ));
+    }
+    Ok(())
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -379,19 +416,28 @@ enum RoutingDecision {
 ///
 /// Sequence (same as the real handler at
 /// [`Platform::query_documents_v1`]):
-/// 1. `offset.is_some()` → `not_yet_implemented("OFFSET …")`
-/// 2. `where_clauses_from_proto` → propagate `InvalidArgument` /
+/// 1. `where_clauses_from_proto` → propagate `InvalidArgument` /
 ///    `Unsupported` decode errors
-/// 3. `order_clauses_from_proto` → propagate aggregate-target
+/// 2. `order_clauses_from_proto` → propagate aggregate-target
 ///    rejection / `InvalidArgument` decode errors
-/// 4. `selects.len() > 1` → `not_yet_implemented("multi-projection …")`
-/// 5. `select_from_proto` (first element, or default documents)
-/// 6. `having_clauses_from_proto` → propagate `InvalidArgument`
-///    decode errors (unknown aggregate-function / operator / ranking
-///    discriminant, missing aggregate, missing right operand)
-/// 7. [`validate_and_route`] — which itself runs `limit == Some(0)`
+/// 3. `selects.len() > 1` → `not_yet_implemented("multi-projection …")`
+/// 4. `select_from_proto` (first element, or default documents)
+/// 5. `having_clauses_from_proto` → propagate `InvalidArgument`
+///    decode errors (unknown aggregate-function / operator
+///    discriminant, missing aggregate, missing / retired right
+///    operand)
+/// 6. [`validate_and_route`] — which itself runs `limit == Some(0)`
 ///    → the non-aggregate HAVING gate → per-function gates →
 ///    routing pick (including the versioned ranked gate).
+/// 7. `offset.is_some()` on a non-ranked decision →
+///    `not_yet_implemented("OFFSET …")`
+///
+/// The OFFSET gate is **last**, not first: whether an offset is
+/// acceptable now depends on where the request routes (the ranked
+/// executor paginates by offset; nothing else does), and that is not
+/// known until routing has run. On a protocol version whose table has
+/// no ranked path, every offset is still refused with the identical
+/// message — only its position relative to the decode gates moved.
 ///
 /// Treats an unset `select` (proto-default) the same way the
 /// handler does — as `SelectProjection::documents()`.
@@ -401,14 +447,7 @@ pub(super) fn validate_and_route_for_tests(
     where_clauses: &[WhereClause],
     platform_version: &PlatformVersion,
 ) -> Result<&'static str, QueryError> {
-    // 1. OFFSET pagination — rejected before any decoding.
-    if request_v1.offset.is_some() {
-        return Err(not_yet_implemented(
-            "OFFSET pagination (use cursor pagination via `start_after` / \
-             `start_at` instead)",
-        ));
-    }
-    // 2. WHERE decoding — wire-malformed shapes (unknown operator
+    // 1. WHERE decoding — wire-malformed shapes (unknown operator
     //    discriminant, nested `DocumentFieldValue.list` beyond
     //    depth 1, …) reject as `InvalidArgument`. Runs even
     //    though the caller passes a separate pre-decoded
@@ -416,10 +455,10 @@ pub(super) fn validate_and_route_for_tests(
     //    the depth-cap and similar decode-time contracts aren't
     //    exercisable otherwise.
     conversions::where_clauses_from_proto(request_v1.where_clauses.clone())?;
-    // 3. ORDER BY decoding — aggregate-target reject as
+    // 2. ORDER BY decoding — aggregate-target reject as
     //    `Unsupported("ORDER BY on aggregate keys …")`.
-    conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
-    // 4. Multi-projection SELECT rejection.
+    let order_by_clauses = conversions::order_clauses_from_proto(request_v1.order_by.clone())?;
+    // 3. Multi-projection SELECT rejection.
     if request_v1.selects.len() > 1 {
         return Err(not_yet_implemented(
             "multi-projection SELECT (the wire accepts `repeated Select` so \
@@ -430,7 +469,7 @@ pub(super) fn validate_and_route_for_tests(
              lands)",
         ));
     }
-    // 5. Decode the single Select (or default to documents).
+    // 4. Decode the single Select (or default to documents).
     let select = request_v1
         .selects
         .first()
@@ -438,20 +477,23 @@ pub(super) fn validate_and_route_for_tests(
         .map(conversions::select_from_proto)
         .transpose()?
         .unwrap_or_else(SelectProjection::documents);
-    // 6. HAVING decoding — wire-malformed clauses reject as
+    // 5. HAVING decoding — wire-malformed clauses reject as
     //    `InvalidArgument` before any routing decision is taken.
     let having = conversions::having_clauses_from_proto(request_v1.having.clone())?;
-    // 7. `validate_and_route` runs the inner `limit` / `having` /
+    // 6. `validate_and_route` runs the inner `limit` / `having` /
     //    per-function gates.
-    validate_and_route(
+    let decision = validate_and_route(
         &select,
         request_v1.limit,
         &having,
         &request_v1.group_by,
+        &order_by_clauses,
         where_clauses,
         platform_version,
-    )
-    .map(|d| match d {
+    )?;
+    // 7. OFFSET, now that routing is known.
+    reject_offset_off_the_ranked_path(request_v1.offset, &decision)?;
+    Ok(match decision {
         RoutingDecision::Documents => "documents",
         RoutingDecision::Count(CountMode::Aggregate) => "count_aggregate",
         RoutingDecision::Count(CountMode::GroupByIn) => "count_entries_via_in_field",
@@ -495,17 +537,13 @@ impl<C> Platform<C> {
             offset,
         } = request_v1;
 
-        // OFFSET pagination is not yet implemented — cursor
-        // pagination via `start_after` / `start_at` is the
-        // supported path today. Reject any non-None offset
-        // before doing further work; same `not_yet_implemented`
-        // contract as HAVING / SUM / AVG.
-        if offset.is_some() {
-            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
-                "OFFSET pagination (use cursor pagination via `start_after` / \
-                 `start_at` instead)",
-            )));
-        }
+        // NOTE: the OFFSET gate is no longer here. Whether an offset is
+        // acceptable depends on where the request routes — the ranked
+        // executor paginates by offset, nothing else does — so it runs
+        // once `validate_and_route` has answered, in
+        // `reject_offset_off_the_ranked_path`. Off the ranked path the
+        // rejection is byte-identical to the one this block used to
+        // emit.
 
         // Decode the proto-typed `repeated WhereClause` / `repeated
         // OrderClause` into drive's structured forms once, up
@@ -513,19 +551,13 @@ impl<C> Platform<C> {
         // executor consume the typed clauses directly — no CBOR
         // envelope on the v1 path.
         //
-        // `having` is decoded here too, unconditionally. It used to
-        // be short-circuited on `is_empty()` because the server
-        // rejected non-empty HAVING wholesale and decoding just to
-        // discard was pure overhead; now the ranked path consumes
-        // the decoded clauses, so the decode runs for every request.
-        // The consequence the old comment predicted follows
-        // automatically: wire-malformed HAVING (bad discriminant,
-        // missing aggregate, missing right operand, …) now surfaces
-        // as `InvalidArgument` instead of being masked by the
-        // blanket "not yet implemented" — including on protocol
-        // versions whose routing table still refuses every HAVING,
-        // since malformed input is malformed regardless of which
-        // capability would have handled it.
+        // `having` is decoded here too, unconditionally, even though
+        // no protocol version evaluates it yet: wire-malformed HAVING
+        // (bad discriminant, missing aggregate, missing right operand,
+        // a retired `ranking` right operand) surfaces as
+        // `InvalidArgument` rather than being masked by the blanket
+        // "not yet implemented", since malformed input is malformed
+        // regardless of which capability would have handled it.
         let where_clauses = match conversions::where_clauses_from_proto(proto_where_clauses) {
             Ok(c) => c,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
@@ -569,12 +601,17 @@ impl<C> Platform<C> {
             limit,
             &having_clauses,
             &group_by,
+            &order_by_clauses,
             &where_clauses,
             platform_version,
         ) {
             Ok(r) => r,
             Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
         };
+
+        if let Err(e) = reject_offset_off_the_ranked_path(offset, &routing) {
+            return Ok(QueryValidationResult::new_with_error(e));
+        }
 
         match routing {
             RoutingDecision::Documents => self.dispatch_documents_v1(
@@ -635,6 +672,7 @@ impl<C> Platform<C> {
                 where_clauses,
                 order_by_clauses,
                 limit,
+                offset,
                 start,
                 prove,
                 platform_state,
@@ -1212,9 +1250,8 @@ impl<C> Platform<C> {
     }
 
     /// Dispatch a ranked request — a `COUNT` / `SUM` / `AVG` select
-    /// whose single `HAVING` clause carries a ranking (`TOP(n)` /
-    /// `BOTTOM(n)`; `MAX` / `MIN` are forwarded too and refused by
-    /// drive) — to
+    /// with a `GROUP BY` whose single `ORDER BY` clause names the
+    /// selected aggregate — to
     /// [`Drive::execute_document_ranked_request`], and map the response
     /// into a `GetDocumentsResponseV1` carrying a `RankedEntries`
     /// payload (or a `Proof` payload when prove=true).
@@ -1225,15 +1262,15 @@ impl<C> Platform<C> {
     /// naming:
     ///
     /// 1. **The request is forwarded whole.** `where_clauses`,
-    ///    `limit` and `start` are passed down even though a ranked
-    ///    request must carry none of them, because drive owns that
-    ///    rejection: the SDK's client-side helpers call drive's
-    ///    validator with no abci in the path, so re-checking here
-    ///    would create a second, driftable copy of the grammar. The
-    ///    rejections come back as `Error::Query(...)` and are
-    ///    surfaced to the caller as query errors, not internal ones.
-    ///    `order_by` is the sole exception — the drive request has no
-    ///    field for it, so it is rejected here.
+    ///    `having`, `order_by`, `limit`, `offset` and `start` all go
+    ///    down, including the ones a ranked request must leave empty,
+    ///    because drive owns those rejections: the SDK's client-side
+    ///    helpers call drive's validator with no abci in the path, so
+    ///    re-checking here would create a second, driftable copy of
+    ///    the grammar. The rejections come back as `Error::Query(...)`
+    ///    and are surfaced to the caller as query errors, not internal
+    ///    ones. `order_by` in particular is no longer refused here —
+    ///    it is the ranking.
     /// 2. **Proving an empty ranking is mapped, not propagated.** See
     ///    [`empty_ranking_proof_rejection`].
     #[allow(clippy::too_many_arguments)]
@@ -1247,34 +1284,12 @@ impl<C> Platform<C> {
         where_clauses: Vec<WhereClause>,
         order_clauses: Vec<OrderClause>,
         limit: Option<u32>,
+        offset: Option<u32>,
         start: Option<RequestV1Start>,
         prove: bool,
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
-        // ORDER BY is refused here rather than downstream because
-        // `DocumentRankedRequest` has no field to carry it, so drive
-        // cannot own this rejection the way it owns `where` / `limit`
-        // / `start_at`. The result order of a ranked query *is* the
-        // ranking, produced by the direction of the walk over the
-        // axis secondary: a caller-supplied ordering could only
-        // agree with it (redundant) or contradict it (unsatisfiable —
-        // re-sorting the k returned groups by a document property
-        // answers a different question than the ranking asked).
-        // Accepting and silently ignoring it is the one genuinely
-        // dangerous option, so it is rejected loudly.
-        if !order_clauses.is_empty() {
-            return Ok(QueryValidationResult::new_with_error(
-                QueryError::InvalidArgument(
-                    "ORDER BY is not valid for a ranked query: the entry order of a \
-                     `HAVING … TOP(n)` / `BOTTOM(n)` result already is the ranking \
-                     order (best-first for TOP, worst-first for BOTTOM). Drop \
-                     `order_by`, or flip TOP ↔ BOTTOM to reverse the ranking."
-                        .to_string(),
-                ),
-            ));
-        }
-
         let contract_id: Identifier =
             check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
                 QueryError::InvalidArgument(
@@ -1308,11 +1323,10 @@ impl<C> Platform<C> {
             group_by: &group_by,
             select,
             having: &having,
+            order_by: &order_clauses,
             where_clauses: &where_clauses,
             limit,
-            // `offset` is rejected for every v1 request at the top of
-            // `query_documents_v1`, so it can only be `None` here.
-            offset: None,
+            offset,
             has_start_at: start.is_some(),
             prove,
         };
@@ -1335,18 +1349,29 @@ impl<C> Platform<C> {
             };
 
         let response = match drive_response {
-            DocumentRankedResponse::Entries(entries) => GetDocumentsResponseV1 {
+            // `page.skipped` — the rank this page starts at — is
+            // deliberately dropped for now: the wire `RankedEntries`
+            // message has no field to carry it yet, and adding one is
+            // a proto change that lands with the rest of the
+            // client-side rework. Until then the value stays inside
+            // drive, where the proof path already returns it to any
+            // caller verifying for themselves. The binding is not
+            // lost, only unexposed: a proving client re-derives
+            // `skipped` from the proof bytes rather than trusting a
+            // server-supplied number, which is the stronger source
+            // anyway.
+            DocumentRankedResponse::Entries(page) => GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
                     // No aggregate-collapse arm here, unlike count /
                     // sum / average: a ranked result is always a list
-                    // of groups. Even `TOP(1)` returns one *entry*,
+                    // of groups. Even `LIMIT 1` returns one *entry*,
                     // because the caller needs to know which group
                     // won, not only the winning value.
                     variant: Some(result_data::Variant::Ranked(RankedEntries {
                         // Order is preserved verbatim: entry order is
                         // the ranking order, and drive already
                         // asserted the list is no longer than `k`.
-                        entries: entries.into_iter().map(into_v1_ranked_entry).collect(),
+                        entries: page.entries.into_iter().map(into_v1_ranked_entry).collect(),
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
@@ -1400,16 +1425,27 @@ fn into_v1_ranked_entry(e: DriveRankedEntry) -> RankedEntry {
 /// condition rather than a server fault: **an empty ranking cannot be
 /// proved**.
 ///
-/// grovedb's prover has no absence-proof shape for "this axis
-/// secondary has no entries", so proving a ranking over an index that
-/// holds no documents fails with a merk-level "Cannot create proof for
-/// empty tree", wrapped by grovedb as `CorruptedData`. Reaching that
-/// state needs nothing exotic — querying a freshly registered contract
-/// with `prove = true` does it — so letting it propagate would answer
-/// an ordinary request with an internal error (`Status::unknown`) and
-/// an alarming server-side log line, and give the caller no idea that
-/// the same request without `prove` succeeds and returns the empty
-/// list.
+/// **This is now a backstop rather than a live path.** The ranked
+/// prover moved to `prove_indexed_axis_top_k_paginated`, which emits a
+/// guaranteed-empty range against an empty axis secondary instead of
+/// refusing, so proving a ranking over a contract with no documents
+/// succeeds and the proved and unproven paths agree (pinned by
+/// `ranked_tests::proving_an_empty_ranking_succeeds`). The mapping is
+/// kept because the failure it recognizes is a *class* — a merk-level
+/// "cannot prove an empty tree" surfacing from somewhere in the
+/// ancestor chain — not a single call site, and because the cost of
+/// keeping it is one string comparison on an error path.
+///
+/// Historically: the non-paginated prover had no absence-proof shape
+/// for "this axis secondary has no entries", so proving a ranking over
+/// an index that held no documents failed with a merk-level "Cannot
+/// create proof for empty tree", wrapped by grovedb as
+/// `CorruptedData`. Reaching that state needed nothing exotic —
+/// querying a freshly registered contract with `prove = true` did it —
+/// so letting it propagate would answer an ordinary request with an
+/// internal error (`Status::unknown`) and an alarming server-side log
+/// line, and give the caller no idea that the same request without
+/// `prove` succeeded and returned the empty list.
 ///
 /// Detection is by variant + marker substring rather than by a typed
 /// error, because grovedb flattens the merk error into a

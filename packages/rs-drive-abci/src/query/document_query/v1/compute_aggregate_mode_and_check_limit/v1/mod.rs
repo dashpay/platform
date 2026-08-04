@@ -1,24 +1,24 @@
 //! v1 of `compute_aggregate_mode_and_check_limit` — the protocol
-//! version 14 routing table, which adds the ranked (`HAVING …
-//! TOP(n)`) path.
+//! version 14 routing table, which adds the ranked
+//! (`ORDER BY <aggregate> LIMIT n OFFSET m`) path.
 //!
-//! Behaviour splits on `having`:
+//! Behaviour splits on the **`order_by` clause**:
 //!
-//! - **empty** — delegate to [`v0`](super::v0) verbatim. Every
+//! - the request names the selected aggregate in a single `ORDER BY`
+//!   clause, and has a `GROUP BY` — route to the ranked executor.
+//! - anything else — delegate to [`v0`](super::v0) verbatim. Every
 //!   non-ranked request routes exactly as it did before the upgrade,
 //!   which is what makes v1 safe to activate: only requests a v13 node
 //!   would have *rejected* behave differently.
-//! - **non-empty** — validate the routing-level shape and hand the
-//!   request to the ranked executor.
 //!
 //! ## What "routing-level shape" means here
 //!
 //! This function answers one question — *is this request bound for the
 //! ranked executor?* — and nothing else. The full ranked grammar
-//! (which axis, which direction, `1 ≤ n ≤ 100`, `having` aggregate
-//! byte-equal to the `select`, no `where`, no `limit` / `offset` /
-//! `start_at`, exactly one `group_by` property, and whether the
-//! contract's index actually declares the axis) is owned by drive's
+//! (which axis, which direction, `1 ≤ limit ≤ 100`, no `where`, no
+//! `having`, no `start_at`, exactly one `group_by` property, and
+//! whether the contract's index actually declares the axis) is owned by
+//! drive's
 //! `drive_document_ranked_query::mode_detection::detect_ranked_mode`
 //! and its index picker, and is itself versioned there.
 //!
@@ -26,26 +26,25 @@
 //! for one grammar: the SDK's proof helpers call drive's validator
 //! directly (no abci in the path), so a routing-layer copy that
 //! drifted would make the server accept or reject requests the client
-//! disagrees about. The three checks below are the minimum needed to
-//! *route*:
+//! disagrees about. The checks below are the minimum needed to *route*:
 //!
-//! 1. **Exactly one `having` clause.** Multiple clauses are implicitly
-//!    ANDed, and "in the top 5 by X and the bottom 3 by Y" is not a
-//!    ranked query — it is an intersection with no storage primitive.
-//!    With two clauses there is no single ranking to route on.
-//! 2. **The right operand is a ranking.** A `HAVING <agg> > <value>`
-//!    threshold is a different (unimplemented) feature, not a
-//!    misspelled ranking, so it keeps the `not_yet_implemented`
-//!    contract rather than becoming an argument error.
-//! 3. **`group_by` is non-empty.** A ranking ranks groups; with no
-//!    grouping there is exactly one implicit group and the request is
-//!    structurally meaningless rather than merely unsupported. Drive
-//!    would reject it too, but routing a request that cannot succeed
-//!    would cost a contract fetch first.
+//! 1. **`group_by` is non-empty.** A ranking ranks groups; with no
+//!    grouping there is exactly one implicit group and `ORDER BY
+//!    <aggregate>` is a no-op rather than a ranking.
+//! 2. **Exactly one `order_by` clause, naming the selected
+//!    aggregate.** This is the discriminator, and it has to be exact:
+//!    `SELECT COUNT(*) GROUP BY brand ORDER BY brand` is a perfectly
+//!    ordinary grouped count and must keep routing to the grouped
+//!    path, while `… ORDER BY $count` is the ranked one. Matching on
+//!    the field name is what keeps those two apart.
+//! 3. **`having` is empty on the ranked path.** Boolean per-group
+//!    predicates are not evaluated at all yet, and combining one with
+//!    an aggregate ordering is a distinct (also unimplemented)
+//!    capability — see the rejection below.
 //!
-//! Note what is *not* checked: `k`'s bounds, the select↔having
-//! agreement, `where` / `limit` / `start_at` presence. Those all reach
-//! drive and come back as `Error::Query(...)`, which the ranked
+//! Note what is *not* checked: the limit's bounds, its presence at
+//! all, `where` / `start_at` presence, `offset`'s value. Those all
+//! reach drive and come back as `Error::Query(...)`, which the ranked
 //! dispatcher maps onto `QueryError::Query` — a client-visible
 //! rejection, not an internal error.
 
@@ -53,67 +52,68 @@ use super::v0::compute_aggregate_mode_and_check_limit_v0;
 use super::AggregateRouting;
 use crate::error::query::QueryError;
 use crate::query::document_query::v1::not_yet_implemented;
-use drive::error::query::QuerySyntaxError;
-use drive::query::{HavingClause, HavingRightOperand, WhereClause};
+use drive::query::{
+    HavingClause, OrderClause, SelectProjection, WhereClause, RANKED_COUNT_ORDER_KEY,
+};
+
+/// The `order_by` field name that names `select`'s aggregate:
+/// the projection's own field for `SUM(f)` / `AVG(f)`, and the
+/// [`RANKED_COUNT_ORDER_KEY`] sentinel for `COUNT(*)`.
+///
+/// Mirrors drive's private `ranked_order_key`. The duplication is
+/// deliberate and safe in a way the rest of the grammar would not be:
+/// this is a *name*, pinned by a shared public constant, not a rule.
+/// A drift would be a compile-time constant mismatch, not a silent
+/// semantic disagreement — and calling into drive here would mean
+/// building a `DocumentRankedMode` before the contract has even been
+/// fetched.
+fn aggregate_order_key(select: &SelectProjection) -> &str {
+    if select.field.is_empty() {
+        RANKED_COUNT_ORDER_KEY
+    } else {
+        select.field.as_str()
+    }
+}
 
 pub(super) fn compute_aggregate_mode_and_check_limit_v1(
+    select: &SelectProjection,
     group_by: &[String],
     where_clauses: &[WhereClause],
+    order_by: &[OrderClause],
     limit: Option<u32>,
     having: &[HavingClause],
     function_name: &str,
 ) -> Result<AggregateRouting, QueryError> {
-    let clause = match having {
-        // No HAVING: identical routing to v0, including its
-        // `accepts_limit()` enforcement. `having` is passed through as
-        // the empty slice it is, so v0's own blanket rejection is
-        // trivially satisfied.
-        [] => {
-            return compute_aggregate_mode_and_check_limit_v0(
-                group_by,
-                where_clauses,
-                limit,
-                having,
-                function_name,
-            )
-        }
-        [only] => only,
-        _ => {
-            return Err(not_yet_implemented(&format!(
-                "SELECT {} with {} HAVING clauses (ranked queries take exactly one \
-                 clause carrying the ranking; multiple HAVING clauses are implicitly \
-                 ANDed and there is no ranked primitive for an intersection of two \
-                 rankings)",
-                function_name,
-                having.len()
-            )));
-        }
+    let orders_by_the_aggregate = match order_by {
+        [only] => only.field == aggregate_order_key(select),
+        _ => false,
     };
 
-    match clause.right {
-        HavingRightOperand::Ranking(_) => {}
-        HavingRightOperand::Value(_) => {
-            return Err(not_yet_implemented(&format!(
-                "HAVING {}(…) <operator> <value> — a threshold comparison on an \
-                 aggregate (the wire surface accepts a literal right operand so \
-                 callers can encode it ahead of server support landing, but today \
-                 only a ranking right operand is evaluated, and of those only \
-                 TOP(n) / BOTTOM(n) — MAX / MIN are refused further down because \
-                 groups tied at the extreme are not provable)",
-                function_name
-            )));
-        }
+    if group_by.is_empty() || !orders_by_the_aggregate {
+        // Not a ranked shape: identical routing to v0, including its
+        // `accepts_limit()` enforcement and its blanket HAVING
+        // rejection.
+        return compute_aggregate_mode_and_check_limit_v0(
+            group_by,
+            where_clauses,
+            limit,
+            having,
+            function_name,
+        );
     }
 
-    if group_by.is_empty() {
-        return Err(QueryError::Query(QuerySyntaxError::InvalidParameter(
-            format!(
-                "HAVING {}(…) with a ranking operand requires a GROUP BY property: a \
-                 ranking orders groups against each other, and with no GROUP BY there \
-                 is a single implicit group with nothing to rank it against. Add \
-                 `group_by` naming the ranked index's property.",
-                function_name
-            ),
+    // Ranked shape. `having` is refused here rather than downstream
+    // because the two rejections say different things: drive's is
+    // about the ranked *executor* and only fires once a contract has
+    // been fetched, while this one keeps the `not_yet_implemented`
+    // contract the rest of the v1 surface uses for capabilities that
+    // are wired on the wire but not in the server.
+    if !having.is_empty() {
+        return Err(not_yet_implemented(&format!(
+            "boolean HAVING combined with `ORDER BY {}(…)` (ranking reads a pre-sorted \
+             axis secondary, so filtering groups first would mean walking every group to \
+             test the predicate — the exact cost the ranked surface exists to avoid)",
+            function_name
         )));
     }
 

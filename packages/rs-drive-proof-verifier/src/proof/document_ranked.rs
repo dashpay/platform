@@ -217,13 +217,20 @@ pub fn verify_ranked_top_k_proof(
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(RootHash, Vec<RankedEntry>), Error> {
-    let (root_hash, entries) = query
+    let (root_hash, page) = query
         .verify_ranked_top_k_proof(&proof.grovedb_proof, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    Ok((root_hash, entries))
+    // `page.skipped` — the attested rank this page starts at — is
+    // dropped here for now: this signature predates offset pagination
+    // and widening it is part of the client-side rework that also
+    // teaches the SDK's request builder the `ORDER BY … LIMIT … OFFSET`
+    // grammar. Dropping it is safe (a caller that never asked for an
+    // offset gets `skipped == 0`) but lossy for one that did, which is
+    // why it is a stop-gap and not the end state.
+    Ok((root_hash, page.entries))
 }
 
 /// Reject the generic [`FromProof`] entry point for

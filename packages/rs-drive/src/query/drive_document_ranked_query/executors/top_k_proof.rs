@@ -1,6 +1,7 @@
 //! Ranked executor for `prove = true` — generates the grovedb
-//! indexed-axis top-k proof envelope for the same `(index, axis,
-//! descending, k)` the no-proof executor would read.
+//! indexed-axis paginated top-k proof envelope for the same
+//! `(index, axis, descending, k, offset)` the no-proof executor would
+//! read.
 
 use super::super::DocumentRankedMode;
 use super::ranked_query_for_mode;
@@ -12,7 +13,7 @@ use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
 impl Drive {
-    /// Proof of the top / bottom `k` groups on a ranked index.
+    /// Proof of one page of `k` groups on a ranked index.
     ///
     /// The client verifies it with
     /// [`DriveDocumentRankedQuery::verify_ranked_top_k_proof`](crate::query::DriveDocumentRankedQuery::verify_ranked_top_k_proof),

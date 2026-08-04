@@ -7,8 +7,8 @@ use crate::verify::RootHash;
 use dpp::version::PlatformVersion;
 
 impl DriveDocumentRankedQuery<'_> {
-    /// Verifies a grovedb indexed-axis top-k proof and returns
-    /// `(root_hash, entries)`.
+    /// Verifies a grovedb indexed-axis paginated top-k proof and returns
+    /// `(root_hash, page)`.
     ///
     /// Counterpart to the prover-side
     /// [`execute_top_k_with_proof`](Self::execute_top_k_with_proof).
@@ -19,7 +19,10 @@ impl DriveDocumentRankedQuery<'_> {
     ///
     /// The returned entries are in ranking order, exactly as the
     /// unproven [`execute_top_k_no_proof`](Self::execute_top_k_no_proof)
-    /// would return them. The caller combines `root_hash` with the
+    /// would return them, and
+    /// [`RankedPage::skipped`](crate::query::RankedPage::skipped)
+    /// carries the attested starting rank so entry `i` is the group at
+    /// rank `skipped + i`. The caller combines `root_hash` with the
     /// surrounding tenderdash signature — see `rs-drive-proof-verifier`
     /// for the canonical composition.
     ///
@@ -30,7 +33,7 @@ impl DriveDocumentRankedQuery<'_> {
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<crate::query::RankedEntry>), Error> {
+    ) -> Result<(RootHash, crate::query::RankedPage), Error> {
         match platform_version
             .drive
             .methods

@@ -38,11 +38,10 @@ use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::having::{
-    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
-    HavingRankingKind, HavingRightOperand,
+    HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
 };
 use crate::query::projection::{SelectFunction, SelectProjection};
-use crate::query::{WhereClause, WhereOperator};
+use crate::query::{OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
@@ -75,101 +74,96 @@ fn group_by() -> Vec<String> {
     vec![GROUP_PROPERTY.to_string()]
 }
 
-/// A single `HAVING <aggregate> <op> <ranking>` clause, with the operator
-/// that v0's grammar pairs with the ranking kind (`in` for the set-valued
-/// `TOP` / `BOTTOM`, `=` for the scalar `MAX` / `MIN`).
-///
-/// `MAX` / `MIN` are rejected by detection (their ties at the extreme are
-/// not provable — see [`max_and_min_are_rejected_as_untieable`]), but the
-/// helper still builds the operator the wire pairs with them so the
-/// rejection tests exercise a clause that is well-formed *apart* from the
-/// ranking kind.
-fn having(
-    function: HavingAggregateFunction,
-    field: &str,
-    kind: HavingRankingKind,
-    n: Option<u64>,
-) -> Vec<HavingClause> {
-    let operator = match kind {
-        HavingRankingKind::Top | HavingRankingKind::Bottom => HavingOperator::In,
-        HavingRankingKind::Max | HavingRankingKind::Min => HavingOperator::Equal,
-    };
-    vec![HavingClause {
-        aggregate: HavingAggregate {
-            function,
-            field: field.to_string(),
-        },
-        operator,
-        right: HavingRightOperand::Ranking(HavingRanking { kind, n }),
+/// The single `ORDER BY <field> [ASC|DESC]` clause that carries the
+/// ranking. `ascending = false` is the `DESC` / "highest first"
+/// reading.
+fn order_by(field: &str, ascending: bool) -> Vec<OrderClause> {
+    vec![OrderClause {
+        field: field.to_string(),
+        ascending,
     }]
 }
 
-/// `SELECT AVG(grade) … HAVING AVG(grade) <ranking>` — the fixture's
-/// headline shape, parameterized on the ranking so the mapping tests can
-/// sweep all four kinds.
-fn detect_avg(kind: HavingRankingKind, n: Option<u64>) -> Result<DocumentRankedMode, Error> {
+/// `LIMIT limit [OFFSET offset]`, with no cursor.
+fn page(limit: Option<u32>, offset: Option<u32>) -> RankedPaginationInputs {
+    RankedPaginationInputs {
+        limit,
+        offset,
+        has_start_at: false,
+    }
+}
+
+/// `SELECT AVG(grade) … GROUP BY restaurantId ORDER BY grade …` — the
+/// fixture's headline shape, parameterized on direction and pagination
+/// so the mapping tests can sweep them.
+fn detect_avg(
+    ascending: bool,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<DocumentRankedMode, Error> {
     detect_ranked_mode_v0(
         &SelectProjection::avg("grade"),
         &group_by(),
-        &having(HavingAggregateFunction::Avg, "grade", kind, n),
         &[],
-        RankedPaginationInputs::default(),
+        &order_by("grade", ascending),
+        &[],
+        page(limit, offset),
     )
 }
 
-/// The two positional ranking kinds map onto `(descending, k)` exactly as
-/// the SQL reading demands: `TOP` is "highest first", `BOTTOM` is "lowest
-/// first", and `n = 1` is how the single best-ranked group is asked for.
+/// The `ORDER BY` direction is the walk direction and the `LIMIT` is
+/// `k`, exactly as the SQL reading demands: `DESC` is "highest first",
+/// `ASC` is "lowest first", and `LIMIT 1` is how the single
+/// best-ranked group is asked for.
 #[test]
-fn ranking_kinds_map_to_direction_and_k() {
-    let top = detect_avg(HavingRankingKind::Top, Some(5)).expect("TOP(5) is well-formed");
-    assert!(top.descending, "TOP ranks highest-first");
-    assert_eq!(top.k, 5);
+fn order_direction_maps_to_walk_direction_and_limit_is_k() {
+    let desc = detect_avg(false, Some(5), None).expect("ORDER BY … DESC LIMIT 5 is well-formed");
+    assert!(desc.descending, "DESC ranks highest-first");
+    assert_eq!(desc.k, 5);
 
-    let bottom = detect_avg(HavingRankingKind::Bottom, Some(3)).expect("BOTTOM(3) is well-formed");
-    assert!(!bottom.descending, "BOTTOM ranks lowest-first");
-    assert_eq!(bottom.k, 3);
+    let asc = detect_avg(true, Some(3), None).expect("ORDER BY … ASC LIMIT 3 is well-formed");
+    assert!(!asc.descending, "ASC ranks lowest-first");
+    assert_eq!(asc.k, 3);
 
-    let top_one = detect_avg(HavingRankingKind::Top, Some(1)).expect("TOP(1) is well-formed");
-    assert!(top_one.descending);
-    assert_eq!(top_one.k, 1, "TOP(1) is the single best-ranked group");
-
-    let bottom_one =
-        detect_avg(HavingRankingKind::Bottom, Some(1)).expect("BOTTOM(1) is well-formed");
-    assert!(!bottom_one.descending);
+    let desc_one = detect_avg(false, Some(1), None).expect("LIMIT 1 is well-formed");
+    assert!(desc_one.descending);
     assert_eq!(
-        bottom_one.k, 1,
-        "BOTTOM(1) is the single worst-ranked group"
+        desc_one.k, 1,
+        "DESC LIMIT 1 is the single best-ranked group"
     );
+
+    let asc_one = detect_avg(true, Some(1), None).expect("LIMIT 1 is well-formed");
+    assert!(!asc_one.descending);
+    assert_eq!(asc_one.k, 1, "ASC LIMIT 1 is the single worst-ranked group");
 }
 
-/// `MAX` / `MIN` are *value-based*: `HAVING <agg> = MAX` selects every
-/// group whose aggregate equals the extreme. The axis secondary breaks
-/// ties by group key, so a bounded read would silently drop tied groups
-/// and the proof could not attest that nothing else ties. They are
-/// therefore rejected as unsupported — with or without `n`, on every axis
-/// — and `TOP(1)` / `BOTTOM(1)` are the positional alternative.
+/// `OFFSET` is optional and defaults to rank 0; when present it is
+/// carried through verbatim, with no ceiling of its own. The ceiling is
+/// deliberately absent because grovedb's paginated proof is
+/// `O(log n + k)` at any offset — the skipped region is attested by
+/// counted subtree commitments rather than walked — so a large offset
+/// is not a cost lever.
 #[test]
-fn max_and_min_are_rejected_as_untieable() {
-    for kind in [HavingRankingKind::Max, HavingRankingKind::Min] {
-        for n in [None, Some(1), Some(3)] {
-            let error = detect_avg(kind, n)
-                .expect_err("MAX / MIN must be rejected regardless of whether `n` is present");
-            match error {
-                Error::Query(QuerySyntaxError::Unsupported(message)) => {
-                    assert!(
-                        message.contains("tied"),
-                        "the rejection must explain the tie semantics, got: {message}"
-                    );
-                    assert!(
-                        message.contains("TOP(1)") && message.contains("BOTTOM(1)"),
-                        "the rejection must point at the positional alternative, got: {message}"
-                    );
-                }
-                other => panic!("expected an Unsupported query error, got {other}"),
-            }
-        }
-    }
+fn offset_is_optional_defaults_to_zero_and_is_uncapped() {
+    assert_eq!(
+        detect_avg(false, Some(3), None)
+            .expect("no OFFSET is well-formed")
+            .offset,
+        0,
+        "an absent OFFSET means the page starts at rank 0"
+    );
+
+    // "the 5th best grade" — skip the four above it, take one.
+    let fifth_best = detect_avg(false, Some(1), Some(4)).expect("LIMIT 1 OFFSET 4 is well-formed");
+    assert_eq!(fifth_best.k, 1);
+    assert_eq!(fifth_best.offset, 4);
+    assert!(fifth_best.descending);
+
+    // Far past any plausible population, and far past MAX_RANKED_LIMIT:
+    // still accepted, because offset costs nothing to prove.
+    let deep = detect_avg(false, Some(10), Some(u32::MAX)).expect("a huge OFFSET is well-formed");
+    assert_eq!(deep.offset, u32::MAX);
+    assert_eq!(deep.k, 10);
 }
 
 /// The resolved mode carries everything the index picker needs, not just
@@ -177,7 +171,7 @@ fn max_and_min_are_rejected_as_untieable() {
 /// the aggregate applies to.
 #[test]
 fn resolved_mode_carries_axis_group_property_and_field() {
-    let avg = detect_avg(HavingRankingKind::Top, Some(2)).expect("well-formed");
+    let avg = detect_avg(false, Some(2), None).expect("well-formed");
     assert_eq!(avg.axis, RankedAxis::Avg);
     assert_eq!(avg.group_by_property, GROUP_PROPERTY);
     assert_eq!(avg.aggregate_field, "grade");
@@ -185,14 +179,10 @@ fn resolved_mode_carries_axis_group_property_and_field() {
     let count = detect_ranked_mode_v0(
         &SelectProjection::count_star(),
         &group_by(),
-        &having(
-            HavingAggregateFunction::Count,
-            "",
-            HavingRankingKind::Top,
-            Some(2),
-        ),
         &[],
-        RankedPaginationInputs::default(),
+        &order_by(RANKED_COUNT_ORDER_KEY, false),
+        &[],
+        page(Some(2), None),
     )
     .expect("COUNT(*) is well-formed");
     assert_eq!(count.axis, RankedAxis::Count);
@@ -204,55 +194,115 @@ fn resolved_mode_carries_axis_group_property_and_field() {
     let sum = detect_ranked_mode_v0(
         &SelectProjection::sum("amount"),
         &group_by(),
-        &having(
-            HavingAggregateFunction::Sum,
-            "amount",
-            HavingRankingKind::Bottom,
-            Some(1),
-        ),
         &[],
-        RankedPaginationInputs::default(),
+        &order_by("amount", true),
+        &[],
+        page(Some(1), None),
     )
     .expect("SUM is well-formed");
     assert_eq!(sum.axis, RankedAxis::Sum);
     assert_eq!(sum.aggregate_field, "amount");
 }
 
-/// `n = 0` selects nothing and `n > MAX_RANKED_LIMIT` is refused rather
-/// than clamped — a clamp would produce a proof whose echoed `k` the
-/// client's own reconstruction rejects. The boundary itself is accepted.
+/// `COUNT(*)` is ordered by the `$count` sentinel and by nothing else.
+///
+/// The sentinel exists because `COUNT(*)` has no field to name. `$` is
+/// DPP's system-property namespace, which a document schema cannot use,
+/// so the token is collision-proof against every contract that could
+/// ever be written — a bare `"count"` would hijack ordering for any
+/// schema that happens to have a `count` column, which is exactly the
+/// failure this test guards.
+#[test]
+fn count_star_is_ordered_by_the_dollar_count_sentinel() {
+    assert!(
+        RANKED_COUNT_ORDER_KEY.starts_with('$'),
+        "the sentinel must live in the system-property namespace so it cannot collide \
+         with a schema property"
+    );
+
+    let mode = detect_ranked_mode_v0(
+        &SelectProjection::count_star(),
+        &group_by(),
+        &[],
+        &order_by(RANKED_COUNT_ORDER_KEY, false),
+        &[],
+        page(Some(4), None),
+    )
+    .expect("`ORDER BY $count DESC LIMIT 4` is the COUNT(*) ranking");
+    assert_eq!(mode.axis, RankedAxis::Count);
+    assert_eq!(mode.k, 4);
+
+    // A plain `count` column name is *not* the sentinel, even though a
+    // reader might expect it to be.
+    let error = detect_ranked_mode_v0(
+        &SelectProjection::count_star(),
+        &group_by(),
+        &[],
+        &order_by("count", false),
+        &[],
+        page(Some(4), None),
+    )
+    .expect_err("only the `$`-prefixed sentinel names the COUNT(*) axis");
+    match error {
+        Error::Query(QuerySyntaxError::Unsupported(message)) => {
+            assert!(
+                message.contains(RANKED_COUNT_ORDER_KEY),
+                "the rejection must name the sentinel to write instead, got: {message}"
+            );
+        }
+        other => panic!("expected an Unsupported query error, got {other}"),
+    }
+}
+
+/// `LIMIT 0` selects nothing and `LIMIT > MAX_RANKED_LIMIT` is refused
+/// rather than clamped — a clamp would produce a proof whose echoed `k`
+/// the client's own reconstruction rejects. The boundary itself is
+/// accepted.
 #[test]
 fn k_is_bounded_to_one_through_max_ranked_limit() {
-    let zero = detect_avg(HavingRankingKind::Top, Some(0)).expect_err("TOP(0) must be rejected");
+    let zero = detect_avg(false, Some(0), None).expect_err("LIMIT 0 must be rejected");
     assert!(matches!(
         zero,
         Error::Query(QuerySyntaxError::InvalidLimit(_))
     ));
 
-    let over = detect_avg(HavingRankingKind::Top, Some(MAX_RANKED_LIMIT as u64 + 1))
-        .expect_err("TOP(101) must be rejected");
+    let over = detect_avg(false, Some(MAX_RANKED_LIMIT as u32 + 1), None)
+        .expect_err("LIMIT 101 must be rejected");
     assert!(matches!(
         over,
         Error::Query(QuerySyntaxError::InvalidLimit(_))
     ));
 
-    let at_limit = detect_avg(HavingRankingKind::Top, Some(MAX_RANKED_LIMIT as u64))
-        .expect("TOP(100) sits exactly on the ceiling and must be accepted");
+    let at_limit = detect_avg(false, Some(MAX_RANKED_LIMIT as u32), None)
+        .expect("LIMIT 100 sits exactly on the ceiling and must be accepted");
     assert_eq!(at_limit.k, MAX_RANKED_LIMIT);
 }
 
-/// `TOP` / `BOTTOM` need an `n` — the wire makes it optional (see
-/// `HavingRanking::n`), so evaluation is where its absence gets rejected.
+/// `LIMIT` is mandatory in ranked mode. There is no server-side default
+/// because `k` is echoed inside the proof envelope and re-checked by the
+/// verifier: a number the client never chose is a number it cannot
+/// reproduce when rebuilding the query to verify.
 #[test]
-fn top_and_bottom_require_n() {
-    for kind in [HavingRankingKind::Top, HavingRankingKind::Bottom] {
-        let error =
-            detect_avg(kind, None).expect_err("a positional ranking without n is malformed");
-        assert!(matches!(
-            error,
-            Error::Query(QuerySyntaxError::InvalidParameter(_))
-        ));
+fn limit_is_required() {
+    let error = detect_avg(false, None, None).expect_err(
+        "a ranked query without a limit is \
+                                                          incomplete",
+    );
+    match error {
+        Error::Query(QuerySyntaxError::InvalidLimit(message)) => {
+            assert!(
+                message.contains("limit"),
+                "the rejection must name the missing knob, got: {message}"
+            );
+        }
+        other => panic!("expected InvalidLimit, got {other}"),
     }
+
+    // And an OFFSET alone does not stand in for it.
+    assert!(matches!(
+        detect_avg(false, None, Some(4)),
+        Err(Error::Query(QuerySyntaxError::InvalidLimit(_)))
+    ));
 }
 
 /// Ranked indexes are single-property, so grouping is single-property
@@ -264,14 +314,10 @@ fn group_by_must_name_exactly_one_property() {
         let error = detect_ranked_mode_v0(
             &SelectProjection::avg("grade"),
             &group_by,
-            &having(
-                HavingAggregateFunction::Avg,
-                "grade",
-                HavingRankingKind::Top,
-                Some(2),
-            ),
             &[],
-            RankedPaginationInputs::default(),
+            &order_by("grade", false),
+            &[],
+            page(Some(2), None),
         )
         .expect_err("group_by arity other than 1 must be rejected");
         assert!(matches!(
@@ -281,75 +327,76 @@ fn group_by_must_name_exactly_one_property() {
     }
 }
 
-/// The `HAVING` aggregate must be the *same* aggregate as the `SELECT`:
-/// ranking one aggregate while projecting another would need a second
-/// axis the storage does not maintain.
+/// The `ORDER BY` field must be the *selected aggregate's* field:
+/// ranking one aggregate while projecting another, or ordering groups by
+/// a raw document property, would need a sort the axis secondary does
+/// not maintain.
 #[test]
-fn having_aggregate_must_match_the_select() {
-    // Same field, different function.
-    let function_mismatch = detect_ranked_mode_v0(
+fn order_by_must_name_the_selected_aggregate() {
+    // A different (perfectly real) document property.
+    let wrong_field = detect_ranked_mode_v0(
         &SelectProjection::avg("grade"),
         &group_by(),
-        &having(
-            HavingAggregateFunction::Sum,
-            "grade",
-            HavingRankingKind::Top,
-            Some(2),
-        ),
         &[],
-        RankedPaginationInputs::default(),
+        &order_by(GROUP_PROPERTY, false),
+        &[],
+        page(Some(2), None),
     )
-    .expect_err("AVG select with SUM having must be rejected");
+    .expect_err("ordering groups by the grouping property is not a ranking");
+    match wrong_field {
+        Error::Query(QuerySyntaxError::Unsupported(message)) => {
+            assert!(
+                message.contains("grade"),
+                "the rejection must name the ordering that *is* supported, got: {message}"
+            );
+        }
+        other => panic!("expected an Unsupported query error, got {other}"),
+    }
+
+    // Another numeric property the select does not aggregate.
     assert!(matches!(
-        function_mismatch,
-        Error::Query(QuerySyntaxError::InvalidParameter(_))
+        detect_ranked_mode_v0(
+            &SelectProjection::avg("grade"),
+            &group_by(),
+            &[],
+            &order_by("price", false),
+            &[],
+            page(Some(2), None),
+        ),
+        Err(Error::Query(QuerySyntaxError::Unsupported(_)))
     ));
 
-    // Same function, different field.
-    let field_mismatch = detect_ranked_mode_v0(
-        &SelectProjection::avg("grade"),
-        &group_by(),
-        &having(
-            HavingAggregateFunction::Avg,
-            "price",
-            HavingRankingKind::Top,
-            Some(2),
-        ),
-        &[],
-        RankedPaginationInputs::default(),
-    )
-    .expect_err("AVG(grade) select with AVG(price) having must be rejected");
+    // The COUNT(*) sentinel is not a stand-in for an AVG ordering.
     assert!(matches!(
-        field_mismatch,
-        Error::Query(QuerySyntaxError::InvalidParameter(_))
+        detect_ranked_mode_v0(
+            &SelectProjection::avg("grade"),
+            &group_by(),
+            &[],
+            &order_by(RANKED_COUNT_ORDER_KEY, false),
+            &[],
+            page(Some(2), None),
+        ),
+        Err(Error::Query(QuerySyntaxError::Unsupported(_)))
     ));
 }
 
-/// Exactly one `HAVING` clause. Multiple clauses are implicitly ANDed and
-/// there is no ranked primitive for the intersection of two rankings.
+/// Exactly one `ORDER BY` clause. The axis secondary is a single-key
+/// ordering — a second sort key would need a second axis the storage
+/// does not maintain — and zero clauses is not a ranking at all.
 #[test]
-fn exactly_one_having_clause_is_required() {
-    let mut two = having(
-        HavingAggregateFunction::Avg,
-        "grade",
-        HavingRankingKind::Top,
-        Some(2),
-    );
-    two.extend(having(
-        HavingAggregateFunction::Avg,
-        "grade",
-        HavingRankingKind::Bottom,
-        Some(2),
-    ));
+fn exactly_one_order_by_clause_is_required() {
+    let mut two = order_by("grade", false);
+    two.extend(order_by(GROUP_PROPERTY, true));
     for clauses in [Vec::new(), two] {
         let error = detect_ranked_mode_v0(
             &SelectProjection::avg("grade"),
             &group_by(),
+            &[],
             &clauses,
             &[],
-            RankedPaginationInputs::default(),
+            page(Some(2), None),
         )
-        .expect_err("having must carry exactly one clause");
+        .expect_err("order_by must carry exactly one clause");
         assert!(matches!(
             error,
             Error::Query(QuerySyntaxError::InvalidParameter(_))
@@ -357,10 +404,12 @@ fn exactly_one_having_clause_is_required() {
     }
 }
 
-/// A threshold right-operand (`HAVING AVG(grade) > 80`) is a range walk
-/// over the axis secondary — a different primitive, deliberately deferred.
+/// A boolean `HAVING` cannot yet be combined with an aggregate
+/// ordering: ranking reads a pre-sorted secondary, and filtering groups
+/// first would mean walking every group to test the predicate — exactly
+/// the cost the ranked surface exists to avoid.
 #[test]
-fn having_value_operand_is_rejected_as_unsupported() {
+fn having_is_rejected_alongside_an_aggregate_ordering() {
     let clauses = vec![HavingClause {
         aggregate: HavingAggregate {
             function: HavingAggregateFunction::Avg,
@@ -373,14 +422,20 @@ fn having_value_operand_is_rejected_as_unsupported() {
         &SelectProjection::avg("grade"),
         &group_by(),
         &clauses,
+        &order_by("grade", false),
         &[],
-        RankedPaginationInputs::default(),
+        page(Some(2), None),
     )
-    .expect_err("value right-operands are not implemented");
-    assert!(matches!(
-        error,
-        Error::Query(QuerySyntaxError::Unsupported(_))
-    ));
+    .expect_err("boolean having is not implemented on the ranked path");
+    match error {
+        Error::Query(QuerySyntaxError::Unsupported(message)) => {
+            assert!(
+                message.contains("having"),
+                "the rejection must name the clause it is refusing, got: {message}"
+            );
+        }
+        other => panic!("expected an Unsupported query error, got {other}"),
+    }
 }
 
 /// Only the three maintained axes can be ranked, and `COUNT` must be
@@ -397,14 +452,10 @@ fn only_count_star_sum_and_avg_selects_are_rankable() {
         let error = detect_ranked_mode_v0(
             &select,
             &group_by(),
-            &having(
-                HavingAggregateFunction::Count,
-                "",
-                HavingRankingKind::Top,
-                Some(2),
-            ),
             &[],
-            RankedPaginationInputs::default(),
+            &order_by("grade", false),
+            &[],
+            page(Some(2), None),
         )
         .expect_err("only COUNT(*) / SUM(f) / AVG(f) rank");
         assert!(
@@ -426,14 +477,10 @@ fn sum_and_avg_selects_require_a_field() {
         let error = detect_ranked_mode_v0(
             &select,
             &group_by(),
-            &having(
-                HavingAggregateFunction::Sum,
-                "",
-                HavingRankingKind::Top,
-                Some(2),
-            ),
             &[],
-            RankedPaginationInputs::default(),
+            &order_by("amount", false),
+            &[],
+            page(Some(2), None),
         )
         .expect_err("a fieldless SUM/AVG has nothing to aggregate");
         assert!(matches!(
@@ -457,14 +504,10 @@ fn where_clauses_are_rejected() {
     let error = detect_ranked_mode_v0(
         &SelectProjection::avg("grade"),
         &group_by(),
-        &having(
-            HavingAggregateFunction::Avg,
-            "grade",
-            HavingRankingKind::Top,
-            Some(2),
-        ),
+        &[],
+        &order_by("grade", false),
         &where_clauses,
-        RankedPaginationInputs::default(),
+        page(Some(2), None),
     )
     .expect_err("ranked queries take no where clauses");
     assert!(matches!(
@@ -473,42 +516,41 @@ fn where_clauses_are_rejected() {
     ));
 }
 
-/// `limit` / `offset` / `start_at` all conflict with, or are meaningless
-/// against, an aggregate-ordered walk whose size is the ranking's `n`.
+/// `start_at` / `start_after` name a document id, and document ids do
+/// not appear in a keyspace sorted by aggregate — so the cursor is
+/// refused while `OFFSET`, which *is* meaningful there, is accepted.
 #[test]
-fn pagination_inputs_are_rejected() {
-    for pagination in [
+fn start_at_is_rejected_while_offset_is_accepted() {
+    let error = detect_ranked_mode_v0(
+        &SelectProjection::avg("grade"),
+        &group_by(),
+        &[],
+        &order_by("grade", false),
+        &[],
         RankedPaginationInputs {
-            limit: Some(10),
-            ..Default::default()
-        },
-        RankedPaginationInputs {
-            offset: Some(5),
-            ..Default::default()
-        },
-        RankedPaginationInputs {
+            limit: Some(2),
+            offset: None,
             has_start_at: true,
-            ..Default::default()
         },
-    ] {
-        let error = detect_ranked_mode_v0(
-            &SelectProjection::avg("grade"),
-            &group_by(),
-            &having(
-                HavingAggregateFunction::Avg,
-                "grade",
-                HavingRankingKind::Top,
-                Some(2),
-            ),
-            &[],
-            pagination,
-        )
-        .expect_err("ranked queries take no pagination inputs");
-        assert!(
-            matches!(error, Error::Query(QuerySyntaxError::InvalidLimit(_))),
-            "expected InvalidLimit for {pagination:?}, got {error}"
-        );
+    )
+    .expect_err("ranked queries take no cursor");
+    match error {
+        Error::Query(QuerySyntaxError::InvalidLimit(message)) => {
+            assert!(
+                message.contains("OFFSET"),
+                "the rejection must point at the pagination that does work, got: {message}"
+            );
+        }
+        other => panic!("expected InvalidLimit, got {other}"),
     }
+
+    // The same request paginated by offset instead is accepted.
+    assert_eq!(
+        detect_avg(false, Some(2), Some(6))
+            .expect("OFFSET is the ranked pagination")
+            .offset,
+        6
+    );
 }
 
 /// The versioned wrapper routes v0 to the v0 table and fails closed on an
@@ -518,35 +560,24 @@ fn versioned_detection_routes_v0_and_rejects_unknown_versions() {
     let versioned = detect_ranked_mode(
         &SelectProjection::avg("grade"),
         &group_by(),
-        &having(
-            HavingAggregateFunction::Avg,
-            "grade",
-            HavingRankingKind::Top,
-            Some(4),
-        ),
         &[],
-        RankedPaginationInputs::default(),
+        &order_by("grade", false),
+        &[],
+        page(Some(4), None),
         platform_version(),
     )
     .expect("PV14's detect_ranked_mode slot is 0");
-    assert_eq!(
-        versioned,
-        detect_avg(HavingRankingKind::Top, Some(4)).unwrap()
-    );
+    assert_eq!(versioned, detect_avg(false, Some(4), None).unwrap());
 
     let mut future = platform_version().clone();
     future.drive.methods.document.query.detect_ranked_mode = 1;
     let error = detect_ranked_mode(
         &SelectProjection::avg("grade"),
         &group_by(),
-        &having(
-            HavingAggregateFunction::Avg,
-            "grade",
-            HavingRankingKind::Top,
-            Some(4),
-        ),
         &[],
-        RankedPaginationInputs::default(),
+        &order_by("grade", false),
+        &[],
+        page(Some(4), None),
         &future,
     )
     .expect_err("an unknown routing-table version must fail closed");
@@ -750,6 +781,7 @@ fn insert_docs(
 
 /// One ranked request, minus the `prove` flag and the pieces the
 /// dispatcher derives.
+#[derive(Clone)]
 struct RankedCase {
     document_type_name: &'static str,
     /// The single `GROUP BY` property. Every fixture doctype groups by
@@ -758,51 +790,68 @@ struct RankedCase {
     /// observable.
     group_by_property: &'static str,
     select: SelectProjection,
-    aggregate_function: HavingAggregateFunction,
-    aggregate_field: &'static str,
-    kind: HavingRankingKind,
-    n: Option<u64>,
+    /// The `ORDER BY` field. Must name the selected aggregate:
+    /// [`RANKED_COUNT_ORDER_KEY`] for `COUNT(*)`, otherwise the select's
+    /// own field.
+    order_field: &'static str,
+    /// `false` is `DESC` — the "highest first" ranking.
+    ascending: bool,
+    limit: Option<u32>,
+    offset: Option<u32>,
 }
 
 impl RankedCase {
-    fn avg(kind: HavingRankingKind, n: Option<u64>) -> Self {
+    fn avg(ascending: bool, limit: Option<u32>) -> Self {
         Self {
             document_type_name: "review",
             group_by_property: GROUP_PROPERTY,
             select: SelectProjection::avg("grade"),
-            aggregate_function: HavingAggregateFunction::Avg,
-            aggregate_field: "grade",
-            kind,
-            n,
+            order_field: "grade",
+            ascending,
+            limit,
+            offset: None,
         }
     }
 
-    fn count(kind: HavingRankingKind, n: Option<u64>) -> Self {
+    fn count(ascending: bool, limit: Option<u32>) -> Self {
         Self {
             document_type_name: "visit",
             group_by_property: GROUP_PROPERTY,
             select: SelectProjection::count_star(),
-            aggregate_function: HavingAggregateFunction::Count,
-            aggregate_field: "",
-            kind,
-            n,
+            order_field: RANKED_COUNT_ORDER_KEY,
+            ascending,
+            limit,
+            offset: None,
         }
     }
 
-    fn sum(kind: HavingRankingKind, n: Option<u64>) -> Self {
+    fn sum(ascending: bool, limit: Option<u32>) -> Self {
         Self {
             document_type_name: "tip",
             group_by_property: GROUP_PROPERTY,
             select: SelectProjection::sum("amount"),
-            aggregate_function: HavingAggregateFunction::Sum,
-            aggregate_field: "amount",
-            kind,
-            n,
+            order_field: "amount",
+            ascending,
+            limit,
+            offset: None,
         }
+    }
+
+    /// The same case, paginated: `… LIMIT limit OFFSET offset`.
+    fn at_offset(mut self, offset: u32) -> Self {
+        self.offset = Some(offset);
+        self
     }
 
     fn group_by(&self) -> Vec<String> {
         vec![self.group_by_property.to_string()]
+    }
+
+    fn order_by(&self) -> Vec<OrderClause> {
+        vec![OrderClause {
+            field: self.order_field.to_string(),
+            ascending: self.ascending,
+        }]
     }
 }
 
@@ -815,12 +864,7 @@ fn run(
     prove: bool,
 ) -> Result<DocumentRankedResponse, Error> {
     let group_by = case.group_by();
-    let having_clauses = having(
-        case.aggregate_function,
-        case.aggregate_field,
-        case.kind,
-        case.n,
-    );
+    let order_by = case.order_by();
     let document_type = contract
         .document_type_for_name(case.document_type_name)
         .expect("doctype exists");
@@ -830,10 +874,11 @@ fn run(
             document_type,
             group_by: &group_by,
             select: case.select.clone(),
-            having: &having_clauses,
+            having: &[],
+            order_by: &order_by,
             where_clauses: &[],
-            limit: None,
-            offset: None,
+            limit: case.limit,
+            offset: case.offset,
             has_start_at: false,
             prove,
         },
@@ -842,11 +887,15 @@ fn run(
     )
 }
 
-fn entries_of(response: DocumentRankedResponse) -> Vec<RankedEntry> {
+fn page_of(response: DocumentRankedResponse) -> RankedPage {
     match response {
-        DocumentRankedResponse::Entries(entries) => entries,
+        DocumentRankedResponse::Entries(page) => page,
         DocumentRankedResponse::Proof(_) => panic!("expected entries, got a proof"),
     }
+}
+
+fn entries_of(response: DocumentRankedResponse) -> Vec<RankedEntry> {
+    page_of(response).entries
 }
 
 fn proof_of(response: DocumentRankedResponse) -> Vec<u8> {
@@ -872,18 +921,18 @@ fn client_side_query<'a>(
     case: &RankedCase,
 ) -> DriveDocumentRankedQuery<'a> {
     let group_by = case.group_by();
-    let having_clauses = having(
-        case.aggregate_function,
-        case.aggregate_field,
-        case.kind,
-        case.n,
-    );
+    let order_by = case.order_by();
     let mode = detect_ranked_mode(
         &case.select,
         &group_by,
-        &having_clauses,
         &[],
-        RankedPaginationInputs::default(),
+        &order_by,
+        &[],
+        RankedPaginationInputs {
+            limit: case.limit,
+            offset: case.offset,
+            has_start_at: false,
+        },
         platform_version(),
     )
     .expect("the case is well-formed");
@@ -911,6 +960,7 @@ fn client_side_query<'a>(
         axis: mode.axis,
         descending: mode.descending,
         k: mode.k,
+        offset: mode.offset,
     }
 }
 
@@ -922,21 +972,22 @@ fn grovedb_root_hash(drive: &Drive) -> [u8; 32] {
         .expect("root hash must be readable")
 }
 
-/// Prove the case, verify the proof, and assert the verified entries and
-/// root hash match the live database.
+/// Prove the case, verify the proof, and assert the verified page and
+/// root hash match the live database. Returns the verified page so
+/// callers can assert on the attested `skipped` rank.
 fn assert_proof_round_trips(
     drive: &Drive,
     contract: &DataContract,
     case: &RankedCase,
     expected: &[RankedEntry],
-) {
+) -> RankedPage {
     let proof = proof_of(run(drive, contract, case, true).expect("prove must succeed"));
     let query = client_side_query(contract, case);
     let (root_hash, verified) = query
         .verify_ranked_top_k_proof(&proof, platform_version())
         .expect("the proof must verify");
     assert_eq!(
-        verified, expected,
+        verified.entries, expected,
         "verified entries must equal what the unproven read returned"
     );
     assert_eq!(
@@ -944,6 +995,7 @@ fn assert_proof_round_trips(
         grovedb_root_hash(drive),
         "the proof must reconstruct the live grovedb root hash"
     );
+    verified
 }
 
 /// Averages: alpha (90+80)/2 = 85, beta (60+70+50)/3 = 60, gamma 95,
@@ -971,7 +1023,7 @@ fn avg_axis_ranks_reads_and_proves_consistently() {
         ],
     );
 
-    let top_three = RankedCase::avg(HavingRankingKind::Top, Some(3));
+    let top_three = RankedCase::avg(false, Some(3));
     let entries = entries_of(run(&drive, &contract, &top_three, false).expect("read must succeed"));
     assert_eq!(
         keys_of(&entries),
@@ -1002,7 +1054,7 @@ fn avg_axis_ranks_reads_and_proves_consistently() {
         500,
         &[("epsilon", 10), ("epsilon", 11)],
     );
-    let bottom_one = RankedCase::avg(HavingRankingKind::Bottom, Some(1));
+    let bottom_one = RankedCase::avg(true, Some(1));
     let entries =
         entries_of(run(&drive, &contract, &bottom_one, false).expect("read must succeed"));
     assert_eq!(
@@ -1052,7 +1104,7 @@ fn count_axis_ranks_reads_and_proves_consistently() {
         ],
     );
 
-    let top_two = RankedCase::count(HavingRankingKind::Top, Some(2));
+    let top_two = RankedCase::count(false, Some(2));
     let entries = entries_of(run(&drive, &contract, &top_two, false).expect("read must succeed"));
     assert_eq!(
         keys_of(&entries),
@@ -1063,7 +1115,7 @@ fn count_axis_ranks_reads_and_proves_consistently() {
     assert_eq!(entries[1].value, RankedEntryValue::Count(3));
     assert_proof_round_trips(&drive, &contract, &top_two, &entries);
 
-    let bottom_one = RankedCase::count(HavingRankingKind::Bottom, Some(1));
+    let bottom_one = RankedCase::count(true, Some(1));
     let entries =
         entries_of(run(&drive, &contract, &bottom_one, false).expect("read must succeed"));
     assert_eq!(
@@ -1074,18 +1126,16 @@ fn count_axis_ranks_reads_and_proves_consistently() {
     assert_eq!(entries[0].value, RankedEntryValue::Count(1));
     assert_proof_round_trips(&drive, &contract, &bottom_one, &entries);
 
-    // The value-based spelling of the same intent is refused end to end,
-    // not just in the pure detector.
-    let error = run(
-        &drive,
-        &contract,
-        &RankedCase::count(HavingRankingKind::Min, None),
-        false,
-    )
-    .expect_err("MIN cannot be served: groups tied at the minimum are not provable");
+    // A missing LIMIT is refused end to end, not just in the pure
+    // detector: `k` is echoed in the proof envelope, so there is no
+    // server-side default a verifying client could reproduce.
+    let mut no_limit = RankedCase::count(true, None);
+    no_limit.limit = None;
+    let error = run(&drive, &contract, &no_limit, false)
+        .expect_err("a ranked request without a limit is incomplete");
     assert!(matches!(
         error,
-        Error::Query(QuerySyntaxError::Unsupported(_))
+        Error::Query(QuerySyntaxError::InvalidLimit(_))
     ));
 }
 
@@ -1110,7 +1160,7 @@ fn sum_axis_ranks_reads_and_proves_consistently() {
         ],
     );
 
-    let top_one = RankedCase::sum(HavingRankingKind::Top, Some(1));
+    let top_one = RankedCase::sum(false, Some(1));
     let entries = entries_of(run(&drive, &contract, &top_one, false).expect("read must succeed"));
     assert_eq!(
         keys_of(&entries),
@@ -1120,22 +1170,7 @@ fn sum_axis_ranks_reads_and_proves_consistently() {
     assert_eq!(entries[0].value, RankedEntryValue::Sum(100));
     assert_proof_round_trips(&drive, &contract, &top_one, &entries);
 
-    // `= MAX` would mean "every group at the maximum", which the axis
-    // secondary cannot prove — it is refused rather than silently served
-    // as `TOP(1)`.
-    let error = run(
-        &drive,
-        &contract,
-        &RankedCase::sum(HavingRankingKind::Max, None),
-        false,
-    )
-    .expect_err("MAX cannot be served: groups tied at the maximum are not provable");
-    assert!(matches!(
-        error,
-        Error::Query(QuerySyntaxError::Unsupported(_))
-    ));
-
-    let bottom_three = RankedCase::sum(HavingRankingKind::Bottom, Some(3));
+    let bottom_three = RankedCase::sum(true, Some(3));
     let entries =
         entries_of(run(&drive, &contract, &bottom_three, false).expect("read must succeed"));
     assert_eq!(
@@ -1169,32 +1204,179 @@ fn top_k_larger_than_the_group_count_returns_every_group() {
         &[("alpha", 10), ("beta", 20)],
     );
 
-    let case = RankedCase::sum(HavingRankingKind::Top, Some(MAX_RANKED_LIMIT as u64));
+    let case = RankedCase::sum(false, Some(MAX_RANKED_LIMIT as u32));
     let entries = entries_of(run(&drive, &contract, &case, false).expect("read must succeed"));
     assert_eq!(keys_of(&entries), vec!["beta", "alpha"]);
     assert_proof_round_trips(&drive, &contract, &case, &entries);
 }
 
-/// **A ranked index with no documents behaves asymmetrically between the
-/// two paths, and that is a grovedb limitation, not a drive choice.**
+/// **`OFFSET` pages through the ranking, and the proof attests where the
+/// page starts.**
+///
+/// Five groups by average grade, descending:
+/// `gamma(95) > alpha(85) > beta(60) > delta(30) > epsilon(10)`.
+///
+/// Three shapes are covered, because they fail differently:
+///
+/// 1. **A one-entry window in the middle** — `LIMIT 1 OFFSET 4` is how
+///    "the 5th best grade" is spelled. The entry alone does not say
+///    which rank it is; `skipped` does, and it comes back attested.
+/// 2. **A window running off the end** — asking for three groups from
+///    rank 3 yields the two that exist. A short page is the index
+///    having fewer groups, not an error, exactly as a short unpaginated
+///    page is.
+/// 3. **A window entirely past the end** — the page is empty *and*
+///    `skipped` collapses to the secondary's true population, which is
+///    the proof's way of saying "there is nothing here, and here is how
+///    much there is in total". That is the one case where the proved
+///    and unproven paths differ: the unproven read cannot see the short
+///    walk and reports the requested offset.
+#[test]
+fn offset_pages_through_the_ranking_and_the_proof_attests_the_starting_rank() {
+    let (drive, contract) = setup_restaurants();
+    insert_docs(
+        &drive,
+        &contract,
+        "review",
+        "grade",
+        1,
+        &[
+            ("gamma", 95),
+            ("alpha", 90),
+            ("alpha", 80),
+            ("beta", 60),
+            ("delta", 30),
+            ("epsilon", 10),
+        ],
+    );
+
+    // (1) The 5th best grade: skip the four above it, take one.
+    let fifth_best = RankedCase::avg(false, Some(1)).at_offset(4);
+    let page = page_of(run(&drive, &contract, &fifth_best, false).expect("read must succeed"));
+    assert_eq!(
+        keys_of(&page.entries),
+        vec!["epsilon"],
+        "gamma > alpha > beta > delta > epsilon — rank 4 (0-based) is epsilon"
+    );
+    assert_eq!(page.entries[0].value.as_f64(), 10.0);
+    let verified = assert_proof_round_trips(&drive, &contract, &fifth_best, &page.entries);
+    assert_eq!(
+        verified.skipped, 4,
+        "the proof must attest that this entry really is the 5th-ranked group, not just \
+         that it is *a* group"
+    );
+
+    // (2) A window that runs off the end returns the tail, short.
+    let tail = RankedCase::avg(false, Some(3)).at_offset(3);
+    let page = page_of(run(&drive, &contract, &tail, false).expect("read must succeed"));
+    assert_eq!(
+        keys_of(&page.entries),
+        vec!["delta", "epsilon"],
+        "only two groups remain from rank 3; a short page is not an error"
+    );
+    let verified = assert_proof_round_trips(&drive, &contract, &tail, &page.entries);
+    assert_eq!(
+        verified.skipped, 3,
+        "the skip itself succeeded, so `skipped` is the requested offset"
+    );
+
+    // (3) A window entirely past the end: empty page, and `skipped`
+    //     attests the population.
+    let past_end = RankedCase::avg(false, Some(2)).at_offset(9);
+    let page = page_of(run(&drive, &contract, &past_end, false).expect("read must succeed"));
+    assert!(
+        page.entries.is_empty(),
+        "there is no rank 9 in a five-group ranking"
+    );
+    assert_eq!(
+        page.skipped, 9,
+        "the unproven read cannot see the short walk, so it echoes the requested offset"
+    );
+    let verified = assert_proof_round_trips(&drive, &contract, &past_end, &page.entries);
+    assert_eq!(
+        verified.skipped, 5,
+        "the *proved* path re-derives the real skip from the counted subtree \
+         commitments, and `skipped < offset` with an empty page is a proof that the \
+         ranking holds exactly five groups"
+    );
+
+    // Paging with `ASC` walks the same five groups from the other end,
+    // so offset 4 there is the *best* group rather than the worst.
+    let worst_first_fifth = RankedCase::avg(true, Some(1)).at_offset(4);
+    let page =
+        page_of(run(&drive, &contract, &worst_first_fifth, false).expect("read must succeed"));
+    assert_eq!(keys_of(&page.entries), vec!["gamma"]);
+    let verified = assert_proof_round_trips(&drive, &contract, &worst_first_fifth, &page.entries);
+    assert_eq!(verified.skipped, 4);
+}
+
+/// A proof of one page must not verify as another page of the same
+/// ranking. `offset` is echoed in the envelope and re-checked, which is
+/// what stops a server from answering "the 5th best" with a proof of
+/// "the best" — the entries would look perfectly valid, and only the
+/// offset binding distinguishes them.
+#[test]
+fn a_proof_does_not_verify_under_a_different_offset() {
+    let (drive, contract) = setup_restaurants();
+    insert_docs(
+        &drive,
+        &contract,
+        "review",
+        "grade",
+        1,
+        &[("alpha", 90), ("beta", 60), ("gamma", 30), ("delta", 10)],
+    );
+
+    let at_two = RankedCase::avg(false, Some(1)).at_offset(2);
+    let proof = proof_of(run(&drive, &contract, &at_two, true).expect("prove must succeed"));
+    assert!(client_side_query(&contract, &at_two)
+        .verify_ranked_top_k_proof(&proof, platform_version())
+        .is_ok());
+
+    for other_offset in [0u32, 1, 3] {
+        let other = RankedCase::avg(false, Some(1)).at_offset(other_offset);
+        assert!(
+            client_side_query(&contract, &other)
+                .verify_ranked_top_k_proof(&proof, platform_version())
+                .is_err(),
+            "a proof for OFFSET 2 must not verify as OFFSET {other_offset}"
+        );
+    }
+
+    // And an unpaginated query is not the same query as `OFFSET 0`'s
+    // sibling either — it *is* `OFFSET 0`, so that one must verify.
+    let unpaginated_proof = proof_of(
+        run(&drive, &contract, &RankedCase::avg(false, Some(1)), true).expect("prove must succeed"),
+    );
+    assert!(
+        client_side_query(&contract, &RankedCase::avg(false, Some(1)).at_offset(0))
+            .verify_ranked_top_k_proof(&unpaginated_proof, platform_version())
+            .is_ok(),
+        "an absent OFFSET and `OFFSET 0` are the same request, so one's proof verifies \
+         under the other"
+    );
+}
+
+/// **An empty ranking now proves, and that is a consequence of moving to
+/// the paginated primitive.**
 ///
 /// The unproven read returns an empty list — the indexed tree exists from
-/// contract registration, its secondary is simply empty. The prove path
-/// *errors*: grovedb's merk prover cannot emit a proof for an empty tree
-/// ("Cannot create proof for empty tree"), and there is no absence-proof
-/// shape for "this ranking has no entries".
+/// contract registration, its secondary is simply empty. Under the old
+/// non-paginated prover the prove path *errored* here ("Cannot create
+/// proof for empty tree"): there was no envelope shape for "this ranking
+/// has no entries", so a freshly registered contract queried with
+/// `prove = true` got an error until the first document landed.
 ///
-/// Pinned as a test rather than left undiscovered because it is reachable
-/// by any client: a freshly registered contract with `prove = true`
-/// returns an error until the first document lands. Callers that must
-/// tolerate empty state should read unproven, or treat this specific
-/// error as "empty". Fixing it properly means teaching grovedb to emit an
-/// empty-tree envelope; when that lands, this test flips to a successful
-/// round trip and is the tripwire that says so.
+/// `prove_indexed_axis_top_k_paginated` closes that gap — it emits a
+/// guaranteed-empty range against the secondary rather than refusing —
+/// so the two paths now agree on empty state, and this test is the
+/// tripwire that says so. The attested `skipped` is `0`, which for an
+/// `OFFSET 0` request is the proof that the ranking is empty rather than
+/// merely unread.
 #[test]
-fn ranking_an_empty_index_reads_empty_but_cannot_be_proved() {
+fn ranking_an_empty_index_reads_empty_and_proves_empty() {
     let (drive, contract) = setup_restaurants();
-    let case = RankedCase::avg(HavingRankingKind::Top, Some(5));
+    let case = RankedCase::avg(false, Some(5));
 
     let entries = entries_of(run(&drive, &contract, &case, false).expect("read must succeed"));
     assert!(
@@ -1202,15 +1384,26 @@ fn ranking_an_empty_index_reads_empty_but_cannot_be_proved() {
         "an index with no documents has no groups to rank"
     );
 
-    let error = run(&drive, &contract, &case, true)
-        .expect_err("grovedb cannot prove an empty secondary today");
-    let message = error.to_string();
-    assert!(
-        message.contains("empty tree"),
-        "expected the empty-tree prover limitation, got: {message}"
+    let verified = assert_proof_round_trips(&drive, &contract, &case, &[]);
+    assert_eq!(
+        verified.skipped, 0,
+        "nothing was skipped because there was nothing to skip"
     );
 
-    // One document is enough to make the same request provable.
+    // Asking past the end of an empty ranking is equally provable, and
+    // `skipped` collapses to the (zero) population.
+    let verified = assert_proof_round_trips(
+        &drive,
+        &contract,
+        &RankedCase::avg(false, Some(5)).at_offset(3),
+        &[],
+    );
+    assert_eq!(
+        verified.skipped, 0,
+        "the walk found nothing to skip, which attests a population of 0"
+    );
+
+    // And the same request keeps working once a document lands.
     insert_docs(&drive, &contract, "review", "grade", 1, &[("alpha", 42)]);
     let entries = entries_of(run(&drive, &contract, &case, false).expect("read must succeed"));
     assert_eq!(keys_of(&entries), vec!["alpha"]);
@@ -1240,13 +1433,7 @@ fn ties_break_by_group_key_in_the_walk_direction() {
     );
 
     let descending = entries_of(
-        run(
-            &drive,
-            &contract,
-            &RankedCase::sum(HavingRankingKind::Top, Some(4)),
-            false,
-        )
-        .expect("read must succeed"),
+        run(&drive, &contract, &RankedCase::sum(false, Some(4)), false).expect("read must succeed"),
     );
     assert_eq!(
         keys_of(&descending),
@@ -1255,13 +1442,7 @@ fn ties_break_by_group_key_in_the_walk_direction() {
     );
 
     let ascending = entries_of(
-        run(
-            &drive,
-            &contract,
-            &RankedCase::sum(HavingRankingKind::Bottom, Some(4)),
-            false,
-        )
-        .expect("read must succeed"),
+        run(&drive, &contract, &RankedCase::sum(true, Some(4)), false).expect("read must succeed"),
     );
     assert_eq!(
         keys_of(&ascending),
@@ -1277,19 +1458,13 @@ fn ties_break_by_group_key_in_the_walk_direction() {
     // A tie-truncating `k` therefore selects a *specific* subset, not an
     // arbitrary one — which is what makes TOP(k) reproducible.
     let top_two = entries_of(
-        run(
-            &drive,
-            &contract,
-            &RankedCase::sum(HavingRankingKind::Top, Some(2)),
-            false,
-        )
-        .expect("read must succeed"),
+        run(&drive, &contract, &RankedCase::sum(false, Some(2)), false).expect("read must succeed"),
     );
     assert_eq!(keys_of(&top_two), vec!["gamma", "delta"]);
     assert_proof_round_trips(
         &drive,
         &contract,
-        &RankedCase::sum(HavingRankingKind::Top, Some(2)),
+        &RankedCase::sum(false, Some(2)),
         &top_two,
     );
 }
@@ -1323,7 +1498,7 @@ fn a_tampered_proof_never_verifies_to_the_honest_root_hash() {
         &[("alpha", 90), ("beta", 60), ("gamma", 30)],
     );
 
-    let case = RankedCase::avg(HavingRankingKind::Top, Some(2));
+    let case = RankedCase::avg(false, Some(2));
     let proof = proof_of(run(&drive, &contract, &case, true).expect("prove must succeed"));
     let query = client_side_query(&contract, &case);
     let (_, honest) = query
@@ -1377,7 +1552,7 @@ fn a_proof_does_not_verify_under_a_different_ranking() {
         &[("alpha", 90), ("beta", 60), ("gamma", 30)],
     );
 
-    let case = RankedCase::avg(HavingRankingKind::Top, Some(2));
+    let case = RankedCase::avg(false, Some(2));
     let proof = proof_of(run(&drive, &contract, &case, true).expect("prove must succeed"));
     let honest = client_side_query(&contract, &case);
     assert!(honest
@@ -1424,7 +1599,7 @@ fn verify_rejects_an_unknown_method_version() {
     let (drive, contract) = setup_restaurants();
     insert_docs(&drive, &contract, "review", "grade", 1, &[("alpha", 90)]);
 
-    let case = RankedCase::avg(HavingRankingKind::Top, Some(1));
+    let case = RankedCase::avg(false, Some(1));
     let proof = proof_of(run(&drive, &contract, &case, true).expect("prove must succeed"));
     let query = client_side_query(&contract, &case);
 
@@ -1456,10 +1631,10 @@ fn a_request_for_an_undeclared_axis_is_rejected_at_dispatch() {
         document_type_name: "visit",
         group_by_property: GROUP_PROPERTY,
         select: SelectProjection::sum("guests"),
-        aggregate_function: HavingAggregateFunction::Sum,
-        aggregate_field: "guests",
-        kind: HavingRankingKind::Top,
-        n: Some(2),
+        order_field: "guests",
+        ascending: false,
+        limit: Some(2),
+        offset: None,
     };
     let error = run(&drive, &contract, &case, false)
         .expect_err("the visit index declares only rankedCountable");
@@ -1666,28 +1841,28 @@ fn insert_dishes(drive: &Drive, contract: &DataContract, rows: &[(&str, &str, i6
 
 /// `SELECT AVG(grade) … GROUP BY restaurantId` against the multi-index
 /// doctype.
-fn dish_avg_case(kind: HavingRankingKind, n: Option<u64>) -> RankedCase {
+fn dish_avg_case(ascending: bool, limit: Option<u32>) -> RankedCase {
     RankedCase {
         document_type_name: "dish",
         group_by_property: GROUP_PROPERTY,
         select: SelectProjection::avg("grade"),
-        aggregate_function: HavingAggregateFunction::Avg,
-        aggregate_field: "grade",
-        kind,
-        n,
+        order_field: "grade",
+        ascending,
+        limit,
+        offset: None,
     }
 }
 
 /// `SELECT COUNT(*) … GROUP BY chefId` against the multi-index doctype.
-fn dish_count_case(kind: HavingRankingKind, n: Option<u64>) -> RankedCase {
+fn dish_count_case(ascending: bool, limit: Option<u32>) -> RankedCase {
     RankedCase {
         document_type_name: "dish",
         group_by_property: CHEF_PROPERTY,
         select: SelectProjection::count_star(),
-        aggregate_function: HavingAggregateFunction::Count,
-        aggregate_field: "",
-        kind,
-        n,
+        order_field: RANKED_COUNT_ORDER_KEY,
+        ascending,
+        limit,
+        offset: None,
     }
 }
 
@@ -1735,7 +1910,7 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
 
     // (a) Grouping by `restaurantId` resolves the Avg-ranked index and
     //     ranks by the average of `grade`.
-    let by_restaurant = dish_avg_case(HavingRankingKind::Top, Some(3));
+    let by_restaurant = dish_avg_case(false, Some(3));
     let avg_entries =
         entries_of(run(&drive, &contract, &by_restaurant, false).expect("read must succeed"));
     assert_eq!(
@@ -1752,7 +1927,7 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     // (b) Grouping by `chefId` resolves the Count-ranked index instead —
     //     a different property, a different axis, a different stored
     //     tree type, on the same doctype and the same documents.
-    let by_chef = dish_count_case(HavingRankingKind::Top, Some(3));
+    let by_chef = dish_count_case(false, Some(3));
     let count_entries =
         entries_of(run(&drive, &contract, &by_chef, false).expect("read must succeed"));
     assert_eq!(
@@ -1798,6 +1973,42 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     assert_proof_round_trips(&drive, &contract, &by_restaurant, &avg_entries);
     assert_proof_round_trips(&drive, &contract, &by_chef, &count_entries);
 
+    // (d) The same agreement under an offset. This is the sharper form
+    //     of (c): a paginated proof binds `offset` as well as the path,
+    //     so a client that resolved a *different* index would fail to
+    //     reconstruct the root hash, and one that resolved the right
+    //     index but the wrong page would fail the offset check. Both
+    //     failure modes are live here because two ranked indexes exist.
+    let second_best_restaurant = dish_avg_case(false, Some(1)).at_offset(1);
+    let page =
+        page_of(run(&drive, &contract, &second_best_restaurant, false).expect("read must succeed"));
+    assert_eq!(
+        keys_of(&page.entries),
+        vec!["alpha"],
+        "gamma(95) > alpha(85) > beta(60) — rank 1 is alpha"
+    );
+    let verified =
+        assert_proof_round_trips(&drive, &contract, &second_best_restaurant, &page.entries);
+    assert_eq!(verified.skipped, 1);
+
+    let second_busiest_chef = dish_count_case(false, Some(1)).at_offset(1);
+    let page =
+        page_of(run(&drive, &contract, &second_busiest_chef, false).expect("read must succeed"));
+    assert_eq!(
+        keys_of(&page.entries),
+        vec!["bob"],
+        "ann(3) > bob(2) > cid(1) — rank 1 is bob"
+    );
+    let verified = assert_proof_round_trips(&drive, &contract, &second_busiest_chef, &page.entries);
+    assert_eq!(verified.skipped, 1);
+    assert_eq!(
+        client_side_query(&contract, &second_busiest_chef)
+            .index
+            .name,
+        "byChef",
+        "the paginated request resolves the same index as the unpaginated one"
+    );
+
     // The non-ranked compound index is never a candidate even though it
     // leads with `chefId`, which is exactly the property this request
     // groups by. `byChef` declares only the Count axis, so an Avg
@@ -1809,7 +2020,7 @@ fn a_doctype_with_several_indexes_ranks_each_group_property_on_its_own_index() {
     );
     let avg_by_chef = RankedCase {
         group_by_property: CHEF_PROPERTY,
-        ..dish_avg_case(HavingRankingKind::Top, Some(2))
+        ..dish_avg_case(false, Some(2))
     };
     let error = run(&drive, &contract, &avg_by_chef, false)
         .expect_err("ranking chefs by average grade is not served by any index");
