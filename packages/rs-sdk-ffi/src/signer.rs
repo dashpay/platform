@@ -746,7 +746,9 @@ pub unsafe extern "C" fn dash_sdk_sign_async_completion(
             // to begin with the marker would otherwise impersonate a typed
             // completion, so disambiguate it by pushing the marker off
             // position 0 (dashpay/platform#4183 review).
-            Err(ProtocolError::Generic(format!("generic_signer_error: {msg}")))
+            Err(ProtocolError::Generic(format!(
+                "generic_signer_error: {msg}"
+            )))
         } else {
             Err(ProtocolError::Generic(msg))
         }
@@ -1348,7 +1350,13 @@ mod tests {
         completion(completion_ctx, std::ptr::null(), 0, 0, err_msg.as_ptr());
         // Duplicate success payload — still a no-op.
         let sig2 = [0x99u8; 64];
-        completion(completion_ctx, sig2.as_ptr(), sig2.len(), 0, std::ptr::null());
+        completion(
+            completion_ctx,
+            sig2.as_ptr(),
+            sig2.len(),
+            0,
+            std::ptr::null(),
+        );
     }
 
     #[tokio::test]
