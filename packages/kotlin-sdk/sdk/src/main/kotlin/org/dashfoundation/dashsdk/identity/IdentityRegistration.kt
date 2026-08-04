@@ -332,6 +332,13 @@ class IdentityRegistration internal constructor(
      * exists — so a discarded `withContext` result would lose the only
      * shareable credential after funds have moved.
      *
+     * Delivery contract (the same hazard, one layer down): the link is
+     * published into a caller-allocated buffer that the native side validates
+     * BEFORE it funds anything, and writes with non-allocating region writes
+     * afterwards. No fallible allocation sits between the broadcast voucher and
+     * the URI arriving here, so the credential cannot be dropped on the way
+     * out. The buffer is scrubbed once the string has been built.
+     *
      * @param inviterIdentityId optional 32-byte inviter id enabling the
      *   contact-bootstrap opt-in; `null` for a pure funding voucher. When
      *   non-null, [inviterUsername] is required.
@@ -372,26 +379,49 @@ class IdentityRegistration internal constructor(
         currentCoroutineContext().ensureActive()
         return withContext(NonCancellable) {
             gate.op {
-                val blob = mapNativeErrors {
-                    IdentityNative.createInvitation(
-                        walletHandle,
-                        amountDuffs,
-                        fundingAccountIndex,
-                        inviterIdentityId,
-                        inviterUsername,
-                        nowUnix,
-                        coreSignerHandle,
+                // Caller-allocated out-buffers, validated natively BEFORE the
+                // voucher is funded — the native side then publishes with
+                // non-allocating region writes. The previous shape allocated
+                // the result array inside JNI *after* the asset lock had been
+                // broadcast and persisted, where an allocation failure would
+                // have destroyed the only copy of the bearer link (Room stores
+                // no URI or voucher key, and there is no regeneration API).
+                // The capacity comes from the native cap on an emitted link, so
+                // the buffer is always large enough and the two cannot drift.
+                val capacity = IdentityNative.invitationBlobCapacity()
+                val outBlob = ByteArray(capacity)
+                val outLen = IntArray(1)
+                try {
+                    mapNativeErrors {
+                        IdentityNative.createInvitation(
+                            walletHandle,
+                            amountDuffs,
+                            fundingAccountIndex,
+                            inviterIdentityId,
+                            inviterUsername,
+                            nowUnix,
+                            coreSignerHandle,
+                            outBlob,
+                            outLen,
+                        )
+                    }
+                    // Blob layout (fixed by the JNI): outpoint[36] (txid[32] ||
+                    // vout_le[4]) then the UTF-8 URI, `len` bytes in total.
+                    // Anything outside that window is a contract violation.
+                    val len = outLen[0]
+                    require(len in 36..capacity) {
+                        "createInvitation reported a $len-byte blob; expected 36..$capacity"
+                    }
+                    CreatedInvitation(
+                        outPoint = outBlob.copyOfRange(0, 36),
+                        uri = String(outBlob, 36, len - 36, Charsets.UTF_8),
                     )
+                } finally {
+                    // The buffer held the plaintext bearer voucher key; scrub it
+                    // so the secret does not linger in a JVM array that outlives
+                    // this call (same discipline as the key-preview blobs).
+                    outBlob.fill(0)
                 }
-                // Blob layout (fixed by the JNI): outpoint[36] (txid[32] || vout_le[4])
-                // then the UTF-8 URI. Anything shorter is a contract violation.
-                require(blob.size >= 36) {
-                    "createInvitation returned a ${blob.size}-byte blob; expected >= 36"
-                }
-                CreatedInvitation(
-                    outPoint = blob.copyOfRange(0, 36),
-                    uri = String(blob.copyOfRange(36, blob.size), Charsets.UTF_8),
-                )
             }
         }
     }

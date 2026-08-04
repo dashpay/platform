@@ -79,7 +79,19 @@ const IS_LOCK_NULL_SENTINEL: &str = "null";
 /// username + txid (64) + WIF (~52) + islock hex (~400) + optional avatar url —
 /// is well under 2 KB; 8192 is comfortable headroom while bounding the
 /// allocation a hostile link can force.
-const MAX_INVITATION_URI_LEN: usize = 8192;
+///
+/// This cap is also part of the **cross-language output contract**:
+/// [`encode_invitation_uri`] enforces it on every link it emits, so an emitted
+/// invitation always fits in a fixed-size buffer. `platform-wallet-ffi`
+/// re-exports it as `PLATFORM_WALLET_MAX_INVITATION_URI_LEN` (and derives
+/// `PLATFORM_WALLET_INVITATION_BLOB_CAPACITY` from it), which is what lets the
+/// JNI create-invitation bridge publish the bearer link into a pre-validated
+/// caller-allocated buffer with a non-allocating region write — no fallible
+/// allocation may sit between the funded voucher and the link reaching the
+/// caller. Changing this value therefore changes that ABI-adjacent capacity;
+/// the FFI/JNI/Kotlin callers all derive it from here, so they move together on
+/// a rebuild rather than drifting.
+pub const MAX_INVITATION_URI_LEN: usize = 8192;
 
 /// Max length (bytes) of a UTF-8 string field (username / display name / avatar
 /// url). DPNS labels are short; this only bounds a hostile link.

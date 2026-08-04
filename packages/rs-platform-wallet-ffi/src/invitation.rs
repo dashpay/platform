@@ -29,7 +29,9 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dpp::identity::accessors::IdentityGettersV0;
-use platform_wallet::wallet::identity::crypto::{parse_invitation_uri, InviterInfo};
+use platform_wallet::wallet::identity::crypto::{
+    parse_invitation_uri, InviterInfo, MAX_INVITATION_URI_LEN,
+};
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use platform_wallet::wallet::identity::network::MAX_INVITATION_TTL_SECS;
@@ -41,6 +43,33 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+
+/// Maximum length, in bytes, of a `dashpay://invite` link this library emits.
+///
+/// Re-export of platform-wallet's `MAX_INVITATION_URI_LEN` — the single source
+/// of truth, enforced by `encode_invitation_uri` on every link it produces, so
+/// the value is *derived* here rather than re-typed. Exposed so a
+/// caller-allocates-the-output binding (the Android JNI bridge) can size a
+/// fixed buffer that is always large enough.
+pub const PLATFORM_WALLET_MAX_INVITATION_URI_LEN: usize = MAX_INVITATION_URI_LEN;
+
+/// Length of the funding-outpoint prefix (`txid[32] || vout_le[4]`) framed
+/// ahead of the URI by bindings that hand back one blob — the same 36-byte
+/// encoding the persistence layer keys invitation rows by.
+pub const PLATFORM_WALLET_INVITATION_OUTPOINT_LEN: usize = 32 + 4;
+
+/// Worst-case size of the `outpoint || utf8_uri` blob a create-invitation
+/// caller must preallocate.
+///
+/// Bounded precisely because the URI itself is capped, so a buffer of this size
+/// can always receive the whole payload. That is what lets a binding validate
+/// its output storage *before* entering the operation and then publish with a
+/// non-allocating write: create only succeeds after the voucher has been
+/// broadcast and persisted, and the returned link is the sole copy of a bearer
+/// credential (nothing persists the URI or the one-time key, and there is no
+/// regeneration entry point), so no fallible allocation may follow the funding.
+pub const PLATFORM_WALLET_INVITATION_BLOB_CAPACITY: usize =
+    PLATFORM_WALLET_INVITATION_OUTPOINT_LEN + PLATFORM_WALLET_MAX_INVITATION_URI_LEN;
 
 /// Create a DashPay invitation: fund a one-time asset-lock voucher at the
 /// DIP-13 invitation path and return a shareable `dashpay://invite` link.

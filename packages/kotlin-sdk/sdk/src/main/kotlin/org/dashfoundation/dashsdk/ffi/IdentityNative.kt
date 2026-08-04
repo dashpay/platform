@@ -173,9 +173,26 @@ internal object IdentityNative {
     ): ByteArray
 
     /**
+     * Byte capacity a [createInvitation] `outBlob` must have: the 36-byte
+     * outpoint prefix plus the native hard cap on an emitted
+     * `dashpay://invite` link. Read from the native side rather than
+     * hard-coded here so the two cannot drift apart across a rebuild.
+     */
+    external fun invitationBlobCapacity(): Int
+
+    /**
      * Create a DashPay invitation (DIP-13): fund a one-time asset-lock
      * voucher and return a shareable `dashpay://invite` link. No identity is
      * registered — this is pure voucher creation.
+     *
+     * Both out-buffers are caller-allocated and validated natively BEFORE the
+     * voucher is funded, so the result is published with non-allocating region
+     * writes that cannot fail. That is required rather than stylistic: the call
+     * only succeeds once the asset lock has been broadcast and persisted, and
+     * the link it produces is the SOLE copy of a bearer credential (Room stores
+     * only the outpoint and funding metadata — no URI, no key — and there is no
+     * regeneration API), so a fallible allocation after the funding could lose
+     * the credential outright.
      *
      * @param amountDuffs voucher amount in duffs (must be positive).
      * @param fundingAccountIndex BIP-44 account the voucher is funded from.
@@ -188,9 +205,12 @@ internal object IdentityNative {
      *   ~24h expiry is derived Rust-side.
      * @param coreSignerHandle `MnemonicResolverHandle` for the funding-spend
      *   signature (the SAME handle [registerIdentityWithFunding] takes).
-     * @return a blob: `outpoint[36] (txid[32] || vout_le[4]) || utf8Uri`. The
-     *   URI embeds the bearer voucher key — never log or persist it beyond
-     *   the share sheet.
+     * @param outBlob a `ByteArray` of at least [invitationBlobCapacity] bytes,
+     *   receiving `outpoint[36] (txid[32] || vout_le[4]) || utf8Uri`. The URI
+     *   embeds the bearer voucher key — never log or persist it beyond the
+     *   share sheet, and scrub this buffer once the string has been built.
+     * @param outLen an `IntArray(1)` receiving the number of bytes actually
+     *   written to [outBlob] (`36 + uri.length`); the rest is untouched.
      */
     external fun createInvitation(
         walletHandle: Long,
@@ -200,7 +220,9 @@ internal object IdentityNative {
         inviterUsername: String?,
         nowUnix: Long,
         coreSignerHandle: Long,
-    ): ByteArray
+        outBlob: ByteArray,
+        outLen: IntArray,
+    )
 
     /**
      * Claim a DashPay invitation (DIP-13): register a NEW identity for the

@@ -21,7 +21,7 @@ pub use dip14::{
 };
 pub use invitation::{
     encode_invitation_uri, parse_invitation_uri, voucher_output_index, wif_network_matches,
-    InviterInfo, ParsedInvitation,
+    InviterInfo, ParsedInvitation, MAX_INVITATION_URI_LEN,
 };
 pub use tx_metadata::{
     derive_tx_metadata_key, derive_tx_metadata_key_from_master, open_tx_metadata, seal_tx_metadata,

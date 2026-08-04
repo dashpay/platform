@@ -35,7 +35,7 @@ use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{
     generic_asset_lock_recovery_allowed, guard, net_from_ord, take_pwffi_error, throw_sdk_exception,
 };
-use jni::objects::{JByteArray, JClass, JString, JValue};
+use jni::objects::{JByteArray, JClass, JIntArray, JString, JValue};
 use jni::sys::{jboolean, jbyteArray, jint, jlong, jobject};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
@@ -45,6 +45,9 @@ use platform_wallet_ffi::identity_discovery::DiscoveredIdentityIdsFFI;
 use platform_wallet_ffi::identity_key_preview::{IdentityKeyPreviewFFI, IdentityKeyPreviewsFFI};
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::invitation::{
+    PLATFORM_WALLET_INVITATION_BLOB_CAPACITY, PLATFORM_WALLET_INVITATION_OUTPOINT_LEN,
+};
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -723,13 +726,37 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_regist
 /// after a restart; the call fails closed BEFORE any funds move when the
 /// bridge doesn't implement invitation persistence.
 ///
-/// ## Return
+/// ## Output contract (caller-allocated, pre-validated)
 ///
-/// A `byte[]` blob: the first 36 bytes are the funding outpoint
-/// (`txid[32] || vout_le[4]` — the same 36-byte encoding the persistence
-/// layer keys invitation rows by), and the remaining bytes are the UTF-8
-/// `dashpay://invite` URI. **The URI embeds the bearer voucher key — the
-/// Kotlin caller MUST NOT log it or persist it anywhere but the share sheet.**
+/// The result is published into buffers the CALLER allocates, not into a
+/// freshly allocated return array:
+///
+/// - `outBlob` — a `byte[]` at least
+///   [`PLATFORM_WALLET_INVITATION_BLOB_CAPACITY`] bytes long (Kotlin reads the
+///   number from
+///   [`Java_org_dashfoundation_dashsdk_ffi_IdentityNative_invitationBlobCapacity`]
+///   rather than hard-coding it). The first 36 bytes receive the funding
+///   outpoint (`txid[32] || vout_le[4]` — the same 36-byte encoding the
+///   persistence layer keys invitation rows by); the bytes after it receive the
+///   UTF-8 `dashpay://invite` URI.
+/// - `outLen` — an `int[1]` receiving the number of bytes actually written
+///   (`36 + uri.len()`). The remainder of `outBlob` is left untouched.
+///
+/// Both buffers are validated BEFORE the native call, so a malformed buffer
+/// fails closed while no funds have moved; publishing afterwards is a pair of
+/// non-allocating region writes that cannot fail. This shape is required, not
+/// stylistic: `platform_wallet_create_invitation` returns success only once the
+/// voucher has been broadcast, persisted and proven, and the URI it hands back
+/// is the SOLE copy of a bearer credential — the persisted invitation row keeps
+/// only the outpoint and funding metadata, and there is no regeneration or
+/// re-export entry point. A fallible post-funding allocation here (the previous
+/// `byte_array_from_slice` return) could therefore drop the only credential
+/// after the money was spent. Mirrors the wallet-creation bridge's out-buffer
+/// discipline in [`crate::wallet_manager`].
+///
+/// **The URI embeds the bearer voucher key — the Kotlin caller MUST NOT log it
+/// or persist it anywhere but the share sheet, and should scrub `outBlob` once
+/// the string has been built.** The Rust-side copies are scrubbed here.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_createInvitation(
@@ -742,17 +769,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
     inviter_username: JString,
     now_unix: jlong,
     core_signer_handle: jlong,
-) -> jbyteArray {
-    guard(&mut env, ptr::null_mut(), |env| {
+    out_blob: JByteArray,
+    out_len: JIntArray,
+) {
+    guard(&mut env, (), |env| {
+        // Validate the caller-allocated out-buffers FIRST — before any
+        // argument marshaling and, crucially, before the native call. Create
+        // only returns success once the voucher has been funded, broadcast and
+        // persisted, and the bearer URI it produces cannot be regenerated, so
+        // the publish step that follows has to be infallible. Checking the
+        // bounds up front is what makes the region writes below allocation-free
+        // and in-range; a bad buffer fails closed here, with no funds moved.
+        // Same discipline as `create_wallet_from_mnemonic_impl`.
+        if out_blob.is_null()
+            || env.get_array_length(&out_blob).map_or(true, |len| {
+                (len as usize) < PLATFORM_WALLET_INVITATION_BLOB_CAPACITY
+            })
+        {
+            let _ = env.exception_clear();
+            throw_sdk_exception(
+                env,
+                1,
+                "outBlob must be a non-null byte[] of at least invitationBlobCapacity() bytes",
+            );
+            return;
+        }
+        if out_len.is_null() || env.get_array_length(&out_len).map_or(true, |len| len < 1) {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "outLen must be a non-null int[1]");
+            return;
+        }
+
         // Reject sign / range errors at the boundary before they bit-cast to
         // huge unsigned values across the FFI.
         if amount_duffs <= 0 {
             throw_sdk_exception(env, 1, "amountDuffs must be positive");
-            return ptr::null_mut();
+            return;
         }
         if funding_account_index < 0 {
             throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
-            return ptr::null_mut();
+            return;
         }
         if now_unix <= 0 || now_unix > u32::MAX as jlong {
             throw_sdk_exception(
@@ -760,11 +816,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
                 1,
                 "nowUnix must be a valid unix timestamp (1..=u32::MAX)",
             );
-            return ptr::null_mut();
+            return;
         }
         if core_signer_handle == 0 {
             throw_sdk_exception(env, 1, "coreSignerHandle must be non-null");
-            return ptr::null_mut();
+            return;
         }
 
         // Optional contact-bootstrap opt-in: a null `inviterIdentityId` ⇒ pure
@@ -776,13 +832,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
         } else {
             match read_id32(env, &inviter_identity_id, "inviterIdentityId") {
                 Some(id) => Some(id),
-                None => return ptr::null_mut(), // read_id32 already threw
+                None => return, // read_id32 already threw
             }
         };
         let inviter_username_c =
             match read_optional_cstring(env, &inviter_username, "inviterUsername") {
                 Ok(c) => c,
-                Err(()) => return ptr::null_mut(), // already threw
+                Err(()) => return, // already threw
             };
         if inviter_id.is_some() && inviter_username_c.is_none() {
             throw_sdk_exception(
@@ -790,7 +846,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
                 1,
                 "inviterUsername is required when inviterIdentityId is provided",
             );
-            return ptr::null_mut();
+            return;
         }
 
         let mut out_uri: *mut c_char = ptr::null_mut();
@@ -816,29 +872,89 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
         // `inviter_id` / `inviter_username_c` own the buffers the pointers above
         // referenced; they stay in scope through the FFI call.
         if take_pwffi_error(env, result) {
-            return ptr::null_mut();
+            return;
         }
         if out_uri.is_null() {
             throw_sdk_exception(env, 99, "createInvitation returned success but no URI");
-            return ptr::null_mut();
+            return;
         }
 
-        // Copy the (secret) URI out, then free the Rust string. It is copied
-        // straight into the return blob and never logged.
-        let uri_bytes = unsafe { CStr::from_ptr(out_uri) }.to_bytes().to_vec();
+        // Copy the (secret) URI out, then free the Rust string. `Zeroizing`
+        // scrubs this copy on drop; it is never logged and goes straight into
+        // the caller's buffer.
+        let uri_bytes =
+            zeroize::Zeroizing::new(unsafe { CStr::from_ptr(out_uri) }.to_bytes().to_vec());
         unsafe { platform_wallet_ffi::platform_wallet_string_free(out_uri) };
 
         // Blob: outpoint (`txid[32] || vout_le[4]`) then the UTF-8 URI. The
         // outpoint uses the same 36-byte encoding the persistence layer keys
         // invitation rows by, so Kotlin has ONE outpoint shape everywhere.
-        let mut blob = Vec::with_capacity(36 + uri_bytes.len());
-        blob.extend_from_slice(&out_outpoint.txid);
-        blob.extend_from_slice(&out_outpoint.vout.to_le_bytes());
-        blob.extend_from_slice(&uri_bytes);
+        // Staged directly as `jbyte` so publishing is one region write with no
+        // second (unscrubbed) copy of the bearer key, and wrapped in
+        // `Zeroizing` so the staging buffer is scrubbed on drop.
+        let mut blob: zeroize::Zeroizing<Vec<jni::sys::jbyte>> = zeroize::Zeroizing::new(
+            Vec::with_capacity(PLATFORM_WALLET_INVITATION_OUTPOINT_LEN + uri_bytes.len()),
+        );
+        blob.extend(out_outpoint.txid.iter().map(|b| *b as jni::sys::jbyte));
+        blob.extend(
+            out_outpoint
+                .vout
+                .to_le_bytes()
+                .iter()
+                .map(|b| *b as jni::sys::jbyte),
+        );
+        blob.extend(uri_bytes.iter().map(|b| *b as jni::sys::jbyte));
 
-        env.byte_array_from_slice(&blob)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        // Unreachable: `encode_invitation_uri` rejects any link longer than
+        // `MAX_INVITATION_URI_LEN`, which is exactly what the capacity above is
+        // derived from. Kept as a defensive backstop so an invariant break
+        // surfaces as a clear error instead of an out-of-range region write.
+        if blob.len() > PLATFORM_WALLET_INVITATION_BLOB_CAPACITY {
+            throw_sdk_exception(
+                env,
+                99,
+                "createInvitation produced a blob larger than invitationBlobCapacity()",
+            );
+            return;
+        }
+
+        // Publish into the pre-validated caller buffers. Region writes on
+        // bounds-checked arrays allocate nothing, so nothing fallible sits
+        // between the funded voucher and the bearer link reaching Kotlin.
+        // Length last: a caller that sees `outLen[0] == 0` never reads a
+        // half-written blob.
+        let published = env
+            .set_byte_array_region(&out_blob, 0, &blob)
+            .and_then(|_| env.set_int_array_region(&out_len, 0, &[blob.len() as jint]));
+        if published.is_err() {
+            // Unreachable after the up-front bounds validation; defensive
+            // backstop only. NOTE the limit: the voucher IS funded, broadcast
+            // and persisted by now and the URI cannot be regenerated, so all
+            // this can do is report the loss loudly rather than silently
+            // returning a null array (the defect this contract removes).
+            let _ = env.exception_clear();
+            throw_sdk_exception(
+                env,
+                99,
+                "invitation was funded but publishing the link into the caller buffer failed",
+            );
+        }
+    })
+}
+
+/// Byte capacity a [`Java_org_dashfoundation_dashsdk_ffi_IdentityNative_createInvitation`]
+/// caller must preallocate for `outBlob`: the 36-byte outpoint prefix plus the
+/// hard cap platform-wallet enforces on an emitted `dashpay://invite` link
+/// (`MAX_INVITATION_URI_LEN`). Exposed as its own entry point so Kotlin never
+/// hard-codes the number — both sides move together on a native rebuild and
+/// cannot silently drift apart.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_invitationBlobCapacity(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jint {
+    guard(&mut env, 0, |_env| {
+        PLATFORM_WALLET_INVITATION_BLOB_CAPACITY as jint
     })
 }
 
