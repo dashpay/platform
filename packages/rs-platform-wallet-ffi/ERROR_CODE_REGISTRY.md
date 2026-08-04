@@ -170,11 +170,11 @@ provenance:
 | ---: | --- | --- | --- |
 | 31 | `ErrorSigningKeyUnavailable` | #4204, #4259 | #4183 |
 
-#4183 merged on 2026-08-04, so 31 is no longer an allocation anyone can inherit
+`#4183` merged on 2026-08-04, so 31 is no longer an allocation anyone can inherit
 — it is trunk. Every branch that has rebased onto current `v4.2-dev` carries it
 from the base, which is not a claim and cannot be double-counted. Verified
 2026-08-04 at the heads of #4184, #4185, #4186, #4194, #4195, #4196, #4204,
-#4240, #4247, #4256 and #4259: all eleven show `ErrorSigningKeyUnavailable = 31`
+`#4240`, #4247, #4256 and #4259: all eleven show `ErrorSigningKeyUnavailable = 31`
 inherited from the merged base.
 
 PR `#4196` also claims no new integer: it adds a token-less
@@ -331,7 +331,7 @@ Three branches have now done so:
   resolution of record.
 
 The equivalent stale comment on **#4204** is gone too. It was not fixed by hand:
-#4204 rebased onto the merged base, and its `error.rs` at `4efecd5b71` now
+`#4204` rebased onto the merged base, and its `error.rs` at `4efecd5b71` now
 carries #4183's corrected 28/29/30 note verbatim from trunk. All four branches
 that ever held the stale reservation text — #4256, #4183, #4184, #4204 — are
 clear, and #4183's version of the note is now trunk.
