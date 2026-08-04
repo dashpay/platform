@@ -55,11 +55,10 @@ use platform_wallet_ffi::{
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
     IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI,
-    PaymentRestoreEntryFFI,
-    PersistenceCallbacks, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI,
-    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    PaymentRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
+    ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
