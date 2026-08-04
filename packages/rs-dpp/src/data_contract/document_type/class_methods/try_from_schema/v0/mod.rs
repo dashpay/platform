@@ -11,8 +11,6 @@ use crate::data_contract::document_type::index_level::IndexLevel;
 use crate::data_contract::document_type::property::DocumentProperty;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
-#[cfg(feature = "validation")]
-use crate::data_contract::document_type::schema::validate_max_depth;
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValidator;
@@ -26,7 +24,8 @@ use std::convert::TryInto;
 use crate::consensus::basic::data_contract::ContestedUniqueIndexOnMutableDocumentTypeError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::ContestedUniqueIndexWithUniqueIndexError;
-#[cfg(any(test, feature = "validation"))]
+// Reached by this module's `#[cfg(test)] mod tests` through `use super::*`.
+#[cfg(test)]
 use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
 #[cfg(feature = "validation")]
 use crate::consensus::basic::document::MissingPositionsInDocumentTypePropertiesError;
@@ -44,17 +43,14 @@ use crate::data_contract::document_type::class_methods::{
 };
 use crate::data_contract::document_type::property_names::{
     CAN_BE_DELETED, CREATION_RESTRICTION_MODE, DOCUMENTS_KEEP_HISTORY, DOCUMENTS_MUTABLE,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, TRADE_MODE,
-    TRANSFERABLE,
+    TRADE_MODE, TRANSFERABLE,
 };
 use crate::data_contract::document_type::{property_names, DocumentType};
+
+use super::common;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::identity::SecurityLevel;
-#[cfg(feature = "validation")]
-use crate::validation::meta_validators::{
-    DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
-};
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
@@ -93,75 +89,36 @@ impl DocumentTypeV0 {
         #[cfg(feature = "validation")]
         let json_schema_validator = StatelessJsonSchemaLazyValidator::new();
 
+        // Generation 0 is only ever selected by CONTRACT_VERSIONS_V1, whose
+        // `document_type_schema` is 0. The read is kept rather than folded into
+        // a literal so this generation's behavior stays byte-identical to the
+        // code consensus ran for it, for any table it is handed.
+        let document_type_schema_version = platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .document_type_schema;
+
         #[cfg(feature = "validation")]
         if full_validation {
             // Make sure a document type name is compliant
-            if !name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-                || name.is_empty()
-                || name.len() > 64
-            {
-                return Err(ProtocolError::ConsensusError(Box::new(
-                    InvalidDocumentTypeNameError::new(name.to_string()).into(),
-                )));
-            }
+            common::validate_document_type_name(name)?;
 
             // Validate document schema depth
-            let mut result = validate_max_depth(&root_schema, platform_version)?;
+            common::validate_schema_depth_and_account_for_size(
+                &root_schema,
+                validation_operations,
+                platform_version,
+            )?;
 
-            if !result.is_valid() {
-                let error = result.errors.remove(0);
-
-                let schema_size = result.into_data()?.size;
-
-                validation_operations.extend(std::iter::once(
-                    ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-                ));
-
-                return Err(ProtocolError::ConsensusError(Box::new(error)));
-            }
-
-            let schema_size = result.into_data()?.size;
-
-            validation_operations.extend(std::iter::once(
-                ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-            ));
-
-            // Make sure JSON Schema is compilable
-            let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
-                ProtocolError::ConsensusError(
-                    ConsensusError::BasicError(BasicError::ValueError(e.into())).into(),
-                )
-            })?;
-
-            // Select the appropriate document meta-schema based on platform version
-            let meta_schema = match platform_version
-                .dpp
-                .contract_versions
-                .document_type_versions
-                .schema
-                .document_type_schema
-            {
-                0 => &*DOCUMENT_META_SCHEMA_V0,
-                1 => &*DOCUMENT_META_SCHEMA_V1,
-                2 => &*DOCUMENT_META_SCHEMA_V2,
-                version => {
-                    return Err(ProtocolError::UnknownVersionMismatch {
-                        method: "DocumentTypeV0::try_from_schema (document_type_schema)"
-                            .to_string(),
-                        known_versions: vec![0, 1, 2],
-                        received: version,
-                    })
-                }
-            };
-
-            // Validate against JSON Schema
-            meta_schema
-                .validate(&root_json_schema)
-                .map_err(|mut errs| ConsensusError::from(errs.next().unwrap()))?;
-
-            json_schema_validator.compile(&root_json_schema, platform_version)?;
+            common::validate_against_meta_schema_and_compile(
+                &root_schema,
+                document_type_schema_version,
+                "DocumentTypeV0::try_from_schema (document_type_schema)",
+                &json_schema_validator,
+                platform_version,
+            )?;
         }
 
         // This has already been validated, but we leave the map_err here for consistency
@@ -178,44 +135,15 @@ impl DocumentTypeV0 {
                 .unwrap_or(data_contact_config.documents_keep_history_contract_default());
 
         // The document history subscription flags are only recognized from
-        // document meta-schema v2 (protocol version 13). Earlier meta-schema
-        // versions either accepted and ignored unknown top-level keys (v0) or
-        // rejected them outright (v1), so parsing them here for historical
-        // protocol versions would change replay validation: a pre-v12
-        // contract carrying e.g. a non-boolean value under one of these names
-        // validated fine on the base implementation and must keep doing so.
+        // document meta-schema v2 (protocol version 13), which no table
+        // selecting generation 0 ever names — see the comment on the read
+        // above, and `common::parse_keeps_history_flags` for why not reading
+        // them is the load-bearing half.
         let (
             documents_keep_transfer_history,
             documents_keep_purchase_history,
             documents_keep_pricing_history,
-        ): (bool, bool, bool) = if platform_version
-            .dpp
-            .contract_versions
-            .document_type_versions
-            .schema
-            .document_type_schema
-            >= 2
-        {
-            (
-                // Are transfers of documents of this type recorded in the
-                // document history system contract?
-                Value::inner_optional_bool_value(schema_map, KEEPS_TRANSFER_HISTORY)
-                    .map_err(consensus_or_protocol_value_error)?
-                    .unwrap_or_default(),
-                // Are purchases of documents of this type recorded in the
-                // document history system contract?
-                Value::inner_optional_bool_value(schema_map, KEEPS_PURCHASE_HISTORY)
-                    .map_err(consensus_or_protocol_value_error)?
-                    .unwrap_or_default(),
-                // Are price updates on documents of this type recorded in the
-                // document history system contract?
-                Value::inner_optional_bool_value(schema_map, KEEPS_PRICING_HISTORY)
-                    .map_err(consensus_or_protocol_value_error)?
-                    .unwrap_or_default(),
-            )
-        } else {
-            (false, false, false)
-        };
+        ) = common::parse_keeps_history_flags(schema_map, document_type_schema_version >= 2)?;
 
         // Are documents of this type mutable? (Overrides contract value)
         let documents_mutable: bool =
