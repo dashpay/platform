@@ -163,8 +163,8 @@ latter.
 "so no new numeric code churns the Swift/Kotlin mirror enums". The merged table
 is unchanged by it.
 
-The **inherited-code table** that used to sit here is gone, and its single row is
-worth recording rather than deleting:
+The **inherited-code table** has been reduced to one row and retained for
+provenance:
 
 | Code | Name | Carried by | Allocated to |
 | ---: | --- | --- | --- |
@@ -228,7 +228,7 @@ also carried by #4256).
 
 Unlike every other entry in this section, this one was not a paper conflict:
 merging #4204 into an integration that already carried
-`ErrorReservationWalletMismatch = 32` produced a hard
+`ErrorTransactionBuild = 32` produced a hard
 `error[E0081]: discriminant value 32 assigned more than once`. Resolution of
 record: **#4204 moves 32 → 37**, the frontier. `ErrorTransactionBuild` keeps 32.
 
@@ -236,9 +236,15 @@ The numbering was the lesser half of the defect. The code was **unmirrored on
 both hosts** — absent from Swift's `PlatformWalletResultCode` and from Kotlin's
 `fromPlatformWalletNative`. Per rule 5 that means Swift rendered it
 `.errorUnknown` (identity lost), while Kotlin fell through to `Generic(32, …)`
-— and in any tree carrying #4185's `ErrorReservationWalletMismatch = 32`,
-Kotlin actively **misclassified** "shielded invite already claimed" as
-"reservation wallet mismatch". That is the exact silently-wrong-error-on-every-host
+— and in any tree also carrying the competing #4247 mapping for 32, Kotlin
+actively **misclassified** "shielded invite already claimed" as "transaction
+build failed". `ErrorReservationWalletMismatch` was never the peer here: its
+allocation history runs 26/28 → 30 → 36 and never passes through 32.
+
+The three host outcomes therefore differ, and only the third is a
+misclassification: Swift loses the code's identity as `.errorUnknown`, Kotlin
+on #4204 alone preserves `Generic(32, …)`, and Kotlin misclassifies only where
+the competing code-32 mapping is also present. That is the cross-host ABI
 failure this file's preamble describes, and it landed on the shielded-invite
 claim-recovery path (the error is raised from four sites in
 `wallet/shielded/operations.rs`, three of them inside the recovery function).
