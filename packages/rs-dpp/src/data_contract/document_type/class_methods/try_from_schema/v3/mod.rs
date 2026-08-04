@@ -239,6 +239,9 @@ fn try_from_schema_generation_3(
             // This is the conditional that was dead in the copied core: at
             // schema 3 the old `document_type_schema >= 2` could only be true.
             admit_history: true,
+            // Count indexes arrived at PV12; every version selecting this
+            // generation is far past that boundary.
+            admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
             // RANKED: the three constants that make this generation 3.
             admit_meta_schema_v3: true,
