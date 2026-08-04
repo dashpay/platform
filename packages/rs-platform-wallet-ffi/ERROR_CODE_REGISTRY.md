@@ -99,11 +99,12 @@ These are shipped ABI. Do not renumber.
 | 25 | `ErrorAssetLockFundingMismatch` | |
 | 26 | `ErrorTransactionBroadcastRejected` | Merged in `9302c62e8b`; took a number several open branches had been treating as free |
 | 27 | `ErrorShutdownIncomplete` | Merged 2026-08-02 by **#4268** (`429667e723`). A quiesce/drain barrier missed its budget. **Took the number #4185 had held since before this file existed** — see the collision history below |
+| 31 | `ErrorSigningKeyUnavailable` | Merged 2026-08-04 by **#4183** (merge commit `189a3abb1c`, stacked on #4191). The signer holds no usable private key for a requested public key. Landed complete in that one commit: the Rust C-facing discriminant, Swift's `errorSigningKeyUnavailable = 31` raw case *and* its `init(ffi:)` arm *and* the typed `PlatformWalletError` case with its `init(result:)` arm, and Kotlin's `31 -> PlatformWallet.SigningKeyUnavailable`. Rule 3 now protects it — see the 31-vs-33 note below |
 | 98 | `NotFound` | Sentinel — `Option` returned as an error |
 | 99 | `ErrorUnknown` | Sentinel — unmapped/flattened errors |
 
-**Next allocatable integer: 38** — 27–37 are all claimed (27 merged; 29 and
-31–37 in the proposed table below; 28 and 30 reserved). **28 and 30 are
+**Next allocatable integer: 38** — 27–37 are all claimed (27 and 31 merged; 29
+and 32–37 in the proposed table below; 28 and 30 reserved). **28 and 30 are
 RESERVED, not free**: #4185 and #4256 vacated them when the reservation trio
 moved to 34–36, but they are deliberately left unclaimed rather than
 back-filled, so that the trio stays contiguous and no number is reused within a
@@ -121,7 +122,6 @@ this file.
 | 28 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
 | 29 | `ErrorAssetLockInsufficientFunds` | #4184 | In review — **keeps 29** (collision resolved) |
 | 30 | *(reserved — vacated)* | — | Vacated by #4185/#4256 on 2026-08-02; RESERVED, not reissuable — the next-free frontier is the only allocation source |
-| 31 | `ErrorSigningKeyUnavailable` | #4183 | In review (also carried by #4204, #4259) |
 | 32 | `ErrorTransactionBuild` | #4247 | In review (also carried by #4256) |
 | 33 | `ErrorTransactionSigning` | #4256 | In review |
 | 34 | `ErrorStaleReservationToken` | #4185 | In review — **moved 27 → 34** (also carried by #4256 and, post-restack, #4196) |
@@ -129,38 +129,59 @@ this file.
 | 36 | `ErrorReservationWalletMismatch` | #4185 | In review — **moved 30 → 36** (also carried by #4256) |
 | 37 | `ErrorShieldedInviteAlreadyClaimed` | #4204 | In review — **moved 32 → 37** (collided with #4247's `ErrorTransactionBuild`; see below) |
 
-Open PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
-2026-08-03 against each PR's file list and the `error.rs` at its head:
-`#3417`, `#3549`, `#3992`, `#4186`, `#4191`, `#4194`, `#4195`, `#4243`.
+**Code 31 left this table on 2026-08-04.** `ErrorSigningKeyUnavailable` sat here
+as #4183's proposal until #4183 merged (`189a3abb1c`); it is now in the merged
+table above and rule 3 applies to it in full. Nothing else in this table has
+merged, and the frontier is unchanged at 38.
 
-Four entries this list used to carry have been removed, each for a different
+Open PRs that touch `rs-platform-wallet-ffi` but claim **no** new code, verified
+2026-08-04 against each PR's file list and the `error.rs` at its head:
+`#3417`, `#3549`, `#3992`, `#4186`, `#4194`, `#4195`, `#4243`.
+
+Five entries this list used to carry have been removed, each for a stated
 reason, so they are not silently re-added:
 
 | Was listed | Why it is gone |
 | --- | --- |
-| `#4240` | Its head touches no file under `rs-platform-wallet-ffi` at all |
-| `#4251` | Same — no file under this crate |
+| `#4240` | Its head touches no file under `rs-platform-wallet-ffi` at all — still true at `a167afe84c` |
+| `#4251` | Was listed as touching no file under this crate; **merged into `v4.2-dev` on 2026-08-04** (`7afc8a8ff3`) having touched none, so nothing here changes |
 | `#4258` | Merged into `v4.2-dev` on 2026-08-03 (`ce8233edb7`); it claimed no code, so the merged table is unchanged |
 | `#4264` | Closed. Its `error.rs` change (mapping new wallet errors onto the existing `ErrorInvalidParameter`) is carried by `#4243`, which is still open and is listed above |
+| `#4191` | **Merged into `v4.2-dev` on 2026-08-04** (`0e2282b586`). In this crate it only ever touched `dashpay.rs`; it claimed no code, so the merged table gained nothing from it — though #4183, which was stacked on it, did |
 
-`#4243` is worth naming explicitly: it *does* modify `error.rs`, but only to map
+`#4186`, `#4194`, `#4195` and `#4243` are worth naming explicitly: each *does*
+modify `error.rs`, but none of them adds a discriminant — `#4243`'s change maps
 new wallet errors onto the **existing** `ErrorInvalidParameter`. Touching
 `error.rs` is not the same as claiming an integer, and this list tracks the
 latter.
 
-Two more PRs carry a code they did not allocate, inherited from the PR they are
-stacked on rather than claimed fresh — they must not be read as a second claim
-on the number:
+**`#4277` is the merged precedent for that distinction.** It merged into
+`v4.2-dev` on 2026-08-04 (`6704a41a85`) with a change to this crate's
+`error.rs`, and it claimed no integer: it routes
+`PlatformWalletError::TxMetadataPayloadTooLarge` onto the existing
+`ErrorInvalidParameter`, with an in-line comment saying it does so deliberately
+"so no new numeric code churns the Swift/Kotlin mirror enums". The merged table
+is unchanged by it.
+
+The **inherited-code table** that used to sit here is gone, and its single row is
+worth recording rather than deleting:
 
 | Code | Name | Carried by | Allocated to |
 | ---: | --- | --- | --- |
 | 31 | `ErrorSigningKeyUnavailable` | #4204, #4259 | #4183 |
 
+#4183 merged on 2026-08-04, so 31 is no longer an allocation anyone can inherit
+— it is trunk. Every branch that has rebased onto current `v4.2-dev` carries it
+from the base, which is not a claim and cannot be double-counted. Verified
+2026-08-04 at the heads of #4184, #4185, #4186, #4194, #4195, #4196, #4204,
+#4240, #4247, #4256 and #4259: all eleven show `ErrorSigningKeyUnavailable = 31`
+inherited from the merged base.
+
 PR `#4196` also claims no new integer: it adds a token-less
 `PlatformWalletError::StaleReservation` variant and deliberately routes it
 through the **existing** `ErrorStaleReservationToken`, so it allocates nothing
-and only has to follow that code's number. As of 2026-08-03 it has restacked
-onto #4185 and follows 34 (see below).
+and only has to follow that code's number. As of 2026-08-04 (head `9909f77546`)
+it is restacked onto #4185 and follows 34 (see below).
 
 ### Non-conforming allocations (withdraw and reissue)
 
@@ -171,9 +192,10 @@ allocation of record.
 
 A rebase is a precondition, not the remedy. `#3968`'s head does contain the
 2026-08-01 base `ed4116b26c` (merge commit `debf67bdae` brought it in), so it is
-not simply an un-rebased branch; it is behind the *current* base `5d68612a45`,
-which is where #4268's merged `ErrorShutdownIncomplete = 27` lives. Rebasing
-picks that up, but rebasing alone will not resolve anything below, because git
+not simply an un-rebased branch; it is behind the *current* base `97904ed2fc`,
+which is where both #4268's merged `ErrorShutdownIncomplete = 27` and #4183's
+merged `ErrorSigningKeyUnavailable = 31` live. Rebasing
+picks those up, but rebasing alone will not resolve anything below, because git
 sees no conflict in any of it — the branch has to **edit its own enum**.
 
 | Code | Name | Owning PR | Conflict |
@@ -221,21 +243,24 @@ failure this file's preamble describes, and it landed on the shielded-invite
 claim-recovery path (the error is raised from four sites in
 `wallet/shielded/operations.rs`, three of them inside the recovery function).
 
-**Partially** fixed on #4204 together with the renumber. Landed at head
+Fixed on #4204 together with the renumber. Landed at head
 `d78b940a03`: the typed Kotlin
 `PlatformWallet.ShieldedInviteAlreadyClaimed` (terminal, `isRetryable = false`),
 the Swift `PlatformWalletResultCode.errorShieldedInviteAlreadyClaimed = 37` raw
 case with its `init(ffi:)` arm, and a `DashSdkErrorTest` assertion that pins 37
 so a future move off the frontier fails the suite instead of the hosts.
 
-**Still missing on #4204, and it does not compile without it:** Swift's
-`PlatformWalletError` has no `.shieldedInviteAlreadyClaimed` case, and its
-`init(result:)` switches exhaustively over `PlatformWalletResultCode` with no
-`default:`. Adding the raw case without the matching `init(result:)` arm makes
-that switch non-exhaustive, so the Swift package fails to build at
-`d78b940a03`. Rule 5's Swift clause is therefore not yet satisfied — treat the
-Swift mirror as incomplete until #4204 adds the typed error case and its
-conversion arm.
+The Swift half of that fix was **incomplete at `d78b940a03`, and is complete
+now.** At that head `PlatformWalletError` had no `.shieldedInviteAlreadyClaimed`
+case even though `init(result:)` switches exhaustively over
+`PlatformWalletResultCode` with no `default:` — adding the raw case without the
+matching arm makes that switch non-exhaustive, so the Swift package did not
+build. **Closed since.** Verified 2026-08-04 at #4204's current head
+`4efecd5b71`: the raw case, its `init(ffi:)` arm, the typed
+`PlatformWalletError.shieldedInviteAlreadyClaimed` case and its `init(result:)`
+arm are all present. Rule 5's Swift clause is satisfied. Kept here because the
+sequence is the lesson — one of rule 5's three Swift edits landed a full review
+round after the other two.
 
 **Lesson for rule 2:** the violation entered on a *review-round* commit, well
 after the PR's numbering had been reviewed and recorded as settled. Re-check
@@ -262,10 +287,12 @@ That is the whole reason this file exists.
 
 ### 30 — vacated, then RESERVED (not free)
 
-`ErrorAssetLockCrossDomainConsentRequired` is named as the holder of 30 in
+`ErrorAssetLockCrossDomainConsentRequired` was named as the holder of 30 in
 in-tree comments on #4183 and #4204, and in #4256's pre-renumber numbering
 rationale. It is **not defined anywhere** — #4184, the PR that would have
-introduced it, does not contain it after a re-scope.
+introduced it, does not contain it after a re-scope. Those comments are all gone
+now: grepping `packages` at `v4.2-dev` `97904ed2fc` on 2026-08-04 returns no
+occurrence of the name, and neither does #4204's head `4efecd5b71`.
 
 Verified 2026-08-01 by reading `packages/rs-platform-wallet-ffi/src/error.rs` at
 the head of **every one of the 62 open PRs**. Stated precisely, because the
@@ -286,7 +313,10 @@ Three branches have now done so:
   #4268 as the owner of 27 and records where the trio went.
 * **#4183** — its enum comment no longer describes 27–28 as reserved for the
   trio; on the 2026-08-03 rebase it was rewritten to say 28 and 30 are reserved
-  and 29 belongs to #4184, and to point here.
+  and 29 belongs to #4184, and to point here. **#4183 merged on 2026-08-04**, so
+  that corrected comment is now the in-tree text at `v4.2-dev` — the reservation
+  of 28 and 30 and #4184's claim on 29 are recorded in `error.rs` itself, not
+  only here.
 * **#4184** — same rebase, same correction. Its note used to read "Codes 27-28
   are reserved" while naming **three** codes, which was correct only while the
   trio sat at 27/28/29. It now says 28 is skipped, 28 and 30 are reserved, and
@@ -294,7 +324,11 @@ Three branches have now done so:
   (`ErrorAssetLockInsufficientFunds = 29`) never moved and remains the
   resolution of record.
 
-The equivalent stale comment on **#4204** is still there.
+The equivalent stale comment on **#4204** is gone too. It was not fixed by hand:
+#4204 rebased onto the merged base, and its `error.rs` at `4efecd5b71` now
+carries #4183's corrected 28/29/30 note verbatim from trunk. All four branches
+that ever held the stale reservation text — #4256, #4183, #4184, #4204 — are
+clear, and #4183's version of the note is now trunk.
 
 ### 27 / 28 — #3968 still collides; #3954's claim merged as #4268
 
@@ -321,9 +355,11 @@ The detail behind those rows:
   was closed; its work landed as **#4268**, which merged 27 into `v4.2-dev` on
   2026-08-02. #4185 and #4256 moved their trio to 34–36 in response. Merging
   decides an ABI number; being the older open claim does not.
-* **#4259** (`9336bdbb71`) carries `ErrorSigningKeyUnavailable = 31` — the same
-  number and name as #4183, i.e. inherited rather than a new allocation, like
-  #4204. No conflict; recorded so the number is not double-counted.
+* **#4259** carries `ErrorSigningKeyUnavailable = 31` — the same number and name
+  as #4183, i.e. inherited rather than a new allocation, like #4204. No
+  conflict; recorded so the number is not double-counted. This is now moot:
+  #4183 merged on 2026-08-04, so at #4259's current head `5b77dfd8f1` the 31 is
+  simply the merged base's, and there is no second claim to reconcile.
 
 PR `#3968` needs a rebase onto current `v4.2-dev` **and** fresh integers from
 the frontier (**38+**). It must leave 26 alone; 27 is no longer available to it
@@ -382,9 +418,16 @@ took 33, on the grounds that 31 (`ErrorSigningKeyUnavailable`, #4183) asserts a
 specific contract — the signer holds no usable private key for a requested public
 key, restored from a typed signer completion code — whereas #4256's
 `BuilderError::SigningFailed` also covers unresolved derivation paths, sighash
-failures, and malformed signature encodings. Both codes are currently allocated.
-Maintainers may still choose to collapse them; that decision belongs to #4183 and
-to #4256 jointly and should be recorded here.
+failures, and malformed signature encodings.
+
+**That question is now half-settled by merging, not by agreement.** #4183 merged
+on 2026-08-04, so **31 is ABI** and rule 3 forbids renumbering or retiring it;
+it also ships with complete Swift and Kotlin mirrors, so hosts already
+distinguish it. The only decision still open is #4256's: whether 33 stays a
+separate code or `BuilderError::SigningFailed` is instead routed onto the
+existing 31. That is #4256's alone to make now, and if it is made it should be
+recorded here. What is no longer available is collapsing the pair *into* 33, or
+moving 31 anywhere.
 
 ## Collision history — the 27 / 28 / 30 → 34 / 35 / 36 move
 
@@ -410,9 +453,15 @@ anything** — merged or proposed — rather than into the next free gap:
 
 * 27 `ErrorShutdownIncomplete` (merged, #4268)
 * 29 `ErrorAssetLockInsufficientFunds` (#4184)
-* 31 `ErrorSigningKeyUnavailable` (#4183/#4204/#4259)
+* 31 `ErrorSigningKeyUnavailable` (**merged 2026-08-04, #4183**; was proposed when the trio jumped it)
 * 32 `ErrorTransactionBuild` (#4247/#4256)
 * 33 `ErrorTransactionSigning` (#4256)
+
+Two of those five are now shipped ABI rather than proposals: 27 already was when
+the trio moved, and 31 has merged since. That is the argument for the move made
+retroactively — a number that looked merely "claimed by an open PR" on
+2026-08-02 is unrenumberable ABI two days later, and anything sitting on it
+would now be stuck there.
 
 Taking 34–36 rather than back-filling the vacated 28 and 30 costs two integers
 in a space that is nowhere near exhausted, and buys two things: the trio reads
@@ -437,15 +486,23 @@ top of this file: a duplicate integer across two branches produces no textual
 conflict, and neither branch's tree contains both variants, so neither
 compiler ever sees the E0081. Both were MERGEABLE and green throughout.
 
-### Known mirror gap on #4256 (not a numbering issue)
+### Mirror gap on #4256 — CLOSED (was never a numbering issue)
 
-Noted while grepping the mirrors for this move: #4256 declares
-`ErrorTransactionBuild = 32` and `ErrorTransactionSigning = 33` in Rust and maps
-both in Kotlin, but its Swift `PlatformWalletResultCode` declares **neither** —
-no `case`, and no arm in `init(ffi:)`, so both fall into that switch's
-`default:` and reach Swift hosts as `.errorUnknown`, losing their identity. That
-is rule 5's Swift clause. Left for #4256's author rather than folded into the
-renumber; it is a missing mirror, not a wrong number.
+Noted while grepping the mirrors for this move: #4256 declared
+`ErrorTransactionBuild = 32` and `ErrorTransactionSigning = 33` in Rust and
+mapped both in Kotlin, but its Swift `PlatformWalletResultCode` declared
+**neither** — no `case`, and no arm in `init(ffi:)`, so both fell into that
+switch's `default:` and would have reached Swift hosts as `.errorUnknown`,
+losing their identity. That is rule 5's Swift clause. It was left for #4256's
+author rather than folded into the renumber, since it was a missing mirror and
+not a wrong number.
+
+**Fixed.** Verified 2026-08-04 at #4256's head `862036b18d`:
+`errorTransactionBuild = 32` and `errorTransactionSigning = 33` raw cases, both
+`init(ffi:)` arms, the typed `PlatformWalletError.transactionBuild` /
+`.transactionSigning` cases and their `init(result:)` arms are all present. Both
+of this file's outstanding Swift mirror gaps — this one and #4204's — closed
+between the 2026-08-03 and 2026-08-04 passes.
 
 ## Sibling FFI crates
 
@@ -458,46 +515,62 @@ the same thing in both enums.
 
 Compiled 2026-08-01 against `v4.2-dev` at `ed4116b26c`, re-verified 2026-08-02
 against `v4.2-dev` at `5d68612a45` (where `ErrorShutdownIncomplete = 27`,
-PR #4268 `429667e723`, entered the merged table), and **re-verified again
-2026-08-03 against the same base `5d68612a45`**, which is still `v4.2-dev`'s
-head.
+PR #4268 `429667e723`, entered the merged table), re-verified 2026-08-03 against
+that same base, and **re-verified again 2026-08-04 against `v4.2-dev` at
+`97904ed2fc`**, which is the current head.
 
-The 2026-08-03 pass re-read the added discriminants directly at the *current*
-head of every open PR that touches `error.rs`, `DashSdkError.kt` or
-`PlatformWalletResult.swift`, and separately checked each PR's file list to
-decide whether it belongs in the no-new-code inventory above. It confirmed:
+The base moved on 2026-08-04, which is what made that pass necessary: four PRs
+merged into `v4.2-dev` that day — **#4191** (`0e2282b586`), **#4183**
+(`189a3abb1c`), **#4277** (`6704a41a85`) and **#4251** (`7afc8a8ff3`) — and one
+of them, #4183, moved a number out of this file's proposed table and into the
+ABI. Each of those four SHAs is the **merge commit on `v4.2-dev`**, confirmed by
+`git merge-base --is-ancestor` against `97904ed2fc`, not a PR head SHA.
 
-* 32 and 33 are still #4247/#4256's, which is why the trio sits at 34–36;
-* 37 is #4204's post-renumber `ErrorShieldedInviteAlreadyClaimed`, mirrored in
-  Kotlin and half-mirrored in Swift (see the code-32 section);
+The 2026-08-04 pass re-read the discriminants directly, in-tree and at the
+*current* head of every open PR that touches `error.rs`, `DashSdkError.kt` or
+`PlatformWalletResult.swift`, and separately re-checked each PR's file list. It
+confirmed:
+
+* in-tree at `97904ed2fc`, `error.rs` runs 0–27 contiguously and then **31**,
+  with 28, 29, 30 and everything from 32 up absent. So 31 is the only number
+  this file had listed as proposed that is now merged, and the frontier is
+  unchanged at 38;
+* `31 = ErrorSigningKeyUnavailable` has **complete** host mirrors on `v4.2-dev`
+  — Swift's raw case, its `init(ffi:)` arm, the typed `PlatformWalletError` case
+  and its `init(result:)` arm, and Kotlin's
+  `31 -> PlatformWallet.SigningKeyUnavailable` — all introduced by
+  `189a3abb1c` itself, so rule 5 was satisfied in the merging commit;
+* 29 is still #4184's; 32 and 33 are still #4247/#4256's, which is why the trio
+  sits at 34–36; 37 is still #4204's;
 * nothing in flight has taken 28, 30, or 38;
-* #4196 has restacked onto #4185 and now carries 34/35/36 rather than 26/27/28;
-* #4247's head now also carries the 34/35/36 trio, inherited from #4185 (which
-  it is stacked on) rather than claimed a second time.
+* #3968 is unchanged and still numbers 26 / 27 / 28;
+* the two Swift mirror gaps this file was tracking — #4204's typed-case gap and
+  #4256's missing raw cases — have both been closed.
 
-PR heads of record, all read on 2026-08-03:
+PR heads of record, all read on 2026-08-04:
 
 | PR | Head | Note |
 | --- | --- | --- |
-| #3954 | `93d0bd49b7` | Closed; superseded by #4268 |
-| #3968 | `5931df745a` | Contains base `ed4116b26c` but **not** `5d68612a45` |
-| #4183 | `8387858016` | Rebased onto `5d68612a45` on 2026-08-03; keeps 31 |
-| #4184 | `5bdae75391` | Rebased onto `5d68612a45` on 2026-08-03; keeps 29 |
-| #4185 | `8813e98533` | Post-34/35/36 move |
-| #4186 | `951260520c` | |
-| #4191 | `8acb0bd14c` | Touches only `dashpay.rs` in this crate |
-| #4194 | `1d812c7297` | |
-| #4195 | `c471dc9fe6` | |
-| #4196 | `12492e8c54` | **Restacked onto #4185 on 2026-08-03**; trio now 34/35/36, MERGEABLE |
-| #4204 | `d78b940a03` | Post-renumber 32 → 37; pre-#4268 base |
-| #4240 | `3c19977a5a` | No file under this crate |
-| #4243 | `f4be5b32f0` | Modifies `error.rs`, claims no integer |
-| #4247 | `540def16a0` | Carries #4185's trio |
-| #4251 | `176f8ed3eb` | No file under this crate |
-| #4256 | `a456664278` | Post-34/35/36 move |
-| #4258 | `ce8233edb7` | **Merged** 2026-08-03; claimed no code |
-| #4259 | `9336bdbb71` | Carries #4183's 31 |
+| #3954 | `31e22d5a90` | Closed; superseded by #4268 |
+| #3968 | `5931df745a` | Head unchanged since 2026-08-03; still numbers 26 / 27 / 28. Contains base `ed4116b26c` but not `5d68612a45`, and so not `97904ed2fc` either |
+| #4183 | `189a3abb1c` | **Merged 2026-08-04** (merge commit); 31 is now ABI |
+| #4184 | `11c3677b1c` | Keeps 29 |
+| #4185 | `326cd3eab6` | Trio at 34/35/36 |
+| #4186 | `1fcdfd6b37` | Modifies `error.rs`; adds no discriminant |
+| #4191 | `0e2282b586` | **Merged 2026-08-04** (merge commit); claimed no code |
+| #4194 | `560f66a31d` | Modifies `error.rs`; adds no discriminant |
+| #4195 | `7d20a638e5` | Modifies `error.rs`; adds no discriminant |
+| #4196 | `9909f77546` | Restacked onto #4185; trio 34/35/36; allocates nothing of its own |
+| #4204 | `4efecd5b71` | 37; rebased onto the merged base, so it now carries 27 and 31 from trunk; Swift mirror complete |
+| #4240 | `a167afe84c` | No file under this crate |
+| #4243 | `f4be5b32f0` | Head unchanged; modifies `error.rs`, claims no integer |
+| #4247 | `8541073247` | 32, plus #4185's trio |
+| #4251 | `7afc8a8ff3` | **Merged 2026-08-04** (merge commit); no file under this crate |
+| #4256 | `862036b18d` | 32 / 33 plus the trio; Swift mirror now complete |
+| #4258 | `ce8233edb7` | Merged 2026-08-03; claimed no code |
+| #4259 | `5b77dfd8f1` | Carries 31 from the merged base |
 | #4264 | `bf88c92b85` | Closed; work carried by #4243 |
+| #4277 | `6704a41a85` | **Merged 2026-08-04** (merge commit); modifies `error.rs`, claims no integer |
 
 Rows describing open PRs reflect those heads and go stale as the PRs are
 updated; the merged table does not.
