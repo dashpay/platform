@@ -170,12 +170,18 @@ pub enum PlatformWalletError {
     /// resolver advertises `Digest` — so it does not warrant a new FFI code and
     /// the host mirror-enum churn that follows one.
     ///
-    /// Deliberately NOT given a dedicated FFI code: a signer that reports its
-    /// typed key-unavailable completion carries the stable machine prefix in
-    /// its `Display`, which the FFI conversion's catch-all promotes to
-    /// `ErrorSigningKeyUnavailable`. The remaining causes are genuine internal
-    /// invariant breaks and should surface as unknown rather than as a
-    /// key-repair prompt.
+    /// Deliberately NOT given a dedicated FFI code: [`Signer::Error`] is
+    /// generic and bounded only by `Display`, so it cannot be classified
+    /// structurally here. Signer failures — including a signer-reported
+    /// key-unavailable completion — remain `MessageSigningFailed` and fall
+    /// through to `ErrorUnknown`. Only [`MessageSigningKeyUnavailable`]
+    /// (address resolution failing before a signer is ever invoked) reaches
+    /// FFI code 31. See the `MessageSigningFailed` arm's NOTE in
+    /// `platform-wallet-ffi`'s error conversion for the full type chain and
+    /// the upstream change that would be needed to close this gap.
+    ///
+    /// [`MessageSigningKeyUnavailable`]: Self::MessageSigningKeyUnavailable
+    /// [`Signer::Error`]: key_wallet::signer::Signer::Error
     ///
     /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
     /// [`Signer`]: key_wallet::signer::Signer
