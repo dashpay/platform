@@ -600,6 +600,12 @@ class ManagedPlatformWallet internal constructor(
      * `Long`: extracting the token and dropping the object races GC, which can
      * release the reservation mid-broadcast.
      *
+     * If a cancellation discards the result *after* the blocking native call
+     * already minted the token, this call closes it deterministically on the way
+     * out (the gate's cancellation-cleanup handoff) rather than leaving the
+     * reservation to the GC backstop or the reservation TTL — the same handling
+     * the token-minting [buildSignedPayment] overload uses.
+     *
      * Funding-domain isolation is unchanged from [buildSignedPayment] and is
      * enforced by the same Rust selector: exactly ONE account funds the payment,
      * never a union; change routes to the unmixed BIP44 account (structural —
@@ -627,7 +633,24 @@ class ManagedPlatformWallet internal constructor(
         coreSignerHandle: Long,
         feePerKb: Long = 0,
         fundingPath: String? = null,
-    ): SignedCoreTransaction = gate.op {
+    ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
+        // Native registration mints the token and transfers reservation ownership
+        // to it before the blocking JNI call returns, so the token already exists
+        // by the time `withContext` dispatches back to the caller. That handoff is
+        // a prompt-cancellation point: if the caller was cancelled while JNI ran,
+        // the completed SignedCoreTransaction is discarded before anyone can hold
+        // it, leaving only the GC/NativeCleaner backstop — the reservation would
+        // then sit until an unpredictable GC cycle or the reservation TTL, and
+        // indefinitely at processed height zero, where key-wallet's TTL sweep
+        // never fires. Closing the discarded result releases the token
+        // deterministically.
+        //
+        // `close()` runs a JNI release; swallow anything it throws rather than let
+        // it escape `opWithCleanupOnCancellation`'s `finally` and displace the
+        // CancellationException that triggered the cleanup. The GC backstop still
+        // sits behind a failed release.
+        cleanup = { payment: SignedCoreTransaction -> runCatching { payment.close() } },
+    ) {
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) { "every recipient amount must be positive" }
         require(feePerKb >= 0) { "feePerKb must be non-negative, got $feePerKb" }
