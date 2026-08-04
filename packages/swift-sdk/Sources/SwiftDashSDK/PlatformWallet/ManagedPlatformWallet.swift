@@ -3567,7 +3567,7 @@ extension ManagedPlatformWallet {
             // violation. Fail loudly rather than persist an empty body.
             guard let jsonPtr = documentJsonPtr else {
                 throw PlatformWalletError.walletOperation(
-                    "create_encrypted_document_with_signer returned no canonical document JSON"
+                    "create_encrypted_document_with_signer_auto_index returned no canonical document JSON"
                 )
             }
             let canonicalJSON = String(cString: jsonPtr)
