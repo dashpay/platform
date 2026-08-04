@@ -14,12 +14,13 @@ pub use proof::document_count::{
     verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, DocumentCount,
 };
-/// Verified ranked (`HAVING … TOP(n)` / `BOTTOM(n)`) result types.
-/// `DocumentRankedEntries` carries one entry per returned group **in
-/// ranking order**; [`verify_ranked_top_k_proof`] is the
-/// tenderdash-composition wrapper that binds the proof's reconstructed
-/// root hash to the signed app hash. (`MAX` / `MIN` are rejected —
-/// every group tied at the extreme cannot be proved.)
+/// Verified ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
+/// [OFFSET m]`) result types. `DocumentRankedEntries` carries one entry
+/// per returned group **in ranking order**, plus the `starting_rank`
+/// that pins each entry to an absolute position;
+/// [`verify_ranked_top_k_proof`] is the tenderdash-composition wrapper
+/// that binds the proof's reconstructed root hash to the signed app
+/// hash and returns the whole verified [`drive::query::RankedPage`].
 pub use proof::document_ranked::{verify_ranked_top_k_proof, DocumentRankedEntries};
 pub use proof::document_split_count::DocumentSplitCounts;
 // Re-export `SplitCountEntry` from rs-drive at the proof-verifier
@@ -34,7 +35,11 @@ pub use drive::query::SplitCountEntry;
 // read it from here and never hardcode the literal. Divide an
 // `AvgFixedPoint` value by it (or call `RankedEntryValue::as_f64`) to
 // render an average.
-pub use drive::query::{RankedEntry, RankedEntryValue, RANKED_AVG_SCALE};
+// `RankedPage` rides along because it is what
+// `verify_ranked_top_k_proof` returns: a caller verifying a ranked
+// proof for themselves needs to name the type without depending on
+// rs-drive.
+pub use drive::query::{RankedEntry, RankedEntryValue, RankedPage, RANKED_AVG_SCALE};
 /// Verified average result types. Average-side analog of `DocumentSum`
 /// / `DocumentSplitSums`; carry the `(count, sum)` pair the verifier
 /// recovers from grovedb PR 670's `AggregateCountAndSumOnRange`

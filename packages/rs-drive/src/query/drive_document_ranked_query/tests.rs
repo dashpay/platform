@@ -1121,7 +1121,7 @@ fn count_axis_ranks_reads_and_proves_consistently() {
     assert_eq!(
         keys_of(&entries),
         vec!["alpha"],
-        "BOTTOM(1) is the single smallest group"
+        "ASC LIMIT 1 is the single smallest group"
     );
     assert_eq!(entries[0].value, RankedEntryValue::Count(1));
     assert_proof_round_trips(&drive, &contract, &bottom_one, &entries);
@@ -1165,7 +1165,7 @@ fn sum_axis_ranks_reads_and_proves_consistently() {
     assert_eq!(
         keys_of(&entries),
         vec!["beta"],
-        "TOP(1) is the single largest sum"
+        "DESC LIMIT 1 is the single largest sum"
     );
     assert_eq!(entries[0].value, RankedEntryValue::Sum(100));
     assert_proof_round_trips(&drive, &contract, &top_one, &entries);
@@ -1456,7 +1456,7 @@ fn ties_break_by_group_key_in_the_walk_direction() {
     );
 
     // A tie-truncating `k` therefore selects a *specific* subset, not an
-    // arbitrary one — which is what makes TOP(k) reproducible.
+    // arbitrary one — which is what makes a truncated LIMIT k reproducible.
     let top_two = entries_of(
         run(&drive, &contract, &RankedCase::sum(false, Some(2)), false).expect("read must succeed"),
     );

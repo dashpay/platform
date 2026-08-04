@@ -2,18 +2,19 @@
 //!
 //! Ranked-side analog of [`super::count_proof_helpers`]: it turns a
 //! caller-built [`DocumentQuery`] plus the node's response into a
-//! verified `Vec<RankedEntry>`. The routing decisions — which ranking
-//! axis, which direction, how many groups, which index covers them —
-//! are **not** re-derived here. They come from rs-drive's own
-//! [`detect_ranked_mode`] and [`find_ranked_index_for_axis`], the same
-//! two functions the server calls, so client and server land on the
-//! same grove path and the same `(axis, k, descending)` triple by
-//! construction rather than by two copies of a grammar agreeing.
+//! verified [`RankedPage`]. The routing decisions — which ranking axis,
+//! which direction, how many groups, how many ranks to skip, which
+//! index covers them — are **not** re-derived here. They come from
+//! rs-drive's own [`detect_ranked_mode`] and
+//! [`find_ranked_index_for_axis`], the same two functions the server
+//! calls, so client and server land on the same grove path and the same
+//! `(axis, k, descending, offset)` tuple by construction rather than by
+//! two copies of a grammar agreeing.
 //!
 //! Unlike the count helper there is no per-shape dispatch: the ranked
 //! surface has exactly one proof primitive
-//! (`prove_indexed_axis_top_k`), and all of a request's variation is
-//! carried *inside* the query struct.
+//! (`prove_indexed_axis_top_k_paginated`), and all of a request's
+//! variation is carried *inside* the query struct.
 //!
 //! [`DocumentRankedEntries`]: drive_proof_verifier::DocumentRankedEntries
 
@@ -29,14 +30,14 @@ use dpp::{
 use drive::query::drive_document_ranked_query::index_picker::find_ranked_index_for_axis;
 use drive::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
 use drive::query::{
-    DocumentRankedMode, DriveDocumentRankedQuery, RankedEntry, RankedPaginationInputs,
+    DocumentRankedMode, DriveDocumentRankedQuery, RankedPage, RankedPaginationInputs,
 };
 use drive_proof_verifier::verify_ranked_top_k_proof;
 
 /// Validate that the caller-built [`DocumentQuery`] really describes a
 /// ranked query, and resolve it into the
-/// `(axis, descending, k, group property, aggregate field)` tuple the
-/// index picker and the prover both work from.
+/// `(axis, descending, k, offset, group property, aggregate field)`
+/// tuple the index picker and the prover both work from.
 ///
 /// This is the ranked counterpart of
 /// [`assert_select_is_count`](super::count_proof_helpers::assert_select_is_count),
@@ -54,35 +55,22 @@ use drive_proof_verifier::verify_ranked_top_k_proof;
 /// so an SDK built against one protocol version cannot quietly accept
 /// a request shape the network of that version rejects — and, more
 /// importantly, cannot resolve a request to a *different*
-/// `(axis, descending, k)` triple than the prover used.
-///
-/// `order_by` is checked here rather than in rs-drive because
-/// `DocumentRankedRequest` has no field to carry it: the server
-/// rejects it in its routing layer for exactly that reason, and this
-/// is the client-side mirror of that rejection.
+/// `(axis, descending, k, offset)` tuple than the prover used —
+/// including the `ORDER BY` clause, which *is* the ranking and so is
+/// now rs-drive's to validate rather than something the SDK has to
+/// reject on its own.
 pub(super) fn assert_ranked_shape(
     request: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentRankedMode, drive_proof_verifier::Error> {
-    if !request.order_by_clauses.is_empty() {
-        return Err(drive_proof_verifier::Error::RequestError {
-            error: "ORDER BY is not valid for a ranked query: the entry order of a \
-                    `HAVING … TOP(n)` / `BOTTOM(n)` result already is the ranking order \
-                    (best-first for TOP, worst-first for BOTTOM). Drop `order_by`, or \
-                    flip TOP ↔ BOTTOM to reverse the ranking."
-                .to_string(),
-        });
-    }
-
-    // `DocumentQuery` uses `0` as the "unset" sentinel for `limit`
-    // (it becomes `None` on the wire) and has no `offset` field at
-    // all — the encoder always emits `offset: None`. Both are
-    // reported to rs-drive exactly as the server sees them so the
-    // client rejects the same requests the server would, with the
+    // `DocumentQuery` uses `0` as the "unset" sentinel for `limit` (it
+    // becomes `None` on the wire); `offset` is already an `Option`.
+    // Both are reported to rs-drive exactly as the server sees them so
+    // the client rejects the same requests the server would, with the
     // same message.
     let pagination = RankedPaginationInputs {
         limit: (request.limit != 0).then_some(request.limit),
-        offset: None,
+        offset: request.offset,
         has_start_at: request.start.is_some(),
     };
 
@@ -90,6 +78,7 @@ pub(super) fn assert_ranked_shape(
         &request.select,
         &request.group_by,
         &request.having,
+        &request.order_by_clauses,
         &request.where_clauses,
         pagination,
         platform_version,
@@ -97,16 +86,17 @@ pub(super) fn assert_ranked_shape(
     .map_err(|e| drive_proof_verifier::Error::RequestError {
         error: format!(
             "this DocumentQuery is not a well-formed ranked query: {e}. A ranked query is \
-             `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)` and \
-             `.with_having(vec![<one clause whose right operand is a TOP(n) / BOTTOM(n) \
-             ranking on the same aggregate>])`, with no where clauses, no limit, no \
-             start_at and no order_by."
+             `.with_select(<COUNT(*)|SUM(f)|AVG(f)>)`, `.with_group_by(<property>)`, \
+             `.order_by_selected_aggregate(<Descending|Ascending>)` and `.with_limit(n)`, \
+             optionally `.with_offset(m)`, with no where clauses, no having and no \
+             start_at."
         ),
     })
 }
 
-/// Verify a ranked-shape proof and return the ranked entries, **in
-/// ranking order**.
+/// Verify a ranked-shape proof and return the verified [`RankedPage`] —
+/// the entries **in ranking order**, plus the attested rank the page
+/// starts at.
 ///
 /// Single source of truth for the ranked proof path. The steps are
 /// deliberately the same ones the drive-side suite runs in its
@@ -130,7 +120,7 @@ pub(super) fn verify_ranked_query(
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<(Option<Vec<RankedEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+) -> Result<(Option<RankedPage>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -185,20 +175,22 @@ pub(super) fn verify_ranked_query(
         axis: mode.axis,
         descending: mode.descending,
         k: mode.k,
+        offset: mode.offset,
     };
 
     // Binds the reconstructed grovedb root hash to the quorum-signed
     // app hash before returning — see the module docs.
-    let (root_hash, entries) =
+    let (root_hash, page) =
         verify_ranked_top_k_proof(&ranked_query, proof, mtd, platform_version, provider)?;
 
     tracing::trace!(
         target: "dash_sdk::ranked_query",
         root_hash = hex::encode(root_hash),
         height = mtd.height,
-        entries = entries.len(),
+        skipped = page.skipped,
+        entries = page.entries.len(),
         "verified ranked top-k proof"
     );
 
-    Ok((Some(entries), mtd.clone(), proof.clone()))
+    Ok((Some(page), mtd.clone(), proof.clone()))
 }

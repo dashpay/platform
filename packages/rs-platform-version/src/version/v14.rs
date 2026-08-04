@@ -80,15 +80,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   shared-prefix fix.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V2` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 1,
-///   switching the v1 document-query handler from "reject every non-empty
-///   HAVING" to routing a `TOP(n)` / `BOTTOM(n)` ranking right-operand to
-///   the ranked executor (`MAX` / `MIN` are refused — tie semantics). v13
-///   and earlier keep the v1 table and therefore keep rejecting HAVING, so
-///   mixed-version networks agree across the upgrade.
+///   opening the ranked path on the v1 document-query handler: a grouped
+///   aggregate whose single `order_by` names the selected aggregate
+///   (`ORDER BY <agg> [ASC|DESC] LIMIT n [OFFSET m]`) routes to the ranked
+///   executor. v13 and earlier keep the v1 table and therefore keep
+///   rejecting that shape, so mixed-version networks agree across the
+///   upgrade.
 ///
 /// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
-/// already carries `selects` / `group_by` / `having`; the ranked response
-/// is an additive `ResultData.ranked` variant.
+/// already carries `selects` / `group_by` / `order_by` / `limit` /
+/// `offset`; the ranked response is an additive `ResultData.ranked`
+/// variant, whose `skipped` field is likewise additive.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot

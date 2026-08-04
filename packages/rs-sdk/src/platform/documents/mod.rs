@@ -6,8 +6,9 @@ pub mod document_average;
 pub mod document_count;
 pub mod document_history_query;
 pub mod document_query;
-/// `Fetch` impl for the ranked (`HAVING … TOP(n)`) result — one entry
-/// per returned group, in ranking order. Requires an index declaring
+/// `Fetch` impl for the ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
+/// [OFFSET m]`) result — one entry per returned group, in ranking order,
+/// plus the rank the page starts at. Requires an index declaring
 /// `rankedCountable` / `rankedSummable` / `rankedAverageable`
 /// (protocol version 14+).
 pub mod document_ranked_entries;

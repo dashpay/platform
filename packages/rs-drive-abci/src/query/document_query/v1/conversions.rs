@@ -280,13 +280,12 @@ fn having_aggregate_from_proto(
 /// on the wire); inner value-shape failures on the literal-value
 /// branch.
 ///
-/// The wire's `right.ranking` arm is a **retired** grammar: cross-group
-/// ranking used to be expressed as `HAVING <agg> IN TOP(n)`, and is now
-/// `ORDER BY <agg> DESC LIMIT n [OFFSET m]`. Drive has no type for it
-/// any more, so a clause still carrying one is refused here with the
-/// replacement spelled out. The proto field itself is removed in a
-/// follow-up; until then this arm is what stops a stale client from
-/// being silently misread.
+/// `HAVING` is a boolean per-group predicate and nothing else, so the
+/// wire's `right` oneof has exactly one arm and this function has
+/// exactly one thing to decode. Cross-group ranking is expressed with
+/// SQL's own ordering surface — `ORDER BY <the selected aggregate> DESC
+/// LIMIT n [OFFSET m]` — which arrives as an `OrderClause` and never
+/// reaches here.
 #[allow(dead_code)]
 pub(super) fn having_clause_from_proto(
     clause: ProtoHavingClause,
@@ -309,17 +308,6 @@ pub(super) fn having_clause_from_proto(
     })?;
     let right = match right {
         having_clause::Right::Value(v) => HavingRightOperand::Value(value_from_proto(v)?),
-        having_clause::Right::Ranking(_) => {
-            return Err(QueryError::InvalidArgument(
-                "HavingClause.right.ranking (`HAVING <aggregate> IN TOP(n)` / \
-                 `BOTTOM(n)` / `= MAX` / `= MIN`) is no longer part of the query \
-                 grammar. Cross-group ranking is expressed with SQL's own ordering \
-                 surface instead: `ORDER BY <the selected aggregate> DESC LIMIT n \
-                 [OFFSET m]` (use the field name `$count` when the projection is \
-                 `COUNT(*)`). `HAVING` is now purely a boolean per-group predicate."
-                    .to_string(),
-            ));
-        }
     };
     Ok(HavingClause {
         aggregate,

@@ -4,9 +4,10 @@
 /// `AggregateCountAndSumOnRange` primitive.
 pub mod document_average;
 pub mod document_count;
-/// Verified ranked (`HAVING … TOP(n)`) result. One entry per returned
-/// group, in ranking order, read from an indexed tree's per-axis
-/// secondary (grovedb PR 657); see the file's docs.
+/// Verified ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
+/// [OFFSET m]`) result. One entry per returned group, in ranking order,
+/// plus the attested rank the page starts at, read from an indexed
+/// tree's per-axis secondary (grovedb PR 657); see the file's docs.
 pub mod document_ranked;
 /// Per-entry verified average result. One `(in_key, key, count, sum)`
 /// tuple per matched group; client divides per-entry to obtain

@@ -48,7 +48,7 @@ flowchart LR
   style ELEM fill:none,stroke:#1f6feb,stroke-width:2px,stroke-dasharray: 6 4,color:#1f6feb
 ```
 
-`TOP(2)` reads the two right-most secondary entries (`zulu`, `mike`) and proves them with a standard Merk range proof — three levels of hashes, two committed entries. The same question against the primary alone would have to commit all nine groups.
+`ORDER BY … DESC LIMIT 2` reads the two right-most secondary entries (`zulu`, `mike`) and proves them with a standard Merk range proof — three levels of hashes, two committed entries. The same question against the primary alone would have to commit all nine groups.
 
 ## Contract Grammar
 
@@ -350,4 +350,15 @@ Every ranking axis is paid for on **every write** that touches a group, not just
 
 ## What a Ranked Query Looks Like
 
-The query surface is deliberately narrow — one aggregate `select`, one `group_by`, one `having` whose right operand is a ranking on the same aggregate, and nothing else. The [Ranked Index Examples](./ranked-index-examples.md) chapter covers the wire shape, the SDK surface, the proof, and the full list of what is rejected and why.
+The query surface is deliberately narrow — one aggregate `select`, one `group_by`, one `ORDER BY` naming that select's aggregate, and a `LIMIT` (plus an optional `OFFSET`). Nothing else:
+
+```sql
+SELECT avg(grade) FROM review
+  GROUP BY restaurantId
+  ORDER BY avg(grade) DESC
+  LIMIT 3
+```
+
+That is ordinary SQL, deliberately. An earlier draft of this surface spelled the same question as `HAVING avg(grade) IN TOP(3)` — a `TOP` / `BOTTOM` primitive on the right of a `HAVING` clause. It was removed before release rather than deprecated: SQL already expresses "the n highest-scoring groups" with `ORDER BY` + `LIMIT`, and inventing a second, non-conformant spelling for it bought nothing but a grammar every client author would have to learn. `HAVING` is now purely a boolean per-group predicate, as in SQL.
+
+The [Ranked Index Examples](./ranked-index-examples.md) chapter covers the wire shape, the SDK surface, the proof, the rank/offset semantics, and the full list of what is rejected and why.

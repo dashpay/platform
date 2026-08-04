@@ -20725,271 +20725,6 @@ $root.org = (function() {
                             return HavingAggregate;
                         })();
 
-                        GetDocumentsRequest.HavingRanking = (function() {
-
-                            /**
-                             * Properties of a HavingRanking.
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
-                             * @interface IHavingRanking
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind|null} [kind] HavingRanking kind
-                             * @property {number|Long|null} [n] HavingRanking n
-                             */
-
-                            /**
-                             * Constructs a new HavingRanking.
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest
-                             * @classdesc Represents a HavingRanking.
-                             * @implements IHavingRanking
-                             * @constructor
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingRanking=} [properties] Properties to set
-                             */
-                            function HavingRanking(properties) {
-                                if (properties)
-                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                        if (properties[keys[i]] != null)
-                                            this[keys[i]] = properties[keys[i]];
-                            }
-
-                            /**
-                             * HavingRanking kind.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind} kind
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @instance
-                             */
-                            HavingRanking.prototype.kind = 0;
-
-                            /**
-                             * HavingRanking n.
-                             * @member {number|Long} n
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @instance
-                             */
-                            HavingRanking.prototype.n = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
-
-                            /**
-                             * Creates a new HavingRanking instance using the specified properties.
-                             * @function create
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingRanking=} [properties] Properties to set
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking} HavingRanking instance
-                             */
-                            HavingRanking.create = function create(properties) {
-                                return new HavingRanking(properties);
-                            };
-
-                            /**
-                             * Encodes the specified HavingRanking message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.verify|verify} messages.
-                             * @function encode
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingRanking} message HavingRanking message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            HavingRanking.encode = function encode(message, writer) {
-                                if (!writer)
-                                    writer = $Writer.create();
-                                if (message.kind != null && Object.hasOwnProperty.call(message, "kind"))
-                                    writer.uint32(/* id 1, wireType 0 =*/8).int32(message.kind);
-                                if (message.n != null && Object.hasOwnProperty.call(message, "n"))
-                                    writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.n);
-                                return writer;
-                            };
-
-                            /**
-                             * Encodes the specified HavingRanking message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.verify|verify} messages.
-                             * @function encodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingRanking} message HavingRanking message or plain object to encode
-                             * @param {$protobuf.Writer} [writer] Writer to encode to
-                             * @returns {$protobuf.Writer} Writer
-                             */
-                            HavingRanking.encodeDelimited = function encodeDelimited(message, writer) {
-                                return this.encode(message, writer).ldelim();
-                            };
-
-                            /**
-                             * Decodes a HavingRanking message from the specified reader or buffer.
-                             * @function decode
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @param {number} [length] Message length if known beforehand
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking} HavingRanking
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            HavingRanking.decode = function decode(reader, length) {
-                                if (!(reader instanceof $Reader))
-                                    reader = $Reader.create(reader);
-                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking();
-                                while (reader.pos < end) {
-                                    var tag = reader.uint32();
-                                    switch (tag >>> 3) {
-                                    case 1:
-                                        message.kind = reader.int32();
-                                        break;
-                                    case 2:
-                                        message.n = reader.uint64();
-                                        break;
-                                    default:
-                                        reader.skipType(tag & 7);
-                                        break;
-                                    }
-                                }
-                                return message;
-                            };
-
-                            /**
-                             * Decodes a HavingRanking message from the specified reader or buffer, length delimited.
-                             * @function decodeDelimited
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking} HavingRanking
-                             * @throws {Error} If the payload is not a reader or valid buffer
-                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                             */
-                            HavingRanking.decodeDelimited = function decodeDelimited(reader) {
-                                if (!(reader instanceof $Reader))
-                                    reader = new $Reader(reader);
-                                return this.decode(reader, reader.uint32());
-                            };
-
-                            /**
-                             * Verifies a HavingRanking message.
-                             * @function verify
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {Object.<string,*>} message Plain object to verify
-                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                             */
-                            HavingRanking.verify = function verify(message) {
-                                if (typeof message !== "object" || message === null)
-                                    return "object expected";
-                                if (message.kind != null && message.hasOwnProperty("kind"))
-                                    switch (message.kind) {
-                                    default:
-                                        return "kind: enum value expected";
-                                    case 0:
-                                    case 1:
-                                    case 2:
-                                    case 3:
-                                        break;
-                                    }
-                                if (message.n != null && message.hasOwnProperty("n"))
-                                    if (!$util.isInteger(message.n) && !(message.n && $util.isInteger(message.n.low) && $util.isInteger(message.n.high)))
-                                        return "n: integer|Long expected";
-                                return null;
-                            };
-
-                            /**
-                             * Creates a HavingRanking message from a plain object. Also converts values to their respective internal types.
-                             * @function fromObject
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {Object.<string,*>} object Plain object
-                             * @returns {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking} HavingRanking
-                             */
-                            HavingRanking.fromObject = function fromObject(object) {
-                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking)
-                                    return object;
-                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking();
-                                switch (object.kind) {
-                                case "MIN":
-                                case 0:
-                                    message.kind = 0;
-                                    break;
-                                case "MAX":
-                                case 1:
-                                    message.kind = 1;
-                                    break;
-                                case "TOP":
-                                case 2:
-                                    message.kind = 2;
-                                    break;
-                                case "BOTTOM":
-                                case 3:
-                                    message.kind = 3;
-                                    break;
-                                }
-                                if (object.n != null)
-                                    if ($util.Long)
-                                        (message.n = $util.Long.fromValue(object.n)).unsigned = true;
-                                    else if (typeof object.n === "string")
-                                        message.n = parseInt(object.n, 10);
-                                    else if (typeof object.n === "number")
-                                        message.n = object.n;
-                                    else if (typeof object.n === "object")
-                                        message.n = new $util.LongBits(object.n.low >>> 0, object.n.high >>> 0).toNumber(true);
-                                return message;
-                            };
-
-                            /**
-                             * Creates a plain object from a HavingRanking message. Also converts values to other types if specified.
-                             * @function toObject
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @static
-                             * @param {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking} message HavingRanking
-                             * @param {$protobuf.IConversionOptions} [options] Conversion options
-                             * @returns {Object.<string,*>} Plain object
-                             */
-                            HavingRanking.toObject = function toObject(message, options) {
-                                if (!options)
-                                    options = {};
-                                var object = {};
-                                if (options.defaults) {
-                                    object.kind = options.enums === String ? "MIN" : 0;
-                                    if ($util.Long) {
-                                        var long = new $util.Long(0, 0, true);
-                                        object.n = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
-                                    } else
-                                        object.n = options.longs === String ? "0" : 0;
-                                }
-                                if (message.kind != null && message.hasOwnProperty("kind"))
-                                    object.kind = options.enums === String ? $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind[message.kind] : message.kind;
-                                if (message.n != null && message.hasOwnProperty("n"))
-                                    if (typeof message.n === "number")
-                                        object.n = options.longs === String ? String(message.n) : message.n;
-                                    else
-                                        object.n = options.longs === String ? $util.Long.prototype.toString.call(message.n) : options.longs === Number ? new $util.LongBits(message.n.low >>> 0, message.n.high >>> 0).toNumber(true) : message.n;
-                                return object;
-                            };
-
-                            /**
-                             * Converts this HavingRanking to JSON.
-                             * @function toJSON
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking
-                             * @instance
-                             * @returns {Object.<string,*>} JSON object
-                             */
-                            HavingRanking.prototype.toJSON = function toJSON() {
-                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                            };
-
-                            /**
-                             * Kind enum.
-                             * @name org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.Kind
-                             * @enum {number}
-                             * @property {number} MIN=0 MIN value
-                             * @property {number} MAX=1 MAX value
-                             * @property {number} TOP=2 TOP value
-                             * @property {number} BOTTOM=3 BOTTOM value
-                             */
-                            HavingRanking.Kind = (function() {
-                                var valuesById = {}, values = Object.create(valuesById);
-                                values[valuesById[0] = "MIN"] = 0;
-                                values[valuesById[1] = "MAX"] = 1;
-                                values[valuesById[2] = "TOP"] = 2;
-                                values[valuesById[3] = "BOTTOM"] = 3;
-                                return values;
-                            })();
-
-                            return HavingRanking;
-                        })();
-
                         GetDocumentsRequest.HavingClause = (function() {
 
                             /**
@@ -20999,7 +20734,6 @@ $root.org = (function() {
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingAggregate|null} [aggregate] HavingClause aggregate
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.Operator|null} [operator] HavingClause operator
                              * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IDocumentFieldValue|null} [value] HavingClause value
-                             * @property {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingRanking|null} [ranking] HavingClause ranking
                              */
 
                             /**
@@ -21041,25 +20775,17 @@ $root.org = (function() {
                              */
                             HavingClause.prototype.value = null;
 
-                            /**
-                             * HavingClause ranking.
-                             * @member {org.dash.platform.dapi.v0.GetDocumentsRequest.IHavingRanking|null|undefined} ranking
-                             * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
-                             * @instance
-                             */
-                            HavingClause.prototype.ranking = null;
-
                             // OneOf field names bound to virtual getters and setters
                             var $oneOfFields;
 
                             /**
                              * HavingClause right.
-                             * @member {"value"|"ranking"|undefined} right
+                             * @member {"value"|undefined} right
                              * @memberof org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause
                              * @instance
                              */
                             Object.defineProperty(HavingClause.prototype, "right", {
-                                get: $util.oneOfGetter($oneOfFields = ["value", "ranking"]),
+                                get: $util.oneOfGetter($oneOfFields = ["value"]),
                                 set: $util.oneOfSetter($oneOfFields)
                             });
 
@@ -21093,8 +20819,6 @@ $root.org = (function() {
                                     writer.uint32(/* id 2, wireType 0 =*/16).int32(message.operator);
                                 if (message.value != null && Object.hasOwnProperty.call(message, "value"))
                                     $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.encode(message.value, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
-                                if (message.ranking != null && Object.hasOwnProperty.call(message, "ranking"))
-                                    $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.encode(message.ranking, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                 return writer;
                             };
 
@@ -21137,9 +20861,6 @@ $root.org = (function() {
                                         break;
                                     case 3:
                                         message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.decode(reader, reader.uint32());
-                                        break;
-                                    case 4:
-                                        message.ranking = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.decode(reader, reader.uint32());
                                         break;
                                     default:
                                         reader.skipType(tag & 7);
@@ -21205,16 +20926,6 @@ $root.org = (function() {
                                         var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.verify(message.value);
                                         if (error)
                                             return "value." + error;
-                                    }
-                                }
-                                if (message.ranking != null && message.hasOwnProperty("ranking")) {
-                                    if (properties.right === 1)
-                                        return "right: multiple values";
-                                    properties.right = 1;
-                                    {
-                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.verify(message.ranking);
-                                        if (error)
-                                            return "ranking." + error;
                                     }
                                 }
                                 return null;
@@ -21288,11 +20999,6 @@ $root.org = (function() {
                                         throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.value: object expected");
                                     message.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.fromObject(object.value);
                                 }
-                                if (object.ranking != null) {
-                                    if (typeof object.ranking !== "object")
-                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsRequest.HavingClause.ranking: object expected");
-                                    message.ranking = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.fromObject(object.ranking);
-                                }
                                 return message;
                             };
 
@@ -21321,11 +21027,6 @@ $root.org = (function() {
                                     object.value = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.DocumentFieldValue.toObject(message.value, options);
                                     if (options.oneofs)
                                         object.right = "value";
-                                }
-                                if (message.ranking != null && message.hasOwnProperty("ranking")) {
-                                    object.ranking = $root.org.dash.platform.dapi.v0.GetDocumentsRequest.HavingRanking.toObject(message.ranking, options);
-                                    if (options.oneofs)
-                                        object.right = "ranking";
                                 }
                                 return object;
                             };
@@ -26831,6 +26532,7 @@ $root.org = (function() {
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
                                  * @interface IRankedEntries
                                  * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IRankedEntry>|null} [entries] RankedEntries entries
+                                 * @property {number|Long|null} [skipped] RankedEntries skipped
                                  */
 
                                 /**
@@ -26856,6 +26558,14 @@ $root.org = (function() {
                                  * @instance
                                  */
                                 RankedEntries.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * RankedEntries skipped.
+                                 * @member {number|Long} skipped
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntries
+                                 * @instance
+                                 */
+                                RankedEntries.prototype.skipped = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                                 /**
                                  * Creates a new RankedEntries instance using the specified properties.
@@ -26884,6 +26594,8 @@ $root.org = (function() {
                                     if (message.entries != null && message.entries.length)
                                         for (var i = 0; i < message.entries.length; ++i)
                                             $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.skipped != null && Object.hasOwnProperty.call(message, "skipped"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.skipped);
                                     return writer;
                                 };
 
@@ -26922,6 +26634,9 @@ $root.org = (function() {
                                             if (!(message.entries && message.entries.length))
                                                 message.entries = [];
                                             message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        case 2:
+                                            message.skipped = reader.uint64();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -26967,6 +26682,9 @@ $root.org = (function() {
                                                 return "entries." + error;
                                         }
                                     }
+                                    if (message.skipped != null && message.hasOwnProperty("skipped"))
+                                        if (!$util.isInteger(message.skipped) && !(message.skipped && $util.isInteger(message.skipped.low) && $util.isInteger(message.skipped.high)))
+                                            return "skipped: integer|Long expected";
                                     return null;
                                 };
 
@@ -26992,6 +26710,15 @@ $root.org = (function() {
                                             message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.fromObject(object.entries[i]);
                                         }
                                     }
+                                    if (object.skipped != null)
+                                        if ($util.Long)
+                                            (message.skipped = $util.Long.fromValue(object.skipped)).unsigned = true;
+                                        else if (typeof object.skipped === "string")
+                                            message.skipped = parseInt(object.skipped, 10);
+                                        else if (typeof object.skipped === "number")
+                                            message.skipped = object.skipped;
+                                        else if (typeof object.skipped === "object")
+                                            message.skipped = new $util.LongBits(object.skipped.low >>> 0, object.skipped.high >>> 0).toNumber(true);
                                     return message;
                                 };
 
@@ -27010,11 +26737,22 @@ $root.org = (function() {
                                     var object = {};
                                     if (options.arrays || options.defaults)
                                         object.entries = [];
+                                    if (options.defaults)
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.skipped = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.skipped = options.longs === String ? "0" : 0;
                                     if (message.entries && message.entries.length) {
                                         object.entries = [];
                                         for (var j = 0; j < message.entries.length; ++j)
                                             object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.toObject(message.entries[j], options);
                                     }
+                                    if (message.skipped != null && message.hasOwnProperty("skipped"))
+                                        if (typeof message.skipped === "number")
+                                            object.skipped = options.longs === String ? String(message.skipped) : message.skipped;
+                                        else
+                                            object.skipped = options.longs === String ? $util.Long.prototype.toString.call(message.skipped) : options.longs === Number ? new $util.LongBits(message.skipped.low >>> 0, message.skipped.high >>> 0).toNumber(true) : message.skipped;
                                     return object;
                                 };
 

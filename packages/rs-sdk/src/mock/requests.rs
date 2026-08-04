@@ -715,17 +715,24 @@ impl MockResponse for drive_proof_verifier::DocumentSplitAverages {
     }
 }
 
-/// Wire shape for `DocumentRankedEntries` mock round-trip:
-/// `(group key, axis tag, value)` triples, in list order — **order is
-/// the ranking**, so a map-shaped encoding (as used nowhere here, but
-/// as would be the obvious alternative) would destroy the answer.
+/// Wire shape for `DocumentRankedEntries` mock round-trip: the page's
+/// `starting_rank`, then `(group key, axis tag, value)` triples in list
+/// order — **order is the ranking**, so a map-shaped encoding (as used
+/// nowhere here, but as would be the obvious alternative) would destroy
+/// the answer.
+///
+/// `starting_rank` is part of the encoding rather than reconstructed as
+/// `0` on decode, because it is exactly what an offset test needs to
+/// assert: a mock that dropped it would make every expectation look
+/// like an offset-0 query and quietly pass a round-trip that lost the
+/// rank base.
 ///
 /// The value is widened to `i128` across all three axes: `Count`
 /// (`u64`) and `Sum` (`i64`) both fit losslessly, and `AvgFixedPoint`
 /// is already an `i128`. One numeric column keeps the tuple flat while
 /// the tag preserves which axis produced it, so a mock expectation
 /// can't quietly turn a count into a sum.
-type DocumentRankedTriples = Vec<(Vec<u8>, u8, i128)>;
+type DocumentRankedPage = (u64, Vec<(Vec<u8>, u8, i128)>);
 
 const RANKED_TAG_COUNT: u8 = 0;
 const RANKED_TAG_SUM: u8 = 1;
@@ -734,8 +741,8 @@ const RANKED_TAG_AVG: u8 = 2;
 impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
     fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         let bincode_config = standard();
-        let triples: DocumentRankedTriples = self
-            .0
+        let triples: Vec<(Vec<u8>, u8, i128)> = self
+            .entries
             .iter()
             .map(|e| match e.value {
                 drive_proof_verifier::RankedEntryValue::Count(count) => {
@@ -749,7 +756,8 @@ impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
                 }
             })
             .collect();
-        bincode::encode_to_vec(triples, bincode_config).expect("encode DocumentRankedEntries")
+        let page: DocumentRankedPage = (self.starting_rank, triples);
+        bincode::encode_to_vec(page, bincode_config).expect("encode DocumentRankedEntries")
     }
 
     fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
@@ -757,7 +765,7 @@ impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
         Self: Sized,
     {
         let bincode_config = standard();
-        let (triples, _): (DocumentRankedTriples, _) =
+        let ((starting_rank, triples), _): (DocumentRankedPage, _) =
             bincode::decode_from_slice(buf, bincode_config).expect("decode DocumentRankedEntries");
         let entries: Vec<drive_proof_verifier::RankedEntry> = triples
             .into_iter()
@@ -775,6 +783,9 @@ impl MockResponse for drive_proof_verifier::DocumentRankedEntries {
                 drive_proof_verifier::RankedEntry { key, value }
             })
             .collect();
-        drive_proof_verifier::DocumentRankedEntries(entries)
+        drive_proof_verifier::DocumentRankedEntries {
+            starting_rank,
+            entries,
+        }
     }
 }

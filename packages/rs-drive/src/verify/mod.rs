@@ -8,7 +8,8 @@ pub mod document;
 /// `GetDocumentsCount` endpoint's prove-path verifiers).
 pub mod document_count;
 /// Document-ranked verification methods on proofs (the
-/// `HAVING … TOP(n)` surface's prove-path verifier).
+/// `GROUP BY … ORDER BY <aggregate> LIMIT n` surface's prove-path
+/// verifier).
 pub mod document_ranked;
 /// Document-sum verification methods on proofs (the
 /// `GetDocumentsSum` endpoint's prove-path verifiers).

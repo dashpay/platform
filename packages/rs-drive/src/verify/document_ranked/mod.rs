@@ -1,5 +1,5 @@
-//! Verifies grovedb proofs produced by the ranked (`HAVING … TOP(n)`)
-//! query surface.
+//! Verifies grovedb proofs produced by the ranked
+//! (`GROUP BY … ORDER BY <aggregate> LIMIT n [OFFSET m]`) query surface.
 //!
 //! Mirrors the layering of [`super::document_count`]: a pure
 //! grovedb-level verifier as a method on
@@ -11,9 +11,9 @@
 //! Only one verifier exists here, and by design: the ranked surface has a
 //! single proof shape. Where the count surface has five verifiers because
 //! five different grovedb primitives can answer a count, every ranked
-//! request — `TOP`, `BOTTOM`, `MAX`, `MIN`, on any of the three axes —
-//! resolves to one `prove_indexed_axis_top_k` envelope that differs only
-//! in the `(axis, k, descending)` triple it echoes.
+//! request — either direction, at any offset, on any of the three axes —
+//! resolves to one `prove_indexed_axis_top_k_paginated` envelope that
+//! differs only in the `(axis, k, descending, offset)` tuple it echoes.
 
 /// Indexed-axis top-k proof verification — returns the ranked groups the
 /// proof commits to, in ranking order.

@@ -2435,41 +2435,6 @@ export namespace GetDocumentsRequest {
     export const Function: FunctionMap;
   }
 
-  export class HavingRanking extends jspb.Message {
-    getKind(): GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap];
-    setKind(value: GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap]): void;
-
-    hasN(): boolean;
-    clearN(): void;
-    getN(): string;
-    setN(value: string): void;
-
-    serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): HavingRanking.AsObject;
-    static toObject(includeInstance: boolean, msg: HavingRanking): HavingRanking.AsObject;
-    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: HavingRanking, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): HavingRanking;
-    static deserializeBinaryFromReader(message: HavingRanking, reader: jspb.BinaryReader): HavingRanking;
-  }
-
-  export namespace HavingRanking {
-    export type AsObject = {
-      kind: GetDocumentsRequest.HavingRanking.KindMap[keyof GetDocumentsRequest.HavingRanking.KindMap],
-      n: string,
-    }
-
-    export interface KindMap {
-      MIN: 0;
-      MAX: 1;
-      TOP: 2;
-      BOTTOM: 3;
-    }
-
-    export const Kind: KindMap;
-  }
-
   export class HavingClause extends jspb.Message {
     hasAggregate(): boolean;
     clearAggregate(): void;
@@ -2483,11 +2448,6 @@ export namespace GetDocumentsRequest {
     clearValue(): void;
     getValue(): GetDocumentsRequest.DocumentFieldValue | undefined;
     setValue(value?: GetDocumentsRequest.DocumentFieldValue): void;
-
-    hasRanking(): boolean;
-    clearRanking(): void;
-    getRanking(): GetDocumentsRequest.HavingRanking | undefined;
-    setRanking(value?: GetDocumentsRequest.HavingRanking): void;
 
     getRightCase(): HavingClause.RightCase;
     serializeBinary(): Uint8Array;
@@ -2505,7 +2465,6 @@ export namespace GetDocumentsRequest {
       aggregate?: GetDocumentsRequest.HavingAggregate.AsObject,
       operator: GetDocumentsRequest.HavingClause.OperatorMap[keyof GetDocumentsRequest.HavingClause.OperatorMap],
       value?: GetDocumentsRequest.DocumentFieldValue.AsObject,
-      ranking?: GetDocumentsRequest.HavingRanking.AsObject,
     }
 
     export interface OperatorMap {
@@ -2527,7 +2486,6 @@ export namespace GetDocumentsRequest {
     export enum RightCase {
       RIGHT_NOT_SET = 0,
       VALUE = 3,
-      RANKING = 4,
     }
   }
 
@@ -3300,6 +3258,11 @@ export namespace GetDocumentsResponse {
       setEntriesList(value: Array<GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry>): void;
       addEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry, index?: number): GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry;
 
+      hasSkipped(): boolean;
+      clearSkipped(): void;
+      getSkipped(): string;
+      setSkipped(value: string): void;
+
       serializeBinary(): Uint8Array;
       toObject(includeInstance?: boolean): RankedEntries.AsObject;
       static toObject(includeInstance: boolean, msg: RankedEntries): RankedEntries.AsObject;
@@ -3313,6 +3276,7 @@ export namespace GetDocumentsResponse {
     export namespace RankedEntries {
       export type AsObject = {
         entriesList: Array<GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.AsObject>,
+        skipped: string,
       }
     }
 

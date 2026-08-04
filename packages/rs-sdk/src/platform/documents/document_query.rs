@@ -11,12 +11,11 @@ use dapi_grpc::platform::v0::{
         document_field_value,
         get_documents_request_v0::Start,
         get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
-        having_aggregate, having_clause, having_ranking, order_clause,
+        having_aggregate, having_clause, order_clause,
         DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
         GetDocumentsRequestV1, HavingAggregate as ProtoHavingAggregate,
-        HavingClause as ProtoHavingClause, HavingRanking as ProtoHavingRanking,
-        OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
-        WhereOperator as ProtoWhereOperator,
+        HavingClause as ProtoHavingClause, OrderClause as ProtoOrderClause,
+        WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -32,10 +31,11 @@ use dpp::{
     prelude::{DataContract, Identifier},
     InvalidVectorSizeError, ProtocolError,
 };
+use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
-    HavingRanking, HavingRankingKind, HavingRightOperand, InternalClauses, OrderClause,
-    SelectFunction, SelectProjection, WhereClause, WhereOperator,
+    HavingRightOperand, InternalClauses, OrderClause, SelectFunction, SelectProjection,
+    WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 
@@ -80,34 +80,72 @@ pub struct DocumentQuery {
     /// `select=Documents` is rejected by the server as unsupported.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub group_by: Vec<String>,
-    /// SQL `HAVING` clauses — aggregate filters that apply to the
-    /// grouped rows produced by `select = Count`, `group_by =
-    /// […]`. Unlike `where_clauses`, the left side is an aggregate
-    /// (`COUNT(*)`, `SUM(field)`, `AVG(field)`) rather than a raw
-    /// row field, and the right side is either a literal value or a
-    /// cross-group ranking (`TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`).
-    /// See [`HavingClause`] / [`drive::query::HavingAggregate`] /
+    /// SQL `HAVING` clauses — **boolean** aggregate filters that apply
+    /// to the grouped rows produced by `select = Count | Sum | Avg`
+    /// with a non-empty `group_by`. Unlike `where_clauses`, the left
+    /// side is an aggregate (`COUNT(*)`, `SUM(field)`, `AVG(field)`)
+    /// rather than a raw row field. See [`HavingClause`] /
+    /// [`drive::query::HavingAggregate`] /
     /// [`drive::query::HavingOperator`] for the catalogs. Multiple
     /// entries combine with implicit `AND`.
     ///
-    /// Only the *ranked* subset executes today, from protocol version
-    /// 14: exactly one clause, over an aggregate the contract's index
-    /// declares rankable, with a `TOP(n)` / `BOTTOM(n)` right
-    /// operand. Literal right operands, multiple clauses, and the
-    /// `MAX` / `MIN` rankings (whose groups tied at the extreme are
-    /// not provable — use `TOP(1)` / `BOTTOM(1)`) are rejected with
-    /// `QuerySyntaxError`. The typed builder covers the whole
-    /// aggregate-filter surface so callers can encode the rest ahead
-    /// of server support landing without a wire-format change.
+    /// **Every non-empty value is rejected by the server** with
+    /// `QuerySyntaxError::Unsupported("HAVING clause is not yet
+    /// implemented")`, at every protocol version. The typed builder
+    /// exists so callers can encode `HAVING` ahead of server support
+    /// landing without a wire-format change.
+    ///
+    /// **`having` does not express ranking.** "The n highest-scoring
+    /// groups" is [`Self::order_by_selected_aggregate`] +
+    /// [`Self::with_limit`] — SQL's own `ORDER BY <agg> DESC LIMIT n`
+    /// — which *is* served, from protocol version 14.
     #[cfg_attr(feature = "mocks", serde(default))]
     pub having: Vec<HavingClause>,
-    /// `order_by` clauses for the query
+    /// `order_by` clauses for the query.
+    ///
+    /// For `select = Documents` these order the matched rows. For the
+    /// **ranked** surface a single clause naming the selected
+    /// aggregate orders the *groups* — see
+    /// [`Self::order_by_selected_aggregate`], which builds it.
     pub order_by_clauses: Vec<OrderClause>,
     /// queryset limit. `0` is the sentinel for "unset / default" and
     /// is translated to `None` on the V1 wire (`optional uint32`).
     pub limit: u32,
+    /// SQL `OFFSET` — how many result rows to skip before the returned
+    /// page. `None` leaves the field unset on the wire.
+    ///
+    /// Served on exactly one path: the **ranked** surface (protocol
+    /// version 14+), where it skips that many *ranks*, so
+    /// `.order_by_selected_aggregate(Descending).with_limit(1)
+    /// .with_offset(4)` is the 5th-best group. Everywhere else the
+    /// server rejects a set offset with `Unsupported("OFFSET
+    /// pagination is not yet implemented")`.
+    ///
+    /// `#[serde(default)]` for the same mock-vector compatibility
+    /// reason as `select` / `group_by` / `having`: a fixture captured
+    /// before offsets existed deserializes to `None`.
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub offset: Option<u32>,
     /// first object to start with
     pub start: Option<Start>,
+}
+
+/// Which end of a ranking a
+/// [`DocumentQuery::order_by_selected_aggregate`] call walks from.
+///
+/// A named pair rather than a bare `ascending: bool`, because the two
+/// readings of a ranked query — "the best n" and "the worst n" — are
+/// what callers actually think in, and `false` meaning "best first" at
+/// a call site is exactly the sort of thing that gets flipped in
+/// review without anyone noticing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RankingDirection {
+    /// `ORDER BY <aggregate> DESC` — walk from the largest aggregate
+    /// down. The "top n" reading: entry 0 is the highest-scoring group.
+    Descending,
+    /// `ORDER BY <aggregate> ASC` — walk from the smallest aggregate
+    /// up. The "bottom n" reading: entry 0 is the lowest-scoring group.
+    Ascending,
 }
 
 impl DocumentQuery {
@@ -131,6 +169,7 @@ impl DocumentQuery {
             having: Vec::new(),
             order_by_clauses: vec![],
             limit: 0,
+            offset: None,
             start: None,
         })
     }
@@ -248,8 +287,76 @@ impl DocumentQuery {
     /// implemented")`. The builder exists so SDK callers can
     /// encode `HAVING` ahead of server support landing without
     /// another version bump.
+    ///
+    /// This is **not** how you ask for a ranking — see
+    /// [`Self::order_by_selected_aggregate`].
     pub fn with_having(mut self, having: Vec<HavingClause>) -> Self {
         self.having = having;
+        self
+    }
+
+    /// Order the `GROUP BY` groups by the aggregate this query
+    /// selects — the **ranked** surface, `ORDER BY <the selected
+    /// aggregate> [ASC|DESC]` (protocol version 14+).
+    ///
+    /// Replaces any previously set `order_by`, because a ranked query
+    /// takes exactly one ordering clause and a second one is rejected
+    /// rather than combined.
+    ///
+    /// The ordered field name is derived from the current
+    /// [`Self::select`] by rs-drive's own
+    /// [`ranked_order_key`] — `SUM(f)` / `AVG(f)` are named by `f`,
+    /// and `COUNT(*)` by the `$count` sentinel. Calling
+    /// [`Self::with_select`] *after* this method leaves a stale field
+    /// name behind and the server will refuse the request; set the
+    /// select first, which is also how the query reads.
+    ///
+    /// Pair with [`Self::with_limit`] (the ranking's `n`, `1 ..= 100`)
+    /// and optionally [`Self::with_offset`], then fetch with
+    /// [`DocumentRankedEntries`](drive_proof_verifier::DocumentRankedEntries).
+    ///
+    /// # The 5th-best group
+    ///
+    /// ```rust,no_run
+    /// # use dash_sdk::platform::{DataContract, DocumentQuery};
+    /// # use dash_sdk::platform::documents::document_query::RankingDirection;
+    /// # use dash_sdk::drive::query::SelectProjection;
+    /// # fn example(contract: DataContract) -> Result<(), dash_sdk::Error> {
+    /// // SELECT avg(grade) GROUP BY restaurantId
+    /// //   ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4
+    /// let query = DocumentQuery::new(contract, "review")?
+    ///     .with_select(SelectProjection::avg("grade"))
+    ///     .with_group_by("restaurantId")
+    ///     .order_by_selected_aggregate(RankingDirection::Descending)
+    ///     .with_limit(1)
+    ///     .with_offset(4);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn order_by_selected_aggregate(mut self, direction: RankingDirection) -> Self {
+        self.order_by_clauses = vec![OrderClause {
+            field: ranked_order_key(&self.select).to_string(),
+            ascending: matches!(direction, RankingDirection::Ascending),
+        }];
+        self
+    }
+
+    /// Set the SQL `OFFSET` — how many ranks to skip before the
+    /// returned page.
+    ///
+    /// Only the ranked surface honours it (see
+    /// [`Self::order_by_selected_aggregate`]); on every other path the
+    /// server rejects a set offset with `Unsupported`. There is no
+    /// ceiling: grovedb attests the skipped region from counted
+    /// subtree commitments instead of walking it, so a deep offset
+    /// costs exactly what a shallow one does.
+    ///
+    /// An offset past the end of the ranking is a legitimate answer
+    /// rather than an error — the page comes back empty, and on a
+    /// proved fetch its `starting_rank` is the ranking's attested total
+    /// population.
+    pub fn with_offset(mut self, offset: u32) -> Self {
+        self.offset = Some(offset);
         self
     }
 
@@ -377,6 +484,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             having,
             order_by_clauses,
             limit,
+            offset,
             start,
         } = value;
 
@@ -400,6 +508,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                 where_clauses,
                 order_by_clauses,
                 limit,
+                offset,
                 start,
                 &select,
                 &group_by,
@@ -411,6 +520,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
                 where_clauses,
                 order_by_clauses,
                 limit,
+                offset,
                 start,
                 select,
                 group_by,
@@ -432,6 +542,7 @@ fn encode_v1(
     where_clauses: Vec<WhereClause>,
     order_by_clauses: Vec<OrderClause>,
     limit: u32,
+    offset: Option<u32>,
     start: Option<Start>,
     select: SelectProjection,
     group_by: Vec<String>,
@@ -486,10 +597,12 @@ fn encode_v1(
             selects: vec![select_to_proto(select)],
             group_by,
             having,
-            // `offset` is wire-reserved for future row-based
-            // pagination; the SDK doesn't surface it yet, so we
-            // always emit `None` here.
-            offset: None,
+            // Honoured on the ranked path (it is the `OFFSET` of
+            // `ORDER BY <agg> DESC LIMIT n OFFSET m`) and rejected by
+            // the server everywhere else. Passed straight through:
+            // deciding here which paths may carry an offset would put
+            // a second copy of that rule in the SDK.
+            offset,
         })),
     })
 }
@@ -501,6 +614,7 @@ fn encode_v0(
     where_clauses: Vec<WhereClause>,
     order_by_clauses: Vec<OrderClause>,
     limit: u32,
+    offset: Option<u32>,
     start: Option<Start>,
     select: &SelectProjection,
     group_by: &[String],
@@ -525,6 +639,15 @@ fn encode_v0(
         return Err(Error::Config(
             "having clauses require Platform v3.1+ (V1 documents wire); not supported on V0"
                 .to_string(),
+        ));
+    }
+    if offset.is_some() {
+        // The V0 request message has no `offset` field at all, so
+        // silently dropping it would page from rank 0 while the caller
+        // believed they had skipped ahead — the one failure mode worth
+        // an extra branch here.
+        return Err(Error::Config(
+            "offset requires Platform v3.1+ (V1 documents wire); not supported on V0".to_string(),
         ));
     }
 
@@ -585,6 +708,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
         let where_clauses = value.internal_clauses.clone().into();
         let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
         let limit = value.limit.unwrap_or(0) as u32;
+        let offset = value.offset.map(u32::from);
 
         let start = if let Some(start_at) = value.start_at {
             match value.start_at_included {
@@ -607,6 +731,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             having: Vec::new(),
             order_by_clauses,
             limit,
+            offset,
             start,
         }
     }
@@ -619,6 +744,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
         let where_clauses = value.internal_clauses.clone().into();
         let order_by_clauses = value.order_by.iter().map(|(_, v)| v.clone()).collect();
         let limit = value.limit.unwrap_or(0) as u32;
+        let offset = value.offset.map(u32::from);
 
         let start = if let Some(start_at) = value.start_at {
             match value.start_at_included {
@@ -641,6 +767,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             having: Vec::new(),
             order_by_clauses,
             limit,
+            offset,
             start,
         }
     }
@@ -684,11 +811,30 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             ),
         };
 
+        // `DriveDocumentQuery`'s offset is a `u16`; the wire's is a
+        // `u32` because the ranked path takes an unbounded one. A
+        // documents query that overflows `u16` is refused rather than
+        // truncated — silently paging from a different rank than the
+        // caller asked for is the worst available outcome.
+        let offset = request
+            .offset
+            .map(|offset| {
+                u16::try_from(offset).map_err(|_| {
+                    Error::Config(format!(
+                        "offset {offset} does not fit a documents query's u16 offset \
+                         (max {}); offsets above that are only meaningful on the ranked \
+                         surface, which does not route through DriveDocumentQuery",
+                        u16::MAX
+                    ))
+                })
+            })
+            .transpose()?;
+
         let query = Self {
             contract: &request.data_contract,
             document_type,
             internal_clauses,
-            offset: None,
+            offset,
             limit,
             order_by: request
                 .order_by_clauses
@@ -740,13 +886,11 @@ fn order_clause_to_proto(clause: OrderClause) -> ProtoOrderClause {
 /// counterpart. The inverse of `rs-drive-abci`'s
 /// `having_clause_from_proto`. Errors only on `Value` variants
 /// the underlying `value_to_proto` can't represent — every
-/// `HavingOperator` / `HavingAggregateFunction` /
-/// `HavingRankingKind` discriminant has a 1:1 wire counterpart
-/// and is always convertible.
+/// `HavingOperator` / `HavingAggregateFunction` discriminant has a
+/// 1:1 wire counterpart and is always convertible.
 fn having_clause_to_proto(clause: HavingClause) -> Result<ProtoHavingClause, Error> {
     let right = match clause.right {
         HavingRightOperand::Value(v) => having_clause::Right::Value(value_to_proto(v)?),
-        HavingRightOperand::Ranking(r) => having_clause::Right::Ranking(having_ranking_to_proto(r)),
     };
     Ok(ProtoHavingClause {
         aggregate: Some(having_aggregate_to_proto(clause.aggregate)),
@@ -767,22 +911,6 @@ fn having_function_to_proto(function: HavingAggregateFunction) -> having_aggrega
         HavingAggregateFunction::Count => having_aggregate::Function::Count,
         HavingAggregateFunction::Sum => having_aggregate::Function::Sum,
         HavingAggregateFunction::Avg => having_aggregate::Function::Avg,
-    }
-}
-
-fn having_ranking_to_proto(ranking: HavingRanking) -> ProtoHavingRanking {
-    ProtoHavingRanking {
-        kind: having_ranking_kind_to_proto(ranking.kind) as i32,
-        n: ranking.n,
-    }
-}
-
-fn having_ranking_kind_to_proto(kind: HavingRankingKind) -> having_ranking::Kind {
-    match kind {
-        HavingRankingKind::Min => having_ranking::Kind::Min,
-        HavingRankingKind::Max => having_ranking::Kind::Max,
-        HavingRankingKind::Top => having_ranking::Kind::Top,
-        HavingRankingKind::Bottom => having_ranking::Kind::Bottom,
     }
 }
 

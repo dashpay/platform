@@ -13,10 +13,27 @@ Every other aggregate query in Drive walks *value trees* under a property-name t
 Three consequences shape the entire API, and they are the reason this chapter's "what is rejected" table is longer than its query list:
 
 1. **No `where` clauses.** Ranked indexes are single-property, so there is no equality prefix to narrow; and a `where` on the ranked property itself asks for a *filtered* ranking, which the secondary cannot express — it is sorted by aggregate, not by group key.
-2. **No `limit` / `offset` / `start_at`.** The result size is the `n` of the ranking. A second, independent limit could only disagree with it.
+2. **No `start_at` cursor.** A cursor names a document id, and document ids do not appear in a keyspace sorted by aggregate. `LIMIT` and `OFFSET` *are* honoured — they are how the ranking is sized and paged; see [Ranks and Offsets](#ranks-and-offsets).
 3. **Entry order IS the ranking order.** The executor returns entries in the order grovedb walked the secondary. Callers must not re-sort.
 
-Each of those is **rejected rather than ignored**, on both the client and the server, because a ranked walk cannot honour them and silently answering a different question is worse than an error.
+The rejections are **rejections rather than silent ignores**, on both the client and the server, because a ranked walk cannot honour them and silently answering a different question is worse than an error.
+
+### The grammar is plain SQL
+
+A ranked query is spelled the way SQL already spells "the n highest-scoring groups":
+
+```sql
+SELECT avg(grade) FROM review
+  GROUP BY restaurantId
+  ORDER BY avg(grade) DESC
+  LIMIT 3
+```
+
+`DESC` is the "top n" reading, `ASC` the "bottom n" reading. `LIMIT` is the ranking's size; `OFFSET` moves the window down the ranking.
+
+**This replaced a non-SQL spelling that never shipped.** An earlier draft put the ranking on the right of a `HAVING` clause — `HAVING avg(grade) IN TOP(3)`, with `TOP` / `BOTTOM` / `MAX` / `MIN` as cross-group primitives. It was removed before release rather than deprecated. The deliberate call: SQL conformance beats a bespoke primitive. Every client author already knows `ORDER BY … LIMIT`; nobody knows `IN TOP(n)`, and the two express exactly the same thing. The retired spelling also had a rough edge the SQL one simply does not have — `= MAX` means *every* group tied at the extreme, which a bounded read cannot prove, so `MAX` / `MIN` had to be permanently refused. `ORDER BY <agg> DESC LIMIT 1` is positional and has no such ambiguity.
+
+`HAVING` survives as what it is in SQL: a boolean per-group predicate. It is not yet evaluated (every non-empty `having` is `Unsupported`), and it cannot currently be combined with a ranking `ORDER BY` — the ranked executor reads a pre-sorted secondary and has no way to drop groups from the middle of that walk.
 
 ## The Restaurants Contract
 
@@ -242,55 +259,73 @@ Every ranked read and every ranked proof is issued against exactly that path, bu
 
 ## The Request on the Wire
 
-Ranked queries ride the existing `GetDocumentsRequestV1`. No new request message and no new field were added: `selects`, `group_by` and `having` already existed, and the ranking is expressed by what goes in them.
+Ranked queries ride the existing `GetDocumentsRequestV1`. No new request message and no new field were added: `selects`, `group_by`, `order_by`, `limit` and `offset` already existed, and the ranking is expressed by what goes in them.
 
 ```proto
 message GetDocumentsRequestV1 {
   // …
+  repeated OrderClause order_by = 4;
+  optional uint32      limit    = 5;
+  bool                 prove    = 8;
   repeated Select      selects  = 9;
   repeated string      group_by = 10;
-  repeated HavingClause having  = 11;
-  bool                 prove    = 8;
+  optional uint32      offset   = 12;
 }
 ```
 
-A well-formed ranked request carries **exactly one** of each of the first three, and everything else at its unset wire value:
+A well-formed ranked request carries **exactly one** select, `group_by` property and `order_by` clause, and everything else at its unset wire value:
 
 | Field | Ranked value |
 |---|---|
 | `selects` | one `Select { function: AVG, field: "grade" }` |
 | `group_by` | `["restaurantId"]` |
-| `having` | one `HavingClause { aggregate: {AVG, "grade"}, operator: IN, right: Ranking{TOP, n: 5} }` |
+| `order_by` | one `OrderClause { target: Field("grade"), ascending: false }` |
+| `limit` | the ranking's `n`, `1 ..= 100` — **required** |
+| `offset` | ranks to skip; unset = 0 |
 | `where_clauses` | empty — **rejected if not** |
-| `order_by` | empty — **rejected if not** |
-| `limit` / `offset` | unset — **rejected if set** |
+| `having` | empty — **rejected if not** |
 | `start_after` / `start_at` | unset — **rejected if set** |
 
-The `having` aggregate must be the *same* aggregate as the `select`; ranking one thing while projecting another is rejected. For `COUNT(*)` rankings, **both** the select's `field` and the having aggregate's `field` are the empty string.
+### Naming the aggregate in `ORDER BY`
 
-The ranking operand itself:
+The `order_by` clause names the aggregate it orders by through the wire's **field** target, and the name has to be the one the `select` already fixed:
 
-```proto
-message HavingRanking {
-  enum Kind {
-    MIN = 0;
-    MAX = 1;
-    TOP = 2;
-    BOTTOM = 3;
-  }
-  Kind kind = 1;
-  // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
-  // single largest / smallest). Required for those two kinds,
-  // and its absence is rejected at evaluation rather than at
-  // decode. Ignored for `MIN` / `MAX`, which evaluation
-  // rejects whether or not it is set.
-  optional uint64 n = 2 [jstype = JS_STRING];
-}
+| `select` | `order_by` field |
+|---|---|
+| `SUM(amount)` | `"amount"` |
+| `AVG(grade)` | `"grade"` |
+| `COUNT(*)` | `"$count"` |
+
+`SUM(f)` / `AVG(f)` are named by `f` — the same property the projection aggregates, which is how `ORDER BY avg(grade)` reads once `SELECT` has fixed the function. `COUNT(*)` aggregates no property, so it is named by the reserved sentinel **`$count`** (`RANKED_COUNT_ORDER_KEY`). The `$` sigil is load-bearing: DPP reserves the `$` prefix for system properties (`$id`, `$ownerId`, …) and a schema cannot declare a property starting with it, so `$count` can never collide with a real column. A bare `count` would silently hijack ordering for any schema that happens to have a `count` field.
+
+An `order_by` naming anything else — a second clause, the `GROUP BY` property, an unrelated field — is rejected rather than normalized. The SDK's `order_by_selected_aggregate()` builder derives the name from the `select` through rs-drive's own mapping, so there is no way to get it wrong by hand.
+
+The wire also carries an explicit aggregate target (`OrderClause.target.aggregate`, e.g. `ORDER BY AVG(grade)` spelled out). It is still `Unsupported` — the field-target spelling above is the one the ranked executor reads — and exists so the explicit form can start being evaluated without another version bump.
+
+`limit` is bounded to `1 ..= 100` (`MAX_RANKED_LIMIT`). Out-of-range is **rejected, not clamped** — `k` is echoed inside the proof envelope and re-checked by the verifier, so a server-side clamp would produce a proof the client's own reconstruction rejects.
+
+## Ranks and Offsets
+
+`OFFSET` is honoured on the ranked path — the one place in the v1 surface where it is — and it is how you ask for a rank rather than a prefix:
+
+```sql
+SELECT avg(grade) FROM review
+  GROUP BY restaurantId
+  ORDER BY avg(grade) DESC
+  LIMIT 1 OFFSET 4        -- the 5th-best restaurant
 ```
 
-**Operator pairing** is the surface's sharpest edge. `TOP(n)` / `BOTTOM(n)` are *set membership* and take `IN`; `MAX` / `MIN` are value-based scalars and take `=`. `= TOP(1)` is also accepted, so the `n == 1` case is not a trap. The SDK's `ranking_having()` constructor exists to get this pairing right without the caller thinking about it.
+The response carries the skip back in `RankedEntries.skipped` (see [The Response](#the-response)), so the page is self-describing.
 
-`n` is bounded to `1 ..= 100` (`MAX_RANKED_LIMIT`). Out-of-range is **rejected, not clamped** — `k` is echoed inside the proof envelope and re-checked by the verifier, so a server-side clamp would produce a proof the client's own reconstruction rejects.
+`skipped` is the page's **starting rank base**: entry `i` is the group at rank `skipped + i` (0-based). Without it, a caller who asked for `LIMIT 1 OFFSET 4` receives one entry and has no way to tell that it really is the 5th-best group rather than the best. It is `0` for offset-less queries, which is what makes the field additive.
+
+Three properties worth stating plainly:
+
+- **The skip is attested, not walked.** grovedb proves the skipped region from the counted subtree commitments (`HashWithCount` / `HashWithCountAndSum`) rather than by traversing it. Both the prover's work and the proof's size stay `O(log n + k)` **at any offset**.
+- **There is therefore no offset ceiling.** An offset of 4 and an offset of four billion cost the same, so there is no denial-of-service lever a cap would close — and a cap would only stop honest deep pagination.
+- **An offset past the end is a positive answer.** `entries` comes back empty and `skipped` is the ranking's *entire attested population*. "There are only 12 groups" is more information than a bare empty list.
+
+On the **unproven** read there is nothing to attest and grovedb's read API does not report a short walk, so `skipped` simply echoes the requested offset. The proved and unproven paths therefore disagree in exactly one case — an offset past the end, where the unproven read reports the request and the proved one reports the truth. **Callers who need the population must prove.**
 
 ## The Response
 
@@ -308,19 +343,21 @@ message RankedEntry {
 
 message RankedEntries {
   repeated RankedEntry entries = 1;
+  optional uint64      skipped = 2 [jstype = JS_STRING];
 }
 ```
 
-Four properties of the payload, each of them load-bearing:
+Five properties of the payload, each of them load-bearing:
 
+- **`skipped` is the page's starting rank** — see [Ranks and Offsets](#ranks-and-offsets). `0` for an offset-less query.
 - **`key` is raw index-key bytes**, not a typed value — the same bytes that name the group's value tree under the index. For a `string` property that's its UTF-8 encoding (`b"alpha"`). Clients that want the typed value decode it with the document type's key deserialization; the wire carries bytes so prover and verifier agree without a schema round-trip.
-- **Entry order IS the ranking order** — best-first for `TOP(n)`, worst-first for `BOTTOM(n)`. Clients must not re-sort. Ties come back in group-key order *in the direction of the walk*, which is **descending** group-key order for `TOP`.
+- **Entry order IS the ranking order** — best-first for `DESC`, worst-first for `ASC`. Clients must not re-sort. Ties come back in group-key order *in the direction of the walk*, which is **descending** group-key order for `DESC`.
 - **Fewer than `n` entries is normal**, not an error — the index simply has fewer groups than requested.
 - **`avg_fixed_point` is a 16-byte big-endian two's-complement `i128`**, the exact integer grovedb sorts the Avg axis by: `floor(sum × SCALE / count)` with euclidean (toward −∞) division. It is carried as raw bytes because protobuf has no 128-bit integer type, and as the exact fixed-point integer rather than a `double` because *this is the value the proof commits to* — rounding server-side would make two groups with distinct averages indistinguishable and break the client's byte-for-byte comparison. The client divides by `RANKED_AVG_SCALE`; the decoder rejects anything that isn't exactly 16 bytes rather than zero-padding a short buffer.
 
 ## Queries in this Chapter
 
-Every query below uses the same shape — one aggregate select, one `group_by`, one ranking `having` — and differs only in the axis and the ranking. All seven come from the end-to-end suite; the "verified result" rows are what the unproven read returned *and* what the verifier recovered from the proof, both asserted equal against the live grovedb root hash.
+Every query below uses the same shape — one aggregate select, one `group_by`, one `ORDER BY` on that aggregate and a `LIMIT` — and differs only in the axis and the ranking. All seven come from the end-to-end suite; the "verified result" rows are what the unproven read returned *and* what the verifier recovered from the proof, both asserted equal against the live grovedb root hash.
 
 | # | Query | Doctype / axis | Complexity | Verified result |
 |---|-------|----------------|------------|-----------------|
@@ -348,7 +385,8 @@ Eight `review` documents across four restaurants:
 ```text
 select   = AVG(grade)
 group_by = [restaurantId]
-having   = AVG(grade) IN TOP(3)
+order_by = grade DESC
+limit    = 3
 prove    = true
 ```
 
@@ -380,7 +418,8 @@ Add a fifth restaurant whose sum doesn't divide evenly: `epsilon` with grades 10
 ```text
 select   = AVG(grade)
 group_by = [restaurantId]
-having   = AVG(grade) IN BOTTOM(1)
+order_by = grade ASC
+limit    = 1
 prove    = true
 ```
 
@@ -394,7 +433,7 @@ prove    = true
 
 Three things this query pins:
 
-- **`BOTTOM(1)` is the positional single worst-ranked group.** It walks the secondary from the smallest sort key up and stops after one entry.
+- **`ORDER BY … ASC LIMIT 1` is the positional single worst-ranked group.** It walks the secondary from the smallest sort key up and stops after one entry.
 - **The sort key is `floor(sum × SCALE / count)`**, computed with grovedb's own `compute_avg_fixed_point` — the test asserts the returned value against both the hand-written `21 × SCALE / 2` *and* grovedb's function, so a change to either the scale or the rounding shows up immediately.
 - **`as_f64()` divides back down**, returning exactly `10.5`. It is a display helper: lossy for large counts and sums, and never to be used for consensus-relevant comparisons, since two groups whose fixed-point averages differ can round to the same `f64`.
 
@@ -414,7 +453,8 @@ Ten `visit` documents. The `guests` values are stored but irrelevant here — th
 ```text
 select   = COUNT(*)
 group_by = [restaurantId]
-having   = COUNT(*) IN TOP(2)
+order_by = $count DESC
+limit    = 2
 prove    = true
 ```
 
@@ -436,7 +476,8 @@ Note that `visit`'s index declares no sum flags at all, so its terminal tree is 
 ```text
 select   = COUNT(*)
 group_by = [restaurantId]
-having   = COUNT(*) IN BOTTOM(1)
+order_by = $count ASC
+limit    = 1
 prove    = true
 ```
 
@@ -446,14 +487,7 @@ prove    = true
 [ ("alpha", Count(1)) ]
 ```
 
-The value-based spelling of the same intent — `HAVING COUNT(*) = MIN` — is refused end to end, not just in the pure detector:
-
-```text
-`Min` ranking is not supported: it selects every group tied at the extreme
-aggregate, which the ranked storage cannot prove (ties are broken by group
-key, so a bounded read would silently omit tied groups). Use `TOP(1)` /
-`BOTTOM(1)` for the positional single best-ranked group instead.
-```
+Note what this query does **not** claim. `ORDER BY $count ASC LIMIT 1` is the *positional* single worst-ranked group: if two restaurants tied at one visit each, one of them comes back and the other does not, deterministically (ties break by group key in the walk's direction). It is not "every group at the minimum" — that is a set a bounded read cannot attest, and it is why the retired grammar's `= MIN` spelling could never have been served. The positional reading documents dropping ties as its meaning; the value-based one would have had to lie about it.
 
 See [What Is Rejected and Why](#what-is-rejected-and-why) for the full reasoning.
 
@@ -471,7 +505,8 @@ Seven `tip` documents:
 ```text
 select   = SUM(amount)
 group_by = [restaurantId]
-having   = SUM(amount) IN BOTTOM(3)
+order_by = amount ASC
+limit    = 3
 prove    = true
 ```
 
@@ -485,7 +520,7 @@ prove    = true
 ascending by sum: delta(1) < gamma(24) < alpha(25) < beta(100)
 ```
 
-`TOP(1)` on the same data returns `[("beta", Sum(100))]`.
+`ORDER BY amount DESC LIMIT 1` on the same data returns `[("beta", Sum(100))]`.
 
 Sums are signed (`sint64` on the wire, `i64` in the SDK) for the same reason the sum surface's are: grovedb's sum trees model overflow into negative space rather than saturating. The Sum axis's sort key is the `i64` with its sign bit flipped, which is what makes plain byte comparison order negatives below positives.
 
@@ -496,28 +531,30 @@ Four groups, all summing to 50. Only the group key distinguishes them.
 ```text
 select   = SUM(amount)
 group_by = [restaurantId]
-having   = SUM(amount) IN TOP(4)      // and the BOTTOM(4) mirror
+order_by = amount DESC              // and the ASC mirror
+limit    = 4
 ```
 
 **Verified results:**
 
 ```text
-TOP(4):     ["gamma", "delta", "beta", "alpha"]     // descending group key
-BOTTOM(4):  ["alpha", "beta", "delta", "gamma"]     // ascending group key
+DESC LIMIT 4:  ["gamma", "delta", "beta", "alpha"]  // descending group key
+ASC  LIMIT 4:  ["alpha", "beta", "delta", "gamma"]  // ascending group key
 ```
 
 The two directions are exact reverses of each other under a full-width `k`. That falls out of the secondary's key layout rather than from a separate tie-break rule: keys are `(sort_key ‖ group_key)`, and the walk is a plain directional scan of that keyspace, so equal sort keys come back in group-key order *in the direction of the walk*.
 
-The consequence that matters is determinism under truncation. `TOP(2)` on the same data returns `["gamma", "delta"]` — a **specific** subset, not an arbitrary one, and the same subset on every node. That reproducibility is what makes a tie-truncating `TOP(k)` provable at all, and it is also precisely why `MAX` / `MIN` are not: `= MAX` means *every* group at the extreme, and a bounded read cannot attest that nothing else ties.
+The consequence that matters is determinism under truncation. `DESC LIMIT 2` on the same data returns `["gamma", "delta"]` — a **specific** subset, not an arbitrary one, and the same subset on every node. That reproducibility is what makes a tie-truncating `LIMIT k` provable at all, and it is the reason the retired `= MAX` spelling could never have been served: `= MAX` means *every* group at the extreme, and a bounded read cannot attest that nothing else ties.
 
 ## Query 7 — Asking For More Groups Than Exist
 
-Two `tip` groups, `TOP(100)`:
+Two `tip` groups, `LIMIT 100`:
 
 ```text
 select   = SUM(amount)
 group_by = [restaurantId]
-having   = SUM(amount) IN TOP(100)
+order_by = amount DESC
+limit    = 100
 prove    = true
 ```
 
@@ -531,12 +568,12 @@ A short result is the index having fewer groups, not an error, and the proof rou
 
 ## Fetching From the Rust SDK
 
-`DocumentRankedEntries` lands on the standard `Fetch` trait against a `DocumentQuery`, with `ranking_having()` building the one `HAVING` clause the surface needs:
+`DocumentRankedEntries` lands on the standard `Fetch` trait against a `DocumentQuery`, with `order_by_selected_aggregate()` building the one ordering clause the surface needs:
 
 ```rust,no_run
 use dash_sdk::{Sdk, platform::{DataContract, DocumentQuery, Fetch, Identifier}};
-use dash_sdk::drive::query::{HavingAggregateFunction, HavingRankingKind, SelectProjection};
-use dash_sdk::platform::documents::document_ranked_entries::ranking_having;
+use dash_sdk::drive::query::SelectProjection;
+use dash_sdk::platform::documents::document_query::RankingDirection;
 use drive_proof_verifier::{DocumentRankedEntries, RankedEntryValue, RANKED_AVG_SCALE};
 use futures::executor::block_on;
 
@@ -550,32 +587,49 @@ let query = DocumentQuery::new(contract, "review")
     .expect("document type exists")
     .with_select(SelectProjection::avg("grade"))
     .with_group_by("restaurantId")
-    .with_having(ranking_having(
-        HavingAggregateFunction::Avg,
-        "grade",
-        HavingRankingKind::Top,
-        Some(5),
-    ));
+    .order_by_selected_aggregate(RankingDirection::Descending)
+    .with_limit(5);
 
 let ranked = block_on(DocumentRankedEntries::fetch(&sdk, query))
     .expect("fetch succeeds")
     .expect("a well-formed ranked query always answers");
 
 // Entry order IS the ranking order — best first.
-for entry in &ranked.0 {
+for (offset, entry) in ranked.entries.iter().enumerate() {
+    let rank = ranked.starting_rank + offset as u64;
     let restaurant = String::from_utf8_lossy(&entry.key);
     if let RankedEntryValue::AvgFixedPoint(fixed_point) = entry.value {
         let average = (fixed_point as f64) / (RANKED_AVG_SCALE as f64);
-        println!("{restaurant}: {average}");
+        println!("#{}: {restaurant}: {average}", rank + 1);
     }
 }
 ```
 
+The **5th-best restaurant** is the same query with the window moved down one rank at a time:
+
+```rust,no_run
+# use dash_sdk::platform::{DataContract, DocumentQuery};
+# use dash_sdk::platform::documents::document_query::RankingDirection;
+# use dash_sdk::drive::query::SelectProjection;
+# fn example(contract: DataContract) -> Result<(), dash_sdk::Error> {
+// SELECT avg(grade) GROUP BY restaurantId
+//   ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4
+let query = DocumentQuery::new(contract, "review")?
+    .with_select(SelectProjection::avg("grade"))
+    .with_group_by("restaurantId")
+    .order_by_selected_aggregate(RankingDirection::Descending)
+    .with_limit(1)
+    .with_offset(4);
+# Ok(())
+# }
+```
+
 Notes on the surface:
 
-- **`ranking_having()` pairs the kind with its operator** — `IN` for `TOP` / `BOTTOM`, `=` for `MAX` / `MIN`. It will happily *build* a `MAX` clause even though evaluation refuses it, so the refusal comes back from the one place that owns the grammar rather than being duplicated in the SDK.
+- **`order_by_selected_aggregate()` derives the ordered field from the `select`** through rs-drive's own key mapping — `"grade"` for `AVG(grade)`, the `$count` sentinel for `COUNT(*)`. You never name it by hand, so client and server cannot disagree about what is being ordered. Set the `select` first; the builder reads it.
+- **It replaces rather than appends.** A ranked query takes exactly one ordering clause.
 - **`RANKED_AVG_SCALE` is a re-export of grovedb's constant**, which moved from `10^15` to `10^19` before release. Never hardcode the literal. `RankedEntryValue::as_f64()` does the same division for display purposes.
-- **`ranked.0` is `Vec<RankedEntry>`** in ranking order. Do not re-sort it.
+- **`ranked.entries` is `Vec<RankedEntry>`** in ranking order. Do not re-sort it. **`ranked.starting_rank`** is the rank of `entries[0]`, re-derived from the proof rather than taken from the node.
 - **The `Fetch` path always requests a proof.** There is no `prove` knob on it; if you need the unproven read, that's the `DocumentRankedEntries::from_unproved_response` path.
 - **No JS/WASM or FFI binding exists yet.** The ranked surface is Rust-SDK-only today; the generated gRPC types are present in the web client but nothing is hand-written on top of them.
 
@@ -585,22 +639,17 @@ Notes on the surface:
 
 Three things grovedb checks before the entries come back:
 
-1. **The envelope's `(axis, k, descending)` match the query.** They are echoed in the proof and compared against the arguments, so a proof generated for a different ranking is rejected rather than silently reinterpreted.
+1. **The envelope's `(axis, k, descending, offset)` match the query.** They are echoed in the proof and compared against the arguments, so a proof generated for a different ranking — or for a different page of the same one — is rejected rather than silently reinterpreted.
 2. **The result's axis shape matches the requested axis** — a `Count` request must not come back holding `Sum` entries. Belt-and-braces on top of (1).
 3. **At most `k` entries.** Fewer is normal; more would mean the proof committed a longer walk than the request authorized.
 
-**Proving an empty ranking is rejected.** grovedb's prover has no absence-proof shape for "this axis secondary has no entries" — the merk layer fails with `Cannot create proof for empty tree`. This is reachable by any client: query a freshly registered contract with `prove = true` and you hit it. Rather than surfacing an internal error, the node maps it to `invalid_argument`:
+**Empty rankings prove.** An earlier iteration of this surface could not prove one: grovedb's non-paginated prover had no absence-proof shape for "this axis secondary has no entries", so the merk layer failed with `Cannot create proof for empty tree` and the node had to map that to an `invalid_argument` telling the caller to retry unproved. It was reachable by anyone — querying a freshly registered contract with `prove = true` did it.
 
-```text
-this ranking has no groups yet, and an empty ranking cannot be proved: grovedb
-has no absence-proof shape for an empty axis secondary. Retry with `prove = false`
-— the unproven read answers the same request with an empty entry list. Once the
-index holds at least one document, the proved form works.
-```
+The paginated prover (`prove_indexed_axis_top_k_paginated`) closed that gap: against an empty axis secondary it emits a **guaranteed-empty range** rather than refusing. Proving a ranking over an index with no documents now succeeds and returns an empty page, so the proved and unproven paths agree on the one case where they used to diverge. There is no fallback to implement and no rejection to recognise; `prove = true` is always answerable.
 
-The SDK deliberately does **not** auto-fall-back — you asked for a proof, and quietly returning unverified data instead would defeat the point. `is_empty_ranking_prove_rejection()` recognises that specific rejection so callers can make the fallback an explicit, visible decision. It is advisory only: `false` means "not recognised", not "definitely a different condition", so never branch on it in a way that turns a `false` into a silent success.
+The same mechanism is what makes an offset past the end provable — see [Ranks and Offsets](#ranks-and-offsets). The node keeps a narrow backstop mapping for the old merk-level error because it names a *class* of failure rather than a single call site, but it is no longer a live path.
 
-**Against a protocol-version-13 node**, the whole request is rejected with `Unsupported("HAVING clause is not yet implemented")` — v13's query table refuses every non-empty `HAVING`, ranking operand or not. That is the intended activation gate, not a bug: a v13 node and a v14 node must disagree here and nowhere else, which is what lets a mixed-version network run through the upgrade.
+**Against a protocol-version-13 node**, the whole request is rejected as `Unsupported` — v13's query table has no ranked path and refuses the aggregate ordering. That is the intended activation gate, not a bug: a v13 node and a v14 node must disagree here and nowhere else, which is what lets a mixed-version network run through the upgrade.
 
 ## What Is Rejected and Why
 
@@ -611,31 +660,28 @@ Everything below is rejected *before* any grovedb work, and most of it is mirror
 | **Compound (multi-property) ranked index** — at contract-parse time, `ranked aggregates are only supported on single-property indexes in this protocol version` | Two reasons. A compound index whose prefix level also terminates an aggregating index would need its ranked terminal tree wrapped in a `NonCounted` / `NotSummed` shell — and the storage layer structurally rejects any wrapper around an indexed tree, because the wrapper would neutralize the very aggregates the ranking indexes. Separately, the ranked query surface has no equality-prefix routing yet. Both are relaxable at a future protocol version. The query-side index picker is the backstop: it refuses compound indexes even if the flags are somehow present. |
 | **`unique` ranked index** — `ranked aggregates are not supported on unique indexes: each group of a unique index contains at most one document, so there is nothing meaningful to rank` | Every ranking over a unique index degenerates to a constant-per-group ordering a plain range query already serves, while still paying for an indexed tree and its secondary maintenance on every write. |
 | **Contested ranked index** | Covered transitively — a contested index is unique by construction, so it hits the check above. |
-| **`MAX` / `MIN` rankings** — `Unsupported`, on every axis, with or without `n` | They are *value-based*: `HAVING <agg> = MAX` selects **every** group whose aggregate equals the extreme. The axis secondary breaks ties by group key, so a `k = 1` read silently drops all but one tied group and the proof cannot express "and nothing else ties". Serving them honestly needs a value-bounded walk ("all entries with sort key == the extreme"), a primitive indexed trees don't offer. Use `TOP(1)` / `BOTTOM(1)`, which are positional and document dropping ties as their meaning. They remain wire-decodable so the refusal comes from the one place that owns the grammar. |
 | **`where` clauses** — `InvalidWhereClauseComponents` | Ranked indexes are single-property, so there is no equality prefix to narrow; and a clause on the ranked property itself asks for a ranking over a filtered subset, which the secondary cannot answer because it is ordered by aggregate rather than by group key. Silently dropping the filter would return the global ranking under the guise of a filtered one. |
-| **`limit`** — `InvalidLimit` | The result size *is* the `n` of the ranking. Change `TOP(n)` / `BOTTOM(n)` instead. |
-| **`offset`** — `InvalidLimit` | Offset-paginated ranking is a separate grovedb primitive (`prove_indexed_axis_top_k_paginated`), deliberately not exposed yet. |
 | **`start_at` / `start_after`** — `InvalidLimit` | The cursor names a document id, but a ranked walk iterates an aggregate-ordered keyspace in which document ids do not appear. |
-| **`order_by`** — `InvalidArgument`, rejected in drive-abci and mirrored in the SDK | The entry order already *is* the ranking. A caller-supplied ordering could only agree with it (redundant) or contradict it (unsatisfiable). Accepting and silently ignoring it is the one genuinely dangerous option. Drop it, or flip `TOP` ↔ `BOTTOM` to reverse the ranking. This one is rejected client-side out of necessity: `DocumentRankedRequest` has no field to carry it, so drive can't own the rejection the way it owns `where` / `limit` / `start_at`. |
+| **`order_by` naming anything but the selected aggregate**, or more than one clause — `InvalidParameter` | The single ordering clause *is* the ranking, and the secondary is sorted by one aggregate only. An ordering on the `GROUP BY` property, on an unrelated field, or a second tie-break clause names an order the secondary cannot produce. Accepting and silently ignoring it is the one genuinely dangerous option. Use the aggregate's own name (`$count` for `COUNT(*)`), or flip `ASC` ↔ `DESC` to reverse the ranking. |
 | **`group_by` with ≠ 1 property** — `InvalidParameter` | Ranked indexes are single-property, so there is no compound grouping to rank over. |
-| **`having` with ≠ 1 clause, or an aggregate that differs from the `select`** — `InvalidParameter` | A `having` whose aggregate disagrees with the `select` would rank one thing while projecting another. |
-| **`having` with a literal value operand instead of a ranking** — `Unsupported` | Threshold `HAVING` (`HAVING COUNT(*) > 5`) is a different feature; a query with no ranking is not a ranked query and the caller wanted the grouped-aggregate surface. |
+| **any non-empty `having`** — `Unsupported` | `HAVING` is a boolean per-group predicate and is not evaluated at any protocol version. It also cannot combine with a ranking `ORDER BY`: the ranked executor reads a pre-sorted secondary and has no way to drop groups from the middle of that walk. |
+| **no `order_by` at all, on a grouped aggregate** — routed elsewhere | Without an ordering this is a plain grouped aggregate, not a ranking; the caller wanted the `DocumentSplitCounts` / `DocumentSplitSums` / `DocumentSplitAverages` surface. |
 | **`COUNT(field)`** (non-`*`) — `Unsupported`; **`SUM` / `AVG` with an empty field** — `InvalidParameter` | The Count axis ranks group cardinality and takes no field; the Sum and Avg axes rank the property the index accumulates and require it. |
-| **`n = 0` or `n > 100`** — `InvalidLimit` | `TOP(0)` selects nothing. The ceiling is a **hard limit, not a clamp**, because `k` is echoed in the proof envelope and re-checked by the verifier — a silent clamp would produce a proof the client's own reconstruction rejects. |
+| **`limit` unset, `0`, or `> 100`** — `InvalidLimit` | A ranking with no `n` has no size, and `LIMIT 0` selects nothing. The ceiling is a **hard limit, not a clamp**, because `k` is echoed in the proof envelope and re-checked by the verifier — a silent clamp would produce a proof the client's own reconstruction rejects. |
 | **A `SUM` / `AVG` ranking on a field the index doesn't accumulate** — no covering index | The picker requires the select's field to be the index's `summable` property. Resolving anything else would answer about the wrong property with no indication that a substitution happened. |
-| **Proving a ranking over an empty index** — `invalid_argument` | grovedb has no absence-proof shape for an empty axis secondary. Retry with `prove = false`. |
+| ~~**Proving a ranking over an empty index**~~ | **No longer rejected.** The paginated prover emits a guaranteed-empty range against an empty axis secondary, so `prove = true` over an index with no documents returns an empty page. Listed here because it used to be a rejection and the old advice ("retry with `prove = false`") is now wrong. |
 
 ## At-a-Glance Comparison
 
 | Query | Doctype | Terminal tree | Axis | Ranking | Returned variant |
 |---|---|---|---|---|---|
-| 1 — Top 3 by average | `review` | `ProvableCountProvableSumIndexedTree [Avg]` | Avg | `IN TOP(3)` | `AvgFixedPoint(i128)` |
-| 2 — Worst average | `review` | same | Avg | `IN BOTTOM(1)` | `AvgFixedPoint(i128)` |
-| 3 — Top 2 by visits | `visit` | `ProvableCountIndexedTree` | Count | `IN TOP(2)` | `Count(u64)` |
-| 4 — Quietest | `visit` | same | Count | `IN BOTTOM(1)` | `Count(u64)` |
-| 5 — Bottom 3 by tips | `tip` | `ProvableSumIndexedTree` | Sum | `IN BOTTOM(3)` | `Sum(i64)` |
-| 6 — Four-way tie | `tip` | same | Sum | `IN TOP(4)` / `BOTTOM(4)` | `Sum(i64)` |
-| 7 — More than exist | `tip` | same | Sum | `IN TOP(100)` | `Sum(i64)` (2 entries) |
+| 1 — Top 3 by average | `review` | `ProvableCountProvableSumIndexedTree [Avg]` | Avg | `ORDER BY grade DESC LIMIT 3` | `AvgFixedPoint(i128)` |
+| 2 — Worst average | `review` | same | Avg | `ORDER BY grade ASC LIMIT 1` | `AvgFixedPoint(i128)` |
+| 3 — Top 2 by visits | `visit` | `ProvableCountIndexedTree` | Count | `ORDER BY $count DESC LIMIT 2` | `Count(u64)` |
+| 4 — Quietest | `visit` | same | Count | `ORDER BY $count ASC LIMIT 1` | `Count(u64)` |
+| 5 — Bottom 3 by tips | `tip` | `ProvableSumIndexedTree` | Sum | `ORDER BY amount ASC LIMIT 3` | `Sum(i64)` |
+| 6 — Four-way tie | `tip` | same | Sum | `ORDER BY amount DESC/ASC LIMIT 4` | `Sum(i64)` |
+| 7 — More than exist | `tip` | same | Sum | `ORDER BY amount DESC LIMIT 100` | `Sum(i64)` (2 entries) |
 
 Every row is one bounded scan of one secondary Merk, one proof, one root-hash commit. The shape never varies with the axis — only the sort-key width (8 / 8 / 16 bytes) and the returned scalar type do.
 

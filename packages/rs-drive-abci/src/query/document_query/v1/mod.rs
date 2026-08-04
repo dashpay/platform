@@ -1349,17 +1349,6 @@ impl<C> Platform<C> {
             };
 
         let response = match drive_response {
-            // `page.skipped` — the rank this page starts at — is
-            // deliberately dropped for now: the wire `RankedEntries`
-            // message has no field to carry it yet, and adding one is
-            // a proto change that lands with the rest of the
-            // client-side rework. Until then the value stays inside
-            // drive, where the proof path already returns it to any
-            // caller verifying for themselves. The binding is not
-            // lost, only unexposed: a proving client re-derives
-            // `skipped` from the proof bytes rather than trusting a
-            // server-supplied number, which is the stronger source
-            // anyway.
             DocumentRankedResponse::Entries(page) => GetDocumentsResponseV1 {
                 result: Some(get_documents_response_v1::Result::Data(ResultData {
                     // No aggregate-collapse arm here, unlike count /
@@ -1372,6 +1361,22 @@ impl<C> Platform<C> {
                         // the ranking order, and drive already
                         // asserted the list is no longer than `k`.
                         entries: page.entries.into_iter().map(into_v1_ranked_entry).collect(),
+                        // The page's starting rank, so entry `i` is
+                        // identifiable as the group at rank
+                        // `skipped + i` rather than as "one of the
+                        // top few". This is the *unproven* path, so
+                        // the number is only as good as the node —
+                        // which is exactly why a proving client
+                        // ignores it and re-derives the attested
+                        // value from the proof bytes instead (see
+                        // `RankedPage::skipped`). Sent as `Some`
+                        // unconditionally, including the `0` an
+                        // offset-less query produces: the proto field
+                        // is `optional` to keep "this node predates
+                        // the field" distinguishable from "this page
+                        // starts at rank 0", and collapsing 0 to
+                        // `None` would throw that distinction away.
+                        skipped: Some(page.skipped),
                     })),
                 })),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),

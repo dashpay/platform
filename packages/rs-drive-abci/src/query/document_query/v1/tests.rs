@@ -90,9 +90,9 @@ fn oc(field: &str, ascending: bool) -> ProtoOrderClause {
 /// rejection tests — the server rejects any non-empty `having`
 /// wholesale today, so the specific aggregate function / operator
 /// / value here don't need to be domain-meaningful, only
-/// well-formed. The wire's other right-operand arm (`ranking`) is a
-/// retired grammar rejected at decode time; the one test that
-/// exercises it builds the `ProtoHavingClause` inline.
+/// well-formed. A literal value is the *only* right operand the wire
+/// has: `HAVING` is a boolean per-group predicate, and cross-group
+/// ranking rides `ORDER BY <agg> LIMIT n` instead.
 fn hc(
     function: having_aggregate::Function,
     field: &str,
@@ -2087,15 +2087,16 @@ mod ranked_tests {
         )
     }
 
-    /// Run a request through the handler and unwrap the ranked
-    /// entries, asserting the response landed on the `ranked` variant
-    /// of `ResultData` rather than on `counts` / `sums` / `averages`.
-    fn ranked_entries(
+    /// Run a request through the handler and unwrap the whole ranked
+    /// **page** — entries plus the `skipped` rank base — asserting the
+    /// response landed on the `ranked` variant of `ResultData` rather
+    /// than on `counts` / `sums` / `averages`.
+    fn ranked_page(
         platform: &Platform<MockCoreRPCLike>,
         state: &PlatformState,
         request: GetDocumentsRequestV1,
         platform_version: &PlatformVersion,
-    ) -> Vec<RankedEntry> {
+    ) -> RankedEntries {
         let result = platform
             .query_documents_v1(request, state, platform_version)
             .expect("query call should not error at the transport layer");
@@ -2111,9 +2112,20 @@ mod ranked_tests {
                         variant: Some(result_data::Variant::Ranked(ranked)),
                     })),
                 metadata: Some(_),
-            }) => ranked.entries,
+            }) => ranked,
             other => panic!("expected a Ranked ResultData, got {:?}", other),
         }
+    }
+
+    /// [`ranked_page`] for the majority of tests, which only care about
+    /// the entries.
+    fn ranked_entries(
+        platform: &Platform<MockCoreRPCLike>,
+        state: &PlatformState,
+        request: GetDocumentsRequestV1,
+        platform_version: &PlatformVersion,
+    ) -> Vec<RankedEntry> {
+        ranked_page(platform, state, request, platform_version).entries
     }
 
     /// The first validation error a request produces. Ranked
@@ -2456,35 +2468,50 @@ mod ranked_tests {
         };
 
         // The 5th best grade.
-        let fifth = ranked_entries(&platform, &state, paged(1, 4), version);
+        let fifth = ranked_page(&platform, &state, paged(1, 4), version);
         assert_eq!(
-            group_keys(&fifth),
+            group_keys(&fifth.entries),
             vec!["epsilon"],
             "gamma > alpha > beta > delta > epsilon — rank 4 (0-based) is epsilon"
         );
         assert_eq!(
-            avg_fixed_points(&fifth),
+            avg_fixed_points(&fifth.entries),
             vec![expected_avg_fixed_point(10, 1)]
         );
+        assert_eq!(
+            fifth.skipped,
+            Some(4),
+            "the page echoes the rank it starts at, which is what makes the single \
+             entry identifiable as the *5th* best rather than the best"
+        );
+
+        // Rank 0 still reports a base, so a caller never has to guess
+        // whether an absent `skipped` means "rank 0" or "old node".
+        let best = ranked_page(&platform, &state, paged(1, 0), version);
+        assert_eq!(group_keys(&best.entries), vec!["gamma"]);
+        assert_eq!(best.skipped, Some(0));
 
         // A window that spans the end returns the tail, short.
-        let tail = ranked_entries(&platform, &state, paged(3, 3), version);
+        let tail = ranked_page(&platform, &state, paged(3, 3), version);
         assert_eq!(
-            group_keys(&tail),
+            group_keys(&tail.entries),
             vec!["delta", "epsilon"],
             "only two groups remain from rank 3"
         );
+        assert_eq!(tail.skipped, Some(3));
 
         // A window entirely past the end is an empty page, not an
-        // error. (The attested population that comes with it lives in
-        // the proof; the unproven wire shape has no field for it yet.)
-        let past_end = ranked_entries(&platform, &state, paged(2, 9), version);
+        // error. On this *unproven* path grovedb's read API doesn't
+        // report the short walk, so `skipped` echoes the request; the
+        // proved path is where it becomes the attested population.
+        let past_end = ranked_page(&platform, &state, paged(2, 9), version);
         assert!(
-            past_end.is_empty(),
+            past_end.entries.is_empty(),
             "there is no rank 9 in a five-group ranking, and asking for one is not an \
              error — got {:?}",
-            group_keys(&past_end)
+            group_keys(&past_end.entries)
         );
+        assert_eq!(past_end.skipped, Some(9));
 
         // And the same page proves.
         let result = platform
@@ -2709,49 +2736,6 @@ mod ranked_tests {
                 );
             }
             other => panic!("expected Unsupported, got {other:?}"),
-        }
-    }
-
-    /// The **retired** ranking right operand. A stale client still
-    /// encoding `HAVING <agg> IN TOP(n)` must be told what to write
-    /// instead, at decode time, rather than having the clause silently
-    /// misread as something else.
-    #[test]
-    fn a_retired_ranking_having_operand_is_rejected_with_the_replacement() {
-        use dapi_grpc::platform::v0::get_documents_request::{
-            having_ranking, HavingRanking as ProtoHavingRanking,
-        };
-
-        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let contract = register_restaurants(&platform, version);
-
-        let mut request = ranked_desc(
-            &contract,
-            "review",
-            select(v1_select::Function::Avg, "grade"),
-            "grade",
-            3,
-        );
-        request.having = vec![ProtoHavingClause {
-            aggregate: Some(ProtoHavingAggregate {
-                function: having_aggregate::Function::Avg as i32,
-                field: "grade".to_string(),
-            }),
-            operator: having_clause::Operator::In as i32,
-            right: Some(having_clause::Right::Ranking(ProtoHavingRanking {
-                kind: having_ranking::Kind::Top as i32,
-                n: Some(3),
-            })),
-        }];
-
-        match ranked_error(&platform, &state, request, version) {
-            QueryError::InvalidArgument(message) => {
-                assert!(
-                    message.contains("ORDER BY") && message.contains("LIMIT"),
-                    "the rejection must spell out the replacement grammar, got: {message}"
-                );
-            }
-            other => panic!("expected InvalidArgument for the retired operand, got {other:?}"),
         }
     }
 

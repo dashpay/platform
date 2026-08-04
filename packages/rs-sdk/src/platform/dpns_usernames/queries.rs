@@ -59,6 +59,7 @@ impl Sdk {
             having: vec![],
             order_by_clauses: vec![], // Remove ordering by $createdAt as it might not be indexed
             limit,
+            offset: None,
             start: None,
         };
 
@@ -148,6 +149,7 @@ impl Sdk {
                 ascending: true,
             }],
             limit: limit.unwrap_or(10),
+            offset: None,
             start: None,
         };
 

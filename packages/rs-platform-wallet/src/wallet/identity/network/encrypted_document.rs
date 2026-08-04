@@ -663,6 +663,7 @@ pub async fn query_owned_encrypted_documents(
                 ascending: true,
             }],
             limit: PAGE,
+            offset: None,
             start: start.clone(),
         };
 

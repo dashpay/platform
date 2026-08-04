@@ -72,7 +72,13 @@ pub fn detect_ranked_mode(
 /// reads once the aggregate function is already fixed by the `SELECT`.
 /// `COUNT(*)` has no field, so it is named by the
 /// [`RANKED_COUNT_ORDER_KEY`] sentinel.
-fn ranked_order_key(select: &SelectProjection) -> &str {
+///
+/// Public because request *builders* need it as much as the validator
+/// does: an SDK offering `.order_by_selected_aggregate(…)` has to emit
+/// the same string this function expects to read back, and a second
+/// copy of the sentinel rule is a silent-rejection bug waiting for the
+/// first `COUNT(*)` ranking.
+pub fn ranked_order_key(select: &SelectProjection) -> &str {
     match select.function {
         SelectFunction::Count if select.field.is_empty() => RANKED_COUNT_ORDER_KEY,
         _ => select.field.as_str(),

@@ -1,12 +1,15 @@
-//! Verified **ranked** (`HAVING … TOP(n)` / `BOTTOM(n)`) document
-//! results.
+//! Verified **ranked** (`GROUP BY … ORDER BY <aggregate> LIMIT n`)
+//! document results.
 //!
 //! A ranked query answers "which `n` groups score highest (or lowest)
 //! on an aggregate?" — `SELECT AVG(grade) GROUP BY restaurantId
-//! HAVING AVG(grade) IN TOP(5)`. The answer is read straight out of
+//! ORDER BY grade DESC LIMIT 5`. The answer is read straight out of
 //! the per-axis *secondary* Merk of an indexed tree (grovedb PR #657),
 //! so it costs `O(log n + k)` and comes with a proof that commits to
-//! exactly the `k` returned `(aggregate, group key)` pairs.
+//! exactly the `k` returned `(aggregate, group key)` pairs — plus the
+//! `OFFSET`, which grovedb attests from counted subtree commitments
+//! rather than by walking the skipped region, so deep pages cost the
+//! same as the first one.
 //!
 //! This module holds the client-facing result type
 //! ([`DocumentRankedEntries`]), the tenderdash-composition wrapper
@@ -16,8 +19,8 @@
 //! ([`DocumentRankedEntries::from_unproved_response`]).
 //!
 //! Per-shape routing (which index covers the axis, which
-//! `(axis, descending, k)` triple the request resolves to) lives in
-//! rs-sdk's `ranked_proof_helpers`, exactly as count's four-way
+//! `(axis, descending, k, offset)` tuple the request resolves to) lives
+//! in rs-sdk's `ranked_proof_helpers`, exactly as count's four-way
 //! dispatch lives in `count_proof_helpers` — it needs the data
 //! contract, which this crate does not carry.
 
@@ -33,19 +36,18 @@ use dapi_grpc::platform::v0::get_documents_response::{
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
-use drive::query::{DriveDocumentQuery, DriveDocumentRankedQuery, RankedEntry, RankedEntryValue};
+use drive::query::{
+    DriveDocumentQuery, DriveDocumentRankedQuery, RankedEntry, RankedEntryValue, RankedPage,
+};
 use drive::verify::RootHash;
 
-/// The ranked groups of a `HAVING … TOP(n)` query.
+/// One page of a `GROUP BY … ORDER BY <aggregate> LIMIT n [OFFSET m]`
+/// query: the ranked groups, plus the rank the page starts at.
 ///
-/// **Entry order is the ranking order** — best-first for `TOP(n)`,
-/// worst-first for `BOTTOM(n)`. Callers must not re-sort; ties (groups
-/// with equal aggregates) come back in group-key order *in the
-/// direction of the walk*, which is descending group-key order for
-/// `TOP`. That tie handling is also why the value-based `MAX` / `MIN`
-/// rankings are refused rather than served as `TOP(1)` / `BOTTOM(1)`:
-/// a bounded read cannot prove it returned *every* group tied at the
-/// extreme.
+/// **Entry order is the ranking order** — best-first for `DESC`,
+/// worst-first for `ASC`. Callers must not re-sort; ties (groups with
+/// equal aggregates) come back in group-key order *in the direction of
+/// the walk*, which is descending group-key order for `DESC`.
 ///
 /// Fewer than `n` entries is normal — the index simply holds fewer
 /// groups than were asked for — and is not an error.
@@ -58,15 +60,50 @@ use drive::verify::RootHash;
 /// integers scaled by [`crate::RANKED_AVG_SCALE`]; divide by it (or
 /// call [`RankedEntryValue::as_f64`]) to render one.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct DocumentRankedEntries(pub Vec<RankedEntry>);
+pub struct DocumentRankedEntries {
+    /// The 0-based rank of `entries[0]` — the query's `OFFSET`, as
+    /// actually honoured.
+    ///
+    /// This is what turns a page back into a *ranking*: entry `i` is
+    /// the group at rank `starting_rank + i`. Without it a caller who
+    /// asked for `ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4` receives
+    /// one entry and has no way to tell it really is the 5th-best
+    /// group rather than the best.
+    ///
+    /// On the **proved** path this is grovedb's cryptographically
+    /// attested count, re-derived by the verifier from the counted
+    /// subtree commitments in the proof bytes rather than trusted from
+    /// the response. It equals the requested offset unless the walk ran
+    /// out of groups first, in which case `entries` is empty and this
+    /// is a *proof* that the ranking holds exactly this many groups in
+    /// total — an offset past the end is a positive answer, not an
+    /// error.
+    ///
+    /// On the **unproven** decode it is whatever the node put on the
+    /// wire (`0` when the field is absent), and carries no more weight
+    /// than the entries beside it.
+    pub starting_rank: u64,
+    /// The groups on this page, **in ranking order**.
+    pub entries: Vec<RankedEntry>,
+}
 
 impl DocumentRankedEntries {
     /// Build a [`DocumentRankedEntries`] from a verifier-side
-    /// `Vec<RankedEntry>`. Identity for now; kept as a constructor in
-    /// case the internal shape evolves, mirroring
-    /// [`DocumentSplitCounts::from_verified`](crate::DocumentSplitCounts::from_verified).
-    pub fn from_verified(entries: Vec<RankedEntry>) -> Self {
-        DocumentRankedEntries(entries)
+    /// [`RankedPage`] — the shape rs-drive's merk-level verifier
+    /// returns, carrying the attested skip alongside the entries.
+    ///
+    /// Mirrors
+    /// [`DocumentSplitCounts::from_verified`](crate::DocumentSplitCounts::from_verified),
+    /// except that it is not the identity: `RankedPage` is rs-drive's
+    /// internal type and this is the client-facing one, so the rename
+    /// of `skipped` → `starting_rank` happens here, where the value
+    /// stops being "how far the walk skipped" and starts being "which
+    /// rank you are looking at".
+    pub fn from_verified(page: RankedPage) -> Self {
+        DocumentRankedEntries {
+            starting_rank: page.skipped,
+            entries: page.entries,
+        }
     }
 
     /// Decode the **unproven** ranked payload of a `getDocuments`
@@ -77,14 +114,16 @@ impl DocumentRankedEntries {
     /// ranking order and this decoder never re-sorts.
     ///
     /// This is a plain wire decode with **no cryptographic guarantee
-    /// whatsoever** — it is the "trust the node" path. Prefer
-    /// [`verify_ranked_top_k_proof`] (via rs-sdk's
+    /// whatsoever** — it is the "trust the node" path, and that applies
+    /// to [`Self::starting_rank`] every bit as much as to the entries:
+    /// an unproven page claiming to start at rank 4 is a claim, not a
+    /// fact. Prefer [`verify_ranked_top_k_proof`] (via rs-sdk's
     /// `DocumentRankedEntries::fetch`) unless you are deliberately
-    /// reading from a node you already trust, or you hit the
-    /// empty-ranking prove gap documented on the SDK type: grovedb has
-    /// no absence-proof shape for an empty axis secondary, so a node
-    /// rejects `prove = true` over an index with no documents and only
-    /// the unproven read can answer it (with an empty list).
+    /// reading from a node you already trust.
+    ///
+    /// A node that predates the wire `skipped` field leaves it unset;
+    /// that decodes to `starting_rank == 0`, which is the right answer
+    /// for the offset-less queries such a node could serve at all.
     ///
     /// # Errors
     ///
@@ -106,14 +145,17 @@ impl DocumentRankedEntries {
             });
         };
         let metadata = v1.metadata.clone().ok_or(Error::EmptyResponseMetadata)?;
-        let entries = match v1.result.as_ref() {
+        let (starting_rank, entries) = match v1.result.as_ref() {
             Some(get_documents_response_v1::Result::Data(ResultData {
                 variant: Some(result_data::Variant::Ranked(ranked)),
-            })) => ranked
-                .entries
-                .iter()
-                .map(ranked_entry_from_proto)
-                .collect::<Result<Vec<_>, _>>()?,
+            })) => (
+                ranked.skipped.unwrap_or(0),
+                ranked
+                    .entries
+                    .iter()
+                    .map(ranked_entry_from_proto)
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
             Some(get_documents_response_v1::Result::Proof(_)) => {
                 return Err(Error::ResponseDecodeError {
                     error: "the response carries a proof, not unproven ranked entries; verify \
@@ -126,13 +168,20 @@ impl DocumentRankedEntries {
                     error: format!(
                         "expected a `ResultData.ranked` payload for a ranked request, got \
                          {other:?}. A response on another variant means the node routed the \
-                         request to a different executor — check that the `having` clause \
-                         carries a ranking operand matching the single `select`."
+                         request to a different executor — check that the request carries a \
+                         `group_by` and a single `order_by` naming the single `select`'s \
+                         aggregate (`$count` for `COUNT(*)`)."
                     ),
                 });
             }
         };
-        Ok((DocumentRankedEntries(entries), metadata))
+        Ok((
+            DocumentRankedEntries {
+                starting_rank,
+                entries,
+            },
+            metadata,
+        ))
     }
 }
 
@@ -180,7 +229,14 @@ fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<RankedEntry, Erro
 
 /// Verify a grovedb indexed-axis top-k proof **and the surrounding
 /// tenderdash commit**, returning the reconstructed root hash and the
-/// ranked entries it commits to.
+/// [`RankedPage`] it commits to.
+///
+/// The page is returned whole rather than as a bare entry list because
+/// [`RankedPage::skipped`] is verified evidence in its own right: it is
+/// re-derived from the counted subtree commitments in the proof bytes,
+/// so it pins each entry to an absolute rank, and on a page past the
+/// end of the ranking it is the *only* payload — an attested total
+/// population under an empty entry list.
 ///
 /// Thin tenderdash-composition wrapper over
 /// [`DriveDocumentRankedQuery::verify_ranked_top_k_proof`] in rs-drive
@@ -216,21 +272,14 @@ pub fn verify_ranked_top_k_proof(
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<(RootHash, Vec<RankedEntry>), Error> {
+) -> Result<(RootHash, RankedPage), Error> {
     let (root_hash, page) = query
         .verify_ranked_top_k_proof(&proof.grovedb_proof, platform_version)
         .map_drive_error(proof, mtd)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    // `page.skipped` — the attested rank this page starts at — is
-    // dropped here for now: this signature predates offset pagination
-    // and widening it is part of the client-side rework that also
-    // teaches the SDK's request builder the `ORDER BY … LIMIT … OFFSET`
-    // grammar. Dropping it is safe (a caller that never asked for an
-    // offset gets `skipped == 0`) but lossy for one that did, which is
-    // why it is a stop-gap and not the end state.
-    Ok((root_hash, page.entries))
+    Ok((root_hash, page))
 }
 
 /// Reject the generic [`FromProof`] entry point for
@@ -240,9 +289,9 @@ pub fn verify_ranked_top_k_proof(
 /// `FromProof<DocumentQuery>` impl defined alongside the SDK's
 /// `DocumentQuery` type (see
 /// `rs-sdk/src/platform/documents/document_ranked_entries.rs`), which
-/// resolves the `(axis, descending, k)` triple and the covering index
-/// from the request's `(select, group_by, having)` triple plus the
-/// data contract. The generic
+/// resolves the `(axis, descending, k, offset)` tuple and the covering
+/// index from the request's `(select, group_by, order_by, limit,
+/// offset)` shape plus the data contract. The generic
 /// `FromProof<Q: TryInto<DriveDocumentQuery>>` path carries neither —
 /// `DriveDocumentQuery` has no notion of a ranking — so it errors out
 /// explicitly rather than verifying the wrong thing; calling this impl
@@ -268,9 +317,9 @@ where
         Err(Error::RequestError {
             error: "DocumentRankedEntries can't be verified via the generic FromProof path; \
                  call DocumentRankedEntries::fetch on a DocumentQuery carrying \
-                 .with_select(<aggregate>), .with_group_by(<property>) and .with_having(<one \
-                 clause with a TOP(n) / BOTTOM(n) ranking>), which resolves the ranking axis \
-                 and the covering index from the data contract"
+                 .with_select(<aggregate>), .with_group_by(<property>), \
+                 .order_by_selected_aggregate(<direction>) and .with_limit(n), which \
+                 resolves the ranking axis and the covering index from the data contract"
                 .to_string(),
         })
     }
@@ -332,15 +381,26 @@ mod tests {
     }
 
     fn ranked_response(entries: Vec<ProtoRankedEntry>) -> GetDocumentsResponse {
+        paged_ranked_response(entries, None)
+    }
+
+    fn paged_ranked_response(
+        entries: Vec<ProtoRankedEntry>,
+        skipped: Option<u64>,
+    ) -> GetDocumentsResponse {
         response_with(get_documents_response_v1::Result::Data(ResultData {
-            variant: Some(result_data::Variant::Ranked(RankedEntries { entries })),
+            variant: Some(result_data::Variant::Ranked(RankedEntries {
+                entries,
+                skipped,
+            })),
         }))
     }
 
-    /// The headline decode: `SELECT AVG(grade) … HAVING AVG(grade) IN
-    /// TOP(3)`. Entry order is the ranking order and must survive the
-    /// decode verbatim, and each 16-byte big-endian payload must come
-    /// back as the exact `i128` grovedb sorted by.
+    /// The headline decode: `SELECT AVG(grade) … GROUP BY restaurantId
+    /// ORDER BY grade DESC LIMIT 3`. Entry order is the ranking order
+    /// and must survive the decode verbatim, and each 16-byte
+    /// big-endian payload must come back as the exact `i128` grovedb
+    /// sorted by.
     #[test]
     fn decodes_avg_entries_preserving_ranking_order() {
         let response = ranked_response(vec![
@@ -355,7 +415,7 @@ mod tests {
             .expect("a well-formed ranked payload decodes");
 
         assert_eq!(metadata.height, 42, "metadata rides along with the entries");
-        let keys: Vec<&[u8]> = decoded.0.iter().map(|e| e.key.as_slice()).collect();
+        let keys: Vec<&[u8]> = decoded.entries.iter().map(|e| e.key.as_slice()).collect();
         assert_eq!(
             keys,
             vec![
@@ -366,11 +426,11 @@ mod tests {
             "entry order is the ranking order and must not be re-sorted"
         );
         assert_eq!(
-            decoded.0[2].value,
+            decoded.entries[2].value,
             RankedEntryValue::AvgFixedPoint((21 * RANKED_AVG_SCALE).div_euclid(2))
         );
         assert_eq!(
-            decoded.0[2].value.as_f64(),
+            decoded.entries[2].value.as_f64(),
             10.5,
             "dividing by RANKED_AVG_SCALE recovers the average a caller renders"
         );
@@ -394,12 +454,12 @@ mod tests {
             .expect("negative averages are well-formed");
 
         assert_eq!(
-            decoded.0[1].value,
+            decoded.entries[1].value,
             RankedEntryValue::AvgFixedPoint(negative_half)
         );
-        assert_eq!(decoded.0[1].value.as_f64(), -0.5);
+        assert_eq!(decoded.entries[1].value.as_f64(), -0.5);
         assert_eq!(
-            decoded.0[2].value,
+            decoded.entries[2].value,
             RankedEntryValue::AvgFixedPoint(i128::MIN),
             "the extreme two's-complement value round-trips unchanged"
         );
@@ -419,7 +479,7 @@ mod tests {
             .expect("count entries are well-formed");
 
         assert_eq!(
-            decoded.0.iter().map(|e| e.value).collect::<Vec<_>>(),
+            decoded.entries.iter().map(|e| e.value).collect::<Vec<_>>(),
             vec![
                 RankedEntryValue::Count(4),
                 RankedEntryValue::Count(3),
@@ -440,18 +500,59 @@ mod tests {
         let (decoded, _) = DocumentRankedEntries::from_unproved_response(&response)
             .expect("signed sums are well-formed");
 
-        assert_eq!(decoded.0[0].value, RankedEntryValue::Sum(-1_000));
+        assert_eq!(decoded.entries[0].value, RankedEntryValue::Sum(-1_000));
     }
 
     /// An empty ranking is a legitimate answer, not an error: the
-    /// index simply has no groups yet. This is exactly the shape a
-    /// caller falls back to after a node refuses to *prove* an empty
-    /// ranking, so it must decode cleanly.
+    /// index simply has no groups yet.
     #[test]
     fn decodes_an_empty_ranking() {
         let (decoded, _) = DocumentRankedEntries::from_unproved_response(&ranked_response(vec![]))
             .expect("an empty ranking is well-formed");
-        assert!(decoded.0.is_empty());
+        assert!(decoded.entries.is_empty());
+        assert_eq!(decoded.starting_rank, 0);
+    }
+
+    /// `skipped` is what makes a page a ranking rather than a list.
+    /// A single entry at rank 4 is the *5th* best group, and the decode
+    /// must carry that through — dropping it would leave the caller
+    /// unable to distinguish it from the winner.
+    #[test]
+    fn decodes_the_starting_rank_of_a_page() {
+        let (decoded, _) = DocumentRankedEntries::from_unproved_response(&paged_ranked_response(
+            vec![avg_entry("epsilon", 10 * RANKED_AVG_SCALE)],
+            Some(4),
+        ))
+        .expect("a paged ranked payload decodes");
+        assert_eq!(decoded.starting_rank, 4);
+        assert_eq!(decoded.entries.len(), 1);
+    }
+
+    /// An offset past the end: no entries, but `skipped` still carries
+    /// the population. Empty entries plus a positive rank is a
+    /// meaningful answer ("there are only 12 groups"), not a
+    /// contradiction to be normalized away.
+    #[test]
+    fn decodes_a_page_past_the_end_of_the_ranking() {
+        let (decoded, _) =
+            DocumentRankedEntries::from_unproved_response(&paged_ranked_response(vec![], Some(12)))
+                .expect("a past-the-end page decodes");
+        assert!(decoded.entries.is_empty());
+        assert_eq!(decoded.starting_rank, 12);
+    }
+
+    /// A node that predates the wire field leaves `skipped` unset.
+    /// That must read as rank 0 — the right answer for the offset-less
+    /// queries such a node could serve at all — rather than as a decode
+    /// failure.
+    #[test]
+    fn an_absent_skipped_field_decodes_as_rank_zero() {
+        let (decoded, _) = DocumentRankedEntries::from_unproved_response(&paged_ranked_response(
+            vec![count_entry("delta", 4)],
+            None,
+        ))
+        .expect("an absent `skipped` is not a decode failure");
+        assert_eq!(decoded.starting_rank, 0);
     }
 
     /// A short or long `avg_fixed_point` is rejected rather than
@@ -546,10 +647,12 @@ mod tests {
         assert!(matches!(err, Error::EmptyVersion));
     }
 
-    /// `from_verified` is the identity constructor the SDK's proof
-    /// path wraps verified entries with.
+    /// `from_verified` is what the SDK's proof path wraps a verified
+    /// [`RankedPage`] with. Both halves must survive: dropping
+    /// `skipped` here would silently turn every proved page into a
+    /// claim about rank 0.
     #[test]
-    fn from_verified_round_trips_the_input_vec() {
+    fn from_verified_carries_both_halves_of_the_page() {
         let entries = vec![
             RankedEntry {
                 key: b"gamma".to_vec(),
@@ -560,9 +663,14 @@ mod tests {
                 value: RankedEntryValue::Count(2),
             },
         ];
+        let wrapped = DocumentRankedEntries::from_verified(RankedPage {
+            skipped: 7,
+            entries: entries.clone(),
+        });
+        assert_eq!(wrapped.entries, entries);
         assert_eq!(
-            DocumentRankedEntries::from_verified(entries.clone()).0,
-            entries
+            wrapped.starting_rank, 7,
+            "the attested skip is the page's rank base and must not be dropped"
         );
     }
 

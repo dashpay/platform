@@ -7,11 +7,12 @@ use crate::version::drive_abci_versions::drive_abci_query_versions::{
 ///
 /// Differs from v1 in exactly one slot:
 /// `document_query_helpers.compute_aggregate_mode_and_check_limit` is 1
-/// rather than 0. That is the ranked-`HAVING` routing gate. The v0 helper
-/// rejects every non-empty `having` with "HAVING clause is not yet
-/// implemented"; the v1 helper routes a request whose single `having`
-/// clause carries a ranking right-operand (`TOP(n)` / `BOTTOM(n)` / `MAX` /
-/// `MIN`) to the ranked executor, and otherwise behaves exactly as v0.
+/// rather than 0. That is the ranked-routing gate. The v0 helper has no
+/// ranked path at all; the v1 helper routes a grouped aggregate whose
+/// single `order_by` names the selected aggregate (`ORDER BY <agg>
+/// [ASC|DESC] LIMIT n [OFFSET m]`) to the ranked executor, and otherwise
+/// behaves exactly as v0. Both reject every non-empty `having` with
+/// "HAVING clause is not yet implemented".
 ///
 /// Keeping the flip in v14's own table is what lets a mixed-version network
 /// agree: protocol version 13 and earlier keep the v1 table, so those nodes
