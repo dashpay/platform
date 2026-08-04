@@ -243,9 +243,16 @@ internal object WalletManagerNative {
      * strictly from that one account, with no union across accounts and no
      * consent gate.
      *
-     * Returns a `byte[]` packed big-endian as `u64 fee, u64 change,` then the
+     * Returns a `byte[]` packed big-endian as
+     * `u64 fee, u64 change, u64 reservationHandle,` then the
      * consensus-serialized signed transaction bytes (0-length / null after
      * throwing). Does NOT broadcast and does NOT persist a debit.
+     *
+     * `reservationHandle` is the opaque stand-in for the key-wallet reservation
+     * token this build stamped on its inputs (0 = it reserved nothing); it must
+     * be passed back to [coreWalletReleasePaymentReservation] to abandon the
+     * build. The token itself cannot cross the ABI — it has no public
+     * constructor, by design, so that it cannot be forged.
      */
     external fun coreWalletBuildSignedPayment(
         coreHandle: Long,
@@ -271,17 +278,23 @@ internal object WalletManagerNative {
      *
      * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
      * [txBytes] is the consensus-serialized signed transaction exactly as
-     * [coreWalletBuildSignedPayment] returned it — the transaction is the
-     * ownership signal, so only that build's own inputs are released.
-     * [fundingPath] must be the SAME optional path the build was given (null =
-     * the unmixed BIP44 account).
+     * [coreWalletBuildSignedPayment] returned it. [fundingPath] must be the SAME
+     * optional path the build was given (null = the unmixed BIP44 account).
+     * [reservationHandle] must be the SAME handle that build returned: it is the
+     * ownership proof that stops this release from freeing a concurrent build's
+     * inputs after key-wallet's TTL swept this build's reservation and that other
+     * build re-reserved the same outpoint (dashpay/platform#4247 review). An
+     * unrecognised non-zero handle throws rather than releasing unguarded.
      *
-     * Idempotent, and a silent no-op after a successful broadcast.
+     * FOR ABANDONED BUILDS ONLY — never after a successful broadcast. Repeated
+     * releases of the same abandoned build are idempotent; that is the only sense
+     * in which this is safe to call twice.
      */
     external fun coreWalletReleasePaymentReservation(
         coreHandle: Long,
         txBytes: ByteArray,
         fundingPath: String?,
+        reservationHandle: Long,
     )
 
     /**
