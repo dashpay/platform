@@ -1559,6 +1559,13 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             return ptr::null_mut();
         }
         if out_txid.is_null() {
+            // finalize returned Ok, so it already minted and registered the
+            // reservation token — but with no txid there is nothing to hand back
+            // to Kotlin, and the token would otherwise sit holding its inputs
+            // until the TTL sweep (which never fires pre-first-sync). Release the
+            // token as well as freeing the transaction before throwing, matching
+            // the sibling register-blob path's Err arm below.
+            unsafe { platform_wallet_ffi::core_wallet_signed_payment_release(token) };
             unsafe { platform_wallet_ffi::core_wallet_transaction_free(out_tx) };
             throw_sdk_exception(env, 1, "finalize returned a NULL txid");
             return ptr::null_mut();
