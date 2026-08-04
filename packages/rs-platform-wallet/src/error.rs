@@ -32,6 +32,21 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// A `txMetadata` plaintext payload is too large to seal into a document
+    /// that fits the `encryptedMetadata` byteArray field (`maxItems` 4096). The
+    /// `version(1) ‖ IV(16) ‖ AES-256-CBC/PKCS7(plaintext)` envelope caps the
+    /// plaintext at [`crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN`]
+    /// bytes; anything larger would derive the key and seal only to be rejected
+    /// at broadcast with an opaque DPP schema error, so the caller is rejected
+    /// HERE — before any key derivation or network work. `max` is the largest
+    /// accepted plaintext length and `len` is what was supplied.
+    #[error(
+        "txMetadata payload is {len} bytes; the encryptedMetadata field caps the \
+         plaintext at {max} bytes (version + IV + PKCS7 envelope must fit the \
+         4096-byte field). Reduce the batch and retry."
+    )]
+    TxMetadataPayloadTooLarge { len: usize, max: usize },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
@@ -519,6 +534,113 @@ pub fn promote_address_nonce_error(error: &dash_sdk::Error) -> Option<PlatformWa
 /// [`promote_address_nonce_error`] for the transfer / withdrawal call sites.
 pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWalletError {
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
+}
+
+/// The reserved machine prefix that a typed `SigningKeyUnavailable` signer
+/// completion stamps at the **start** of its `ProtocolError::Generic` payload.
+///
+/// Canonically owned by the signer-completion boundary as
+/// [`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`]. It is mirrored
+/// here — rather than imported — because this pure-logic crate must recognize
+/// the marker *before* an operation wrapper stringifies the underlying SDK
+/// error, yet is deliberately kept free of any dependency on the FFI crate.
+/// The two definitions are pinned byte-identical by a compile-time assertion in
+/// `platform-wallet-ffi` (`src/error.rs`), so any drift is a build failure
+/// rather than a silent code-31 regression (dashpay/platform#4183 review).
+pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: ";
+
+/// Preserve a structured `SigningKeyUnavailable` signer failure through an
+/// operation wrapper that would otherwise flatten it to a string and discard
+/// the typed discriminator the FFI boundary restores to code 31
+/// (`ErrorSigningKeyUnavailable`).
+///
+/// Several public signing paths (token transfer, DPNS registration, document
+/// replace, …) wrap every SDK failure in an operation-specific string variant
+/// (`TokenError`, `InvalidIdentityData`, …). A genuine key-unavailable
+/// completion still leaves the reserved prefix inside those strings, but the
+/// resulting variant reaches the FFI's `_` arm and flattens to
+/// `ErrorUnknown`, losing the host's key-repair routing. This helper keeps the
+/// failure verbatim under [`PlatformWalletError::Sdk`] — the one shape
+/// `From<PlatformWalletError> for PlatformWalletFFIResult` maps to code 31 —
+/// and hands every other error to `wrap`, the caller's stringifying wrapper,
+/// unchanged.
+///
+/// The check is **structural and position-0 only** (the marker must start the
+/// nested `ProtocolError::Generic` payload); it is never a substring sniff of
+/// the rendered error, so a foreign signer that merely mentions the token is
+/// not misrouted into key repair (dashpay/platform#4183 review). This mirrors
+/// the guarded restore already performed by the FFI conversion.
+pub fn preserve_signer_key_unavailable_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if matches!(
+        &error,
+        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+    ) {
+        PlatformWalletError::Sdk(error)
+    } else {
+        wrap(error)
+    }
+}
+
+#[cfg(test)]
+mod signer_key_unavailable_tests {
+    use super::*;
+
+    /// A structured key-unavailable signer completion (the reserved marker at
+    /// the start of a `ProtocolError::Generic` payload) is preserved verbatim
+    /// under `Sdk` so the FFI boundary can restore code 31 — the operation
+    /// wrapper is NOT applied.
+    #[test]
+    fn preserves_structured_key_unavailable_error() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::TokenError(format!("Token transfer failed: {e}"))
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
+
+    /// An unrelated SDK error is handed to the caller's wrapper unchanged.
+    #[test]
+    fn wraps_unrelated_error() {
+        let error = dash_sdk::Error::Generic("boom".to_string());
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::TokenError(format!("Token transfer failed: {e}"))
+        });
+        match mapped {
+            PlatformWalletError::TokenError(msg) => {
+                assert!(msg.contains("Token transfer failed"));
+                assert!(msg.contains("boom"));
+            }
+            other => panic!("expected wrapped TokenError, got {other:?}"),
+        }
+    }
+
+    /// The marker only counts at position 0: a generic error that merely
+    /// mentions it mid-message is wrapped, never preserved as the typed
+    /// key-unavailable shape (dashpay/platform#4183 review).
+    #[test]
+    fn substring_marker_is_not_preserved() {
+        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "remote signer reported: {SIGNER_KEY_UNAVAILABLE_PREFIX}oops"
+        )));
+        let mapped = preserve_signer_key_unavailable_or(error, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("Failed to replace document: {e}"))
+        });
+        assert!(
+            matches!(mapped, PlatformWalletError::InvalidIdentityData(_)),
+            "a mid-message marker must be wrapped, not preserved"
+        );
+    }
 }
 
 #[cfg(test)]

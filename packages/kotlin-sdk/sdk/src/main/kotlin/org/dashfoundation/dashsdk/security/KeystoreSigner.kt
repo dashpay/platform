@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.security
 
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.UserNotAuthenticatedException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,20 @@ class KeystoreSigner(
     private val network: Network,
     private val biometricGate: BiometricGate?,
     private val platformAddressDao: PlatformAddressDao,
+    /**
+     * Invoked (on the signer's IO scope, best-effort) when a sign attempt
+     * classifies a [KeyPermanentlyInvalidatedException] for the given
+     * storage-key pubkey hex — the wiring point for durable pending-repair
+     * bookkeeping. Load-bearing for LEGACY-alias-backed keys (#4060 round-2
+     * finding 3): the legacy aliases are read-only — there is no deletion
+     * boundary — so the cheap capability check (`hasLegacyKeysKey`) keeps
+     * reporting an invalidated legacy key signable forever and the restart
+     * reconstruction never seeds it; this hook is the only signal that
+     * makes the repair path reachable outside the health sheet.
+     * `PlatformWalletManager` wires it to record the invalidation on the
+     * Room rows and re-seed `pendingIdentityKeys`.
+     */
+    private val onSigningKeyInvalidated: (suspend (pubkeyHex: String) -> Unit)? = null,
 ) : NativeSignerBridge(), AutoCloseable {
 
     private val handleRef =
@@ -72,20 +87,48 @@ class KeystoreSigner(
     ) {
         // Return immediately (vtable contract); work on IO.
         scope.launch {
+            // Idempotent completion guard. The native completeSign reclaims the
+            // PendingSign box via `Box::from_raw(token)` (rs-unified-sdk-jni),
+            // so a SECOND call with the same token is a double-free (undefined
+            // behavior) — the ABI requires EXACTLY one completion per token.
+            // Routing every completion through this guard makes each path fire
+            // at most once, including the cancellation path below that can race
+            // with an already-fired typed completion on the invalidation route.
+            val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+            val complete: (ByteArray?, Int, String?) -> Unit = { sig, code, msg ->
+                if (completed.compareAndSet(false, true)) {
+                    SignerNative.completeSign(completionToken, sig, code, msg)
+                }
+            }
             try {
                 // Platform-payment addresses (0xFF) have no stored private
                 // key — derive on demand from (mnemonic, derivationPath).
                 if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
-                    signPlatformAddressOnDemand(pubkeyBytes, data, completionToken)
+                    signPlatformAddressOnDemand(pubkeyBytes, data, complete)
                     return@launch
                 }
-                signWithStoredKey(pubkeyBytes, data, completionToken)
+                signWithStoredKey(pubkeyBytes, data, complete)
+            } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                // Structured-concurrency cancellation: a teardown of the signer's
+                // IO scope, or cancellation surfaced by the suspend invalidation
+                // callback. The `scope.launch` job is INDEPENDENT of the Rust
+                // request, so rethrowing alone does NOT cancel the native
+                // receiver — the JNI PendingSign token would leak until the
+                // five-minute SIGN_ASYNC_COMPLETION_TIMEOUT. Release it NOW,
+                // exactly once: if a typed key-unavailable completion already
+                // fired on the invalidation path this is a no-op (guard),
+                // otherwise it completes with the generic cancellation result.
+                // Then rethrow so the coroutine still unwinds — NEVER swallow
+                // cancellation (dashpay/platform#4183 review).
+                complete(null, SignerNative.SIGNER_ERROR_CODE_GENERIC, "signing cancelled")
+                throw cancellation
             } catch (e: Exception) {
-                SignerNative.completeSign(
-                    completionToken,
-                    null,
-                    e.message ?: "signing failed",
-                )
+                // Classify before completing: a KeyPermanentlyInvalidatedException
+                // anywhere in the sign path means the key is unavailable until
+                // re-derived, and must surface as the typed code on the FIRST
+                // attempt — not as an opaque generic failure (#4060 round-2
+                // finding 2).
+                complete(null, completionErrorCodeFor(e), e.message ?: "signing failed")
             }
         }
     }
@@ -94,20 +137,74 @@ class KeystoreSigner(
     private suspend fun signWithStoredKey(
         pubkeyBytes: ByteArray,
         data: ByteArray,
-        completionToken: Long,
+        complete: (ByteArray?, Int, String?) -> Unit,
     ) {
         var key: ByteArray? = null
         try {
             val storageKey = storageKeyFor(pubkeyBytes)
-            key = retrieveKeyWithAuth(storageKey)
-            if (key == null) {
-                // Built from the shared marker so the error survives the
-                // Rust round-trip and comes back typed as
-                // DashSdkError.PlatformWallet.SigningKeyUnavailable (the
-                // fromPlatformWalletNative message match) instead of Generic.
-                SignerNative.completeSign(
-                    completionToken,
+            key = try {
+                retrieveKeyWithAuth(storageKey)
+            } catch (e: KeyPermanentlyInvalidatedException) {
+                // The Keystore key that wraps this blob was permanently
+                // invalidated (biometric/credential re-enrollment; the
+                // generation-checked alias cleanup already ran inside
+                // KeystoreManager.decrypt for policy aliases). The key is
+                // unavailable until re-derived — complete with the TYPED
+                // code on this first attempt instead of letting the generic
+                // catch-all label it an opaque signing failure (#4060
+                // round-2 finding 2).
+                val keyUnavailableMessage =
+                    "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
+                        "${storageKey.take(16)}… (key permanently invalidated: " +
+                        "${e.message ?: "re-enrollment"})"
+                // Record the invalidation durably first (finding 3) —
+                // best-effort: bookkeeping failure must not eat the typed
+                // completion.
+                try {
+                    onSigningKeyInvalidated?.invoke(storageKey)
+                } catch (cancellation: kotlin.coroutines.cancellation.CancellationException) {
+                    // The invalidation callback is suspend; runCatching would
+                    // have swallowed its cancellation one layer too low and let
+                    // the sign continue. The key-unavailable result is ALREADY
+                    // known here, so complete the native token with the TYPED
+                    // code before unwinding — otherwise the cancellation would
+                    // skip the completion below and strand the PendingSign token
+                    // until the five-minute timeout. Then rethrow so
+                    // structured-concurrency cancellation still propagates. The
+                    // outer cancellation catch's completion is a no-op (the
+                    // idempotent guard) — no double-free
+                    // (dashpay/platform#4183 review).
+                    complete(
+                        null,
+                        SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
+                        keyUnavailableMessage,
+                    )
+                    throw cancellation
+                } catch (_: Throwable) {
+                    // Best-effort bookkeeping: a non-cancellation failure must
+                    // not eat the typed completion below.
+                }
+                complete(
                     null,
+                    SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
+                    keyUnavailableMessage,
+                )
+                return
+            }
+            if (key == null) {
+                // The typed SIGNER_ERROR_CODE_KEY_UNAVAILABLE rides the
+                // completion ABI and comes back as platform-wallet code 31 →
+                // DashSdkError.PlatformWallet.SigningKeyUnavailable
+                // (dashpay/platform#4060 finding 7). The MESSAGE_MARKER text
+                // is ALSO kept for the #4191 merge-order transition (its
+                // marker-based classification predates the typed code) and
+                // as defense in depth for any conversion path that loses the
+                // machine prefix — NOT for mixed old-native/new-Kotlin
+                // builds, which the completion JNI arity change makes
+                // unsupported outright.
+                complete(
+                    null,
+                    SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE,
                     "${DashSdkError.PlatformWallet.SigningKeyUnavailable.MESSAGE_MARKER} " +
                         "${storageKey.take(16)}…",
                 )
@@ -115,9 +212,17 @@ class KeystoreSigner(
             }
             val signature = SignerNative.signWithPrivateKey(key, network.ffiValue, data)
             if (signature != null) {
-                SignerNative.completeSign(completionToken, signature, null)
+                complete(
+                    signature,
+                    SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                    null,
+                )
             } else {
-                SignerNative.completeSign(completionToken, null, "signing returned no data")
+                complete(
+                    null,
+                    SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                    "signing returned no data",
+                )
             }
         } finally {
             key?.fill(0)
@@ -134,7 +239,7 @@ class KeystoreSigner(
     private suspend fun signPlatformAddressOnDemand(
         addressHash: ByteArray,
         data: ByteArray,
-        completionToken: Long,
+        complete: (ByteArray?, Int, String?) -> Unit,
     ) {
         val hashHex = addressHash.joinToString("") { "%02x".format(it) }
         // The hash may live in several wallets' rows (per-wallet
@@ -143,9 +248,9 @@ class KeystoreSigner(
         // so scan for the first signable candidate.
         val rows = platformAddressDao.getAllByAddressHash(addressHash)
         if (rows.isEmpty()) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no platform address row for $hashHex",
             )
             return
@@ -154,9 +259,9 @@ class KeystoreSigner(
             it.derivationPath.isNotEmpty() && storage.hasMnemonic(it.walletId)
         }
         if (row == null) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no signable platform address row for $hashHex " +
                     "(no candidate has both a derivation path and a stored mnemonic)",
             )
@@ -167,9 +272,9 @@ class KeystoreSigner(
         // discipline, applied here to the signing path).
         val mnemonicUtf8 = storage.retrieveMnemonicUtf8(row.walletId)
         if (mnemonicUtf8 == null) {
-            SignerNative.completeSign(
-                completionToken,
+            complete(
                 null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
                 "no mnemonic stored for wallet of platform address $hashHex",
             )
             return
@@ -183,9 +288,17 @@ class KeystoreSigner(
             SignerNative.signWithMnemonicAndPathInto(m, path, net, payload)
         }
         if (signature != null) {
-            SignerNative.completeSign(completionToken, signature, null)
+            complete(
+                signature,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                null,
+            )
         } else {
-            SignerNative.completeSign(completionToken, null, "signing returned no data")
+            complete(
+                null,
+                SignerNative.SIGNER_ERROR_CODE_GENERIC,
+                "signing returned no data",
+            )
         }
     }
 
@@ -235,7 +348,7 @@ class KeystoreSigner(
         if (h != 0L) SignerNative.destroySigner(h)
     }
 
-    private companion object {
+    companion object {
         /**
          * FFI dispatch tag the Rust `Signer<PlatformAddress>` vtable ships
          * instead of a `KeyType` discriminant when the "pubkey bytes" are a
@@ -243,7 +356,27 @@ class KeystoreSigner(
          * `SIGNER_KEY_TYPE_PLATFORM_ADDRESS_HASH` (0xFF) in
          * `rs-sdk-ffi/src/signer.rs`; arrives here as the unsigned value 255.
          */
-        const val PLATFORM_ADDRESS_HASH_KEY_TYPE: Int = 0xFF
+        private const val PLATFORM_ADDRESS_HASH_KEY_TYPE: Int = 0xFF
+
+        /**
+         * Structured completion code for a sign-path failure [t]:
+         * [KeyPermanentlyInvalidatedException] is a "key unavailable until
+         * re-derived" signal and maps to
+         * [SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE] (→ platform-wallet
+         * code 31 → `DashSdkError.PlatformWallet.SigningKeyUnavailable`);
+         * everything else stays [SignerNative.SIGNER_ERROR_CODE_GENERIC].
+         * Note `UserNotAuthenticatedException` never reaches this — the
+         * biometric-gate retry handles it, and an unhandled one is a generic
+         * failure, not a missing key. Factored pure so the classification is
+         * unit-testable without the native signer handle (#4060 round-2
+         * finding 2).
+         */
+        internal fun completionErrorCodeFor(t: Throwable): Int =
+            if (t is KeyPermanentlyInvalidatedException) {
+                SignerNative.SIGNER_ERROR_CODE_KEY_UNAVAILABLE
+            } else {
+                SignerNative.SIGNER_ERROR_CODE_GENERIC
+            }
     }
 }
 

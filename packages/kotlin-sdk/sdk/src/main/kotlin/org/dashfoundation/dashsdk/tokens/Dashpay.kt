@@ -578,8 +578,9 @@ class EstablishedContactRef internal constructor(handle: Long) : AutoCloseable {
  * `DashSDKException` code by [DashSdkError.PLATFORM_WALLET_CODE_OFFSET]),
  * so without this every local read over an unmanaged identity — e.g.
  * [Dashpay.syncState] on a contact's identity — would throw
- * a typed `DashSdkError.NotFound("…ManagedIdentity not found")`
- * instead of returning null. Any other error is rethrown untouched.
+ * a typed `DashSdkError.PlatformWallet.NotFound("…ManagedIdentity not
+ * found")` instead of returning null. Any other error is rethrown
+ * untouched.
  */
 internal inline fun translateManagedIdentityNotFoundToZero(getHandle: () -> Long): Long =
     try {
