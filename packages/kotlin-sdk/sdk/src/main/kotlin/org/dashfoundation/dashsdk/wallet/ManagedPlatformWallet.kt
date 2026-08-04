@@ -371,15 +371,33 @@ class ManagedPlatformWallet internal constructor(
         val txBytes: ByteArray,
         val fee: Long,
         val change: Long,
+        /**
+         * Opaque handle for the key-wallet reservation token this build stamped
+         * on its inputs (0 = it reserved nothing).
+         *
+         * Pass it to [releasePaymentReservation] together with [txBytes] when
+         * abandoning the build. It is the ownership proof that stops the release
+         * from freeing a *different* build's reservation on the same outpoint —
+         * possible whenever key-wallet's TTL swept this build's reservation and
+         * another build re-took it (dashpay/platform#4247 review). The token
+         * itself never crosses the native boundary: it has no public constructor
+         * precisely so it cannot be forged.
+         *
+         * Not a resource: there is nothing to close, and holding a stale handle
+         * is harmless — it simply stops matching.
+         */
+        val reservationHandle: Long,
     ) {
         override fun equals(other: Any?): Boolean =
             other is SignedCorePayment &&
                 txBytes.contentEquals(other.txBytes) &&
                 fee == other.fee &&
-                change == other.change
+                change == other.change &&
+                reservationHandle == other.reservationHandle
 
         override fun hashCode(): Int =
-            (31 * txBytes.contentHashCode() + fee.hashCode()) * 31 + change.hashCode()
+            ((31 * txBytes.contentHashCode() + fee.hashCode()) * 31 + change.hashCode()) * 31 +
+                reservationHandle.hashCode()
     }
 
     /**
@@ -414,6 +432,17 @@ class ManagedPlatformWallet internal constructor(
      * selection and signing (the same native serialization [sendToAddresses]
      * relies on).
      *
+     * **Cancellation.** The blocking native build cannot observe cancellation
+     * once it has started, and it reserves the funding UTXOs before returning.
+     * If the caller is cancelled while it runs, `withContext` applies prompt
+     * cancellation and discards the completed [SignedCorePayment] — including
+     * the [SignedCorePayment.txBytes] and [SignedCorePayment.reservationHandle]
+     * that are the only way to release that reservation. It would then sit until
+     * key-wallet's TTL backstop, or forever at height 0 where the sweep never
+     * runs. This call therefore releases a discarded result on the way out, so a
+     * cancelled send strands nothing (dashpay/platform#4247 review). The cleanup
+     * is best-effort and never masks the cancellation.
+     *
      * @param recipients `(address, amountDuffs)` pairs; must be non-empty and
      *   every amount positive.
      * @param coreSignerHandle the manager's `MnemonicResolverHandle`
@@ -428,7 +457,19 @@ class ManagedPlatformWallet internal constructor(
         coreSignerHandle: Long,
         feePerKb: Long = 0,
         fundingPath: String? = null,
-    ): SignedCorePayment = gate.op {
+    ): SignedCorePayment = gate.opWithCleanupOnCancellation(
+        // The native build reserves the funding UTXOs before it returns, so by
+        // the time `withContext` dispatches back to the caller the reservation
+        // already exists. That handoff is a prompt-cancellation point: a caller
+        // cancelled while JNI ran never receives the payment, and with it never
+        // receives the tx bytes + reservation handle that are the ONLY way to
+        // release. Releasing the discarded payment here is the deterministic
+        // alternative to waiting out a TTL that, at height 0, never fires.
+        // Mirrors the token-owning `buildSignedPayment` overload above.
+        cleanup = { payment: SignedCorePayment ->
+            releaseDiscardedPayment(payment, fundingPath)
+        },
+    ) {
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
         require(recipients.all { it.second > 0 }) { "every recipient amount must be positive" }
         require(feePerKb >= 0) { "feePerKb must be non-negative, got $feePerKb" }
@@ -440,6 +481,42 @@ class ManagedPlatformWallet internal constructor(
                     core.buildSignedPayment(outputsBlob, feePerKb, coreSignerHandle, fundingPath),
                 )
             }
+        }
+    }
+
+    /**
+     * Best-effort, synchronous release of a [buildSignedPayment] result that
+     * coroutine cancellation discarded before the caller could take ownership.
+     *
+     * Blocking rather than suspending on purpose: it runs from
+     * [opWithCleanupOnCancellation]'s `finally`, where the coroutine is already
+     * cancelled and any suspension would be refused. The underlying native call
+     * is a fast in-memory map operation, so blocking that thread is not a real
+     * cost.
+     *
+     * Never throws. A failure here would replace the caller's
+     * `CancellationException` with an unrelated error thrown out of a `finally`,
+     * and the reservation is recoverable by other means (TTL, or an explicit
+     * release once sync has a height) whereas a corrupted cancellation signal is
+     * not. `Throwable` rather than `Exception` because the native boundary can
+     * surface `UnsatisfiedLinkError` and friends.
+     */
+    private fun releaseDiscardedPayment(payment: SignedCorePayment, fundingPath: String?) {
+        try {
+            coreWallet().use { core ->
+                core.releasePaymentReservation(
+                    payment.txBytes,
+                    fundingPath,
+                    payment.reservationHandle,
+                )
+            }
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "ManagedPlatformWallet",
+                "failed to release the reservation of a cancelled buildSignedPayment; " +
+                    "its inputs stay reserved until the TTL backstop",
+                t,
+            )
         }
     }
 
@@ -541,17 +618,28 @@ class ManagedPlatformWallet internal constructor(
      * entire balance. This call consults no height, so it is the one release
      * path that works pre-sync.
      *
-     * **Releases only this build's own inputs.** The transaction is the
-     * ownership signal: a reserved outpoint is skipped by every other build's
-     * coin selection, so no concurrent build can hold a reservation on any
-     * input of [txBytes].
+     * **Releases only inputs this build still owns.** The guard is
+     * [reservationHandle], not the transaction. An earlier version of this
+     * contract claimed the transaction alone sufficed, because "a reserved
+     * outpoint is skipped by every other build's coin selection". That was
+     * wrong: key-wallet's TTL sweep reclaims a reservation after 24 blocks, and
+     * from that moment a concurrent build can legitimately re-reserve the very
+     * same outpoint. A release by outpoint would then free the OTHER build's
+     * inputs and let coin selection hand them to a second transaction
+     * (dashpay/platform#4247 review).
      *
-     * **Idempotent, and safe after a broadcast.** Calling it twice, or on a
-     * transaction that was in fact broadcast, is a silent no-op rather than an
-     * error, and it cannot resurrect a spent coin — coin selection reads the
-     * UTXO set, from which sync removes the spend independently of any
-     * reservation. That makes it safe in an unconditional `finally` without
-     * tracking whether the broadcast succeeded.
+     * **For abandoned builds ONLY — never call this after a broadcast.** The
+     * previous contract advertised it as safe in an unconditional `finally`,
+     * reasoning that sync removes a broadcast spend from the UTXO set anyway.
+     * The gap is the window *before* sync observes it: this SDK does not
+     * broadcast (dashj does), so between a successful broadcast and sync
+     * processing that spend the inputs are still in the UTXO set, and the
+     * reservation is the only thing keeping a second build off them. Releasing
+     * there invites a conflicting transaction. Branch on "did I broadcast it?" —
+     * something the caller always knows — not on a `finally`.
+     *
+     * **Idempotent** across repeated releases of the *same abandoned build*:
+     * the second call finds the token owns nothing and does nothing.
      *
      * @param txBytes [SignedCorePayment.txBytes] from the build being
      *   abandoned.
@@ -559,16 +647,43 @@ class ManagedPlatformWallet internal constructor(
      *   release lands on the account holding the reservation; `null` means the
      *   unmixed BIP44 account, exactly as it does for the build. A path naming
      *   a different account is harmless but frees nothing.
+     * @param reservationHandle the **same**
+     *   [SignedCorePayment.reservationHandle] that build returned. An
+     *   unrecognised non-zero handle throws rather than falling back to an
+     *   unguarded release.
      */
     suspend fun releasePaymentReservation(
         txBytes: ByteArray,
         fundingPath: String? = null,
+        reservationHandle: Long,
     ): Unit = gate.op {
         require(txBytes.isNotEmpty()) { "txBytes must not be empty" }
         mapNativeErrors {
-            coreWallet().use { core -> core.releasePaymentReservation(txBytes, fundingPath) }
+            coreWallet().use { core ->
+                core.releasePaymentReservation(txBytes, fundingPath, reservationHandle)
+            }
         }
     }
+
+    /**
+     * Release the reservation [payment] holds — the object form of
+     * [releasePaymentReservation], and the one to prefer: it pairs the
+     * transaction bytes with their own reservation handle, so the two can never
+     * be mismatched between two in-flight builds.
+     *
+     * Same contract: for a build being **abandoned**, never one that was
+     * broadcast.
+     *
+     * @param fundingPath the **same** path [buildSignedPayment] was given.
+     */
+    suspend fun releasePaymentReservation(
+        payment: SignedCorePayment,
+        fundingPath: String? = null,
+    ): Unit = releasePaymentReservation(
+        txBytes = payment.txBytes,
+        fundingPath = fundingPath,
+        reservationHandle = payment.reservationHandle,
+    )
 
     /**
      * The wallet's Platform-payment addresses that currently hold credits,
@@ -1043,18 +1158,25 @@ class ManagedPlatformWallet internal constructor(
 
     /**
      * Decode the packed [SignedCorePayment] the native build returns:
-     * `u64 fee, u64 change,` then the signed transaction bytes (big-endian).
+     * `u64 fee, u64 change, u64 reservationHandle,` then the signed transaction
+     * bytes (big-endian).
      */
     private fun decodeSignedPayment(packed: ByteArray): SignedCorePayment {
-        require(packed.size >= 16) {
-            "signed-payment result too short (${packed.size} bytes, need >= 16)"
+        require(packed.size >= 24) {
+            "signed-payment result too short (${packed.size} bytes, need >= 24)"
         }
         val buffer = java.nio.ByteBuffer.wrap(packed) // big-endian by default
         val fee = buffer.long
         val change = buffer.long
+        val reservationHandle = buffer.long
         val txBytes = ByteArray(buffer.remaining())
         buffer.get(txBytes)
-        return SignedCorePayment(txBytes = txBytes, fee = fee, change = change)
+        return SignedCorePayment(
+            txBytes = txBytes,
+            fee = fee,
+            change = change,
+            reservationHandle = reservationHandle,
+        )
     }
 
     /**

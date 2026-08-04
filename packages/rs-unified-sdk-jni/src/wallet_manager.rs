@@ -1022,11 +1022,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 /// CoinJoin account path) funds strictly from that one account, with no union
 /// across accounts and no consent gate.
 ///
-/// Returns a `byte[]` packed big-endian as `u64 fee, u64 change,` then the
-/// consensus-serialized signed transaction bytes (`fee` and `change` in duffs),
-/// or null after throwing. The FFI-owned tx bytes are freed here before
-/// returning; Kotlin decodes the packed array via
-/// `ManagedPlatformWallet.decodeSignedPayment`.
+/// Returns a `byte[]` packed big-endian as
+/// `u64 fee, u64 change, u64 reservationHandle,` then the consensus-serialized
+/// signed transaction bytes (`fee` and `change` in duffs), or null after
+/// throwing. The FFI-owned tx bytes are freed here before returning; Kotlin
+/// decodes the packed array via `ManagedPlatformWallet.decodeSignedPayment`.
+///
+/// `reservationHandle` is the opaque stand-in for the key-wallet reservation
+/// token this build stamped on its inputs (0 = it reserved nothing). It must be
+/// handed back to [coreWalletReleasePaymentReservation] to abandon the build:
+/// that is what makes the release owner-guarded, and the token itself cannot
+/// cross the ABI (it has no public constructor, by design).
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBuildSignedPayment(
     mut env: JNIEnv,
@@ -1078,6 +1084,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut out_tx_len: usize = 0;
         let mut out_fee: u64 = 0;
         let mut out_change: u64 = 0;
+        let mut out_reservation_handle: u64 = 0;
         let result = unsafe {
             platform_wallet_ffi::core_wallet_build_signed_payment(
                 core_handle as Handle,
@@ -1091,6 +1098,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 &mut out_tx_len,
                 &mut out_fee,
                 &mut out_change,
+                &mut out_reservation_handle,
             )
         };
         if take_pwffi_error(env, result) {
@@ -1098,16 +1106,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         }
 
         // Copy the FFI-owned tx bytes out, then free them, then pack the
-        // metadata-prefixed result for Kotlin. `fee` and `change` are written
-        // big-endian ahead of the raw tx bytes.
+        // metadata-prefixed result for Kotlin. `fee`, `change` and the
+        // reservation handle are written big-endian ahead of the raw tx bytes.
         let tx_bytes: &[u8] = if out_tx_bytes.is_null() || out_tx_len == 0 {
             &[]
         } else {
             unsafe { std::slice::from_raw_parts(out_tx_bytes, out_tx_len) }
         };
-        let mut packed = Vec::with_capacity(16 + tx_bytes.len());
+        let mut packed = Vec::with_capacity(24 + tx_bytes.len());
         packed.extend_from_slice(&out_fee.to_be_bytes());
         packed.extend_from_slice(&out_change.to_be_bytes());
+        packed.extend_from_slice(&out_reservation_handle.to_be_bytes());
         packed.extend_from_slice(tx_bytes);
         unsafe {
             platform_wallet_ffi::core_wallet_free_payment_bytes(out_tx_bytes, out_tx_len);
@@ -1134,14 +1143,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 ///
 /// `core_handle` is the transient core-wallet `Handle` from
 /// [platformWalletGetCore]. `tx_bytes` is the consensus-serialized signed
-/// transaction exactly as [coreWalletBuildSignedPayment] returned it — the
-/// transaction is the ownership signal, so only this build's own inputs are
-/// released. `funding_path` must be the SAME optional path the build was given
-/// (null = the unmixed BIP44 account).
+/// transaction exactly as [coreWalletBuildSignedPayment] returned it.
+/// `funding_path` must be the SAME optional path the build was given (null = the
+/// unmixed BIP44 account). `reservation_handle` must be the SAME handle that
+/// build returned: it is the ownership proof that keeps this release from
+/// freeing a concurrent build's inputs after key-wallet's TTL swept and that
+/// build re-reserved the same outpoint (dashpay/platform#4247 review). An
+/// unrecognised non-zero handle is refused rather than released unguarded.
 ///
-/// Idempotent, and a silent no-op after a successful broadcast, so it is safe
-/// in an unconditional cleanup path. Throws only on an invalid handle,
-/// undecodable transaction bytes, or an unresolvable funding path.
+/// FOR ABANDONED BUILDS ONLY — never call this after a successful broadcast.
+/// Until sync processes the spend the inputs are still in the UTXO set, and the
+/// reservation is the only thing keeping a second build off them. Repeated
+/// releases of the same abandoned build are idempotent; that is the only sense in
+/// which it is safe to call twice. Throws on an invalid handle, undecodable
+/// transaction bytes, an unknown reservation handle, or an unresolvable funding
+/// path.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletReleasePaymentReservation(
     mut env: JNIEnv,
@@ -1149,10 +1165,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     core_handle: jlong,
     tx_bytes: JByteArray,
     funding_path: JString,
+    reservation_handle: jlong,
 ) {
     guard(&mut env, (), |env| {
         if core_handle == 0 {
             throw_sdk_exception(env, 1, "core handle is 0");
+            return;
+        }
+        // Handles are minted from a monotonic counter starting at 1, so a
+        // negative `jlong` can only be a caller error. Reject it here rather than
+        // letting `as u64` wrap it into a huge value that the table would refuse
+        // with a much less obvious message.
+        if reservation_handle < 0 {
+            throw_sdk_exception(env, 1, "reservationHandle must be non-negative");
             return;
         }
         let raw = match env.convert_byte_array(&tx_bytes) {
@@ -1189,6 +1214,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
                 raw.len(),
                 funding_path_ptr,
                 funding_path_len,
+                reservation_handle as u64,
             )
         };
         take_pwffi_error(env, result);
