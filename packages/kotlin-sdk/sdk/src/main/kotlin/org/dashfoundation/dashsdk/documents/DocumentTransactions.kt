@@ -1,9 +1,6 @@
 package org.dashfoundation.dashsdk.documents
 
 import org.dashfoundation.dashsdk.wallet.op
-
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.TransactionsNative
 
@@ -248,6 +245,133 @@ class DocumentTransactions internal constructor(
                 recipientId,
                 signingKeyId,
                 signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
+     * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
+     * [ownerId] — signed via [signerHandle]. Implements the create half of the
+     * legacy `BlockchainIdentity.publishTxMetaData` retirement
+     * (dashpay/platform#4086): the SDK derives the identity encryption key,
+     * seals [payload] into the legacy `version ‖ IV ‖ AES-256-CBC` blob, and
+     * writes `{keyIndex, encryptionKeyIndex, encryptedMetadata}`.
+     *
+     * Batching stays app-side: the caller serializes its items into [payload]
+     * (a protobuf `TxMetadataBatch`). The identity encryption key id (the
+     * `keyIndex` field) is chosen SDK-side to match the legacy stack, so the key
+     * never crosses the FFI boundary.
+     *
+     * ### `encryptionKeyIndex` selection (dashpay/platform#4186 follow-up)
+     * Leave [encryptionKeyIndex] `null` (the default) to let the SDK generate
+     * the per-document index in Rust — the host-thin path. Rust draws a valid
+     * non-zero 31-bit BIP-32 child index from the operating-system CSPRNG. The
+     * index is a derivation input stored on each document, not a protocol
+     * sequence number; a repeated index is non-lossy because each document also
+     * has a fresh IV and readers derive from that document's stored fields.
+     *
+     * Passing an explicit non-negative [encryptionKeyIndex] is retained ONLY for
+     * migration / tests and is discouraged: hosts should not own derivation
+     * index policy.
+     *
+     * @param encryptionKeyIndex `null` to let the SDK generate the index
+     *   (preferred); or an explicit non-negative per-document index
+     *   (migration / tests only).
+     * @param version payload version byte (`1` = protobuf, as the wallet writes).
+     * @param payload already-serialized opaque plaintext; the SDK does not
+     *   parse it.
+     * [mnemonicResolverHandle] is the host mnemonic-resolver handle
+     * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]):
+     * required for external-signable wallets (the app's shape — the AES key
+     * derives on demand through the resolver), ignored for wallets with
+     * resident private keys.
+     *
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   base58 `$id` field).
+     */
+    suspend fun createEncryptedDocument(
+        walletHandle: Long,
+        mnemonicResolverHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        version: Int,
+        payload: ByteArray,
+        signerHandle: Long,
+        encryptionKeyIndex: Int? = null,
+    ): String = gate.op {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(encryptionKeyIndex == null || encryptionKeyIndex >= 0) {
+            "encryptionKeyIndex, when supplied, must be non-negative, got $encryptionKeyIndex"
+        }
+        // Only 0 (CBOR) and 1 (protobuf) are wire-meaningful: `seal_tx_metadata`
+        // writes this byte verbatim into the envelope and the legacy dashj stack
+        // (decryptTxMetadata) switches on exactly those two values. Accepting 2..255
+        // would silently seal a document the legacy stack can't decode, breaking the
+        // bidirectional wire-compat guarantee (dashpay/platform#4091).
+        require(version == 0 || version == 1) {
+            "version must be 0 (CBOR) or 1 (protobuf), got $version"
+        }
+        mapNativeErrors {
+            TransactionsNative.documentCreateEncrypted(
+                walletHandle,
+                mnemonicResolverHandle,
+                ownerId,
+                contractId,
+                documentType,
+                // -1 is the JNI sentinel for "let Rust generate the index".
+                encryptionKeyIndex ?: -1,
+                version,
+                payload,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Fetch + DECRYPT every encrypted wallet-contract document owned by
+     * [ownerId] on [contractId]'s [documentType] updated at or after [sinceMs]
+     * (epoch-millis). Implements the read half of the legacy
+     * `BlockchainIdentity.getTxMetaData(since, key)` retirement
+     * (dashpay/platform#4087): the SDK fetches the owner-scoped, since-timestamp
+     * documents and decrypts each with the identity's derived key. Documents
+     * that fail to decrypt are skipped Rust-side (a bad document never aborts
+     * the fetch).
+     *
+     * @return a JSON array; each element is `{ "id", "ownerId" (base58),
+     *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
+     *   "payload" (base64 of the decrypted opaque plaintext) }`. The caller
+     *   parses each `payload` itself (a protobuf `TxMetadataBatch` for
+     *   `version == 1`) and reconciles memo / taxCategory / exchangeRate /
+     *   service / giftCard fields into its local store.
+     *
+     * [mnemonicResolverHandle] is the host mnemonic-resolver handle
+     * ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]):
+     * required for external-signable wallets (the app's shape — the AES key
+     * derives on demand through the resolver), ignored for wallets with
+     * resident private keys.
+     */
+    suspend fun fetchEncryptedDocuments(
+        walletHandle: Long,
+        mnemonicResolverHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        sinceMs: Long,
+    ): String = gate.op {
+        require(ownerId.size == 32) { "ownerId must be 32 bytes" }
+        require(contractId.size == 32) { "contractId must be 32 bytes" }
+        require(sinceMs >= 0) { "sinceMs must be non-negative, got $sinceMs" }
+        mapNativeErrors {
+            TransactionsNative.documentFetchEncrypted(
+                walletHandle,
+                mnemonicResolverHandle,
+                ownerId,
+                contractId,
+                documentType,
+                sinceMs,
             )
         }
     }

@@ -76,6 +76,15 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// (Not returned by `destroy`: Rust owns the callback contexts, so a
     /// straggling worker is memory-safe and merely logged there.)
     case errorShutdownIncomplete = 27
+    // Raw values 28-30 are NOT claimed here: 28 and 30 are reserved (vacated by
+    // the deferred-payment reservation-token trio on dashpay/platform#4185 /
+    // #4256 when it moved to 34-36) and 29 belongs to the asset-lock funding
+    // shortfall on dashpay/platform#4184.
+    /// A state transition could not be signed because the signer has no
+    /// usable private key for the requested public key — restored from the
+    /// structured signer completion code (dashpay/platform#4060 finding 7).
+    /// Route to key repair; not retryable as-is.
+    case errorSigningKeyUnavailable = 31
     case notFound = 98
     case errorUnknown = 99
 
@@ -137,6 +146,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorTransactionBroadcastRejected
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHUTDOWN_INCOMPLETE:
             self = .errorShutdownIncomplete
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE:
+            self = .errorSigningKeyUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -263,6 +274,12 @@ public enum PlatformWalletError: LocalizedError {
     /// sync pass still in flight. The operation failed closed — retry once
     /// sync is idle.
     case shutdownIncomplete(String)
+    /// The signer has no usable private key for the requested public key
+    /// (missing / stranded scalar) — the operation itself did not fail.
+    /// Restored from the structured signer completion code
+    /// (dashpay/platform#4060 finding 7); route to key repair. Kotlin
+    /// parity: `DashSdkError.PlatformWallet.SigningKeyUnavailable`.
+    case signingKeyUnavailable(String)
     case notFound(String)
     case unknown(String)
 
@@ -286,6 +303,7 @@ public enum PlatformWalletError: LocalizedError {
              .transactionBroadcastRejected(let m),
              .addressNonceMismatch(let m),
              .shutdownIncomplete(let m),
+             .signingKeyUnavailable(let m),
              .notFound(let m), .unknown(let m):
             return m
         }
@@ -329,6 +347,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .addressNonceMismatch(detail)
         case .errorShutdownIncomplete:
             self = .shutdownIncomplete(detail)
+        case .errorSigningKeyUnavailable:
+            self = .signingKeyUnavailable(detail)
         case .notFound:               self = .notFound(detail)
         case .errorUnknown:           self = .unknown(detail)
         }

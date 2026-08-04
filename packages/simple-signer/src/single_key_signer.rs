@@ -37,7 +37,7 @@ impl SingleKeySigner {
         }
         let mut arr = Zeroizing::new([0u8; 32]);
         arr.copy_from_slice(private_key_data);
-        let private_key = PrivateKey::from_byte_array(&*arr, network)
+        let private_key = PrivateKey::from_byte_array(&arr, network)
             .map_err(|e| format!("Invalid private key: {}", e))?;
         Ok(Self { private_key })
     }
@@ -88,6 +88,15 @@ impl Drop for SingleKeySigner {
     /// `secp256k1::SecretKey` is `Copy` and does not erase itself, and this
     /// signer is built per FFI call for keys that are deliberately never
     /// persisted, so the scalar is cleared when the handle is destroyed.
+    ///
+    /// This covers the copies this type owns. It does not reach the ones the
+    /// pinned `dashcore` makes internally: `signer::sign` parses its own
+    /// `SecretKey` from the bytes handed to it, as do the `can_sign_with`
+    /// branches below, and neither erases it before returning. Closing that
+    /// gap needs erasing storage inside `rust-dashcore` itself.
+    ///
+    /// TODO(dashconnect-key-hygiene): upstream zeroizing parse/sign storage to
+    /// `rust-dashcore`, then bump the pinned revision here.
     fn drop(&mut self) {
         self.private_key.inner.non_secure_erase();
     }
@@ -150,7 +159,7 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
                 let secp = dashcore::secp256k1::Secp256k1::new();
                 let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
                 let secret_key =
-                    match dashcore::secp256k1::SecretKey::from_byte_array(&*secret_bytes) {
+                    match dashcore::secp256k1::SecretKey::from_byte_array(&secret_bytes) {
                         Ok(sk) => sk,
                         Err(_) => return false,
                     };
@@ -167,7 +176,7 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
                 let secp = dashcore::secp256k1::Secp256k1::new();
                 let secret_bytes = Zeroizing::new(self.private_key.inner.secret_bytes());
                 let secret_key =
-                    match dashcore::secp256k1::SecretKey::from_byte_array(&*secret_bytes) {
+                    match dashcore::secp256k1::SecretKey::from_byte_array(&secret_bytes) {
                         Ok(sk) => sk,
                         Err(_) => return false,
                     };

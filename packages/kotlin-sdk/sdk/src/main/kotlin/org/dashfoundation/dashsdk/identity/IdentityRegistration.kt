@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.ffi.ContestedDpnsNamesNativeResult
 import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.IdentityRegistrationNativeResult
 import org.dashfoundation.dashsdk.ffi.TokensNative
+import org.dashfoundation.dashsdk.tokens.translateManagedIdentityNotFoundToZero
 import org.dashfoundation.dashsdk.wallet.TrackedAssetLock
 
 internal fun interface ResumeIdentityNativeCall {
@@ -90,8 +91,14 @@ class IdentityRegistration internal constructor(
         val refreshedCount = mapNativeErrors {
             syncContestedDpnsNative.call(walletHandle, identityId)
         }
+        // The native side reports an unmanaged identity as a platform-wallet
+        // NotFound error, not a zero handle; translate the raw code back to
+        // the zero-handle signal so the intended, caller-facing message below
+        // is what actually surfaces (dashpay/platform#4060).
         val identityHandle = mapNativeErrors {
-            managedIdentityLookupNative.call(walletHandle, identityId)
+            translateManagedIdentityNotFoundToZero {
+                managedIdentityLookupNative.call(walletHandle, identityId)
+            }
         }
         if (identityHandle == 0L) {
             throw DashSdkError.NotFound("identity is not managed by this wallet")

@@ -264,27 +264,82 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v7 → v8 adds the nullable derivation-breadcrumb columns on
+     * `public_keys` (dashpay/platform#4060 finding 5). Pre-existing rows
+     * must survive with NULL breadcrumbs (unknown — back-filled by the next
+     * persist of each key), and new rows must accept explicit values.
+     */
+    @Test
+    fun migrate7To8AddsDerivationBreadcrumbColumns() {
+        helper.createDatabase(dbName, 7).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, identityIndex, walletId) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0, x'01')",
+            )
+            execSQL(
+                "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                    "publicKeyData, identityId, createdAt, identityIdData) " +
+                    "VALUES (0, '0', '0', '0', 0, x'02AB', 'id-base58', 0, x'0A')",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 8, true, DashDatabase.MIGRATION_7_8)
+
+        // Pre-existing rows survive with NULL breadcrumbs.
+        db.query(
+            "SELECT derivationIdentityIndex, derivationKeyIndex FROM public_keys WHERE keyId = 0",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+            assertTrue(c.isNull(1))
+        }
+        // New rows accept explicit breadcrumbs.
+        db.execSQL(
+            "INSERT INTO public_keys (keyId, purpose, securityLevel, keyType, readOnly, " +
+                "publicKeyData, identityId, createdAt, identityIdData, " +
+                "derivationIdentityIndex, derivationKeyIndex) " +
+                "VALUES (1, '0', '0', '0', 0, x'02CD', 'id-base58', 0, x'0A', 3, 5)",
+        )
+        db.query(
+            "SELECT derivationIdentityIndex, derivationKeyIndex FROM public_keys WHERE keyId = 1",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3, c.getInt(0))
+            assertEquals(5, c.getInt(1))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            7,
+            8,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
+            DashDatabase.MIGRATION_7_8,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v7 schema. */
+    /** The full chain from v1 must also land on a valid v8 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            7,
+            8,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -292,6 +347,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
             DashDatabase.MIGRATION_6_7,
+            DashDatabase.MIGRATION_7_8,
         ).close()
     }
 }

@@ -42,12 +42,13 @@ import org.dashfoundation.example.util.Base58
 /**
  * Wallet key-health diagnostic — port of `WalletKeyHealthSheet.swift`,
  * scoped to what the Kotlin SDK bridges today: for every identity owned by
- * this wallet (`IdentityDao`), walk its `PublicKeyDao` rows and verify the
- * Keystore holds private-key material for each stored pubkey
- * (`WalletStorage.hasPrivateKey`, the analogue of the iOS Keychain
- * lookup).
+ * this wallet (`IdentityDao`), walk its `PublicKeyDao` rows and check whether
+ * the private key for each stored pubkey is actually RECOVERABLE — the probe
+ * (`WalletStorage.probeIdentityKeyRecoverability`, the analogue of the iOS
+ * Keychain lookup) opens the stored blob, so a present-but-stranded/
+ * undecryptable key reads as unrecoverable, not just an absent one.
  *
- * Missing rows offer a Repair action: it re-derives the canonical private
+ * Unrecoverable rows offer a Repair action: it re-derives the canonical private
  * key at `(identityIndex, keyId)` from the wallet mnemonic via the
  * resolver-keyed derive FFI (`dash_sdk_derive_identity_key_at_slot`,
  * surfaced as `PlatformWalletManager.repairIdentityKey`) and re-encrypts it
@@ -79,31 +80,39 @@ fun WalletKeyHealthSheet(
         refreshTick,
     ) {
         val ids = identities ?: return@produceState
-        value = ids.map { identity ->
-            val base58Id = Base58.encode(identity.identityId)
-            val keys = container.database.publicKeyDao()
-                .observeByIdentityId(base58Id).first()
-                .map { row ->
-                    val pubkeyHex = row.publicKeyData.joinToString("") { "%02x".format(it) }
-                    KeyHealthRow(
-                        keyId = row.keyId,
-                        purpose = row.purpose,
-                        securityLevel = row.securityLevel,
-                        pubkeyHex = pubkeyHex,
-                        publicKeyData = row.publicKeyData,
-                        // Decryptability, not mere existence — a blob from the
-                        // pre-RSA scheme is present but unusable and needs the
-                        // same repair as a missing one.
-                        hasPrivateKey = runCatching {
-                            container.walletStorage.isPrivateKeyDecryptable(pubkeyHex)
-                        }.getOrDefault(false),
-                    )
-                }
-            IdentityKeyReport(
-                identityIdBase58 = base58Id,
-                identityIndex = identity.identityIndex,
-                keys = keys,
-            )
+        // The recoverability probe opens each Keystore blob (a decrypt), so it
+        // MUST run off the composition/Main thread — do the whole report build
+        // on IO (the Room reads suspend, the probes are blocking Keystore work).
+        value = withContext(Dispatchers.IO) {
+            ids.map { identity ->
+                val base58Id = Base58.encode(identity.identityId)
+                val keys = container.database.publicKeyDao()
+                    .observeByIdentityId(base58Id).first()
+                    .map { row ->
+                        val pubkeyHex = row.publicKeyData.joinToString("") { "%02x".format(it) }
+                        KeyHealthRow(
+                            keyId = row.keyId,
+                            purpose = row.purpose,
+                            securityLevel = row.securityLevel,
+                            pubkeyHex = pubkeyHex,
+                            publicKeyData = row.publicKeyData,
+                            // Real recoverability, not mere presence — the
+                            // PROBING check actually opens the blob with the
+                            // candidate keys, so a stranded/sibling-alias blob is
+                            // reported unrecoverable and gets the same repair as a
+                            // truly-absent one (the cheap isPrivateKeyDecryptable
+                            // is reserved for the signer's capability callback).
+                            isRecoverable = runCatching {
+                                container.walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+                            }.getOrDefault(false),
+                        )
+                    }
+                IdentityKeyReport(
+                    identityIdBase58 = base58Id,
+                    identityIndex = identity.identityIndex,
+                    keys = keys,
+                )
+            }
         }
     }
 
@@ -136,11 +145,11 @@ fun WalletKeyHealthSheet(
 
                 else -> {
                     // Summary (← summarySection).
-                    val healthy = current.count { report -> report.keys.all { it.hasPrivateKey } }
+                    val healthy = current.count { report -> report.keys.all { it.isRecoverable } }
                     FormSection(title = "Summary") {
                         SummaryRow("Identities checked", current.size)
                         SummaryRow("Healthy", healthy)
-                        SummaryRow("Missing key material", current.size - healthy)
+                        SummaryRow("Unrecoverable key material", current.size - healthy)
                     }
 
                     current.forEach { report ->
@@ -162,16 +171,22 @@ fun WalletKeyHealthSheet(
                                     key = key,
                                     // Repair is available only when a manager
                                     // is live (holds the resolver + storage).
-                                    onRepair = if (!key.hasPrivateKey && activeManager != null) {
+                                    onRepair = if (!key.isRecoverable && activeManager != null) {
                                         {
                                             scope.launch {
                                                 runCatching {
                                                     withContext(Dispatchers.IO) {
+                                                        // The repair reads the derivation slot
+                                                        // from the persisted breadcrumbs on the
+                                                        // key's row — the example app must NOT
+                                                        // pass an index (e.g. the DPP key id):
+                                                        // a wrong slot derives a different valid
+                                                        // scalar that round-trips fine and
+                                                        // persists an unusable key
+                                                        // (dashpay/platform#4060 blocker 1).
                                                         activeManager.repairIdentityKey(
                                                             walletId = walletId,
                                                             publicKeyData = key.publicKeyData,
-                                                            identityIndex = report.identityIndex,
-                                                            keyIndex = key.keyId,
                                                         )
                                                     }
                                                 }
@@ -199,7 +214,15 @@ private data class KeyHealthRow(
     val securityLevel: String,
     val pubkeyHex: String,
     val publicKeyData: ByteArray,
-    val hasPrivateKey: Boolean,
+    /**
+     * Whether the private key actually opens on this device — the probe
+     * decrypts the stored blob. `false` covers BOTH a truly-absent key and a
+     * present-but-unrecoverable one (stranded ciphertext / sibling-alias blob
+     * that no longer decrypts); the probe can't tell them apart, so the row is
+     * labeled by recoverability, not presence, and both get the same re-derive
+     * repair (dashpay/platform#4183 review).
+     */
+    val isRecoverable: Boolean,
 )
 
 private data class IdentityKeyReport(
@@ -233,9 +256,9 @@ private fun KeyRow(key: KeyHealthRow, onRepair: (() -> Unit)? = null) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
-                imageVector = if (key.hasPrivateKey) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                imageVector = if (key.isRecoverable) Icons.Default.CheckCircle else Icons.Default.Cancel,
                 contentDescription = null,
-                tint = if (key.hasPrivateKey) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                tint = if (key.isRecoverable) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
             )
             Text(
                 "Key #${key.keyId} — purpose ${key.purpose}, level ${key.securityLevel}",
@@ -249,10 +272,13 @@ private fun KeyRow(key: KeyHealthRow, onRepair: (() -> Unit)? = null) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            if (key.hasPrivateKey) {
-                "Healthy — private key material stored on this device"
+            if (key.isRecoverable) {
+                "Healthy — private key material recoverable on this device"
             } else {
-                "Missing — no Keystore entry for this public key"
+                // Not necessarily absent: the blob may be present but stranded/
+                // undecryptable (sibling-alias or invalidated Keystore key).
+                // The probe can't distinguish, so don't claim "no entry".
+                "Unrecoverable — key material missing or stranded; re-derive to repair"
             },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
