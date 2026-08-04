@@ -31,19 +31,23 @@ use crate::data_contract::document_type::property_names::{
     KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, RANGE_AVERAGEABLE, RANGE_COUNTABLE,
     RANGE_SUMMABLE, TRADE_MODE, TRANSFERABLE,
 };
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::token_costs::v0::TokenCostsV0;
+use crate::data_contract::document_type::token_costs::TokenCosts;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{property_names, DocumentType};
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::document::transfer::Transferable;
 use crate::identity::SecurityLevel;
+use crate::nft::TradeMode;
 use crate::validation::operations::ProtocolValidationOperation;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 use crate::balances::credits::TokenAmount;
@@ -268,13 +272,80 @@ pub(super) fn parse_keeps_history_flags(
     ))
 }
 
+/// The inputs the stages of [`parse_document_type_core`] share.
+///
+/// Filled in once from the core's own arguments so that each stage takes its
+/// own working data plus one context reference, instead of re-threading the
+/// same nine values apiece. Several fields are read only by `validation`-gated
+/// checks; they are documented as such below and simply go unread in a build
+/// without the feature.
+struct CoreParseContext<'a> {
+    /// Validation only: names the contract in the property-position and
+    /// token-cost errors.
+    data_contract_id: Identifier,
+    /// Validation only: selects which `$`-prefixed properties this contract's
+    /// system schema already provides, and so may not be indexed by hand.
+    data_contract_system_version: u16,
+    /// Validation only: the same question for the contract config's own
+    /// system properties.
+    contract_config_version: u16,
+    name: &'a str,
+    /// Validation only: checks that a token cost names a token position the
+    /// contract actually defines.
+    token_configurations: &'a BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &'a DataContractConfig,
+    /// Whether the stages run their validation-gated checks. Always read
+    /// behind `#[cfg(feature = "validation")]`: a build that compiled none of
+    /// those checks in has nothing to skip.
+    full_validation: bool,
+    generation: &'a ParserGeneration,
+    platform_version: &'a PlatformVersion,
+}
+
+/// The document-type level switches, each falling back to the contract-level
+/// default when the schema does not override it.
+struct DocumentTypeFlags {
+    documents_keep_history: bool,
+    documents_keep_transfer_history: bool,
+    documents_keep_purchase_history: bool,
+    documents_keep_pricing_history: bool,
+    documents_mutable: bool,
+    documents_can_be_deleted: bool,
+    documents_transferable: Transferable,
+    trade_mode: TradeMode,
+    creation_restriction_mode: CreationRestrictionMode,
+}
+
+/// The document type's properties, in both the shapes the parse produces.
+struct ParsedProperties {
+    /// Sub-objects flattened out, which is what the index stage looks
+    /// properties up in.
+    flattened_document_properties: IndexMap<String, DocumentProperty>,
+    /// The nested form, which keeps sub-objects.
+    document_properties: IndexMap<String, DocumentProperty>,
+    required_fields: BTreeSet<String>,
+    transient_fields: BTreeSet<String>,
+}
+
+/// The path sets derived from the parsed properties, together with the
+/// security level and key requirements read off the schema.
+struct PathsAndKeyRequirements {
+    identifier_paths: BTreeSet<String>,
+    binary_paths: BTreeSet<String>,
+    security_level_requirement: SecurityLevel,
+    requires_identity_encryption_bounded_key: Option<StorageKeyRequirements>,
+    requires_identity_decryption_bounded_key: Option<StorageKeyRequirements>,
+}
+
 /// The shared parsing core behind every generation from 1 onward.
 ///
 /// Builds the `DocumentTypeV1` value that generations 2 and 3 then layer the
 /// doctype-level aggregate fields onto (see
 /// [`parse_doctype_aggregate_keywords`] / [`apply_doctype_aggregates`]).
-// TODO: Split into multiple functions
-#[allow(unused_variables)]
+///
+/// The body is a pipeline over the stage functions below it; each stage owns
+/// one section of the document type schema together with the validation that
+/// belongs to that section.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_document_type_core(
     data_contract_id: Identifier,
@@ -290,6 +361,18 @@ pub(super) fn parse_document_type_core(
     generation: &ParserGeneration,
     platform_version: &PlatformVersion,
 ) -> Result<DocumentTypeV1, ProtocolError> {
+    let ctx = CoreParseContext {
+        data_contract_id,
+        data_contract_system_version,
+        contract_config_version,
+        name,
+        token_configurations,
+        data_contact_config,
+        full_validation,
+        generation,
+        platform_version,
+    };
+
     // Create a full root JSON Schema from shorten contract document type schema
     let root_schema = DocumentType::enrich_with_base_schema(
         schema.clone(),
@@ -309,22 +392,11 @@ pub(super) fn parse_document_type_core(
 
     #[cfg(feature = "validation")]
     if full_validation {
-        // Make sure a document type name is compliant
-        validate_document_type_name(name)?;
-
-        // Validate document schema depth
-        validate_schema_depth_and_account_for_size(
+        validate_document_type_schema(
+            &ctx,
             &root_schema,
-            validation_operations,
-            platform_version,
-        )?;
-
-        validate_against_meta_schema_and_compile(
-            &root_schema,
-            generation.document_type_schema_version,
-            generation.meta_schema_method_name,
             &json_schema_validator,
-            platform_version,
+            validation_operations,
         )?;
     }
 
@@ -335,28 +407,152 @@ pub(super) fn parse_document_type_core(
         ))
     })?;
 
+    let flags = parse_document_type_flags(&ctx, schema_map)?;
+
+    let properties =
+        parse_document_properties(&ctx, schema_map, &root_schema, validation_operations)?;
+
+    let (indices, index_structure) = parse_indices(
+        &ctx,
+        schema_map,
+        &flags,
+        &properties.flattened_document_properties,
+        validation_operations,
+    )?;
+
+    let paths_and_key_requirements =
+        parse_paths_and_key_requirements(&ctx, &schema, &properties.document_properties)?;
+
+    // Note: the doctype-level aggregate keys (documentsCountable /
+    // rangeCountable / documentsSummable / rangeSummable and the averageable
+    // shorthands) are intentionally ignored here. This core produces a
+    // `DocumentTypeV1`, which has no aggregate fields; the generations that do
+    // carry them read those keys in their own wrapper (see
+    // `parse_doctype_aggregate_keywords`). The core must never *reject* unknown
+    // keys — it simply doesn't map them to its output type.
+
+    let token_costs = parse_token_costs(&ctx, &schema)?;
+
+    let DocumentTypeFlags {
+        documents_keep_history,
+        documents_keep_transfer_history,
+        documents_keep_purchase_history,
+        documents_keep_pricing_history,
+        documents_mutable,
+        documents_can_be_deleted,
+        documents_transferable,
+        trade_mode,
+        creation_restriction_mode,
+    } = flags;
+    let ParsedProperties {
+        flattened_document_properties,
+        document_properties,
+        required_fields,
+        transient_fields,
+    } = properties;
+    let PathsAndKeyRequirements {
+        identifier_paths,
+        binary_paths,
+        security_level_requirement,
+        requires_identity_encryption_bounded_key,
+        requires_identity_decryption_bounded_key,
+    } = paths_and_key_requirements;
+
+    Ok(DocumentTypeV1 {
+        name: String::from(name),
+        schema,
+        indices,
+        index_structure,
+        flattened_properties: flattened_document_properties,
+        properties: document_properties,
+        identifier_paths,
+        binary_paths,
+        required_fields,
+        transient_fields,
+        documents_keep_history,
+        documents_keep_transfer_history,
+        documents_keep_purchase_history,
+        documents_keep_pricing_history,
+        documents_mutable,
+        documents_can_be_deleted,
+        documents_transferable,
+        trade_mode,
+        creation_restriction_mode,
+        data_contract_id,
+        requires_identity_encryption_bounded_key,
+        requires_identity_decryption_bounded_key,
+        security_level_requirement,
+        #[cfg(feature = "validation")]
+        json_schema_validator,
+        token_costs,
+    })
+}
+
+/// Everything `full_validation` asks of the schema before anything is parsed
+/// out of it: the document type's name, the enriched schema's depth (and the
+/// fee for its size), and the schema itself against this generation's document
+/// meta-schema — which also primes the document validator.
+#[cfg(feature = "validation")]
+fn validate_document_type_schema(
+    ctx: &CoreParseContext<'_>,
+    root_schema: &Value,
+    json_schema_validator: &StatelessJsonSchemaLazyValidator,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+) -> Result<(), ProtocolError> {
+    // Make sure a document type name is compliant
+    validate_document_type_name(ctx.name)?;
+
+    // Validate document schema depth
+    validate_schema_depth_and_account_for_size(
+        root_schema,
+        validation_operations,
+        ctx.platform_version,
+    )?;
+
+    validate_against_meta_schema_and_compile(
+        root_schema,
+        ctx.generation.document_type_schema_version,
+        ctx.generation.meta_schema_method_name,
+        json_schema_validator,
+        ctx.platform_version,
+    )?;
+
+    Ok(())
+}
+
+/// The document-type level switches, read straight off the schema map.
+fn parse_document_type_flags(
+    ctx: &CoreParseContext<'_>,
+    schema_map: &[(Value, Value)],
+) -> Result<DocumentTypeFlags, ProtocolError> {
     // Do documents of this type keep history? (Overrides contract value)
     let documents_keep_history: bool =
         Value::inner_optional_bool_value(schema_map, DOCUMENTS_KEEP_HISTORY)
             .map_err(consensus_or_protocol_value_error)?
-            .unwrap_or(data_contact_config.documents_keep_history_contract_default());
+            .unwrap_or(
+                ctx.data_contact_config
+                    .documents_keep_history_contract_default(),
+            );
 
     let (
         documents_keep_transfer_history,
         documents_keep_purchase_history,
         documents_keep_pricing_history,
-    ) = parse_keeps_history_flags(schema_map, generation.admit_history)?;
+    ) = parse_keeps_history_flags(schema_map, ctx.generation.admit_history)?;
 
     // Are documents of this type mutable? (Overrides contract value)
     let documents_mutable: bool = Value::inner_optional_bool_value(schema_map, DOCUMENTS_MUTABLE)
         .map_err(consensus_or_protocol_value_error)?
-        .unwrap_or(data_contact_config.documents_mutable_contract_default());
+        .unwrap_or(ctx.data_contact_config.documents_mutable_contract_default());
 
     // Can documents of this type be deleted? (Overrides contract value)
     let documents_can_be_deleted: bool =
         Value::inner_optional_bool_value(schema_map, CAN_BE_DELETED)
             .map_err(consensus_or_protocol_value_error)?
-            .unwrap_or(data_contact_config.documents_can_be_deleted_contract_default());
+            .unwrap_or(
+                ctx.data_contact_config
+                    .documents_can_be_deleted_contract_default(),
+            );
 
     // Are documents of this type transferable?
     let documents_transferable_u8: u8 =
@@ -381,6 +577,31 @@ pub(super) fn parse_document_type_core(
 
     let creation_restriction_mode = documents_creation_restriction_mode_u8.try_into()?;
 
+    Ok(DocumentTypeFlags {
+        documents_keep_history,
+        documents_keep_transfer_history,
+        documents_keep_purchase_history,
+        documents_keep_pricing_history,
+        documents_mutable,
+        documents_can_be_deleted,
+        documents_transferable,
+        trade_mode,
+        creation_restriction_mode,
+    })
+}
+
+/// The document type's properties, in both the flattened and the nested
+/// form, together with the required and transient field sets they are built
+/// against.
+///
+/// `validation_operations` is only extended when validation is compiled in.
+#[cfg_attr(not(feature = "validation"), allow(unused_variables))]
+fn parse_document_properties(
+    ctx: &CoreParseContext<'_>,
+    schema_map: &[(Value, Value)],
+    root_schema: &Value,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+) -> Result<ParsedProperties, ProtocolError> {
     // Extract the properties
     let property_values = Value::inner_optional_index_map::<u64>(
         schema_map,
@@ -391,7 +612,7 @@ pub(super) fn parse_document_type_core(
     .unwrap_or_default();
 
     #[cfg(feature = "validation")]
-    if full_validation {
+    if ctx.full_validation {
         validation_operations.extend(std::iter::once(
             ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                 property_values.values().len() as u64,
@@ -405,8 +626,8 @@ pub(super) fn parse_document_type_core(
                     BasicError::MissingPositionsInDocumentTypePropertiesError(
                         MissingPositionsInDocumentTypePropertiesError::new(
                             pos as u32,
-                            data_contract_id,
-                            name.to_string(),
+                            ctx.data_contract_id,
+                            ctx.name.to_string(),
                         ),
                     ),
                 )
@@ -444,8 +665,8 @@ pub(super) fn parse_document_type_core(
             None,
             property_key.clone(),
             property_value,
-            &root_schema,
-            data_contact_config,
+            root_schema,
+            ctx.data_contact_config,
         )
         .map_err(consensus_or_protocol_data_contract_error)?;
 
@@ -455,12 +676,37 @@ pub(super) fn parse_document_type_core(
             &transient_fields,
             property_key,
             property_value,
-            &root_schema,
-            data_contact_config,
+            root_schema,
+            ctx.data_contact_config,
         )
         .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
+    Ok(ParsedProperties {
+        flattened_document_properties,
+        document_properties,
+        required_fields,
+        transient_fields,
+    })
+}
+
+/// The document type's indices: the index grammar this generation admits,
+/// the admission checks for index features it does not have, the per-index
+/// validation limits, and the index tree built from the result.
+///
+/// Which keywords an index may carry and which of them this generation admits
+/// is one decision, so it is deliberately one function.
+///
+/// `flags`, `flattened_document_properties` and `validation_operations` are
+/// only read by the validation-gated checks.
+#[cfg_attr(not(feature = "validation"), allow(unused_variables))]
+fn parse_indices(
+    ctx: &CoreParseContext<'_>,
+    schema_map: &[(Value, Value)],
+    flags: &DocumentTypeFlags,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+) -> Result<(BTreeMap<String, Index>, IndexLevel), ProtocolError> {
     // Initialize indices
     let index_values = Value::inner_optional_array_slice_value(schema_map, property_names::INDICES)
         .map_err(consensus_or_protocol_value_error)?;
@@ -492,27 +738,27 @@ pub(super) fn parse_document_type_core(
                         .map_err(consensus_or_protocol_data_contract_error)?;
 
                     #[cfg(feature = "validation")]
-                    if full_validation {
+                    if ctx.full_validation {
                         // This check is load-bearing, not defense-in-depth:
                         // v2 delegates to V1's parser internally for the
                         // shared core, so this body serves both sides of
                         // the count-index boundary and the driver's
                         // `admit_count_indexes` decides which side we are
                         // on.
-                        if index.countable.is_countable() && !generation.admit_count_indexes {
+                        if index.countable.is_countable() && !ctx.generation.admit_count_indexes {
                             return Err(ProtocolError::ConsensusError(Box::new(
                                 UnsupportedFeatureError::new(
                                     "count index".to_string(),
-                                    platform_version.protocol_version,
+                                    ctx.platform_version.protocol_version,
                                 )
                                 .into(),
                             )));
                         }
-                        if index.range_countable && !generation.admit_count_indexes {
+                        if index.range_countable && !ctx.generation.admit_count_indexes {
                             return Err(ProtocolError::ConsensusError(Box::new(
                                 UnsupportedFeatureError::new(
                                     "range-countable index".to_string(),
-                                    platform_version.protocol_version,
+                                    ctx.platform_version.protocol_version,
                                 )
                                 .into(),
                             )));
@@ -530,7 +776,8 @@ pub(super) fn parse_document_type_core(
                         if index.unique {
                             unique_indices_count += 1;
                             if unique_indices_count
-                                > platform_version
+                                > ctx
+                                    .platform_version
                                     .dpp
                                     .validation
                                     .document_type
@@ -538,8 +785,8 @@ pub(super) fn parse_document_type_core(
                             {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UniqueIndicesLimitReachedError::new(
-                                        name.to_string(),
-                                        platform_version
+                                        ctx.name.to_string(),
+                                        ctx.platform_version
                                             .dpp
                                             .validation
                                             .document_type
@@ -555,7 +802,7 @@ pub(super) fn parse_document_type_core(
                             {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     ContestedUniqueIndexWithUniqueIndexError::new(
-                                        name.to_string(),
+                                        ctx.name.to_string(),
                                         last_contested_unique_index_name.clone(),
                                         index.name,
                                     )
@@ -571,7 +818,8 @@ pub(super) fn parse_document_type_core(
                         if index.contested_index.is_some() {
                             contested_indices_count += 1;
                             if contested_indices_count
-                                > platform_version
+                                > ctx
+                                    .platform_version
                                     .dpp
                                     .validation
                                     .document_type
@@ -579,8 +827,8 @@ pub(super) fn parse_document_type_core(
                             {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     UniqueIndicesLimitReachedError::new(
-                                        name.to_string(),
-                                        platform_version
+                                        ctx.name.to_string(),
+                                        ctx.platform_version
                                             .dpp
                                             .validation
                                             .document_type
@@ -596,7 +844,7 @@ pub(super) fn parse_document_type_core(
                             {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     ContestedUniqueIndexWithUniqueIndexError::new(
-                                        name.to_string(),
+                                        ctx.name.to_string(),
                                         index.name,
                                         last_unique_index_name.clone(),
                                     )
@@ -604,10 +852,10 @@ pub(super) fn parse_document_type_core(
                                 )));
                             }
 
-                            if documents_mutable {
+                            if flags.documents_mutable {
                                 return Err(ProtocolError::ConsensusError(Box::new(
                                     ContestedUniqueIndexOnMutableDocumentTypeError::new(
-                                        name.to_string(),
+                                        ctx.name.to_string(),
                                         index.name,
                                     )
                                     .into(),
@@ -620,109 +868,18 @@ pub(super) fn parse_document_type_core(
                         // Index names must be unique for the document type
                         if !index_names.insert(index.name.to_owned()) {
                             return Err(ProtocolError::ConsensusError(Box::new(
-                                DuplicateIndexNameError::new(name.to_string(), index.name).into(),
+                                DuplicateIndexNameError::new(ctx.name.to_string(), index.name)
+                                    .into(),
                             )));
                         }
 
                         // Validate indexed properties
-                        index.properties.iter().try_for_each(|index_property| {
-                            // Do not allow to index already indexed system properties
-                            if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&index_property.name.as_str())
-                            {
-                                return Err(ProtocolError::ConsensusError(Box::new(
-                                    SystemPropertyIndexAlreadyPresentError::new(
-                                        name.to_owned(),
-                                        index.name.to_owned(),
-                                        index_property.name.to_owned(),
-                                    )
-                                    .into(),
-                                )));
-                            }
-
-                            // Indexed property must be defined in user schema if it's not a system one
-                            if !DocumentType::system_properties_contains(
-                                data_contract_system_version,
-                                contract_config_version,
-                                documents_transferable,
-                                trade_mode,
-                                index_property.name.as_str(),
-                                platform_version,
-                            )? {
-                                let property_definition = flattened_document_properties
-                                    .get(&index_property.name)
-                                    .ok_or_else(|| {
-                                        ProtocolError::ConsensusError(Box::new(
-                                            UndefinedIndexPropertyError::new(
-                                                name.to_owned(),
-                                                index.name.to_owned(),
-                                                index_property.name.to_owned(),
-                                            )
-                                            .into(),
-                                        ))
-                                    })?;
-
-                                // Validate indexed property type
-                                match &property_definition.property_type {
-                                    // Array and objects aren't supported for indexing yet
-                                    DocumentPropertyType::Array(_)
-                                    | DocumentPropertyType::Object(_)
-                                    | DocumentPropertyType::VariableTypeArray(_) => {
-                                        Err(ProtocolError::ConsensusError(Box::new(
-                                            InvalidIndexPropertyTypeError::new(
-                                                name.to_owned(),
-                                                index.name.to_owned(),
-                                                index_property.name.to_owned(),
-                                                property_definition.property_type.name(),
-                                            )
-                                            .into(),
-                                        )))
-                                    }
-                                    // Indexed byte array size must be limited
-                                    DocumentPropertyType::ByteArray(sizes)
-                                        if sizes.max_size.is_none()
-                                            || sizes.max_size.unwrap()
-                                                > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
-                                    {
-                                        Err(ProtocolError::ConsensusError(Box::new(
-                                            InvalidIndexedPropertyConstraintError::new(
-                                                name.to_owned(),
-                                                index.name.to_owned(),
-                                                index_property.name.to_owned(),
-                                                "maxItems".to_string(),
-                                                format!(
-                                                    "should be less or equal {}",
-                                                    MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
-                                                ),
-                                            )
-                                            .into(),
-                                        )))
-                                    }
-                                    // Indexed string length must be limited
-                                    DocumentPropertyType::String(sizes)
-                                        if sizes.max_length.is_none()
-                                            || sizes.max_length.unwrap()
-                                                > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
-                                    {
-                                        Err(ProtocolError::ConsensusError(Box::new(
-                                            InvalidIndexedPropertyConstraintError::new(
-                                                name.to_owned(),
-                                                index.name.to_owned(),
-                                                index_property.name.to_owned(),
-                                                "maxLength".to_string(),
-                                                format!(
-                                                    "should be less or equal {}",
-                                                    MAX_INDEXED_STRING_PROPERTY_LENGTH
-                                                ),
-                                            )
-                                            .into(),
-                                        )))
-                                    }
-                                    _ => Ok(()),
-                                }
-                            } else {
-                                Ok(())
-                            }
-                        })?;
+                        validate_index_properties(
+                            ctx,
+                            &index,
+                            flags,
+                            flattened_document_properties,
+                        )?;
                     }
 
                     Ok((index.name.clone(), index))
@@ -732,12 +889,132 @@ pub(super) fn parse_document_type_core(
         .transpose()?
         .unwrap_or_default();
 
-    let index_structure = IndexLevel::try_from_indices(indices.values(), name, platform_version)?;
+    let index_structure =
+        IndexLevel::try_from_indices(indices.values(), ctx.name, ctx.platform_version)?;
 
+    Ok((indices, index_structure))
+}
+
+/// The per-property half of index validation: an already-indexed system
+/// property may not be indexed again, a user property must be defined, and an
+/// indexed property's type must be one the index encoding supports within its
+/// key length limits.
+#[cfg(feature = "validation")]
+fn validate_index_properties(
+    ctx: &CoreParseContext<'_>,
+    index: &Index,
+    flags: &DocumentTypeFlags,
+    flattened_document_properties: &IndexMap<String, DocumentProperty>,
+) -> Result<(), ProtocolError> {
+    index.properties.iter().try_for_each(|index_property| {
+        // Do not allow to index already indexed system properties
+        if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&index_property.name.as_str()) {
+            return Err(ProtocolError::ConsensusError(Box::new(
+                SystemPropertyIndexAlreadyPresentError::new(
+                    ctx.name.to_owned(),
+                    index.name.to_owned(),
+                    index_property.name.to_owned(),
+                )
+                .into(),
+            )));
+        }
+
+        // Indexed property must be defined in user schema if it's not a system one
+        if !DocumentType::system_properties_contains(
+            ctx.data_contract_system_version,
+            ctx.contract_config_version,
+            flags.documents_transferable,
+            flags.trade_mode,
+            index_property.name.as_str(),
+            ctx.platform_version,
+        )? {
+            let property_definition = flattened_document_properties
+                .get(&index_property.name)
+                .ok_or_else(|| {
+                    ProtocolError::ConsensusError(Box::new(
+                        UndefinedIndexPropertyError::new(
+                            ctx.name.to_owned(),
+                            index.name.to_owned(),
+                            index_property.name.to_owned(),
+                        )
+                        .into(),
+                    ))
+                })?;
+
+            // Validate indexed property type
+            match &property_definition.property_type {
+                // Array and objects aren't supported for indexing yet
+                DocumentPropertyType::Array(_)
+                | DocumentPropertyType::Object(_)
+                | DocumentPropertyType::VariableTypeArray(_) => {
+                    Err(ProtocolError::ConsensusError(Box::new(
+                        InvalidIndexPropertyTypeError::new(
+                            ctx.name.to_owned(),
+                            index.name.to_owned(),
+                            index_property.name.to_owned(),
+                            property_definition.property_type.name(),
+                        )
+                        .into(),
+                    )))
+                }
+                // Indexed byte array size must be limited
+                DocumentPropertyType::ByteArray(sizes)
+                    if sizes.max_size.is_none()
+                        || sizes.max_size.unwrap() > MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH =>
+                {
+                    Err(ProtocolError::ConsensusError(Box::new(
+                        InvalidIndexedPropertyConstraintError::new(
+                            ctx.name.to_owned(),
+                            index.name.to_owned(),
+                            index_property.name.to_owned(),
+                            "maxItems".to_string(),
+                            format!(
+                                "should be less or equal {}",
+                                MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH
+                            ),
+                        )
+                        .into(),
+                    )))
+                }
+                // Indexed string length must be limited
+                DocumentPropertyType::String(sizes)
+                    if sizes.max_length.is_none()
+                        || sizes.max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH =>
+                {
+                    Err(ProtocolError::ConsensusError(Box::new(
+                        InvalidIndexedPropertyConstraintError::new(
+                            ctx.name.to_owned(),
+                            index.name.to_owned(),
+                            index_property.name.to_owned(),
+                            "maxLength".to_string(),
+                            format!(
+                                "should be less or equal {}",
+                                MAX_INDEXED_STRING_PROPERTY_LENGTH
+                            ),
+                        )
+                        .into(),
+                    )))
+                }
+                _ => Ok(()),
+            }
+        } else {
+            Ok(())
+        }
+    })
+}
+
+/// The identifier and binary paths implied by the parsed properties, plus
+/// the security level and the encryption/decryption key requirements the
+/// schema asks for.
+fn parse_paths_and_key_requirements(
+    ctx: &CoreParseContext<'_>,
+    schema: &Value,
+    document_properties: &IndexMap<String, DocumentProperty>,
+) -> Result<PathsAndKeyRequirements, ProtocolError> {
     // Collect binary and identifier properties
     let (identifier_paths, binary_paths) = DocumentType::find_identifier_and_binary_paths(
-        &document_properties,
-        &platform_version
+        document_properties,
+        &ctx.platform_version
             .dpp
             .contract_versions
             .document_type_versions,
@@ -762,6 +1039,23 @@ pub(super) fn parse_document_type_core(
         .map(StorageKeyRequirements::try_from)
         .transpose()?;
 
+    Ok(PathsAndKeyRequirements {
+        identifier_paths,
+        binary_paths,
+        security_level_requirement,
+        requires_identity_encryption_bounded_key,
+        requires_identity_decryption_bounded_key,
+    })
+}
+
+/// The token costs attached to each document action.
+///
+/// `ctx` is only read by the validation-gated checks on those costs.
+#[cfg_attr(not(feature = "validation"), allow(unused_variables))]
+fn parse_token_costs(
+    ctx: &CoreParseContext<'_>,
+    schema: &Value,
+) -> Result<TokenCosts, ProtocolError> {
     let token_costs_value = schema.get_optional_value("tokenCost")?;
 
     let extract_cost = |key: &str| -> Result<Option<DocumentActionTokenCost>, ProtocolError> {
@@ -784,14 +1078,14 @@ pub(super) fn parse_document_type_core(
                         .unwrap_or(DocumentActionTokenEffect::TransferTokenToContractOwner);
 
                     #[cfg(feature = "validation")]
-                    if full_validation {
+                    if ctx.full_validation {
                         // contract id is none if we are on our own contract
-                        if target_contract_id.is_none() && !token_configurations.contains_key(&token_contract_position) {
+                        if target_contract_id.is_none() && !ctx.token_configurations.contains_key(&token_contract_position) {
                             return Err(ProtocolError::ConsensusError(
                                 ConsensusError::BasicError(
                                     BasicError::InvalidTokenPositionError(
                                         InvalidTokenPositionError::new(
-                                            token_configurations.last_key_value().map(|(position, _)| *position),
+                                            ctx.token_configurations.last_key_value().map(|(position, _)| *position),
                                             token_contract_position,
                                         ),
                                     ),
@@ -802,7 +1096,7 @@ pub(super) fn parse_document_type_core(
 
                         // If contractId is present and user tries to burn, bail out:
                         if let Some(target_contract_id) = target_contract_id {
-                            if target_contract_id == data_contract_id {
+                            if target_contract_id == ctx.data_contract_id {
                                 // we are in the same contract, but we set the data contract id
                                 return Err(ProtocolError::ConsensusError(
                                     ConsensusError::BasicError(
@@ -846,15 +1140,7 @@ pub(super) fn parse_document_type_core(
                 .transpose()
     };
 
-    // Note: the doctype-level aggregate keys (documentsCountable /
-    // rangeCountable / documentsSummable / rangeSummable and the averageable
-    // shorthands) are intentionally ignored here. This core produces a
-    // `DocumentTypeV1`, which has no aggregate fields; the generations that do
-    // carry them read those keys in their own wrapper (see
-    // `parse_doctype_aggregate_keywords`). The core must never *reject* unknown
-    // keys — it simply doesn't map them to its output type.
-
-    let token_costs = TokenCostsV0 {
+    Ok(TokenCostsV0 {
         create: extract_cost("create")?,
         replace: extract_cost("replace")?,
         delete: extract_cost("delete")?,
@@ -862,36 +1148,7 @@ pub(super) fn parse_document_type_core(
         update_price: extract_cost("update_price")?,
         purchase: extract_cost("purchase")?,
     }
-    .into();
-
-    Ok(DocumentTypeV1 {
-        name: String::from(name),
-        schema,
-        indices,
-        index_structure,
-        flattened_properties: flattened_document_properties,
-        properties: document_properties,
-        identifier_paths,
-        binary_paths,
-        required_fields,
-        transient_fields,
-        documents_keep_history,
-        documents_keep_transfer_history,
-        documents_keep_purchase_history,
-        documents_keep_pricing_history,
-        documents_mutable,
-        documents_can_be_deleted,
-        documents_transferable,
-        trade_mode,
-        creation_restriction_mode,
-        data_contract_id,
-        requires_identity_encryption_bounded_key,
-        requires_identity_decryption_bounded_key,
-        security_level_requirement,
-        #[cfg(feature = "validation")]
-        json_schema_validator,
-        token_costs,
-    })
+    .into())
 }
 
 /// The doctype-level aggregate configuration, already desugared.
