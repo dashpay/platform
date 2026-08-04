@@ -14,6 +14,9 @@
 //! `platform_wallet::wallet::funding_privacy` for the invariant and
 //! `platform_wallet::wallet::core::send` for the semantics.
 
+use crate::core_wallet::payment_reservation::{
+    PaymentReservationHandle, UnknownReservationHandle, PAYMENT_RESERVATIONS,
+};
 use crate::error::*;
 use crate::handle::{Handle, CORE_WALLET_STORAGE};
 use crate::runtime::runtime;
@@ -133,6 +136,13 @@ fn decode_payment_outputs(
 /// * `out_fee` — receives the fee paid, in duffs.
 /// * `out_change` — receives the change returned to the wallet, in duffs (0 if
 ///   the build produced no change output).
+/// * `out_reservation_handle` — receives the opaque handle standing in for the
+///   key-wallet reservation token this build stamped on its inputs, or `0` if it
+///   reserved nothing. Pass it back to
+///   [`core_wallet_release_payment_reservation`] to abandon the build; it is what
+///   makes that release owner-guarded. Not a pointer and nothing to free — see
+///   [`payment_reservation`](crate::core_wallet::payment_reservation) for why the
+///   token itself cannot cross this boundary.
 ///
 /// # Safety
 /// All pointers must be valid; `outputs_blob` must be readable for
@@ -153,6 +163,7 @@ pub unsafe extern "C" fn core_wallet_build_signed_payment(
     out_tx_len: *mut usize,
     out_fee: *mut u64,
     out_change: *mut u64,
+    out_reservation_handle: *mut u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(outputs_blob);
     check_ptr!(core_signer_handle);
@@ -160,6 +171,7 @@ pub unsafe extern "C" fn core_wallet_build_signed_payment(
     check_ptr!(out_tx_len);
     check_ptr!(out_fee);
     check_ptr!(out_change);
+    check_ptr!(out_reservation_handle);
 
     let funding_path = match parse_optional_derivation_path(funding_path_ptr, funding_path_len) {
         Ok(p) => p,
@@ -199,6 +211,12 @@ pub unsafe extern "C" fn core_wallet_build_signed_payment(
     *out_tx_len = len;
     *out_fee = payment.fee;
     *out_change = payment.change_amount;
+    // Park the key-wallet token behind an opaque handle: it is not
+    // ABI-representable (private counter, no public constructor — deliberately,
+    // so it cannot be forged), so the host carries the handle instead.
+    *out_reservation_handle = PAYMENT_RESERVATIONS
+        .stash(payment.reservation_token)
+        .as_u64();
 
     PlatformWalletFFIResult::ok()
 }
@@ -228,14 +246,19 @@ pub unsafe extern "C" fn core_wallet_free_payment_bytes(bytes: *mut u8, len: usi
 /// on a freshly restored wallet can strand the whole balance for the life of
 /// the process (dashpay/platform#4247 review). This call consults no height.
 ///
-/// Releases ONLY this build's own inputs: the transaction is the ownership
-/// signal, since a reserved outpoint is skipped by every other build's coin
-/// selection, so no concurrent build can hold a reservation on any input of
-/// `tx_bytes`.
+/// Releases ONLY inputs this build still owns. The guard is
+/// `reservation_handle`, not the transaction: between the build and this call
+/// key-wallet's TTL can sweep the reservation and a concurrent build can
+/// re-reserve the same outpoint, at which point releasing by outpoint alone would
+/// free the OTHER build's inputs and open a double-spend window
+/// (dashpay/platform#4247 review).
 ///
-/// Idempotent, and a silent no-op when the transaction was in fact broadcast —
-/// safe to wire into an unconditional cleanup path without tracking whether the
-/// broadcast succeeded.
+/// FOR ABANDONED BUILDS ONLY — do NOT call this after a successful broadcast.
+/// This primitive does not broadcast, so between the caller's broadcast and sync
+/// processing that spend the inputs are still in the UTXO set and the reservation
+/// is the only thing keeping a second build off them. Releasing there invites a
+/// conflicting transaction. Repeated releases of the same abandoned build are
+/// idempotent; that is the only sense in which this is safe to call twice.
 ///
 /// * `handle` — a core-wallet handle (`platform_wallet_get_core`).
 /// * `tx_bytes`/`tx_bytes_len` — the consensus-serialized signed transaction
@@ -245,6 +268,11 @@ pub unsafe extern "C" fn core_wallet_free_payment_bytes(bytes: *mut u8, len: usi
 ///   reservation. `null` / `0` means the unmixed BIP44 account, as it does for
 ///   the build. A path naming a different account is harmless but frees
 ///   nothing.
+/// * `reservation_handle` — the SAME value
+///   `core_wallet_build_signed_payment` wrote to `out_reservation_handle`. `0`
+///   means "that build reserved nothing" and releases nothing. Any other
+///   unrecognised value is refused with `ErrorInvalidParameter` rather than
+///   downgraded to an unguarded release.
 ///
 /// # Safety
 /// `tx_bytes` must be readable for `tx_bytes_len` bytes; `funding_path_ptr`,
@@ -257,6 +285,7 @@ pub unsafe extern "C" fn core_wallet_release_payment_reservation(
     tx_bytes_len: usize,
     funding_path_ptr: *const u8,
     funding_path_len: usize,
+    reservation_handle: u64,
 ) -> PlatformWalletFFIResult {
     check_ptr!(tx_bytes);
 
@@ -264,6 +293,23 @@ pub unsafe extern "C" fn core_wallet_release_payment_reservation(
         Ok(p) => p,
         Err(result) => return result,
     };
+
+    let reservation_token =
+        match PAYMENT_RESERVATIONS.resolve(PaymentReservationHandle::from(reservation_handle)) {
+            Ok(token) => token,
+            Err(UnknownReservationHandle(unknown)) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    format!(
+                        "reservation handle {} is unknown: it was never issued by \
+                         core_wallet_build_signed_payment, belongs to a previous process, or \
+                         has aged out of the handle table. Refusing rather than releasing \
+                         unguarded, which could free a concurrent build's inputs",
+                        unknown.as_u64()
+                    ),
+                );
+            }
+        };
 
     let raw = std::slice::from_raw_parts(tx_bytes, tx_bytes_len);
     let transaction: dashcore::Transaction =
@@ -278,7 +324,11 @@ pub unsafe extern "C" fn core_wallet_release_payment_reservation(
         };
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.release_payment_reservation(&transaction, funding_path.clone()))
+        runtime().block_on(wallet.release_payment_reservation(
+            &transaction,
+            funding_path.clone(),
+            reservation_token,
+        ))
     });
 
     let result = unwrap_option_or_return!(option);
