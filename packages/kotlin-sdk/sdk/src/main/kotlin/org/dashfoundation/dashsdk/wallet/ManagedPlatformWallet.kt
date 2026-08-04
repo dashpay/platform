@@ -257,14 +257,28 @@ class ManagedPlatformWallet internal constructor(
              */
             internal fun fromRegisterBlob(blob: ByteArray): SignedCoreTransaction {
                 val buffer = java.nio.ByteBuffer.wrap(blob) // big-endian by default
+                // The blob is produced by our own JNI packer, not an attacker, so
+                // a malformed layout is a bug rather than a reachable hostile
+                // input. Validate the two length prefixes anyway: a negative
+                // length (a u32 high bit read as a signed Int) would make
+                // `ByteArray(len)` throw NegativeArraySizeException, and a length
+                // past the buffer would throw BufferUnderflowException — both
+                // opaque. `require` turns either into a precise, greppable message
+                // naming the field and the offending value.
+                fun readLengthPrefixedBytes(field: String): ByteArray {
+                    val len = buffer.int
+                    require(len in 0..buffer.remaining()) {
+                        "register blob: $field length $len out of range " +
+                            "0..${buffer.remaining()} (blob is ${blob.size} bytes)"
+                    }
+                    val bytes = ByteArray(len)
+                    buffer.get(bytes)
+                    return bytes
+                }
                 val token = buffer.long
                 val feeDuffs = buffer.long
-                val txidLen = buffer.int
-                val txidBytes = ByteArray(txidLen)
-                buffer.get(txidBytes)
-                val txBytesLen = buffer.int
-                val rawTxBytes = ByteArray(txBytesLen)
-                buffer.get(rawTxBytes)
+                val txidBytes = readLengthPrefixedBytes("txid")
+                val rawTxBytes = readLengthPrefixedBytes("txBytes")
                 return SignedCoreTransaction(
                     txidHex = String(txidBytes, Charsets.UTF_8),
                     rawTxBytes = rawTxBytes,

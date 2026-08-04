@@ -1122,9 +1122,36 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             platform_wallet_ffi::core_wallet_free_payment_bytes(out_tx_bytes, out_tx_len);
         }
 
-        env.byte_array_from_slice(&packed)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        match env.byte_array_from_slice(&packed) {
+            Ok(a) => a.into_raw(),
+            Err(_) => {
+                // The native build already RESERVED its selected inputs and
+                // handed back the reservation handle inside `packed`, which
+                // Kotlin will now never receive. Left alone, those coins sit
+                // unselectable until key-wallet's 24-block TTL backstop — and
+                // that backstop never fires before the first sync completes
+                // (`ReservationSet::sweep` early-returns at height 0), so an
+                // alloc failure here can strand a freshly restored wallet's
+                // whole balance. Release the reservation before returning null,
+                // exactly as the sibling send-payment export does in its Err
+                // arm. `packed` is `fee|change|handle` (24 BE bytes) then the
+                // raw tx, so the tx bytes are `packed[24..]`; the funding path
+                // and handle are still in scope.
+                let _ = env.exception_clear();
+                let tx = &packed[24..];
+                let _ = unsafe {
+                    platform_wallet_ffi::core_wallet_release_payment_reservation(
+                        core_handle as Handle,
+                        tx.as_ptr(),
+                        tx.len(),
+                        funding_path_ptr,
+                        funding_path_len,
+                        out_reservation_handle,
+                    )
+                };
+                ptr::null_mut()
+            }
+        }
     })
 }
 
