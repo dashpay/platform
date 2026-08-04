@@ -83,10 +83,6 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 // reserved **inputs**, and is the proof of ownership an owner-guarded release
 // presents.
 use key_wallet::ReservationToken as FundingReservationToken;
-// Same key-wallet type under the name the funding-path finalize path uses.
-// Unified onto `FundingReservationToken` below; kept during the #4247 restack so
-// both call sites read against the alias their own review thread cites.
-use key_wallet::ReservationToken as KeyWalletReservationToken;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -239,7 +235,7 @@ pub struct FinalizedCorePayment {
     /// onto the selected inputs, so a later release is *owner-guarded* and frees
     /// only inputs this build still owns (`dashpay/platform#4185`). `None` only
     /// if the build reserved nothing, which the funded path never does.
-    reservation_token: Option<KeyWalletReservationToken>,
+    reservation_token: Option<FundingReservationToken>,
     /// The per-generation balance `Arc` of the wallet this payment was
     /// **finalized against**, captured from the originating `CoreWallet` inside
     /// [`CoreWallet::finalize_signed_payment_from_funding_path`]. The registry
@@ -300,7 +296,7 @@ pub(crate) struct FinalizedPaymentParts {
     pub(crate) transaction: Transaction,
     pub(crate) funding: FundingAccountRef,
     pub(crate) reservation_height: u32,
-    pub(crate) reservation_token: Option<KeyWalletReservationToken>,
+    pub(crate) reservation_token: Option<FundingReservationToken>,
 }
 
 /// A built-and-signed Core L1 payment, ready to be committed/broadcast by the
