@@ -849,6 +849,26 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
             return;
         }
 
+        // Staging buffer for the bearer blob, allocated BEFORE the voucher is
+        // funded and at the FULL advertised capacity — never at a size derived
+        // from the returned URI. Rust allocation failure aborts the process, so
+        // an allocation performed *after* funding is an unrecoverable loss of
+        // the only copy of the bearer link. Reserving here moves that abort
+        // point ahead of the asset lock: everything between the funded voucher
+        // and the region write below is allocation-free, because the length is
+        // bounds-checked against this capacity before a single byte is pushed
+        // and `extend` therefore cannot reallocate.
+        //
+        // Wrapped in `Zeroizing` so the staging copy of the bearer key is
+        // scrubbed on drop; `jbyte` so publishing is one region write with no
+        // second, unscrubbed copy.
+        let mut blob: zeroize::Zeroizing<Vec<jni::sys::jbyte>> =
+            zeroize::Zeroizing::new(Vec::with_capacity(PLATFORM_WALLET_INVITATION_BLOB_CAPACITY));
+        // The allocator may hand back more than requested; pin whatever it
+        // actually gave us so the post-funding assertion below detects a
+        // reallocation rather than comparing against the requested figure.
+        let reserved_capacity = blob.capacity();
+
         let mut out_uri: *mut c_char = ptr::null_mut();
         let mut out_outpoint = OutPointFFI {
             txid: [0u8; 32],
@@ -879,22 +899,33 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
             return;
         }
 
-        // Copy the (secret) URI out, then free the Rust string. `Zeroizing`
-        // scrubs this copy on drop; it is never logged and goes straight into
-        // the caller's buffer.
-        let uri_bytes =
-            zeroize::Zeroizing::new(unsafe { CStr::from_ptr(out_uri) }.to_bytes().to_vec());
-        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_uri) };
+        // Borrow the (secret) URI in place — no owned copy is made, so no
+        // allocation happens on this side of the funding. The Rust string is
+        // freed once its bytes have been staged.
+        let uri_bytes: &[u8] = unsafe { CStr::from_ptr(out_uri) }.to_bytes();
 
         // Blob: outpoint (`txid[32] || vout_le[4]`) then the UTF-8 URI. The
         // outpoint uses the same 36-byte encoding the persistence layer keys
         // invitation rows by, so Kotlin has ONE outpoint shape everywhere.
-        // Staged directly as `jbyte` so publishing is one region write with no
-        // second (unscrubbed) copy of the bearer key, and wrapped in
-        // `Zeroizing` so the staging buffer is scrubbed on drop.
-        let mut blob: zeroize::Zeroizing<Vec<jni::sys::jbyte>> = zeroize::Zeroizing::new(
-            Vec::with_capacity(PLATFORM_WALLET_INVITATION_OUTPOINT_LEN + uri_bytes.len()),
-        );
+        //
+        // Bounds-check BEFORE staging: this is what guarantees the `extend`
+        // calls below stay inside the capacity reserved before funding and
+        // never reallocate. Unreachable in practice — `encode_invitation_uri`
+        // rejects any link longer than `MAX_INVITATION_URI_LEN`, which is what
+        // the capacity is derived from — but it is the invariant the
+        // allocation-free claim rests on, so it is checked rather than assumed.
+        if PLATFORM_WALLET_INVITATION_OUTPOINT_LEN + uri_bytes.len()
+            > PLATFORM_WALLET_INVITATION_BLOB_CAPACITY
+        {
+            unsafe { platform_wallet_ffi::platform_wallet_string_free(out_uri) };
+            throw_sdk_exception(
+                env,
+                99,
+                "createInvitation produced a blob larger than invitationBlobCapacity()",
+            );
+            return;
+        }
+
         blob.extend(out_outpoint.txid.iter().map(|b| *b as jni::sys::jbyte));
         blob.extend(
             out_outpoint
@@ -904,19 +935,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
                 .map(|b| *b as jni::sys::jbyte),
         );
         blob.extend(uri_bytes.iter().map(|b| *b as jni::sys::jbyte));
-
-        // Unreachable: `encode_invitation_uri` rejects any link longer than
-        // `MAX_INVITATION_URI_LEN`, which is exactly what the capacity above is
-        // derived from. Kept as a defensive backstop so an invariant break
-        // surfaces as a clear error instead of an out-of-range region write.
-        if blob.len() > PLATFORM_WALLET_INVITATION_BLOB_CAPACITY {
-            throw_sdk_exception(
-                env,
-                99,
-                "createInvitation produced a blob larger than invitationBlobCapacity()",
-            );
-            return;
-        }
+        debug_assert_eq!(
+            blob.capacity(),
+            reserved_capacity,
+            "staging the invitation blob reallocated after the voucher was funded"
+        );
+        unsafe { platform_wallet_ffi::platform_wallet_string_free(out_uri) };
 
         // Publish into the pre-validated caller buffers. Region writes on
         // bounds-checked arrays allocate nothing, so nothing fallible sits
