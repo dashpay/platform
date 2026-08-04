@@ -79,6 +79,12 @@ pub unsafe extern "C" fn core_wallet_signed_payment_broadcast(
     out_txid: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_txid);
+    // Define the out-param before any fallible work. `*out_txid` is written only
+    // in the Ok arm below, so all five error returns (unknown handle, broadcast
+    // failure, interior-NUL txid) would otherwise leave the caller's pointer at
+    // whatever it allocated. Null-initializing means a caller that frees
+    // `out_txid` after an error frees a null, not an indeterminate pointer.
+    *out_txid = std::ptr::null_mut();
 
     let core = unwrap_option_or_return!(CORE_WALLET_STORAGE.with_item(core_handle, |w| w.clone()));
 

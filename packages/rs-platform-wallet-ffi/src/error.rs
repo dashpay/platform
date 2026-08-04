@@ -248,12 +248,17 @@ pub enum PlatformWalletFFIResultCode {
     /// (dashpay/platform#4247 review). The specific cause still travels in the
     /// result `message` via the typed `Display`.
     ///
-    /// Numbering: 27–31 are claimed by sibling v4.1 stack PRs
-    /// (`ErrorStaleReservationToken`/`ErrorReservationTokenConsumed` #4185,
-    /// `ErrorAssetLockInsufficientFunds` #4184,
-    /// `ErrorReservationWalletMismatch`, `ErrorSigningKeyUnavailable`), so this
-    /// takes the first slot free on every branch of that stack and needs no
-    /// renumbering whatever order they land in.
+    /// Numbering: this code is **32**. The authoritative in-file allocation map
+    /// is the comment block immediately below this variant (and
+    /// `ERROR_CODE_REGISTRY.md`, dashpay/platform#4261); do not restate positions
+    /// here, they drift. In short: 27–33 are claimed across the merged ABI and
+    /// the sibling v4.1 stack (27 `ErrorShutdownIncomplete`, 29
+    /// `ErrorAssetLockInsufficientFunds`, 31 `ErrorSigningKeyUnavailable`, 33
+    /// `ErrorTransactionSigning`), 28 and 30 are vacated-but-reserved, and the
+    /// deferred-token trio `ErrorStaleReservationToken` /
+    /// `ErrorReservationTokenConsumed` / `ErrorReservationWalletMismatch` sits at
+    /// **34–36**, not in the 27–31 window an earlier revision of this comment
+    /// placed it in.
     ErrorTransactionBuild = 32,
 
     // Codes 27-33 are claimed outside this PR and MUST NOT be reused here.
@@ -901,7 +906,9 @@ mod tests {
     }
 
     /// The new code must not silently collide with a sibling v4.1 stack PR's
-    /// (27–31 are claimed; see the variant's doc comment).
+    /// (27–33 are claimed across the merged ABI and the stack; the deferred-token
+    /// trio sits at 34–36 — see the variant's doc comment and
+    /// `ERROR_CODE_REGISTRY.md`).
     #[test]
     fn transaction_build_code_is_thirty_two() {
         assert_eq!(
