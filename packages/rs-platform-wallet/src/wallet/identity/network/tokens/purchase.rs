@@ -78,6 +78,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             None,
         )
         .await
-        .map_err(|e| PlatformWalletError::TokenError(format!("Token purchase failed: {}", e)))
+        .map_err(|e| {
+            // Preserve a structured key-unavailable signer failure so the FFI
+            // boundary can still restore code 31; only genuine operation
+            // failures get stringified into `TokenError`
+            // (dashpay/platform#4183 review).
+            crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                PlatformWalletError::TokenError(format!("Token purchase failed: {}", e))
+            })
+        })
     }
 }

@@ -1334,7 +1334,9 @@ mod tests {
     fn get_managed_identity_unknown_wallet_is_invalid_handle() {
         let id = [0u8; 32];
         let mut out: Handle = 0;
-        let r = unsafe { platform_wallet_get_managed_identity(0xDEAD_BEEF, id.as_ptr(), &mut out) };
+        let r = unsafe {
+            platform_wallet_get_managed_identity(0xDEAD_BEEF, id.as_ptr(), &mut out)
+        };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         assert_eq!(out, 0, "out handle is untouched on an invalid-handle miss");
     }

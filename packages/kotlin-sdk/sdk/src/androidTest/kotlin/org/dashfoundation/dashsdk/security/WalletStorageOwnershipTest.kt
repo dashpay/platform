@@ -24,13 +24,14 @@ import java.security.KeyStore
  * `NoSuchAlgorithmException` there).
  *
  * Any test here that reaches [WalletStorage.storePrivateKey] generates the
- * `KEYS_ALIAS` RSA keypair via [KeystoreManager.ensureKeysKeyPair], which
- * requires `setUserAuthenticationRequired(true)` — Android Keystore
- * refuses to create that key without a secure lock screen enrolled on the
- * device. This is the first androidTest in this module to exercise that
- * code path (every existing androidTest avoids identity-key storage), so
- * CI's emulator setup now enrolls one (`adb shell locksettings set-pin`
- * in `.github/workflows/kotlin-sdk-build.yml`) before running this suite.
+ * default policy's `KEYS_ALIAS_AUTH_GATED` RSA keypair, which requires
+ * `setUserAuthenticationRequired(true)` — Android Keystore refuses to
+ * create that key without a secure lock screen enrolled on the device
+ * (a lockless device would degrade the write to the DEVICE_BOUND alias).
+ * This is the first androidTest in this module to exercise that code path
+ * (every existing androidTest avoids identity-key storage), so CI's
+ * emulator setup enrolls one (`adb shell locksettings set-pin` in
+ * `.github/workflows/kotlin-sdk-build.yml`) before running this suite.
  */
 @RunWith(AndroidJUnit4::class)
 class WalletStorageOwnershipTest {
@@ -147,13 +148,15 @@ class WalletStorageOwnershipTest {
         storage.storePrivateKey("d15ca4d3", ByteArray(32) { 4 }, ownerWalletId = walletA)
         assertTrue(storage.isPrivateKeyDecryptable("d15ca4d3"))
 
-        // Simulate KEYS_ALIAS being replaced (Keystore data loss + a fresh
-        // key generated on next use, or a DataStore-only backup restore
-        // reintroducing this exact blob onto a device with its own key) —
-        // delete the entry directly so the old RSA-shaped blob now sits
-        // under a keypair that never encrypted it.
+        // Simulate the POLICY alias being replaced (Keystore data loss + a
+        // fresh key generated on next use, or a DataStore-only backup
+        // restore reintroducing this exact blob onto a device with its own
+        // key) — delete the entry directly so the old RSA-shaped blob now
+        // sits under a keypair that never encrypted it. The default-policy
+        // storage writes under KEYS_ALIAS_AUTH_GATED (the legacy KEYS_ALIAS
+        // is read-only and never wrote this blob).
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS_AUTH_GATED)
 
         assertFalse(
             "an RSA-shaped blob encrypted under a replaced keypair must not be trusted by shape alone",
@@ -178,7 +181,7 @@ class WalletStorageOwnershipTest {
         // signal, not an invitation to attempt OAEP with the replacement
         // private key and surface a provider-specific decryption failure.
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS_AUTH_GATED)
 
         assertNull(storage.retrievePrivateKey("57a1eb10"))
     }
@@ -187,61 +190,65 @@ class WalletStorageOwnershipTest {
     fun capabilityProbeDoesNotRegenerateAMissingKeysAlias() = runBlocking {
         storage.storePrivateKey("9c0ffee0", ByteArray(32) { 4 }, ownerWalletId = walletA)
 
-        // Deleting KEYS_ALIAS is exactly what invalidation cleanup does. The
-        // signer capability probe reaches this through canSignWith on a Rust
-        // callback thread, so it must stay read-only: report the blob unusable
-        // WITHOUT falling through to ensureKeysKeyPair and generating a fresh
-        // RSA-2048 pair under the process-wide lock (which would block that
-        // thread and mutate Keystore state on a mere probe).
+        // Deleting the policy alias is exactly what invalidation cleanup
+        // does. The signer capability probe reaches this through canSignWith
+        // on a Rust callback thread, so it must stay read-only: report the
+        // blob unusable WITHOUT falling through to key generation for a
+        // fresh RSA-2048 pair under the process-wide lock (which would block
+        // that thread and mutate Keystore state on a mere probe).
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS_AUTH_GATED)
 
         assertFalse(storage.isPrivateKeyDecryptable("9c0ffee0"))
         assertNull(
-            "capability probe must not regenerate KEYS_ALIAS",
-            keyStore.getCertificate(KeystoreManager.KEYS_ALIAS),
+            "capability probe must not regenerate the policy alias",
+            keyStore.getCertificate(KeystoreManager.KEYS_ALIAS_AUTH_GATED),
         )
     }
 
     @Test
     fun keysAliasEncryptionCarriesTheFingerprintOfItsEncryptionKey() {
         val keystore = KeystoreManager()
+        val alias = KeystoreManager.KEYS_ALIAS_AUTH_GATED
 
-        val encrypted = keystore.encryptForKeysAlias(ByteArray(32) { 6 })
+        val encrypted = keystore.encryptForIdentityKeysAlias(alias, ByteArray(32) { 6 })
 
-        // The returned fingerprint is a snapshot of the exact key the
-        // ciphertext was produced with, not a live re-read of the alias.
-        assertEquals(keystore.keysAliasFingerprint(), encrypted.keyFingerprint)
+        // The returned fingerprint (and producing alias) is a snapshot of
+        // the exact key the ciphertext was produced with, not a live
+        // re-read of the alias.
+        assertEquals(keystore.keysAliasFingerprint(alias), encrypted.keyFingerprint)
+        assertEquals(alias, encrypted.alias)
 
-        // Rotating KEYS_ALIAS afterward must not retroactively change what the
+        // Rotating the alias afterward must not retroactively change what the
         // blob claims: were the fingerprint re-derived from the current alias
         // instead of captured at encrypt time, this would still match the new
         // key and the mislabel race (old-key ciphertext, new-key fingerprint)
         // would be reachable. It must stay bound to the retired key.
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
+        keyStore.deleteEntry(alias)
 
-        assertNotEquals(keystore.keysAliasFingerprint(), encrypted.keyFingerprint)
+        assertNotEquals(keystore.keysAliasFingerprint(alias), encrypted.keyFingerprint)
     }
 
     @Test
     fun staleInvalidationCleanupDoesNotDeleteAReplacementKeysAlias() {
         val keystore = KeystoreManager()
-        val invalidatedGeneration = keystore.keysAliasFingerprint()
+        val alias = KeystoreManager.KEYS_ALIAS_AUTH_GATED
+        val invalidatedGeneration = keystore.keysAliasFingerprint(alias)
 
         // Model another invalidated decryptor winning the cleanup race, then
-        // a writer regenerating KEYS_ALIAS before this stale decryptor gets
-        // the lock. Its cleanup must not orphan ciphertext written under the
-        // replacement generation.
+        // a writer regenerating the policy alias before this stale decryptor
+        // gets the lock. Its cleanup must not orphan ciphertext written
+        // under the replacement generation.
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        keyStore.deleteEntry(KeystoreManager.KEYS_ALIAS)
-        val replacementGeneration = keystore.keysAliasFingerprint()
+        keyStore.deleteEntry(alias)
+        val replacementGeneration = keystore.keysAliasFingerprint(alias)
         assertNotEquals(invalidatedGeneration, replacementGeneration)
 
         assertFalse(
-            keystore.deleteKeysAliasIfCurrentGeneration(invalidatedGeneration),
+            keystore.deleteIdentityKeysAliasIfCurrentGeneration(alias, invalidatedGeneration),
         )
-        assertEquals(replacementGeneration, keystore.keysAliasFingerprint())
+        assertEquals(replacementGeneration, keystore.keysAliasFingerprint(alias))
     }
 
     @Test
