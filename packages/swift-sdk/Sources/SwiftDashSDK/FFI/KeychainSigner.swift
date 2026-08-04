@@ -775,18 +775,19 @@ private func keychainSignerSignAsyncTrampoline(
         dataToSign = Data()
     }
 
-    func reportError(_ message: String) {
+    func reportError(_ message: String, code: Int32 = KeychainSignerCompletionErrorCode.generic) {
         // C strings have to outlive the call. `withCString` does this
-        // for us.
+        // for us. `code` is the structured DashSDKSignerErrorCode
+        // discriminator (dashpay/platform#4060 finding 7).
         message.withCString { errPtr in
-            completion(completionCtx, nil, 0, errPtr)
+            completion(completionCtx, nil, 0, code, errPtr)
         }
     }
 
     func reportSuccess(_ sig: Data) {
         sig.withUnsafeBytes { sigBuf in
             let base = sigBuf.bindMemory(to: UInt8.self).baseAddress
-            completion(completionCtx, base, UInt(sigBuf.count), nil)
+            completion(completionCtx, base, UInt(sigBuf.count), 0, nil)
         }
     }
 
@@ -845,7 +846,14 @@ private func keychainSignerSignAsyncTrampoline(
     let privateKey: Data
     switch signer.lookupIdentityPrivateKey(publicKey: pubkeyData) {
     case .failure(let err):
-        reportError(err.localizedDescription)
+        // "No stored key" outcomes carry the structured
+        // SigningKeyUnavailable code so hosts get the typed
+        // PlatformWalletError.signingKeyUnavailable without message
+        // sniffing (dashpay/platform#4060 finding 7).
+        reportError(
+            err.localizedDescription,
+            code: keychainSignerCompletionErrorCode(for: err)
+        )
         return
     case .success(let priv):
         privateKey = priv
@@ -883,3 +891,24 @@ private func keychainSignerCanSignTrampoline(
 /// `dash_sdk_signer_destroy` runs from `deinit`. Kept around so
 /// the Rust vtable's `destroy` slot is always non-null.
 private func keychainSignerDestroyTrampoline(_: UnsafeMutableRawPointer?) {}
+
+/// Mirror of `rs-sdk-ffi`'s `DashSDKSignerErrorCode` — the structured
+/// completion-failure discriminator (dashpay/platform#4060 finding 7).
+/// Only `generic` and `signingKeyUnavailable` are emitted today.
+enum KeychainSignerCompletionErrorCode {
+    static let generic: Int32 = 0
+    static let signingKeyUnavailable: Int32 = 1
+}
+
+/// Classify a `KeychainSigner.Error` for the completion's structured
+/// `error_code`: the "no stored key" outcomes — missing row/scalar or a
+/// keychain entry the identifier no longer resolves — are
+/// `signingKeyUnavailable`; everything else stays `generic`.
+func keychainSignerCompletionErrorCode(for error: KeychainSigner.Error) -> Int32 {
+    switch error {
+    case .publicKeyNotFound, .privateKeyMissingFromKeychain:
+        return KeychainSignerCompletionErrorCode.signingKeyUnavailable
+    default:
+        return KeychainSignerCompletionErrorCode.generic
+    }
+}
