@@ -216,6 +216,28 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         }
 
         let hash = signed_msg_hash(message);
+        // Every signer failure becomes `MessageSigningFailed` (→ `ErrorUnknown`),
+        // including a key-unavailable one. That is a known limitation, not an
+        // oversight, and it cannot be fixed here.
+        //
+        // `preserve_signer_key_unavailable_or` — this crate's own helper for
+        // exactly this problem — takes a `dash_sdk::Error` and matches
+        // `Protocol(Generic(s))` with the reserved marker at position 0. It
+        // serves the STATE-TRANSITION signing paths, whose failures are
+        // `dash_sdk::Error`. `sign_ecdsa` is a different surface: its error is
+        // `S::Error`, bounded only by `Display + Send + Sync + 'static`, so
+        // there is no enum here to match — passing it to that helper will not
+        // type-check. The one production impl
+        // (`rs_sdk_ffi::MnemonicResolverCoreSigner`, `Error =
+        // MnemonicResolverSignerError`) never stamps the marker either, so even
+        // a position-0 check on `e.to_string()` would have no producer, while a
+        // `contains` check is the substring sniff #4183's review rejected.
+        //
+        // Closing it needs an upstream change — the signer rendering its
+        // key-unavailable variants with the marker at position 0, or key-wallet
+        // tightening `Signer::Error` to something matchable. See the NOTE on
+        // the `MessageSigningFailed` arm in `platform-wallet-ffi`'s error
+        // conversion for the full chain.
         let (signature, public_key) = signer
             .sign_ecdsa(&path, hash.to_byte_array())
             .await
@@ -522,6 +544,78 @@ mod tests {
 
         async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
             panic!("public_key is not part of the signed-message path");
+        }
+    }
+
+    /// A digest-capable backend that fails every signature the way a Keystore
+    /// or Keychain reports a missing key: its `Display` begins with the reserved
+    /// key-unavailable marker, the representation the state-transition signing
+    /// paths rely on to recover FFI code 31.
+    struct KeyUnavailableSigner;
+
+    #[async_trait::async_trait]
+    impl Signer for KeyUnavailableSigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[SignerMethod] {
+            &[SignerMethod::Digest]
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            _path: &DerivationPath,
+            _sighash: [u8; 32],
+        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+            Err(format!(
+                "{}no private key stored for this derivation path",
+                crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+            ))
+        }
+
+        async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
+            panic!("public_key is not part of the signed-message path");
+        }
+    }
+
+    /// **Pins a known limitation, so nobody has to re-derive it.** A signer that
+    /// reports key-unavailable during message signing does NOT reach FFI code
+    /// 31; it lands on `MessageSigningFailed`, which the FFI flattens to
+    /// `ErrorUnknown`.
+    ///
+    /// The mechanism is visible in the assertion: the marker survives, but
+    /// MID-STRING, because `reason` is composed as
+    /// "signer rejected the digest at {path}: {e}". A position-0 match — the
+    /// only kind #4183's review permits — therefore cannot see it, and
+    /// `preserve_signer_key_unavailable_or` cannot be applied because it takes a
+    /// `dash_sdk::Error` while `sign_ecdsa` yields `S::Error: Display`.
+    ///
+    /// If an upstream change ever makes this reachable as code 31 (the signer
+    /// stamping the marker at position 0 of its own error, or key-wallet
+    /// tightening `Signer::Error`), THIS TEST SHOULD FAIL — flip it to assert
+    /// `MessageSigningKeyUnavailable` and delete the surrounding notes.
+    #[tokio::test]
+    async fn signer_key_unavailable_is_not_preserved_during_message_signing() {
+        let (wm, wallet_id, _, address) =
+            mnemonic_wallet_manager(MESSAGE_SIGNING_TEST_MNEMONIC).await;
+        let core = core_wallet(wm, wallet_id);
+
+        let result = core
+            .sign_message(&address.to_string(), MESSAGE, &KeyUnavailableSigner)
+            .await;
+
+        match result {
+            Err(PlatformWalletError::MessageSigningFailed { reason, .. }) => {
+                assert!(
+                    reason.contains(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX),
+                    "the signer's marker should still be present: {reason:?}"
+                );
+                assert!(
+                    !reason.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX),
+                    "the marker is mid-string once wrapped, which is exactly why a \
+                     position-0 match cannot recover it: {reason:?}"
+                );
+            }
+            other => panic!("expected MessageSigningFailed, got {other:?}"),
         }
     }
 

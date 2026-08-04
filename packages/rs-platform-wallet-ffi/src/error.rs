@@ -482,13 +482,49 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // could only ever appear mid-string. Matching it here would mean
             // exactly the substring sniff that review ruled out.
             //
-            // Consequence worth knowing: a Keystore/Keychain key-unavailable
-            // completion reaching `sign_message` surfaces as ErrorUnknown, not
-            // 31. Closing that needs a structural change at the producer — have
-            // `sign_message` classify the signer's own rendering before it wraps
-            // it — not a looser match here. `platform-wallet` cannot see the
-            // marker constant (it does not depend on `rs-sdk-ffi`), so that is
-            // its own piece of work.
+            // Consequence worth knowing: a signer-reported key-unavailable
+            // condition reaching `sign_message` surfaces as ErrorUnknown, not
+            // 31. That is NOT closable at this layer, and — having chased it —
+            // not closable at the producer either without an upstream change.
+            // The type chain is the whole story:
+            //
+            //   * `preserve_signer_key_unavailable_or` (platform-wallet's own
+            //     helper, #4183) takes a `dash_sdk::Error` and matches
+            //     `Protocol(Generic(s))` with the marker at position 0. It is
+            //     the right tool — for the STATE-TRANSITION signing paths
+            //     (document replace, DPNS, token transfer), whose failures ARE
+            //     `dash_sdk::Error`, which is where it is used.
+            //   * Message signing does not use that surface at all. It calls
+            //     key-wallet's `Signer::sign_ecdsa`, whose error is the
+            //     associated type `S::Error`, bounded only by
+            //     `Display + Send + Sync + 'static`. There is no enum to match:
+            //     no `dash_sdk::Error`, no `ProtocolError`, nothing structural.
+            //   * The one production impl, `MnemonicResolverCoreSigner`
+            //     (rs-sdk-ffi), has `Error = MnemonicResolverSignerError` — a
+            //     typed enum that never stamps the marker. Its `NotFound`
+            //     ("mnemonic not found in keychain") IS the key-unavailable
+            //     case, but nothing distinguishes it once it is `Display`ed.
+            //   * The marker is produced only in `rs-sdk-ffi`'s state-transition
+            //     completion callback (`SignResult = Result<Vec<u8>,
+            //     ProtocolError>`), never on a `Signer::sign_ecdsa` path.
+            //
+            // So a position-0 check on the signer's rendering would have zero
+            // producers today, and a `contains` check is the substring sniff
+            // #4183's review rejected. Note the marker constant IS visible here
+            // now (#4183 mirrored it as
+            // `platform_wallet::error::SIGNER_KEY_UNAVAILABLE_PREFIX`, pinned
+            // byte-identical by a compile-time assertion in this crate) — the
+            // blocker is the error TYPE, not the constant, which corrects an
+            // earlier note in this file's history.
+            //
+            // The fix belongs upstream, in ONE of:
+            //   (a) `MnemonicResolverCoreSigner` rendering its key-unavailable
+            //       variants with the marker at position 0, after which a
+            //       position-0 check in `sign_message` becomes principled; or
+            //   (b) key-wallet tightening `Signer::Error` so callers can match
+            //       a typed key-unavailable variant instead of a string.
+            // Both change shared, externally-consumed surfaces and want their
+            // own review; neither is in scope for message signing.
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
