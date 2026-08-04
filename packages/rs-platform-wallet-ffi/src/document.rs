@@ -529,7 +529,7 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// owned by `owner_identity_id`, signed via the external `signer_handle`.
 ///
 /// Prepares the document synchronously via
-/// `IdentityWallet::prepare_txmetadata_encryption` — the SDK resolves the
+/// `IdentityWallet::prepare_txmetadata_encryption_blocking` — the SDK resolves the
 /// identity, selects its ENCRYPTION key id (the `keyIndex` field), and derives
 /// the AES key from the wallet HD tree before the host payload is copied. It
 /// then seals the opaque `payload` into the legacy
@@ -935,7 +935,7 @@ unsafe fn create_encrypted_document_inner(
                     Some(master) => TxMetadataKeySource::Master(&master.0),
                     None => TxMetadataKeySource::ResidentWallet,
                 };
-                identity_wallet.prepare_txmetadata_encryption(
+                identity_wallet.prepare_txmetadata_encryption_blocking(
                     &owner_id_for_async,
                     resolved_index,
                     version,
@@ -1021,7 +1021,7 @@ unsafe fn create_encrypted_document_inner(
 /// 2. Only if that scan produced candidates, the AES key source is acquired on
 ///    the ORIGINAL calling thread, so a host resolver callback runs on the
 ///    thread that entered this export rather than a runtime worker.
-/// 3. `IdentityWallet::decrypt_fetched_documents` — synchronous derive and
+/// 3. `IdentityWallet::decrypt_fetched_documents_blocking` — synchronous derive and
 ///    decrypt, after which the resolved master is erased immediately.
 ///
 /// Nothing secret is therefore alive across the contract fetch or the paginated
@@ -1206,7 +1206,8 @@ unsafe fn fetch_encrypted_documents_inner(
         Some(master) => TxMetadataKeySource::Master(&master.0),
         None => TxMetadataKeySource::ResidentWallet,
     };
-    let decrypted = identity_wallet.decrypt_fetched_documents(&owner_id, &raw_docs, key_source);
+    let decrypted =
+        identity_wallet.decrypt_fetched_documents_blocking(&owner_id, &raw_docs, key_source);
     drop(master_opt);
     let docs = unwrap_result_or_return!(decrypted);
 

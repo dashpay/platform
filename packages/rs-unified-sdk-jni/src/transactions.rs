@@ -50,22 +50,53 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
+/// The release function a native-string guard calls exactly once on drop.
+///
+/// Carried as a field rather than hard-coded in each `Drop` so the CHOICE of
+/// release function is observable: a test can install a recording release and
+/// prove which contract a guard actually honors, on the normal path and on an
+/// unwind. Both real frees are null-safe and the null form cannot tell them
+/// apart, so nothing else in this file can catch a guard silently switched to
+/// the wrong free.
+type NativeStringRelease = unsafe extern "C" fn(*mut c_char);
+
 /// Nullable owner for plaintext-equivalent strings returned by
 /// `platform_wallet_fetch_encrypted_documents`.
 ///
 /// Install this immediately after the FFI call so every later result, JNI
 /// allocation, and unwind path releases the allocation through the sensitive
 /// zeroizing contract.
-struct SensitivePlatformWalletString(*mut c_char);
+struct SensitivePlatformWalletString {
+    ptr: *mut c_char,
+    /// Always the sensitive free in production — the field is private and only
+    /// [`Self::new`] fills it, so a call site still cannot pair this allocation
+    /// with another contract's release function.
+    release: NativeStringRelease,
+}
 
 impl SensitivePlatformWalletString {
+    fn new(ptr: *mut c_char) -> Self {
+        Self {
+            ptr,
+            release: platform_wallet_ffi::platform_wallet_sensitive_string_free,
+        }
+    }
+
+    /// Same owner with a caller-supplied release, for proving which release the
+    /// drop paths actually run. Test-only: production ownership always comes
+    /// from [`Self::new`].
+    #[cfg(test)]
+    fn with_release_for_test(ptr: *mut c_char, release: NativeStringRelease) -> Self {
+        Self { ptr, release }
+    }
+
     fn as_c_str(&self) -> Option<&CStr> {
-        if self.0.is_null() {
+        if self.ptr.is_null() {
             None
         } else {
             // SAFETY: a non-null pointer came from the platform-wallet FFI
             // CString result and remains owned by this guard.
-            Some(unsafe { CStr::from_ptr(self.0) })
+            Some(unsafe { CStr::from_ptr(self.ptr) })
         }
     }
 }
@@ -75,7 +106,7 @@ impl Drop for SensitivePlatformWalletString {
         // SAFETY: this guard is the sole owner of the nullable pointer, and the
         // fetch contract names the sensitive free as its release function.
         unsafe {
-            platform_wallet_ffi::platform_wallet_sensitive_string_free(self.0);
+            (self.release)(self.ptr);
         }
     }
 }
@@ -91,16 +122,34 @@ impl Drop for SensitivePlatformWalletString {
 /// Install this immediately after the FFI call transfers ownership, so every
 /// later result check, null check, JNI allocation failure and unwind releases
 /// the allocation exactly once.
-struct OrdinaryPlatformWalletString(*mut c_char);
+struct OrdinaryPlatformWalletString {
+    ptr: *mut c_char,
+    /// Always the ordinary free in production; see the sibling guard's field.
+    release: NativeStringRelease,
+}
 
 impl OrdinaryPlatformWalletString {
+    fn new(ptr: *mut c_char) -> Self {
+        Self {
+            ptr,
+            release: platform_wallet_ffi::platform_wallet_string_free,
+        }
+    }
+
+    /// Test-only counterpart of
+    /// [`SensitivePlatformWalletString::with_release_for_test`].
+    #[cfg(test)]
+    fn with_release_for_test(ptr: *mut c_char, release: NativeStringRelease) -> Self {
+        Self { ptr, release }
+    }
+
     fn as_c_str(&self) -> Option<&CStr> {
-        if self.0.is_null() {
+        if self.ptr.is_null() {
             None
         } else {
             // SAFETY: a non-null pointer came from the platform-wallet FFI
             // CString result and remains owned by this guard.
-            Some(unsafe { CStr::from_ptr(self.0) })
+            Some(unsafe { CStr::from_ptr(self.ptr) })
         }
     }
 }
@@ -111,7 +160,7 @@ impl Drop for OrdinaryPlatformWalletString {
         // create contract names the ordinary free as its release function. The
         // ordinary free is null-safe.
         unsafe {
-            platform_wallet_ffi::platform_wallet_string_free(self.0);
+            (self.release)(self.ptr);
         }
     }
 }
@@ -961,7 +1010,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         // before any result, null or JNI-allocation handling so every later
         // path — success, early return, or unwind — releases it exactly once
         // through the ordinary free.
-        let out_json = OrdinaryPlatformWalletString(out_json);
+        let out_json = OrdinaryPlatformWalletString::new(out_json);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
@@ -1063,7 +1112,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 &mut out_json as *mut *mut c_char,
             )
         };
-        let out_json = SensitivePlatformWalletString(out_json);
+        let out_json = SensitivePlatformWalletString::new(out_json);
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
@@ -1504,17 +1553,17 @@ mod tests {
     /// behind, and what an unwind through the same scope drops.
     #[test]
     fn both_native_string_guards_release_a_null_pointer_safely() {
-        drop(OrdinaryPlatformWalletString(ptr::null_mut()));
-        drop(SensitivePlatformWalletString(ptr::null_mut()));
+        drop(OrdinaryPlatformWalletString::new(ptr::null_mut()));
+        drop(SensitivePlatformWalletString::new(ptr::null_mut()));
     }
 
     /// A null guard reports no string rather than dereferencing.
     #[test]
     fn a_null_guard_reports_no_string() {
-        assert!(OrdinaryPlatformWalletString(ptr::null_mut())
+        assert!(OrdinaryPlatformWalletString::new(ptr::null_mut())
             .as_c_str()
             .is_none());
-        assert!(SensitivePlatformWalletString(ptr::null_mut())
+        assert!(SensitivePlatformWalletString::new(ptr::null_mut())
             .as_c_str()
             .is_none());
     }
@@ -1525,7 +1574,7 @@ mod tests {
     #[test]
     fn the_ordinary_guard_releases_a_real_allocation_on_both_paths() {
         let owned = CString::new("{\"$id\":\"abc\"}").expect("no interior NUL");
-        let guard = OrdinaryPlatformWalletString(owned.into_raw());
+        let guard = OrdinaryPlatformWalletString::new(owned.into_raw());
         assert_eq!(
             guard
                 .as_c_str()
@@ -1539,7 +1588,7 @@ mod tests {
         // An unwind through a scope holding the guard must still release it.
         let unwound = std::panic::catch_unwind(|| {
             let owned = CString::new("{}").expect("no interior NUL");
-            let _guard = OrdinaryPlatformWalletString(owned.into_raw());
+            let _guard = OrdinaryPlatformWalletString::new(owned.into_raw());
             panic!("unwind with the guard live");
         });
         assert!(unwound.is_err(), "the panic must have unwound");
@@ -1558,7 +1607,7 @@ mod tests {
     #[test]
     fn the_sensitive_guard_releases_a_real_allocation_on_both_paths() {
         let owned = CString::new("[{\"payload\":\"AAECAw==\"}]").expect("no interior NUL");
-        let guard = SensitivePlatformWalletString(owned.into_raw());
+        let guard = SensitivePlatformWalletString::new(owned.into_raw());
         assert_eq!(
             guard
                 .as_c_str()
@@ -1575,10 +1624,131 @@ mod tests {
         // the return would take.
         let unwound = std::panic::catch_unwind(|| {
             let owned = CString::new("[]").expect("no interior NUL");
-            let _guard = SensitivePlatformWalletString(owned.into_raw());
+            let _guard = SensitivePlatformWalletString::new(owned.into_raw());
             panic!("unwind with the sensitive guard live");
         });
         assert!(unwound.is_err(), "the panic must have unwound");
+    }
+
+    // ── Which release each guard selects, and that it runs exactly once ─────
+    //
+    // The tests above prove the guards release SOMETHING on every path, but not
+    // WHICH free they call: both real frees are null-safe, and after a real free
+    // the allocation cannot be inspected. A guard switched to the wrong
+    // contract — the sensitive fetch output released without being wiped — would
+    // compile and leave every case above green. These pin the selection through
+    // a recording release, then pin the production constructors to the frees the
+    // two contracts actually name.
+
+    thread_local! {
+        /// Pointers passed to the recording release, in call order.
+        static RELEASED: std::cell::RefCell<Vec<*mut c_char>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// Records the pointer instead of freeing it. Never hands a pointer to a
+    /// real free, so the caller keeps ownership and can reclaim it.
+    unsafe extern "C" fn recording_release(ptr: *mut c_char) {
+        RELEASED.with(|seen| seen.borrow_mut().push(ptr));
+    }
+
+    fn recorded() -> Vec<*mut c_char> {
+        RELEASED.with(|seen| seen.borrow().clone())
+    }
+
+    fn clear_recorded() {
+        RELEASED.with(|seen| seen.borrow_mut().clear());
+    }
+
+    /// Each guard runs its release EXACTLY ONCE per owned pointer, on the
+    /// normal path, on a null pointer, and on an unwind.
+    ///
+    /// Exactly-once is the property a double free or a leak would break, and it
+    /// is invisible to the real frees.
+    #[test]
+    fn a_guard_runs_its_release_exactly_once_on_every_drop_path() {
+        clear_recorded();
+
+        // Normal path, non-null.
+        let owned = CString::new("[]").expect("no interior NUL");
+        let raw = owned.into_raw();
+        drop(SensitivePlatformWalletString::with_release_for_test(
+            raw,
+            recording_release,
+        ));
+        assert_eq!(
+            recorded(),
+            vec![raw],
+            "a dropped guard must release its pointer exactly once"
+        );
+        // The recording release freed nothing, so reclaim the allocation here.
+        // SAFETY: `raw` came from `CString::into_raw` and was never freed.
+        drop(unsafe { CString::from_raw(raw) });
+
+        // Null ownership still releases exactly once: the real frees are
+        // null-safe and the guard must not special-case them away.
+        clear_recorded();
+        drop(OrdinaryPlatformWalletString::with_release_for_test(
+            ptr::null_mut(),
+            recording_release,
+        ));
+        assert_eq!(
+            recorded(),
+            vec![ptr::null_mut()],
+            "a null-owning guard must still run its release exactly once"
+        );
+
+        // Unwind path — a JNI allocation failure or a panic between the FFI call
+        // and the return.
+        clear_recorded();
+        let owned = CString::new("[]").expect("no interior NUL");
+        let raw = owned.into_raw();
+        let unwound = std::panic::catch_unwind(|| {
+            let _guard =
+                SensitivePlatformWalletString::with_release_for_test(raw, recording_release);
+            panic!("unwind with the guard live");
+        });
+        assert!(unwound.is_err(), "the panic must have unwound");
+        assert_eq!(
+            recorded(),
+            vec![raw],
+            "an unwind must run the release exactly once, not zero or twice"
+        );
+        // SAFETY: as above — the recording release did not free it.
+        drop(unsafe { CString::from_raw(raw) });
+    }
+
+    /// The production constructors name the frees their contracts require.
+    ///
+    /// The fetch output is plaintext-equivalent and MUST go through the
+    /// zeroizing free; the create output is ciphertext and metadata and goes
+    /// through the ordinary one. Swapping either — the mistake the distinct
+    /// types exist to prevent, and the one a `with_release_for_test` misuse
+    /// could reintroduce — fails here.
+    #[test]
+    fn the_production_guards_select_their_contracts_release_function() {
+        let sensitive = SensitivePlatformWalletString::new(ptr::null_mut());
+        assert_eq!(
+            sensitive.release as usize,
+            platform_wallet_ffi::platform_wallet_sensitive_string_free as usize,
+            "the fetch guard must release plaintext-equivalent output through the \
+             zeroizing free"
+        );
+
+        let ordinary = OrdinaryPlatformWalletString::new(ptr::null_mut());
+        assert_eq!(
+            ordinary.release as usize,
+            platform_wallet_ffi::platform_wallet_string_free as usize,
+            "the create guard must release its ciphertext JSON through the \
+             ordinary free"
+        );
+
+        assert_ne!(
+            platform_wallet_ffi::platform_wallet_sensitive_string_free as usize,
+            platform_wallet_ffi::platform_wallet_string_free as usize,
+            "the two frees must be distinct functions, or the assertions above \
+             prove nothing"
+        );
     }
 
     /// The fetch output's ASCII / no-interior-NUL precondition is what lets the

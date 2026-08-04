@@ -98,6 +98,26 @@ pub enum PlatformWalletError {
     )]
     UnsupportedTxMetadataVersion { version: u8 },
 
+    /// A `*_blocking` entry point could not take the wallet-manager read lock
+    /// without parking the calling thread, and parking it was not safe.
+    ///
+    /// The blocking entry points park on `blocking_read`, which Tokio refuses —
+    /// with a panic — on a thread that is currently driving tasks. Whether the
+    /// current thread may park is not observable from outside Tokio (a
+    /// `spawn_blocking` thread may; a runtime worker may not), so when a runtime
+    /// is in scope these entry points take the lock without waiting and report
+    /// contention here instead of risking a panic that `panic = "abort"` would
+    /// turn into an immediate process death.
+    ///
+    /// Transient by construction: retry, or call the API's async counterpart
+    /// from async code, which waits for the lock properly.
+    #[error(
+        "{api} could not take the wallet-manager read lock without parking the \
+         calling thread, and a Tokio runtime is in scope; retry, or call this \
+         API's async counterpart from async code"
+    )]
+    WalletManagerBusy { api: &'static str },
+
     /// A paginated encrypted-document scan stopped advancing: a full page
     /// produced a cursor that had already been used, so continuing would
     /// refetch the same documents without end.

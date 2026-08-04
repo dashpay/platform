@@ -132,7 +132,8 @@ pub const MAX_TX_METADATA_PLAINTEXT_LEN: usize = {
 /// Reject a `txMetadata` plaintext that cannot fit the `encryptedMetadata`
 /// field once sealed, BEFORE any key derivation or network work.
 ///
-/// Callers on the create path (`prepare_encrypted_txmetadata_properties`, and
+/// Callers on the create path (`prepare_encrypted_txmetadata_properties`, its
+/// `_blocking` counterpart, and
 /// the FFI/JNI entry points) run this first so an over-large batch fails with a
 /// typed [`PlatformWalletError::TxMetadataPayloadTooLarge`] up front instead of
 /// deriving the key, sealing, and dying at broadcast with an opaque DPP schema

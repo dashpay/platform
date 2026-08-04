@@ -25,6 +25,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
+use key_wallet_manager::WalletManager;
 use zeroize::Zeroizing;
 
 use crate::error::PlatformWalletError;
@@ -33,6 +34,7 @@ use crate::wallet::identity::crypto::tx_metadata::{
     ensure_tx_metadata_create_inputs_valid, ensure_tx_metadata_payload_fits, open_tx_metadata,
     seal_tx_metadata, MAX_TX_METADATA_ENCRYPTION_KEY_INDEX,
 };
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 use super::*;
 
@@ -567,6 +569,19 @@ mod decrypted_document_tests {
     }
 }
 
+/// Everything the tx-metadata key derivation needs about one owner, resolved
+/// from the wallet manager in a single lock acquisition: the identity (whose
+/// keys pick the document's `keyIndex`), the HD slot it lives at, and the
+/// wallet the AES key derives from.
+///
+/// Carries no key material of its own — the wallet is the same handle the
+/// manager holds — so it is only as sensitive as the wallet it came from.
+struct TxMetadataEncryptionContext {
+    identity: dpp::identity::Identity,
+    identity_index: u32,
+    wallet: key_wallet::wallet::Wallet,
+}
+
 impl IdentityWallet {
     /// Select the identity's encryption key id (the document's `keyIndex`
     /// field): an `ECDSA_SECP256K1` `Purpose::ENCRYPTION` / `MEDIUM` key, falling
@@ -722,99 +737,113 @@ impl IdentityWallet {
         .await
     }
 
-    /// Resolve `(identity, identity_index, wallet)` for `owner_identity_id`
-    /// from the in-process wallet manager — the inputs the tx-metadata key
-    /// derivation needs. Errors for a watch-only / out-of-wallet identity (no
-    /// resident HD slot); the dash-wallet migration uses a resident mnemonic
-    /// wallet.
+    /// Resolve the [`TxMetadataEncryptionContext`] for `owner_identity_id` from
+    /// an ALREADY-HELD wallet-manager read guard. Errors for a watch-only /
+    /// out-of-wallet identity (no resident HD slot); the dash-wallet migration
+    /// uses a resident mnemonic wallet.
+    ///
+    /// Shared by the async and blocking resolvers below, which differ ONLY in
+    /// how the guard is taken, so the two can never drift apart on what counts
+    /// as a resolvable owner.
+    fn encryption_context_from_manager(
+        &self,
+        wm: &WalletManager<PlatformWalletInfo>,
+        owner_identity_id: &Identifier,
+    ) -> Result<TxMetadataEncryptionContext, PlatformWalletError> {
+        let info = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let managed = info
+            .identity_manager
+            .managed_identity(owner_identity_id)
+            .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
+        let identity_index = managed.identity_index.ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Identity {owner_identity_id} is watch-only (no resident HD slot); \
+                 cannot derive its txMetadata encryption key in-process"
+            ))
+        })?;
+        let identity = managed.identity.clone();
+        let wallet = wm
+            .get_wallet(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
+            .clone();
+        Ok(TxMetadataEncryptionContext {
+            identity,
+            identity_index,
+            wallet,
+        })
+    }
+
+    /// Await the wallet-manager read lock, then resolve the
+    /// [`TxMetadataEncryptionContext`] for `owner_identity_id`.
     async fn resolve_encryption_context(
         &self,
         owner_identity_id: &Identifier,
-    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError>
-    {
+    ) -> Result<TxMetadataEncryptionContext, PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
-        let info = wm
-            .get_wallet_info(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let managed = info
-            .identity_manager
-            .managed_identity(owner_identity_id)
-            .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
-        let identity_index = managed.identity_index.ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Identity {owner_identity_id} is watch-only (no resident HD slot); \
-                 cannot derive its txMetadata encryption key in-process"
-            ))
-        })?;
-        let identity = managed.identity.clone();
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
-            .clone();
-        Ok((identity, identity_index, wallet))
+        self.encryption_context_from_manager(&wm, owner_identity_id)
     }
 
-    /// Synchronous (`blocking_read`) counterpart of
-    /// [`Self::resolve_encryption_context`], resolving
-    /// `(identity, identity_index, wallet)` without crossing an `.await`. MUST
-    /// be called from a sync context — never inside an async task (`blocking_read`
-    /// panics there). Used by [`Self::prepare_txmetadata_encryption`] so the
-    /// master xprv can be wiped BEFORE any network round-trip.
+    /// Synchronous counterpart of [`Self::resolve_encryption_context`],
+    /// resolving the same context without crossing an `.await` — that is what
+    /// lets the `*_blocking` entry points wipe a resolved master xprv BEFORE any
+    /// network round-trip.
+    ///
+    /// ## Never panics, including when called from async code
+    /// `blocking_read` parks the calling thread, and Tokio refuses to park a
+    /// thread that is currently driving tasks — it panics, which
+    /// `panic = "abort"` turns into an immediate process death. Whether the
+    /// current thread MAY park is not observable from outside Tokio (a
+    /// `spawn_blocking` thread may, a runtime worker may not), so this splits on
+    /// what is observable:
+    ///
+    /// * **No runtime in scope** — the FFI's own C thread, and any plain
+    ///   synchronous caller. Parking is unconditionally safe, so park.
+    /// * **A runtime in scope** — do not park at all. Take the lock without
+    ///   waiting and report contention as the typed, retryable
+    ///   [`PlatformWalletError::WalletManagerBusy`], naming `api` so the caller
+    ///   knows which entry point to move onto its async counterpart.
     fn resolve_encryption_context_blocking(
         &self,
         owner_identity_id: &Identifier,
-    ) -> Result<(dpp::identity::Identity, u32, key_wallet::wallet::Wallet), PlatformWalletError>
-    {
-        let wm = self.wallet_manager.blocking_read();
-        let info = wm
-            .get_wallet_info(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let managed = info
-            .identity_manager
-            .managed_identity(owner_identity_id)
-            .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
-        let identity_index = managed.identity_index.ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Identity {owner_identity_id} is watch-only (no resident HD slot); \
-                 cannot derive its txMetadata encryption key in-process"
-            ))
-        })?;
-        let identity = managed.identity.clone();
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?
-            .clone();
-        Ok((identity, identity_index, wallet))
+        api: &'static str,
+    ) -> Result<TxMetadataEncryptionContext, PlatformWalletError> {
+        match tokio::runtime::Handle::try_current() {
+            Err(_) => {
+                let wm = self.wallet_manager.blocking_read();
+                self.encryption_context_from_manager(&wm, owner_identity_id)
+            }
+            Ok(_) => {
+                let wm = self
+                    .wallet_manager
+                    .try_read()
+                    .map_err(|_| PlatformWalletError::WalletManagerBusy { api })?;
+                self.encryption_context_from_manager(&wm, owner_identity_id)
+            }
+        }
     }
 
-    /// Synchronously resolve every fallible input needed to encrypt one
-    /// txMetadata payload, without taking or copying the plaintext itself.
+    /// Select the identity encryption key and derive the per-document AES key
+    /// from an already-resolved encryption context.
     ///
-    /// The returned context contains the selected identity key id and a
-    /// zeroizing per-document AES key. A host bridge can therefore finish this
-    /// operation, release any master xprv used to derive it, and only then
-    /// materialize the payload for [`PreparedTxMetadataEncryption::seal`].
-    ///
-    /// **Crosses no `.await`** and resolves through `blocking_read`. Call from a
-    /// synchronous context only; calling it inside an async task panics.
-    pub fn prepare_txmetadata_encryption(
+    /// Pure and synchronous: no lock, no network, no awaits. Shared by the
+    /// async and blocking preparation entry points so the two produce
+    /// byte-identical contexts.
+    fn prepared_encryption_from_context(
         &self,
-        owner_identity_id: &Identifier,
+        context: &TxMetadataEncryptionContext,
         encryption_key_index: u32,
         version: u8,
         payload_len: usize,
         key_source: TxMetadataKeySource<'_>,
     ) -> Result<PreparedTxMetadataEncryption, PlatformWalletError> {
-        ensure_tx_metadata_create_inputs_valid(payload_len, version, Some(encryption_key_index))?;
-
-        let (identity, identity_index, wallet) =
-            self.resolve_encryption_context_blocking(owner_identity_id)?;
-        let key_index = Self::select_encryption_key_id(&identity)?;
+        let key_index = Self::select_encryption_key_id(&context.identity)?;
         let aes_key = key_source
             .derive(
-                &wallet,
+                &context.wallet,
                 self.sdk.network,
-                identity_index,
+                context.identity_index,
                 key_index,
                 encryption_key_index,
             )
@@ -836,18 +865,83 @@ impl IdentityWallet {
         })
     }
 
-    /// Synchronously derive the identity encryption key and seal `payload` into
-    /// the wire-compatible `version ‖ IV ‖ AES-256-CBC` blob, returning the
+    /// Resolve every fallible input needed to encrypt one txMetadata payload,
+    /// without taking or copying the plaintext itself.
+    ///
+    /// The returned context contains the selected identity key id and a
+    /// zeroizing per-document AES key. A host bridge can therefore finish this
+    /// operation, release any master xprv used to derive it, and only then
+    /// materialize the payload for [`PreparedTxMetadataEncryption::seal`].
+    ///
+    /// The ONLY await is the wallet-manager read lock, taken before anything is
+    /// derived — no key material and no plaintext exists yet at that point, and
+    /// nothing here touches the network. A caller holding a master xprv across
+    /// this call therefore holds it across a local lock acquisition and nothing
+    /// else. A caller that must not even do that (the FFI, which wipes the
+    /// master before the broadcast await) uses
+    /// [`Self::prepare_txmetadata_encryption_blocking`] instead.
+    pub async fn prepare_txmetadata_encryption(
+        &self,
+        owner_identity_id: &Identifier,
+        encryption_key_index: u32,
+        version: u8,
+        payload_len: usize,
+        key_source: TxMetadataKeySource<'_>,
+    ) -> Result<PreparedTxMetadataEncryption, PlatformWalletError> {
+        ensure_tx_metadata_create_inputs_valid(payload_len, version, Some(encryption_key_index))?;
+
+        let context = self.resolve_encryption_context(owner_identity_id).await?;
+        self.prepared_encryption_from_context(
+            &context,
+            encryption_key_index,
+            version,
+            payload_len,
+            key_source,
+        )
+    }
+
+    /// Synchronous counterpart of [`Self::prepare_txmetadata_encryption`].
+    ///
+    /// **Crosses no `.await` at all** — it resolves through a blocking read —
+    /// so a host bridge can derive here, wipe the master xprv, and only then
+    /// enter an async broadcast. Call it from a synchronous context; called
+    /// with a Tokio runtime in scope it never parks and never panics, returning
+    /// [`PlatformWalletError::WalletManagerBusy`] if the lock is contended.
+    pub fn prepare_txmetadata_encryption_blocking(
+        &self,
+        owner_identity_id: &Identifier,
+        encryption_key_index: u32,
+        version: u8,
+        payload_len: usize,
+        key_source: TxMetadataKeySource<'_>,
+    ) -> Result<PreparedTxMetadataEncryption, PlatformWalletError> {
+        ensure_tx_metadata_create_inputs_valid(payload_len, version, Some(encryption_key_index))?;
+
+        let context = self.resolve_encryption_context_blocking(
+            owner_identity_id,
+            "IdentityWallet::prepare_txmetadata_encryption_blocking",
+        )?;
+        self.prepared_encryption_from_context(
+            &context,
+            encryption_key_index,
+            version,
+            payload_len,
+            key_source,
+        )
+    }
+
+    /// Derive the identity encryption key and seal `payload` into the
+    /// wire-compatible `version ‖ IV ‖ AES-256-CBC` blob, returning the
     /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` properties JSON ready
     /// for [`Self::create_document_with_signer`] — the exact document shape the
     /// legacy `publishTxMetaData` wrote, so the legacy stack decrypts it.
     ///
-    /// **Crosses no `.await`** (resolves via `blocking_read`, derives, seals) so
-    /// the FFI caller can WIPE the resolved master xprv before the network
-    /// broadcast: the master never lives across an await. Call from a sync
-    /// context only. The subsequent
-    /// generic [`Self::create_document_with_signer`] then broadcasts the returned
-    /// properties with no key material in scope.
+    /// Awaits only the wallet-manager read lock (see
+    /// [`Self::prepare_txmetadata_encryption`]); the derivation and the seal are
+    /// synchronous, and the subsequent generic
+    /// [`Self::create_document_with_signer`] broadcasts the returned properties
+    /// with no key material in scope. A caller that must keep its master off
+    /// every await uses [`Self::prepare_encrypted_txmetadata_properties_blocking`].
     ///
     /// The caller supplies:
     /// - `encryption_key_index`: the per-document index (dash-wallet's monotonic
@@ -860,7 +954,7 @@ impl IdentityWallet {
     /// The `keyIndex` field (the identity encryption key id) is selected SDK-side
     /// to match the legacy stack; `key_source` selects where the AES key derives
     /// from (see [`TxMetadataKeySource`]).
-    pub fn prepare_encrypted_txmetadata_properties(
+    pub async fn prepare_encrypted_txmetadata_properties(
         &self,
         owner_identity_id: &Identifier,
         encryption_key_index: u32,
@@ -869,6 +963,30 @@ impl IdentityWallet {
         key_source: TxMetadataKeySource<'_>,
     ) -> Result<String, PlatformWalletError> {
         self.prepare_txmetadata_encryption(
+            owner_identity_id,
+            encryption_key_index,
+            version,
+            payload.len(),
+            key_source,
+        )
+        .await?
+        .seal(payload)
+    }
+
+    /// Synchronous counterpart of
+    /// [`Self::prepare_encrypted_txmetadata_properties`], resolving through a
+    /// blocking read so nothing it derives crosses an `.await`. Same
+    /// sync-context contract as
+    /// [`Self::prepare_txmetadata_encryption_blocking`].
+    pub fn prepare_encrypted_txmetadata_properties_blocking(
+        &self,
+        owner_identity_id: &Identifier,
+        encryption_key_index: u32,
+        version: u8,
+        payload: &[u8],
+        key_source: TxMetadataKeySource<'_>,
+    ) -> Result<String, PlatformWalletError> {
+        self.prepare_txmetadata_encryption_blocking(
             owner_identity_id,
             encryption_key_index,
             version,
@@ -893,7 +1011,9 @@ impl IdentityWallet {
     /// to survive this scan — an unbounded wait, since the SDK sets no request
     /// timeout.
     ///
-    /// Pairs with [`Self::decrypt_fetched_documents`], which is synchronous.
+    /// Pairs with [`Self::decrypt_fetched_documents`], or with
+    /// [`Self::decrypt_fetched_documents_blocking`] for a caller whose key
+    /// material must not cross any await at all.
     pub async fn fetch_raw_encrypted_documents(
         &self,
         owner_identity_id: &Identifier,
@@ -948,16 +1068,17 @@ impl IdentityWallet {
     /// The DECRYPT half: turn raw entries from
     /// [`Self::fetch_raw_encrypted_documents`] into decrypted documents.
     ///
-    /// **Crosses no `.await`** — it resolves its context with a blocking read
-    /// and derives synchronously — so a caller may acquire key material, call
-    /// this, and wipe that material immediately, without it ever being live
-    /// across a network round trip. Call from a sync context only; a blocking
-    /// read panics inside an async task.
+    /// Awaits only the wallet-manager read lock; the derivation and every
+    /// decrypt are synchronous and touch no network. A caller may therefore
+    /// acquire key material, call this, and wipe that material immediately,
+    /// without it ever being live across a network round trip. A caller that
+    /// must keep its key material off every await uses
+    /// [`Self::decrypt_fetched_documents_blocking`].
     ///
     /// Returns an empty vec for empty input without resolving anything, so a
     /// caller that skipped acquisition on an empty scan stays correct if it
     /// calls this anyway.
-    pub fn decrypt_fetched_documents(
+    pub async fn decrypt_fetched_documents(
         &self,
         owner_identity_id: &Identifier,
         raw_docs: &[(Identifier, Option<Document>)],
@@ -966,9 +1087,43 @@ impl IdentityWallet {
         if raw_docs.is_empty() {
             return Ok(Vec::new());
         }
-        let (_identity, identity_index, wallet) =
-            self.resolve_encryption_context_blocking(owner_identity_id)?;
-        Ok(self.decrypt_raw_documents(raw_docs, identity_index, &wallet, key_source))
+        let context = self.resolve_encryption_context(owner_identity_id).await?;
+        Ok(self.decrypt_raw_documents(
+            raw_docs,
+            context.identity_index,
+            &context.wallet,
+            key_source,
+        ))
+    }
+
+    /// Synchronous counterpart of [`Self::decrypt_fetched_documents`].
+    ///
+    /// **Crosses no `.await`** — it resolves its context with a blocking read
+    /// and derives synchronously — which is what lets the FFI hold a resolved
+    /// master for the length of one plain function call and wipe it on the next
+    /// line. Same sync-context contract as
+    /// [`Self::prepare_txmetadata_encryption_blocking`]: with a Tokio runtime in
+    /// scope it never parks and never panics, returning
+    /// [`PlatformWalletError::WalletManagerBusy`] on contention instead.
+    pub fn decrypt_fetched_documents_blocking(
+        &self,
+        owner_identity_id: &Identifier,
+        raw_docs: &[(Identifier, Option<Document>)],
+        key_source: TxMetadataKeySource<'_>,
+    ) -> Result<Vec<DecryptedEncryptedDocument>, PlatformWalletError> {
+        if raw_docs.is_empty() {
+            return Ok(Vec::new());
+        }
+        let context = self.resolve_encryption_context_blocking(
+            owner_identity_id,
+            "IdentityWallet::decrypt_fetched_documents_blocking",
+        )?;
+        Ok(self.decrypt_raw_documents(
+            raw_docs,
+            context.identity_index,
+            &context.wallet,
+            key_source,
+        ))
     }
 
     /// Fetch and decrypt in one call, for wallets that hold their keys in
@@ -1028,7 +1183,7 @@ impl IdentityWallet {
         // Candidates exist: acquire the key context now, with every network
         // await already behind us. Everything from here to the end of the loop
         // is synchronous, so the resolved material never crosses an await.
-        let (_identity, identity_index, wallet) = self
+        let context = self
             .resolve_encryption_context(owner_identity_id)
             .await
             .inspect_err(|e| {
@@ -1039,7 +1194,12 @@ impl IdentityWallet {
                 ));
             })?;
 
-        Ok(self.decrypt_raw_documents(&raw_docs, identity_index, &wallet, key_source))
+        Ok(self.decrypt_raw_documents(
+            &raw_docs,
+            context.identity_index,
+            &context.wallet,
+            key_source,
+        ))
     }
 
     /// Decrypt raw entries with an already-resolved context.
@@ -2550,8 +2710,8 @@ mod query_tests {
     /// A skip that silently dropped everything would satisfy neither.
     // A plain `#[test]` driving its own runtime: only the network stages are
     // awaited, and the decrypt stage runs outside the runtime entirely — the
-    // same split the FFI makes, and required because
-    // `decrypt_fetched_documents` takes a blocking read.
+    // same split the FFI makes, which is the shape
+    // `decrypt_fetched_documents_blocking` exists for.
     #[test]
     fn fetch_decrypts_the_valid_document_and_skips_the_malformed_and_unsupported_ones() {
         use crate::wallet::identity::crypto::tx_metadata::{
@@ -2692,8 +2852,9 @@ mod query_tests {
         // Stage 2 — acquire a FRESH master only now that there is something to
         // decrypt, decrypt synchronously, and erase it before leaving the block.
         // This runs outside the runtime, matching the FFI, whose decrypt stage
-        // executes on its own calling thread; `decrypt_fetched_documents` takes
-        // a blocking read and must not run inside an async task.
+        // executes on its own calling thread — the context
+        // `decrypt_fetched_documents_blocking` is built for, where its blocking
+        // read can park freely.
         let fetched = {
             let seed = Zeroizing::new(
                 Mnemonic::from_entropy(&[0u8; 16], Language::English)
@@ -2702,7 +2863,7 @@ mod query_tests {
             );
             let mut master = ExtendedPrivKey::new_master(network, seed.as_ref())
                 .expect("master xprv acquired after the scan");
-            let decrypted = wallet.identity().decrypt_fetched_documents(
+            let decrypted = wallet.identity().decrypt_fetched_documents_blocking(
                 &TEST_OWNER,
                 &raw,
                 TxMetadataKeySource::Master(&master),
@@ -2959,5 +3120,170 @@ mod query_tests {
             expected_raw_count as u32 + 2,
             "a seeded scope must continue in process rather than re-count"
         );
+    }
+
+    // ── The blocking entry points never panic, wherever they are called ─────
+    //
+    // `blocking_read` is how the `*_blocking` APIs keep key material off every
+    // await, but Tokio answers it with a PANIC on a thread that is driving
+    // tasks — and this workspace builds with `panic = "abort"`, so that panic is
+    // immediate process death, not a catchable misuse. A public API that a Rust
+    // consumer can reach from an ordinary async task must therefore fail as a
+    // value. These cases pin both halves of that: the uncontended call proceeds,
+    // and the contended one reports a typed error instead of parking.
+
+    /// A resident wallet whose managed identity carries the ENCRYPTION key,
+    /// ready for a `prepare_*` call.
+    async fn resident_wallet_for_preparation() -> std::sync::Arc<crate::PlatformWallet> {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(dpp::version::PlatformVersion::latest())
+            .build()
+            .expect("mock sdk builds");
+        let (wallet, _identity_index, _key_index) =
+            wallet_with_managed_identity(sdk, TEST_OWNER).await;
+        make_wallet_resident(&wallet).await;
+        wallet
+    }
+
+    /// Called from inside a Tokio task, the blocking preparation must return —
+    /// not abort the process.
+    ///
+    /// Before the fix this test did not fail, it DIED: `blocking_read` on a
+    /// runtime worker panics, and `panic = "abort"` takes the test binary with
+    /// it. Nothing is contended here, so the call must also actually succeed.
+    #[tokio::test]
+    async fn blocking_preparation_inside_an_async_task_completes_instead_of_panicking() {
+        use crate::wallet::identity::crypto::tx_metadata::VERSION_PROTOBUF;
+
+        let wallet = resident_wallet_for_preparation().await;
+
+        let prepared = wallet
+            .identity()
+            .prepare_txmetadata_encryption_blocking(
+                &TEST_OWNER,
+                1,
+                VERSION_PROTOBUF,
+                16,
+                TxMetadataKeySource::ResidentWallet,
+            )
+            .expect(
+                "an uncontended blocking preparation must complete from an async task, \
+                 not panic on the runtime worker",
+            );
+
+        assert_eq!(prepared.encryption_key_index, 1);
+        assert_eq!(prepared.version, VERSION_PROTOBUF);
+        assert_eq!(prepared.payload_len, 16);
+    }
+
+    /// Same call, with the wallet-manager lock genuinely held by a writer.
+    ///
+    /// This is the case that would otherwise have to park: it must neither park
+    /// (deadlocking this single task against its own guard) nor panic, but
+    /// report the typed retryable error naming the entry point.
+    #[tokio::test]
+    async fn a_contended_blocking_preparation_reports_a_busy_wallet_manager() {
+        use crate::wallet::identity::crypto::tx_metadata::VERSION_PROTOBUF;
+
+        let wallet = resident_wallet_for_preparation().await;
+        let identity_wallet = wallet.identity();
+
+        // Held across the blocking call below, so `try_read` cannot succeed.
+        let _writer = identity_wallet.wallet_manager.write().await;
+
+        let error = identity_wallet
+            .prepare_txmetadata_encryption_blocking(
+                &TEST_OWNER,
+                1,
+                VERSION_PROTOBUF,
+                16,
+                TxMetadataKeySource::ResidentWallet,
+            )
+            .expect_err("the wallet-manager lock is write-held for the whole call");
+
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::WalletManagerBusy {
+                    api: "IdentityWallet::prepare_txmetadata_encryption_blocking"
+                }
+            ),
+            "a contended blocking preparation must surface the typed busy error \
+             naming its own entry point; got {error:?}"
+        );
+    }
+
+    /// The decrypt half takes the same bridge, so it must behave the same way.
+    ///
+    /// A non-empty input is required: the empty-input short circuit returns
+    /// before any lock is taken and would pass no matter what the bridge did.
+    #[tokio::test]
+    async fn a_contended_blocking_decrypt_reports_a_busy_wallet_manager() {
+        let wallet = resident_wallet_for_preparation().await;
+        let identity_wallet = wallet.identity();
+
+        let id = Identifier::from([0x5Au8; 32]);
+        let raw = vec![(id, Some(document_at(id, 1_700_000_000_000)))];
+
+        let _writer = identity_wallet.wallet_manager.write().await;
+
+        let error = identity_wallet
+            .decrypt_fetched_documents_blocking(
+                &TEST_OWNER,
+                &raw,
+                TxMetadataKeySource::ResidentWallet,
+            )
+            .expect_err("the wallet-manager lock is write-held for the whole call");
+
+        assert!(
+            matches!(
+                error,
+                PlatformWalletError::WalletManagerBusy {
+                    api: "IdentityWallet::decrypt_fetched_documents_blocking"
+                }
+            ),
+            "a contended blocking decrypt must surface the typed busy error naming \
+             its own entry point; got {error:?}"
+        );
+    }
+
+    /// The async counterparts are the deterministic path for async callers:
+    /// they WAIT for the lock instead of reporting contention.
+    ///
+    /// Proven by holding the write guard until after the async preparation is
+    /// already pending — a call that reported busy, or that resolved before the
+    /// guard dropped, would not satisfy this. Time is paused, so the timeout
+    /// that observes "still waiting" costs no real wall clock.
+    #[tokio::test(start_paused = true)]
+    async fn the_async_preparation_waits_for_a_contended_wallet_manager() {
+        use crate::wallet::identity::crypto::tx_metadata::VERSION_PROTOBUF;
+
+        let wallet = resident_wallet_for_preparation().await;
+        let identity_wallet = wallet.identity();
+
+        let writer = identity_wallet.wallet_manager.write().await;
+
+        let mut pending = Box::pin(identity_wallet.prepare_txmetadata_encryption(
+            &TEST_OWNER,
+            1,
+            VERSION_PROTOBUF,
+            16,
+            TxMetadataKeySource::ResidentWallet,
+        ));
+        // Polled while the writer still holds the lock: it must be waiting, not
+        // failing.
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), &mut pending)
+                .await
+                .is_err(),
+            "the async preparation must wait for the write guard rather than \
+             reporting contention"
+        );
+
+        drop(writer);
+        let prepared = pending
+            .await
+            .expect("the async preparation completes once the writer releases");
+        assert_eq!(prepared.encryption_key_index, 1);
     }
 }

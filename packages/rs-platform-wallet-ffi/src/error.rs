@@ -433,6 +433,16 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::TxMetadataEncryptionKeyIndexNotDerivable { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // A `*_blocking` wallet API that declined to park on a contended
+            // wallet-manager lock because a Tokio runtime was in scope. The C
+            // exports call those APIs from their own calling thread, which has
+            // no runtime, so this is unreachable through this crate — it is
+            // mapped anyway so an embedder that does reach it gets the retryable
+            // wallet-operation code rather than ErrorUnknown. No new numeric
+            // code: the condition is transient, not a distinct host contract.
+            PlatformWalletError::WalletManagerBusy { .. } => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
             // wallet operation that propagates the SDK error via `?`). The
