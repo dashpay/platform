@@ -85,6 +85,7 @@ use crate::data_contract::document_type::validator::StatelessJsonSchemaLazyValid
 #[cfg(feature = "validation")]
 use crate::validation::meta_validators::{
     DOCUMENT_META_SCHEMA_V0, DOCUMENT_META_SCHEMA_V1, DOCUMENT_META_SCHEMA_V2,
+    DOCUMENT_META_SCHEMA_V3,
 };
 #[cfg(feature = "validation")]
 use jsonschema::JSONSchema;
@@ -97,12 +98,45 @@ use super::{
     NOT_ALLOWED_SYSTEM_PROPERTIES,
 };
 
+/// RANKED: the extra index-property check a generation runs before the generic
+/// index-key limits.
+///
+/// Only generation 3 has one (the ranked axes tighten the key ceiling); every
+/// earlier generation passes [`no_ranked_index_key_length_check`], which is the
+/// exact no-op those generations perform today. Passing the check in rather
+/// than branching on a version inside the shared core keeps the generation-only
+/// rule — and the constants it is derived from — in the generation that owns it.
+///
+/// This type and its no-op exist only for generation 3; without it there is no
+/// per-property hook in the core at all.
+pub(super) type RankedIndexKeyLengthCheck =
+    fn(&str, &Index, &str, &DocumentPropertyType, &PlatformVersion) -> Result<(), ProtocolError>;
+
+/// The [`RankedIndexKeyLengthCheck`] for a generation that has no ranking axes
+/// to constrain — i.e. every generation whose index grammar rejects the
+/// `ranked*` keywords outright.
+pub(super) fn no_ranked_index_key_length_check(
+    _document_type_name: &str,
+    _index: &Index,
+    _index_property_name: &str,
+    _property_type: &DocumentPropertyType,
+    _platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    Ok(())
+}
+
 /// Everything the shared parsing steps need to know about *which* generation is
 /// running them.
 ///
 /// Each generation module constructs one of these from its own constants. The
 /// shared code never derives any of these fields from a platform version.
+///
+/// The fields are split into two groups on purpose: the ranked-aggregate group
+/// is exactly what a build without generation 3 does not need, so it can be
+/// removed as a block. See the `RANKED` markers through this module for the
+/// matching call sites.
 pub(super) struct ParserGeneration {
+    // ---- present in every generation ----
     /// The `document_type_schema` table value to select the document
     /// meta-schema with. Read by the *driver*, not down here.
     pub document_type_schema_version: u16,
@@ -114,6 +148,20 @@ pub(super) struct ParserGeneration {
     /// unknown `document_type_schema`. Differs per generation, so it is a
     /// parameter rather than a constant.
     pub meta_schema_method_name: &'static str,
+
+    // ---- RANKED: generation-3 additions ----
+    // Every field below exists only because generation 3 does. Drop them
+    // together with the `v3` module and the ranked arms they gate, and what is
+    // left is the parser as it stood before the ranked aggregates.
+    /// Whether document meta-schema v3 is part of this generation's table —
+    /// i.e. whether `3` is a known value of `document_type_schema` for it.
+    pub admit_meta_schema_v3: bool,
+    /// Whether the index grammar admits the `ranked*` keywords. Forwarded to
+    /// [`Index::try_from_value_map`], which rejects them as unknown keys when
+    /// this is `false`.
+    pub admit_ranked: bool,
+    /// See [`RankedIndexKeyLengthCheck`].
+    pub ranked_index_key_length_check: RankedIndexKeyLengthCheck,
 }
 
 /// Reject a document type whose name is not a non-empty ASCII
@@ -172,23 +220,33 @@ pub(super) fn validate_schema_depth_and_account_for_size(
 
 /// Pick the document meta-schema for a `document_type_schema` table value.
 ///
-/// Every generation's own copy of this match named exactly meta-schemas 0, 1
-/// and 2 and reported `known_versions: [0, 1, 2]`, so the shared version is a
-/// verbatim merge rather than a widening: `method_name` is the only thing that
-/// ever differed between them.
+/// `admit_meta_schema_v3` is what makes this one match total across every
+/// generation without any of them gaining a meta-schema it did not ship with:
+/// a generation whose table never names meta-schema v3 passes `false` and keeps
+/// reporting `known_versions: [0, 1, 2]`, exactly as its own copy of this match
+/// did.
 #[cfg(feature = "validation")]
 pub(super) fn select_document_meta_schema(
     document_type_schema_version: u16,
+    admit_meta_schema_v3: bool,
     method_name: &str,
 ) -> Result<&'static JSONSchema, ProtocolError> {
     Ok(match document_type_schema_version {
         0 => &*DOCUMENT_META_SCHEMA_V0,
         1 => &*DOCUMENT_META_SCHEMA_V1,
         2 => &*DOCUMENT_META_SCHEMA_V2,
+        // RANKED: meta-schema v3 and the widened `known_versions` are
+        // generation 3's. Without it this is a plain `vec![0, 1, 2]` arm and
+        // the parameter goes away.
+        3 if admit_meta_schema_v3 => &*DOCUMENT_META_SCHEMA_V3,
         version => {
             return Err(ProtocolError::UnknownVersionMismatch {
                 method: method_name.to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: if admit_meta_schema_v3 {
+                    vec![0, 1, 2, 3]
+                } else {
+                    vec![0, 1, 2]
+                },
                 received: version,
             })
         }
@@ -201,6 +259,7 @@ pub(super) fn select_document_meta_schema(
 pub(super) fn validate_against_meta_schema_and_compile(
     root_schema: &Value,
     document_type_schema_version: u16,
+    admit_meta_schema_v3: bool,
     meta_schema_method_name: &str,
     json_schema_validator: &StatelessJsonSchemaLazyValidator,
     platform_version: &PlatformVersion,
@@ -213,8 +272,11 @@ pub(super) fn validate_against_meta_schema_and_compile(
     })?;
 
     // Select the appropriate document meta-schema based on platform version
-    let meta_schema =
-        select_document_meta_schema(document_type_schema_version, meta_schema_method_name)?;
+    let meta_schema = select_document_meta_schema(
+        document_type_schema_version,
+        admit_meta_schema_v3,
+        meta_schema_method_name,
+    )?;
 
     // Validate against JSON Schema
     meta_schema
@@ -316,6 +378,7 @@ pub(super) fn parse_document_type_core(
         validate_against_meta_schema_and_compile(
             &root_schema,
             generation.document_type_schema_version,
+            generation.admit_meta_schema_v3,
             generation.meta_schema_method_name,
             &json_schema_validator,
             platform_version,
@@ -478,12 +541,21 @@ pub(super) fn parse_document_type_core(
             index_values
                 .iter()
                 .map(|index_value| {
-                    let index: Index = index_value
-                        .to_map()
-                        .map_err(consensus_or_protocol_value_error)?
-                        .as_slice()
-                        .try_into()
-                        .map_err(consensus_or_protocol_data_contract_error)?;
+                    // RANKED: whether the `ranked*` keywords are part of the
+                    // grammar at all is the generation's own constant. When it
+                    // is `false` they fall through to the unknown-key arm and
+                    // are rejected with exactly the error the generation always
+                    // produced — which is what `TryFrom<&[(Value, Value)]> for
+                    // Index` does, so without generation 3 this whole call
+                    // collapses back to `.as_slice().try_into()`.
+                    let index: Index = Index::try_from_value_map(
+                        index_value
+                            .to_map()
+                            .map_err(consensus_or_protocol_value_error)?
+                            .as_slice(),
+                        generation.admit_ranked,
+                    )
+                    .map_err(consensus_or_protocol_data_contract_error)?;
 
                     #[cfg(feature = "validation")]
                     if full_validation {
@@ -661,6 +733,26 @@ pub(super) fn parse_document_type_core(
                                             .into(),
                                         ))
                                     })?;
+
+                                // RANKED: a ranking axis tightens the generic key
+                                // limits below: the property's encoded value
+                                // becomes the item key of a grovedb indexed
+                                // tree, whose ordered secondary prefixes it
+                                // with a sort key. Checked before the generic
+                                // limits so a ranked index reports the bound
+                                // that actually applies to it. System
+                                // properties skip this the same way they skip
+                                // the generic limits — every one of them
+                                // encodes to a fixed 32 bytes or fewer. A
+                                // generation without ranking axes passes the
+                                // no-op check.
+                                (generation.ranked_index_key_length_check)(
+                                    name,
+                                    &index,
+                                    index_property.name.as_str(),
+                                    &property_definition.property_type,
+                                    platform_version,
+                                )?;
 
                                 // Validate indexed property type
                                 match &property_definition.property_type {

@@ -1,13 +1,12 @@
-//! Document-type parser **generation 2** — protocol version 12 onward.
+//! Document-type parser **generation 2** — protocol versions 12 and 13.
 //!
 //! Generation 2 is generation 1 plus the doctype-level aggregate keywords
 //! (`documentsCountable` / `rangeCountable` / `documentsSummable` /
 //! `rangeSummable` and the `documentsAverageable` / `rangeAverageable`
 //! shorthands). Core parsing is delegated to the generation-1 entry point,
 //! which is where the `document_type_schema` read that distinguishes PV12 from
-//! PV13 lives; the aggregate keywords themselves do not vary across the
-//! protocol versions this generation serves, so this module passes no
-//! version-dependent constants at all.
+//! PV13 lives; the aggregate keywords themselves do not vary across the two, so
+//! this module passes no version-dependent constants at all.
 
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -130,10 +129,10 @@ mod tests {
     /// Generation-specific tests must pin a protocol version that actually
     /// selects their own generation: `PlatformVersion::latest()` silently
     /// retargets these tests onto a different parser generation and a
-    /// different document meta-schema whenever LATEST moves. PV13 is the first
-    /// protocol version whose `try_from_schema` selects generation 2 with
-    /// `document_type_schema: 2` — the meta-schema `latest()` resolves to
-    /// today, so behavior here is unchanged by the pin.
+    /// different document meta-schema whenever LATEST moves. PV13 is the
+    /// highest protocol version whose `try_from_schema` selects generation 2,
+    /// and its `document_type_schema` is 2 — the same meta-schema `latest()`
+    /// resolved to before generation 3 existed, so behavior here is unchanged.
     fn generation_2_platform_version() -> &'static PlatformVersion {
         PlatformVersion::get(13).expect("protocol version 13 exists")
     }

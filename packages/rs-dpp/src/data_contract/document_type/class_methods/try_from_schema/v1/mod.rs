@@ -1,5 +1,5 @@
 //! Document-type parser **generation 1** — protocol versions 9 through 11,
-//! and the core that generation 2 (protocol version 12 onward) delegates to.
+//! and the core that generation 2 (protocol versions 12 and 13) delegates to.
 //!
 //! The parsing steps themselves live in [`super::common`]; this module is the
 //! thin driver that names generation 1's grammar.
@@ -34,8 +34,8 @@ impl DocumentTypeV1 {
     /// Generation 1 reaches it directly (`try_from_schema: 1`, protocol
     /// versions 9–11, `document_type_schema: 0`), and generation 2 reaches it
     /// by delegation from [`DocumentTypeV2::try_from_schema`] (`try_from_schema:
-    /// 2`, protocol version 12 onward, `document_type_schema` 1 at PV12 and 2
-    /// from PV13 on).
+    /// 2`, protocol versions 12 and 13, `document_type_schema` 1 and 2
+    /// respectively).
     ///
     /// That is why the `keeps*History` gate below is a real table read rather
     /// than a constant: the flags are absent for generation 1 and for PV12, and
@@ -91,6 +91,13 @@ impl DocumentTypeV1 {
                 document_type_schema_version,
                 admit_history: document_type_schema_version >= 2,
                 meta_schema_method_name: "DocumentTypeV1::try_from_schema (document_type_schema)",
+                // RANKED: generation 1 predates the ranked aggregates entirely
+                // — its meta-schema table names 0, 1 and 2 only, its index
+                // grammar has no `ranked*` keywords, and it therefore has no
+                // ranked key ceiling to enforce.
+                admit_meta_schema_v3: false,
+                admit_ranked: false,
+                ranked_index_key_length_check: common::no_ranked_index_key_length_check,
             },
             platform_version,
         )
