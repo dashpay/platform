@@ -6,6 +6,7 @@ import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
 import org.dashfoundation.dashsdk.ffi.TokensNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.tokens.translateManagedIdentityNotFoundToZero
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -546,7 +547,14 @@ class ManagedPlatformWallet internal constructor(
         val watched = inMemoryWatchedIdentityIds().map { it to true }
         (managed + watched).mapNotNull { (id, isWatched) ->
             mapNativeErrors {
-                val identityHandle = TokensNative.getManagedIdentity(handle, id)
+                // The native side reports an unmanaged / just-removed identity
+                // as a platform-wallet NotFound error, not a zero handle, so
+                // the raw code is translated back to the zero-handle "skip"
+                // signal here — otherwise one removed id would throw through
+                // the whole listing (dashpay/platform#4060).
+                val identityHandle = translateManagedIdentityNotFoundToZero {
+                    TokensNative.getManagedIdentity(handle, id)
+                }
                 if (identityHandle == 0L) return@mapNativeErrors null
                 try {
                     val index = WalletManagerNative.managedIdentityGetIdentityIndex(identityHandle)
