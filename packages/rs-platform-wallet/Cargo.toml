@@ -62,10 +62,13 @@ zip32 = { version = "0.2.0", default-features = false, optional = true }
 # Same version as `dash-sdk` so the lockfile resolves a single copy.
 futures = { version = "0.3.30", optional = true }
 
-# OS CSPRNG (`OsRng`) for one-time Orchard key generation
-# (`shielded::keys::generate_one_time_orchard_key`, the inviter side of L2
-# shielded invitations). Same `rand` major the dev-deps / benches already use.
-rand = { version = "0.8", optional = true }
+# NOTE: the OS CSPRNG (`OsRng`) this crate uses for one-time Orchard key
+# generation (`shielded::keys::generate_one_time_orchard_key`, the inviter
+# side of L2 shielded invitations) comes from the unconditional `rand = "0.8"`
+# in the "Standard dependencies" block above. dashpay/platform#4277 promoted
+# `rand` from a dev-dependency to a mandatory one, so this PR no longer
+# declares its own optional copy (a second `rand` key in `[dependencies]` is a
+# duplicate-key manifest error) and `shielded` no longer lists `dep:rand`.
 
 # Networked, opt-in example binaries. Each one performs real network I/O
 # against a live devnet, so they are examples (compiled, never run by
@@ -121,7 +124,7 @@ default = ["bls", "eddsa"]
 test-utils = ["key-wallet/test-utils"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
-shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dep:rand", "dash-sdk/shielded", "dpp/shielded-client"]
+shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
 # Opt-in serde derives on the changeset types in `src/changeset/` plus
 # the per-identity / DashPay scalar types those changesets carry.
 # Activates `key-wallet/serde` (which transitively activates
