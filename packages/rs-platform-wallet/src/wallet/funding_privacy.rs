@@ -130,7 +130,6 @@ mod guardrail {
 
     use crate::test_support::{split_funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::core::CoreWallet;
-    use crate::wallet::core::WalletGeneration;
     use crate::PlatformWalletError;
 
     // -- static guard --------------------------------------------------------
@@ -259,7 +258,7 @@ mod guardrail {
     /// rather than silently reaching into a second domain.
     #[tokio::test]
     async fn no_spend_entry_point_unions_by_default() {
-        let (wm, wallet_id, signer) =
+        let (wm, wallet_id, generation, signer) =
             split_funded_wallet_manager(BIP44_DUFFS, COINJOIN_DUFFS).await;
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let core = CoreWallet::new(
@@ -267,7 +266,7 @@ mod guardrail {
             wm,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            Arc::new(WalletGeneration::new()),
+            generation,
         );
         let payment = core
             .build_signed_payment(
@@ -295,7 +294,8 @@ mod guardrail {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
         // 0.09 DASH BIP44, 0.2 DASH CoinJoin; take 0.15 DASH from CoinJoin.
-        let (wm, wallet_id, signer) = split_funded_wallet_manager(9_000_000, 20_000_000).await;
+        let (wm, wallet_id, generation, signer) =
+            split_funded_wallet_manager(9_000_000, 20_000_000).await;
 
         let (bip44_ops, coinjoin_ops, coinjoin_path) = {
             let guard = wm.read().await;
@@ -331,7 +331,7 @@ mod guardrail {
             wm,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            Arc::new(WalletGeneration::new()),
+            generation,
         );
         let payment = core
             .build_signed_payment(
