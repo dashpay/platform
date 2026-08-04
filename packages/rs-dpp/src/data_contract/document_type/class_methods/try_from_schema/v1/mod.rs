@@ -65,10 +65,12 @@ impl DocumentTypeV1 {
         validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        // The one version read left in the parser generations. See the doc
-        // comment above: this entry point backs generation 1 (schema 0) and
-        // generation 2 (schema 1 at PV12, schema 2 at PV13), and the
-        // `keeps*History` flags activate on the schema-2 half of that range.
+        // The version reads left in the parser generations live here and
+        // nowhere else. See the doc comment above: this entry point backs
+        // generation 1 (schema 0) and generation 2 (schema 1 at PV12,
+        // schema 2 from PV13 on), so the grammar admissions that flip
+        // inside that range — `keeps*History` at schema 2, count indexes
+        // at PV12 — are computed here and passed down as plain booleans.
         let document_type_schema_version = platform_version
             .dpp
             .contract_versions
@@ -90,6 +92,7 @@ impl DocumentTypeV1 {
             &common::ParserGeneration {
                 document_type_schema_version,
                 admit_history: document_type_schema_version >= 2,
+                admit_count_indexes: platform_version.protocol_version >= 12,
                 meta_schema_method_name: "DocumentTypeV1::try_from_schema (document_type_schema)",
                 // RANKED: generation 1 predates the ranked aggregates entirely
                 // — its meta-schema table names 0, 1 and 2 only, its index
@@ -107,7 +110,6 @@ impl DocumentTypeV1 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::DocumentTypeV0;
     use assert_matches::assert_matches;
     use platform_value::platform_value;
 
@@ -629,13 +631,14 @@ mod tests {
             let config = DataContractConfig::default_for_version(platform_version)
                 .expect("should create a default config");
 
-            let result = DocumentTypeV0::try_from_schema(
+            let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
                 1,
                 config.version(),
                 "invalid name",
                 schema.clone(),
                 None,
+                &BTreeMap::new(),
                 &config,
                 true,
                 &mut vec![],
