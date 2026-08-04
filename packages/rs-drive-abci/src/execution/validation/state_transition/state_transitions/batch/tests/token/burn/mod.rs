@@ -3956,9 +3956,6 @@ mod token_burn_tests {
         // PV13 genesis registers the document history contract and stores the
         // larger DPNS v2 schema, which changes the contracts-subtree node
         // sizes and therefore the byte-billed group-action contract reads.
-        // PROTOCOL_VERSION_14: 4_367_880 (up a further 9_000) — PV14 runs on
-        // GROVE_V4, whose batch cleanup gates charge an extra stored-element
-        // read per overwrite-capable / delete-tree op.
         run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             4_367_880,

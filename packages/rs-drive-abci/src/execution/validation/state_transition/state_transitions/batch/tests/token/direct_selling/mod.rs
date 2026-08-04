@@ -22,10 +22,6 @@ mod token_selling_tests {
         // PV13 genesis registers the document history contract and stores the
         // larger DPNS v2 schema, which changes the contracts-subtree node
         // sizes and therefore the byte-billed contract reads.
-        // PROTOCOL_VERSION_14: a further 3_680 credits in fees (balance down
-        // from 699_868_073_580) — PV14 runs on GROVE_V4, whose batch cleanup
-        // gates charge an extra stored-element read per overwrite-capable /
-        // delete-tree op.
         run_successful_direct_purchase_single_price_at_protocol_version(
             PlatformVersion::latest().protocol_version,
             699_868_073_580,

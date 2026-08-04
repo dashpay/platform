@@ -36,9 +36,7 @@ mod dpns_tests {
     ///
     /// Delta vs PV12: 6_010_380 - 5_978_080 = 32_300 credits = T1 + T2
     /// query costs across 3 subdomain creates (~10,767 per transition,
-    /// or ~5,383 per query). The latest-version pin above sits a further
-    /// 4_000 credits higher: PV14 runs on GROVE_V4, whose overwrite
-    /// inspection charges an extra stored-element read.
+    /// or ~5,383 per query).
     #[tokio::test]
     async fn test_dpns_contract_references_with_no_contested_unique_index_protocol_version_11() {
         run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
