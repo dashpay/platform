@@ -110,6 +110,12 @@ pub(super) struct ParserGeneration {
     /// of this generation's grammar. When `false` they are ignored entirely,
     /// exactly as a node that predated them did.
     pub admit_history: bool,
+    /// Whether `countable` / `rangeCountable` index features are admitted.
+    /// They require GroveDB tree variants and query primitives (CountTree /
+    /// ProvableCountTree / NonCounted / AggregateCountOnRange) that only
+    /// exist from protocol v12 onward, so the driver passes `false` below
+    /// that boundary and the index is rejected with `UnsupportedFeatureError`.
+    pub admit_count_indexes: bool,
     /// Method name reported by the `UnknownVersionMismatch` raised for an
     /// unknown `document_type_schema`. Differs per generation, so it is a
     /// parameter rather than a constant.
@@ -487,20 +493,13 @@ pub(super) fn parse_document_type_core(
 
                     #[cfg(feature = "validation")]
                     if full_validation {
-                        // `countable` and `rangeCountable` index features
-                        // require GroveDB tree variants and query primitives
-                        // (CountTree / ProvableCountTree / NonCounted /
-                        // AggregateCountOnRange) that only exist from
-                        // protocol v12 onward. NOTE: at protocol v12+ the
-                        // dispatch routes to `try_from_schema_v2`, but v2
-                        // delegates to V1's parser internally for the
-                        // shared core — so this body IS reached at v12+
-                        // and the `< 12` check is load-bearing, not
-                        // defense-in-depth. Without it, v12 contracts
-                        // with countable / range_countable indexes would
-                        // be rejected here.
-                        if index.countable.is_countable() && platform_version.protocol_version < 12
-                        {
+                        // This check is load-bearing, not defense-in-depth:
+                        // v2 delegates to V1's parser internally for the
+                        // shared core, so this body serves both sides of
+                        // the count-index boundary and the driver's
+                        // `admit_count_indexes` decides which side we are
+                        // on.
+                        if index.countable.is_countable() && !generation.admit_count_indexes {
                             return Err(ProtocolError::ConsensusError(Box::new(
                                 UnsupportedFeatureError::new(
                                     "count index".to_string(),
@@ -509,7 +508,7 @@ pub(super) fn parse_document_type_core(
                                 .into(),
                             )));
                         }
-                        if index.range_countable && platform_version.protocol_version < 12 {
+                        if index.range_countable && !generation.admit_count_indexes {
                             return Err(ProtocolError::ConsensusError(Box::new(
                                 UnsupportedFeatureError::new(
                                     "range-countable index".to_string(),
