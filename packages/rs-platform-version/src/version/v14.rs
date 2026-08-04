@@ -18,7 +18,7 @@ use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::D
 use crate::version::drive_abci_versions::drive_abci_method_versions::v9::DRIVE_ABCI_METHOD_VERSIONS_V9;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v9::DRIVE_ABCI_VALIDATION_VERSIONS_V9;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
@@ -54,6 +54,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// unenforced grovedb batch guard) simply gets `CountSumTree` value trees
 /// for values first seen at v14+, which readers treat identically.
 ///
+/// `DRIVE_ABCI_VALIDATION_VERSIONS_V10` bumps
+/// `document_create_transition_structure_validation` to v1, which requires a
+/// document create transition's prefunded voting balance to name the same
+/// contested vote poll the document itself resolves to. Up to v13 the index
+/// name in that field was accepted as given while document insertion always
+/// used the document type's contested index, so a submitter could fund,
+/// register and resolve a contest under a vote poll describing a different
+/// index than the one the contest was actually created on, or open a contest
+/// for a document that is not a contested resource at all.
+///
 /// Everything else matches v13.
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
@@ -61,7 +71,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V9,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested create transitions must name the contested index they resolve to
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

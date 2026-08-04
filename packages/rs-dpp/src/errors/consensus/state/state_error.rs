@@ -37,8 +37,10 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
+use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -95,6 +97,12 @@ pub enum StateError {
     DocumentContestDocumentWithSameIdAlreadyPresentError(
         DocumentContestDocumentWithSameIdAlreadyPresentError,
     ),
+
+    #[error(transparent)]
+    DocumentContestIndexMismatchError(DocumentContestIndexMismatchError),
+
+    #[error(transparent)]
+    DocumentContestNotRequiredError(DocumentContestNotRequiredError),
 
     #[error(transparent)]
     DocumentNotFoundError(DocumentNotFoundError),
