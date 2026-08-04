@@ -71,10 +71,11 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
     /**
      * Build + sign a standard L1 payment funded from ONE of the wallet's
      * signable funds accounts, WITHOUT broadcasting. Returns the packed native
-     * result (`u64 fee, u64 change,` then the signed tx bytes, big-endian) —
-     * decoded by [ManagedPlatformWallet.buildSignedPayment]. See that method
-     * for the full contract; drive this through it (it serializes concurrent
-     * builds), not directly.
+     * result (`u64 fee, u64 change, u64 reservationHandle,` then the signed tx
+     * bytes, big-endian) — decoded by
+     * [ManagedPlatformWallet.buildSignedPayment]. See that method for the full
+     * contract; drive this through it (it serializes concurrent builds), not
+     * directly.
      */
     internal fun buildSignedPayment(
         outputsBlob: ByteArray,
@@ -92,12 +93,22 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
 
     /**
      * Release the UTXO reservation a [buildSignedPayment] call took, for a
-     * build that will not be broadcast. See
-     * [ManagedPlatformWallet.releasePaymentReservation] for the full contract;
-     * drive this through it, not directly.
+     * build that will not be broadcast. [reservationHandle] must be the handle
+     * that build returned — it is what makes the release owner-guarded. See
+     * [ManagedPlatformWallet.releasePaymentReservation] for the full contract
+     * (including why this must NOT be called after a broadcast); drive this
+     * through it, not directly.
      */
-    internal fun releasePaymentReservation(txBytes: ByteArray, fundingPath: String?) =
-        WalletManagerNative.coreWalletReleasePaymentReservation(handle, txBytes, fundingPath)
+    internal fun releasePaymentReservation(
+        txBytes: ByteArray,
+        fundingPath: String?,
+        reservationHandle: Long,
+    ) = WalletManagerNative.coreWalletReleasePaymentReservation(
+        handle,
+        txBytes,
+        fundingPath,
+        reservationHandle,
+    )
 
     override fun close() {
         cleanable.clean()
