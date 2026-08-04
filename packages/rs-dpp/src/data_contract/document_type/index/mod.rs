@@ -1199,6 +1199,30 @@ impl Index {
             ));
         }
 
+        // `nullSearchable: false` suppresses the terminal reference for a
+        // document that leaves the indexed property out — but the document
+        // index walker has already created that document's value tree by the
+        // time the terminal handler declines. Under a ranked index that value
+        // tree is an entry of a grovedb indexed primary, so the secondary
+        // mirrors it as a group whose aggregates are all zero: an
+        // authenticated TOP/BOTTOM answer would contain a group the index is
+        // supposed to exclude, with no document behind it. `nullSearchable`
+        // is only ever `false` when the contract says so explicitly — the
+        // default is `true` — and under `true` the null documents get their
+        // real reference and form a legitimate rankable group, which is the
+        // combination authors actually want.
+        if (ranked_countable || ranked_summable || ranked_averageable) && !null_searchable {
+            return Err(DataContractError::InvalidContractStructure(
+                "ranked aggregates are not supported with nullSearchable: false: a \
+                 document missing the indexed property still creates the null group's \
+                 value tree, but its reference is suppressed, so the ranking would \
+                 expose a phantom group with zero aggregates and no documents behind \
+                 it. Leave nullSearchable at its default (true), where documents with \
+                 a null value form a real, rankable group"
+                    .to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
@@ -2394,6 +2418,113 @@ mod tests {
             result.is_err(),
             "TryFrom is the pre-meta-schema-v3 grammar and must reject ranked keys"
         );
+    }
+
+    /// The three range/ranked flag pairs that make a single-property index
+    /// legally rankable, one per axis. Used by the `nullSearchable` tests so
+    /// each axis is checked on its own rather than through the Avg superset.
+    fn ranked_axis_fixtures() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
+        vec![
+            (
+                "rankedCountable",
+                vec![
+                    ("countable", Value::Text("countable".to_string())),
+                    ("rangeCountable", Value::Bool(true)),
+                    ("rankedCountable", Value::Bool(true)),
+                ],
+            ),
+            (
+                "rankedSummable",
+                vec![
+                    ("summable", Value::Text("score".to_string())),
+                    ("rangeSummable", Value::Bool(true)),
+                    ("rankedSummable", Value::Bool(true)),
+                ],
+            ),
+            (
+                "rankedAverageable",
+                vec![
+                    ("averageable", Value::Text("score".to_string())),
+                    ("rangeAverageable", Value::Bool(true)),
+                    ("rankedAverageable", Value::Bool(true)),
+                ],
+            ),
+        ]
+    }
+
+    /// `nullSearchable: false` next to any ranking axis is refused at parse
+    /// time. The write path would still create the null group's value tree —
+    /// that happens in the index walker, before the terminal handler decides
+    /// to suppress the reference — so grovedb's secondary would carry a group
+    /// with zero aggregates and no documents behind it, and an authenticated
+    /// TOP/BOTTOM answer would include a group the index excludes.
+    #[test]
+    fn test_index_try_from_ranked_with_explicit_null_searchable_false_rejected() {
+        for (axis, mut extra) in ranked_axis_fixtures() {
+            extra.push(("nullSearchable", Value::Bool(false)));
+            let index_map = ranked_index_map(extra);
+            let result = Index::try_from_value_map(index_map.as_slice(), true);
+            assert!(
+                result.is_err(),
+                "{axis} with nullSearchable: false must be rejected"
+            );
+            let msg = format!("{:?}", result.unwrap_err());
+            assert!(
+                msg.contains("nullSearchable") && msg.contains("phantom"),
+                "error must name nullSearchable and explain the phantom group; got {msg}"
+            );
+        }
+    }
+
+    /// Omitting the key leaves the default (`true`), which is the shape the
+    /// rule permits: null documents get their real reference and form a
+    /// legitimate rankable group.
+    #[test]
+    fn test_index_try_from_ranked_without_null_searchable_key_accepted() {
+        for (axis, extra) in ranked_axis_fixtures() {
+            let index_map = ranked_index_map(extra);
+            let index = Index::try_from_value_map(index_map.as_slice(), true)
+                .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
+            assert!(
+                index.null_searchable,
+                "{axis}: the absent key must still default to true"
+            );
+        }
+    }
+
+    /// Spelling out the default explicitly is equally fine — the rule is
+    /// about the resolved value, and `true` is the safe one.
+    #[test]
+    fn test_index_try_from_ranked_with_explicit_null_searchable_true_accepted() {
+        for (axis, mut extra) in ranked_axis_fixtures() {
+            extra.push(("nullSearchable", Value::Bool(true)));
+            let index_map = ranked_index_map(extra);
+            let index = Index::try_from_value_map(index_map.as_slice(), true).unwrap_or_else(|e| {
+                panic!("{axis} with an explicit nullSearchable: true must parse: {e:?}")
+            });
+            assert!(index.null_searchable);
+        }
+    }
+
+    /// The restriction is scoped to ranked indexes: `nullSearchable: false`
+    /// on an index without a ranking axis keeps working exactly as before,
+    /// including on the aggregating (range) layouts the ranking axes extend.
+    #[test]
+    fn test_index_try_from_non_ranked_with_null_searchable_false_still_accepted() {
+        let plain = ranked_index_map(vec![("nullSearchable", Value::Bool(false))]);
+        let index = Index::try_from_value_map(plain.as_slice(), true)
+            .expect("nullSearchable: false on a plain index must still parse");
+        assert!(!index.null_searchable);
+
+        let aggregating = ranked_index_map(vec![
+            ("averageable", Value::Text("score".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("nullSearchable", Value::Bool(false)),
+        ]);
+        let index = Index::try_from_value_map(aggregating.as_slice(), true)
+            .expect("nullSearchable: false on a range-averageable index must still parse");
+        assert!(!index.null_searchable);
+        assert!(!index.ranked_averageable);
     }
 
     #[test]

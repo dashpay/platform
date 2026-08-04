@@ -855,6 +855,179 @@ fn compound_ranked_index_contract_is_rejected_at_parse_time() {
     }
 }
 
+/// Build a `visit` contract whose single-property `rankedCountable` index
+/// spells `nullSearchable` out as `null_searchable`, so the rejection can be
+/// exercised from the contract path rather than from the index parser alone.
+fn try_build_null_searchable_ranked_contract(
+    null_searchable: Option<bool>,
+) -> Result<DataContract, dpp::ProtocolError> {
+    use dpp::data_contract::DataContractFactory;
+    use dpp::platform_value::platform_value;
+    use dpp::tests::utils::generate_random_identifier_struct;
+
+    let factory =
+        DataContractFactory::new(PROTOCOL_VERSION_V14).expect("expected to create factory");
+
+    let mut index_entry: Vec<(Value, Value)> = vec![
+        (
+            Value::Text("name".to_string()),
+            Value::Text("byRestaurantVisits".to_string()),
+        ),
+        (
+            Value::Text("properties".to_string()),
+            Value::Array(vec![Value::Map(vec![(
+                Value::Text(GROUP_PROPERTY.to_string()),
+                Value::Text("asc".to_string()),
+            )])]),
+        ),
+        (
+            Value::Text("countable".to_string()),
+            Value::Text("countable".to_string()),
+        ),
+        (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+        (
+            Value::Text("rankedCountable".to_string()),
+            Value::Bool(true),
+        ),
+    ];
+    if let Some(null_searchable) = null_searchable {
+        index_entry.push((
+            Value::Text("nullSearchable".to_string()),
+            Value::Bool(null_searchable),
+        ));
+    }
+
+    let schemas = platform_value!({
+        "visit": {
+            "type": "object",
+            "documentsMutable": true,
+            "canBeDeleted": true,
+            "properties": {
+                "restaurantId": {"type": "string", "position": 0, "maxLength": 32},
+                "guests": {"type": "integer", "minimum": 1, "maximum": 100, "position": 1},
+            },
+            "required": ["restaurantId", "guests"],
+            "indices": Value::Array(vec![Value::Map(index_entry)]),
+            "additionalProperties": false,
+        }
+    });
+
+    factory
+        .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+        .map(|created| created.data_contract_owned())
+}
+
+/// `nullSearchable: false` on a ranked index is refused at contract-parse
+/// time (rs-dpp), and that parse gate is the *enforcement* — nothing below it
+/// re-checks the combination.
+///
+/// What the gate prevents: with `nullSearchable: false`, a document that
+/// leaves the indexed property out still gets its null group's value tree
+/// created by the index walker
+/// (`add_indices_for_top_index_level_for_contract_operations_v2` inserts it
+/// unconditionally, before recursing), and only then does the terminal
+/// handler decline to write the reference
+/// (`add_reference_for_index_level_for_contract_operations_v0`'s
+/// `all_fields_null && !should_insert_with_all_null` early return). Under a
+/// ranked index that value tree is an entry of a grovedb indexed primary, so
+/// the secondary mirror records it as a group with zero aggregates — an
+/// authenticated TOP/BOTTOM answer would contain a group the index is
+/// supposed to exclude, with no document behind it.
+///
+/// The same shape is what a ranked `[a]` sharing its prefix with `[a, b]`
+/// would hit: the null group's value tree additionally hosts the compound
+/// index's `b` continuation, which keeps the phantom group alive even after
+/// every real document is gone.
+#[test]
+fn null_searchable_false_on_a_ranked_index_is_rejected_at_parse_time() {
+    let error = try_build_null_searchable_ranked_contract(Some(false))
+        .expect_err("nullSearchable: false on a ranked index must be rejected at parse time");
+    let message = error.to_string();
+    assert!(
+        message.contains("nullSearchable") && message.contains("phantom"),
+        "expected the phantom-group rationale, got: {message}"
+    );
+
+    // Both accepted spellings of the default.
+    try_build_null_searchable_ranked_contract(None)
+        .expect("a ranked index with no nullSearchable key must register");
+    try_build_null_searchable_ranked_contract(Some(true))
+        .expect("a ranked index with an explicit nullSearchable: true must register");
+}
+
+/// The shape the parse gate above rules out, pinned as a struct literal —
+/// the parser is the only thing standing between this combination and the
+/// phantom group, so it is worth stating exactly what makes it one.
+///
+/// Both halves have to be true at once for a phantom to exist, and they are:
+///
+/// * `should_insert_with_all_null: false` — the terminal handler suppresses
+///   the null group's reference, so the group has no document behind it;
+/// * the level still resolves to an *indexed* tree, so grovedb mirrors every
+///   one of its children — including that document-less null group — into the
+///   ranked secondary.
+///
+/// With `null_searchable: true` the first half flips: the null documents get
+/// a real reference and the group becomes a legitimate rankable one. That is
+/// the only suppression path into this level — the terminal handler's early
+/// return is the sole place a reference is skipped, and for a single-property
+/// index `all_fields_null` is exactly "this property is null" — which is why
+/// the parse gate closes the hole completely rather than narrowing it.
+#[test]
+fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
+    use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
+    use dpp::data_contract::document_type::{Index, IndexCountability, IndexLevel, IndexProperty};
+    use grovedb::element::IndexAxis;
+    use grovedb::TreeType;
+
+    let ranked_index = |null_searchable: bool| Index {
+        name: "byRestaurantVisits".to_string(),
+        properties: vec![IndexProperty {
+            name: GROUP_PROPERTY.to_string(),
+            ascending: true,
+        }],
+        unique: false,
+        null_searchable,
+        contested_index: None,
+        countable: IndexCountability::Countable,
+        range_countable: true,
+        summable: None,
+        range_summable: false,
+        ranked_countable: true,
+        ranked_summable: false,
+        ranked_averageable: false,
+    };
+
+    for null_searchable in [false, true] {
+        let index = ranked_index(null_searchable);
+        let index_structure = IndexLevel::try_from_indices([&index], "visit", platform_version())
+            .expect("index level must build from a single-property ranked index");
+        let terminal_level = index_structure
+            .sub_levels()
+            .get(GROUP_PROPERTY)
+            .expect("terminal level exists");
+        let type_info = terminal_level
+            .has_index_with_type()
+            .expect("the ranked index terminates here");
+
+        // The level is indexed either way — that is the ranking axis doing
+        // its job, and it is why every child of this level reaches the
+        // secondary mirror.
+        let (tree_type, axes) = property_name_tree_type_and_ranked_axes(Some(type_info))
+            .expect("terminal resolution must succeed");
+        assert_eq!(tree_type, TreeType::ProvableCountIndexedTree);
+        assert_eq!(axes, vec![IndexAxis::Count]);
+
+        // ...and this is the half the parse gate removes: without it the
+        // null group's value tree exists with no reference inside it.
+        assert_eq!(
+            type_info.should_insert_with_all_null, null_searchable,
+            "the terminal handler suppresses the null group's reference exactly when \
+             null_searchable is false"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Contract update
 // ---------------------------------------------------------------------------

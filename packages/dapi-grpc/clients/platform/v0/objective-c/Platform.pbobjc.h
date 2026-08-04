@@ -2648,21 +2648,20 @@ typedef GPB_ENUM(GetDocumentsRequest_HavingRanking_FieldNumber) {
  * Cross-group ranking primitive on the right side of a
  * `HavingClause`. The ranking is computed over the set of
  * group-aggregate results (one per `GROUP BY` row), so
- * `HAVING COUNT(*) EQ MAX` selects groups whose count equals
- * the maximum count across all groups, and
  * `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
  * among the five largest. Concise way to express top-N /
  * bottom-N selection without window functions or
  * `ORDER BY` + `LIMIT`.
  *
- * **Operator compatibility**:
- * - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
- *   with `TOP` / `BOTTOM` only when `n=1` (the single largest /
- *   smallest); evaluation rejects other combinations as
- *   ambiguous.
- * - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
- * - `BETWEEN*` doesn't compose meaningfully with rankings and
- *   is rejected at evaluation time.
+ * **Operator compatibility** (as evaluated from protocol v14):
+ * - `IN` with `TOP(n)` / `BOTTOM(n)` — set membership, the
+ *   canonical form.
+ * - `=` with `TOP(1)` / `BOTTOM(1)` — the positional "single
+ *   best- / worst-ranked group".
+ * - every other operator against a ranking (`!=`, `<`, `<=`,
+ *   `>`, `>=`, `BETWEEN*`) is rejected at routing time: none of
+ *   them names a bounded prefix of the ranking the axis
+ *   secondary can walk.
  *
  * **`MIN` / `MAX` are wire-stable but rejected by evaluation**,
  * whatever the operator. They are value-based — `= MAX` selects
@@ -2956,8 +2955,12 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Start_OneOfCase) {
  * `select=COUNT, group_by=[a, b]`:
  * - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
  *
+ * `having = [<aggregate> IN TOP(n) | BOTTOM(n)]` (protocol v14+):
+ * - exactly one clause, ranking right operand, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`.
+ *
  * **Rejected shapes** (return `Unsupported`):
- * - any non-empty `having` (always — pending future server capability).
+ * - any non-empty `having` at protocol v13 and earlier.
+ * - at v14+: a `having` with more than one clause, with a `MAX` / `MIN` ranking, or with a value-comparison right operand (e.g. `AVG(x) > 4`).
  * - `select=DOCUMENTS` with non-empty `group_by`.
  * - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
  * - `select=COUNT` with `group_by.len() > 2`.
@@ -3134,13 +3137,20 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  * AND. See `HavingClause` / `HavingAggregate` for the
  * operator and aggregate-function catalogs.
  *
- * **Always rejected when non-empty** today with
- * `Unsupported("HAVING clause is not yet implemented")`. The
- * wire shape is shipped now so the future server capability
- * can land without another version bump — and so callers can
- * construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
- * requests in their builders even before the server evaluates
- * them.
+ * **Protocol v13 and earlier reject every non-empty `having`**
+ * with `Unsupported("HAVING clause is not yet implemented")`.
+ *
+ * **From protocol v14** a single clause whose right operand is a
+ * `TOP(n)` / `BOTTOM(n)` ranking (via the `in` operator, or `=`
+ * when n = 1) is served by the ranked executor and answered in
+ * `ResultData.ranked`. Still `Unsupported` at v14: `MAX` / `MIN`
+ * rankings (they are value-based, and tied extremes are not
+ * provable — see `HavingRanking`), value-comparison right
+ * operands such as `AVG(x) > 4`, and more than one clause. The
+ * wire shape carries those forms so callers can construct full
+ * `HAVING COUNT(*) > 5 AND SUM(amount) > 100` requests in their
+ * builders, and so the remaining capabilities can land without
+ * another version bump.
  **/
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_HavingClause*> *havingArray;
 /** The number of items in @c havingArray without causing the array to be created. */
@@ -3708,9 +3718,10 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_O
 };
 
 /**
- * One group in a ranked (`HAVING … TOP(n)` / `BOTTOM(n)` /
- * `MAX` / `MIN`) result: the group's index key plus the
- * aggregate it was ranked by.
+ * One group in a ranked (`HAVING … IN TOP(n)` / `BOTTOM(n)`)
+ * result: the group's index key plus the aggregate it was ranked
+ * by. `MAX` / `MIN` never produce these entries — they are
+ * rejected at routing time, see `HavingRanking`.
  *
  * `key` is the raw index-key bytes of the GROUP BY property's
  * value — the same bytes that name the group's value tree under
@@ -3787,10 +3798,10 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntries_Field
 
 /**
  * Ranked result entries. **Entry order IS the ranking order** —
- * best-first for `TOP(n)` / `MAX`, worst-first for `BOTTOM(n)` /
- * `MIN`. Clients must not re-sort; ties (equal aggregates) come
- * back in group-key order in the direction of the walk, which is
- * descending group-key order for `TOP` / `MAX`.
+ * best-first for `TOP(n)`, worst-first for `BOTTOM(n)`. Clients
+ * must not re-sort; ties (equal aggregates) come back in
+ * group-key order in the direction of the walk, which is
+ * descending group-key order for `TOP`.
  *
  * Fewer than `n` entries is normal — the index simply has fewer
  * groups than requested — and is not an error.
@@ -3858,9 +3869,11 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
 
 /**
  * Ranked-aggregate result. Routed when the request carries a
- * `having` clause whose right operand is a `HavingRanking`
- * (`TOP(n)` / `BOTTOM(n)` / `MAX` / `MIN`) matching the
- * single `select`. Answered from the per-axis secondary of
+ * single `having` clause whose right operand is a
+ * `HavingRanking` of kind `TOP(n)` or `BOTTOM(n)` matching
+ * the single `select`; `MAX` / `MIN` rankings and
+ * value-comparison right operands return `Unsupported`
+ * instead. Answered from the per-axis secondary of
  * an indexed tree, so the index must declare the matching
  * `rankedCountable` / `rankedSummable` / `rankedAverageable`
  * keyword (meta-schema v3, protocol version 14+). Entry

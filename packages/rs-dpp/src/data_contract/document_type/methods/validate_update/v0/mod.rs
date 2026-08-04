@@ -1608,9 +1608,14 @@ mod tests {
             let schema = platform_value!({
                 "type": "object",
                 "properties": {
+                    // 32 rather than the generic 63-character index limit:
+                    // an index declaring a ranking axis bounds its group key
+                    // more tightly (59 characters on the Avg axis), and both
+                    // halves of these tests have to build the same doctype
+                    // shape with only `rankedAverageable` differing.
                     "restaurantId": {
                         "type": "string",
-                        "maxLength": 63,
+                        "maxLength": 32,
                         "position": 0,
                     },
                     "grade": {

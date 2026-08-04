@@ -98,6 +98,151 @@ use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::{Identifier, Value};
 
+/// grovedb's ceiling on the key of an entry stored directly under an
+/// *indexed* tree's primary when the tree carries only the Count and/or Sum
+/// axes (`grovedb::operations::indexed_tree::MAX_CIDX_ITEM_KEY_LEN`).
+///
+/// Those two axes key their ordered secondary by `sort_key ‖ item_key` with
+/// an 8-byte sort key, and Merk requires every key to stay below 256 bytes,
+/// which leaves `255 - 8 = 247` bytes for the item key. GroveDB enforces it
+/// on both write paths (the dedicated insert and the batch pre-state check),
+/// so a document whose index key exceeded it would abort the whole batch.
+#[cfg(feature = "validation")]
+const MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH: u16 = 247;
+
+/// The same ceiling for a ranked tree whose configured axes include Avg
+/// (`grovedb::operations::indexed_tree::MAX_AVG_INDEXED_ITEM_KEY_LEN`).
+///
+/// The avg secondary sorts on a 16-byte fixed-point key rather than an
+/// 8-byte one, so the item key gets 8 fewer bytes: `255 - 16 = 239`.
+#[cfg(feature = "validation")]
+const MAX_RANKED_AVG_INDEX_KEY_LENGTH: u16 = 239;
+
+/// Worst-case bytes one character of a string property can occupy once it has
+/// been encoded into an index key.
+///
+/// `DocumentPropertyType::encode_value_for_tree_keys` stores a string as its
+/// raw UTF-8 bytes, and a single UTF-8 scalar takes at most 4 bytes — which
+/// is exactly the factor `DocumentPropertyType::max_byte_size` applies to
+/// `maxLength`, and the factor the generic
+/// [`MAX_INDEXED_STRING_PROPERTY_LENGTH`] was derived from
+/// (`floor(255 / 4) = 63`).
+#[cfg(feature = "validation")]
+const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
+
+/// The strictest item-key ceiling the index's declared ranking axes impose,
+/// or `None` when the index declares no ranking axis at all (in which case
+/// only the generic index-key limits apply).
+///
+/// Avg wins when present because its wider sort key leaves the least room;
+/// the three flags are independent, so an index may carry Avg alongside
+/// Count and/or Sum and still has to satisfy the tightest of them.
+#[cfg(feature = "validation")]
+fn ranked_index_key_length_limit(index: &Index) -> Option<u16> {
+    if index.ranked_averageable {
+        Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
+    } else if index.ranked_countable || index.ranked_summable {
+        Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
+    } else {
+        None
+    }
+}
+
+/// Reject an index property whose *worst-case* encoded key would not fit
+/// under the ceiling its index's ranking axes impose.
+///
+/// A ranked index turns the property-name tree into a grovedb indexed tree
+/// whose children — the per-group value trees, keyed by the encoded property
+/// value — are mirrored into an ordered secondary keyed by
+/// `sort_key ‖ item_key`. The generic index-key limits (255 encoded bytes for
+/// a byte array, 63 characters for a string) were derived against Merk's bare
+/// 256-byte key ceiling and are therefore too loose here by the width of the
+/// sort key. Contracts must fail at registration rather than let a document
+/// insert abort the block's batch on a key grovedb refuses to mirror.
+///
+/// The worst case is derived exactly the way every other size-sensitive path
+/// derives it, through [`DocumentPropertyType::max_byte_size`]: a string of
+/// `maxLength` L characters can reach `4 * L` bytes, a byte array of
+/// `maxItems` N reaches N, and every other indexable type has a fixed
+/// encoding of at most 32 bytes (identifiers) that can never reach a ceiling
+/// in the 239..=247 range.
+#[cfg(feature = "validation")]
+fn validate_ranked_index_property_key_length(
+    document_type_name: &str,
+    index: &Index,
+    index_property_name: &str,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = ranked_index_key_length_limit(index) else {
+        return Ok(());
+    };
+
+    // `None` is only produced by the array and object types, which the
+    // property-type check right after this one rejects outright with the
+    // error that actually explains the problem.
+    let Some(worst_case_key_length) = property_type.max_byte_size(platform_version)? else {
+        return Ok(());
+    };
+
+    if worst_case_key_length <= limit {
+        return Ok(());
+    }
+
+    // The sort-key width is what the ceiling gives up against Merk's
+    // 255-byte maximum key, so it reads straight back out of the limit.
+    let sort_key_width = 255 - limit;
+
+    let (constraint_name, reason) = match property_type {
+        DocumentPropertyType::String(_) => (
+            "maxLength",
+            format!(
+                "should be less or equal {} on an index declaring a ranked axis: the index key \
+                 is the property's UTF-8 bytes (worst case {} bytes per character), and grovedb \
+                 caps a ranked group key at {} bytes because the ordered secondary is keyed by a \
+                 {}-byte sort key followed by the group key and Merk keys must stay below 256 \
+                 bytes",
+                limit / INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER,
+                INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER,
+                limit,
+                sort_key_width,
+            ),
+        ),
+        DocumentPropertyType::ByteArray(_) => (
+            "maxItems",
+            format!(
+                "should be less or equal {limit} on an index declaring a ranked axis: grovedb \
+                 caps a ranked group key at {limit} bytes because the ordered secondary is keyed \
+                 by a {sort_key_width}-byte sort key followed by the group key and Merk keys must \
+                 stay below 256 bytes",
+            ),
+        ),
+        // Unreachable for every type the parser admits here — they all
+        // encode to at most 32 bytes — but stated rather than assumed so a
+        // future variable-width type cannot slip past unbounded.
+        _ => (
+            "maximum encoded size",
+            format!(
+                "the property's worst-case encoded index key is {worst_case_key_length} bytes, \
+                 but an index declaring a ranked axis caps its group key at {limit} bytes (the \
+                 ordered secondary is keyed by a {sort_key_width}-byte sort key followed by the \
+                 group key and Merk keys must stay below 256 bytes)",
+            ),
+        ),
+    };
+
+    Err(ProtocolError::ConsensusError(Box::new(
+        InvalidIndexedPropertyConstraintError::new(
+            document_type_name.to_owned(),
+            index.name.to_owned(),
+            index_property_name.to_owned(),
+            constraint_name.to_string(),
+            reason,
+        )
+        .into(),
+    )))
+}
+
 /// The shared parsing core of generation 3 — a copy of the generation-1
 /// core (`v1/mod.rs`), private to this module. It builds the
 /// `DocumentTypeV1` value that [`try_from_schema_generation_3`]
@@ -587,6 +732,24 @@ fn try_from_schema_generation_3_core(
                                             .into(),
                                         ))
                                     })?;
+
+                                // A ranking axis tightens the generic key
+                                // limits below: the property's encoded value
+                                // becomes the item key of a grovedb indexed
+                                // tree, whose ordered secondary prefixes it
+                                // with a sort key. Checked before the generic
+                                // limits so a ranked index reports the bound
+                                // that actually applies to it. System
+                                // properties skip this the same way they skip
+                                // the generic limits — every one of them
+                                // encodes to a fixed 32 bytes or fewer.
+                                validate_ranked_index_property_key_length(
+                                    name,
+                                    &index,
+                                    index_property.name.as_str(),
+                                    &property_definition.property_type,
+                                    platform_version,
+                                )?;
 
                                 // Validate indexed property type
                                 match &property_definition.property_type {
@@ -1378,7 +1541,21 @@ mod tests {
     /// `if`/`then` conditionals demand the literal range keys, and the
     /// `dependentRequired` chain covers the rest
     /// (`rangeAverageable` → `averageable`).
+    ///
+    /// `restaurantId` is capped at 32 characters — comfortably inside the
+    /// ranked key bound on every axis, so these grammar tests exercise the
+    /// keywords and nothing else. The bound itself is exercised by
+    /// [`ranked_review_schema_with_max_length`] below.
     fn ranked_review_schema(ranked_keys: Vec<(&str, bool)>) -> Value {
+        ranked_review_schema_with_max_length(32, ranked_keys)
+    }
+
+    /// [`ranked_review_schema`] with the indexed string property's
+    /// `maxLength` spelled out, for the ranked key-length boundary tests.
+    fn ranked_review_schema_with_max_length(
+        max_length: u32,
+        ranked_keys: Vec<(&str, bool)>,
+    ) -> Value {
         let mut index_entry: Vec<(Value, Value)> = vec![
             (
                 Value::Text("name".to_string()),
@@ -1414,7 +1591,7 @@ mod tests {
                 platform_value!({
                     "restaurantId": {
                         "type": "string",
-                        "maxLength": 63,
+                        "maxLength": max_length,
                         "position": 0,
                     },
                     "grade": {
@@ -1688,5 +1865,294 @@ mod tests {
             msg.contains("rankedCountable") && msg.contains("rangeCountable"),
             "error must name both flags; got {msg}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ranked index key-length bounds
+    // -----------------------------------------------------------------------
+    //
+    // A ranked index makes the property-name tree a grovedb *indexed* tree
+    // whose children — the per-group value trees, keyed by the encoded
+    // property value — are mirrored into an ordered secondary keyed by
+    // `sort_key ‖ item_key`. Merk keys must stay below 256 bytes, so grovedb
+    // caps the item key at `255 - sort_key_width`: 247 for the 8-byte Count
+    // and Sum sort keys, 239 for the 16-byte Avg one. The generic index-key
+    // limits (255 bytes / 63 characters) were derived against the bare 256
+    // ceiling and are too loose by exactly the sort-key width, so the parser
+    // has to tighten them or a contract would register and then abort the
+    // batch of every document insert carrying an oversized key.
+    //
+    // The character bounds follow from the same worst case
+    // `DocumentPropertyType::max_byte_size` uses — 4 UTF-8 bytes per
+    // character, the very factor the generic 63 was derived from
+    // (`floor(255 / 4)`):
+    //
+    //   Count/Sum: floor(247 / 4) = 61 characters (61 * 4 = 244 ✓, 62 * 4 = 248 ✗)
+    //   Avg:       floor(239 / 4) = 59 characters (59 * 4 = 236 ✓, 60 * 4 = 240 ✗)
+
+    /// A doctype whose indexed `restaurantId` property is given verbatim and
+    /// whose single index carries `index_extras` on top of the mandatory
+    /// name/properties pair. `grade` is always present so the summable and
+    /// averageable layouts have an integer to aggregate.
+    fn ranked_bound_schema(indexed_property: Value, index_extras: Vec<(&str, Value)>) -> Value {
+        let mut index_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        index_entry.extend(
+            index_extras
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Map(vec![
+                    (Value::Text("restaurantId".to_string()), indexed_property),
+                    (
+                        Value::Text("grade".to_string()),
+                        platform_value!({
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 1,
+                        }),
+                    ),
+                ]),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    fn string_property(max_length: u32) -> Value {
+        platform_value!({
+            "type": "string",
+            "maxLength": max_length,
+            "position": 0,
+        })
+    }
+
+    fn byte_array_property(max_items: u32) -> Value {
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "maxItems": max_items,
+            "position": 0,
+        })
+    }
+
+    /// Count axis only — an 8-byte sort key, so the 247-byte ceiling.
+    fn count_ranked_extras() -> Vec<(&'static str, Value)> {
+        vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ]
+    }
+
+    /// Sum axis only — also an 8-byte sort key, same 247-byte ceiling.
+    fn sum_ranked_extras() -> Vec<(&'static str, Value)> {
+        vec![
+            ("summable", Value::Text("grade".to_string())),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+        ]
+    }
+
+    /// Avg axis — a 16-byte sort key, so the tighter 239-byte ceiling.
+    fn avg_ranked_extras() -> Vec<(&'static str, Value)> {
+        vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]
+    }
+
+    fn parse_bound(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
+        parse_with(schema, PlatformVersion::latest(), true)
+    }
+
+    /// Count-ranked and sum-ranked indexes share the 8-byte sort key, so both
+    /// stop the indexed string at 61 characters.
+    #[test]
+    fn ranked_count_and_sum_axes_bound_an_indexed_string_at_61_characters() {
+        for (axis, extras) in [
+            ("rankedCountable", count_ranked_extras()),
+            ("rankedSummable", sum_ranked_extras()),
+        ] {
+            parse_bound(ranked_bound_schema(string_property(61), extras.clone()))
+                .unwrap_or_else(|e| panic!("{axis}: 61 * 4 = 244 <= 247 must be accepted: {e:?}"));
+
+            let error = parse_bound(ranked_bound_schema(string_property(62), extras))
+                .expect_err("62 * 4 = 248 > 247 must be rejected");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
+                "{axis}: the error must name maxLength, the 61-character bound and the \
+                 247-byte key ceiling it derives from; got {msg}"
+            );
+        }
+    }
+
+    /// The Avg axis's 16-byte sort key costs 8 more bytes, and the string
+    /// bound drops to 59 characters with it.
+    #[test]
+    fn ranked_avg_axis_bounds_an_indexed_string_at_59_characters() {
+        parse_bound(ranked_bound_schema(
+            string_property(59),
+            avg_ranked_extras(),
+        ))
+        .expect("59 * 4 = 236 <= 239 must be accepted");
+
+        let error = parse_bound(ranked_bound_schema(
+            string_property(60),
+            avg_ranked_extras(),
+        ))
+        .expect_err("60 * 4 = 240 > 239 must be rejected");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("59") && msg.contains("239"),
+            "the error must name maxLength, the 59-character bound and the 239-byte key \
+             ceiling it derives from; got {msg}"
+        );
+    }
+
+    /// Avg is strictly tighter than Count/Sum, and an index carrying Avg
+    /// *alongside* the other axes has to satisfy the tightest of them: the
+    /// 60-character string that a count-only ranked index accepts is refused
+    /// the moment the Avg axis joins.
+    #[test]
+    fn the_avg_axis_bound_wins_when_several_ranking_axes_are_declared() {
+        // Count-only accepts it...
+        parse_bound(ranked_bound_schema(
+            string_property(60),
+            count_ranked_extras(),
+        ))
+        .expect("60 characters fits the count axis's 247-byte ceiling");
+
+        // ...and adding the Avg axis to the same index refuses it.
+        // The meta-schema's `dependentRequired` chain is literal, so
+        // `rangeCountable` has to bring `countable` along explicitly even
+        // though `averageable` already implies it in effect.
+        let mut both = avg_ranked_extras();
+        both.push(("countable", Value::Text("countable".to_string())));
+        both.push(("rangeCountable", Value::Bool(true)));
+        both.push(("rankedCountable", Value::Bool(true)));
+        let error = parse_bound(ranked_bound_schema(string_property(60), both))
+            .expect_err("the Avg axis's 239-byte ceiling must win over the count axis's 247");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("239"),
+            "the strictest axis's ceiling must be the one reported; got {msg}"
+        );
+    }
+
+    /// Byte arrays are stored verbatim, so their bound is the ceiling itself:
+    /// 247 bytes on the count/sum axes, 239 once Avg is in play.
+    #[test]
+    fn ranked_axes_bound_an_indexed_byte_array_at_the_raw_ceiling() {
+        for (axis, extras, limit) in [
+            ("rankedCountable", count_ranked_extras(), 247u32),
+            ("rankedSummable", sum_ranked_extras(), 247),
+            ("rankedAverageable", avg_ranked_extras(), 239),
+        ] {
+            parse_bound(ranked_bound_schema(
+                byte_array_property(limit),
+                extras.clone(),
+            ))
+            .unwrap_or_else(|e| panic!("{axis}: exactly {limit} bytes must be accepted: {e:?}"));
+
+            let error =
+                match parse_bound(ranked_bound_schema(byte_array_property(limit + 1), extras)) {
+                    Ok(_) => panic!("{axis}: {} bytes must be rejected", limit + 1),
+                    Err(error) => error,
+                };
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("maxItems") && msg.contains(&limit.to_string()),
+                "{axis}: the error must name maxItems and the {limit}-byte ceiling; got {msg}"
+            );
+        }
+    }
+
+    /// A property whose encoding is fixed and small — an integer group key is
+    /// 8 bytes — can never reach any ranked ceiling, on any axis.
+    #[test]
+    fn a_fixed_width_indexed_property_always_fits_every_ranked_axis() {
+        let integer_property = platform_value!({
+            "type": "integer",
+            "minimum": 0_u32,
+            "maximum": 1_000_000_u32,
+            "position": 0,
+        });
+        for (axis, extras) in [
+            ("rankedCountable", count_ranked_extras()),
+            ("rankedSummable", sum_ranked_extras()),
+            ("rankedAverageable", avg_ranked_extras()),
+        ] {
+            parse_bound(ranked_bound_schema(integer_property.clone(), extras)).unwrap_or_else(
+                |e| panic!("{axis}: a fixed-width integer group key must always fit: {e:?}"),
+            );
+        }
+    }
+
+    /// The tightening is scoped to ranked indexes. Without a ranking axis the
+    /// generic limits are untouched — 63 characters and 255 bytes, both of
+    /// which a ranked index would refuse.
+    #[test]
+    fn a_non_ranked_index_keeps_the_generic_key_limits() {
+        parse_bound(ranked_bound_schema(string_property(63), vec![]))
+            .expect("63 characters is the generic string limit and must still pass");
+        let error = parse_bound(ranked_bound_schema(string_property(64), vec![]))
+            .expect_err("64 characters exceeds the generic string limit");
+        assert!(
+            format!("{error:?}").contains("63"),
+            "a non-ranked index must still report the generic 63-character limit"
+        );
+
+        parse_bound(ranked_bound_schema(byte_array_property(255), vec![]))
+            .expect("255 bytes is the generic byte-array limit and must still pass");
+        let error = parse_bound(ranked_bound_schema(byte_array_property(256), vec![]))
+            .expect_err("256 bytes exceeds the generic byte-array limit");
+        assert!(
+            format!("{error:?}").contains("255"),
+            "a non-ranked index must still report the generic 255-byte limit"
+        );
+
+        // The same aggregating (range) layout the ranking axes extend, minus
+        // the ranking: still the generic limits, since no secondary is keyed
+        // by these values.
+        let mut range_only = avg_ranked_extras();
+        range_only.retain(|(key, _)| *key != "rankedAverageable");
+        parse_bound(ranked_bound_schema(string_property(63), range_only))
+            .expect("a range-averageable index without a ranking axis keeps the generic limit");
     }
 }
