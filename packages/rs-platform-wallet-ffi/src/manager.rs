@@ -179,6 +179,30 @@ pub unsafe extern "C" fn platform_wallet_manager_persistence_capabilities(
     PlatformWalletFFIResult::ok()
 }
 
+/// Whether the manager has frozen its durable sync watermark this session
+/// (dashpay/platform#4069).
+///
+/// `true` means the wallet-event adapter dropped record-bearing events (a
+/// broadcast lag) or had a persistence `store()` rejected, so the persisted
+/// `syncedHeight` is deliberately held behind the chain tip and a rescan is
+/// pending on the next launch. Hosts poll this to surface a hard
+/// "verification failed / rescan pending" state instead of the fault being
+/// visible only in error logs.
+///
+/// The flag latches: once `true` it stays `true` for the process lifetime.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_sync_fault_detected(
+    handle: Handle,
+    out_detected: *mut bool,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_detected);
+
+    let option =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.sync_fault_detected());
+    *out_detected = unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Map the C `has_x: bool` + `x` companion-pair idiom to a Rust `Option<u32>`.
 ///
 /// `has == true` yields `Some(value)` — including `Some(0)`, kept distinct
