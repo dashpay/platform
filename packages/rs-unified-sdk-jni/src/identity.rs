@@ -1085,9 +1085,19 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_claimI
             unsafe { platform_wallet_ffi_result_free(&mut destroy) };
         }
 
-        env.byte_array_from_slice(&out_id)
-            .map(|a| a.into_raw())
-            .unwrap_or(ptr::null_mut())
+        // The claimed identity is already folded into IdentityManager and
+        // persisted, so there is nothing to release here — but a bare
+        // `unwrap_or(null)` would hand Kotlin a silent null through a non-null
+        // `ByteArray` return type, indistinguishable from success with an empty
+        // id. Raise the same native exception the sibling identity byte[]
+        // allocation failure uses (line ~564) so the caller sees a real error.
+        match env.byte_array_from_slice(&out_id) {
+            Ok(array) => array.into_raw(),
+            Err(_) => {
+                throw_sdk_exception(env, 99, "claimed identity result byte[] allocation failed");
+                ptr::null_mut()
+            }
+        }
     })
 }
 

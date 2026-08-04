@@ -114,8 +114,9 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * row per funded one-time asset-lock voucher, keyed by its 36-byte funding
  * outpoint. Durable storage here is what lets the Rust `create_invitation`
  * durability gate mint a voucher (a non-durable store could re-export the
- * same one-time key after a restart). Rows die with their wallet via the
- * `deleteWalletData` cascade.
+ * same one-time key after a restart). The `invitations` table has no foreign
+ * key to `wallets`, so rows do not cascade on delete; `deleteWalletData`
+ * removes them explicitly instead.
  */
 @Database(
     version = 9,
