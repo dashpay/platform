@@ -451,6 +451,15 @@ mod tests {
         PlatformVersion::get(13).expect("protocol version 13 exists")
     }
 
+    /// Generation-specific tests must pin a protocol version that actually
+    /// selects their own generation: `pv14()` silently
+    /// retargets these tests onto a different parser generation and a
+    /// different document meta-schema whenever LATEST moves. PV14 is the
+    /// first protocol version whose `try_from_schema` selects generation 3.
+    fn pv14() -> &'static PlatformVersion {
+        PlatformVersion::get(14).expect("protocol version 14 exists")
+    }
+
     /// PV14 accepts the ranked keywords and carries them onto the parsed index
     /// — both when parsed through this generation directly and when reached
     /// the way production reaches it, through the dispatcher. The dispatcher
@@ -458,7 +467,7 @@ mod tests {
     #[test]
     fn ranked_keywords_accepted_at_pv14() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema.clone(), PlatformVersion::latest(), true)
+        let v2 = parse_with(schema.clone(), pv14(), true)
             .expect("meta-schema v3 must accept the ranked index keywords");
 
         let index = v2
@@ -471,7 +480,7 @@ mod tests {
         assert!(index.range_countable && index.range_summable);
 
         // Same schema, same platform version, through the real dispatcher.
-        let dispatched = parse_dispatched(schema, PlatformVersion::latest(), true)
+        let dispatched = parse_dispatched(schema, pv14(), true)
             .expect("the dispatcher must route PV14 to a generation that accepts the keywords");
         let DocumentType::V2(dispatched) = dispatched else {
             panic!("generation 3 produces a V2-shaped document type");
@@ -529,7 +538,7 @@ mod tests {
     #[test]
     fn ranked_keywords_accepted_at_pv14_without_full_validation() {
         let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
-        let v2 = parse_with(schema, PlatformVersion::latest(), false)
+        let v2 = parse_with(schema, pv14(), false)
             .expect("PV14 structural parse must accept the ranked keywords");
         assert!(
             v2.indices
@@ -550,7 +559,7 @@ mod tests {
         // `if rankedCountable == true then require rangeCountable`
         // conditional fails.
         let schema = ranked_review_schema(vec![("rankedCountable", true)]);
-        let result = parse_with(schema, PlatformVersion::latest(), true);
+        let result = parse_with(schema, pv14(), true);
         assert!(
             result.is_err(),
             "meta-schema v3 must demand rangeCountable alongside a true \
@@ -617,14 +626,9 @@ mod tests {
     #[test]
     fn ranked_flags_written_out_as_false_do_not_require_a_range_axis() {
         for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let v2 = parse_with(
-                bare_ranked_index_schema(key, false),
-                PlatformVersion::latest(),
-                true,
-            )
-            .unwrap_or_else(|e| {
-                panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}")
-            });
+            let v2 = parse_with(bare_ranked_index_schema(key, false), pv14(), true).unwrap_or_else(
+                |e| panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}"),
+            );
 
             let index = v2
                 .indices
@@ -648,11 +652,7 @@ mod tests {
     #[test]
     fn ranked_flags_set_true_still_require_their_range_axis() {
         for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
-            let result = parse_with(
-                bare_ranked_index_schema(key, true),
-                PlatformVersion::latest(),
-                true,
-            );
+            let result = parse_with(bare_ranked_index_schema(key, true), pv14(), true);
             assert!(
                 result.is_err(),
                 "`{key}: true` with no range axis must be rejected under full validation"
@@ -682,7 +682,7 @@ mod tests {
                 "rankedCountable": true,
             }],
         });
-        let result = parse_with(schema, PlatformVersion::latest(), false);
+        let result = parse_with(schema, pv14(), false);
         assert!(
             result.is_err(),
             "rankedCountable with no range-count layout must be rejected structurally"
@@ -824,7 +824,7 @@ mod tests {
     }
 
     fn parse_bound(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
-        parse_with(schema, PlatformVersion::latest(), true)
+        parse_with(schema, pv14(), true)
     }
 
     /// Count-ranked and sum-ranked indexes share the 8-byte sort key, so both
