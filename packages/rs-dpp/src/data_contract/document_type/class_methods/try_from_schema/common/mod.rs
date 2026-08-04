@@ -163,9 +163,6 @@ pub(super) struct ParserGeneration {
     // Every field below exists only because generation 3 does. Drop them
     // together with the `v3` module and the ranked arms they gate, and what is
     // left is the parser as it stood before the ranked aggregates.
-    /// Whether document meta-schema v3 is part of this generation's table —
-    /// i.e. whether `3` is a known value of `document_type_schema` for it.
-    pub admit_meta_schema_v3: bool,
     /// Whether the index grammar admits the `ranked*` keywords. Forwarded to
     /// [`Index::try_from_value_map`], which rejects them as unknown keys when
     /// this is `false`.
@@ -230,33 +227,25 @@ pub(super) fn validate_schema_depth_and_account_for_size(
 
 /// Pick the document meta-schema for a `document_type_schema` table value.
 ///
-/// `admit_meta_schema_v3` is what makes this one match total across every
-/// generation without any of them gaining a meta-schema it did not ship with:
-/// a generation whose table never names meta-schema v3 passes `false` and keeps
-/// reporting `known_versions: [0, 1, 2]`, exactly as its own copy of this match
-/// did.
+/// This is a total function of the table value alone: the version tables pair
+/// each `try_from_schema` generation with its `document_type_schema`, so the
+/// pairing is enforced where it is authored, not re-checked down here. The
+/// grammar a generation admits is gated by its own `ParserGeneration` flags,
+/// not by which meta-schema validated the JSON.
 #[cfg(feature = "validation")]
 pub(super) fn select_document_meta_schema(
     document_type_schema_version: u16,
-    admit_meta_schema_v3: bool,
     method_name: &str,
 ) -> Result<&'static JSONSchema, ProtocolError> {
     Ok(match document_type_schema_version {
         0 => &*DOCUMENT_META_SCHEMA_V0,
         1 => &*DOCUMENT_META_SCHEMA_V1,
         2 => &*DOCUMENT_META_SCHEMA_V2,
-        // RANKED: meta-schema v3 and the widened `known_versions` are
-        // generation 3's. Without it this is a plain `vec![0, 1, 2]` arm and
-        // the parameter goes away.
-        3 if admit_meta_schema_v3 => &*DOCUMENT_META_SCHEMA_V3,
+        3 => &*DOCUMENT_META_SCHEMA_V3,
         version => {
             return Err(ProtocolError::UnknownVersionMismatch {
                 method: method_name.to_string(),
-                known_versions: if admit_meta_schema_v3 {
-                    vec![0, 1, 2, 3]
-                } else {
-                    vec![0, 1, 2]
-                },
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })
         }
@@ -269,7 +258,6 @@ pub(super) fn select_document_meta_schema(
 pub(super) fn validate_against_meta_schema_and_compile(
     root_schema: &Value,
     document_type_schema_version: u16,
-    admit_meta_schema_v3: bool,
     meta_schema_method_name: &str,
     json_schema_validator: &StatelessJsonSchemaLazyValidator,
     platform_version: &PlatformVersion,
@@ -282,11 +270,8 @@ pub(super) fn validate_against_meta_schema_and_compile(
     })?;
 
     // Select the appropriate document meta-schema based on platform version
-    let meta_schema = select_document_meta_schema(
-        document_type_schema_version,
-        admit_meta_schema_v3,
-        meta_schema_method_name,
-    )?;
+    let meta_schema =
+        select_document_meta_schema(document_type_schema_version, meta_schema_method_name)?;
 
     // Validate against JSON Schema
     meta_schema
@@ -574,7 +559,6 @@ fn validate_document_type_schema(
     validate_against_meta_schema_and_compile(
         root_schema,
         ctx.generation.document_type_schema_version,
-        ctx.generation.admit_meta_schema_v3,
         ctx.generation.meta_schema_method_name,
         json_schema_validator,
         ctx.platform_version,

@@ -243,8 +243,7 @@ fn try_from_schema_generation_3(
             // generation is far past that boundary.
             admit_count_indexes: true,
             meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
-            // RANKED: the three constants that make this generation 3.
-            admit_meta_schema_v3: true,
+            // RANKED: the constants that make this generation 3.
             admit_ranked: true,
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
         },

@@ -115,10 +115,6 @@ impl DocumentTypeV0 {
             common::validate_against_meta_schema_and_compile(
                 &root_schema,
                 document_type_schema_version,
-                // RANKED: generation 0 predates the ranked aggregates, so its
-                // meta-schema table names 0, 1 and 2 only. Without generation 3
-                // this argument does not exist.
-                false,
                 "DocumentTypeV0::try_from_schema (document_type_schema)",
                 &json_schema_validator,
                 platform_version,
