@@ -755,7 +755,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// Create + broadcast an ENCRYPTED wallet-contract document (the wire-
 /// compatible `txMetadata` shape) — the JNI bridge over
 /// `platform_wallet_create_encrypted_document_with_signer` and its
-/// Rust-allocated-index sibling.
+/// Rust-generated-index sibling.
 ///
 /// The SDK derives the identity encryption key, seals `payload` into the
 /// legacy `version ‖ IV ‖ AES-256-CBC` blob, and writes
@@ -766,7 +766,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// `encryption_key_index` carries the per-document index OR the `-1` sentinel
 /// (dashpay/platform#4186 follow-up): a non-negative value is used verbatim
 /// (routed to the explicit-index export, retained for migration / tests), while
-/// `-1` means "let the SDK allocate the index from authoritative Platform state"
+/// `-1` means "let the SDK generate the per-document index"
 /// and routes to `platform_wallet_create_encrypted_document_with_signer_auto_index`.
 /// Any value `< -1` is rejected. Returns the confirmed document's canonical JSON
 /// (its 32-byte id is the base58 `$id` field); null after throwing on error.
@@ -795,15 +795,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         let Some(doc_type) = read_cstring(env, &document_type, "documentType") else {
             return ptr::null_mut();
         };
-        // encryptionKeyIndex == -1 is the "let Rust allocate" sentinel
-        // (dashpay/platform#4186 follow-up): the host omits the index and the
-        // SDK derives the next one from Platform state. A non-negative value is
+        // encryptionKeyIndex == -1 is the "let Rust generate" sentinel: the
+        // host omits the index and platform-wallet draws a valid BIP-32 child
+        // index from the operating-system CSPRNG. A non-negative value is
         // an explicit caller-supplied index; anything below -1 is invalid.
         if encryption_key_index < -1 {
             throw_sdk_exception(
                 env,
                 1,
-                "encryptionKeyIndex must be >= 0, or -1 to let the SDK allocate it",
+                "encryptionKeyIndex must be >= 0, or -1 to let the SDK generate it",
             );
             return ptr::null_mut();
         }
@@ -818,6 +818,27 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 env,
                 1,
                 "version must be 0 (CBOR) or 1 (protobuf) — the only wire-decodable txMetadata versions",
+            );
+            return ptr::null_mut();
+        }
+        // Reject by Java-array length before `convert_byte_array` creates the
+        // JNI-owned plaintext copy. The FFI/core repeat the same shared bound.
+        let payload_len = match env.get_array_length(&payload) {
+            Ok(len) => len as usize,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "payload byte[] was null/invalid");
+                return ptr::null_mut();
+            }
+        };
+        if payload_len > platform_wallet_ffi::document::MAX_TX_METADATA_PLAINTEXT_LEN {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "txMetadata payload is {payload_len} bytes; maximum is {} bytes",
+                    platform_wallet_ffi::document::MAX_TX_METADATA_PLAINTEXT_LEN,
+                ),
             );
             return ptr::null_mut();
         }
@@ -842,7 +863,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
         let mut out_json: *mut c_char = ptr::null_mut();
         let result = if auto_index {
             // Host omitted the index: route to the ABI-additive sibling that
-            // takes no encryptionKeyIndex and lets Rust allocate it.
+            // takes no encryptionKeyIndex and lets Rust generate it.
             unsafe {
                 platform_wallet_ffi::platform_wallet_create_encrypted_document_with_signer_auto_index(
                     wallet_handle as Handle,

@@ -32,98 +32,39 @@ use crate::wallet::identity::crypto::tx_metadata::{
     derive_tx_metadata_key, derive_tx_metadata_key_from_master, ensure_tx_metadata_payload_fits,
     open_tx_metadata, seal_tx_metadata,
 };
+use rand::{rngs::OsRng, RngCore};
 
 use super::*;
 
-/// In-process high-water map for txMetadata `encryptionKeyIndex` allocation,
-/// keyed by owner identity id → the NEXT index to hand out for that identity.
-/// Wrapped in an `Arc<tokio::sync::Mutex<..>>` so it is shared across every
-/// clone of [`IdentityWallet`] and serializes concurrent allocations (see
-/// [`reserve_next_index`] / [`IdentityWallet::allocate_encryption_key_index`]).
-pub(crate) type EncryptionKeyIndexAllocator =
-    Arc<tokio::sync::Mutex<std::collections::HashMap<Identifier, u32>>>;
+/// Largest valid non-hardened BIP-32 child index. `encryptionKeyIndex` becomes a
+/// hardened child in the txMetadata path, so its raw value must stay below
+/// `2^31` (`ChildNumber::from_hardened_idx` enforces the same bound).
+const MAX_ENCRYPTION_KEY_INDEX: u32 = 0x7fff_ffff;
 
-/// The legacy `encryptionKeyIndex` for the NEXT txMetadata document given the
-/// count of documents that already exist for the identity — dash-wallet's
-/// `1 + countAllRequests()`.
+/// Convert one random word into a valid txMetadata `encryptionKeyIndex`.
 ///
-/// `countAllRequests()` was `SELECT COUNT(*) FROM transaction_metadata_platform`
-/// (the count of the identity's published txMetadata documents in the app's
-/// local cache — see `PlatformSyncService.publishTxMetaData`,
-/// `TransactionMetadataDocumentDao.countAllRequests`). Empty state
-/// (`count == 0`) → `1`; `n` existing documents → `n + 1`. This is `count + 1`,
-/// NOT `max(index) + 1` — it matches the legacy formula byte-for-byte
-/// (dashpay/platform#4186). Saturates at `u32::MAX` (an unreachable
-/// 4-billion-document wallet) rather than wrapping back to `0`.
-pub(crate) fn next_encryption_key_index_from_count(count: u32) -> u32 {
-    count.saturating_add(1)
+/// Zero is skipped to preserve the legacy convention that document indices
+/// start at one. The high bit is cleared because BIP-32 reserves it for the
+/// hardened-child encoding itself.
+fn encryption_key_index_candidate(random: u32) -> Option<u32> {
+    let candidate = random & MAX_ENCRYPTION_KEY_INDEX;
+    (candidate != 0).then_some(candidate)
 }
 
-/// Atomically reserve the next `encryptionKeyIndex` for `owner` from the shared
-/// `allocator`, serializing concurrent callers under its mutex so two creates
-/// through the SAME wallet process can never pick the same index.
+/// Generate a Rust-owned per-document txMetadata derivation index.
 ///
-/// The first allocation for an owner in this process seeds the high-water from
-/// `seed` — the Platform-derived `1 + count`, evaluated lazily UNDER the lock so
-/// a racing caller blocks on the seed rather than re-computing it — and every
-/// subsequent allocation hands out a monotonically increasing index with no
-/// further network work. The stored value is always `handed_out + 1`.
-///
-/// Cross-DEVICE uniqueness is NOT guaranteed (another device that has not yet
-/// reflected its writes on Platform can seed to the same base); see
-/// [`IdentityWallet::allocate_encryption_key_index`] for why that stays safe.
-///
-/// Two deliberate trade-offs of the single per-wallet mutex + optimistic
-/// reservation: allocations for OTHER owners in the same wallet serialize
-/// behind a first-time seed fetch (benign for the normal one-identity case),
-/// and a create that fails after allocating leaves a harmless index GAP —
-/// never a collision — since the high-water is not rolled back.
-pub(crate) async fn reserve_next_index<S>(
-    allocator: &tokio::sync::Mutex<std::collections::HashMap<Identifier, u32>>,
-    owner: &Identifier,
-    seed: S,
-) -> Result<u32, PlatformWalletError>
-where
-    S: std::future::Future<Output = Result<u32, PlatformWalletError>>,
-{
-    // Hold the guard across the (first-time only) seed await: this is exactly
-    // what serializes racing allocators — a second caller that finds the map
-    // empty blocks here until the first has seeded and inserted its `next + 1`.
-    let mut guard = allocator.lock().await;
-    let next = match guard.get(owner).copied() {
-        Some(n) => n,
-        None => seed.await?,
-    };
-    guard.insert(*owner, next.saturating_add(1));
-    Ok(next)
-}
-
-/// [`reserve_next_index`] with the deterministic payload-size gate run FIRST, so
-/// an over-large payload — one that MUST fail — never consumes an index.
-///
-/// The size check ([`ensure_tx_metadata_payload_fits`]) is a pure, deterministic
-/// bound (`payload_len <= MAX_TX_METADATA_PLAINTEXT_LEN`) that needs no network
-/// and no key material. Running it before the allocator is touched means an
-/// oversized payload returns the typed
-/// [`PlatformWalletError::TxMetadataPayloadTooLarge`] WITHOUT seeding the
-/// high-water or advancing it — no index is reserved, so the allocator leaves no
-/// gap for a request that was always going to be rejected. Only once the payload
-/// is known to fit do we (lazily, under the lock) seed/hand out the next index
-/// (dashpay/platform#4186 review: validate size before allocating the index).
-pub(crate) async fn reserve_next_index_checked<S>(
-    allocator: &tokio::sync::Mutex<std::collections::HashMap<Identifier, u32>>,
-    owner: &Identifier,
-    payload_len: usize,
-    seed: S,
-) -> Result<u32, PlatformWalletError>
-where
-    S: std::future::Future<Output = Result<u32, PlatformWalletError>>,
-{
-    // Deterministic, network-free size gate BEFORE any allocation: an oversized
-    // payload fails here, so `seed` is never polled and the high-water is never
-    // seeded/advanced — no consumed index, no gap.
-    ensure_tx_metadata_payload_fits(payload_len)?;
-    reserve_next_index(allocator, owner, seed).await
+/// This index is a derivation input carried by the document, not a document id
+/// or a protocol uniqueness token. Readers always derive from the document's
+/// own `{keyIndex, encryptionKeyIndex}` fields, and every sealed document has a
+/// fresh random IV, so an index collision is non-lossy. A CSPRNG-generated
+/// 31-bit value therefore gives the host-thin API the property it needs without
+/// pretending that a client-side Platform count is an atomic allocator.
+fn generate_encryption_key_index() -> u32 {
+    loop {
+        if let Some(candidate) = encryption_key_index_candidate(OsRng.next_u32()) {
+            return candidate;
+        }
+    }
 }
 
 /// Where one encrypted-document call derives the per-document txMetadata AES
@@ -313,120 +254,6 @@ impl IdentityWallet {
             })
     }
 
-    /// Count the identity's existing txMetadata-style documents on Platform —
-    /// the authoritative equivalent of dash-wallet's local
-    /// `transactionMetadataDocumentDao.countAllRequests()`
-    /// (`SELECT COUNT(*) FROM transaction_metadata_platform`). Fetches +
-    /// registers the contract, then runs the owner-scoped scan with
-    /// `since_ms == 0` (every document, since `$updatedAt >= 0` always holds)
-    /// and returns the number of documents found.
-    ///
-    /// Every returned entry counts, materialized or not: an un-materialized id
-    /// still denotes an existing document, so the count never under-reports and
-    /// the next index never re-collides with an existing one.
-    ///
-    /// NOTE: this counts by fetching the owned documents (the same paginated
-    /// query the fetch path uses) rather than a dedicated drive `COUNT` query —
-    /// a wallet's txMetadata document set is small, so the extra surface a
-    /// count-only query would add is not worth it here.
-    async fn count_owned_txmetadata_documents(
-        &self,
-        contract_id: &Identifier,
-        owner_identity_id: &Identifier,
-        document_type_name: &str,
-    ) -> Result<u32, PlatformWalletError> {
-        use dash_sdk::platform::{ContextProvider, Fetch};
-
-        let contract = DataContract::fetch(&self.sdk, *contract_id)
-            .await
-            .map_err(PlatformWalletError::Sdk)?
-            .ok_or_else(|| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Data contract {contract_id} not found on Platform; \
-                     cannot allocate encryptionKeyIndex"
-                ))
-            })?;
-        let contract = Arc::new(contract);
-        if let Some(provider) = self.sdk.context_provider() {
-            provider.register_data_contract(Arc::clone(&contract));
-        }
-        let raw =
-            query_owned_encrypted_documents(&self.sdk, contract, owner_identity_id, document_type_name, 0)
-                .await?;
-        Ok(u32::try_from(raw.len()).unwrap_or(u32::MAX))
-    }
-
-    /// Allocate the next `encryptionKeyIndex` for an encrypted-document create
-    /// when the host supplies none — moving the index-selection policy off the
-    /// Kotlin host and into authoritative Rust/Platform state
-    /// (dashpay/platform#4186 follow-up: the host-thin rule forbids a key-index
-    /// policy loop in the host; hosts now provide only the opaque payload).
-    ///
-    /// Semantics MATCH the retired dash-wallet counter EXACTLY: the index is
-    /// `1 + countAllRequests()`, where the count is now
-    /// [`Self::count_owned_txmetadata_documents`] read from Platform at create
-    /// time instead of the app's local `transaction_metadata_platform` table.
-    /// Empty state → `1`; `n` existing documents → `n + 1` (see
-    /// [`next_encryption_key_index_from_count`]).
-    ///
-    /// Allocation is serialized through the wallet's shared
-    /// [`EncryptionKeyIndexAllocator`] mutex (see [`reserve_next_index`]): two
-    /// concurrent creates through the SAME wallet process can NEVER pick the
-    /// same index — the first seeds the in-process high-water from Platform, the
-    /// second hands out the next value without a second query.
-    ///
-    /// ## Cross-device caveat (best-effort per device, NOT data-loss)
-    /// Uniqueness is guaranteed only PER DEVICE. Two devices sharing an identity
-    /// can seed to the same base before either's write is visible to the other,
-    /// so both may write a document at the same `encryptionKeyIndex`. This is
-    /// SAFE, not lossy: every encrypted document stores its OWN `keyIndex` +
-    /// `encryptionKeyIndex`, and the reader
-    /// ([`Self::fetch_encrypted_documents`]) derives each document's key from
-    /// the document's own stored indices — so two documents sharing an index
-    /// each carry a fresh random IV, decrypt independently, and are BOTH
-    /// returned. A duplicate index is not even an extra decrypt attempt (the
-    /// reader never guesses indices); no document is overwritten or shadowed.
-    ///
-    /// ## Size validated BEFORE allocating (no index consumed on failure)
-    /// `payload_len` is the plaintext length of the document about to be sealed.
-    /// It is checked against
-    /// [`MAX_TX_METADATA_PLAINTEXT_LEN`](crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN)
-    /// up front — a pure,
-    /// network-free bound — via [`reserve_next_index_checked`], so an oversized
-    /// payload (which the deterministic 4063-byte limit MUST reject) fails with
-    /// [`PlatformWalletError::TxMetadataPayloadTooLarge`] WITHOUT ever counting on
-    /// Platform or advancing the allocator's high-water. An always-doomed request
-    /// therefore leaves no index gap (dashpay/platform#4186 review).
-    pub async fn allocate_encryption_key_index(
-        &self,
-        owner_identity_id: &Identifier,
-        contract_id: &Identifier,
-        document_type_name: &str,
-        payload_len: usize,
-    ) -> Result<u32, PlatformWalletError> {
-        reserve_next_index_checked(
-            &self.enc_key_index_allocator,
-            owner_identity_id,
-            payload_len,
-            async {
-                let count = self
-                    .count_owned_txmetadata_documents(
-                        contract_id,
-                        owner_identity_id,
-                        document_type_name,
-                    )
-                    .await?;
-                let index = next_encryption_key_index_from_count(count);
-                breadcrumb(&format!(
-                    "allocate_encryption_key_index: seeded owner={owner_identity_id} \
-                     existing_count={count} next_index={index}"
-                ));
-                Ok(index)
-            },
-        )
-        .await
-    }
-
     /// Resolve `(identity, identity_index, wallet)` for `owner_identity_id`
     /// from the in-process wallet manager — the inputs the tx-metadata key
     /// derivation needs. Errors for a watch-only / out-of-wallet identity (no
@@ -506,8 +333,10 @@ impl IdentityWallet {
     /// properties with no key material in scope.
     ///
     /// The caller supplies:
-    /// - `encryption_key_index`: the per-document index (dash-wallet's monotonic
-    ///   `1 + countAllRequests()` counter). Batching stays app-side.
+    /// - `encryption_key_index`: an explicit per-document derivation index.
+    ///   New host APIs should omit it and use
+    ///   [`Self::prepare_encrypted_txmetadata_properties_auto_index`]; this
+    ///   explicit path remains for migration and compatibility tests.
     /// - `version`: the payload version byte (`1` = protobuf, as the wallet
     ///   writes).
     /// - `payload`: the already-serialized opaque plaintext (a protobuf
@@ -571,6 +400,35 @@ impl IdentityWallet {
             FIELD_ENCRYPTED_METADATA: hex::encode(&blob),
         })
         .to_string())
+    }
+
+    /// Rust-owned-index sibling of
+    /// [`Self::prepare_encrypted_txmetadata_properties`].
+    ///
+    /// Generates a valid non-zero 31-bit BIP-32 child index with the operating
+    /// system CSPRNG, then derives and seals the document with that index. No
+    /// Platform query, allocator mutex, or wallet-facade state is involved.
+    /// This is deliberate: `encryptionKeyIndex` is stored on every document and
+    /// consumed from that document during decryption, so it is not a protocol
+    /// sequence number and does not need globally authoritative allocation.
+    /// Every document also receives a fresh random IV; an unlikely repeated
+    /// index therefore remains non-lossy and both documents decrypt normally.
+    pub fn prepare_encrypted_txmetadata_properties_auto_index(
+        &self,
+        owner_identity_id: &Identifier,
+        version: u8,
+        payload: &[u8],
+        key_source: TxMetadataKeySource<'_>,
+    ) -> Result<String, PlatformWalletError> {
+        // Keep deterministic rejection ahead of randomness and key derivation.
+        ensure_tx_metadata_payload_fits(payload.len())?;
+        self.prepare_encrypted_txmetadata_properties(
+            owner_identity_id,
+            generate_encryption_key_index(),
+            version,
+            payload,
+            key_source,
+        )
     }
 
     /// Fetch every encrypted `txMetadata`-style document owned by
@@ -845,160 +703,34 @@ pub async fn query_owned_encrypted_documents(
 }
 
 #[cfg(test)]
-mod allocator_tests {
-    //! Unit tests for the `encryptionKeyIndex` allocator
-    //! (dashpay/platform#4186 follow-up). These exercise the index math and the
-    //! atomic in-process reservation WITHOUT a live SDK: the Platform-derived
-    //! seed is injected as a plain future, so `1 + count` semantics, per-owner
-    //! isolation, and the concurrent no-collision guarantee are all pinned here.
+mod index_generation_tests {
     use super::*;
 
-    fn empty_allocator() -> EncryptionKeyIndexAllocator {
-        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()))
-    }
-
-    /// The index math is EXACTLY dash-wallet's `1 + countAllRequests()`:
-    /// empty state → 1, `n` existing → `n + 1` (count+1, not max+1), saturating
-    /// at the ceiling rather than wrapping to 0.
     #[test]
-    fn next_index_matches_legacy_one_plus_count() {
-        assert_eq!(next_encryption_key_index_from_count(0), 1);
-        assert_eq!(next_encryption_key_index_from_count(1), 2);
-        assert_eq!(next_encryption_key_index_from_count(5), 6);
-        assert_eq!(next_encryption_key_index_from_count(u32::MAX), u32::MAX);
-    }
-
-    /// Empty state seeds to `1 + count(0) == 1`, then hands out 2, 3 … WITHOUT
-    /// re-seeding (the seed future must not be polled again once the high-water
-    /// is established).
-    #[tokio::test]
-    async fn empty_state_seeds_to_one_then_increments() {
-        let alloc = empty_allocator();
-        let owner = Identifier::from([7u8; 32]);
-
-        let first = reserve_next_index(&alloc, &owner, async {
-            Ok(next_encryption_key_index_from_count(0))
-        })
-        .await
-        .expect("seed ok");
-        assert_eq!(first, 1, "empty state must allocate index 1");
-
-        // A seed that panics if awaited proves the second/third allocations
-        // never re-seed — they read the cached high-water instead.
-        let must_not_seed =
-            || async { unreachable!("must not re-seed once the high-water is established") };
+    fn candidate_is_nonzero_and_within_the_bip32_child_domain() {
+        assert_eq!(encryption_key_index_candidate(0), None);
+        assert_eq!(encryption_key_index_candidate(1), Some(1));
         assert_eq!(
-            reserve_next_index(&alloc, &owner, must_not_seed()).await.unwrap(),
-            2
+            encryption_key_index_candidate(u32::MAX),
+            Some(MAX_ENCRYPTION_KEY_INDEX),
+            "the hardened marker bit must not leak into the raw child index"
         );
         assert_eq!(
-            reserve_next_index(&alloc, &owner, must_not_seed()).await.unwrap(),
-            3
+            encryption_key_index_candidate(0x8000_0001),
+            Some(1),
+            "only the lower 31 bits are part of the raw child index"
         );
     }
 
-    /// Distinct owners keep independent high-waters — one identity's allocations
-    /// never perturb another's.
-    #[tokio::test]
-    async fn distinct_owners_seed_independently() {
-        let alloc = empty_allocator();
-        let a = Identifier::from([1u8; 32]);
-        let b = Identifier::from([2u8; 32]);
+    #[test]
+    fn generated_indices_are_valid_hardened_children() {
+        use key_wallet::bip32::ChildNumber;
 
-        // a: 3 existing docs → 4; b: 0 existing → 1; then a again → 5.
-        assert_eq!(
-            reserve_next_index(&alloc, &a, async { Ok(next_encryption_key_index_from_count(3)) })
-                .await
-                .unwrap(),
-            4
-        );
-        assert_eq!(
-            reserve_next_index(&alloc, &b, async { Ok(next_encryption_key_index_from_count(0)) })
-                .await
-                .unwrap(),
-            1
-        );
-        assert_eq!(
-            reserve_next_index(&alloc, &a, async { unreachable!("a already seeded") })
-                .await
-                .unwrap(),
-            5
-        );
-    }
-
-    /// The core concurrency guarantee: two allocations racing on the SAME owner
-    /// through the SAME allocator get DISTINCT indices. The mutex serializes
-    /// them even though both start from an empty map and both would otherwise
-    /// seed to 1. `yield_now` inside the seed widens the interleaving window so
-    /// a broken (non-serialized) allocator would reliably hand out 1 twice.
-    #[tokio::test]
-    async fn concurrent_allocations_never_collide() {
-        let alloc = empty_allocator();
-        let owner = Identifier::from([3u8; 32]);
-
-        let seed = || async {
-            tokio::task::yield_now().await;
-            Ok(next_encryption_key_index_from_count(0))
-        };
-        let (r1, r2) = tokio::join!(
-            reserve_next_index(&alloc, &owner, seed()),
-            reserve_next_index(&alloc, &owner, seed()),
-        );
-        let (i1, i2) = (r1.expect("task 1"), r2.expect("task 2"));
-
-        assert_ne!(i1, i2, "concurrent allocations must not collide");
-        let mut got = [i1, i2];
-        got.sort_unstable();
-        assert_eq!(got, [1, 2], "the two racing indices must be exactly 1 and 2");
-    }
-
-    /// An oversized payload on the auto-index path fails with the typed
-    /// `TxMetadataPayloadTooLarge` BEFORE the allocator is touched: the seed is
-    /// never polled, so the high-water is neither seeded nor advanced — no index
-    /// is consumed and no gap is left (dashpay/platform#4186 review). A
-    /// subsequent well-sized reservation for the same owner still starts at the
-    /// legacy `1 + count(0) == 1`, proving nothing was reserved by the doomed
-    /// request.
-    #[tokio::test]
-    async fn oversized_payload_does_not_advance_highwater() {
-        use crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN;
-
-        let alloc = empty_allocator();
-        let owner = Identifier::from([8u8; 32]);
-
-        // 4064 bytes (MAX + 1) is the first rejected length. The seed panics if
-        // polled — proving the size gate short-circuits before any allocation.
-        let result = reserve_next_index_checked(
-            &alloc,
-            &owner,
-            MAX_TX_METADATA_PLAINTEXT_LEN + 1,
-            async { unreachable!("seed must not run when the payload is oversized") },
-        )
-        .await;
-        match result {
-            Err(PlatformWalletError::TxMetadataPayloadTooLarge { len, max }) => {
-                assert_eq!(len, MAX_TX_METADATA_PLAINTEXT_LEN + 1);
-                assert_eq!(max, MAX_TX_METADATA_PLAINTEXT_LEN);
-            }
-            other => panic!("expected TxMetadataPayloadTooLarge, got {other:?}"),
+        for _ in 0..256 {
+            let index = generate_encryption_key_index();
+            assert!((1..=MAX_ENCRYPTION_KEY_INDEX).contains(&index));
+            ChildNumber::from_hardened_idx(index)
+                .expect("generated txMetadata index must be a valid hardened child");
         }
-
-        // High-water NOT advanced: the owner was never inserted into the map.
-        assert!(
-            alloc.lock().await.get(&owner).is_none(),
-            "an oversized payload must not seed/advance the allocator high-water"
-        );
-
-        // The next well-sized reservation still seeds fresh at 1 — no gap was
-        // left by the rejected oversized request.
-        let index = reserve_next_index_checked(&alloc, &owner, 0, async {
-            Ok(next_encryption_key_index_from_count(0))
-        })
-        .await
-        .expect("well-sized reservation seeds ok");
-        assert_eq!(
-            index, 1,
-            "the first index after a rejected oversized payload must still be 1 (no gap)"
-        );
     }
 }

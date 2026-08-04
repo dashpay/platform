@@ -24,6 +24,7 @@ dashcore = { workspace = true }
 thiserror = "1.0"
 async-trait = "0.1"
 arc-swap = "1"
+rand = "0.8"
 
 # Collections
 bimap = "0.6"
@@ -95,7 +96,6 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
 # Dev-only, so the production build stays on the leaner default features.
 key-wallet = { workspace = true, features = ["test-utils"] }
-rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
 # Used by `shielded_tree_append_bench.rs` to open SQLite with tuned PRAGMAs

@@ -19,7 +19,7 @@ import org.junit.Test
  *    an out-of-range byte would silently seal a document the legacy stack can't
  *    decode.
  * 2. `encryptionKeyIndex` (dashpay/platform#4186 follow-up): `null` is the
- *    preferred path (Rust allocates the index from Platform state); an explicit
+ *    preferred path (Rust generates the per-document index); an explicit
  *    value, when supplied, must be non-negative.
  *
  * Paths that PASS validation proceed into native and can't be fully unit-tested
@@ -68,7 +68,7 @@ class DocumentTransactionsVersionValidationTest {
 
     /**
      * An explicit NEGATIVE index (the migration/test-only path) is rejected by
-     * the `require`. `null` (the allocate-in-Rust path) is the only way to omit
+     * the `require`. `null` (the generate-in-Rust path) is the only way to omit
      * an index; a negative explicit value is a caller error.
      */
     @Test
@@ -96,7 +96,7 @@ class DocumentTransactionsVersionValidationTest {
 
     /**
      * The no-index path (`encryptionKeyIndex` omitted → `null`, the default and
-     * preferred allocate-in-Rust route) must PASS the argument guards. With all
+     * preferred generate-in-Rust route) must PASS the argument guards. With all
      * other inputs valid, the only failure that can surface is the native call
      * itself (no JNI library in a JVM unit test), NOT an
      * [IllegalArgumentException] from our `require`s — proving `null` is a valid
@@ -115,7 +115,7 @@ class DocumentTransactionsVersionValidationTest {
                     version = 1,
                     payload = payload,
                     signerHandle = 0L,
-                    // encryptionKeyIndex omitted → null → allocate in Rust.
+                    // encryptionKeyIndex omitted → null → generate in Rust.
                 )
             }
         }.exceptionOrNull()

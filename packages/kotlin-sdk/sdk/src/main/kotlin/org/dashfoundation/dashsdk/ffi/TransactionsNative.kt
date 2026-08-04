@@ -181,11 +181,11 @@ internal object TransactionsNative {
      *   whose txMetadata AES key derives on demand through the resolver.
      *   Ignored for wallets with resident private keys.
      * @param encryptionKeyIndex the per-document index, OR `-1` to let the SDK
-     *   allocate it in Rust from authoritative Platform state
-     *   (dashpay/platform#4186 follow-up). A non-negative value routes to the
-     *   explicit-index FFI export (migration / tests); `-1` routes to
-     *   `platform_wallet_create_encrypted_document_with_signer_auto_index`, which
-     *   omits the index. Values `< -1` are rejected.
+     *   generate it in Rust with the operating-system CSPRNG. A non-negative
+     *   value routes to the explicit-index FFI export (migration / tests);
+     *   `-1` routes to
+     *   `platform_wallet_create_encrypted_document_with_signer_auto_index`,
+     *   which omits the index. Values `< -1` are rejected.
      * @param version payload version byte (`1` = protobuf, as the wallet writes).
      * @param payload the already-serialized opaque plaintext (a protobuf
      *   `TxMetadataBatch`); the SDK does not parse it.
