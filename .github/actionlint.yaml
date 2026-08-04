@@ -1,0 +1,9 @@
+# Custom labels carried by this repo's self-hosted runners. Without this,
+# actionlint flags `runs-on: [self-hosted, rust-ci]` as an unknown label
+# because it can't resolve it against the GitHub-hosted runner names.
+#
+# `rust-ci` must be applied to every runner allowed to take the Rust workspace
+# test job (Settings -> Actions -> Runners -> <runner> -> Labels).
+self-hosted-runner:
+  labels:
+    - rust-ci
