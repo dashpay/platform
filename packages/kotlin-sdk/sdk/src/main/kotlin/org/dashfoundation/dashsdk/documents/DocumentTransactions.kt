@@ -263,23 +263,19 @@ class DocumentTransactions internal constructor(
      * `keyIndex` field) is chosen SDK-side to match the legacy stack, so the key
      * never crosses the FFI boundary.
      *
-     * ### `encryptionKeyIndex` allocation (dashpay/platform#4186 follow-up)
-     * Leave [encryptionKeyIndex] `null` (the default) to let the SDK allocate
-     * the per-document index in Rust from authoritative Platform state — the
-     * host-thin path. Rust counts the identity's existing txMetadata documents
-     * on Platform and uses `1 + count` (matching dash-wallet's retired
-     * `1 + countAllRequests()` semantics EXACTLY), serialized under the wallet's
-     * allocator mutex so concurrent creates through the same process never pick
-     * the same index. The index is best-effort unique PER DEVICE; a cross-device
-     * duplicate is not data-loss (each document stores its own index and the
-     * reader derives that document's key from it, so both decrypt independently).
+     * ### `encryptionKeyIndex` selection (dashpay/platform#4186 follow-up)
+     * Leave [encryptionKeyIndex] `null` (the default) to let the SDK generate
+     * the per-document index in Rust — the host-thin path. Rust draws a valid
+     * non-zero 31-bit BIP-32 child index from the operating-system CSPRNG. The
+     * index is a derivation input stored on each document, not a protocol
+     * sequence number; a repeated index is non-lossy because each document also
+     * has a fresh IV and readers derive from that document's stored fields.
      *
      * Passing an explicit non-negative [encryptionKeyIndex] is retained ONLY for
-     * migration / tests and is discouraged: the host must NOT reintroduce a
-     * caller-supplied `1 + countAllRequests()` counter (concurrent callers /
-     * devices could collide, and it violates the host-thin key-index rule).
+     * migration / tests and is discouraged: hosts should not own derivation
+     * index policy.
      *
-     * @param encryptionKeyIndex `null` to let the SDK allocate the index
+     * @param encryptionKeyIndex `null` to let the SDK generate the index
      *   (preferred); or an explicit non-negative per-document index
      *   (migration / tests only).
      * @param version payload version byte (`1` = protobuf, as the wallet writes).
@@ -325,7 +321,7 @@ class DocumentTransactions internal constructor(
                 ownerId,
                 contractId,
                 documentType,
-                // -1 is the JNI sentinel for "let Rust allocate the index".
+                // -1 is the JNI sentinel for "let Rust generate the index".
                 encryptionKeyIndex ?: -1,
                 version,
                 payload,

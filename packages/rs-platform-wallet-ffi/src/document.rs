@@ -4,11 +4,16 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 use std::slice;
+use std::sync::Arc;
 
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::Identifier;
 use dpp::serialization::ValueConvertible;
 use key_wallet::bip32::ExtendedPrivKey;
+use platform_wallet::wallet::identity::crypto::tx_metadata::{
+    ensure_tx_metadata_payload_fits,
+    MAX_TX_METADATA_PLAINTEXT_LEN as CORE_MAX_TX_METADATA_PLAINTEXT_LEN,
+};
 use platform_wallet::{PlatformWalletError, TxMetadataKeySource};
 use rs_sdk_ffi::{MnemonicResolverHandle, SignerHandle, VTableSigner};
 use zeroize::Zeroizing;
@@ -20,6 +25,10 @@ use crate::identity_keys_from_mnemonic::resolve_master_from_resolver;
 use crate::runtime::block_on_worker;
 use crate::types::read_identifier;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
+
+/// Shared with JNI so the Java-array length can be rejected before either
+/// native layer copies an oversized plaintext payload.
+pub const MAX_TX_METADATA_PLAINTEXT_LEN: usize = CORE_MAX_TX_METADATA_PLAINTEXT_LEN;
 
 /// RAII guard scrubbing a resolved master xprv's secret scalar on drop.
 /// `ExtendedPrivKey` has no `Drop`/`Zeroize` of its own, so a resolved master
@@ -299,9 +308,8 @@ fn confirmed_document_to_json(document: &Document) -> Result<String, PlatformWal
 /// This explicit-index entry point is retained for migration / tests. New
 /// hosts should prefer the ABI-additive sibling
 /// [`platform_wallet_create_encrypted_document_with_signer_auto_index`], which
-/// omits `encryption_key_index` and lets Rust allocate it from authoritative
-/// Platform state (dashpay/platform#4186 follow-up) — moving the index-selection
-/// policy off the host.
+/// omits `encryption_key_index` and lets Rust generate a valid per-document
+/// derivation index — moving index-selection policy off the host.
 ///
 /// On success the confirmed document's 32-byte id is written to
 /// `out_document_id` and its canonical query-side JSON to `*out_document_json`
@@ -341,20 +349,18 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer(
     )
 }
 
-/// Create + broadcast an encrypted `txMetadata` document, letting RUST allocate
-/// the per-document `encryptionKeyIndex` from authoritative Platform state
-/// (dashpay/platform#4186 follow-up). ABI-additive sibling of
+/// Create + broadcast an encrypted `txMetadata` document, letting Rust generate
+/// the per-document `encryptionKeyIndex`. ABI-additive sibling of
 /// [`platform_wallet_create_encrypted_document_with_signer`] — IDENTICAL
 /// parameters minus `encryption_key_index`.
 ///
-/// The host omits the index; the SDK counts the identity's existing txMetadata
-/// documents on Platform and uses `1 + count` (dash-wallet's retired
-/// `1 + countAllRequests()` semantics), serialized under the wallet's allocator
-/// mutex so concurrent creates through the same process never collide.
-/// Best-effort unique per device; a cross-device duplicate index is NOT
-/// data-loss (see `IdentityWallet::allocate_encryption_key_index`). Every other
-/// behavior (identity-key selection, AES derivation, sealing, master wiping,
-/// broadcast) matches the explicit-index export.
+/// The host omits the index; the SDK draws a non-zero 31-bit BIP-32 child index
+/// from the operating-system CSPRNG. `encryptionKeyIndex` is stored on every
+/// document and read back during decryption, so it is not a protocol sequence
+/// number. A repeated index is non-lossy: each document also carries a fresh IV
+/// and both derive/decrypt from their own stored fields. Every other behavior
+/// (identity-key selection, AES derivation, sealing, master wiping, broadcast)
+/// matches the explicit-index export.
 ///
 /// # Safety
 /// Same contract as [`platform_wallet_create_encrypted_document_with_signer`].
@@ -373,8 +379,8 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    // Rust-allocated-index entry point: the host omits encryptionKeyIndex, so
-    // the shared impl allocates it from Platform state (`None`).
+    // Rust-generated-index entry point: the host omits encryptionKeyIndex, so
+    // the shared impl generates it while preparing the encrypted properties.
     create_encrypted_document_impl(
         wallet_handle,
         mnemonic_resolver_handle,
@@ -393,18 +399,13 @@ pub unsafe extern "C" fn platform_wallet_create_encrypted_document_with_signer_a
 
 /// Shared implementation behind the explicit-index
 /// ([`platform_wallet_create_encrypted_document_with_signer`], `Some`) and
-/// Rust-allocated
+/// Rust-generated
 /// ([`platform_wallet_create_encrypted_document_with_signer_auto_index`],
 /// `None`) encrypted-document create exports.
 ///
-/// When `index` is `None` the per-document `encryptionKeyIndex` is allocated
-/// from Platform state via `IdentityWallet::allocate_encryption_key_index`
-/// (serialized under the wallet's allocator mutex) BEFORE any key material is
-/// resolved — the allocation touches no secrets and never crosses the broadcast
-/// await with the master in scope. That allocation first runs the deterministic,
-/// network-free payload-size gate, so an oversized payload fails without
-/// reserving (and thus without consuming) an index — no allocator gap
-/// (dashpay/platform#4186 review).
+/// When `index` is `None`, `IdentityWallet` generates the per-document
+/// `encryptionKeyIndex` locally while preparing the encrypted properties. No
+/// Platform count, allocator state, or allocation network round trip is needed.
 ///
 /// # Safety
 /// All pointers must be valid for the duration of the call; `payload` may be
@@ -436,6 +437,10 @@ unsafe fn create_encrypted_document_impl(
     let document_type_str =
         unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
 
+    // Reject before either native layer copies the caller's plaintext. This is
+    // deterministic and needs no wallet, resolver, randomness, or network.
+    unwrap_result_or_return!(ensure_tx_metadata_payload_fits(payload_len));
+
     // Copy the payload into an owned buffer. Null is allowed only for a
     // zero-length payload. It is wrapped in `Zeroizing` so the native plaintext
     // copy is scrubbed on drop, and it is dropped explicitly the instant the
@@ -452,95 +457,60 @@ unsafe fn create_encrypted_document_impl(
     let owner_id_for_async = owner_id;
     let contract_id_for_async = contract_id_value;
 
-    // `move` so the closure OWNS `payload_vec` and can drop it (scrubbing the
-    // plaintext) before the broadcast `.await`; the other captures are Copy or
-    // already moved into the nested `async move` block.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
-        let identity_wallet = wallet.identity().clone();
+    // Clone the Arc under the global handle-store read lock and release that
+    // lock immediately. Resolver callbacks and network waits must not block
+    // lifecycle writes for every wallet handle in the process.
+    let wallet =
+        unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Arc::clone));
+    let identity_wallet = wallet.identity().clone();
 
-        // Resolve the per-document encryptionKeyIndex FIRST, before any key
-        // material is in scope: the host either supplies it explicitly
-        // (`Some`, migration / tests) or omits it (`None`), in which case Rust
-        // allocates the next index from authoritative Platform state, serialized
-        // under the wallet's allocator mutex (dashpay/platform#4186 follow-up).
-        // The allocation touches no secrets, so it can run on the worker before
-        // the master is resolved. `allocate_encryption_key_index` runs the
-        // deterministic payload-size gate (network-free) BEFORE reserving, so an
-        // oversized payload fails without consuming an index — no allocator gap
-        // (dashpay/platform#4186 review).
-        let resolved_index: u32 = match index {
-            Some(i) => i,
-            None => {
-                let iw = identity_wallet.clone();
-                let doc_type = document_type_str.clone();
-                let payload_len = payload_vec.len();
-                block_on_worker(async move {
-                    iw.allocate_encryption_key_index(
-                        &owner_id_for_async,
-                        &contract_id_for_async,
-                        &doc_type,
-                        payload_len,
-                    )
-                    .await
-                })
-                .map_err(PlatformWalletFFIResult::from)?
-            }
-        };
+    // Key-source selection may synchronously call back into the host resolver.
+    // The master is wrapped in a Drop-wiping guard and resolved only after the
+    // deterministic payload check above.
+    let master_opt = unwrap_result_or_return!(unsafe {
+        tx_metadata_key_master_for_wallet(&wallet, mnemonic_resolver_handle)
+    })
+    .map(WipingMaster);
 
-        // Key-source selection by wallet capability (may synchronously call
-        // back into the host mnemonic resolver for external-signable
-        // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
-        // master is wrapped in a Drop-wiping guard.
-        let master_opt =
-            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
-                .map(WipingMaster);
-
-        // Derive the AES key + seal the wire blob SYNCHRONOUSLY, then wipe the
-        // master BEFORE any network `.await`: the master xprv never crosses the
-        // broadcast await (dashpay/platform#4091). Only the sealed properties
-        // (ciphertext, no key material) cross into the async block below.
-        let key_source = match master_opt.as_ref() {
-            Some(master) => TxMetadataKeySource::Master(&master.0),
-            None => TxMetadataKeySource::ResidentWallet,
-        };
-        let properties_json = identity_wallet
-            .prepare_encrypted_txmetadata_properties(
-                &owner_id_for_async,
-                resolved_index,
-                version,
-                &payload_vec,
-                key_source,
-            )
-            .map_err(PlatformWalletFFIResult::from)?;
-        // The plaintext is now sealed inside `properties_json` (ciphertext
-        // only). Scrub the native plaintext copy AND the master immediately —
-        // neither may cross the broadcast `.await` below. `payload_vec` is
-        // `Zeroizing`, so the drop also wipes its bytes (dashpay/platform#4091).
-        drop(payload_vec);
-        drop(master_opt);
-
-        let result: Result<(Identifier, String), PlatformWalletError> =
-            block_on_worker(async move {
-                let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-                // Generic create path (no key material in scope): fetches the
-                // contract, sanitizes the hex `encryptedMetadata` into `Bytes`,
-                // auto-selects the AUTHENTICATION signing key, and broadcasts on
-                // the 8 MB worker stack.
-                let confirmed: Document = identity_wallet
-                    .create_document_with_signer(
-                        &owner_id_for_async,
-                        &contract_id_for_async,
-                        &document_type_str,
-                        &properties_json,
-                        signer,
-                    )
-                    .await?;
-                let json_string = confirmed_document_to_json(&confirmed)?;
-                Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
-            });
-        result.map_err(PlatformWalletFFIResult::from)
+    // Derive + seal synchronously, then wipe plaintext and master before the
+    // broadcast await. The auto path generates its index inside platform-wallet
+    // and the explicit path remains available for migration/tests.
+    let key_source = match master_opt.as_ref() {
+        Some(master) => TxMetadataKeySource::Master(&master.0),
+        None => TxMetadataKeySource::ResidentWallet,
+    };
+    let properties_json = unwrap_result_or_return!(match index {
+        Some(index) => identity_wallet.prepare_encrypted_txmetadata_properties(
+            &owner_id_for_async,
+            index,
+            version,
+            &payload_vec,
+            key_source,
+        ),
+        None => identity_wallet.prepare_encrypted_txmetadata_properties_auto_index(
+            &owner_id_for_async,
+            version,
+            &payload_vec,
+            key_source,
+        ),
     });
-    let result = unwrap_option_or_return!(option);
+    drop(payload_vec);
+    drop(master_opt);
+
+    let result: Result<(Identifier, String), PlatformWalletError> = block_on_worker(async move {
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        let confirmed: Document = identity_wallet
+            .create_document_with_signer(
+                &owner_id_for_async,
+                &contract_id_for_async,
+                &document_type_str,
+                &properties_json,
+                signer,
+            )
+            .await?;
+        let json_string = confirmed_document_to_json(&confirmed)?;
+        Ok::<_, PlatformWalletError>((confirmed.id(), json_string))
+    });
     let (document_id, document_json) = unwrap_result_or_return!(result);
 
     let json_cstring = unwrap_result_or_return!(CString::new(document_json));
@@ -600,47 +570,37 @@ pub unsafe extern "C" fn platform_wallet_fetch_encrypted_documents(
     let owner_id_for_async = owner_id;
     let contract_id_for_async = contract_id_value;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
+    // Do not retain the process-wide handle-store guard across the resolver
+    // callback and paginated network fetch.
+    let wallet =
+        unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Arc::clone));
+    let identity_wallet = wallet.identity().clone();
+    let master_opt = unwrap_result_or_return!(unsafe {
+        tx_metadata_key_master_for_wallet(&wallet, mnemonic_resolver_handle)
+    })
+    .map(WipingMaster);
 
-        // Key-source selection by wallet capability (may synchronously call
-        // back into the host mnemonic resolver for external-signable
-        // wallets — see `tx_metadata_key_master_for_wallet`). The resolved
-        // master is wrapped in a Drop-wiping guard.
-        let master_opt =
-            unsafe { tx_metadata_key_master_for_wallet(wallet, mnemonic_resolver_handle) }?
-                .map(WipingMaster);
-
-        let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
-            block_on_worker(async move {
-                // TRADEOFF (dashpay/platform#4091): unlike create, a document's
-                // (keyIndex, encryptionKeyIndex) are only known AFTER its page is
-                // fetched, so the master cannot be fully pre-derived before the
-                // network work. It therefore stays resident across the pagination
-                // awaits — but inside the `WipingMaster` Drop guard, so a panic or
-                // early return still scrubs its scalar (a manual post-await erase
-                // would be skipped on those paths). Per-document key derivation is
-                // itself synchronous, between page fetches (see
-                // `fetch_encrypted_documents`).
-                let key_source = match master_opt.as_ref() {
-                    Some(master) => TxMetadataKeySource::Master(&master.0),
-                    None => TxMetadataKeySource::ResidentWallet,
-                };
-                let fetched = identity_wallet
-                    .fetch_encrypted_documents(
-                        &owner_id_for_async,
-                        &contract_id_for_async,
-                        &document_type_str,
-                        since_ms,
-                        key_source,
-                    )
-                    .await;
-                drop(master_opt); // scrub as soon as the fetch completes
-                fetched
-            });
-        result.map_err(PlatformWalletFFIResult::from)
-    });
-    let result = unwrap_option_or_return!(option);
+    let result: Result<Vec<platform_wallet::DecryptedEncryptedDocument>, PlatformWalletError> =
+        block_on_worker(async move {
+            // Unlike create, a document's derivation indices are only known
+            // after its page is fetched, so the master remains in its wiping
+            // guard across pagination and is scrubbed immediately afterward.
+            let key_source = match master_opt.as_ref() {
+                Some(master) => TxMetadataKeySource::Master(&master.0),
+                None => TxMetadataKeySource::ResidentWallet,
+            };
+            let fetched = identity_wallet
+                .fetch_encrypted_documents(
+                    &owner_id_for_async,
+                    &contract_id_for_async,
+                    &document_type_str,
+                    since_ms,
+                    key_source,
+                )
+                .await;
+            drop(master_opt);
+            fetched
+        });
     let docs = unwrap_result_or_return!(result);
 
     let json_array: Vec<serde_json::Value> = docs
@@ -1078,6 +1038,42 @@ mod tests {
             "unset $createdAt must be present and null, got {:?}",
             json.get("$createdAt")
         );
+    }
+
+    /// Oversized plaintext is rejected before the function looks up the wallet
+    /// handle or copies the payload. The deliberately invalid handle therefore
+    /// must not mask the deterministic input error.
+    #[test]
+    fn encrypted_document_rejects_oversized_payload_before_wallet_lookup() {
+        let owner_id = [1u8; 32];
+        let contract_id = [2u8; 32];
+        let document_type = CString::new("txMetadata").unwrap();
+        let payload = vec![0u8; MAX_TX_METADATA_PLAINTEXT_LEN + 1];
+        let mut document_id = [0u8; 32];
+        let mut document_json = ptr::null_mut();
+
+        let result = unsafe {
+            platform_wallet_create_encrypted_document_with_signer_auto_index(
+                NULL_HANDLE,
+                ptr::null_mut(),
+                owner_id.as_ptr(),
+                contract_id.as_ptr(),
+                document_type.as_ptr(),
+                1,
+                payload.as_ptr(),
+                payload.len(),
+                1usize as *mut SignerHandle,
+                document_id.as_mut_ptr(),
+                &mut document_json,
+            )
+        };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert!(document_json.is_null());
+        assert_eq!(document_id, [0u8; 32]);
     }
 
     // ── tx_metadata_key_master_for_wallet dispatch (dashpay/platform#4091) ──
