@@ -52,7 +52,23 @@ final class MayaDepositVerificationIntegrationTests: IntegrationTestCase {
         let payloadLength: Int
     }
 
+    /// Opt-in gate. `run_tests.sh` (which CI runs for `swift-sdk-build`) executes this bundle,
+    /// and these tests sit behind several 90-second `waitForSpendable` windows on top of a full
+    /// SPV bootstrap. A bootstrap stall would hang the job rather than fail it, so they run only
+    /// when explicitly requested until the bootstrap path is reliable.
+    private static let isEnabled =
+        ProcessInfo.processInfo.environment["MAYA_DEPOSIT_VERIFICATION"] == "1"
+
+    private func skipUnlessEnabled() throws {
+        try XCTSkipUnless(
+            Self.isEnabled,
+            "Set MAYA_DEPOSIT_VERIFICATION=1 to run the Maya deposit verification suite "
+                + "(requires a local dashmate devnet and a completed SPV bootstrap)."
+        )
+    }
+
     func testPrompt04StaticProofAndLegacyFeeParity() async throws {
+        try skipUnlessEnabled()
         try env.walletManager.startSpv(config: env.spvConfig)
 
         let shortDeposit = try await buildDepositObservation(
@@ -108,6 +124,64 @@ final class MayaDepositVerificationIntegrationTests: IntegrationTestCase {
         }
     }
 
+    /// The 80-byte ceiling is the reason the whole memo path can refuse a swap, so prove the
+    /// boundary rather than the fixture: 80 bytes must be accepted, 81 rejected.
+    ///
+    /// Also pins the FFI guarantee this PR introduced — `core_wallet_tx_builder_add_op_return`
+    /// validates the payload *before* `take_builder()`, so a rejected memo must leave the
+    /// builder's already-configured outputs and options intact rather than replacing it with a
+    /// `mem::take` default. The rejected builder is therefore reused here and finalized, and the
+    /// resulting transaction must still carry the vault output and the ordering flags set before
+    /// the failed call.
+    func testOpReturnCeilingBoundaryAndRejectionPreservesBuilder() async throws {
+        try skipUnlessEnabled()
+        try env.walletManager.startSpv(config: env.spvConfig)
+
+        let wallet = try await env.makeTestWallet(name: "maya-op-return-boundary")
+        let coreWallet = wallet.getCoreWallet()
+        let platformWallet = wallet.getPlatformWallet()
+
+        let fundingAddress = try coreWallet.nextReceiveAddress()
+        _ = try await fundByMining(address: fundingAddress, dash: 0.5)
+        try await wallet.waitForSpendable(exactly: 50_000_000, timeout: 90)
+
+        let depositAmount: UInt64 = 200_000
+        let vaultAddress = try await env.coreRPC.getNewAddress()
+        let atCeiling = Data(repeating: 0x4d, count: Constants.maxMemoBytes)
+        let overCeiling = Data(repeating: 0x4d, count: Constants.maxMemoBytes + 1)
+
+        let builder = try CoreTransactionBuilder(network: .regtest)
+        try builder.addOutput(address: vaultAddress, amountDuffs: depositAmount)
+        try builder.preserveOutputOrder()
+        try builder.changeToFirstInput()
+
+        XCTAssertThrowsError(try builder.addOpReturn(overCeiling)) { error in
+            XCTAssertTrue(
+                "\(error)".lowercased().contains("op_return"),
+                "expected an OP_RETURN size error, got \(error)"
+            )
+        }
+
+        // Same builder instance: if the rejection had consumed it, this would build a
+        // transaction missing the vault output and the ordering flags.
+        try builder.addOpReturn(atCeiling)
+        let tx = try builder.finalizeAtomic(
+            wallet: platformWallet,
+            accountType: .bip44,
+            accountIndex: Constants.bip44AccountIndex
+        )
+
+        let decoded = try TransactionDecoder.decode(try tx.serializedData(), network: .regtest)
+        XCTAssertEqual(decoded.outputs.count, 3, "vault + memo + change survived the rejection")
+        XCTAssertEqual(decoded.outputs[0].address, vaultAddress, "VOUT0 lost after the rejected memo")
+        XCTAssertEqual(decoded.outputs[0].valueDuffs, depositAmount)
+        XCTAssertEqual(decoded.outputs[1].valueDuffs, 0)
+        XCTAssertEqual(
+            opReturnPayload(from: decoded.outputs[1].scriptPubkey), atCeiling,
+            "an exactly-80-byte payload must be accepted and carried verbatim"
+        )
+    }
+
     private func buildDepositObservation(
         name: String,
         fundingDashAmounts: [Double],
@@ -149,13 +223,22 @@ final class MayaDepositVerificationIntegrationTests: IntegrationTestCase {
         let decodedMemoData = try XCTUnwrap(opReturnPayload(from: memoOutput.scriptPubkey))
         let decodedMemo = try XCTUnwrap(String(data: decodedMemoData, encoding: .utf8))
 
-        let inputZeroMatch = try findMatchedUTXO(for: decoded.inputs[0], in: utxosBeforeBuild)
-        let outputTwoMatchesInputZeroScript: Bool
-        if decoded.outputs.count == 3 {
-            outputTwoMatchesInputZeroScript = decoded.outputs[2].scriptPubkey == inputZeroMatch.scriptPubkey
-        } else {
-            outputTwoMatchesInputZeroScript = false
+        // Both fixtures fund far more than the deposit plus fee, so change is always well above
+        // dust and the transaction must be exactly vault + memo + change. Assert the shape here,
+        // before any subscripting: a wrong shape must surface as a readable failure rather than
+        // trapping on an out-of-range index and taking the whole test process down.
+        XCTAssertEqual(
+            decoded.outputs.count, 3,
+            "\(name) must contain vault, memo and change outputs"
+        )
+        XCTAssertFalse(decoded.inputs.isEmpty, "\(name) has no inputs")
+        guard decoded.outputs.count == 3, let firstInput = decoded.inputs.first else {
+            throw XCTSkip("\(name) produced an unexpected transaction shape; assertions above hold the detail")
         }
+
+        let inputZeroMatch = try findMatchedUTXO(for: firstInput, in: utxosBeforeBuild)
+        let outputTwoMatchesInputZeroScript =
+            decoded.outputs[2].scriptPubkey == inputZeroMatch.scriptPubkey
 
         return DepositObservation(
             name: name,
@@ -178,17 +261,17 @@ final class MayaDepositVerificationIntegrationTests: IntegrationTestCase {
     }
 
     private func assertDepositObservation(_ observation: DepositObservation) {
-        XCTAssertGreaterThanOrEqual(observation.outputCount, 2, "\(observation.name) output count below Maya minimum")
-        XCTAssertLessThanOrEqual(observation.outputCount, 3, "\(observation.name) output count above Maya maximum")
+        // Exactly three, not a range: both fixtures leave millions of duffs after the vault
+        // payment and fee, so change is mandatory. Accepting two outputs would let a regression
+        // that suppresses change pass the very test that exists to prove change goes to VIN0.
+        XCTAssertEqual(observation.outputCount, 3, "\(observation.name) must be vault + memo + change")
         XCTAssertEqual(observation.actualVaultAmount, observation.depositAmount, "\(observation.name) VOUT0 amount mismatch")
         XCTAssertTrue(observation.outputOneIsOpReturn, "\(observation.name) VOUT1 is not OP_RETURN")
         XCTAssertEqual(observation.decodedMemo, observation.memo, "\(observation.name) memo payload mismatch")
         XCTAssertGreaterThanOrEqual(observation.depositAmount, Constants.minimumDepositDuffs, "\(observation.name) deposit fell below Maya dust floor")
         XCTAssertLessThanOrEqual(observation.memoBytes, Constants.maxMemoBytes, "\(observation.name) memo exceeded 80 bytes")
         XCTAssertGreaterThanOrEqual(observation.feeDuffs, UInt64(observation.serializedSize), "\(observation.name) fee fell below 1 duff/byte")
-        if observation.outputCount == 3 {
-            XCTAssertTrue(observation.outputTwoMatchesInputZeroScript, "\(observation.name) VOUT2 does not return change to VIN0 scriptPubKey")
-        }
+        XCTAssertTrue(observation.outputTwoMatchesInputZeroScript, "\(observation.name) VOUT2 does not return change to VIN0 scriptPubKey")
     }
 
     private func legacyFeeObservationForOrdinarySend() async throws -> LegacyFeeObservation {
