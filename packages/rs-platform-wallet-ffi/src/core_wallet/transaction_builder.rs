@@ -230,7 +230,23 @@ pub unsafe extern "C" fn core_wallet_signed_payment_finalize(
     check_ptr!(out_tx);
     check_ptr!(out_bytes_ptr);
     check_ptr!(out_bytes_len);
+    // Zero-initialize EVERY out-param up front. The success block at the bottom
+    // writes all six, but the many error returns in between (build failure,
+    // signing failure, txid encoding) previously left five of them untouched,
+    // so a caller that does not check the result code would read whatever it had
+    // allocated — a dangling `out_tx.tx_bytes`/`out_bytes_ptr` in particular is a
+    // use-after-free hazard. Defined defaults make every error path leave a null
+    // transaction, a null txid, and zero fee/length instead.
     *out_token = 0;
+    *out_fee = 0;
+    *out_txid = std::ptr::null_mut();
+    *out_tx = FFICoreTransaction {
+        tx_bytes: std::ptr::null_mut(),
+        tx_len: 0,
+        fee: 0,
+    };
+    *out_bytes_ptr = std::ptr::null();
+    *out_bytes_len = 0;
 
     // `finalize_transaction` consumes the builder: reclaim both heap boxes up
     // front so they are freed on every return path below.
