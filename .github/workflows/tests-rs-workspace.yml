@@ -21,6 +21,13 @@ jobs:
         with:
           clean: false
 
+      - name: Fail on local rust-dashcore patch override
+        run: |
+          if grep -q '^\[patch\."https://github.com/dashpay/rust-dashcore"\]' Cargo.toml; then
+            echo "::error::Remove the local rust-dashcore [patch] override before merging"
+            exit 1
+          fi
+
       - name: Prune macOS runner disk before tests
         run: |
           for path in ../target-backup-before-*-clean-* target/llvm-cov-target; do

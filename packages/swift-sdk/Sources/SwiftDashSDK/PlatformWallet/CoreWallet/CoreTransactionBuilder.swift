@@ -68,6 +68,26 @@ public final class FinalizedCoreTransaction {
     }
 
     func takeForAbandon() throws -> Handle { try takeForBroadcast() }
+
+    /// Consensus-serialized signed transaction bytes (copied out) without
+    /// consuming the ownership token.
+    public func serializedData() throws -> Data {
+        guard nativeHandle != 0 else {
+            throw PlatformWalletError.unknown("FinalizedCoreTransaction already consumed")
+        }
+
+        var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
+        var bytesLen: UInt = 0
+        try core_wallet_signed_transaction_v2_bytes(nativeHandle, &bytesPtr, &bytesLen).check()
+
+        guard let bytesPtr, bytesLen > 0 else {
+            throw PlatformWalletError.unknown(
+                "FFI returned success but finalized transaction bytes were empty"
+            )
+        }
+        defer { platform_wallet_bytes_free(bytesPtr, bytesLen) }
+        return Data(bytes: bytesPtr, count: Int(bytesLen))
+    }
 }
 
 /// key-wallet transaction builder over FFI. Add outputs and options, then call
@@ -185,11 +205,41 @@ public final class CoreTransactionBuilder {
         return self
     }
 
+    /// Add a zero-value OP_RETURN output carrying `data` for a MAYACHAIN-style
+    /// deposit. See https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions
+    @discardableResult
+    public func addOpReturn(_ data: Data) throws -> CoreTransactionBuilder {
+        try data.withUnsafeBytes { buf in
+            try core_wallet_tx_builder_add_op_return(
+                handle,
+                buf.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                UInt(data.count)
+            ).check()
+        }
+        return self
+    }
+
     @discardableResult
     public func setChangeAddress(_ address: String) throws -> CoreTransactionBuilder {
         let c = strdup(address)
         defer { free(c) }
         try core_wallet_tx_builder_set_change_address(handle, c).check()
+        return self
+    }
+
+    /// Preserve outputs in insertion order for a MAYACHAIN-style deposit.
+    /// See https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions
+    @discardableResult
+    public func preserveOutputOrder() throws -> CoreTransactionBuilder {
+        try core_wallet_tx_builder_preserve_output_order(handle).check()
+        return self
+    }
+
+    /// Route change to the first selected input address (VIN0) for a MAYACHAIN-style deposit.
+    /// See https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/sending-transactions
+    @discardableResult
+    public func changeToFirstInput() throws -> CoreTransactionBuilder {
+        try core_wallet_tx_builder_change_to_first_input(handle).check()
         return self
     }
 
