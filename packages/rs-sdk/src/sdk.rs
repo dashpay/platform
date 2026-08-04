@@ -480,7 +480,9 @@ impl Sdk {
     ///   unproved self-assertion;
     /// - the probe is *unproven* and feeds only peer ordering, never the SDK's
     ///   protocol-version ratchet, which stays proof-driven
-    ///   ([`Self::maybe_update_protocol_version`]).
+    ///   ([`Self::maybe_update_protocol_version`]);
+    /// - the pass also stops early on [`Self::shutdown`], so a shutdown during
+    ///   refresh is not delayed by the remaining probe budget.
     ///
     /// Probes execute their transport directly against the target address
     /// instead of going through the `DapiClient` executor: the executor pairs
@@ -591,8 +593,14 @@ impl Sdk {
             }
         ))
         .buffer_unordered(PEER_VERSION_PROBE_CONCURRENCY)
-        .take_until(rs_dapi_client::transport::sleep(
-            PEER_VERSION_PROBE_TOTAL_BUDGET,
+        // Stop on whichever comes first: the overall probe budget, or SDK
+        // shutdown. Without the cancellation arm a `Sdk::shutdown()` issued
+        // during a refresh would still wait out the full budget.
+        .take_until(futures::future::select(
+            Box::pin(rs_dapi_client::transport::sleep(
+                PEER_VERSION_PROBE_TOTAL_BUDGET,
+            )),
+            Box::pin(self.cancelled()),
         )));
 
         let mut preferred_count = 0;
