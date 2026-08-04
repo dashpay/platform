@@ -701,6 +701,40 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_tx_builder_add_op_return` — append a zero-value OP_RETURN
+/// output carrying `data` (a MAYACHAIN-style deposit memo). The FFI rejects
+/// a payload over the 80-byte standardness limit BEFORE consuming the
+/// builder's state, so a refused memo leaves outputs/options intact.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderAddOpReturn(
+    mut env: JNIEnv,
+    _class: JClass,
+    builder: jlong,
+    data: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        if builder == 0 {
+            throw_sdk_exception(env, 1, "builder handle is 0");
+            return;
+        }
+        let bytes = match env.convert_byte_array(&data) {
+            Ok(b) => b,
+            Err(_) => {
+                throw_sdk_exception(env, 1, "data must be a byte[]");
+                return;
+            }
+        };
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_tx_builder_add_op_return(
+                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
+                bytes.as_ptr(),
+                bytes.len(),
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// `core_wallet_tx_builder_set_change_address` — override the change
 /// address (network-checked Rust-side). Optional: `set_funding` also sets a
 /// change address, so the `.coreToCore` send path does not call this.
@@ -723,6 +757,53 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             platform_wallet_ffi::core_wallet_tx_builder_set_change_address(
                 builder as *mut platform_wallet_ffi::FFITransactionBuilder,
                 address_c.as_ptr(),
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// `core_wallet_tx_builder_preserve_output_order` — keep outputs in
+/// insertion order instead of BIP-69 sorting them at build time. Required
+/// for MAYACHAIN-style deposits (vault must stay VOUT0, memo VOUT1).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderPreserveOutputOrder(
+    mut env: JNIEnv,
+    _class: JClass,
+    builder: jlong,
+) {
+    guard(&mut env, (), |env| {
+        if builder == 0 {
+            throw_sdk_exception(env, 1, "builder handle is 0");
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_tx_builder_preserve_output_order(
+                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// `core_wallet_tx_builder_change_to_first_input` — route change to the
+/// address of the first selected input (VIN0). Required for MAYACHAIN-style
+/// deposits: MAYAChain identifies the depositor by VIN0 and pays refunds
+/// there. Overrides any change address `set_funding` assigned.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderChangeToFirstInput(
+    mut env: JNIEnv,
+    _class: JClass,
+    builder: jlong,
+) {
+    guard(&mut env, (), |env| {
+        if builder == 0 {
+            throw_sdk_exception(env, 1, "builder handle is 0");
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_tx_builder_change_to_first_input(
+                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
             )
         };
         let _ = take_pwffi_error(env, result);
@@ -1179,6 +1260,55 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             return 0;
         }
         fee as jlong
+    })
+}
+
+/// `core_wallet_signed_transaction_v2_bytes` — the consensus-serialized
+/// signed transaction bytes of a finalized-transaction handle from
+/// [coreTxBuilderFinalize], WITHOUT consuming the ownership token (mirror of
+/// Swift's `FinalizedCoreTransaction.serializedData()`). Lets the caller
+/// assert the deposit shape (e.g. MAYACHAIN's vault/OP_RETURN/change output
+/// order) before deciding to broadcast. The FFI-owned buffer is copied into
+/// the returned `byte[]` and freed here.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Bytes(
+    mut env: JNIEnv,
+    _class: JClass,
+    transaction_handle: jlong,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if transaction_handle == 0 {
+            throw_sdk_exception(env, 1, "transaction handle is 0");
+            return ptr::null_mut();
+        }
+        let mut bytes_ptr: *mut u8 = ptr::null_mut();
+        let mut bytes_len: usize = 0;
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_signed_transaction_v2_bytes(
+                transaction_handle as Handle,
+                &mut bytes_ptr,
+                &mut bytes_len,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if bytes_ptr.is_null() || bytes_len == 0 {
+            // A signed transaction is never 0 bytes — same check Swift makes.
+            throw_sdk_exception(
+                env,
+                1,
+                "FFI returned success but finalized transaction bytes were empty",
+            );
+            return ptr::null_mut();
+        }
+        // Copy into a JVM array, then free the FFI-owned buffer on every path.
+        let array = {
+            let slice = unsafe { std::slice::from_raw_parts(bytes_ptr, bytes_len) };
+            env.byte_array_from_slice(slice)
+        };
+        unsafe { platform_wallet_ffi::platform_wallet_bytes_free(bytes_ptr, bytes_len) };
+        array.map(|a| a.into_raw()).unwrap_or(ptr::null_mut())
     })
 }
 

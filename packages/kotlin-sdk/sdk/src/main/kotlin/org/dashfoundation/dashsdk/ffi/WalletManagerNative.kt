@@ -141,11 +141,34 @@ internal object WalletManagerNative {
     external fun coreTxBuilderAddOutput(builder: Long, address: String, amount: Long)
 
     /**
+     * `core_wallet_tx_builder_add_op_return` — append a zero-value OP_RETURN
+     * output carrying [data] (a MAYACHAIN-style deposit memo). Rejected
+     * Rust-side over the 80-byte standardness limit — BEFORE the builder's
+     * state is consumed, so a refused memo leaves prior outputs intact.
+     */
+    external fun coreTxBuilderAddOpReturn(builder: Long, data: ByteArray)
+
+    /**
      * `core_wallet_tx_builder_set_change_address` — override the change
      * address (network-checked). Optional; the Core→Core send relies on
      * [coreTxBuilderSetFunding], which also sets a change address.
      */
     external fun coreTxBuilderSetChangeAddress(builder: Long, address: String)
+
+    /**
+     * `core_wallet_tx_builder_preserve_output_order` — keep outputs in
+     * insertion order instead of BIP-69 sorting them at build time
+     * (MAYACHAIN deposits require vault = VOUT0, memo = VOUT1).
+     */
+    external fun coreTxBuilderPreserveOutputOrder(builder: Long)
+
+    /**
+     * `core_wallet_tx_builder_change_to_first_input` — route change to the
+     * address of the first selected input (VIN0). MAYACHAIN identifies the
+     * depositor by VIN0 and pays refunds there. Overrides the change address
+     * [coreTxBuilderSetFunding] assigned.
+     */
+    external fun coreTxBuilderChangeToFirstInput(builder: Long)
 
     /** `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0). */
     external fun coreTxBuilderSetFeeRate(builder: Long, satPerKb: Long)
@@ -238,6 +261,14 @@ internal object WalletManagerNative {
 
     /** Read the finalized transaction's fee before consumption. */
     external fun coreSignedTransactionV2Fee(transaction: Long): Long
+
+    /**
+     * `core_wallet_signed_transaction_v2_bytes` — the consensus-serialized
+     * signed transaction bytes, read WITHOUT consuming the ownership token.
+     * Lets the caller assert the deposit shape (e.g. MAYACHAIN's
+     * vault/OP_RETURN/change ordering) before deciding to broadcast.
+     */
+    external fun coreSignedTransactionV2Bytes(transaction: Long): ByteArray
 
     /** `core_wallet_destroy` — release a core handle from [platformWalletGetCore]. Safe on 0. */
     external fun coreWalletDestroy(coreHandle: Long)
