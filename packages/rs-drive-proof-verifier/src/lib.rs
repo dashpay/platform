@@ -35,6 +35,14 @@ pub use drive::query::SplitCountEntry;
 // read it from here and never hardcode the literal. Divide an
 // `AvgFixedPoint` value by it (or call `RankedEntryValue::as_f64`) to
 // render an average.
+//
+// The fixed point is the exact integer grovedb ranks on **when it came
+// from a proof**. `DocumentRankedEntries::from_unproved_response`
+// reconstructs it from the wire's `double` (the no-proof path carries
+// an f64 approximation, since a proof-verifying client rebuilds the
+// entry from the proof instead), so on that path the low digits past
+// f64's ~15–16 significant decimals are noise. Anything that needs the
+// committed integer must go through the proof.
 // `RankedPage` rides along because it is what
 // `verify_ranked_top_k_proof` returns: a caller verifying a ranked
 // proof for themselves needs to name the type without depending on

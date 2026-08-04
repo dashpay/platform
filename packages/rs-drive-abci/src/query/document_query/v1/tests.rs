@@ -2180,25 +2180,21 @@ mod ranked_tests {
             .collect()
     }
 
-    /// Decode the wire's `avg_fixed_point` back into the `i128` it
-    /// encodes, asserting the 16-byte big-endian contract the proto
-    /// documents. This is the inverse a client performs, so a change
-    /// to the encoding breaks here rather than silently in the SDK.
-    fn avg_fixed_points(entries: &[RankedEntry]) -> Vec<i128> {
+    /// Pull the wire's `avg` doubles out of the entries.
+    ///
+    /// The wire carries a `double` approximation rather than the exact
+    /// fixed-point `i128` because these entries only exist on the
+    /// no-proof path — the proof path reconstructs the exact integer
+    /// from the grovedb proof. Expectations are therefore built by
+    /// running the *same* conversion the server runs (see
+    /// [`expected_avg`]), so the comparison is exact rather than
+    /// epsilon-based.
+    fn avgs(entries: &[RankedEntry]) -> Vec<f64> {
         entries
             .iter()
             .map(|entry| match entry.value {
-                Some(ranked_entry::Value::AvgFixedPoint(ref bytes)) => {
-                    let bytes: [u8; 16] = bytes.as_slice().try_into().unwrap_or_else(|_| {
-                        panic!(
-                            "avg_fixed_point must be exactly 16 bytes (i128 big-endian), \
-                             got {} bytes",
-                            bytes.len()
-                        )
-                    });
-                    i128::from_be_bytes(bytes)
-                }
-                ref other => panic!("expected an avg_fixed_point value, got {:?}", other),
+                Some(ranked_entry::Value::Avg(avg)) => avg,
+                ref other => panic!("expected an avg value, got {:?}", other),
             })
             .collect()
     }
@@ -2212,6 +2208,15 @@ mod ranked_tests {
         (sum as i128)
             .saturating_mul(RANKED_AVG_SCALE)
             .div_euclid(count as i128)
+    }
+
+    /// The double the wire is expected to carry: the fixed point above,
+    /// divided by the scale in `f64` — the exact computation
+    /// `RankedEntryValue::as_f64` performs server-side. Reproducing the
+    /// rounding model rather than hardcoding a decimal literal is what
+    /// lets these tests compare with `==`.
+    fn expected_avg(sum: i64, count: u64) -> f64 {
+        (expected_avg_fixed_point(sum, count) as f64) / (RANKED_AVG_SCALE as f64)
     }
 
     /// `SELECT COUNT(*) GROUP BY restaurantId ORDER BY $count DESC
@@ -2414,20 +2419,19 @@ mod ranked_tests {
              > epsilon(10.5)"
         );
         assert_eq!(
-            avg_fixed_points(&entries),
+            avgs(&entries),
             vec![
-                expected_avg_fixed_point(95, 1),
-                expected_avg_fixed_point(170, 2),
-                expected_avg_fixed_point(180, 3),
-                expected_avg_fixed_point(60, 2),
-                expected_avg_fixed_point(21, 2),
+                expected_avg(95, 1),
+                expected_avg(170, 2),
+                expected_avg(180, 3),
+                expected_avg(60, 2),
+                expected_avg(21, 2),
             ],
-            "each entry is floor(sum * RANKED_AVG_SCALE / count), 16-byte big-endian"
+            "each entry is floor(sum * RANKED_AVG_SCALE / count) rendered as a double"
         );
-        // And the fixed point really does divide back down to the
-        // average a caller would render.
-        let epsilon = avg_fixed_points(&entries)[4];
-        assert_eq!((epsilon as f64) / (RANKED_AVG_SCALE as f64), 10.5);
+        // And the double really is the average a caller would render —
+        // 21/2 survives the fixed-point round trip exactly.
+        assert_eq!(avgs(&entries)[4], 10.5);
     }
 
     /// **`OFFSET` is accepted on the ranked path**, which is the one
@@ -2474,10 +2478,7 @@ mod ranked_tests {
             vec!["epsilon"],
             "gamma > alpha > beta > delta > epsilon — rank 4 (0-based) is epsilon"
         );
-        assert_eq!(
-            avg_fixed_points(&fifth.entries),
-            vec![expected_avg_fixed_point(10, 1)]
-        );
+        assert_eq!(avgs(&fifth.entries), vec![expected_avg(10, 1)]);
         assert_eq!(
             fifth.skipped,
             Some(4),

@@ -65,8 +65,16 @@
 //! [`RANKED_AVG_SCALE`](drive_proof_verifier::RANKED_AVG_SCALE) — a
 //! re-export of grovedb's own constant, which moved from `10^15` to
 //! `10^19` before release, so never hardcode the literal — or call
-//! [`RankedEntryValue::as_f64`](drive_proof_verifier::RankedEntryValue::as_f64)
-//! for a lossy display value.
+//! [`RankedEntryValue::as_f64`](drive_proof_verifier::RankedEntryValue::as_f64),
+//! which does that division for you.
+//!
+//! **How exact the average is depends on the path.** Fetched with a
+//! proof (the default, and what the examples below do), the fixed point
+//! is the integer grovedb committed to and ranked on. Fetched without
+//! one, the wire carries only an `f64` of the average and the SDK
+//! re-scales it back, so the digits past `f64`'s ~15–16 significant
+//! decimals are reconstruction noise — fine to render, not something to
+//! compare for equality. Ranking *order* is exact either way.
 //!
 //! ## Example: top 5 restaurants by average grade
 //!
@@ -101,6 +109,14 @@
 //!     let rank = ranked.starting_rank + offset as u64;
 //!     let restaurant = String::from_utf8_lossy(&entry.key);
 //!     if let RankedEntryValue::AvgFixedPoint(fixed_point) = entry.value {
+//!         // `as_f64()` is this same division, for when you only want
+//!         // to display the number:
+//!         //     let average = entry.value.as_f64();
+//!         // Keep the `fixed_point` itself when you need the exact
+//!         // integer the proof committed to — comparing two groups,
+//!         // reproducing the ranking, storing it. On a `prove = false`
+//!         // fetch that integer is a reconstruction from the wire's
+//!         // double, so it is only as precise as an `f64`.
 //!         let average = (fixed_point as f64) / (RANKED_AVG_SCALE as f64);
 //!         println!("#{}: {restaurant}: {average}", rank + 1);
 //!     }

@@ -30615,7 +30615,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
   VALUE_NOT_SET: 0,
   COUNT: 2,
   SUM: 3,
-  AVG_FIXED_POINT: 4
+  AVG: 4
 };
 
 /**
@@ -30659,7 +30659,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
     key: msg.getKey_asB64(),
     count: jspb.Message.getFieldWithDefault(msg, 2, "0"),
     sum: jspb.Message.getFieldWithDefault(msg, 3, "0"),
-    avgFixedPoint: msg.getAvgFixedPoint_asB64()
+    avg: jspb.Message.getFloatingPointFieldWithDefault(msg, 4, 0.0)
   };
 
   if (includeInstance) {
@@ -30709,8 +30709,8 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
       msg.setSum(value);
       break;
     case 4:
-      var value = /** @type {!Uint8Array} */ (reader.readBytes());
-      msg.setAvgFixedPoint(value);
+      var value = /** @type {number} */ (reader.readDouble());
+      msg.setAvg(value);
       break;
     default:
       reader.skipField();
@@ -30762,9 +30762,9 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
       f
     );
   }
-  f = /** @type {!(string|Uint8Array)} */ (jspb.Message.getField(message, 4));
+  f = /** @type {number} */ (jspb.Message.getField(message, 4));
   if (f != null) {
-    writer.writeBytes(
+    writer.writeDouble(
       4,
       f
     );
@@ -30887,43 +30887,19 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
 
 
 /**
- * optional bytes avg_fixed_point = 4;
- * @return {string}
+ * optional double avg = 4;
+ * @return {number}
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getAvgFixedPoint = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 4, ""));
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getAvg = function() {
+  return /** @type {number} */ (jspb.Message.getFloatingPointFieldWithDefault(this, 4, 0.0));
 };
 
 
 /**
- * optional bytes avg_fixed_point = 4;
- * This is a type-conversion wrapper around `getAvgFixedPoint()`
- * @return {string}
- */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getAvgFixedPoint_asB64 = function() {
-  return /** @type {string} */ (jspb.Message.bytesAsB64(
-      this.getAvgFixedPoint()));
-};
-
-
-/**
- * optional bytes avg_fixed_point = 4;
- * Note that Uint8Array is not supported on all browsers.
- * @see http://caniuse.com/Uint8Array
- * This is a type-conversion wrapper around `getAvgFixedPoint()`
- * @return {!Uint8Array}
- */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.getAvgFixedPoint_asU8 = function() {
-  return /** @type {!Uint8Array} */ (jspb.Message.bytesAsU8(
-      this.getAvgFixedPoint()));
-};
-
-
-/**
- * @param {!(string|Uint8Array)} value
+ * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} returns this
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.setAvgFixedPoint = function(value) {
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.setAvg = function(value) {
   return jspb.Message.setOneofField(this, 4, proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.oneofGroups_[0], value);
 };
 
@@ -30932,7 +30908,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
  * Clears the field making it undefined.
  * @return {!proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry} returns this
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.clearAvgFixedPoint = function() {
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.clearAvg = function() {
   return jspb.Message.setOneofField(this, 4, proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.oneofGroups_[0], undefined);
 };
 
@@ -30941,7 +30917,7 @@ proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Rank
  * Returns whether this field is set.
  * @return {boolean}
  */
-proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.hasAvgFixedPoint = function() {
+proto.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry.prototype.hasAvg = function() {
   return jspb.Message.getField(this, 4) != null;
 };
 

@@ -7163,14 +7163,14 @@ void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneO
 @dynamic key;
 @dynamic count;
 @dynamic sum;
-@dynamic avgFixedPoint;
+@dynamic avg;
 
 typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_ {
   uint32_t _has_storage_[2];
   NSData *key;
-  NSData *avgFixedPoint;
   uint64_t count;
   int64_t sum;
+  double avg;
 } GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_;
 
 // This method is threadsafe because it is initially called
@@ -7207,13 +7207,13 @@ typedef struct GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_
         .dataType = GPBDataTypeSInt64,
       },
       {
-        .name = "avgFixedPoint",
+        .name = "avg",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_AvgFixedPoint,
+        .number = GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Avg,
         .hasIndex = -1,
-        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, avgFixedPoint),
+        .offset = (uint32_t)offsetof(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry__storage_, avg),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeBytes,
+        .dataType = GPBDataTypeDouble,
       },
     };
     GPBDescriptor *localDescriptor =

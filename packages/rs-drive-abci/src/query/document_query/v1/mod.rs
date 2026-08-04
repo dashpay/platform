@@ -1415,13 +1415,17 @@ fn into_v1_ranked_entry(e: DriveRankedEntry) -> RankedEntry {
         value: Some(match e.value {
             RankedEntryValue::Count(count) => ranked_entry::Value::Count(count),
             RankedEntryValue::Sum(sum) => ranked_entry::Value::Sum(sum),
-            // 16-byte big-endian two's complement, the encoding the
-            // proto field documents. `to_be_bytes` on `i128` is
-            // exactly that, and is the inverse of the client's
-            // `i128::from_be_bytes`.
-            RankedEntryValue::AvgFixedPoint(avg) => {
-                ranked_entry::Value::AvgFixedPoint(avg.to_be_bytes().to_vec())
-            }
+            // The wire carries a `double` approximation of the exact
+            // fixed-point `i128` the Avg axis is ordered by:
+            // `fixed_point as f64 / RANKED_AVG_SCALE as f64`, which is
+            // what `as_f64` computes. Lossy by construction, and that
+            // is fine — these entries are only read on the no-proof
+            // ("quick answer") path. A proof-verifying client ignores
+            // this field and reconstructs the exact fixed point from
+            // the grovedb proof, so no verification depends on it.
+            // Ranking order is still exact: the ordering happened over
+            // the i128 before this conversion.
+            value @ RankedEntryValue::AvgFixedPoint(_) => ranked_entry::Value::Avg(value.as_f64()),
         }),
     }
 }

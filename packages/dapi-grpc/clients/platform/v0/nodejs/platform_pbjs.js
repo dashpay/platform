@@ -26218,7 +26218,7 @@ $root.org = (function() {
                                  * @property {Uint8Array|null} [key] RankedEntry key
                                  * @property {number|Long|null} [count] RankedEntry count
                                  * @property {number|Long|null} [sum] RankedEntry sum
-                                 * @property {Uint8Array|null} [avgFixedPoint] RankedEntry avgFixedPoint
+                                 * @property {number|null} [avg] RankedEntry avg
                                  */
 
                                 /**
@@ -26261,24 +26261,24 @@ $root.org = (function() {
                                 RankedEntry.prototype.sum = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
 
                                 /**
-                                 * RankedEntry avgFixedPoint.
-                                 * @member {Uint8Array} avgFixedPoint
+                                 * RankedEntry avg.
+                                 * @member {number} avg
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
                                  * @instance
                                  */
-                                RankedEntry.prototype.avgFixedPoint = $util.newBuffer([]);
+                                RankedEntry.prototype.avg = 0;
 
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
                                 /**
                                  * RankedEntry value.
-                                 * @member {"count"|"sum"|"avgFixedPoint"|undefined} value
+                                 * @member {"count"|"sum"|"avg"|undefined} value
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.RankedEntry
                                  * @instance
                                  */
                                 Object.defineProperty(RankedEntry.prototype, "value", {
-                                    get: $util.oneOfGetter($oneOfFields = ["count", "sum", "avgFixedPoint"]),
+                                    get: $util.oneOfGetter($oneOfFields = ["count", "sum", "avg"]),
                                     set: $util.oneOfSetter($oneOfFields)
                                 });
 
@@ -26312,8 +26312,8 @@ $root.org = (function() {
                                         writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.count);
                                     if (message.sum != null && Object.hasOwnProperty.call(message, "sum"))
                                         writer.uint32(/* id 3, wireType 0 =*/24).sint64(message.sum);
-                                    if (message.avgFixedPoint != null && Object.hasOwnProperty.call(message, "avgFixedPoint"))
-                                        writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.avgFixedPoint);
+                                    if (message.avg != null && Object.hasOwnProperty.call(message, "avg"))
+                                        writer.uint32(/* id 4, wireType 1 =*/33).double(message.avg);
                                     return writer;
                                 };
 
@@ -26358,7 +26358,7 @@ $root.org = (function() {
                                             message.sum = reader.sint64();
                                             break;
                                         case 4:
-                                            message.avgFixedPoint = reader.bytes();
+                                            message.avg = reader.double();
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -26411,12 +26411,12 @@ $root.org = (function() {
                                         if (!$util.isInteger(message.sum) && !(message.sum && $util.isInteger(message.sum.low) && $util.isInteger(message.sum.high)))
                                             return "sum: integer|Long expected";
                                     }
-                                    if (message.avgFixedPoint != null && message.hasOwnProperty("avgFixedPoint")) {
+                                    if (message.avg != null && message.hasOwnProperty("avg")) {
                                         if (properties.value === 1)
                                             return "value: multiple values";
                                         properties.value = 1;
-                                        if (!(message.avgFixedPoint && typeof message.avgFixedPoint.length === "number" || $util.isString(message.avgFixedPoint)))
-                                            return "avgFixedPoint: buffer expected";
+                                        if (typeof message.avg !== "number")
+                                            return "avg: number expected";
                                     }
                                     return null;
                                 };
@@ -26456,11 +26456,8 @@ $root.org = (function() {
                                             message.sum = object.sum;
                                         else if (typeof object.sum === "object")
                                             message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
-                                    if (object.avgFixedPoint != null)
-                                        if (typeof object.avgFixedPoint === "string")
-                                            $util.base64.decode(object.avgFixedPoint, message.avgFixedPoint = $util.newBuffer($util.base64.length(object.avgFixedPoint)), 0);
-                                        else if (object.avgFixedPoint.length >= 0)
-                                            message.avgFixedPoint = object.avgFixedPoint;
+                                    if (object.avg != null)
+                                        message.avg = Number(object.avg);
                                     return message;
                                 };
 
@@ -26503,10 +26500,10 @@ $root.org = (function() {
                                         if (options.oneofs)
                                             object.value = "sum";
                                     }
-                                    if (message.avgFixedPoint != null && message.hasOwnProperty("avgFixedPoint")) {
-                                        object.avgFixedPoint = options.bytes === String ? $util.base64.encode(message.avgFixedPoint, 0, message.avgFixedPoint.length) : options.bytes === Array ? Array.prototype.slice.call(message.avgFixedPoint) : message.avgFixedPoint;
+                                    if (message.avg != null && message.hasOwnProperty("avg")) {
+                                        object.avg = options.json && !isFinite(message.avg) ? String(message.avg) : message.avg;
                                         if (options.oneofs)
-                                            object.value = "avgFixedPoint";
+                                            object.value = "avg";
                                     }
                                     return object;
                                 };

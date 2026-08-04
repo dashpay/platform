@@ -3694,14 +3694,14 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNu
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Key = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Count = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Sum = 3,
-  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_AvgFixedPoint = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_FieldNumber_Avg = 4,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase) {
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Count = 2,
   GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Sum = 3,
-  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_AvgFixedPoint = 4,
+  GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_OneOfCase_Avg = 4,
 };
 
 /**
@@ -3722,7 +3722,7 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry_Value_O
  *     `rankedCountable` axis.
  *   * `sum`    — `SELECT SUM(field)`, `rankedSummable` axis.
  *     Signed for the same reason `SumEntry.sum` is.
- *   * `avg_fixed_point` — `SELECT AVG(field)`,
+ *   * `avg`    — `SELECT AVG(field)`,
  *     `rankedAverageable` axis.
  **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry : GPBMessage
@@ -3745,29 +3745,39 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_RankedEntry : G
 @property(nonatomic, readwrite) int64_t sum;
 
 /**
- * The group's average as a **16-byte big-endian two's-
- * complement `i128` fixed-point number**: the exact integer
- * grovedb sorts the Avg axis by, namely
- * `floor(sum * SCALE / count)` with euclidean (toward −∞)
- * division, where SCALE is grovedb's `AVG_FIXED_POINT_SCALE`
- * (currently 10^19). Divide by that scale to get a float:
- * `avg = i128_from_be_bytes(avg_fixed_point) / SCALE`.
+ * The group's average, as a **`double` approximation** of the
+ * exact value the Avg axis is ordered by.
  *
- * Carried as raw bytes rather than a numeric field because
- * protobuf has no 128-bit integer type, and as the exact
- * fixed-point integer rather than a `double` because this is
- * the value the ranked proof commits to — a client that
- * verifies the proof must be able to compare byte-for-byte
- * with what it reconstructs. Rounding to a `double`
- * server-side would make two groups with distinct averages
- * indistinguishable and break that comparison.
+ * What grovedb actually commits to and sorts by is an `i128`
+ * fixed-point integer: `floor(sum * SCALE / count)` with
+ * euclidean (toward −∞) division, where SCALE is grovedb's
+ * `AVG_FIXED_POINT_SCALE` (currently 10^19). This field is
+ * that integer divided by SCALE in `f64`, i.e.
+ * `fixed_point as f64 / SCALE as f64`.
+ *
+ * A `double` is honest here because `RankedEntry` is only ever
+ * populated on the **no-proof ("quick answer") path**, where
+ * the client has already chosen to trust the server's reply.
+ * A proof-verifying client never reads this field: it
+ * reconstructs each entry from the grovedb proof itself, where
+ * the exact fixed-point `i128` lives, so nothing about proof
+ * verification depends on this number's precision.
+ *
+ * Precision bound: `f64` carries ~15–16 significant decimal
+ * digits, so two groups whose exact fixed-point averages differ
+ * only beyond that can compare equal here. Do not use this
+ * value for equality checks, tie-breaking, or any
+ * reconstruction of the committed integer — request the proof
+ * and read the fixed point from it instead. Entry *order* is
+ * still exact: the server ranks on the i128 before converting.
  *
  * SCALE is a grovedb constant, not a wire constant: it moved
- * from 10^15 to 10^19 before release. Clients should read it
- * from the SDK's re-export (`RANKED_AVG_SCALE`) rather than
- * hardcoding the literal.
+ * from 10^15 to 10^19 before release. Clients that need it
+ * (e.g. to go back to fixed point on the proof path) should
+ * read it from the SDK's re-export (`RANKED_AVG_SCALE`) rather
+ * than hardcoding the literal.
  **/
-@property(nonatomic, readwrite, copy, null_resettable) NSData *avgFixedPoint;
+@property(nonatomic, readwrite) double avg;
 
 @end
 

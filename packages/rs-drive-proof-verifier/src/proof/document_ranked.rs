@@ -38,6 +38,7 @@ use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive::query::{
     DriveDocumentQuery, DriveDocumentRankedQuery, RankedEntry, RankedEntryValue, RankedPage,
+    RANKED_AVG_SCALE,
 };
 use drive::verify::RootHash;
 
@@ -59,6 +60,12 @@ use drive::verify::RootHash;
 /// [`RankedEntryValue::AvgFixedPoint`]. Averages are fixed-point
 /// integers scaled by [`crate::RANKED_AVG_SCALE`]; divide by it (or
 /// call [`RankedEntryValue::as_f64`]) to render one.
+///
+/// The fixed point is **exact on the proved path only**. A page built
+/// by [`Self::from_verified`] carries the very integer the proof
+/// commits to; one built by [`Self::from_unproved_response`] carries a
+/// best-effort reconstruction from the wire's `double` — see that
+/// method for what that costs.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DocumentRankedEntries {
     /// The 0-based rank of `entries[0]` — the query's `OFFSET`, as
@@ -125,6 +132,19 @@ impl DocumentRankedEntries {
     /// that decodes to `starting_rank == 0`, which is the right answer
     /// for the offset-less queries such a node could serve at all.
     ///
+    /// ## Averages come back approximate here
+    ///
+    /// The wire's `avg` is a `double`, deliberately: these entries only
+    /// exist on this path, and a proof-verifying client reconstructs
+    /// the exact fixed point from the proof instead. To keep one
+    /// [`RankedEntryValue`] type across both paths this decoder
+    /// multiplies the double back up by [`crate::RANKED_AVG_SCALE`] and
+    /// rounds, so the [`RankedEntryValue::AvgFixedPoint`] it yields is a
+    /// **best-effort reconstruction, not the committed integer** — its
+    /// low digits are noise beyond `f64`'s ~15–16 significant decimal
+    /// digits. Render it, compare it loosely, but do not treat it as the
+    /// value grovedb ranked on; ask for the proof if you need that.
+    ///
     /// # Errors
     ///
     /// - [`Error::EmptyVersion`] when the response carries no version.
@@ -132,7 +152,8 @@ impl DocumentRankedEntries {
     ///   response (which has no ranked shape), carries a proof rather
     ///   than data, or carries a non-ranked `ResultData` variant.
     /// - [`Error::ResponseDecodeError`] when an entry's `value` oneof
-    ///   is unset, or its `avg_fixed_point` is not exactly 16 bytes.
+    ///   is unset, or its `avg` is not a finite double that scales into
+    ///   `i128` range.
     pub fn from_unproved_response(
         response: &GetDocumentsResponse,
     ) -> Result<(Self, ResponseMetadata), Error> {
@@ -188,35 +209,43 @@ impl DocumentRankedEntries {
 /// Decode one wire [`ProtoRankedEntry`] into rs-drive's
 /// [`RankedEntry`].
 ///
-/// The `avg_fixed_point` arm enforces the proto's **exactly 16 bytes,
-/// big-endian two's-complement `i128`** contract rather than
-/// zero-padding a short buffer: a truncated average would decode to a
-/// plausible-but-wrong number (dropping the low bytes of a
-/// `10^19`-scaled integer changes the value by orders of magnitude),
-/// and there is no length under 16 that is more likely to be a
-/// legitimate encoding than a corrupted one.
+/// The `avg` arm re-scales the wire's `double` into the fixed-point
+/// `i128` [`RankedEntryValue`] carries, so callers see one type
+/// regardless of which path produced the page. The round trip is lossy
+/// in one direction only — the server divided an exact integer by
+/// [`RANKED_AVG_SCALE`], we multiply back and round — so the result is
+/// the closest fixed point to what the node reported, not necessarily
+/// the one it committed to. `from_unproved_response` documents that;
+/// exactness lives on the proof path.
+///
+/// A non-finite `avg`, or one that scales past `i128`, is rejected
+/// rather than saturated: `as` casts would silently turn `NaN` into
+/// `0` (an average of zero — a plausible-looking lie) and an
+/// out-of-range double into `i128::MIN`/`MAX`. Every legitimate value
+/// fits comfortably, since `|sum| ≤ i64::MAX` bounds the true fixed
+/// point at `i64::MAX * 10^19 ≈ 9.2e37 < i128::MAX`.
 fn ranked_entry_from_proto(entry: &ProtoRankedEntry) -> Result<RankedEntry, Error> {
     let value = match entry.value.as_ref() {
         Some(ranked_entry::Value::Count(count)) => RankedEntryValue::Count(*count),
         Some(ranked_entry::Value::Sum(sum)) => RankedEntryValue::Sum(*sum),
-        Some(ranked_entry::Value::AvgFixedPoint(bytes)) => {
-            let bytes: [u8; 16] =
-                bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| Error::ResponseDecodeError {
-                        error: format!(
-                            "`avg_fixed_point` must be exactly 16 bytes (a big-endian \
-                             two's-complement i128), got {}",
-                            bytes.len()
-                        ),
-                    })?;
-            RankedEntryValue::AvgFixedPoint(i128::from_be_bytes(bytes))
+        Some(ranked_entry::Value::Avg(avg)) => {
+            let scaled = avg * (RANKED_AVG_SCALE as f64);
+            // `i128::MIN as f64` is exactly −2^127; `i128::MAX as f64`
+            // rounds *up* to 2^127, hence the asymmetric comparisons.
+            if !scaled.is_finite() || scaled < (i128::MIN as f64) || scaled >= -(i128::MIN as f64) {
+                return Err(Error::ResponseDecodeError {
+                    error: format!(
+                        "`avg` must be a finite double that scales into i128 range when \
+                         multiplied by {RANKED_AVG_SCALE}, got {avg}"
+                    ),
+                });
+            }
+            RankedEntryValue::AvgFixedPoint(scaled.round() as i128)
         }
         None => {
             return Err(Error::ResponseDecodeError {
                 error: "ranked entry carries no `value`; the server always sets exactly one \
-                        of `count` / `sum` / `avg_fixed_point`"
+                        of `count` / `sum` / `avg`"
                     .to_string(),
             });
         }
@@ -359,12 +388,20 @@ mod tests {
         }
     }
 
+    /// An entry as the *server* would emit it for a group whose exact
+    /// fixed-point average is `fixed_point`: the wire carries
+    /// `fixed_point as f64 / RANKED_AVG_SCALE as f64`, the same
+    /// conversion `RankedEntryValue::as_f64` performs in rs-drive-abci.
     fn avg_entry(key: &str, fixed_point: i128) -> ProtoRankedEntry {
+        avg_entry_raw(key, (fixed_point as f64) / (RANKED_AVG_SCALE as f64))
+    }
+
+    /// An entry carrying an arbitrary double, for the malformed cases
+    /// that no fixed point maps to.
+    fn avg_entry_raw(key: &str, avg: f64) -> ProtoRankedEntry {
         ProtoRankedEntry {
             key: key.as_bytes().to_vec(),
-            value: Some(ranked_entry::Value::AvgFixedPoint(
-                fixed_point.to_be_bytes().to_vec(),
-            )),
+            value: Some(ranked_entry::Value::Avg(avg)),
         }
     }
 
@@ -398,9 +435,16 @@ mod tests {
 
     /// The headline decode: `SELECT AVG(grade) … GROUP BY restaurantId
     /// ORDER BY grade DESC LIMIT 3`. Entry order is the ranking order
-    /// and must survive the decode verbatim, and each 16-byte
-    /// big-endian payload must come back as the exact `i128` grovedb
-    /// sorted by.
+    /// and must survive the decode verbatim, and each double must
+    /// re-scale into the fixed point it was rendered from.
+    ///
+    /// These particular averages survive the double round trip *bit for
+    /// bit* — `95`, `85` and `10.5` times `10^19` all fit in `f64`'s 53
+    /// significand bits — so the assertion can be exact. That is a
+    /// property of the fixtures, not a guarantee of the wire format:
+    /// `from_unproved_response` reconstructs a best-effort fixed point,
+    /// and an average with more significant digits than `f64` holds
+    /// would come back slightly off. Exactness lives on the proof path.
     #[test]
     fn decodes_avg_entries_preserving_ranking_order() {
         let response = ranked_response(vec![
@@ -437,17 +481,22 @@ mod tests {
     }
 
     /// Averages are signed: a group whose summable property is
-    /// negative ranks below zero, and the two's-complement round trip
-    /// must survive. A decoder that read the bytes as unsigned would
-    /// turn `-0.5` into a colossal positive number and silently invert
-    /// the ranking's meaning.
+    /// negative ranks below zero, and the sign must survive the double
+    /// round trip. A decoder that mishandled it would turn `-0.5` into
+    /// a positive number and silently invert the ranking's meaning.
+    ///
+    /// The last entry is the largest magnitude the axis can actually
+    /// produce — `sum = i64::MIN` over a single document — which pins
+    /// that the `i128`-range guard rejects only genuinely impossible
+    /// doubles, not legitimate extremes.
     #[test]
-    fn decodes_negative_fixed_point_averages() {
+    fn decodes_negative_averages() {
         let negative_half = (-RANKED_AVG_SCALE).div_euclid(2);
+        let extreme = (i64::MIN as i128) * RANKED_AVG_SCALE;
         let response = ranked_response(vec![
             avg_entry("above", RANKED_AVG_SCALE),
             avg_entry("below", negative_half),
-            avg_entry("floor", i128::MIN),
+            avg_entry("floor", extreme),
         ]);
 
         let (decoded, _) = DocumentRankedEntries::from_unproved_response(&response)
@@ -460,8 +509,8 @@ mod tests {
         assert_eq!(decoded.entries[1].value.as_f64(), -0.5);
         assert_eq!(
             decoded.entries[2].value,
-            RankedEntryValue::AvgFixedPoint(i128::MIN),
-            "the extreme two's-complement value round-trips unchanged"
+            RankedEntryValue::AvgFixedPoint(extreme),
+            "the most negative average the axis can hold is decoded, not rejected"
         );
     }
 
@@ -555,28 +604,34 @@ mod tests {
         assert_eq!(decoded.starting_rank, 0);
     }
 
-    /// A short or long `avg_fixed_point` is rejected rather than
-    /// zero-padded. Truncation would decode to a plausible-looking
-    /// number many orders of magnitude off (the scale is 10^19), which
-    /// is far worse than a loud failure.
+    /// An `avg` that cannot be a scaled fixed point is rejected rather
+    /// than cast. `as` casts on `f64 -> i128` saturate and map `NaN` to
+    /// `0`, so a malformed wire value would otherwise decode as a
+    /// confident average of zero (or of `i128::MIN`) — a
+    /// plausible-looking lie is far worse than a loud failure.
+    ///
+    /// This is the double-shaped replacement for the old
+    /// exactly-16-bytes length check: a `double` field has no length to
+    /// validate, but it does have values no legitimate average maps to.
     #[test]
-    fn rejects_avg_fixed_point_of_the_wrong_length() {
-        for bytes in [vec![0u8; 15], vec![0u8; 17], Vec::new()] {
-            let length = bytes.len();
-            let response = ranked_response(vec![ProtoRankedEntry {
-                key: b"alpha".to_vec(),
-                value: Some(ranked_entry::Value::AvgFixedPoint(bytes)),
-            }]);
+    fn rejects_an_avg_that_is_not_a_scaled_fixed_point() {
+        for avg in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            // Past i128 range once multiplied by 10^19.
+            1e30,
+            -1e30,
+        ] {
+            let response = ranked_response(vec![avg_entry_raw("alpha", avg)]);
             let err = match DocumentRankedEntries::from_unproved_response(&response) {
                 Err(err) => err,
-                Ok(decoded) => {
-                    panic!("a {length}-byte average must be rejected, decoded {decoded:?}")
-                }
+                Ok(decoded) => panic!("an `avg` of {avg} must be rejected, decoded {decoded:?}"),
             };
             let message = format!("{err}");
             assert!(
-                message.contains("exactly 16 bytes") && message.contains(&length.to_string()),
-                "the rejection must name the contract and the offending length; got {message}"
+                message.contains("finite double") && message.contains("i128 range"),
+                "the rejection must name the contract it violates; got {message}"
             );
         }
     }

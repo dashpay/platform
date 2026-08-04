@@ -335,9 +335,9 @@ The result is an additive `ResultData.ranked` variant:
 message RankedEntry {
   bytes key = 1;
   oneof value {
-    uint64 count           = 2 [jstype = JS_STRING];
-    sint64 sum             = 3 [jstype = JS_STRING];
-    bytes  avg_fixed_point = 4;
+    uint64 count = 2 [jstype = JS_STRING];
+    sint64 sum   = 3 [jstype = JS_STRING];
+    double avg   = 4;
   }
 }
 
@@ -353,7 +353,7 @@ Five properties of the payload, each of them load-bearing:
 - **`key` is raw index-key bytes**, not a typed value — the same bytes that name the group's value tree under the index. For a `string` property that's its UTF-8 encoding (`b"alpha"`). Clients that want the typed value decode it with the document type's key deserialization; the wire carries bytes so prover and verifier agree without a schema round-trip.
 - **Entry order IS the ranking order** — best-first for `DESC`, worst-first for `ASC`. Clients must not re-sort. Ties come back in group-key order *in the direction of the walk*, which is **descending** group-key order for `DESC`.
 - **Fewer than `n` entries is normal**, not an error — the index simply has fewer groups than requested.
-- **`avg_fixed_point` is a 16-byte big-endian two's-complement `i128`**, the exact integer grovedb sorts the Avg axis by: `floor(sum × SCALE / count)` with euclidean (toward −∞) division. It is carried as raw bytes because protobuf has no 128-bit integer type, and as the exact fixed-point integer rather than a `double` because *this is the value the proof commits to* — rounding server-side would make two groups with distinct averages indistinguishable and break the client's byte-for-byte comparison. The client divides by `RANKED_AVG_SCALE`; the decoder rejects anything that isn't exactly 16 bytes rather than zero-padding a short buffer.
+- **`avg` is a `double` approximation, and deliberately so.** What grovedb sorts the Avg axis by is an exact `i128` fixed point — `floor(sum × SCALE / count)` with euclidean (toward −∞) division — and this field is that integer divided by `RANKED_AVG_SCALE` in `f64`. The precision loss costs nothing because **`RankedEntry` only exists on the no-proof path**: a client that asked for a proof reconstructs each entry from the proof itself, where the exact fixed point lives, and never reads this field. So the wire says what it means — an approximation for the caller who already chose to trust the node — instead of dressing a trusted number up as an exact one. Two groups whose averages differ past `f64`'s ~15–16 significant digits can compare equal here; anything needing the committed integer must request the proof. Entry *order* is exact regardless: the ranking happened over the `i128` before the conversion. The decoder rejects a non-finite `avg`, or one that scales past `i128`, rather than casting it into a plausible-looking zero.
 
 ## Queries in this Chapter
 
@@ -604,6 +604,8 @@ for (offset, entry) in ranked.entries.iter().enumerate() {
     }
 }
 ```
+
+`fixed_point` is the exact integer the proof commits to on this (proved) path. On a `prove = false` fetch the wire carries only the `double` — the SDK re-scales it back into the same variant, so the low digits are reconstruction noise. See the [response notes](#the-response).
 
 The **5th-best restaurant** is the same query with the window moved down one rank at a time:
 

@@ -3218,12 +3218,10 @@ export namespace GetDocumentsResponse {
       getSum(): string;
       setSum(value: string): void;
 
-      hasAvgFixedPoint(): boolean;
-      clearAvgFixedPoint(): void;
-      getAvgFixedPoint(): Uint8Array | string;
-      getAvgFixedPoint_asU8(): Uint8Array;
-      getAvgFixedPoint_asB64(): string;
-      setAvgFixedPoint(value: Uint8Array | string): void;
+      hasAvg(): boolean;
+      clearAvg(): void;
+      getAvg(): number;
+      setAvg(value: number): void;
 
       getValueCase(): RankedEntry.ValueCase;
       serializeBinary(): Uint8Array;
@@ -3241,14 +3239,14 @@ export namespace GetDocumentsResponse {
         key: Uint8Array | string,
         count: string,
         sum: string,
-        avgFixedPoint: Uint8Array | string,
+        avg: number,
       }
 
       export enum ValueCase {
         VALUE_NOT_SET = 0,
         COUNT = 2,
         SUM = 3,
-        AVG_FIXED_POINT = 4,
+        AVG = 4,
       }
     }
 
