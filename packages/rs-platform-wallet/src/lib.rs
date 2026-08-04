@@ -60,7 +60,8 @@ pub use wallet::core::WalletBalance;
 pub use wallet::core::{CoreWallet, FundingAccountRef, SignedCoreTransaction};
 pub use wallet::core::{FinalizedCorePayment, SignedCorePayment};
 pub use wallet::signed_payment_registry::{
-    RegisterWrongGeneration, ReservationToken, SignedPaymentError, SignedPaymentRegistry,
+    RegisterPaymentWrongGeneration, RegisterWrongGeneration, ReservationToken, SignedPaymentError,
+    SignedPaymentRegistry,
 };
 // DashPay types + crypto helpers re-exported through the identity
 // domain (they live under `identity::types::dashpay::*` and

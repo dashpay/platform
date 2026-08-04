@@ -91,7 +91,7 @@ use key_wallet::ReservationToken as KeyWalletReservationToken;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::transaction::FundingAccountRef;
-use crate::wallet::core::CoreWallet;
+use crate::wallet::core::{CoreWallet, WalletGeneration};
 use crate::wallet::funding_privacy::is_signable_funding_account;
 
 /// key-wallet's default fee rate (duffs per kB). Matches the asset-lock
@@ -170,57 +170,137 @@ const BIP44_ACCOUNT_INDEX: u32 = 0;
 /// `DashpayReceivingFunds` account) and the reservation registry that mints
 /// broadcast/release tokens.
 ///
-/// Holding one of these means the selected inputs are **reserved**. Either
-/// register it with [`SignedPaymentRegistry::register_funded_by`] — which takes
-/// over that responsibility and returns a token — or release it with
+/// Holding one of these means the selected inputs are **reserved**. Exactly one
+/// of the two consuming discharges must follow: register it with
+/// [`SignedPaymentRegistry::register_payment`] — which takes the whole value and
+/// returns a token that owns the release from then on — or release it with
 /// [`CoreWallet::abandon_payment`]. Dropping it without doing either strands the
 /// reservation until key-wallet's TTL backstop reclaims it.
 ///
-/// ## Not `Clone` — it is a linear obligation
+/// ## An opaque, linear ownership object
 ///
-/// The reservation it holds must be discharged exactly once. While this derived
-/// `Clone`, a safe caller could abandon one copy and register another, or mint
-/// two registry tokens able to broadcast the same transaction — one release
-/// would free inputs the other copy still believed it owned
-/// (dashpay/platform#4256 review). [`CoreWallet::abandon_payment`] now consumes
-/// the value for the same reason: abandoning it ends its life, so a
-/// register-after-abandon cannot compile.
+/// The reservation it holds must be discharged exactly once, so this type is
+/// deliberately not `Clone` and its fields are **private**. Both properties are
+/// load-bearing, and each closes a distinct hole
+/// (dashpay/platform#4256 review):
 ///
-/// The fields stay public: `register_funded_by` belongs to the reservation
-/// registry (dashpay/platform#4185) and still takes the transaction, funding
-/// ref, height and token as separate arguments, so making them private would
-/// only add accessors without closing the mismatched-pieces hole. Folding those
-/// four parameters into one consuming `register(payment)` — the shape
-/// `register` already has for `SignedCoreTransaction` — is the real fix and
-/// belongs on #4185, which owns that API.
+/// * **Not `Clone`.** While it derived `Clone`, a safe caller could abandon one
+///   copy and register another, or mint two registry tokens able to broadcast
+///   the same transaction — one release would free inputs the other copy still
+///   believed it owned.
+/// * **Private fields, consumed whole.** While the fields were public and the
+///   registry took them as separate arguments, `Clone`-ness of the *pieces* let
+///   a caller reproduce the same hole without cloning the object: register the
+///   cloned transaction/funding/height/token and then `abandon_payment(payment)`,
+///   leaving a live token whose inputs had already become selectable; or register
+///   the same pieces twice, release one token, rebuild a conflicting transaction,
+///   and still broadcast the old one through the second token. Separate
+///   arguments also let a caller pair a transaction with an unrelated funding
+///   path or owner token, aiming cleanup at the wrong reservation. Registration
+///   now derives **every** stored field from the consumed value, so none of those
+///   states is expressible.
 ///
-/// [`SignedPaymentRegistry::register_funded_by`]:
-///     crate::SignedPaymentRegistry::register_funded_by
+/// ## Generation binding
+///
+/// It also carries the [`WalletGeneration`] of the wallet that finalized it —
+/// the same unforgeable marker [`SignedCoreTransaction`] has and
+/// [`CoreWallet::is_same_generation`] pointer-compares. The registry validates
+/// the wallet it is asked to bind a token to against that marker before minting,
+/// exactly as [`SignedPaymentRegistry::register`] does for the
+/// `AccountTypePreference`-selected path, so a caller cannot finalize through
+/// wallet A and register/broadcast through an unrelated wallet B.
+///
+/// [`SignedPaymentRegistry::register_payment`]:
+///     crate::SignedPaymentRegistry::register_payment
+/// [`SignedPaymentRegistry::register`]:
+///     crate::SignedPaymentRegistry::register
+/// [`SignedCoreTransaction`]: crate::SignedCoreTransaction
 #[derive(Debug)]
 pub struct FinalizedCorePayment {
     /// The signed transaction.
-    pub transaction: Transaction,
+    transaction: Transaction,
     /// The fee paid, in duffs — derived from the transaction itself
     /// (`inputs − outputs`), the same ground truth [`SignedCorePayment::fee`]
     /// uses.
-    pub fee: u64,
+    fee: u64,
     /// Duffs returned to the wallet's BIP44 change address (0 when the build
     /// produced no change output).
-    pub change_amount: u64,
+    change_amount: u64,
     /// The ONE account the inputs were selected from and reserved in, as its
     /// RESOLVED account-level derivation path — never the caller's `None`. A
     /// later release must name this account, not the default BIP44 one.
-    pub funding: FundingAccountRef,
+    funding: FundingAccountRef,
     /// The wallet's `last_processed_height` captured in the funding critical
     /// section, i.e. the exact clock `set_current_height` stamped the
     /// reservation with. The registry's age guard must baseline off this — see
     /// [`SignedCoreTransaction::reservation_height`](crate::SignedCoreTransaction::reservation_height).
-    pub reservation_height: u32,
+    reservation_height: u32,
     /// The key-wallet [`ReservationToken`](key_wallet::ReservationToken) stamped
     /// onto the selected inputs, so a later release is *owner-guarded* and frees
     /// only inputs this build still owns (`dashpay/platform#4185`). `None` only
     /// if the build reserved nothing, which the funded path never does.
-    pub reservation_token: Option<KeyWalletReservationToken>,
+    reservation_token: Option<KeyWalletReservationToken>,
+    /// The per-generation balance `Arc` of the wallet this payment was
+    /// **finalized against**, captured from the originating `CoreWallet` inside
+    /// [`CoreWallet::finalize_signed_payment_from_funding_path`]. The registry
+    /// pointer-compares it before minting a token — see the type docs.
+    origin_generation: Arc<WalletGeneration>,
+}
+
+impl FinalizedCorePayment {
+    /// The signed transaction. Borrowed, so the FFI can take its txid and
+    /// consensus-serialize it before handing the whole value to the registry.
+    pub fn transaction(&self) -> &Transaction {
+        &self.transaction
+    }
+
+    /// The fee paid, in duffs (`inputs − outputs`).
+    pub fn fee(&self) -> u64 {
+        self.fee
+    }
+
+    /// Duffs returned to the wallet's BIP44 change address (0 when the build
+    /// produced no change output).
+    pub fn change_amount(&self) -> u64 {
+        self.change_amount
+    }
+
+    /// The per-generation marker of the wallet this payment was finalized
+    /// against. Borrowed, not consumed, so the registry's generation check can
+    /// run *before* [`into_registered_parts`](Self::into_registered_parts) takes
+    /// ownership — mirroring
+    /// [`SignedCoreTransaction::origin_generation`](crate::SignedCoreTransaction).
+    pub(crate) fn origin_generation(&self) -> &Arc<WalletGeneration> {
+        &self.origin_generation
+    }
+
+    /// Consume this finalized payment into the owned parts the deferred
+    /// [`SignedPaymentRegistry`](crate::SignedPaymentRegistry) stores.
+    ///
+    /// Consuming (rather than cloning, or accepting the parts as separate
+    /// arguments) is what enforces unique reservation ownership: one finalize
+    /// yields exactly one ownership object, the registry can be handed it exactly
+    /// once, and the transaction, funding account, reservation height and owner
+    /// token it stores are guaranteed to be the matching set the build produced.
+    pub(crate) fn into_registered_parts(self) -> FinalizedPaymentParts {
+        FinalizedPaymentParts {
+            transaction: self.transaction,
+            funding: self.funding,
+            reservation_height: self.reservation_height,
+            reservation_token: self.reservation_token,
+        }
+    }
+}
+
+/// The owned facts the deferred-payment registry takes over when it registers a
+/// path-funded payment. Produced only by
+/// [`FinalizedCorePayment::into_registered_parts`], which consumes the
+/// non-`Clone` ownership object exactly once.
+pub(crate) struct FinalizedPaymentParts {
+    pub(crate) transaction: Transaction,
+    pub(crate) funding: FundingAccountRef,
+    pub(crate) reservation_height: u32,
+    pub(crate) reservation_token: Option<KeyWalletReservationToken>,
 }
 
 /// A built-and-signed Core L1 payment, ready to be committed/broadcast by the
@@ -342,8 +422,9 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// no variant for a receival account — so before this method a receival
     /// balance could be *signed* (here) or *broadcast with a token* (there), but
     /// never both. Register the result with
-    /// [`SignedPaymentRegistry::register_funded_by`](crate::SignedPaymentRegistry::register_funded_by)
-    /// to mint the token the broadcast/release pair consumes.
+    /// [`SignedPaymentRegistry::register_payment`](crate::SignedPaymentRegistry::register_payment)
+    /// — which consumes the whole [`FinalizedCorePayment`] — to mint the token
+    /// the broadcast/release pair consumes.
     ///
     /// ## Reservation ownership — the caller MUST discharge it
     ///
@@ -717,6 +798,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             funding: FundingAccountRef::Path(funding_path),
             reservation_height: height,
             reservation_token,
+            // The generation that actually took the reservation. The registry
+            // pointer-compares this against the wallet it is asked to bind the
+            // token to, so a token can only ever be minted against the
+            // `ReservationSet` that holds these inputs.
+            origin_generation: Arc::clone(self.generation()),
         };
 
         // Belt-and-braces: the pre-build check bounded only the output side,
@@ -730,7 +816,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // RELEASE BEFORE RETURNING (dashpay/platform#4247 + #4256 review).
         //
         // The reservation is discharged before returning: this is a failure
-        // between the build and a successful `register_funded_by`, exactly the
+        // between the build and a successful `register_payment`, exactly the
         // case `abandon_payment` documents. The inputs are already reserved by
         // the time this check runs and this is the one error path that can reach
         // it, so returning bare would strand them twice over: the caller never
@@ -741,9 +827,10 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // process. Since the failure is "too many small inputs", the stranded
         // amount is typically the whole account.
         //
-        // `abandon_payment` is the owner-guarded discharge: it presents this
-        // build's own `reservation_token`, so it frees exactly these inputs even
-        // if a TTL sweep and an unrelated re-reservation had interleaved.
+        // `abandon_payment` is the owner-guarded discharge: it consumes the
+        // payment and presents its own `reservation_token`, so it frees exactly
+        // these inputs even if a TTL sweep and an unrelated re-reservation had
+        // interleaved.
         let signed_size = payment.transaction.size();
         if signed_size > MAX_STANDARD_TX_SIZE {
             self.abandon_payment(payment).await;
@@ -911,8 +998,13 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// Owner-guarded and generation-bound, like every other release here. Use it
     /// on any failure between the build and a successful
-    /// [`register_funded_by`](crate::SignedPaymentRegistry::register_funded_by);
+    /// [`register_payment`](crate::SignedPaymentRegistry::register_payment);
     /// once registered, the registry owns the release instead.
+    ///
+    /// Consumes the payment, so the double-ownership the finding on
+    /// dashpay/platform#4256 describes — abandon here, then register the same
+    /// build's pieces and hold a live token over inputs that have become
+    /// selectable again — cannot be written.
     pub async fn abandon_payment(&self, payment: FinalizedCorePayment) {
         self.release_reservation_for(
             &payment.funding,
@@ -1795,14 +1887,8 @@ mod tests {
         let registry: SignedPaymentRegistry<AlwaysRejectedBroadcaster> =
             SignedPaymentRegistry::new();
         let token = registry
-            .register_funded_by(
-                core.clone(),
-                payment.transaction.clone(),
-                payment.funding.clone(),
-                payment.reservation_height,
-                payment.reservation_token,
-            )
-            .await;
+            .register_payment(core.clone(), payment)
+            .expect("registering through the finalizing wallet is the same generation");
         assert_eq!(registry.outstanding(), 1, "the token must be registered");
 
         // The reservation is HELD: the receival account has a single UTXO, so a
@@ -1848,14 +1934,8 @@ mod tests {
         // rebuild rather than stranded until the TTL backstop.
         let rebuilt = after_release.expect("rebuilt payment");
         let token = registry
-            .register_funded_by(
-                core.clone(),
-                rebuilt.transaction.clone(),
-                rebuilt.funding.clone(),
-                rebuilt.reservation_height,
-                rebuilt.reservation_token,
-            )
-            .await;
+            .register_payment(core.clone(), rebuilt)
+            .expect("registering through the finalizing wallet is the same generation");
         let broadcast = registry.broadcast(token, &core).await;
         assert!(
             broadcast.is_err(),
@@ -1882,7 +1962,7 @@ mod tests {
 
     /// `abandon_payment` is the other way to discharge a finalized payment's
     /// reservation — the one a host takes when marshalling fails between the
-    /// build and a successful `register_funded_by` (the FFI's `CString::new`
+    /// build and a successful `register_payment` (the FFI's `CString::new`
     /// arm). It must give the receival account's inputs back without the
     /// registry ever being involved.
     ///
@@ -1946,6 +2026,101 @@ mod tests {
         );
     }
 
+    /// Registration must bind the token to the SAME wallet generation the
+    /// payment was finalized against — the guarantee
+    /// [`SignedPaymentRegistry::register`] already had, now extended to the
+    /// path-funded form (dashpay/platform#4256 review).
+    ///
+    /// While the registry took the built transaction's *pieces* rather than the
+    /// ownership object it could not check this at all: a payment finalized
+    /// through generation A could be registered against an unrelated (or
+    /// same-id, re-created) generation B, after which broadcasting through B
+    /// would pass the broadcast-time generation check, submit A's transaction
+    /// through B's broadcaster, run cleanup against B — and leave A's real
+    /// reservation stranded until key-wallet's TTL.
+    ///
+    /// The refusal must also hand the payment back rather than dropping it, so
+    /// its still-held reservation can be reconciled: abandoning it through the
+    /// FINALIZING wallet returns the receival inputs to spendable.
+    #[tokio::test]
+    async fn register_payment_refuses_a_foreign_generation_and_hands_the_payment_back() {
+        use crate::wallet::signed_payment_registry::{
+            RegisterPaymentWrongGeneration, SignedPaymentRegistry,
+        };
+
+        let (wm, wallet_id, signer) =
+            split_funded_wallet_manager_dashpay(9_000_000, 20_000_000, DashpayLeg::ReceivingFunds)
+                .await;
+        let (_, _, receival_path) = dashpay_outpoints_and_receival_path(&wm, &wallet_id).await;
+        // The finalizing wallet: the manager's OWN generation handle, so its
+        // releases actually act (see [`wallet_generation`]).
+        let generation = wallet_generation(&wm, &wallet_id).await;
+        let core = core_wallet(Arc::clone(&wm), wallet_id, generation);
+        // A foreign generation over the same manager entry: same wallet id, a
+        // fresh generation `Arc` — what a remove-then-recreate produces.
+        let foreign = core_wallet(
+            Arc::clone(&wm),
+            wallet_id,
+            Arc::new(WalletGeneration::new()),
+        );
+
+        let payment = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(7), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await
+            .expect("the receival build succeeds");
+
+        let registry: SignedPaymentRegistry<AlwaysRejectedBroadcaster> =
+            SignedPaymentRegistry::new();
+        let rejected = registry.register_payment(foreign, payment);
+        let RegisterPaymentWrongGeneration { payment } = match rejected {
+            Err(err) => err,
+            Ok(_) => panic!("registering through a foreign generation must be refused"),
+        };
+        assert_eq!(
+            registry.outstanding(),
+            0,
+            "a rejected registration must not mint a token"
+        );
+
+        // The reservation is still held by the handed-back payment: the receival
+        // account has a single UTXO, so a second build cannot re-select it.
+        let blocked = core
+            .finalize_signed_payment_from_funding_path(
+                vec![(recipient(8), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path.clone()),
+            )
+            .await;
+        assert!(
+            matches!(
+                blocked,
+                Err(PlatformWalletError::PaymentInsufficientFunds { .. })
+            ),
+            "the refused registration must leave the reservation held, got {blocked:?}"
+        );
+
+        // Reconciling through the FINALIZING wallet frees exactly those inputs.
+        core.abandon_payment(payment).await;
+        assert!(
+            core.finalize_signed_payment_from_funding_path(
+                vec![(recipient(9), 15_000_000)],
+                None,
+                &signer,
+                Some(receival_path),
+            )
+            .await
+            .is_ok(),
+            "the payment handed back by a refused registration must still be \
+             abandonable, returning the receival inputs to spendable"
+        );
+    }
+
     /// The DEFAULT (`funding_path: None`) build must record and release its
     /// reservation against the unmixed BIP44 account too.
     ///
@@ -1981,14 +2156,8 @@ mod tests {
         let registry: SignedPaymentRegistry<AlwaysRejectedBroadcaster> =
             SignedPaymentRegistry::new();
         let token = registry
-            .register_funded_by(
-                core.clone(),
-                payment.transaction.clone(),
-                payment.funding.clone(),
-                payment.reservation_height,
-                payment.reservation_token,
-            )
-            .await;
+            .register_payment(core.clone(), payment)
+            .expect("registering through the finalizing wallet is the same generation");
 
         // Held: the fixture's single BIP44 UTXO is reserved.
         assert!(

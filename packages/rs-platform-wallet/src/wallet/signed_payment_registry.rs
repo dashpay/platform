@@ -81,7 +81,9 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::ReservationToken as FundingReservationToken;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::wallet::core::{CoreWallet, FundingAccountRef, SignedCoreTransaction};
+use crate::wallet::core::{
+    CoreWallet, FinalizedCorePayment, FundingAccountRef, SignedCoreTransaction,
+};
 use crate::PlatformWalletError;
 
 /// Opaque handle to a registered, signed-but-unsent payment. Minted by
@@ -242,6 +244,31 @@ impl std::fmt::Display for RegisterWrongGeneration {
 
 impl std::error::Error for RegisterWrongGeneration {}
 
+/// The wallet handed to [`SignedPaymentRegistry::register_payment`] is **not**
+/// the generation the path-funded payment was finalized against — the
+/// [`RegisterWrongGeneration`] of the funding-path registration form, refused
+/// for exactly the same reason.
+///
+/// The rejected [`FinalizedCorePayment`] is returned so its held funding
+/// reservation is **never stranded**: the caller still owns it and can release
+/// it through the correct wallet ([`CoreWallet::abandon_payment`]) or drop it.
+///
+/// [`FinalizedCorePayment`]: crate::FinalizedCorePayment
+#[derive(Debug)]
+pub struct RegisterPaymentWrongGeneration {
+    /// The finalized payment `register_payment` refused to bind, handed back
+    /// intact.
+    pub payment: FinalizedCorePayment,
+}
+
+impl std::fmt::Display for RegisterPaymentWrongGeneration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("registration wallet is not the generation the payment was finalized against")
+    }
+}
+
+impl std::error::Error for RegisterPaymentWrongGeneration {}
+
 /// A built, signed transaction whose funding UTXOs are reserved, awaiting a
 /// deferred broadcast or an explicit release.
 struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
@@ -274,7 +301,7 @@ struct RegisteredPayment<B: TransactionBroadcaster + ?Sized> {
     /// (`SignedCoreTransaction::reservation_height` on the
     /// [`register`](SignedPaymentRegistry::register) path,
     /// `FinalizedCorePayment::reservation_height` on the
-    /// [`register_funded_by`](SignedPaymentRegistry::register_funded_by) path).
+    /// [`register_payment`](SignedPaymentRegistry::register_payment) path).
     /// Compared against the wallet's current `last_processed_height` to refuse a
     /// broadcast/release once the reservation could plausibly have been swept by
     /// key-wallet's TTL (see [`RESERVATION_MAX_AGE_BLOCKS`]). Mandatory on both
@@ -421,7 +448,7 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
                 // `finalize_transaction` selects through key-wallet's
                 // `AccountTypePreference`, so this path can only ever name a
                 // standard-shaped account. The `Path` arm exists for
-                // `register_funded_by` below.
+                // `register_payment` below.
                 funding: FundingAccountRef::standard(
                     parts.funding_account_type,
                     parts.funding_account_index,
@@ -444,53 +471,121 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
     /// and a later release would then free BIP44's inputs instead of the
     /// receival account's.
     ///
-    /// `funding` MUST be the account the build actually selected from
-    /// (`FinalizedCorePayment::funding`), not the caller's requested path:
-    /// `None` requests resolve to the unmixed BIP44 account's path, and the
-    /// release must name the resolved account.
+    /// # Consumes the payment
     ///
-    /// `registered_height` MUST be `FinalizedCorePayment::reservation_height` —
-    /// the `last_processed_height` sampled inside the funding critical section,
-    /// not a fresh sample. It is mandatory for the same reason it is on
+    /// It takes the whole [`FinalizedCorePayment`] by value and derives every
+    /// stored field from it: the built transaction, the RESOLVED funding account
+    /// (never the caller's requested path — a `None` request resolves to the
+    /// unmixed BIP44 account and the release must name the resolved account), the
+    /// reservation height sampled inside the funding critical section, and
+    /// key-wallet's owner-guard token.
+    ///
+    /// Taking the value rather than those pieces separately is what makes the
+    /// registration sound (`dashpay/platform#4256` review). While the pieces were
+    /// passed independently, safe public code could:
+    ///
+    /// * register cloned pieces and then
+    ///   [`abandon_payment`](CoreWallet::abandon_payment) the payment, leaving a
+    ///   live token whose funding inputs had already been returned to the
+    ///   selectable pool;
+    /// * register the same transaction twice, release one token, build a
+    ///   conflicting transaction from the freed inputs, and still broadcast the
+    ///   original through the second token; or
+    /// * pair a transaction with an unrelated funding path, height, or owner
+    ///   token, aiming the later cleanup at the wrong reservation.
+    ///
+    /// `FinalizedCorePayment` is not `Clone` and its fields are private, so a
+    /// finalize yields exactly one registerable value and none of those states is
+    /// expressible. Register-after-abandon in particular no longer type-checks —
+    /// both discharges take the value:
+    ///
+    /// ```compile_fail,E0382
+    /// use platform_wallet::broadcaster::TransactionBroadcaster;
+    /// use platform_wallet::{CoreWallet, FinalizedCorePayment, SignedPaymentRegistry};
+    ///
+    /// fn register_after_abandon<B: TransactionBroadcaster + ?Sized>(
+    ///     core: CoreWallet<B>,
+    ///     registry: &SignedPaymentRegistry<B>,
+    ///     payment: FinalizedCorePayment,
+    /// ) {
+    ///     // Discharges the reservation: those inputs are selectable again.
+    ///     drop(core.abandon_payment(payment));
+    ///     // E0382 (use of moved value): no token can be minted over inputs the
+    ///     // abandon above already returned to the selectable pool.
+    ///     let _ = registry.register_payment(core, payment);
+    /// }
+    /// ```
+    ///
+    /// The registration height stays mandatory, and for the same reason it is on
     /// [`register`](Self::register): a height sampled after a slow external
     /// signer would make the token look fresher than the reservation it covers,
-    /// and the age guard would stop tripping before key-wallet's TTL sweep.
+    /// and the age guard would stop tripping before key-wallet's TTL sweep. It is
+    /// now derived here rather than supplied, so it cannot be a fresh sample.
     ///
-    /// # Generation binding is the caller's obligation here
+    /// # Generation binding
     ///
-    /// Unlike [`register`](Self::register), this entry point takes the built
-    /// transaction's parts rather than a non-`Clone` ownership object, so it
-    /// cannot itself prove `core` is the generation that produced them
-    /// (`FinalizedCorePayment` carries no `origin_generation` marker). The FFI
-    /// caller finalizes and registers under one
-    /// [`CoreWallet::generation_payment_guard`] hold, which is what upholds the
-    /// binding on this path. Giving `FinalizedCorePayment` the same unforgeable
-    /// marker `SignedCoreTransaction` has — so this call can enforce it the way
-    /// [`register`](Self::register) does — is tracked as follow-up work on
-    /// `dashpay/platform#4256`.
+    /// `core` **must** be the same wallet *generation* the payment was finalized
+    /// against, validated here against the unforgeable `origin_generation` marker
+    /// [`FinalizedCorePayment`] captures at finalize — exactly as
+    /// [`register`](Self::register) validates `SignedCoreTransaction`. A mismatch
+    /// is refused with [`RegisterPaymentWrongGeneration`], which hands the
+    /// rejected payment back so its reservation is not stranded. Otherwise safe
+    /// code could finalize through wallet A and `register_payment(core_b,
+    /// payment_from_a)`, after which broadcasting through B would pass the
+    /// generation check and submit A's transaction through B's broadcaster while
+    /// cleanup ran against B and A's real reservation leaked until its TTL.
+    ///
+    /// Synchronous **by design**, like [`register`](Self::register): the body is
+    /// one `std::Mutex` insert with no `.await`, so there is no future that could
+    /// be dropped before its first poll and silently discard the consumed
+    /// payment — and its held reservation — without inserting a registry entry.
+    /// While this was `async` (and contained no await), dropping its future
+    /// before polling did exactly that.
+    ///
+    /// # Liveness is the caller's obligation
+    ///
+    /// As on [`register`](Self::register), the generation check here is
+    /// `payment`-relative: it proves `core` is the wallet that *finalized* the
+    /// payment, not that that wallet is still registered in the manager, and
+    /// being synchronous it cannot ask (the manager lock is `async`).
+    /// `finalize_signed_payment_from_funding_path` drops the manager write lock
+    /// before awaiting the signer, so a teardown — sweep included — can run to
+    /// completion while a finalize is mid-signature.
+    ///
+    /// Callers must therefore hold [`CoreWallet::generation_payment_guard`]
+    /// across [`CoreWallet::is_current_generation`] and this call, and
+    /// [`abandon_payment`](CoreWallet::abandon_payment) when the wallet is gone.
+    /// The FFI's `core_wallet_build_signed_payment_with_token` is the production
+    /// caller and does exactly that.
     ///
     /// [`CoreWallet::finalize_signed_payment_from_funding_path`]:
     ///     crate::CoreWallet::finalize_signed_payment_from_funding_path
-    pub async fn register_funded_by(
+    /// [`FinalizedCorePayment`]: crate::FinalizedCorePayment
+    pub fn register_payment(
         &self,
         core: CoreWallet<B>,
-        tx: Transaction,
-        funding: FundingAccountRef,
-        registered_height: u32,
-        funding_reservation_token: Option<FundingReservationToken>,
-    ) -> ReservationToken {
+        payment: FinalizedCorePayment,
+    ) -> Result<ReservationToken, RegisterPaymentWrongGeneration> {
+        // Bind the token to the EXACT generation the payment was finalized
+        // against, the same `Arc::ptr_eq` on the per-generation balance handle
+        // `is_same_generation` uses. Refuse BEFORE consuming `payment`, and hand
+        // it back so the caller can reconcile its reservation.
+        if !Arc::ptr_eq(core.generation(), payment.origin_generation()) {
+            return Err(RegisterPaymentWrongGeneration { payment });
+        }
+        let parts = payment.into_registered_parts();
         let token = ReservationToken(self.next_token.fetch_add(1, Ordering::SeqCst));
         self.lock().insert(
             token,
             RegisteredPayment {
                 core,
-                tx,
-                funding,
-                registered_height,
-                funding_reservation_token,
+                tx: parts.transaction,
+                funding: parts.funding,
+                registered_height: parts.reservation_height,
+                funding_reservation_token: parts.reservation_token,
             },
         );
-        token
+        Ok(token)
     }
 
     /// Broadcast the payment behind `token`, reconciling its UTXO reservation on
