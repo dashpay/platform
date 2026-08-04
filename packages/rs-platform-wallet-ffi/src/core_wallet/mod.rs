@@ -4,6 +4,7 @@
 
 mod addresses;
 mod broadcast;
+pub(crate) mod payment_reservation;
 mod send;
 pub(crate) mod signed_payment;
 mod transaction_builder;

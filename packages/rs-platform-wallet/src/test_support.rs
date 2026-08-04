@@ -348,6 +348,7 @@ pub(crate) async fn split_funded_wallet_manager(
 ) -> (
     Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     WalletId,
+    Arc<WalletGeneration>,
     WalletSigner,
 ) {
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait as _;
@@ -407,10 +408,15 @@ pub(crate) async fn split_funded_wallet_manager(
         wallet: ctx.wallet.clone(),
     };
 
+    // Returned, not discarded: a `CoreWallet` built over a *different*
+    // `WalletGeneration` than the one registered here is a foreign generation,
+    // and every generation-bound path (above all the owner-guarded reservation
+    // release) correctly no-ops against it. Handing the real handle back is what
+    // keeps callers from silently testing a no-op.
     let generation = Arc::new(WalletGeneration::new());
     let info = PlatformWalletInfo {
         core_wallet: ctx.managed_wallet,
-        generation,
+        generation: Arc::clone(&generation),
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
     };
@@ -418,7 +424,7 @@ pub(crate) async fn split_funded_wallet_manager(
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
-    (Arc::new(RwLock::new(wm)), wallet_id, signer)
+    (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
 }
 
 /// Funded SPV-backed Core wallet for downstream FFI lifecycle tests. The SPV
