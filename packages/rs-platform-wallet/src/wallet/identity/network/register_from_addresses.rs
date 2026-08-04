@@ -108,11 +108,17 @@ impl IdentityWallet {
             )
             .await
             .map_err(|e| {
-                crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to register identity from addresses: {}",
-                        e
-                    ))
+                // Preserve a structured key-unavailable signer failure (from the
+                // identity signer) so the FFI boundary can still restore code 31;
+                // otherwise fall through to the existing nonce-promotion /
+                // stringifying wrapper unchanged (dashpay/platform#4183 review).
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    crate::error::promote_address_nonce_error(&e).unwrap_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(format!(
+                            "Failed to register identity from addresses: {}",
+                            e
+                        ))
+                    })
                 })
             })?;
 

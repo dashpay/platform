@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **18**
+Capabilities tracked: **22**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 10 | 8 | 0 | 0 |
-| Swift | Example app | 4 | 12 | 0 | 2 |
-| Kotlin | SDK | 5 | 12 | 1 | 0 |
-| Kotlin | Example app | 4 | 11 | 1 | 2 |
+| Swift | SDK | 12 | 8 | 1 | 1 |
+| Swift | Example app | 4 | 12 | 1 | 5 |
+| Kotlin | SDK | 9 | 12 | 1 | 0 |
+| Kotlin | Example app | 5 | 11 | 1 | 5 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 0 | 7 | 11 |
-| Kotlin | 2 | 6 | 10 |
+| Swift | 0 | 7 | 15 |
+| Kotlin | 4 | 6 | 12 |
 
 ## Capability status
 
@@ -42,6 +42,10 @@ Capabilities tracked: **18**
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |
+| `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
+| `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
+| `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.
