@@ -451,9 +451,8 @@ impl IdentityWallet {
     ) -> Result<Vec<DecryptedEncryptedDocument>, PlatformWalletError> {
         use dash_sdk::platform::{ContextProvider, Fetch};
 
-        // On-device diagnostic breadcrumbs, dual-emitted at warn level (see
-        // [`breadcrumb`]): this call sits under an active `sdkFetched=0`
-        // investigation — every stage must be provably visible in `adb logcat`.
+        // Successful stage breadcrumbs stay at DEBUG; genuine failures below
+        // use `breadcrumb_error` and remain visible at WARN.
         breadcrumb(&format!(
             "fetch_encrypted_documents: entry owner={owner_identity_id} \
              contract={contract_id} type={document_type_name} since_ms={since_ms} \
@@ -687,11 +686,8 @@ pub async fn query_owned_encrypted_documents(
         }
     }
 
-    // On-device diagnostic breadcrumb: the probe reported `sdkFetched=0` with
-    // ZERO decrypt-skip warnings, which can only mean the query itself returned
-    // nothing OR nothing materialized. Log the raw count (BEFORE decrypt) so an
-    // `adb logcat` run pins the empty result to the query vs the
-    // materialization vs the decrypt stage without guessing.
+    // Keep the raw/materialized count at DEBUG for host diagnostics without
+    // emitting identity-correlated success telemetry to Android logcat.
     breadcrumb(&format!(
         "query_owned_encrypted_documents: fetched raw encrypted documents \
          owner={owner_identity_id} type={document_type_name} since_ms={since_ms} \
