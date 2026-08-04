@@ -448,6 +448,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::MessageSigningAddressInvalid { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidParameter
             }
+            // Message bytes that are not valid UTF-8: the same kind of
+            // caller-input error as the address arm above, so it gets the same
+            // code. It previously fell through to ErrorUnknown, which told a
+            // host "internal failure" about a malformed argument it could fix.
+            PlatformWalletError::MessageSigningMessageInvalid { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A second, signer-free producer of code 31 (the arm above is the
             // first): a message-signing address that belongs to no signable
             // funds account means no key can exist for it — the same conclusion
@@ -1096,6 +1103,31 @@ mod tests {
         );
     }
 
+    /// Malformed MESSAGE bytes are caller input just like a malformed address,
+    /// so they map to the same ErrorInvalidParameter — not ErrorUnknown, which
+    /// would report an internal failure for an argument the caller can fix.
+    /// Only reachable across the FFI, where the message arrives as raw bytes.
+    #[test]
+    fn message_signing_message_invalid_maps_to_invalid_parameter() {
+        let err = PlatformWalletError::MessageSigningMessageInvalid {
+            address: "yRd4FhXfVGHXpsuZXPNkMrfD9GVj46pnjt".to_string(),
+            reason: "invalid utf-8 sequence of 1 bytes from index 2".to_string(),
+        };
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        // The rendering must blame the message, not the address.
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            msg.contains("message to sign") && !msg.contains("address is not valid"),
+            "the Display must name the message as the malformed argument: {msg}"
+        );
+    }
+
     /// A bad message-signing address is caller input, so it maps to the
     /// already-mirrored ErrorInvalidParameter rather than ErrorUnknown.
     #[test]
@@ -1115,6 +1147,11 @@ mod tests {
     /// internal invariant breaks, which should read as a bug rather than as a
     /// key-repair prompt, so it falls through to ErrorUnknown carrying the
     /// signer's own rendering. Pinned so a future arm cannot silently claim it.
+    ///
+    /// Note this variant no longer carries malformed-message-bytes, which used
+    /// to land here and therefore on ErrorUnknown; they now have their own
+    /// `MessageSigningMessageInvalid` mapping to ErrorInvalidParameter. What
+    /// remains here is genuinely internal.
     ///
     /// #4183's key-unavailable promotion does NOT reach this variant, by
     /// design: it matches `Sdk(Protocol(Generic(s)))` structurally with the

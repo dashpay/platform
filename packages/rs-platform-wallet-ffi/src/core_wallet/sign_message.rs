@@ -31,7 +31,11 @@ use std::os::raw::c_char;
 /// the same shape for symmetry.
 ///
 /// `on_error` builds the typed error, so each argument reports itself rather
-/// than borrowing the other's phrasing.
+/// than borrowing the other's phrasing: a malformed address yields
+/// `MessageSigningAddressInvalid` and malformed message bytes yield
+/// `MessageSigningMessageInvalid`. Both are caller input and both surface as
+/// [`PlatformWalletFFIResultCode::ErrorInvalidParameter`] (2) — neither is an
+/// internal failure, so neither may reach `ErrorUnknown`.
 ///
 /// `len == 0` yields the empty string WITHOUT dereferencing `ptr`, which may
 /// legitimately be null: Swift's established marshalling
@@ -73,14 +77,20 @@ unsafe fn read_utf8(
 ///   significant and the verifier must receive the identical bytes. An empty
 ///   message is valid and signable, and `message_ptr` MAY be null when
 ///   `message_len` is 0 — the shape host marshalling naturally produces for an
-///   empty string.
+///   empty string. Bytes that are not valid UTF-8 fail with
+///   [`PlatformWalletFFIResultCode::ErrorInvalidParameter`] (2), the same code
+///   a malformed address yields: there is no string to sign, and it is the
+///   caller's argument to fix.
 /// * `core_signer_handle` — the caller's `MnemonicResolverHandle`; ownership is
 ///   retained by the caller (this function does NOT destroy it).
 /// * `out_signature` — receives a heap-allocated C string holding the base64
 ///   signature. Free with [`super::core_wallet_free_address`].
 ///
 /// # Safety
-/// `address_ptr` must be non-null and readable for `address_len` bytes;
+/// Encoding is CHECKED, not assumed: either buffer failing to be valid UTF-8 is
+/// a safe, typed `ErrorInvalidParameter` return rather than undefined behavior.
+/// What the caller must guarantee is memory validity — `address_ptr` must be
+/// non-null and readable for `address_len` bytes;
 /// `message_ptr` must be readable for `message_len` bytes when that length is
 /// non-zero (it may be null when the length is 0). Both must stay valid for the
 /// duration of the call; `out_signature` must point to writable memory for one
@@ -133,9 +143,11 @@ pub unsafe extern "C" fn core_wallet_sign_message(
         }
     }));
     // A non-UTF-8 message is reported against the (now known) address, so the
-    // error names the signing target the caller asked about.
+    // error names the signing target the caller asked about — but as a MESSAGE
+    // error, not an address one: the address parsed fine, and this maps to
+    // ErrorInvalidParameter like any other malformed argument.
     let message = unwrap_result_or_return!(read_utf8(message_ptr, message_len, |e| {
-        PlatformWalletError::MessageSigningFailed {
+        PlatformWalletError::MessageSigningMessageInvalid {
             address: address.clone(),
             reason: format!("message is not valid UTF-8: {e}"),
         }

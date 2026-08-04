@@ -120,6 +120,21 @@ pub enum PlatformWalletError {
     #[error("message-signing address {address:?} is unusable: {reason}")]
     MessageSigningAddressInvalid { address: String, reason: String },
 
+    /// The bytes handed to `core_wallet_sign_message` as the message are not
+    /// valid UTF-8, so there is no string to sign. Caller input, exactly like
+    /// [`Self::MessageSigningAddressInvalid`] — and given its own variant for
+    /// the same reason the address case has one: these errors exist to name
+    /// *which argument* the caller must fix, and reusing the address variant
+    /// for a message problem would render "address … is unusable" over a
+    /// perfectly good address.
+    ///
+    /// Only reachable across the FFI, where the message arrives as raw bytes; a
+    /// Rust or Kotlin caller cannot construct an ill-formed `&str`/`String`.
+    /// `address` is the (already validated as UTF-8) signing target, carried
+    /// for log correlation like every sibling — the *message* is what failed.
+    #[error("the message to sign for address {address} is not valid UTF-8: {reason}")]
+    MessageSigningMessageInvalid { address: String, reason: String },
+
     /// [`CoreWallet::sign_message`] was given a well-formed P2PKH address for
     /// the right network that this wallet holds no signing key for: it belongs
     /// to no *signable* funds account (BIP44 / BIP32 / CoinJoin /
