@@ -381,6 +381,14 @@ internal object WalletManagerNative {
     external fun identitySyncStop(managerHandle: Long)
     external fun identitySyncIsRunning(managerHandle: Long): Boolean
 
+    /**
+     * Whether the durable sync watermark has been frozen this session because
+     * persistence events were dropped or a store was rejected — the persisted
+     * `syncedHeight` is held behind the chain tip and a rescan is pending on
+     * the next launch. Latches for the process lifetime.
+     */
+    external fun syncFaultDetected(managerHandle: Long): Boolean
+
     /** Shielded loop — only present when the native library is built with shielded. */
     external fun shieldedSyncStart(managerHandle: Long)
     external fun shieldedSyncStop(managerHandle: Long)
