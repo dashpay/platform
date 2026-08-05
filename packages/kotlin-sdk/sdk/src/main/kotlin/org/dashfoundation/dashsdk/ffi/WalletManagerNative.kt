@@ -50,6 +50,19 @@ internal object WalletManagerNative {
     /** Shut down + free a bundle from [nativeCreate]. Safe on 0. */
     external fun nativeDestroy(bundle: Long)
 
+    /**
+     * Resolve every (name, descriptor) pair the Rust persistence
+     * trampolines dispatch against [NativePersistenceBridge]. Returns
+     * `null` when all slots resolve; otherwise the first unresolvable
+     * `"name descriptor"` pair. Virtual dispatch defers each resolution to
+     * the slot's first live call, so without this check a drifted
+     * descriptor would surface only mid-flow at runtime — the instrumented
+     * suite calls it to pin the Rust↔Kotlin lockstep up front.
+     */
+    external fun nativeVerifyPersistenceBridgeDescriptors(
+        bridge: NativePersistenceBridge,
+    ): String?
+
     // ── Wallet creation / restore ─────────────────────────────────────
 
     /**

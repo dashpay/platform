@@ -16,6 +16,7 @@ import org.dashfoundation.dashsdk.persistence.dao.DataContractDao
 import org.dashfoundation.dashsdk.persistence.dao.DocumentDao
 import org.dashfoundation.dashsdk.persistence.dao.DpnsNameDao
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
+import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
 import org.dashfoundation.dashsdk.persistence.dao.ShieldedDao
@@ -39,6 +40,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DocumentTypeEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.IndexEntity
+import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.KeywordEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
@@ -107,9 +109,14 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * process restart. Room is the durability substrate deliberately: the
  * wallet-deletion cascade removes these rows, so pending entries die with
  * their wallet automatically (a DataStore side-table would leak).
+ *
+ * Version 9 (DIP-13 invitations): adds the `invitations` table (mirror of
+ * the Swift `PersistentInvitation` model — push-persisted by the
+ * `on_persist_invitations_fn` callback, no Rust rehydrate, no secret
+ * column; the "Sent invitations" list reads it via a Room `Flow`).
  */
 @Database(
-    version = 8,
+    version = 9,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -119,6 +126,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         TxoEntity::class,
         CoreAddressEntity::class,
         AssetLockEntity::class,
+        InvitationEntity::class,
         IdentityEntity::class,
         PublicKeyEntity::class,
         DpnsNameEntity::class,
@@ -156,6 +164,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun txoDao(): TxoDao
     abstract fun coreAddressDao(): CoreAddressDao
     abstract fun assetLockDao(): AssetLockDao
+    abstract fun invitationDao(): InvitationDao
     abstract fun identityDao(): IdentityDao
     abstract fun publicKeyDao(): PublicKeyDao
     abstract fun dpnsNameDao(): DpnsNameDao
@@ -476,6 +485,36 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v8 → v9: add the DIP-13 `invitations` table. Purely additive. SQL
+         * mirrors the exported `schemas/.../9.json` `createSql` exactly
+         * (column order = entity field order).
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `invitations` (" +
+                        "`outPointHex` TEXT NOT NULL, " +
+                        "`rawOutPoint` BLOB NOT NULL, " +
+                        "`walletId` BLOB NOT NULL, " +
+                        "`fundingIndexRaw` INTEGER NOT NULL, " +
+                        "`amountDuffs` INTEGER NOT NULL, " +
+                        "`expiryUnix` INTEGER NOT NULL, " +
+                        "`createdAtSecs` INTEGER NOT NULL, " +
+                        "`hasInviter` INTEGER NOT NULL, " +
+                        "`statusRaw` INTEGER NOT NULL, " +
+                        "`reclaimInFlight` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`outPointHex`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` " +
+                        "ON `invitations` (`walletId`)",
+                )
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -491,6 +530,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
                 )
                 .build()
 
