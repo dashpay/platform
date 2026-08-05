@@ -23,6 +23,15 @@ use versioned_feature_core::FeatureVersionBounds;
 // meta-schema v3 are introduced together and pair by construction. Under v2 the
 // ranked keys still fail an index entry's `additionalProperties: false`, so v5
 // (protocol version 13) keeps pre-activation validation unchanged.
+//
+// `validate_schema_compatibility` moves to 1: the compatibility validator has
+// no keyword rule for `indices`, so under generation 0 any contract-update
+// schema diff under `/indices` that survived the index checks hard-errored
+// (an internal error, not a consensus-invalid result). Index definitions are
+// validated by `validate_update` v1's name-keyed comparison at protocol
+// version 14, so generation 1 strips the top-level `indices` key before
+// diffing — an index-order-only update (a semantic no-op) now validates
+// cleanly, while real index changes keep their dedicated consensus error.
 pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
@@ -64,7 +73,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                 traversal_validator: 0,
             },
-            validate_schema_compatibility: 0,
+            validate_schema_compatibility: 1, // changed: strips `indices` before diffing — index changes are validated by `validate_update` v1, so an index-order-only diff no longer hard-errors
         },
         methods: DocumentTypeMethodVersions {
             create_document_from_data: 0,
