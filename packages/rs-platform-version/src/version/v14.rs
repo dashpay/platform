@@ -18,7 +18,7 @@ use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::D
 use crate::version::drive_abci_versions::drive_abci_method_versions::v9::DRIVE_ABCI_METHOD_VERSIONS_V9;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v9::DRIVE_ABCI_VALIDATION_VERSIONS_V9;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts two consensus changes:
+/// v14 hosts three consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates** (this branch): an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -56,16 +56,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    insertable pre-v14 only through an unenforced grovedb batch guard)
 ///    simply gets `CountSumTree` value trees for values first seen at
 ///    v14+, which readers treat identically.
+/// 3. **The contested vote poll index cross-check**: the index named by a
+///    document create transition's prefunded voting balance keys the vote
+///    poll, its stored info, its end-date entry and its prefunded
+///    specialized balance, while the contested index the contender is
+///    inserted under always comes from the document type. Up to v13 nothing
+///    tied the two together, so a submitter could register and fund a
+///    contest under a vote poll describing a different index than the one
+///    the contest was created on — which halts the chain when that poll
+///    ends — or open a contest for a document that is not a contested
+///    resource at all.
 ///
-/// The two are orthogonal by construction: the ranked upgrade decides the
+/// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
 /// one level below it, and a demoted `CountSumTree` value tree contributes
 /// its (count, sum) to a ranked indexed parent exactly as the provable
 /// variant did — so ranked secondaries keep ranking correctly over
 /// shared-prefix shapes.
 ///
-/// Until a contract uses the ranked grammar, the only v14 behavior change
-/// is the shared-prefix fix; everything else matches v13:
+/// Until a contract uses the ranked grammar, the only v14 behavior changes
+/// are the shared-prefix fix and the contested-index cross-check; everything
+/// else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -86,6 +97,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   executor. v13 and earlier keep the v1 table and therefore keep
 ///   rejecting that shape, so mixed-version networks agree across the
 ///   upgrade.
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` bumps
+///   `document_create_transition_structure_validation` 0 → 1, requiring a
+///   contested create transition's prefunded voting balance to name the
+///   same vote poll the document itself resolves to, and rejecting one on a
+///   document that resolves to no contested index. v13 keeps the v9 table
+///   and therefore keeps accepting both, so replay of pre-upgrade blocks is
+///   unchanged.
 ///
 /// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
@@ -97,7 +115,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V9,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V9,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested create transitions must name the contested index they resolve to
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked HAVING routing gate
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -254,6 +272,34 @@ mod tests {
         assert_eq!(
             grove.batch_insert_empty_provable_count_provable_sum_indexed_tree,
             0
+        );
+    }
+
+    /// The contested vote poll index cross-check changes accept/reject
+    /// behavior for document create transitions, so it lives in v14's own
+    /// validation table: a v13 node keeps running structure validation v0,
+    /// which validates only the prefunded amount and ignores the index name.
+    /// A change that made v13 non-zero here would retroactively reject
+    /// transitions already in the chain.
+    #[test]
+    fn contested_index_cross_check_is_v14_only() {
+        assert_eq!(
+            PLATFORM_V13
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_structure_validation,
+            0
+        );
+        assert_eq!(
+            PLATFORM_V14
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .batch_state_transition
+                .document_create_transition_structure_validation,
+            1
         );
     }
 }

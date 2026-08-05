@@ -123,7 +123,7 @@ jobs:
         uses: ./.github/actions/rust
         with:
           cache: false
-          components: llvm-tools
+          components: llvm-tools, rustfmt, clippy
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov 2>/dev/null || true
