@@ -45,6 +45,8 @@ mod tests {
     use crate::consensus::ConsensusError;
     use crate::data_contract::config::DataContractConfig;
     use crate::data_contract::document_type::DocumentType;
+    use crate::data_contract::errors::{DataContractError, JsonSchemaError};
+    use crate::ProtocolError;
     use assert_matches::assert_matches;
     use platform_value::{platform_value, Identifier, Value};
     use platform_version::version::PlatformVersion;
@@ -148,11 +150,11 @@ mod tests {
             .validate_update(new_late_name.as_ref(), platform_version)
             .expect_err("late-name addition should error in schema compatibility");
 
-        assert!(
-            late_error
-                .to_string()
-                .contains("schema keyword 'indices' at path '/indices/2' is not supported"),
-            "expected the schema compatibility hard error for the `indices` keyword, got {late_error}"
+        assert_matches!(
+            late_error,
+            ProtocolError::DataContractError(DataContractError::JsonSchema(
+                JsonSchemaError::SchemaCompatibilityValidationError(message)
+            )) if message == "schema keyword 'indices' at path '/indices/2' is not supported"
         );
     }
 }
