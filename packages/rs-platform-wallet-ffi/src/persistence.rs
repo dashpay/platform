@@ -5874,21 +5874,25 @@ mod tests {
         assert_eq!(ffi.bits, 0x81);
         assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
         // Capability negotiation is deliberately NOT appended to the legacy
-        // callback vtable. Pin the vtable size (invitations + the appended
-        // `release_fn` context destructor) and prove `release_fn` is the
-        // terminal field so old clients are never over-read past it.
+        // callback vtable. Pin the vtable size so a new slot has to be a
+        // deliberate, reviewed act, and prove the last-appended field really is
+        // terminal — growth is only safe while it happens at the end, where no
+        // previously-defined slot changes offset. The count moves with each
+        // append (invitations, then the `release_fn` context destructor, now
+        // the txid enumeration pair).
         #[cfg(not(feature = "shielded"))]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            22 * std::mem::size_of::<usize>()
+            24 * std::mem::size_of::<usize>()
         );
         #[cfg(feature = "shielded")]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            38 * std::mem::size_of::<usize>()
+            40 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            std::mem::offset_of!(PersistenceCallbacks, release_fn) + std::mem::size_of::<usize>(),
+            std::mem::offset_of!(PersistenceCallbacks, on_list_wallet_core_txids_free_fn)
+                + std::mem::size_of::<usize>(),
             std::mem::size_of::<PersistenceCallbacks>()
         );
         assert_eq!(
