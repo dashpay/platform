@@ -143,8 +143,16 @@ mod tests {
         // The identical addition under a late-sorting name passes the tree
         // comparison and instead hard-errors in the schema compatibility
         // check ("schema keyword 'indices' ... is not supported").
-        old.as_ref()
+        let late_error = old
+            .as_ref()
             .validate_update(new_late_name.as_ref(), platform_version)
             .expect_err("late-name addition should error in schema compatibility");
+
+        assert!(
+            late_error
+                .to_string()
+                .contains("schema keyword 'indices' at path '/indices/2' is not supported"),
+            "expected the schema compatibility hard error for the `indices` keyword, got {late_error}"
+        );
     }
 }

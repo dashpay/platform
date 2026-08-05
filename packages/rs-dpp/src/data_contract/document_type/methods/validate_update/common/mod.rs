@@ -1279,6 +1279,153 @@ mod tests {
                 )] if e.additional_message() == "document type can not change whether it is range countable: changing from false to true"
             );
         }
+
+        /// Builds old/new document types from two schemas and runs
+        /// `validate_config`, asserting the exact rejection message. The
+        /// per-flag tests below only differ in one schema keyword, so the
+        /// boilerplate lives here.
+        fn assert_config_change_rejected(
+            old_schema: platform_value::Value,
+            new_schema: platform_value::Value,
+            expected_message: &str,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let data_contract_id = Identifier::random();
+            let document_type_name = "test";
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            let old_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                old_schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create old document type");
+
+            let new_document_type = DocumentType::try_from_schema(
+                data_contract_id,
+                1,
+                config.version(),
+                document_type_name,
+                new_schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                false,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create new document type");
+
+            let result = old_document_type
+                .as_ref()
+                .validate_config(new_document_type.as_ref());
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::DocumentTypeUpdateError(e)
+                )] if e.additional_message() == expected_message
+            );
+        }
+
+        fn schema_with_keep_flag(flag: &str, value: bool) -> platform_value::Value {
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "test": {
+                        "type": "string",
+                        "position": 0,
+                    }
+                },
+                flag: value,
+                "additionalProperties": false,
+            })
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_documents_keep_transfer_history_is_changed() {
+            assert_config_change_rejected(
+                schema_with_keep_flag("keepsTransferHistory", true),
+                schema_with_keep_flag("keepsTransferHistory", false),
+                "document type can not change whether it keeps transfer history: changing from true to false",
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_documents_keep_purchase_history_is_changed() {
+            assert_config_change_rejected(
+                schema_with_keep_flag("keepsPurchaseHistory", true),
+                schema_with_keep_flag("keepsPurchaseHistory", false),
+                "document type can not change whether it keeps purchase history: changing from true to false",
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_documents_keep_pricing_history_is_changed() {
+            assert_config_change_rejected(
+                schema_with_keep_flag("keepsPricingHistory", true),
+                schema_with_keep_flag("keepsPricingHistory", false),
+                "document type can not change whether it keeps pricing history: changing from true to false",
+            );
+        }
+
+        /// `documentsSummable` must name an integer property listed in
+        /// `required`, so the summable schemas carry an `amount` field.
+        fn schema_with_summable(
+            documents_summable: bool,
+            range_summable: bool,
+        ) -> platform_value::Value {
+            let mut schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    "amount": {
+                        "type": "integer",
+                        "position": 0,
+                    }
+                },
+                "required": ["amount"],
+                "additionalProperties": false,
+            });
+            let map = schema.as_map_mut().expect("schema must be a map");
+            if documents_summable {
+                map.push(("documentsSummable".into(), "amount".into()));
+            }
+            if range_summable {
+                map.push(("rangeSummable".into(), true.into()));
+            }
+            schema
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_documents_summable_is_changed() {
+            assert_config_change_rejected(
+                schema_with_summable(true, false),
+                schema_with_summable(false, false),
+                "document type can not change whether or how its documents are summable: changing from Some(\"amount\") to None",
+            );
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_range_summable_is_changed() {
+            // `documentsSummable` stays equal across old and new so that
+            // validate_config reaches the range_summable check below it
+            // (mirrors the range_countable test above).
+            assert_config_change_rejected(
+                schema_with_summable(true, false),
+                schema_with_summable(true, true),
+                "document type can not change whether it is range summable: changing from false to true",
+            );
+        }
     }
 
     mod validate_schema {
