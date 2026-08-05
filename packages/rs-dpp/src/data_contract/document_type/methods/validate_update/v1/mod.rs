@@ -172,7 +172,7 @@ mod tests {
     // same clean rejection naming the added index.
     #[test]
     fn should_reject_added_index_identically_regardless_of_name_sort_order() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        let platform_version = PlatformVersion::latest();
 
         let old = old_doc_type(platform_version);
 
@@ -226,7 +226,7 @@ mod tests {
     // clean, deterministic rejection.
     #[test]
     fn should_reject_renamed_index_with_clean_error() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        let platform_version = PlatformVersion::latest();
 
         let old = old_doc_type(platform_version);
 
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn should_reject_removed_index() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        let platform_version = PlatformVersion::latest();
 
         let old = old_doc_type(platform_version);
 
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn should_reject_index_with_added_property() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        let platform_version = PlatformVersion::latest();
 
         let old = old_doc_type(platform_version);
 
@@ -311,7 +311,7 @@ mod tests {
     // the schema-compatibility hard error. v1 rejects it cleanly.
     #[test]
     fn should_reject_index_with_changed_unique_flag() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        let platform_version = PlatformVersion::latest();
 
         let old = old_doc_type(platform_version);
 
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn should_pass_when_indices_are_unchanged() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14 must exist");
+        let platform_version = PlatformVersion::latest();
 
         let old = old_doc_type(platform_version);
         let new = old_doc_type(platform_version);
@@ -426,8 +426,7 @@ mod tests {
 
         #[test]
         fn should_return_invalid_result_when_ranked_averageable_is_changed() {
-            let platform_version =
-                PlatformVersion::get(14).expect("protocol version 14 must exist");
+            let platform_version = PlatformVersion::latest();
             let old = document_type_with_ranked_index(false, platform_version);
             let new = document_type_with_ranked_index(true, platform_version);
 
@@ -446,8 +445,7 @@ mod tests {
 
         #[test]
         fn should_pass_when_ranked_averageable_is_unchanged() {
-            let platform_version =
-                PlatformVersion::get(14).expect("protocol version 14 must exist");
+            let platform_version = PlatformVersion::latest();
             let old = document_type_with_ranked_index(true, platform_version);
             let new = document_type_with_ranked_index(true, platform_version);
 
