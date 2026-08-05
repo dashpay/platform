@@ -380,7 +380,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             recorded += 1;
         }
 
-        if !had_read_error {
+        // An enumeration that came back empty proves nothing: after a restore
+        // the recurring `dashpay_sync()` can fire before the host has finished
+        // repopulating its transaction table, and a zero-txid sweep is
+        // indistinguishable from a wallet that genuinely has nothing to
+        // reconstruct. Stamping the guard there would end recovery for the
+        // rest of the process — the exact symptom this pass exists to fix.
+        // Retrying costs one enumeration per sweep, without the per-record
+        // reads, until the wallet actually has transactions.
+        if !had_read_error && txid_count > 0 {
             for (owner, contact) in eligible_contacts {
                 if write_failed_for.contains(&(owner, contact)) {
                     continue;
@@ -3130,8 +3138,8 @@ mod tests {
     /// "any payment with this contact?" read that as "already reconstructed"
     /// and permanently hid the outgoing history for every two-way contact.
     #[tokio::test]
-    async fn reconcile_sent_payments_from_tx_history_reconstructs_for_contact_with_received_history()
-    {
+    async fn reconcile_sent_payments_from_tx_history_reconstructs_for_contact_with_received_history(
+    ) {
         use dashcore::hashes::Hash;
         use dashcore::BlockHash;
         use key_wallet::managed_account::transaction_record::OutputRole;
@@ -3271,8 +3279,14 @@ mod tests {
         );
     }
 
+    /// An empty enumeration is inconclusive, so the sweep must keep retrying.
+    ///
+    /// After a restore the recurring `dashpay_sync()` can fire before the host
+    /// has repopulated its transaction table. Treating that zero-txid answer as
+    /// "nothing to reconstruct" would stamp the per-launch guard and end
+    /// recovery for the rest of the process.
     #[tokio::test]
-    async fn reconcile_sent_payments_from_tx_history_skips_repeat_empty_sweeps() {
+    async fn reconcile_sent_payments_from_tx_history_retries_after_empty_enumeration() {
         let persister = Arc::new(RecordStorePersister::default());
         let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
         let owner = Identifier::from([0xAA; 32]);
@@ -3291,33 +3305,86 @@ mod tests {
 
         let _ = install_external_account(&manager, wallet_id, owner, contact).await;
 
-        assert_eq!(
-            iw.dashpay()
-                .reconcile_sent_payments_from_tx_history()
-                .await
-                .expect("first reconcile"),
-            0,
-            "an empty tx history should produce no reconstructed payments"
-        );
+        for pass in 1..=2 {
+            assert_eq!(
+                iw.dashpay()
+                    .reconcile_sent_payments_from_tx_history()
+                    .await
+                    .expect("reconcile"),
+                0,
+                "an empty tx history should produce no reconstructed payments (pass {pass})"
+            );
+        }
         assert_eq!(
             *persister.list_wallet_core_txids_calls.lock().unwrap(),
-            1,
-            "the first pass must enumerate txids once"
+            2,
+            "an empty enumeration must not be taken as conclusive"
         );
         assert_eq!(
             *persister.get_core_tx_record_calls.lock().unwrap(),
             0,
             "with no txids there should be no per-record reads"
         );
+    }
 
-        assert_eq!(
-            iw.dashpay()
-                .reconcile_sent_payments_from_tx_history()
-                .await
-                .expect("second reconcile"),
-            0,
-            "the second pass should early-exit before touching persistence"
+    /// Once a sweep has actually scanned transactions, repeating it is pure
+    /// overhead — the guard stops the full walk on every later pass.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_skips_repeat_sweeps_after_a_real_scan() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let _ = install_external_account(&manager, wallet_id, owner, contact).await;
+
+        // A transaction that pays someone else: the enumeration is non-empty,
+        // so the scan is conclusive even though it reconstructs nothing.
+        let unrelated = dashcore::Address::p2pkh(
+            &dashcore::PublicKey::from_slice(&[
+                0x02, 0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC, 0x55, 0xA0, 0x62, 0x95, 0xCE,
+                0x87, 0x0B, 0x07, 0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9, 0x59, 0xF2, 0x81,
+                0x5B, 0x16, 0xF8, 0x17, 0x98,
+            ])
+            .expect("valid compressed pubkey"),
+            Network::Testnet,
         );
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(11, BlockHash::all_zeros(), 0)),
+            vec![(unrelated, 1_000, OutputRole::Sent)],
+        );
+        persister
+            .records
+            .lock()
+            .unwrap()
+            .insert(record.txid, record);
+
+        for pass in 1..=2 {
+            assert_eq!(
+                iw.dashpay()
+                    .reconcile_sent_payments_from_tx_history()
+                    .await
+                    .expect("reconcile"),
+                0,
+                "nothing pays this contact (pass {pass})"
+            );
+        }
         assert_eq!(
             *persister.list_wallet_core_txids_calls.lock().unwrap(),
             1,
@@ -3325,8 +3392,8 @@ mod tests {
         );
         assert_eq!(
             *persister.get_core_tx_record_calls.lock().unwrap(),
-            0,
-            "steady-state early exit should avoid tx-record fetches entirely"
+            1,
+            "the second pass must early-exit before any tx-record fetch"
         );
     }
 

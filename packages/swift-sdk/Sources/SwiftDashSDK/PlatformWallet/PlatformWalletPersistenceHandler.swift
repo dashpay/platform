@@ -31,7 +31,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         transaction: PersistentTransaction
     ) -> Bool {
-        if transaction.involvedAccounts.contains(where: { $0.wallet.walletId == walletId }) {
+        // `account.wallet` is non-optional on the model but is a fault-loaded
+        // relationship; a relationship-store inconsistency would crash here,
+        // so guard via Optional cast (same treatment as the UTXO bucketing in
+        // `loadWalletList`).
+        if transaction.involvedAccounts.contains(where: {
+            let wallet: PersistentWallet? = $0.wallet
+            return wallet?.walletId == walletId
+        }) {
             return true
         }
         if transaction.outputs.contains(where: { $0.walletId == walletId }) {
@@ -5778,15 +5785,27 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Scope is the union of wallet-owned TXOs (`outputs`, `inputs`,
     /// `pendingInputs`) and payload-only account involvement
     /// (`involvedAccounts`).
-    func walletCoreTxids(walletId: Data) -> [Data] {
+    /// Returns `errored: true` when the fetch itself failed, so the shim can
+    /// report a non-zero status. Collapsing a database fault to an empty list
+    /// would be indistinguishable from a wallet with no transactions, and the
+    /// Rust side treats those two very differently.
+    func walletCoreTxids(walletId: Data) -> (txids: [Data], errored: Bool) {
         onQueue {
             let descriptor = FetchDescriptor<PersistentTransaction>()
-            guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
-                return []
+            let rows: [PersistentTransaction]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                NSLog(
+                    "[persistor-txids:swift] PersistentTransaction fetch failed: %@",
+                    String(describing: error)
+                )
+                return ([], true)
             }
-            return rows.compactMap { tx in
+            let txids = rows.compactMap { tx in
                 Self.walletOwnsTransaction(walletId: walletId, transaction: tx) ? tx.txid : nil
             }
+            return (txids, false)
         }
     }
 
@@ -7509,11 +7528,14 @@ private func listWalletCoreTxidsCallback(
     outTxids: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
     outCount: UnsafeMutablePointer<UInt>?
 ) -> Int32 {
+    // Non-zero on a missing argument: reporting success here would hand Rust
+    // an empty enumeration that it cannot tell apart from a wallet with no
+    // transactions.
     guard let context = context,
           let walletIdPtr = walletIdPtr,
           let outTxids = outTxids,
           let outCount = outCount else {
-        return 0
+        return -1
     }
 
     outTxids.pointee = nil
@@ -7523,7 +7545,10 @@ private func listWalletCoreTxidsCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
-    let txids = handler.walletCoreTxids(walletId: walletId)
+    let (txids, errored) = handler.walletCoreTxids(walletId: walletId)
+    guard !errored else {
+        return -1
+    }
     guard !txids.isEmpty else {
         return 0
     }

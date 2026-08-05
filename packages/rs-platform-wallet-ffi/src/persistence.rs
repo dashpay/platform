@@ -627,34 +627,6 @@ pub struct PersistenceCallbacks {
     pub on_get_core_tx_record_free_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, tx_bytes: *const u8, tx_bytes_len: usize),
     >,
-    /// Enumerate the persisted Core txids that belong to `wallet_id`.
-    ///
-    /// Used by DashPay sent-payment reconstruction to walk the local
-    /// transaction history without requiring the optional in-memory
-    /// `transactions()` map to retain finalized records.
-    ///
-    /// Output contract:
-    /// - Set `*out_txids` to a contiguous buffer of `32 * *out_count`
-    ///   bytes, one raw-wire txid per 32-byte chunk, and `*out_count`
-    ///   to the number of txids returned.
-    /// - Set `*out_txids = null` and `*out_count = 0` when no rows
-    ///   exist for the wallet.
-    /// - Return `0` on success; non-zero values are treated as backend
-    ///   failures by the Rust side.
-    pub on_list_wallet_core_txids_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            out_txids: *mut *const u8,
-            out_count: *mut usize,
-        ) -> i32,
-    >,
-    /// Paired free callback for the txid buffer returned by
-    /// [`Self::on_list_wallet_core_txids_fn`]. Rust invokes this with
-    /// the same pointer and txid count, exactly once per successful
-    /// hit.
-    pub on_list_wallet_core_txids_free_fn:
-        Option<unsafe extern "C" fn(context: *mut c_void, txids: *const u8, count: usize)>,
     /// Called with an `AssetLockChangeSet` slice — upserts on the
     /// tracked-asset-lock store and outpoint tombstones. Swift maps
     /// upserts onto `PersistentAssetLock` rows keyed by the 36-byte
@@ -708,6 +680,38 @@ pub struct PersistenceCallbacks {
     /// callbacks memory-safe. A context needing no cleanup takes a no-op
     /// `release_fn`; `None` is valid only alongside a null `context`.
     pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,
+    /// Enumerate the persisted Core txids that belong to `wallet_id`.
+    ///
+    /// Appended at the END so the struct layout stays stable — a host
+    /// built against the previous vtable keeps working, it simply never
+    /// sets these two slots.
+    ///
+    /// Used by DashPay sent-payment reconstruction to walk the local
+    /// transaction history without requiring the optional in-memory
+    /// `transactions()` map to retain finalized records.
+    ///
+    /// Output contract:
+    /// - Set `*out_txids` to a contiguous buffer of `32 * *out_count`
+    ///   bytes, one raw-wire txid per 32-byte chunk, and `*out_count`
+    ///   to the number of txids returned.
+    /// - Set `*out_txids = null` and `*out_count = 0` when no rows
+    ///   exist for the wallet.
+    /// - Return `0` on success; non-zero values are treated as backend
+    ///   failures by the Rust side.
+    pub on_list_wallet_core_txids_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_txids: *mut *const u8,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    /// Paired free callback for the txid buffer returned by
+    /// [`Self::on_list_wallet_core_txids_fn`]. Rust invokes this with
+    /// the same pointer and txid count, exactly once per successful
+    /// hit.
+    pub on_list_wallet_core_txids_free_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, txids: *const u8, count: usize)>,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -2813,12 +2817,26 @@ impl PlatformWalletPersistence for FFIPersister {
             return Ok(Vec::new());
         }
 
-        let raw = unsafe { slice::from_raw_parts(txids_ptr, count.saturating_mul(32)) };
-        if raw.len() != count.saturating_mul(32) {
+        // Validate the byte length BEFORE building the slice: `from_raw_parts`
+        // requires it to fit in `isize::MAX`, and an implausible `count` from
+        // the host would otherwise be silently clamped into a slice that
+        // outruns the allocation.
+        let Some(byte_len) = count.checked_mul(32) else {
             return Err(PersistenceError::backend(
-                "on_list_wallet_core_txids_fn returned an inconsistent txid buffer",
+                "on_list_wallet_core_txids_fn reported a txid count whose byte length overflows",
+            ));
+        };
+        if byte_len > isize::MAX as usize {
+            return Err(PersistenceError::backend(
+                "on_list_wallet_core_txids_fn reported a txid buffer larger than isize::MAX",
             ));
         }
+
+        // SAFETY: the host guarantees `txids_ptr` points to `byte_len` valid
+        // bytes for the duration of the callback window — `_txid_guard` keeps
+        // that window open until this function returns — and `byte_len` is
+        // checked above to be a valid slice length.
+        let raw = unsafe { slice::from_raw_parts(txids_ptr, byte_len) };
 
         let mut out = Vec::with_capacity(count);
         for chunk in raw.chunks_exact(32) {
