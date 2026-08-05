@@ -290,9 +290,21 @@ jobs:
           path: lcov-shielded.info
           key: rs-shielded-lcov-v1-${{ steps.shielded-hash.outputs.hash }}
 
+      # On pull requests the drive-abci chain-simulation suite
+      # (strategy_tests, ~90 multi-second whole-chain simulations that
+      # dominate the test phase's wall time) is reduced to the single
+      # comprehensive simulation — see the doc comment on
+      # run_chain_comprehensive_mixed_operations_with_epoch_change_and_quorum_rotation
+      # for what it covers. Push and nightly runs execute the full suite, so
+      # a regression in an excluded simulation is caught minutes after merge
+      # — the same safety-net pattern as the shielded phase above.
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
+          FILTER='not test(~shield)'
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILTER="$FILTER and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))"
+          fi
           cargo llvm-cov nextest --no-report \
             --package drive \
             --package dpp \
@@ -318,7 +330,7 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            -E 'not test(~shield)'
+            -E "$FILTER"
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
