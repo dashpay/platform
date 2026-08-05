@@ -63,8 +63,12 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     // fee for the with-change shape is exact in BOTH branches — see the
     // `single_output_transfer_fee_matches_on_wire_action_count` test, which pins the carved fee
     // against the bundle's real `actions.len()`.
+    //
+    // The helper also enforces the consensus action ceiling
+    // (`max_shielded_transition_actions`), so a wallet fragmented enough to need more spends
+    // than consensus allows fails here rather than after the ~30 s proof.
     const MAX_OUTPUTS: usize = 2; // recipient + change
-    let num_actions = shielded_bundle_action_count(spends.len(), MAX_OUTPUTS)?;
+    let num_actions = shielded_bundle_action_count(spends.len(), MAX_OUTPUTS, platform_version)?;
     // The fee is fixed at the minimum: a transfer's `value_balance` IS the fee and consensus
     // pins it to exactly this amount (overpayment buys nothing and would leak a distinguishing
     // fee fingerprint that breaks shielded uniformity).
@@ -238,7 +242,11 @@ pub fn build_shielded_transfer_transition_multi<P: OrchardProver>(
     let num_outputs = outputs.len().checked_add(1).ok_or_else(|| {
         ProtocolError::ShieldedBuildError("output count overflows usize".to_string())
     })?;
-    let num_actions = shielded_bundle_action_count(spends.len(), num_outputs)?;
+    // Also the consensus action-ceiling gate: `max(spends, recipients + 1)` must stay within
+    // `max_shielded_transition_actions`, or the transition is doomed at `validate_structure`.
+    // `try_from_bundle` performs no structural validation, so without this the caller would burn
+    // the ~30 s Halo 2 proof on a bundle consensus is guaranteed to reject.
+    let num_actions = shielded_bundle_action_count(spends.len(), num_outputs, platform_version)?;
     let fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
 
     let required = transfer_total.checked_add(fee).ok_or_else(|| {
@@ -597,6 +605,137 @@ mod tests {
         .expect_err("spending exactly sum + fee must be rejected");
         assert!(
             err.to_string().contains("strictly less than"),
+            "unexpected error: {err}"
+        );
+    }
+
+    // --------------------------------------------------------------
+    // Consensus action ceiling (`max_shielded_transition_actions`)
+    // --------------------------------------------------------------
+
+    /// Build `count` recipient outputs of `amount` each, all to the same test address.
+    fn n_outputs(count: usize, amount: u64) -> Vec<ShieldedTransferOutput> {
+        let recipient = test_orchard_address();
+        (0..count)
+            .map(|_| ShieldedTransferOutput {
+                recipient,
+                amount,
+                memo: [0u8; 36],
+            })
+            .collect()
+    }
+
+    /// `max_shielded_transition_actions` recipient outputs plus the unconditional change output
+    /// publish one action too many. `try_from_bundle` runs no structural validation, so without
+    /// an up-front gate this bundle would be laid out, proved (~30 s of Halo 2) and only then
+    /// rejected by consensus at `validate_structure`. It must fail BEFORE proving — this test
+    /// completing in milliseconds is itself part of the assertion.
+    #[test]
+    fn multi_output_transfer_rejects_output_count_over_the_action_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+
+        // `max` recipients → `max + 1` outputs once change is added. This is exactly what the
+        // FFI's 16-recipient ceiling admits today.
+        let outputs = n_outputs(max, 1_000_000);
+
+        let err = build_shielded_transfer_transition_multi(
+            vec![test_spendable_note(u64::MAX / 2)],
+            &outputs,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            platform_version,
+        )
+        .expect_err("a bundle over the consensus action limit must be rejected");
+        assert!(
+            err.to_string().contains("exceeding the consensus limit"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// The boundary itself must still build: `max - 1` recipients plus change is exactly
+    /// `max_shielded_transition_actions` actions. The gate must not reject it — the build gets
+    /// past the fee/limit arithmetic and only stops at the (unrelated) `add_spend` anchor
+    /// mismatch of the test note, which is how the other builder tests pin "proceeded past the
+    /// value checks" without paying for a real proof.
+    #[test]
+    fn multi_output_transfer_accepts_the_action_limit_boundary() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+
+        let outputs = n_outputs(max - 1, 1_000_000);
+
+        let err = build_shielded_transfer_transition_multi(
+            vec![test_spendable_note(u64::MAX / 2)],
+            &outputs,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            platform_version,
+        )
+        .expect_err("the test note's all-zero path mismatches the empty-tree anchor");
+        let err = err.to_string();
+        assert!(
+            !err.contains("exceeding the consensus limit"),
+            "exactly {max} actions is AT the limit and must not be rejected by it, got: {err}"
+        );
+        assert!(
+            err.contains("failed to add spend") || err.contains("nchor"),
+            "expected the downstream add_spend error, got: {err}"
+        );
+    }
+
+    /// The spend side can breach the ceiling too: a fragmented wallet selecting more notes than
+    /// `max_shielded_transition_actions` publishes one action per spend. The single-output
+    /// builder shares the same gate, so it must fail fast as well.
+    #[test]
+    fn transfer_rejects_spend_count_over_the_action_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+        let sk = SpendingKey::from_bytes([42u8; 32]).expect("valid sk");
+        let fvk = FullViewingKey::from(&sk);
+        let ask = SpendAuthorizingKey::from(&sk);
+        let change_address = test_orchard_address();
+        let recipient = test_orchard_address();
+
+        let spends: Vec<SpendableNote> = (0..max + 1)
+            .map(|_| test_spendable_note(1_000_000_000))
+            .collect();
+
+        let err = build_shielded_transfer_transition(
+            spends,
+            &recipient,
+            1_000,
+            &change_address,
+            &fvk,
+            &ask,
+            Anchor::empty_tree(),
+            &TestProver,
+            [0u8; 36],
+            platform_version,
+        )
+        .expect_err("more spends than the consensus action limit must be rejected");
+        assert!(
+            err.to_string().contains("exceeding the consensus limit"),
             "unexpected error: {err}"
         );
     }

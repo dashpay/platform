@@ -55,6 +55,7 @@ use grovedb_commitment_tree::{
     FullViewingKey, MerklePath, Note, NoteValue, OutgoingViewingKey, PaymentAddress, ProvingKey,
     Scope, SpendAuthorizingKey, SpendingKey,
 };
+use platform_version::version::PlatformVersion;
 use rand::rngs::OsRng;
 use rand::RngCore;
 
@@ -107,7 +108,8 @@ impl From<&OrchardAddress> for PaymentAddress {
 }
 
 /// The number of Orchard actions a `BundleType::DEFAULT` bundle built from `num_spends` spends
-/// and `num_outputs` outputs will publish **on the wire**.
+/// and `num_outputs` outputs will publish **on the wire**, validated against the consensus
+/// action ceiling.
 ///
 /// Every shielded fee predictor MUST size its fee with this function, because consensus prices
 /// the fee off the on-wire `actions.len()` (see
@@ -123,17 +125,41 @@ impl From<&OrchardAddress> for PaymentAddress {
 ///
 /// This delegates to Orchard's own [`BundleType::num_actions`] rather than re-deriving the rule,
 /// so the predictor cannot drift from the builder that actually lays out the bundle.
+///
+/// # The consensus ceiling
+///
+/// Every shielded transition's `validate_structure` rejects a bundle whose `actions.len()`
+/// exceeds `platform_version.system_limits.max_shielded_transition_actions` (via
+/// `validate_actions_count`), but the `try_from_bundle` constructors do NOT run structural
+/// validation — so without this gate an over-sized bundle is built, proved (~30 s of Halo 2),
+/// and only then rejected on chain. Because the action count is `max(spends, outputs)`, bounding
+/// it here bounds BOTH sides: a fragmented wallet spending too many notes and a caller asking
+/// for too many outputs are rejected by the same comparison, before any proving work starts.
 pub fn shielded_bundle_action_count(
     num_spends: usize,
     num_outputs: usize,
+    platform_version: &PlatformVersion,
 ) -> Result<usize, ProtocolError> {
-    BundleType::DEFAULT
+    let num_actions = BundleType::DEFAULT
         .num_actions(num_spends, num_outputs)
         .map_err(|e| {
             ProtocolError::ShieldedBuildError(format!(
                 "invalid Orchard bundle shape ({num_spends} spends, {num_outputs} outputs): {e}"
             ))
-        })
+        })?;
+
+    let max_actions = platform_version
+        .system_limits
+        .max_shielded_transition_actions as usize;
+    if num_actions > max_actions {
+        return Err(ProtocolError::ShieldedBuildError(format!(
+            "a bundle of {num_spends} spends and {num_outputs} outputs publishes {num_actions} \
+             Orchard actions, exceeding the consensus limit of {max_actions} \
+             (max_shielded_transition_actions); consensus would reject the proved transition"
+        )));
+    }
+
+    Ok(num_actions)
 }
 
 /// Serializes an authorized Orchard bundle into the raw fields used by
@@ -824,6 +850,7 @@ mod mod_tests {
     /// the ones a spends-only predictor gets wrong.
     #[test]
     fn shielded_bundle_action_count_is_max_spends_outputs_padded_to_two() {
+        let platform_version = PlatformVersion::latest();
         for (spends, outputs, expected) in [
             (0usize, 1usize, 2usize),
             (1, 1, 2),
@@ -836,7 +863,7 @@ mod mod_tests {
             (5, 3, 5),
             (3, 7, 7),
         ] {
-            let actual = shielded_bundle_action_count(spends, outputs)
+            let actual = shielded_bundle_action_count(spends, outputs, platform_version)
                 .expect("DEFAULT bundles accept any spend/output mix");
             assert_eq!(
                 actual, expected,
@@ -850,6 +877,7 @@ mod mod_tests {
     /// the cheapest real bundle to construct at several output counts.
     #[test]
     fn shielded_bundle_action_count_matches_a_real_bundle() {
+        let platform_version = PlatformVersion::latest();
         let recipient = test_orchard_address();
         // (dummy_outputs, total outputs = 1 real + dummies)
         for dummies in [0usize, 1, 4] {
@@ -857,13 +885,57 @@ mod mod_tests {
             let bundle =
                 build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, dummies, &TestProver)
                     .expect("bundle should build");
-            let predicted =
-                shielded_bundle_action_count(0, num_outputs).expect("valid bundle shape");
+            let predicted = shielded_bundle_action_count(0, num_outputs, platform_version)
+                .expect("valid bundle shape");
             assert_eq!(
                 bundle.actions().len(),
                 predicted,
                 "predicted action count must match the real bundle's on-wire count for \
                  {num_outputs} outputs"
+            );
+        }
+    }
+
+    /// The predictor is also the CONSENSUS gate: `validate_actions_count` rejects
+    /// `actions.len() > max_shielded_transition_actions`, but `try_from_bundle` runs no
+    /// structural validation — so a bundle over the ceiling would be proved (~30 s of Halo 2)
+    /// and only then rejected on chain. The boundary itself must still pass.
+    #[test]
+    fn shielded_bundle_action_count_accepts_the_consensus_boundary() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+
+        // Exactly at the ceiling, from each side.
+        assert_eq!(
+            shielded_bundle_action_count(1, max, platform_version)
+                .expect("the output-side boundary must be accepted"),
+            max
+        );
+        assert_eq!(
+            shielded_bundle_action_count(max, 1, platform_version)
+                .expect("the spend-side boundary must be accepted"),
+            max
+        );
+    }
+
+    /// One action over the ceiling must fail fast — from the OUTPUT side (the 16-recipient FFI
+    /// call, which becomes 17 outputs once the unconditional change output is added) and from
+    /// the SPEND side (a fragmented wallet selecting too many notes).
+    #[test]
+    fn shielded_bundle_action_count_rejects_over_the_consensus_limit() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version
+            .system_limits
+            .max_shielded_transition_actions as usize;
+
+        for (spends, outputs) in [(1usize, max + 1), (max + 1, 1), (max + 1, max + 1)] {
+            let err = shielded_bundle_action_count(spends, outputs, platform_version)
+                .expect_err("a bundle over the consensus action limit must be rejected");
+            assert!(
+                err.to_string().contains("exceeding the consensus limit"),
+                "unexpected error for {spends} spends / {outputs} outputs: {err}"
             );
         }
     }

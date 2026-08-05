@@ -356,7 +356,53 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
 /// `num_recipients` from driving a huge allocation before anything else can reject it. The real
 /// ceiling is the 20 KiB state-transition size limit, which admits roughly six Orchard actions —
 /// so a legitimate caller stays far below this.
-const MAX_SHIELDED_TRANSFER_RECIPIENTS: usize = 16;
+///
+/// Public so language bridges (the JNI adapter, Swift) can enforce the SAME bound before they
+/// allocate their own caller-sized buffers, rather than duplicating the literal.
+pub const MAX_SHIELDED_TRANSFER_RECIPIENTS: usize = 16;
+
+/// Render a caught panic payload as a human-readable string.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "<non-string panic payload>".to_string()
+    }
+}
+
+/// Run a shielded-spend export body under [`std::panic::catch_unwind`], converting a panic into a
+/// typed FFI error instead of letting it reach the `extern "C"` frame.
+///
+/// A Rust panic cannot unwind through a C ABI boundary: it aborts the process. The JNI layer
+/// wraps its calls in `support::guard` (which catches panics and raises a Java exception), but
+/// that guard sits on the FAR side of this `extern "C"` export, so it never sees the unwind — the
+/// process is already gone. `block_on_worker` makes this reachable rather than theoretical: it
+/// `.expect`s on the tokio `JoinError`, so any panic inside the proving future (Halo 2 synthesis,
+/// note bookkeeping, the SDK) re-panics right here inside the export.
+///
+/// The panic is mapped to [`PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed`], NOT to
+/// a definitive failure code: a panic can strike after the notes were reserved and even after the
+/// transition was broadcast, so the outcome is genuinely ambiguous. That code's contract is
+/// exactly the conservative one this needs — the host must not auto-retry, the reservation stays
+/// in place, and the next nullifier sync (or an app restart) reconciles whether the spend landed.
+fn catch_spend_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(result) => result,
+        Err(payload) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+            format!(
+                "{operation} panicked: {}. The spend may or may not have been broadcast — do \
+                 NOT retry; the next shielded sync reconciles the outcome.",
+                panic_payload_message(payload.as_ref())
+            ),
+        ),
+    }
+}
 
 /// Send a shielded → shielded transfer with SEVERAL outputs in one
 /// atomic transition.
@@ -394,6 +440,39 @@ const MAX_SHIELDED_TRANSFER_RECIPIENTS: usize = 16;
 ///   C string for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer_multi(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    recipients_raw_43: *const u8,
+    amounts: *const u64,
+    num_recipients: usize,
+    memo_text: *const c_char,
+) -> PlatformWalletFFIResult {
+    // The whole body runs under `catch_unwind`: a panic (most concretely `block_on_worker`'s
+    // `.expect` on a panicking proving task) must NOT reach this `extern "C"` frame, where it
+    // would abort the process instead of surfacing to the host as a typed error.
+    catch_spend_panic("shielded multi-output transfer", || {
+        shielded_transfer_multi_inner(
+            handle,
+            wallet_id_bytes,
+            mnemonic_resolver_handle,
+            account,
+            recipients_raw_43,
+            amounts,
+            num_recipients,
+            memo_text,
+        )
+    })
+}
+
+/// Body of [`platform_wallet_manager_shielded_transfer_multi`], as an ordinary Rust function so a
+/// panic unwinds into [`catch_spend_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+#[allow(clippy::too_many_arguments)]
+unsafe fn shielded_transfer_multi_inner(
     handle: Handle,
     wallet_id_bytes: *const u8,
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
@@ -1612,6 +1691,54 @@ mod tests {
         unsafe { CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+
+    /// A non-panicking body passes its result straight through — the guard must be invisible on
+    /// the happy path.
+    #[test]
+    fn catch_spend_panic_passes_results_through() {
+        let ok = catch_spend_panic("test", PlatformWalletFFIResult::ok);
+        assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
+
+        let err = catch_spend_panic("test", || {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "bad input",
+            )
+        });
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!(message_of(&err), "bad input");
+    }
+
+    /// A panic inside a shielded-spend export must NOT unwind into the `extern "C"` frame (that
+    /// aborts the process). It becomes `ErrorShieldedSpendUnconfirmed` — the conservative
+    /// "may have been broadcast, do NOT retry" contract, because a panic can strike after the
+    /// notes are reserved and after the transition is submitted.
+    #[test]
+    fn catch_spend_panic_maps_a_panic_to_the_unconfirmed_contract() {
+        let previous = std::panic::take_hook();
+        // Silence the default hook's backtrace spew for this deliberate panic.
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = catch_spend_panic("shielded multi-output transfer", || {
+            panic!("tokio worker panicked");
+        });
+        std::panic::set_hook(previous);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
+            "a panic must map to the ambiguous, do-not-retry code"
+        );
+        let message = message_of(&result);
+        assert!(
+            message.contains("shielded multi-output transfer panicked")
+                && message.contains("tokio worker panicked"),
+            "the panic payload must survive into the FFI message: {message}"
+        );
+        assert!(
+            message.contains("do NOT retry"),
+            "the message must carry the do-not-retry guidance: {message}"
+        );
     }
 
     /// `map_spend_result` pins the retry-relevant code split the three spend
