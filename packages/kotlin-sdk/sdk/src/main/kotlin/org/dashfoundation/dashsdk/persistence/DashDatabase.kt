@@ -102,13 +102,21 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * explicit transaction↔typed-account involvement table for payload-only
  * provider transactions.
  *
- * Version 8 (DIP-13 invitations): adds the `invitations` table (mirror of
+ * Version 8 (durable repair signal, dashpay/platform#4060): adds the
+ * nullable `public_keys.derivationIdentityIndex` / `derivationKeyIndex`
+ * derivation-breadcrumb columns, so identity keys whose private half is
+ * missing or undecryptable can re-seed the pending-repair state after a
+ * process restart. Room is the durability substrate deliberately: the
+ * wallet-deletion cascade removes these rows, so pending entries die with
+ * their wallet automatically (a DataStore side-table would leak).
+ *
+ * Version 9 (DIP-13 invitations): adds the `invitations` table (mirror of
  * the Swift `PersistentInvitation` model — push-persisted by the
  * `on_persist_invitations_fn` callback, no Rust rehydrate, no secret
  * column; the "Sent invitations" list reads it via a Room `Flow`).
  */
 @Database(
-    version = 8,
+    version = 9,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -459,11 +467,29 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
-         * v7 → v8: add the DIP-13 `invitations` table. Purely additive. SQL
-         * mirrors the exported `schemas/.../8.json` `createSql` exactly
-         * (column order = entity field order).
+         * v7 → v8: additive nullable derivation-breadcrumb columns on
+         * `public_keys` (dashpay/platform#4060 finding 5). NULL for every
+         * pre-existing row — correct, because a legacy row's breadcrumbs are
+         * unknown; the persist callback back-fills them on the next upsert of
+         * each key, after which the pending-repair reconstruction can see it.
          */
         val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationIdentityIndex` INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE `public_keys` ADD COLUMN `derivationKeyIndex` INTEGER",
+                )
+            }
+        }
+
+        /**
+         * v8 → v9: add the DIP-13 `invitations` table. Purely additive. SQL
+         * mirrors the exported `schemas/.../9.json` `createSql` exactly
+         * (column order = entity field order).
+         */
+        val MIGRATION_8_9: Migration = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `invitations` (" +
@@ -504,6 +530,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
                 )
                 .build()
 

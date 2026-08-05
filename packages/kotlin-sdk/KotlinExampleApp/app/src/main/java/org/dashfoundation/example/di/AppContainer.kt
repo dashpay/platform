@@ -39,6 +39,14 @@ class AppContainer(private val context: Context) {
 
     val appState = AppState(dataStore, applicationScope)
 
+    val dashPayActiveIdentityStore =
+        org.dashfoundation.example.ui.dashpay.DashPayActiveIdentityStore(dataStore)
+
+    val dashPayActiveIdentityRestorationCoordinator =
+        org.dashfoundation.example.ui.dashpay.DashPayActiveIdentityRestorationCoordinator(
+            dashPayActiveIdentityStore,
+        )
+
     val appUiState = AppUiState()
 
     /** Fast-cadence SPV progress feed for the global overlay (A-M4 wires the source). */
@@ -135,8 +143,22 @@ class AppContainer(private val context: Context) {
      */
     suspend fun activateManager() {
         val sdk = appState.sdk.value ?: return
-        val manager = walletManagerStore.activate(sdk.network, sdk)
-        manager.loadPersistedWallets()
+        val manager = dashPayActiveIdentityRestorationCoordinator.restore(
+            network = sdk.network,
+            loadWallets = {
+                val activatedManager = walletManagerStore.activate(sdk.network, sdk)
+                activatedManager.loadPersistedWallets()
+                org.dashfoundation.example.ui.dashpay.DashPayWalletLoad(
+                    value = activatedManager,
+                    loadedWalletIdsHex = activatedManager.wallets.value.keys,
+                )
+            },
+            loadWalletOwnedIdentities = {
+                database.identityDao()
+                    .observeWalletOwnedByNetwork(sdk.network.ffiValue)
+                    .first()
+            },
+        )
         platformBalanceSyncService.configure(manager)
 
         // Bind the wallet-scoped services against the deterministic first

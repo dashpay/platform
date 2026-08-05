@@ -959,6 +959,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shield_from_asset_lock proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
@@ -1378,6 +1379,7 @@ mod tests {
                 &|_| Ok(None),
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shield_from_asset_lock proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");

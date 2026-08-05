@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 8,
-    "identityHash": "dd2169debcd985d7acdd7d99acd14840",
+    "identityHash": "7c05146891642d5abd6a173803616b94",
     "entities": [
       {
         "tableName": "wallets",
@@ -869,101 +869,6 @@
         ]
       },
       {
-        "tableName": "invitations",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`outPointHex` TEXT NOT NULL, `rawOutPoint` BLOB NOT NULL, `walletId` BLOB NOT NULL, `fundingIndexRaw` INTEGER NOT NULL, `amountDuffs` INTEGER NOT NULL, `expiryUnix` INTEGER NOT NULL, `createdAtSecs` INTEGER NOT NULL, `hasInviter` INTEGER NOT NULL, `statusRaw` INTEGER NOT NULL, `reclaimInFlight` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`outPointHex`))",
-        "fields": [
-          {
-            "fieldPath": "outPointHex",
-            "columnName": "outPointHex",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "rawOutPoint",
-            "columnName": "rawOutPoint",
-            "affinity": "BLOB",
-            "notNull": true
-          },
-          {
-            "fieldPath": "walletId",
-            "columnName": "walletId",
-            "affinity": "BLOB",
-            "notNull": true
-          },
-          {
-            "fieldPath": "fundingIndexRaw",
-            "columnName": "fundingIndexRaw",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "amountDuffs",
-            "columnName": "amountDuffs",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "expiryUnix",
-            "columnName": "expiryUnix",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "createdAtSecs",
-            "columnName": "createdAtSecs",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "hasInviter",
-            "columnName": "hasInviter",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "statusRaw",
-            "columnName": "statusRaw",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "reclaimInFlight",
-            "columnName": "reclaimInFlight",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "createdAt",
-            "columnName": "createdAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "updatedAt",
-            "columnName": "updatedAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "outPointHex"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_invitations_walletId",
-            "unique": false,
-            "columnNames": [
-              "walletId"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` ON `${TABLE_NAME}` (`walletId`)"
-          }
-        ]
-      },
-      {
         "tableName": "identities",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`identityId` BLOB NOT NULL, `balance` INTEGER NOT NULL, `revision` INTEGER NOT NULL, `isLocal` INTEGER NOT NULL, `alias` TEXT, `dpnsName` TEXT, `mainDpnsName` TEXT, `identityType` TEXT NOT NULL, `votingPrivateKeyIdentifier` TEXT, `ownerPrivateKeyIdentifier` TEXT, `payoutPrivateKeyIdentifier` TEXT, `createdAt` INTEGER NOT NULL, `lastUpdated` INTEGER NOT NULL, `lastSyncedAt` INTEGER, `networkRaw` INTEGER NOT NULL, `walletId` BLOB, `identityIndex` INTEGER NOT NULL, PRIMARY KEY(`identityId`), FOREIGN KEY(`walletId`) REFERENCES `wallets`(`walletId`) ON UPDATE NO ACTION ON DELETE SET NULL )",
         "fields": [
@@ -1104,7 +1009,7 @@
       },
       {
         "tableName": "public_keys",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyId` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `securityLevel` TEXT NOT NULL, `keyType` TEXT NOT NULL, `readOnly` INTEGER NOT NULL, `disabledAt` INTEGER, `publicKeyData` BLOB NOT NULL, `contractBoundsData` BLOB, `contractBoundsDocumentTypeName` TEXT, `privateKeyKeychainIdentifier` TEXT, `identityId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessed` INTEGER, `identityIdData` BLOB, FOREIGN KEY(`identityIdData`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyId` INTEGER NOT NULL, `purpose` TEXT NOT NULL, `securityLevel` TEXT NOT NULL, `keyType` TEXT NOT NULL, `readOnly` INTEGER NOT NULL, `disabledAt` INTEGER, `publicKeyData` BLOB NOT NULL, `contractBoundsData` BLOB, `contractBoundsDocumentTypeName` TEXT, `privateKeyKeychainIdentifier` TEXT, `derivationIdentityIndex` INTEGER, `derivationKeyIndex` INTEGER, `identityId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `lastAccessed` INTEGER, `identityIdData` BLOB, FOREIGN KEY(`identityIdData`) REFERENCES `identities`(`identityId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
         "fields": [
           {
             "fieldPath": "id",
@@ -1167,6 +1072,16 @@
             "fieldPath": "privateKeyKeychainIdentifier",
             "columnName": "privateKeyKeychainIdentifier",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "derivationIdentityIndex",
+            "columnName": "derivationIdentityIndex",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "derivationKeyIndex",
+            "columnName": "derivationKeyIndex",
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "identityId",
@@ -4044,7 +3959,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'dd2169debcd985d7acdd7d99acd14840')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7c05146891642d5abd6a173803616b94')"
     ]
   }
 }

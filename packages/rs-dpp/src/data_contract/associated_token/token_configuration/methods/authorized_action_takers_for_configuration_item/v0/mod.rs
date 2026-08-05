@@ -308,6 +308,24 @@ mod tests {
     }
 
     #[test]
+    fn controlling_main_group_change_reports_configured_rule_verbatim() {
+        for takers in [
+            AuthorizedActionTakers::NoOne,
+            AuthorizedActionTakers::ContractOwner,
+            AuthorizedActionTakers::MainGroup,
+            AuthorizedActionTakers::Group(0),
+            AuthorizedActionTakers::Identity(Identifier::from([7u8; 32])),
+        ] {
+            let mut c = TokenConfigurationV0::default_most_restrictive();
+            c.set_main_control_group_can_be_modified(takers);
+            let result = c.controlling_action_takers_for_configuration_item(
+                &TokenConfigurationChangeItem::MainControlGroup(Some(3)),
+            );
+            assert_eq!(result, takers);
+        }
+    }
+
+    #[test]
     fn marketplace_trade_mode_returns_authorized_to_make_change() {
         let c = TokenConfigurationV0::default_most_restrictive();
         let result = c.authorized_action_takers_for_configuration_item(

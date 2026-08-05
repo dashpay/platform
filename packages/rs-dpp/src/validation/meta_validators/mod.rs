@@ -48,6 +48,10 @@ lazy_static! {
         "../../../schema/meta_schemas/document/v2/document-meta.json"
     ))
     .expect("v1 document meta-schema JSON must be valid");
+    static ref DOCUMENT_META_JSON_V3: Value = serde_json::from_str::<Value>(include_str!(
+        "../../../schema/meta_schemas/document/v3/document-meta.json"
+    ))
+    .expect("v3 document meta-schema JSON must be valid");
 
     pub static ref DRAFT_202012_META_SCHEMA: JSONSchema = JSONSchema::options()
         .with_draft(Draft::Draft202012)
@@ -238,6 +242,61 @@ lazy_static! {
         )
         .to_owned()
         .compile(&DOCUMENT_META_JSON_V2)
+        .expect("Invalid data contract schema");
+
+    // Compiled version of document meta schema v3
+    // Introduced for protocol version 14 (contract-level ranked aggregates).
+    // v2 plus the three index-level ranking keywords — `rankedCountable`,
+    // `rankedSummable`, `rankedAverageable` — and the `dependentRequired`
+    // rows tying each to its range axis. Hosting them on a schema only v14+
+    // contracts validate against leaves v13 validation untouched: under v2
+    // the keys still fail `additionalProperties: false` on an index entry.
+    pub static ref DOCUMENT_META_SCHEMA_V3: JSONSchema = JSONSchema::options()
+        .with_keyword(
+            "byteArray",
+            |_, _, _| Ok(Box::new(ByteArrayKeyword)),
+        )
+        .with_patterns_regex_engine(RegexEngine::Regex(RegexOptions {
+            size_limit: Some(5 * (1 << 20)),
+            ..Default::default()
+        }))
+        .should_ignore_unknown_formats(false)
+        .should_validate_formats(true)
+        .with_draft(Draft::Draft202012)
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/applicator".to_string(),
+            DRAFT202012_APPLICATOR.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/core".to_string(),
+            DRAFT202012_CORE.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/unevaluated".to_string(),
+            DRAFT202012_UNEVALUATED.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/validation".to_string(),
+            DRAFT202012_VALIDATION.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/meta-data".to_string(),
+            DRAFT202012_META_DATA.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/format-annotation".to_string(),
+            DRAFT202012_FORMAT_ANNOTATION.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/meta/content".to_string(),
+            DRAFT202012_CONTENT.clone(),
+        )
+        .with_document(
+            "https://json-schema.org/draft/2020-12/schema".to_string(),
+            DRAFT202012.clone(),
+        )
+        .to_owned()
+        .compile(&DOCUMENT_META_JSON_V3)
         .expect("Invalid data contract schema");
 
 }

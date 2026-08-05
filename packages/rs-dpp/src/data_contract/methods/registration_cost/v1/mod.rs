@@ -112,7 +112,24 @@ impl DataContractInSerializationFormat {
                 ) {
                     for index_value in index_values {
                         if let Ok(index_value_map) = index_value.to_map() {
-                            if let Ok(index) = Index::try_from(index_value_map.as_slice()) {
+                            // Same ranked-keyword gate the document type parser
+                            // applies (`document_type_schema >= 3`, i.e. meta
+                            // schema v3 / protocol version 14). Without it a
+                            // PV14 index carrying `rankedCountable` &co. would
+                            // fail to parse here and be billed nothing, while
+                            // the identical index parses fine during
+                            // validation — the fee must cover every index the
+                            // contract actually registers.
+                            if let Ok(index) = Index::try_from_value_map(
+                                index_value_map.as_slice(),
+                                platform_version
+                                    .dpp
+                                    .contract_versions
+                                    .document_type_versions
+                                    .schema
+                                    .document_type_schema
+                                    >= 3,
+                            ) {
                                 let base_index_fee = if index.contested_index.is_some() {
                                     fee_version.document_type_base_contested_index_registration_fee
                                 } else if index.unique {

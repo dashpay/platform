@@ -17,6 +17,7 @@
     "core_wallet_broadcast_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
     "core_wallet_get_balance": "packages/rs-platform-wallet-ffi/src/core_wallet/wallet.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
@@ -447,7 +448,7 @@
           "host": "kotlin",
           "kind": "device",
           "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
-          "id": "migrate7To8AddsInvitationsTable",
+          "id": "migrate8To9AddsInvitationsTable",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         },
@@ -1160,6 +1161,167 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "CORE-06",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "security.key_security_policy_alias_split",
+      "title": "Identity-key security policy selects a dedicated Keystore alias (AUTH_GATED default / DEVICE_BOUND opt-in), with honest lockless degradation",
+      "area": "shared_policy",
+      "shared_apis": [],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "not-applicable",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "supported",
+          "restart": "tested",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/KeySecurityPolicyTest.kt",
+          "id": "effectivePolicyDegradesToDeviceBoundOnALocklessDevice",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/WalletStorageUpgradeMatrixTest.kt",
+          "id": "aliasTagRoutesReadsAfterLocklessDegradation",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        }
+      ]
+    },
+    {
+      "id": "errors.platform_wallet_not_found_typed",
+      "title": "Platform-wallet code 98 (Option miss) surfaces typed inside the wallet-error family on both hosts",
+      "area": "shared_policy",
+      "shared_apis": [],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testPlatformWalletNotFoundFFIResultMapping",
+          "command": "swift test --package-path packages/swift-sdk",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "platformWalletNotFoundCodeMapsToTypedWalletNotFound",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "persistence.pending_identity_key_repair",
+      "title": "Watch-only identity-key failures surface as durable, restart-surviving pending-repair state",
+      "area": "persistence",
+      "shared_apis": [],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Swift's persistence handler re-derives inline and has no queryable pending-keys surface or repair verification; the WalletKeyHealthSheet re-derive covers the user path but nothing is durable or typed. Port the pendingIdentityKeys/repairIdentityKey surface if iOS needs the same recoverability guarantees."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "tested",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "reconstructionSeedsPendingFromBreadcrumbRowsWithNullIdentifier",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate7To8AddsDerivationBreadcrumbColumns",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "errors.signing_key_unavailable_discriminator",
+      "title": "Structured SigningKeyUnavailable signer discriminator (typed code 31, no message sniffing)",
+      "area": "shared_policy",
+      "shared_apis": [
+        "dash_sdk_sign_async_completion"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ErrorHandlingTests.swift",
+          "id": "testSigningKeyUnavailableFFIResultMapping",
+          "command": "swift test --package-path packages/swift-sdk",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "signingKeyUnavailableCode31MapsTyped",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
           "covers_restart": false
         }
       ]

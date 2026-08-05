@@ -6,7 +6,7 @@ The `platform.gateway` section configures the Dash Platform Gateway, which serve
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.35.11-impr.1` | `dashpay/envoy:latest` |
+| `platform.gateway.docker.image` | Docker image for Gateway | `dashpay/envoy:1.39.0-impr.1` | `dashpay/envoy:latest` |
 
 ## Listeners
 

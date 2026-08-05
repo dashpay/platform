@@ -33,6 +33,49 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testPlatformWalletNotFoundFFIResultMapping() {
+        // Code 98 (the blanket Option→result miss) stays typed inside the
+        // wallet-error family — the mapping Kotlin now converges on
+        // (DashSdkError.PlatformWallet.NotFound), dashpay/platform#4060.
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND),
+            .notFound
+        )
+    }
+
+    func testSigningKeyUnavailableFFIResultMapping() {
+        // The structured signer discriminator (dashpay/platform#4060
+        // finding 7): PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable
+        // (31) surfaces as the typed .errorSigningKeyUnavailable /
+        // PlatformWalletError.signingKeyUnavailable — no message sniffing.
+        XCTAssertEqual(
+            PlatformWalletResultCode(
+                ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SIGNING_KEY_UNAVAILABLE
+            ),
+            .errorSigningKeyUnavailable
+        )
+    }
+
+    func testKeychainSignerMissingKeyErrorsClassifyAsSigningKeyUnavailable() {
+        // The trampoline's structured completion code: "no stored key"
+        // outcomes carry SigningKeyUnavailable (1); operational failures
+        // stay Generic (0).
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(for: .publicKeyNotFound),
+            KeychainSignerCompletionErrorCode.signingKeyUnavailable
+        )
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(
+                for: .privateKeyMissingFromKeychain(account: "acct")
+            ),
+            KeychainSignerCompletionErrorCode.signingKeyUnavailable
+        )
+        XCTAssertEqual(
+            keychainSignerCompletionErrorCode(for: .ffiSignFailed(message: "boom")),
+            KeychainSignerCompletionErrorCode.generic
+        )
+    }
+
     // MARK: - ErrorCategory Tests
 
     func testErrorCategoryIsUserRecoverable() {
@@ -404,5 +447,44 @@ final class ErrorHandlingTests: XCTestCase {
 
         let failureResult: Result<String, Error> = .failure(TestError())
         XCTAssertEqual(failureResult.errorMessage, "Test failure")
+    }
+
+    // MARK: - Core broadcast outcome mapping
+
+    func testCoreBroadcastOutcomeMapping() throws {
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .success,
+                txid: "accepted-id",
+                reason: ""
+            ),
+            .accepted(txid: "accepted-id")
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastRejected,
+                txid: "rejected-id",
+                reason: "policy"
+            ),
+            .rejected(txid: "rejected-id", reason: "policy")
+        )
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastUnconfirmed,
+                txid: "unknown-id",
+                reason: "timeout"
+            ),
+            .unknown(txid: "unknown-id", reason: "timeout")
+        )
+    }
+
+    func testCoreBroadcastOutcomeRejectsOperationalResultCode() {
+        XCTAssertThrowsError(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorInvalidHandle,
+                txid: "unused",
+                reason: "invalid handle"
+            )
+        )
     }
 }

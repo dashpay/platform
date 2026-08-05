@@ -119,9 +119,6 @@ where
             )).into()));
         }
 
-        // Cleanup block cache before we execute a new proposal
-        self.clear_drive_block_cache(platform_version)?;
-
         // destructure the block proposal
         let block_proposal::v0::BlockProposal {
             core_chain_locked_height,

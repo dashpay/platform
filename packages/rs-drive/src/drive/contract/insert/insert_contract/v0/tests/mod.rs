@@ -15,7 +15,16 @@
 //!   `rangeSummable` / `rangeCountable` 4-way dispatcher
 //!   (`(false, false) | (true, false) | (false, true) | (true,
 //!   true)` corners of the matrix).
+//! - [`shared_prefix_aggregation_e2e_tests`] — cross-index shared
+//!   prefix layouts where a shorter aggregate index and a deeper
+//!   range index must compose safely during document insertion.
+//! - [`ranked_index_e2e_tests`] — per-index `rankedCountable` /
+//!   `rankedSummable` / `rankedAverageable` (meta schema v3 / PV14):
+//!   the indexed-tree variants and their ordered secondaries, end to
+//!   end through insert / update / delete.
 
 mod countable_e2e_tests;
 mod range_countable_index_e2e_tests;
 mod range_summable_index_e2e_tests;
+mod ranked_index_e2e_tests;
+mod shared_prefix_aggregation_e2e_tests;

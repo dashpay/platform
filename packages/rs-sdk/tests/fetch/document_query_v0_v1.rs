@@ -30,7 +30,8 @@ use dapi_grpc::platform::v0::GetDocumentsRequest;
 use dash_sdk::{platform::documents::document_query::DocumentQuery, Error as SdkError, SdkBuilder};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
-use dpp::version::PlatformVersion;
+use dpp::version::v11::PROTOCOL_VERSION_11;
+use dpp::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 use drive::query::conditions::{WhereClause, WhereOperator};
 use drive::query::ordering::OrderClause;
 use drive::query::SelectProjection;
@@ -219,15 +220,12 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 
 #[test]
 fn sdk_builder_default_seeds_atomic_to_floor() {
-    // Auto-detect default uses mainnet, so the atomic seeds to the mainnet
-    // `min_protocol_version` floor, which `version()` returns until the first
-    // response ratchets it upward. Mainnet's floor is PV_11 in
-    // `Sdk::min_protocol_version`.
+    // Auto-detect default: the atomic seeds to the effective floor,
+    // max(INITIAL_PROTOCOL_VERSION, mainnet network floor), which
+    // `version()` returns until the first response ratchets it upward.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
-    assert_eq!(
-        sdk_default.version().protocol_version,
-        dpp::version::v11::PROTOCOL_VERSION_11
-    );
+    let expected_floor = INITIAL_PROTOCOL_VERSION.max(PROTOCOL_VERSION_11);
+    assert_eq!(sdk_default.version().protocol_version, expected_floor);
 }
 
 /// PROTOCOL_VERSION_11 corresponds to Dash Platform v3.0 (testnet at the

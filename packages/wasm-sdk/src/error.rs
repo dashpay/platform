@@ -15,6 +15,7 @@ pub enum WasmSdkErrorKind {
     Protocol,
     Proof,
     InvalidProvedResponse,
+    ExecutionNotProved,
     DapiClientError,
     DapiMocksError,
     CoreError,
@@ -136,6 +137,11 @@ impl From<SdkError> for WasmSdkError {
             ),
             Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
             Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
+            // Deterministic for a given transition family: retrying another
+            // node cannot upgrade a snapshot into execution evidence.
+            ExecutionNotProved(msg) => {
+                Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
+            }
             InvalidProvedResponse(msg) => Self::new(
                 WasmSdkErrorKind::InvalidProvedResponse,
                 msg,
@@ -287,6 +293,7 @@ impl WasmSdkError {
             K::Protocol => "Protocol",
             K::Proof => "Proof",
             K::InvalidProvedResponse => "InvalidProvedResponse",
+            K::ExecutionNotProved => "ExecutionNotProved",
             K::DapiClientError => "DapiClientError",
             K::DapiMocksError => "DapiMocksError",
             K::CoreError => "CoreError",

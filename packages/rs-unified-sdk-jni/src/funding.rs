@@ -651,10 +651,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// `platform_wallet_manager_shielded_identity_create_from_pool`).
 ///
 /// Mirrors Swift's `PlatformWalletManager.shieldedIdentityCreateFromPool`:
-/// spends a note of the fixed exit `denomination` (credits — one of the
-/// on-chain `shielded_identity_create_denominations`: 0.1 / 0.3 / 0.5 /
-/// 1.0 DASH) from the wallet's bound Orchard pool (`account`) to fund a new
-/// identity at `identity_index`. `pubkeys_blob` is the SAME shared rich
+/// spends a note of the fixed exit `denomination` (credits — a member of the
+/// ACTIVE protocol version's on-chain
+/// `shielded_identity_create_denominations` set: 0.1 / 0.3 / 0.5 / 1.0 DASH
+/// through PV12, 0.03 / 0.1 / 0.25 / 0.5 / 1.0 DASH from PV13; a non-member
+/// is rejected at validation) from the wallet's bound Orchard pool
+/// (`account`) to fund a new identity at `identity_index`. `pubkeys_blob` is the SAME shared rich
 /// registration key-row blob ID-08 uses (built by `IdentityPubkeyCodec`,
 /// decoded by `decode_registration_pubkeys_blob` exactly like
 /// [`Java_..._registerIdentityFromAddresses`]). `fallback_address` is the

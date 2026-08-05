@@ -22,6 +22,8 @@ pub mod paths;
 pub(crate) mod prove;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod queries;
+#[cfg(feature = "server")]
+mod refresh_cache;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;

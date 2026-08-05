@@ -1,6 +1,7 @@
 use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyMethodVersions {
@@ -8,6 +9,7 @@ pub struct DriveVerifyMethodVersions {
     pub document: DriveVerifyDocumentMethodVersions,
     pub document_count: DriveVerifyDocumentCountMethodVersions,
     pub document_sum: DriveVerifyDocumentSumMethodVersions,
+    pub document_ranked: DriveVerifyDocumentRankedMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
@@ -69,6 +71,15 @@ pub struct DriveVerifyDocumentSumMethodVersions {
     pub verify_distinct_sum_proof: FeatureVersion,
     pub verify_distinct_count_and_sum_proof: FeatureVersion,
     pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
+}
+
+/// Versions for the ranked-aggregate (`HAVING ... TOP/BOTTOM/MIN/MAX`)
+/// prove-path verifier. The single method is implemented on
+/// `DriveDocumentRankedQuery` and returns `(RootHash, Vec<RankedEntry>)`,
+/// delegating to grovedb's `verify_indexed_axis_top_k`.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentRankedMethodVersions {
+    pub verify_ranked_top_k_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -5,7 +5,22 @@ use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use platform_wallet::PlatformWalletError;
 use std::os::raw::c_char;
+
+fn classify_broadcast_result(
+    result: Result<dashcore::Txid, PlatformWalletError>,
+    local_txid: dashcore::Txid,
+) -> (Option<dashcore::Txid>, PlatformWalletFFIResult) {
+    match result {
+        Ok(_) => (Some(local_txid), PlatformWalletFFIResult::ok()),
+        Err(error @ PlatformWalletError::TransactionBroadcast(_))
+        | Err(error @ PlatformWalletError::TransactionBroadcastUnconfirmed(_)) => {
+            (Some(local_txid), error.into())
+        }
+        Err(error) => (None, error.into()),
+    }
+}
 
 /// Consume and broadcast an atomically finalized V2 transaction.
 ///
@@ -39,15 +54,19 @@ pub unsafe extern "C" fn core_wallet_broadcast_signed_transaction_v2(
             "transaction was finalized by a different wallet".to_string(),
         );
     }
+    let local_txid = finalized.transaction.transaction().txid();
     let result = runtime().block_on(
         finalized
             .wallet
             .broadcast_finalized_transaction(&finalized.transaction),
     );
-    let txid = unwrap_result_or_return!(result);
+    let (txid, ffi_result) = classify_broadcast_result(result, local_txid);
+    let Some(txid) = txid else {
+        return ffi_result;
+    };
     let c_str = unwrap_result_or_return!(std::ffi::CString::new(txid.to_string()));
     *out_txid = c_str.into_raw();
-    PlatformWalletFFIResult::ok()
+    ffi_result
 }
 
 /// Consume a finalized transaction without broadcasting and release its input
@@ -128,6 +147,9 @@ pub unsafe extern "C" fn core_wallet_signed_transaction_v2_fee(
 /// # Safety
 /// `handle` must be a valid core-wallet handle; `tx` must be a valid,
 /// non-null pointer to an `FFICoreTransaction`; `out_txid` must be writable.
+/// On accepted, rejected, and unknown network outcomes `out_txid` receives a
+/// Rust-owned C string that the caller frees with
+/// `platform_wallet_string_free`. Operational errors leave it null.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_broadcast_transaction(
     handle: Handle,
@@ -136,11 +158,13 @@ pub unsafe extern "C" fn core_wallet_broadcast_transaction(
     account_index: u32,
     out_txid: *mut *mut c_char,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(tx);
     check_ptr!(out_txid);
+    *out_txid = std::ptr::null_mut();
+    check_ptr!(tx);
 
     let tx: dashcore::Transaction =
         unwrap_result_or_return!(dashcore::consensus::deserialize((*tx).bytes()));
+    let local_txid = tx.txid();
 
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
         runtime().block_on(async {
@@ -161,11 +185,66 @@ pub unsafe extern "C" fn core_wallet_broadcast_transaction(
 
     let result = unwrap_option_or_return!(option);
 
-    let txid = unwrap_result_or_return!(result);
+    let (txid, ffi_result) = classify_broadcast_result(result, local_txid);
+    let Some(txid) = txid else {
+        return ffi_result;
+    };
     let c_str = unwrap_result_or_return!(std::ffi::CString::new(txid.to_string()));
     *out_txid = c_str.into_raw();
 
-    PlatformWalletFFIResult::ok()
+    ffi_result
+}
+
+#[cfg(test)]
+mod outcome_tests {
+    use dashcore::hashes::Hash;
+
+    use super::*;
+
+    fn txid(byte: u8) -> dashcore::Txid {
+        dashcore::Txid::from_byte_array([byte; 32])
+    }
+
+    #[test]
+    fn network_outcomes_all_carry_a_txid() {
+        let accepted = classify_broadcast_result(Ok(txid(1)), txid(9));
+        assert_eq!(accepted.0, Some(txid(9)));
+        assert_eq!(accepted.1.code, PlatformWalletFFIResultCode::Success);
+
+        let rejected = classify_broadcast_result(
+            Err(PlatformWalletError::TransactionBroadcast(
+                "rejected".to_string(),
+            )),
+            txid(2),
+        );
+        assert_eq!(rejected.0, Some(txid(2)));
+        assert_eq!(
+            rejected.1.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastRejected
+        );
+
+        let unknown = classify_broadcast_result(
+            Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "timeout".to_string(),
+            )),
+            txid(3),
+        );
+        assert_eq!(unknown.0, Some(txid(3)));
+        assert_eq!(
+            unknown.1.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+    }
+
+    #[test]
+    fn operational_error_does_not_carry_a_txid() {
+        let outcome = classify_broadcast_result(
+            Err(PlatformWalletError::TransactionBuild("invalid".to_string())),
+            txid(4),
+        );
+        assert_eq!(outcome.0, None);
+        assert_eq!(outcome.1.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
 }
 
 #[cfg(test)]

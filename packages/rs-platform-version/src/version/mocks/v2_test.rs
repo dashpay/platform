@@ -153,7 +153,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                 read_total_balance: 0,
                 notes_count: 0,
             },
-            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
+            saved_block_transactions: DriveSavedBlockTransactionsMethodVersions { store_address_balances: 0, fetch_address_balances: 0, prove_compacted_address_balance_changes: 0, compact_address_balances: 0, cleanup_expired_address_balances: 0, max_blocks_before_compaction: 64, max_addresses_before_compaction: 2048 },
         },
         grove_methods: DRIVE_GROVE_METHOD_VERSIONS_V1,
         grove_version: GROVE_V1,
@@ -500,6 +500,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     system_limits: SystemLimits {
         estimated_contract_max_serialized_size: 16384,
         max_field_value_size: 5000,
+        max_document_value_depth: None,
         max_state_transition_size: 20000, // Is different in this test version, not sure if this was a mistake
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,

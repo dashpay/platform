@@ -25,7 +25,7 @@ use crate::version::drive_versions::v8::DRIVE_VERSION_V8;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v2::SYSTEM_DATA_CONTRACT_VERSIONS_V2;
-use crate::version::system_limits::v2::SYSTEM_LIMITS_V2;
+use crate::version::system_limits::v3::SYSTEM_LIMITS_V3;
 use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
@@ -46,11 +46,20 @@ pub const PROTOCOL_VERSION_13: ProtocolVersion = 13;
 /// v13 also enables DPNS username transfers and sales:
 /// * `DRIVE_ABCI_VALIDATION_VERSIONS_V9` bumps data trigger bindings to v1,
 ///   dropping the reject bindings for Transfer, Purchase and UpdatePrice on
-///   DPNS `domain` documents.
+///   DPNS `domain` documents. It also revises the shielded identity-create
+///   exit-denomination set: 0.03 and 0.25 DASH are added and 0.3 DASH is
+///   retired, giving 0.03 / 0.1 / 0.25 / 0.5 / 1 DASH.
 /// * `DRIVE_VERSION_V8` bumps the document transfer/purchase high-level
 ///   operation conversions to v1, which rewrite a transferred or purchased
 ///   domain's `records.identity` to the new owner so the username resolves
 ///   to the buyer.
+/// * `DRIVE_VERSION_V8` also switches the compacted address-balance-changes
+///   proof to the two-proof `CompactedAddressBalanceProof` bincode envelope
+///   (`prove_compacted_address_balance_changes` 1 via
+///   `DRIVE_VERIFY_METHOD_VERSIONS_V2`'s matching decoder bump): the
+///   independently verified predecessor proof binds the forward-query start
+///   key. Nodes and clients on v12 and below keep the legacy single GroveDB
+///   proof, so mixed-version networks interoperate until v13 activates.
 pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_13,
     drive: DRIVE_VERSION_V8,
@@ -80,7 +89,7 @@ pub const PLATFORM_V13: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V2, // changed: DPNS v2 subscribes domain to document history
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V2,
+    system_limits: SYSTEM_LIMITS_V3,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

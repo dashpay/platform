@@ -35,26 +35,29 @@ impl<C> Platform<C> {
         let system_data_contracts = &self.drive.cache.system_data_contracts;
 
         let mut system_data_contract_types = BTreeMap::from_iter([
-            (SystemDataContract::DPNS, system_data_contracts.load_dpns()),
+            (
+                SystemDataContract::DPNS,
+                system_data_contracts.load_dpns(platform_version)?,
+            ),
             (
                 SystemDataContract::Withdrawals,
-                system_data_contracts.load_withdrawals(),
+                system_data_contracts.load_withdrawals(platform_version)?,
             ),
             (
                 SystemDataContract::Dashpay,
-                system_data_contracts.load_dashpay(),
+                system_data_contracts.load_dashpay(platform_version)?,
             ),
             (
                 SystemDataContract::MasternodeRewards,
-                system_data_contracts.load_masternode_reward_shares(),
+                system_data_contracts.load_masternode_reward_shares(platform_version)?,
             ),
             (
                 SystemDataContract::TokenHistory,
-                system_data_contracts.load_token_history(),
+                system_data_contracts.load_token_history(platform_version)?,
             ),
             (
                 SystemDataContract::KeywordSearch,
-                system_data_contracts.load_keyword_search(),
+                system_data_contracts.load_keyword_search(platform_version)?,
             ),
         ]);
 
@@ -64,7 +67,7 @@ impl<C> Platform<C> {
         if platform_version.protocol_version >= 13 {
             system_data_contract_types.insert(
                 SystemDataContract::DocumentHistory,
-                system_data_contracts.load_document_history(),
+                system_data_contracts.load_document_history(platform_version)?,
             );
         }
 
@@ -85,7 +88,7 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let dpns_contract = system_data_contracts.load_dpns();
+        let dpns_contract = system_data_contracts.load_dpns(platform_version)?;
 
         self.register_dpns_top_level_domain_operations(
             &dpns_contract,

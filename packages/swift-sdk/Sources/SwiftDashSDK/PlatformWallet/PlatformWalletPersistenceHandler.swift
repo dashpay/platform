@@ -1204,11 +1204,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     /// Build `PersistenceCallbacks` that point to this handler.
     ///
-    /// The returned struct must not outlive `self`.
+    /// **Transfers ownership of a strong reference to Rust**: the context
+    /// is `passRetained`, and `release_fn` balances that retain exactly
+    /// once — when the Rust manager and every background worker holding
+    /// its persister have dropped their references (possibly on a Rust
+    /// thread, possibly after `destroy` returns if a worker straggles).
+    /// ARC therefore cannot free this handler while any Rust worker can
+    /// still call back into it, no matter how teardown went.
+    ///
+    /// If manager creation fails, Rust never took the reference — the
+    /// caller must balance the retain itself (see `configure`).
     func makeCallbacks() -> PersistenceCallbacks {
-        let contextPtr = Unmanaged.passUnretained(self).toOpaque()
+        let contextPtr = Unmanaged.passRetained(self).toOpaque()
         var cb = PersistenceCallbacks()
         cb.context = contextPtr
+        cb.release_fn = { context in
+            guard let context else { return }
+            Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).release()
+        }
         cb.on_changeset_begin_fn = changesetBeginCallback
         cb.on_changeset_end_fn = changesetEndCallback
         cb.on_persist_address_balances_fn = persistAddressBalancesCallback

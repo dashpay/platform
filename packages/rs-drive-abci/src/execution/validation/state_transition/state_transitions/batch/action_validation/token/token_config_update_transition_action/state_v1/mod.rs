@@ -81,13 +81,17 @@ impl TokenConfigUpdateTransitionActionStateValidationV1 for TokenConfigUpdateTra
             }
         }
 
-        let validation_result = self.validate_state_v0(
+        // Pass the controlling rule so an unauthorized `MainControlGroup` change item
+        // is reported with `main_control_group_can_be_modified` instead of the
+        // hardcoded `NoOne` that v0 reports.
+        let validation_result = self.validate_state_v0_with_reported_action_takers(
             platform,
             owner_id,
             block_info,
             execution_context,
             transaction,
             platform_version,
+            Some(authorized_action_takers),
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
