@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
 
           MISSING=()
-          for pkg in build-essential cmake libgmp-dev pkg-config jq zip; do
+          for pkg in build-essential cmake libgmp-dev libssl-dev pkg-config jq zip; do
             dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
