@@ -40,8 +40,22 @@ fn persistence_capabilities_declaration(
 /// that cbindgen cannot expose without dragging the entire crate's
 /// internal layout into the C ABI.
 ///
-/// `persistence` and `event_handler` are callback vtables whose `context`
-/// pointers must remain valid for the lifetime of the manager.
+/// `persistence` and `event_handler` are callback vtables. A vtable that
+/// carries a non-null `context` MUST also set `release_fn` — creation
+/// fails with `ErrorInvalidParameter` otherwise. Ownership of the context
+/// then transfers to Rust: the manager keeps it alive for exactly as long
+/// as any internal worker can still invoke a callback, and calls
+/// `release_fn` once — possibly on a background thread, possibly *after*
+/// a later `destroy` returns if a worker straggles — when the last
+/// reference drops. A borrowed (non-null context, null `release_fn`)
+/// vtable is rejected rather than accepted-and-hoped-for, because nothing
+/// but ownership can make a straggling worker safe: `destroy` returns
+/// `Success` without proving quiescence, so a borrowed context would be
+/// freeable by the host while a straggler can still call through it. A
+/// host whose context needs no cleanup passes a no-op `release_fn`.
+///
+/// On a non-`Success` return Rust has NOT taken ownership of either
+/// context; a host that pre-retained them must release them itself.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_create(
     sdk_ptr: *const c_void,
@@ -93,6 +107,33 @@ unsafe fn platform_wallet_manager_create_impl(
     check_ptr!(persistence);
     check_ptr!(event_handler);
     check_ptr!(out_handle);
+
+    // Ownership is mandatory for a context-carrying vtable: `destroy`
+    // returns `Success` without proving every worker joined, which is only
+    // sound because a straggler's `Arc` keeps the host context alive via
+    // `release_fn`. A borrowed context (non-null, no destructor) would
+    // reintroduce the freed-context callback exactly on the non-clean
+    // path, so it is rejected up front instead of accepted unsafely.
+    if !(*persistence).context.is_null() && (*persistence).release_fn.is_none() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "persistence callbacks carry a context but no release_fn; the manager owns \
+             callback contexts (released when its last worker drops) and cannot accept \
+             a borrowed context — pass a release_fn (a no-op one if the context needs \
+             no cleanup)"
+                .to_string(),
+        );
+    }
+    if !(*event_handler).context.is_null() && (*event_handler).release_fn.is_none() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "event-handler callbacks carry a context but no release_fn; the manager owns \
+             callback contexts (released when its last worker drops) and cannot accept \
+             a borrowed context — pass a release_fn (a no-op one if the context needs \
+             no cleanup)"
+                .to_string(),
+        );
+    }
 
     let sdk = Arc::new((*(sdk_ptr as *const Sdk)).clone());
     let persister = Arc::new(FFIPersister::new_with_persistence_capabilities(
@@ -422,20 +463,45 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 }
 
 /// Destroy a PlatformWalletManager handle.
+///
+/// Runs the full lifecycle shutdown (bounded: quiesce + join every
+/// coordinator, SPV, the payment-hook tasks, and the event adapter) and
+/// removes the handle. Always returns `Success` for a live handle.
+///
+/// A non-clean shutdown — a worker that outlived its join budget — is
+/// logged, **not** surfaced as an error, because it is no longer a
+/// safety problem the host could act on: a straggling worker holds a
+/// strong reference to the callback vtables, and creation guarantees
+/// every context-carrying vtable is owned (`release_fn` required), so
+/// the host objects stay alive until that worker exits, at which point
+/// Rust releases them. Nothing dangles, nothing needs a retry, nothing
+/// needs a deliberate leak on the host side.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
         // Run the full lifecycle shutdown to completion, not just the
-        // platform-address sync. Every background task (identity sync,
-        // shielded sync, the wallet-event adapter) can fire callbacks
-        // through the host-owned `context` pointer; once `destroy`
-        // returns the host may free that context, so no task may be
-        // left alive to fire a callback against freed memory.
-        // `shutdown()` is idempotent, so this is safe even if the host
-        // already stopped some sync managers before calling destroy.
-        runtime().block_on(manager.shutdown());
+        // platform-address sync. `shutdown()` is idempotent, so this is
+        // safe even if the host already stopped some sync managers
+        // before calling destroy.
+        let report = runtime().block_on(manager.shutdown());
+        if !report.all_clean() {
+            // A worker panicked, exceeded its join budget, or stayed
+            // detached. Its persister/event-handler Arcs keep the host
+            // callback contexts alive until it actually exits, so this
+            // is diagnostic, not a UAF hazard.
+            tracing::warn!(
+                ?report,
+                "platform wallet manager shutdown did not join every worker \
+                 cleanly; stragglers keep their callback contexts alive and \
+                 release them on exit"
+            );
+        }
+        // Dropping the manager here releases its persister/event-handler
+        // references; the host contexts are released (via `release_fn`)
+        // as soon as the last worker's reference drops — typically right
+        // now, or later if a straggler is still draining.
     }
     PlatformWalletFFIResult::ok()
 }
@@ -504,7 +570,142 @@ mod tests {
             on_shielded_sync_completed_fn: None,
             on_shielded_sync_progress_fn: None,
             on_shielded_tree_progress_fn: None,
+            release_fn: None,
         }
+    }
+
+    /// Counts invocations through a `*mut AtomicUsize` context — stands in
+    /// for the host's release trampoline.
+    unsafe extern "C" fn counting_release(context: *mut c_void) {
+        if let Some(counter) = (context as *const std::sync::atomic::AtomicUsize).as_ref() {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    /// A context-carrying vtable without a `release_fn` must be rejected
+    /// at creation. `destroy` returns `Success` without proving every
+    /// worker joined; that is only sound because a straggler's `Arc`
+    /// keeps the host context alive via ownership. Accepting a borrowed
+    /// context would let a legacy caller free it after a "successful"
+    /// destroy while a straggler can still call through it — the exact
+    /// use-after-free this FFI exists to prevent.
+    #[test]
+    fn create_rejects_context_carrying_vtable_without_release_fn() {
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let sentinel = 0xC0FFEEusize as *mut c_void;
+
+        // Persistence vtable with a context but no destructor.
+        let mut callbacks = persistence_callbacks();
+        callbacks.context = sentinel;
+        let event_cbs = event_callbacks();
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_cbs,
+                &mut handle,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "borrowed persistence context must be rejected"
+        );
+
+        // Event vtable with a context but no destructor.
+        let callbacks = persistence_callbacks();
+        let mut event_cbs = event_callbacks();
+        event_cbs.context = sentinel;
+        let result = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_cbs,
+                &mut handle,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "borrowed event context must be rejected"
+        );
+
+        // Null contexts stay valid without a destructor (the
+        // `configure(modelContainer: nil)` shape).
+        let callbacks = persistence_callbacks();
+        let event_cbs = event_callbacks();
+        let result = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_cbs,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+    }
+
+    /// The owned-context contract end to end through the public FFI: when
+    /// both vtables set `release_fn`, destroying the manager releases each
+    /// context exactly once — after shutdown has joined every worker, so
+    /// the release IS the proof that nothing can call back into the host
+    /// anymore. This is the contract that lets Swift `passRetained` /
+    /// JNI box-transfer their callback objects instead of leaking them
+    /// whenever teardown is not provably clean.
+    #[test]
+    fn destroy_releases_owned_callback_contexts_exactly_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let persistence_releases = AtomicUsize::new(0);
+        let event_releases = AtomicUsize::new(0);
+
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let mut callbacks = persistence_callbacks();
+        callbacks.context = &persistence_releases as *const AtomicUsize as *mut c_void;
+        callbacks.release_fn = Some(counting_release);
+        let mut event_cbs = event_callbacks();
+        event_cbs.context = &event_releases as *const AtomicUsize as *mut c_void;
+        event_cbs.release_fn = Some(counting_release);
+
+        let mut handle = 0;
+        let result = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const Sdk as *const c_void,
+                &callbacks,
+                &event_cbs,
+                &mut handle,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(
+            persistence_releases.load(Ordering::SeqCst),
+            0,
+            "context must stay alive while the manager lives"
+        );
+        assert_eq!(event_releases.load(Ordering::SeqCst), 0);
+
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+
+        assert_eq!(
+            persistence_releases.load(Ordering::SeqCst),
+            1,
+            "destroy must release the persistence context exactly once"
+        );
+        assert_eq!(
+            event_releases.load(Ordering::SeqCst),
+            1,
+            "destroy must release the event context exactly once"
+        );
+
+        // Destroying a stale handle must not double-release.
+        let result = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(persistence_releases.load(Ordering::SeqCst), 1);
+        assert_eq!(event_releases.load(Ordering::SeqCst), 1);
     }
 
     fn query(handle: Handle) -> PersistenceCapabilitiesFFI {

@@ -1131,7 +1131,12 @@ pub(in crate::execution) mod tests {
 
         let (identity_2, signer_2, key_2) = identity_2;
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -1717,7 +1722,12 @@ pub(in crate::execution) mod tests {
         let (identity_1, signer_1, key_1) =
             setup_identity(platform, rng.gen(), dash_to_credits!(0.5));
 
-        let dpns = platform.drive.cache.system_data_contracts.load_dpns();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
         let dpns_contract = dpns.clone();
 
         let preorder = dpns_contract
@@ -3530,6 +3540,269 @@ pub(in crate::execution) mod tests {
                 "control: without the byteArray widening the vote-poll resolver \
                  must succeed; got {:?}",
                 result
+            );
+        }
+    }
+
+    /// End-to-end regression test for the contested-index cross-check.
+    ///
+    /// The index name in a create transition's `prefunded_voting_balance` is
+    /// what keys the vote poll, its stored info, its end-date entry and its
+    /// prefunded specialized balance, while the contested index tree the
+    /// contender is inserted into always comes from
+    /// `DocumentType::find_contested_index`. Before the cross-check nothing
+    /// tied the two together.
+    ///
+    /// The contract used here has a non-contested index (`parentName`) whose
+    /// properties are a strict prefix of the contested index
+    /// (`parentNameAndLabel`). That is what makes the mismatch survive: the
+    /// bogus vote poll's contenders path is a tree the contested insert
+    /// creates anyway, so the poll is registered — one level above the contest
+    /// it describes.
+    ///
+    /// Run against the pre-fix structure validation (v0) this exact test shows
+    /// the transition executing successfully and the resolver then returning
+    /// `Err(Drive(CorruptedCodeExecution("expected a locked tally")))`, because
+    /// the tally query finds no lock/abstain sum trees where the poll points.
+    /// That `Err` propagates through `run_dao_platform_events` ->
+    /// `run_block_proposal` (bare `?`), so it is not caught into a
+    /// per-state-transition result — it halts every validator at the block
+    /// where the poll ends. The end-date entry is never cleaned up, so every
+    /// subsequent block proposal fails the same way.
+    mod contested_index_mismatch_chain_halt {
+        use super::*;
+        use crate::config::PlatformConfig;
+        use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::consensus::ConsensusError;
+        use dpp::dashcore::Network;
+        use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+        use dpp::state_transition::batch_transition::document_create_transition::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::{
+            BatchTransitionV0, DocumentCreateTransition,
+        };
+
+        /// A contested `domain` document type that also carries a
+        /// non-contested `parentName` index on `[normalizedParentDomainName]`,
+        /// a strict prefix of the contested `[normalizedParentDomainName,
+        /// normalizedLabel]`.
+        const CONTRACT_WITH_PREFIX_INDEX: &str =
+            "tests/supporting_files/contract/dpns/dpns-contract-contested-unique-index-and-prefix-index.json";
+
+        /// Opens a contest on the prefix-index contract with the voting
+        /// balance prefunded for `prefunded_index`, then advances past the
+        /// vote poll end date and runs the per-block resolver.
+        ///
+        /// Returns the execution result of the create transition and, when it
+        /// was executed, the resolver's result.
+        async fn run_contest_then_resolve(
+            prefunded_index: &str,
+        ) -> (
+            StateTransitionExecutionResult,
+            Option<Result<(), crate::error::Error>>,
+        ) {
+            // Mainnet: on testnet the contested structure validation is skipped
+            // altogether before epoch 2080.
+            let platform_config = PlatformConfig {
+                network: Network::Mainnet,
+                ..Default::default()
+            };
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .with_config(platform_config)
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(0x0C01_7E57);
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+            let contract_owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let contract = setup_contract(
+                &platform.drive,
+                CONTRACT_WITH_PREFIX_INDEX,
+                None,
+                Some(contract_owner.0.id().to_buffer()),
+                None::<fn(&mut DataContract)>,
+                None,
+                Some(platform_version),
+            );
+
+            let domain = contract
+                .document_type_for_name("domain")
+                .expect("expected a domain document type");
+
+            let entropy = Bytes32::random_with_rng(&mut rng);
+
+            let mut document = domain
+                .random_document_with_identifier_and_entropy(
+                    &mut rng,
+                    identity.id(),
+                    entropy,
+                    DocumentFieldFillType::FillIfNotRequired,
+                    DocumentFieldFillSize::AnyDocumentFillSize,
+                    platform_version,
+                )
+                .expect("expected a random domain document");
+
+            document.set("parentDomainName", "dash".into());
+            document.set("normalizedParentDomainName", "dash".into());
+            document.set("label", "quantum".into());
+            document.set("normalizedLabel", "quantum".into());
+            document.set("records.identity", document.owner_id().into());
+            document.set("subdomainRules.allowSubdomains", false.into());
+            document.set("preorderSalt", rng.gen::<[u8; 32]>().into());
+
+            let owner_id = document.owner_id();
+            let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
+                base: DocumentBaseTransition::from_document(
+                    &document,
+                    domain,
+                    None,
+                    2,
+                    platform_version,
+                    None,
+                )
+                .expect("expected a base transition"),
+                entropy: entropy.0,
+                data: document.clone().properties_consumed(),
+                prefunded_voting_balance: Some((
+                    prefunded_index.to_string(),
+                    platform_version
+                        .fee_version
+                        .vote_resolution_fund_fees
+                        .contested_document_vote_resolution_fund_required_amount,
+                )),
+            }
+            .into();
+
+            let inner_transition: BatchTransition = BatchTransitionV0 {
+                owner_id,
+                transitions: vec![create_transition.into()],
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = inner_transition.into();
+            transition
+                .sign_external(&key, &signer, Some(|_, _| Ok(SecurityLevel::HIGH)))
+                .await
+                .expect("expected to sign");
+
+            let serialized_transition = transition
+                .serialize_to_bytes()
+                .expect("expected to serialize the transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default_with_time(3000),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process the state transition");
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let execution_result = processing_result.into_execution_results().remove(0);
+
+            if !matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            ) {
+                return (execution_result, None);
+            }
+
+            let after_vote_poll_end = platform_version
+                .dpp
+                .voting_versions
+                .default_vote_poll_time_duration_mainnet_ms
+                + 10_000;
+
+            fast_forward_to_block(&platform, after_vote_poll_end, 900, 42, 0, false);
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let resolver_result = platform.check_for_ended_vote_polls(
+                &platform_state,
+                &platform_state,
+                &BlockInfo {
+                    time_ms: after_vote_poll_end,
+                    height: 900,
+                    core_height: 42,
+                    epoch: Default::default(),
+                },
+                Some(&transaction),
+                platform_version,
+            );
+
+            (execution_result, Some(resolver_result))
+        }
+
+        /// THE FIX. A vote poll prefunded for `parentName` describes a
+        /// different resource than the contest the document would create, so
+        /// the transition never executes and no vote poll is registered.
+        #[tokio::test]
+        async fn prefunding_a_prefix_index_is_rejected() {
+            let (execution_result, resolver_result) = run_contest_then_resolve("parentName").await;
+
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::DocumentContestIndexMismatchError(_)
+                    ),
+                    ..
+                },
+                "a prefunded voting balance naming an index other than the contested one must be \
+                 rejected before it can register a vote poll"
+            );
+
+            assert!(
+                resolver_result.is_none(),
+                "the transition must not have executed"
+            );
+        }
+
+        /// CONTROL (causation proof). The exact same contest prefunded for the
+        /// contested index executes, and its vote poll resolves without error
+        /// when it ends. The only difference between the two runs is the index
+        /// name in the prefunded voting balance.
+        #[tokio::test]
+        async fn prefunding_the_contested_index_resolves_successfully() {
+            let (execution_result, resolver_result) =
+                run_contest_then_resolve("parentNameAndLabel").await;
+
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let resolver_result =
+                resolver_result.expect("expected the vote poll resolver to have run");
+
+            assert!(
+                resolver_result.is_ok(),
+                "control: a contest whose vote poll names its own contested index must resolve; \
+                 got {:?}",
+                resolver_result
             );
         }
     }

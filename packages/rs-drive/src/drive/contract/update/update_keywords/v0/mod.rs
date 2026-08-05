@@ -108,7 +108,10 @@ impl Drive {
         let mut operations: Vec<LowLevelDriveOperation> = vec![];
 
         // First get the existing keywords so we know which ones we need to delete and which new ones we need to add
-        let contract = self.cache.system_data_contracts.load_keyword_search();
+        let contract = self
+            .cache
+            .system_data_contracts
+            .load_keyword_search(platform_version)?;
         let document_type = contract.document_type_for_name("contractKeywords")?;
 
         let mut query = DriveDocumentQuery::all_items_query(&contract, document_type, None);

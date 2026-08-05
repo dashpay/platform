@@ -3,6 +3,7 @@ use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBro
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::state_transition::{
     OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
 };
@@ -385,6 +386,19 @@ pub enum StaleNodeError {
         received_timestamp_ms: u64,
         /// Tolerance in milliseconds
         tolerance_ms: u64,
+    },
+    /// Server kept reporting a current epoch that its own proofs contradict
+    ///
+    /// The epoch index in response metadata is not covered by the quorum
+    /// signature, so `ExtendedEpochInfo::fetch_current` only uses it to shape a
+    /// proved query and then checks it against the proof. This error means the
+    /// check kept failing: every proof showed a newer epoch already started.
+    #[error("received epoch is outdated: hinted {hinted_epoch}, proven started epoch {proven_epoch}; try another server")]
+    Epoch {
+        /// Epoch index the server reported as current in unsigned response metadata
+        hinted_epoch: EpochIndex,
+        /// Newer epoch index that the server's own proof showed as already started
+        proven_epoch: EpochIndex,
     },
 }
 

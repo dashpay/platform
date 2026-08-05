@@ -662,6 +662,24 @@ pub struct PersistenceCallbacks {
             removed_count: usize,
         ) -> i32,
     >,
+    /// Destructor for `context`, called by Rust **exactly once** when the
+    /// last internal reference to this vtable drops — that is, when the
+    /// manager *and every background worker that cloned its persister*
+    /// have finished. Appended at the END so the struct layout stays
+    /// stable.
+    ///
+    /// Setting this transfers ownership of `context` to Rust: the host
+    /// hands over a strong reference (Swift `Unmanaged.passRetained`, JNI
+    /// a boxed `GlobalRef`) and must NOT free the context itself. The
+    /// callback may fire on any thread.
+    ///
+    /// **Required whenever `context` is non-null** —
+    /// `platform_wallet_manager_create` rejects a context-carrying vtable
+    /// without a destructor, because `destroy` returns without proving
+    /// every worker joined and only ownership keeps a straggler's
+    /// callbacks memory-safe. A context needing no cleanup takes a no-op
+    /// `release_fn`; `None` is valid only alongside a null `context`.
+    pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -725,6 +743,7 @@ impl Default for PersistenceCallbacks {
             on_load_shielded_viewing_keys_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_viewing_keys_free_fn: None,
+            release_fn: None,
         }
     }
 }
@@ -789,6 +808,29 @@ pub struct FFIPersister {
     /// dashpay/platform#4069. Holding this lock for the whole round makes
     /// each round atomic with respect to every other round.
     round_lock: Mutex<RoundGuardState>,
+}
+
+/// Releases the host callback context when the persister's last owner
+/// drops. The persister is constructed exactly once per manager
+/// ([`platform_wallet_manager_create`]) into an `Arc` that the manager and
+/// every background worker clone — so this `Drop` runs exactly once, after
+/// the manager AND all of its workers (including any straggler that
+/// outlived a non-clean shutdown) are provably done calling back into the
+/// host. That converts the old borrowed-context contract — where the host
+/// had to keep the callback object alive past `destroy` "just in case" or
+/// deliberately leak it — into plain ownership: the host hands Rust a
+/// strong reference and Rust frees it when nothing can touch it anymore.
+///
+/// [`platform_wallet_manager_create`]: crate::manager::platform_wallet_manager_create
+impl Drop for FFIPersister {
+    fn drop(&mut self) {
+        if let Some(release) = self.callbacks.release_fn {
+            // SAFETY: `release_fn` was supplied together with `context` by
+            // the host, which contracted for exactly one call on any
+            // thread. This is the only call site and `Drop` runs once.
+            unsafe { release(self.callbacks.context) };
+        }
+    }
 }
 
 impl FFIPersister {
@@ -5550,6 +5592,48 @@ mod tests {
     ) {
     }
 
+    /// The owned-context contract at the persister level: the host context
+    /// is released exactly once, and only when the LAST `Arc` clone drops.
+    /// A worker that outlives the manager (the straggler `destroy` used to
+    /// have to defend against with a deliberate host-side leak) therefore
+    /// keeps the host callback object alive for exactly as long as it can
+    /// still call into it, and frees it on exit — no earlier, no twice.
+    #[test]
+    fn release_fires_once_when_the_last_arc_clone_drops() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        unsafe extern "C" fn count_release(context: *mut c_void) {
+            if let Some(counter) = (context as *const AtomicUsize).as_ref() {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let releases = Box::leak(Box::new(AtomicUsize::new(0)));
+        let callbacks = PersistenceCallbacks {
+            context: releases as *const AtomicUsize as *mut c_void,
+            release_fn: Some(count_release),
+            ..PersistenceCallbacks::default()
+        };
+
+        let persister = Arc::new(FFIPersister::new(callbacks));
+        let straggler = Arc::clone(&persister);
+
+        drop(persister);
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            0,
+            "a live straggler clone must keep the host context alive"
+        );
+
+        drop(straggler);
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            1,
+            "the last clone dropping must release the host context exactly once"
+        );
+    }
+
     /// A callback-free persister (the `configure(modelContainer: nil)` shape)
     /// silently drops every write, so it must NOT attest durability — this is
     /// the concrete fail-open hole the fail-closed default exists to catch:
@@ -5674,21 +5758,21 @@ mod tests {
         assert_eq!(ffi.bits, 0x81);
         assert_eq!(std::mem::size_of::<PersistenceCapabilitiesFFI>(), 16);
         // Capability negotiation is deliberately NOT appended to the legacy
-        // callback vtable. Pin its historical size and prove invitations remain
-        // the terminal field so old clients are never over-read.
+        // callback vtable. Pin the vtable size (invitations + the appended
+        // `release_fn` context destructor) and prove `release_fn` is the
+        // terminal field so old clients are never over-read past it.
         #[cfg(not(feature = "shielded"))]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            21 * std::mem::size_of::<usize>()
+            22 * std::mem::size_of::<usize>()
         );
         #[cfg(feature = "shielded")]
         assert_eq!(
             std::mem::size_of::<PersistenceCallbacks>(),
-            37 * std::mem::size_of::<usize>()
+            38 * std::mem::size_of::<usize>()
         );
         assert_eq!(
-            std::mem::offset_of!(PersistenceCallbacks, on_persist_invitations_fn)
-                + std::mem::size_of::<usize>(),
+            std::mem::offset_of!(PersistenceCallbacks, release_fn) + std::mem::size_of::<usize>(),
             std::mem::size_of::<PersistenceCallbacks>()
         );
         assert_eq!(
