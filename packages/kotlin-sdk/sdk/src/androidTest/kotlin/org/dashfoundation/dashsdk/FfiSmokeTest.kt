@@ -1,12 +1,18 @@
 package org.dashfoundation.dashsdk
 
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
 import org.dashfoundation.dashsdk.ffi.SignerNative
+import org.dashfoundation.dashsdk.ffi.WalletManagerNative
+import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -76,5 +82,30 @@ class FfiSmokeTest {
         // nothing about JNI, which by contract never scrubs the caller's array.
         assertNotNull("native derive-and-sign should return a signature", signature)
         assertEquals("compact recoverable ECDSA signature", 65, signature!!.size)
+    }
+
+    /**
+     * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
+     * each bridge method by (name, descriptor) only when its slot first
+     * fires — for the invitation upsert that would be mid-way through a
+     * live, funded `create_invitation`. Resolving the whole table up front
+     * turns a descriptor typo into a CI failure instead.
+     */
+    @Test
+    fun persistenceBridgeDescriptorsAllResolve() {
+        NativeLoader.ensureLoaded()
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            val handler = PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)
+            val firstMismatch =
+                WalletManagerNative.nativeVerifyPersistenceBridgeDescriptors(handler)
+            assertNull(
+                "bridge method failed to resolve (Rust descriptor vs Kotlin " +
+                    "signature drift): $firstMismatch",
+                firstMismatch,
+            )
+        } finally {
+            db.close()
+        }
     }
 }

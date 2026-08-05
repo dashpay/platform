@@ -1,14 +1,13 @@
 //! Pairwise diff helpers for [`IndexLevel`] trees, used by
 //! `validate_update` to surface the first index-path where a
-//! count- or sum-affecting flag differs between an old and a new
-//! contract version.
+//! count-, sum- or ranking-affecting flag differs between an old and
+//! a new contract version.
 //!
-//! Both flags (count and sum) drive grovedb tree-variant choice at
-//! contract creation, so toggling either after creation would
-//! require rebuilding the index tree and is rejected. The error
-//! messages include from→to values so contract authors can see
-//! *what* changed at the rejected path, not just *that* something
-//! did.
+//! All of them drive grovedb tree-variant choice at contract
+//! creation, so toggling any after creation would require rebuilding
+//! the index tree and is rejected. The error messages include from→to
+//! values so contract authors can see *what* changed at the rejected
+//! path, not just *that* something did.
 
 use super::IndexLevel;
 
@@ -101,6 +100,58 @@ impl IndexLevel {
         for (key, old_sub) in &self.sub_index_levels {
             if let Some(new_sub) = new.sub_index_levels.get(key) {
                 if let Some(inner_path) = old_sub.find_first_summability_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Ranking counterpart of [`Self::find_first_countability_change`] and
+    /// [`Self::find_first_summability_change`]. Recursively finds the first
+    /// index path where any of the three ranking axes (`ranked_countable`,
+    /// `ranked_summable`, `ranked_averageable`) differs between two
+    /// `IndexLevel` trees.
+    ///
+    /// All three live in one helper because the Avg axis is neither a
+    /// count-only nor a sum-only property, and because they are decided
+    /// together: the set of declared axes picks the indexed tree variant
+    /// (`ProvableCountIndexedTree` / `ProvableSumIndexedTree` /
+    /// `ProvableCountProvableSumIndexedTree(axes)`) and its ordered secondaries
+    /// at contract creation. Toggling any one of them would require rebuilding
+    /// the secondaries for every existing group, so all three are immutable —
+    /// same reasoning, and same error, as the count and sum flags.
+    ///
+    /// Returns `None` if all three properties are the same everywhere.
+    #[cfg(feature = "validation")]
+    pub(super) fn find_first_ranked_change(&self, new: &IndexLevel) -> Option<String> {
+        if let (Some(old_info), Some(new_info)) =
+            (&self.has_index_with_type, &new.has_index_with_type)
+        {
+            if old_info.ranked_countable != new_info.ranked_countable {
+                return Some(format!(
+                    "(ranked_countable: {} -> {})",
+                    old_info.ranked_countable, new_info.ranked_countable,
+                ));
+            }
+            if old_info.ranked_summable != new_info.ranked_summable {
+                return Some(format!(
+                    "(ranked_summable: {} -> {})",
+                    old_info.ranked_summable, new_info.ranked_summable,
+                ));
+            }
+            if old_info.ranked_averageable != new_info.ranked_averageable {
+                return Some(format!(
+                    "(ranked_averageable: {} -> {})",
+                    old_info.ranked_averageable, new_info.ranked_averageable,
+                ));
+            }
+        }
+
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_ranked_change(new_sub) {
                     return Some(format!("{} -> {}", key, inner_path));
                 }
             }

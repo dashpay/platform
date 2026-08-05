@@ -14,12 +14,40 @@ pub use proof::document_count::{
     verify_distinct_count_proof, verify_point_lookup_count_proof,
     verify_primary_key_count_tree_proof, DocumentCount,
 };
+/// Verified ranked (`GROUP BY … ORDER BY <aggregate> LIMIT n
+/// [OFFSET m]`) result types. `DocumentRankedEntries` carries one entry
+/// per returned group **in ranking order**, plus the `starting_rank`
+/// that pins each entry to an absolute position;
+/// [`verify_ranked_top_k_proof`] is the tenderdash-composition wrapper
+/// that binds the proof's reconstructed root hash to the signed app
+/// hash and returns the whole verified [`drive::query::RankedPage`].
+pub use proof::document_ranked::{verify_ranked_top_k_proof, DocumentRankedEntries};
 pub use proof::document_split_count::DocumentSplitCounts;
 // Re-export `SplitCountEntry` from rs-drive at the proof-verifier
 // crate root so SDK consumers don't have to depend on rs-drive
 // directly just to name the entry type returned by
 // `verify_distinct_count_proof` and `DocumentSplitCounts::from_verified`.
 pub use drive::query::SplitCountEntry;
+// Same treatment for the ranked surface's entry types, plus the
+// fixed-point scale the Avg axis sorts by. `RANKED_AVG_SCALE` is
+// itself a re-export of grovedb's `AVG_FIXED_POINT_SCALE` — it moved
+// from 10^15 to 10^19 late in grovedb's development, so clients must
+// read it from here and never hardcode the literal. Divide an
+// `AvgFixedPoint` value by it (or call `RankedEntryValue::as_f64`) to
+// render an average.
+//
+// The fixed point is the exact integer grovedb ranks on **when it came
+// from a proof**. `DocumentRankedEntries::from_unproved_response`
+// reconstructs it from the wire's `double` (the no-proof path carries
+// an f64 approximation, since a proof-verifying client rebuilds the
+// entry from the proof instead), so on that path the low digits past
+// f64's ~15–16 significant decimals are noise. Anything that needs the
+// committed integer must go through the proof.
+// `RankedPage` rides along because it is what
+// `verify_ranked_top_k_proof` returns: a caller verifying a ranked
+// proof for themselves needs to name the type without depending on
+// rs-drive.
+pub use drive::query::{RankedEntry, RankedEntryValue, RankedPage, RANKED_AVG_SCALE};
 /// Verified average result types. Average-side analog of `DocumentSum`
 /// / `DocumentSplitSums`; carry the `(count, sum)` pair the verifier
 /// recovers from grovedb PR 670's `AggregateCountAndSumOnRange`

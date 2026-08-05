@@ -1254,6 +1254,562 @@ mod creation_tests {
         assert!(documents.is_empty());
     }
 
+    /// The index name in `prefunded_voting_balance` is what keys the vote poll,
+    /// its stored info and its prefunded specialized balance, while the
+    /// contested index tree the contender is actually inserted into always
+    /// comes from the document type's contested index. A transition naming a
+    /// different index than the one its document resolves to must therefore be
+    /// rejected outright.
+    #[tokio::test]
+    async fn test_document_creation_on_contested_unique_index_should_fail_if_prefunding_another_index(
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            network: Network::Mainnet,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(433);
+
+        let platform_state = platform.state.load();
+
+        let (identity_1, signer_1, key_1) =
+            setup_identity(&mut platform, 958, dash_to_credits!(0.5));
+
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(platform_version)
+            .expect("expected the dpns system contract");
+        let dpns_contract = dpns.clone();
+
+        let preorder = dpns_contract
+            .document_type_for_name("preorder")
+            .expect("expected a preorder document type");
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected a domain document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut preorder_document_1 = preorder
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut document_1 = domain
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_1.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document_1.set("parentDomainName", "dash".into());
+        document_1.set("normalizedParentDomainName", "dash".into());
+        document_1.set("label", "quantum".into());
+        document_1.set("normalizedLabel", "quantum".into());
+        document_1.set("records.identity", document_1.owner_id().into());
+        document_1.set("subdomainRules.allowSubdomains", false.into());
+
+        let salt_1: [u8; 32] = rng.gen();
+
+        let mut salted_domain_buffer_1: Vec<u8> = vec![];
+        salted_domain_buffer_1.extend(salt_1);
+        salted_domain_buffer_1.extend("quantum.dash".as_bytes());
+
+        let salted_domain_hash_1 = hash_double(salted_domain_buffer_1);
+
+        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
+
+        document_1.set("preorderSalt", salt_1.into());
+
+        let documents_batch_create_preorder_transition_1 =
+            BatchTransition::new_document_creation_transition_from_document(
+                preorder_document_1,
+                preorder,
+                entropy.0,
+                &key_1,
+                2,
+                0,
+                None,
+                &signer_1,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition");
+
+        let documents_batch_create_serialized_preorder_transition_1 =
+            documents_batch_create_preorder_transition_1
+                .serialize_to_bytes()
+                .expect("expected documents batch serialized state transition");
+
+        let owner_id = document_1.owner_id();
+        let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
+            base: DocumentBaseTransition::from_document(
+                &document_1,
+                domain,
+                None,
+                3,
+                platform_version,
+                None,
+            )
+            .expect("expected a base transition"),
+            entropy: entropy.0,
+            data: document_1.clone().properties_consumed(),
+            // Paying the right amount, but for `identityId` instead of the
+            // contested `parentNameAndLabel` index this document resolves to.
+            prefunded_voting_balance: Some((
+                "identityId".to_string(),
+                platform_version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_vote_resolution_fund_required_amount,
+            )),
+        }
+        .into();
+        let documents_batch_inner_create_transition_1: BatchTransition = BatchTransitionV0 {
+            owner_id,
+            transitions: vec![create_transition.into()],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut documents_batch_create_transition_1: StateTransition =
+            documents_batch_inner_create_transition_1.into();
+        documents_batch_create_transition_1
+            .sign_external(&key_1, &signer_1, Some(|_, _| Ok(SecurityLevel::HIGH)))
+            .await
+            .expect("expected to sign");
+
+        let documents_batch_create_serialized_transition_1 = documents_batch_create_transition_1
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_preorder_transition_1.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![documents_batch_create_serialized_transition_1.clone()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentContestIndexMismatchError(_)),
+                ..
+            }]
+        );
+
+        // The contest must not exist: no contender was added under the real
+        // contested index, and no document was created.
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+
+        let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+            .expect("expected to encode the word dash");
+
+        let quantum_encoded = bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+            .expect("expected to encode the word quantum");
+
+        let query_validation_result = platform
+            .query_contested_resource_vote_state(
+                GetContestedResourceVoteStateRequest {
+                    version: Some(get_contested_resource_vote_state_request::Version::V0(
+                        GetContestedResourceVoteStateRequestV0 {
+                            contract_id: dpns_contract.id().to_vec(),
+                            document_type_name: domain.name().clone(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![dash_encoded, quantum_encoded],
+                            result_type: ResultType::DocumentsAndVoteTally as i32,
+                            allow_include_locked_and_abstaining_vote_tally: false,
+                            start_at_identifier_info: None,
+                            count: None,
+                            prove: false,
+                        },
+                    )),
+                },
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to execute query")
+            .into_data()
+            .expect("expected query to be valid");
+
+        let get_contested_resource_vote_state_response::Version::V0(
+            GetContestedResourceVoteStateResponseV0 {
+                metadata: _,
+                result,
+            },
+        ) = query_validation_result.version.expect("expected a version");
+
+        let Some(
+            get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                    contenders,
+                    ..
+                },
+            ),
+        ) = result
+        else {
+            panic!("expected contenders")
+        };
+
+        assert_eq!(contenders.len(), 0);
+
+        let drive_query =
+            DriveDocumentQuery::new_primary_key_single_item_query(&dpns, domain, document_1.id());
+
+        let documents = platform
+            .drive
+            .query_documents(drive_query, None, false, None, None)
+            .expect("expected to get back documents")
+            .documents_owned();
+
+        assert!(documents.is_empty());
+    }
+
+    /// The stored info of a contest — which carries its status and start time,
+    /// and therefore drives the locked / joinable / already-a-contestant checks
+    /// — is looked up under the vote poll built from the transition's own
+    /// prefunded voting balance. Naming an index other than the contested one
+    /// makes that lookup miss, so every one of those checks is skipped while
+    /// the contender is still inserted into the real contest. This test pins
+    /// the join window specifically.
+    #[tokio::test]
+    async fn test_contest_can_not_be_joined_after_the_join_window_by_prefunding_another_index() {
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            network: Network::Mainnet,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let platform_state = platform.state.load();
+
+        let (_contender_1, _contender_2, dpns_contract) = create_dpns_identity_name_contest(
+            &mut platform,
+            &platform_state,
+            9,
+            "quantum",
+            platform_version,
+        )
+        .await;
+
+        // Move past the window in which other contenders may still join.
+        let after_join_window = platform_version
+            .dpp
+            .validation
+            .voting
+            .allow_other_contenders_time_mainnet_ms
+            + 100_000;
+
+        fast_forward_to_block(&platform, after_join_window, 900, 42, 0, false);
+
+        let platform_state = platform.state.load();
+
+        let mut rng = StdRng::seed_from_u64(11);
+
+        let (identity_3, signer_3, key_3) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let preorder = dpns_contract
+            .document_type_for_name("preorder")
+            .expect("expected a preorder document type");
+
+        let domain = dpns_contract
+            .document_type_for_name("domain")
+            .expect("expected a domain document type");
+
+        let entropy = Bytes32::random_with_rng(&mut rng);
+
+        let mut preorder_document_3 = preorder
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_3.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        let mut document_3 = domain
+            .random_document_with_identifier_and_entropy(
+                &mut rng,
+                identity_3.id(),
+                entropy,
+                DocumentFieldFillType::FillIfNotRequired,
+                DocumentFieldFillSize::AnyDocumentFillSize,
+                platform_version,
+            )
+            .expect("expected a random document");
+
+        document_3.set("parentDomainName", "dash".into());
+        document_3.set("normalizedParentDomainName", "dash".into());
+        document_3.set("label", "quantum".into());
+        document_3.set("normalizedLabel", "quantum".into());
+        document_3.set("records.identity", document_3.owner_id().into());
+        document_3.set("subdomainRules.allowSubdomains", false.into());
+
+        let salt_3: [u8; 32] = rng.gen();
+
+        let mut salted_domain_buffer_3: Vec<u8> = vec![];
+        salted_domain_buffer_3.extend(salt_3);
+        salted_domain_buffer_3.extend("quantum.dash".as_bytes());
+
+        preorder_document_3.set(
+            "saltedDomainHash",
+            hash_double(salted_domain_buffer_3).into(),
+        );
+
+        document_3.set("preorderSalt", salt_3.into());
+
+        let preorder_transition_3 =
+            BatchTransition::new_document_creation_transition_from_document(
+                preorder_document_3,
+                preorder,
+                entropy.0,
+                &key_3,
+                2,
+                0,
+                None,
+                &signer_3,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition")
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let owner_id = document_3.owner_id();
+        let create_transition: DocumentCreateTransition = DocumentCreateTransitionV0 {
+            base: DocumentBaseTransition::from_document(
+                &document_3,
+                domain,
+                None,
+                3,
+                platform_version,
+                None,
+            )
+            .expect("expected a base transition"),
+            entropy: entropy.0,
+            data: document_3.clone().properties_consumed(),
+            // Naming `identityId` instead of the contested `parentNameAndLabel`
+            // makes the stored info of the running contest invisible to this
+            // transition.
+            prefunded_voting_balance: Some((
+                "identityId".to_string(),
+                platform_version
+                    .fee_version
+                    .vote_resolution_fund_fees
+                    .contested_document_vote_resolution_fund_required_amount,
+            )),
+        }
+        .into();
+        let inner_transition_3: BatchTransition = BatchTransitionV0 {
+            owner_id,
+            transitions: vec![create_transition.into()],
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        }
+        .into();
+        let mut domain_transition_3: StateTransition = inner_transition_3.into();
+        domain_transition_3
+            .sign_external(&key_3, &signer_3, Some(|_, _| Ok(SecurityLevel::HIGH)))
+            .await
+            .expect("expected to sign");
+
+        let domain_transition_3 = domain_transition_3
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+        let block_info = BlockInfo {
+            time_ms: after_join_window + 3000,
+            height: 901,
+            core_height: 42,
+            epoch: Default::default(),
+        };
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![preorder_transition_3],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_eq!(processing_result.valid_count(), 1);
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![domain_transition_3],
+                &platform_state,
+                &block_info,
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [PaidConsensusError {
+                error: ConsensusError::StateError(StateError::DocumentContestIndexMismatchError(_)),
+                ..
+            }]
+        );
+
+        // The contest still has exactly its two original contenders.
+        let config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+
+        let dash_encoded = bincode::encode_to_vec(Value::Text("dash".to_string()), config)
+            .expect("expected to encode the word dash");
+
+        let quantum_encoded = bincode::encode_to_vec(Value::Text("quantum".to_string()), config)
+            .expect("expected to encode the word quantum");
+
+        let query_validation_result = platform
+            .query_contested_resource_vote_state(
+                GetContestedResourceVoteStateRequest {
+                    version: Some(get_contested_resource_vote_state_request::Version::V0(
+                        GetContestedResourceVoteStateRequestV0 {
+                            contract_id: dpns_contract.id().to_vec(),
+                            document_type_name: domain.name().clone(),
+                            index_name: "parentNameAndLabel".to_string(),
+                            index_values: vec![dash_encoded, quantum_encoded],
+                            result_type: ResultType::DocumentsAndVoteTally as i32,
+                            allow_include_locked_and_abstaining_vote_tally: false,
+                            start_at_identifier_info: None,
+                            count: None,
+                            prove: false,
+                        },
+                    )),
+                },
+                &platform_state,
+                platform_version,
+            )
+            .expect("expected to execute query")
+            .into_data()
+            .expect("expected query to be valid");
+
+        let get_contested_resource_vote_state_response::Version::V0(
+            GetContestedResourceVoteStateResponseV0 {
+                metadata: _,
+                result,
+            },
+        ) = query_validation_result.version.expect("expected a version");
+
+        let Some(
+            get_contested_resource_vote_state_response_v0::Result::ContestedResourceContenders(
+                get_contested_resource_vote_state_response_v0::ContestedResourceContenders {
+                    contenders,
+                    ..
+                },
+            ),
+        ) = result
+        else {
+            panic!("expected contenders")
+        };
+
+        assert_eq!(
+            contenders.len(),
+            2,
+            "the contest must not have gained a contender after its join window closed"
+        );
+    }
+
     #[tokio::test]
     async fn test_document_creation_on_contested_unique_index_should_not_fail_if_not_paying_for_it_on_testnet_before_epoch_2080(
     ) {
