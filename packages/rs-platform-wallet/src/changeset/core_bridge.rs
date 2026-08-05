@@ -118,6 +118,84 @@ impl AdapterFaultState {
     }
 }
 
+/// Per-drain accounting behind the one-line batch diagnostic.
+///
+/// This line is read off a tester's logcat to answer one question — *did the
+/// durable sync watermark actually advance?* — so it must only ever report
+/// what the persister truly accepted. A height can meet three different fates
+/// in a single drain, and they are tracked separately because conflating them
+/// sends a diagnosis down the wrong path:
+///
+/// * `persisted` — a changeset carrying this height was handed to
+///   [`PlatformWalletPersistence::store`] and it returned `Ok`. **This is the
+///   only field that means the durable watermark advanced.**
+/// * `frozen` — the batch proposed this height, but the fail-closed guard
+///   ([`freeze_synced_height_if_faulted`]) stripped it because that wallet had
+///   already faulted this session, so it was never offered to the store.
+///   Without this field a held-back watermark is indistinguishable from a
+///   batch that simply carried no watermark at all.
+/// * `rejected` — this height *was* offered to the store and the store
+///   returned an error, so the rows and the watermark are not on disk.
+///
+/// Each is the monotonic max over the wallets in the drain, so a batch
+/// spanning a healthy wallet and a faulted one reports both.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct BatchDiagnostics {
+    /// Events folded into this drain.
+    folded: usize,
+    /// Distinct wallets the drain produced a changeset for.
+    wallets: usize,
+    /// Highest watermark the store accepted and committed.
+    persisted: Option<u32>,
+    /// Highest watermark withheld by the fail-closed guard.
+    frozen: Option<u32>,
+    /// Highest watermark the store rejected.
+    rejected: Option<u32>,
+    /// Wallets in this drain that are faulted, plus wallets faulted *by* it.
+    faulted: usize,
+}
+
+impl BatchDiagnostics {
+    fn new(folded: usize, wallets: usize) -> Self {
+        Self {
+            folded,
+            wallets,
+            ..Self::default()
+        }
+    }
+
+    /// Raise `slot` to `height` if it is higher (or set it if unset).
+    fn raise(slot: &mut Option<u32>, height: u32) {
+        *slot = Some(slot.map_or(height, |cur| cur.max(height)));
+    }
+
+    /// The store returned `Ok` for a changeset carrying `height`.
+    fn record_persisted(&mut self, height: u32) {
+        Self::raise(&mut self.persisted, height);
+    }
+
+    /// The fail-closed guard stripped `height` before it reached the store.
+    fn record_frozen(&mut self, height: u32) {
+        Self::raise(&mut self.frozen, height);
+    }
+
+    /// The store returned an error for a changeset carrying `height`.
+    fn record_rejected(&mut self, height: u32) {
+        Self::raise(&mut self.rejected, height);
+    }
+}
+
+impl std::fmt::Display for BatchDiagnostics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "wallet-event batch: folded={} wallets={} synced_height_persisted={:?} \
+             synced_height_frozen={:?} synced_height_rejected={:?} faulted={}",
+            self.folded, self.wallets, self.persisted, self.frozen, self.rejected, self.faulted,
+        )
+    }
+}
+
 /// Spawn the wallet-event persistence task.
 ///
 /// The `receiver` is the manager's lossless persistence receiver, taken once
@@ -270,43 +348,113 @@ async fn run_wallet_event_adapter<P>(
 
         // Commit the folded batch. The channel is lossless, so the only way a
         // watermark is held back is a rejected `store()` (the fail-closed
-        // backstop below).
-        let wallets_in_batch = batch.len();
-        let mut synced_height_persisted: Option<u32> = None;
-        let mut faulted_in_batch = 0usize;
-        for (wallet_id, mut core) in batch {
-            // Hold this wallet's durable watermark at the last fully persisted
-            // height once it has faulted. Records/UTXOs still persist — only
-            // the height advance is suppressed. Applied after the fold so a
-            // `synced_height` that arrived via merge is stripped too.
-            let is_faulted = fault.is_faulted(&wallet_id);
-            if is_faulted {
-                faulted_in_batch += 1;
+        // backstop inside `commit_batch`).
+        let diag = commit_batch(
+            &*persister,
+            batch,
+            folded,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        // One structured line per drain via the `log` facade so a tester
+        // logcat is unambiguous about whether the watermark is advancing.
+        // Every field reports an observed outcome — see [`BatchDiagnostics`].
+        log::info!("{}", diag);
+
+        if closed {
+            if !cancel.is_cancelled() {
+                tracing::error!("WalletEvent persistence channel closed unexpectedly");
             }
-            freeze_synced_height_if_faulted(&mut core, is_faulted);
-            if core.is_empty_no_records() {
-                // SyncHeightAdvanced for an unknown wallet, empty
-                // BlockProcessed, a watermark-only batch stripped by the fault
-                // guard above, etc. — nothing to persist. Skip the round-trip.
-                continue;
+            break;
+        }
+    }
+    tracing::debug!("wallet-event adapter task exiting");
+}
+
+/// Commit one folded drain to the persister and report what actually happened.
+///
+/// Split out of [`run_wallet_event_adapter`] so the batch diagnostic — the line
+/// we read off a tester's logcat to decide whether the durable watermark is
+/// advancing — is directly unit-testable against a real `store()` rejection,
+/// without the async channel plumbing. The returned [`BatchDiagnostics`] is
+/// what the caller logs.
+///
+/// Ordering matters and is load-bearing:
+///
+/// 1. Apply [`freeze_synced_height_if_faulted`] *after* the fold, so a
+///    `synced_height` that entered via `Merge` is stripped just like a
+///    standalone one (otherwise folding would smuggle a watermark past the
+///    guard and reintroduce dashpay/platform#4069).
+/// 2. Record `frozen` from the height the batch *proposed*, captured before the
+///    guard strips it.
+/// 3. Record `persisted` only from the `Ok` arm of `store()`. A rejected store
+///    means the rows never reached disk — the same condition that makes us
+///    fault the wallet — so counting it as persisted would make the trace
+///    contradict itself.
+fn commit_batch<P>(
+    persister: &P,
+    batch: BTreeMap<WalletId, CoreChangeSet>,
+    folded: usize,
+    fault: &mut AdapterFaultState,
+    sync_fault: &AtomicBool,
+    freeze_logged: &mut bool,
+) -> BatchDiagnostics
+where
+    P: PlatformWalletPersistence + ?Sized,
+{
+    let mut diag = BatchDiagnostics::new(folded, batch.len());
+    for (wallet_id, mut core) in batch {
+        // Hold this wallet's durable watermark at the last fully persisted
+        // height once it has faulted. Records/UTXOs still persist — only the
+        // height advance is suppressed.
+        let is_faulted = fault.is_faulted(&wallet_id);
+        if is_faulted {
+            diag.faulted += 1;
+        }
+        // Capture what this batch PROPOSED before the guard can strip it, so a
+        // withheld watermark is reported as frozen instead of silently reading
+        // as "this batch carried no watermark".
+        let proposed_height = core.synced_height;
+        freeze_synced_height_if_faulted(&mut core, is_faulted);
+        if is_faulted {
+            if let Some(h) = proposed_height {
+                diag.record_frozen(h);
             }
-            if let Some(h) = core.synced_height {
-                synced_height_persisted = Some(synced_height_persisted.map_or(h, |cur| cur.max(h)));
+        }
+        if core.is_empty_no_records() {
+            // SyncHeightAdvanced for an unknown wallet, empty BlockProcessed, a
+            // watermark-only batch stripped by the fault guard above, etc. —
+            // nothing to persist. Skip the round-trip.
+            continue;
+        }
+        // The height this changeset OFFERS to the store. It is counted as
+        // persisted only in the `Ok` arm below.
+        let offered_height = core.synced_height;
+        let cs = PlatformWalletChangeSet {
+            core: Some(core),
+            ..PlatformWalletChangeSet::default()
+        };
+        match persister.store(wallet_id, cs) {
+            Ok(()) => {
+                if let Some(h) = offered_height {
+                    diag.record_persisted(h);
+                }
             }
-            let cs = PlatformWalletChangeSet {
-                core: Some(core),
-                ..PlatformWalletChangeSet::default()
-            };
-            if let Err(e) = persister.store(wallet_id, cs) {
+            Err(e) => {
                 // A rejected changeset means these rows are not on disk. Fault
                 // THIS wallet's watermark so it can't outrun them; the next
                 // scan re-emits and the idempotent upserts recover the state.
-                fault.fault_wallet(wallet_id, &sync_fault);
-                faulted_in_batch += 1;
+                if let Some(h) = offered_height {
+                    diag.record_rejected(h);
+                }
+                fault.fault_wallet(wallet_id, sync_fault);
+                diag.faulted += 1;
                 // One-shot, unambiguous logcat marker via the `log` facade
                 // (android_logger forwards `log` to logcat; `tracing` may not).
-                if !freeze_logged {
-                    freeze_logged = true;
+                if !*freeze_logged {
+                    *freeze_logged = true;
                     log::error!(
                         "SYNC WATERMARK FROZEN: persister rejected a changeset for wallet {} ({}); \
                          its durable sync height is now held so the next scan re-persists the \
@@ -322,28 +470,8 @@ async fn run_wallet_event_adapter<P>(
                 );
             }
         }
-
-        // One structured line per drain via the `log` facade so a tester
-        // logcat is unambiguous about whether the watermark is advancing.
-        // `missed` is always 0 now (the lossless channel cannot drop); it is
-        // kept in the line so a nonzero value would immediately stand out as a
-        // regression.
-        log::info!(
-            "wallet-event batch: folded={} wallets={} synced_height_persisted={:?} faulted={} missed=0",
-            folded,
-            wallets_in_batch,
-            synced_height_persisted,
-            faulted_in_batch,
-        );
-
-        if closed {
-            if !cancel.is_cancelled() {
-                tracing::error!("WalletEvent persistence channel closed unexpectedly");
-            }
-            break;
-        }
     }
-    tracing::debug!("wallet-event adapter task exiting");
+    diag
 }
 
 /// Durable-watermark guard for dashpay/platform#4069.
@@ -1534,5 +1662,294 @@ mod tests {
                 "no store may carry a synced_height once the wallet is faulted"
             );
         }
+    }
+
+    // ── Batch-diagnostic reporting (dashpay/platform#4290 review) ──
+    //
+    // The per-drain `wallet-event batch: ...` line is read off a mainnet
+    // tester's logcat to answer "is the durable watermark advancing?", so what
+    // it reports is a tested property, not a comment.
+    //
+    // The regression these lock down: the diagnostic used to fold
+    // `core.synced_height` into `synced_height_persisted` BEFORE calling
+    // `persister.store(...)`. A rejected store therefore logged
+    // `synced_height_persisted=Some(h)` in the very same drain that faulted the
+    // wallet *because* height `h`'s rows were not accepted — an internally
+    // contradictory trace that points a diagnosis at the wrong subsystem.
+    //
+    // These drive the real `commit_batch` (the production commit path,
+    // including the fail-closed guard) so the assertions cover the shipped
+    // code, not a restatement of it.
+
+    use super::{commit_batch, BatchDiagnostics};
+
+    /// A changeset that both proposes a watermark and carries a record-bearing
+    /// field, so it survives `is_empty_no_records()` and actually reaches
+    /// `store()`.
+    fn watermark_with_rows(synced: u32, processed: u32) -> CoreChangeSet {
+        CoreChangeSet {
+            synced_height: Some(synced),
+            last_processed_height: Some(processed),
+            ..CoreChangeSet::default()
+        }
+    }
+
+    fn one_wallet_batch(
+        wallet_id: WalletId,
+        core: CoreChangeSet,
+    ) -> BTreeMap<WalletId, CoreChangeSet> {
+        let mut batch = BTreeMap::new();
+        batch.insert(wallet_id, core);
+        batch
+    }
+
+    /// Baseline: a height the store ACCEPTED is the one case that may be
+    /// reported as persisted.
+    #[test]
+    fn accepted_store_reports_the_watermark_as_persisted() {
+        let wallet_id = [1u8; 32];
+        let (obs_tx, _obs_rx) = unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let mut freeze_logged = false;
+
+        let diag = commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(500, 500)),
+            1,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        assert_eq!(diag.persisted, Some(500));
+        assert_eq!(diag.frozen, None);
+        assert_eq!(diag.rejected, None);
+        assert_eq!(diag.faulted, 0);
+        assert!(!sync_fault.load(Ordering::Relaxed));
+        assert!(diag
+            .to_string()
+            .contains("synced_height_persisted=Some(500)"));
+    }
+
+    /// REGRESSION (PR #4290 review): a REJECTED `store()` must never be
+    /// reported as persisted.
+    #[test]
+    fn rejected_store_is_not_reported_as_persisted() {
+        let wallet_id = [9u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        persister.fail_next(wallet_id);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let mut freeze_logged = false;
+
+        let diag = commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(500, 500)),
+            1,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        // The height was genuinely offered to the store...
+        let observed = obs_rx.try_recv().expect("the rejected store still ran");
+        assert!(observed.rejected);
+        assert_eq!(observed.synced_height, Some(500));
+
+        // ...and the store rejected it, so it is NOT on disk.
+        assert_eq!(
+            diag.persisted, None,
+            "a rejected watermark must never be counted as persisted"
+        );
+        assert_eq!(
+            diag.rejected,
+            Some(500),
+            "the rejected height belongs under its own field"
+        );
+        assert_eq!(
+            diag.frozen, None,
+            "the guard did not strip this one — the store rejected it"
+        );
+        assert_eq!(diag.faulted, 1);
+
+        // The rendered logcat line must not claim the height reached disk.
+        let line = diag.to_string();
+        assert!(
+            line.contains("synced_height_persisted=None"),
+            "logcat line must report no persisted watermark: {line}"
+        );
+        assert!(
+            !line.contains("synced_height_persisted=Some(500)"),
+            "logcat line must not report the rejected height as persisted: {line}"
+        );
+        assert!(
+            line.contains("synced_height_rejected=Some(500)"),
+            "logcat line must surface the rejected height: {line}"
+        );
+
+        // The fail-closed guard itself is untouched: the wallet is faulted, the
+        // host-visible signal is latched, and the one-shot frozen marker fired.
+        assert!(fault.is_faulted(&wallet_id));
+        assert!(sync_fault.load(Ordering::Relaxed));
+        assert!(
+            freeze_logged,
+            "the one-shot SYNC WATERMARK FROZEN marker must have been emitted"
+        );
+    }
+
+    /// A watermark withheld by the fail-closed guard is reported as `frozen` —
+    /// never as persisted, and distinguishably from a drain that simply carried
+    /// no watermark at all.
+    #[test]
+    fn guard_stripped_watermark_is_reported_as_frozen_not_persisted() {
+        let wallet_id = [9u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        // Pre-fault the wallet, as an earlier drain's rejection would have.
+        fault.fault_wallet(wallet_id, &sync_fault);
+        let mut freeze_logged = true; // one-shot already spent
+
+        let diag = commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(900, 900)),
+            1,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        assert_eq!(diag.persisted, None, "a frozen watermark is not persisted");
+        assert_eq!(diag.frozen, Some(900));
+        assert_eq!(diag.rejected, None);
+        assert_eq!(diag.faulted, 1);
+
+        // Guard behaviour unchanged: the store never saw the height, while the
+        // record-bearing field still persisted.
+        let observed = obs_rx
+            .try_recv()
+            .expect("record-bearing rows still persist while frozen");
+        assert_eq!(
+            observed.synced_height, None,
+            "the guard must strip the watermark before it reaches the store"
+        );
+        assert_eq!(observed.last_processed_height, Some(900));
+
+        let line = diag.to_string();
+        assert!(line.contains("synced_height_persisted=None"), "{line}");
+        assert!(line.contains("synced_height_frozen=Some(900)"), "{line}");
+    }
+
+    /// A watermark-ONLY changeset under the guard is stripped to empty and
+    /// skips the store round-trip entirely. It must still be reported as
+    /// frozen, otherwise that drain reads as idle.
+    #[test]
+    fn frozen_watermark_only_batch_is_still_reported() {
+        let wallet_id = [9u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        fault.fault_wallet(wallet_id, &sync_fault);
+        let mut freeze_logged = true;
+
+        let core = CoreChangeSet {
+            synced_height: Some(1234),
+            ..CoreChangeSet::default()
+        };
+        let diag = commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, core),
+            1,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        assert_eq!(diag.frozen, Some(1234));
+        assert_eq!(diag.persisted, None);
+        assert_eq!(diag.rejected, None);
+        assert!(
+            obs_rx.try_recv().is_err(),
+            "a stripped watermark-only batch must skip the store round-trip"
+        );
+    }
+
+    /// One drain can span a healthy wallet and a rejecting one. Each outcome is
+    /// reported under its own field instead of collapsing into a single
+    /// "persisted" number that would over-report the rejecting wallet.
+    #[test]
+    fn mixed_batch_reports_persisted_and_rejected_separately() {
+        let healthy = [1u8; 32];
+        let rejecting = [2u8; 32];
+        let (obs_tx, _obs_rx) = unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        persister.fail_next(rejecting);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let mut freeze_logged = false;
+
+        let mut batch = BTreeMap::new();
+        batch.insert(healthy, watermark_with_rows(10, 10));
+        batch.insert(rejecting, watermark_with_rows(20, 20));
+
+        let diag = commit_batch(
+            &persister,
+            batch,
+            2,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        assert_eq!(
+            diag.persisted,
+            Some(10),
+            "only the healthy wallet's height landed"
+        );
+        assert_eq!(
+            diag.rejected,
+            Some(20),
+            "the rejecting wallet's height did not land"
+        );
+        assert_eq!(diag.wallets, 2);
+        assert_eq!(diag.folded, 2);
+        assert!(
+            !fault.is_faulted(&healthy),
+            "a sibling wallet must not be faulted by another's rejection"
+        );
+        assert!(fault.is_faulted(&rejecting));
+    }
+
+    /// Each field takes its monotonic max independently, so a lower height
+    /// later in a drain cannot pull a reported watermark backwards and the
+    /// three outcomes never bleed into each other.
+    #[test]
+    fn diagnostics_fields_take_independent_monotonic_max() {
+        let mut diag = BatchDiagnostics::new(3, 3);
+        diag.record_persisted(10);
+        diag.record_persisted(4); // lower — must not regress
+        diag.record_frozen(7);
+        diag.record_rejected(99);
+        assert_eq!(diag.persisted, Some(10));
+        assert_eq!(diag.frozen, Some(7));
+        assert_eq!(diag.rejected, Some(99));
+    }
+
+    /// The exact logcat contract a tester greps for.
+    #[test]
+    fn diagnostic_line_format_is_stable() {
+        let mut diag = BatchDiagnostics::new(512, 2);
+        diag.record_persisted(100);
+        diag.record_rejected(200);
+        assert_eq!(
+            diag.to_string(),
+            "wallet-event batch: folded=512 wallets=2 synced_height_persisted=Some(100) \
+             synced_height_frozen=None synced_height_rejected=Some(200) faulted=0"
+        );
     }
 }
