@@ -464,6 +464,22 @@ impl DashPaySyncManager {
             );
         }
 
+        // Local-only: rebuild missing `Sent` entries from persisted
+        // wallet transaction history + the contact external-account
+        // address pools. Runs after the incoming reconcile so an
+        // existing received entry under the txid wins the dedup guard.
+        if let Err(e) = identity
+            .dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+        {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "DashPay sent-payment reconstruction failed"
+            );
+        }
+
         // Local-only: DIP-15 §12.6 coreHeight backfill — lower SPV synced_height
         // to re-scan for incoming payments that landed on a contact's receival
         // address before it was watched (restore-from-seed / 2nd device /

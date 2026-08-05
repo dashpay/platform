@@ -27,6 +27,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    static func walletOwnsTransaction(
+        walletId: Data,
+        transaction: PersistentTransaction
+    ) -> Bool {
+        if transaction.involvedAccounts.contains(where: { $0.wallet.walletId == walletId }) {
+            return true
+        }
+        if transaction.outputs.contains(where: { $0.walletId == walletId }) {
+            return true
+        }
+        if transaction.inputs.contains(where: { $0.walletId == walletId }) {
+            return true
+        }
+        return transaction.pendingInputs.contains(where: { $0.walletId == walletId })
+    }
+
     let modelContainer: ModelContainer
 
     /// Network this handler's owning `PlatformWalletManager` is bound
@@ -1260,6 +1276,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_persist_invitations_fn = persistInvitationsCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
+        cb.on_list_wallet_core_txids_fn = listWalletCoreTxidsCallback
+        cb.on_list_wallet_core_txids_free_fn = listWalletCoreTxidsFreeCallback
         return cb
     }
 
@@ -5755,6 +5773,23 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Enumerate the persisted txids scoped to `walletId`.
+    ///
+    /// Scope is the union of wallet-owned TXOs (`outputs`, `inputs`,
+    /// `pendingInputs`) and payload-only account involvement
+    /// (`involvedAccounts`).
+    func walletCoreTxids(walletId: Data) -> [Data] {
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentTransaction>()
+            guard let rows = try? backgroundContext.fetch(descriptor), !rows.isEmpty else {
+                return []
+            }
+            return rows.compactMap { tx in
+                Self.walletOwnsTransaction(walletId: walletId, transaction: tx) ? tx.txid : nil
+            }
+        }
+    }
+
     /// Look up the network for a wallet id by reading the owning
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
@@ -7464,4 +7499,60 @@ private func getCoreTxRecordFreeCallback(
     UnsafeMutablePointer(mutating: txBytes).deallocate()
     _ = context
     _ = txBytesLen
+}
+
+/// C shim for `on_list_wallet_core_txids_fn`. Returns a contiguous
+/// `count * 32` byte buffer of raw txids in wire order.
+private func listWalletCoreTxidsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    outTxids: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr,
+          let outTxids = outTxids,
+          let outCount = outCount else {
+        return 0
+    }
+
+    outTxids.pointee = nil
+    outCount.pointee = 0
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    let txids = handler.walletCoreTxids(walletId: walletId)
+    guard !txids.isEmpty else {
+        return 0
+    }
+
+    let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count * 32)
+    // Pack only well-formed txids and report how many were packed. Skipping a
+    // malformed one while still reporting `txids.count` would leave its slot
+    // uninitialized and hand Rust 32 bytes of garbage as a txid.
+    var packed = 0
+    for txid in txids where txid.count == 32 {
+        txid.copyBytes(to: buffer.advanced(by: packed * 32), count: 32)
+        packed += 1
+    }
+    guard packed > 0 else {
+        buffer.deallocate()
+        return 0
+    }
+    outTxids.pointee = UnsafePointer(buffer)
+    outCount.pointee = UInt(packed)
+    return 0
+}
+
+/// Paired free callback for `on_list_wallet_core_txids_free_fn`.
+private func listWalletCoreTxidsFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    txids: UnsafePointer<UInt8>?,
+    _ count: UInt
+) {
+    guard let txids = txids else { return }
+    UnsafeMutablePointer(mutating: txids).deallocate()
+    _ = context
 }

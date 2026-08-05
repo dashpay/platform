@@ -195,6 +195,207 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(floor)
     }
 
+    /// Rebuild missing `Sent` [`PaymentEntry`]s by matching persisted
+    /// wallet transaction outputs against the wallet's registered
+    /// `DashpayExternalAccount` address pools.
+    ///
+    /// Recovery path for sent-payment history after restore-from-seed:
+    /// the wallet's transaction records survive in persistence but the
+    /// local DashPay payment cache may be empty. Unlike the
+    /// receival-side UTXO walk this scans persisted tx records, sums
+    /// every output that pays a contact's external-account address, and
+    /// records a `Sent` entry per `(owner, contact, txid)`.
+    ///
+    /// Only contacts whose local payment history is still empty are
+    /// eligible, and each eligible contact is swept at most once per
+    /// launch. That keeps the recovery path cheap in steady state:
+    /// after the first "nothing to reconstruct" answer, recurring
+    /// `dashpay_sync()` passes stop full-scanning persisted tx history
+    /// every 15 seconds.
+    ///
+    /// Local-only and idempotent: an existing payment entry under the
+    /// txid is never overwritten.
+    pub async fn reconcile_sent_payments_from_tx_history(
+        &self,
+    ) -> Result<usize, PlatformWalletError> {
+        use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
+        use dashcore::ScriptBuf;
+        use std::collections::{BTreeMap, BTreeSet};
+
+        // Keyed by script pubkey, not by rendered address: the outputs this
+        // matches against come from a consensus-decoded `Transaction`, which
+        // carries scripts. Comparing scripts also sidesteps address-encoding
+        // pitfalls (network prefix, P2PKH vs P2SH rendering).
+        let (address_matches, eligible_contacts): (
+            BTreeMap<ScriptBuf, (Identifier, Identifier)>,
+            Vec<(Identifier, Identifier)>,
+        ) = {
+            let wm = self.wallet_manager.read().await;
+            let info = match wm.get_wallet_info(&self.wallet_id) {
+                Some(info) => info,
+                None => return Ok(0),
+            };
+            let mut out = BTreeMap::new();
+            let mut eligible = Vec::new();
+            for (key, account) in &info.core_wallet.accounts.dashpay_external_accounts {
+                let owner = Identifier::from(key.user_identity_id);
+                let contact = Identifier::from(key.friend_identity_id);
+                let Some(managed) = info.identity_manager.managed_identity(&owner) else {
+                    continue;
+                };
+                if managed
+                    .dashpay()
+                    .sent_payment_reconcile_attempted
+                    .contains(&contact)
+                {
+                    continue;
+                }
+                // Only a `Sent` entry proves this contact's outgoing history is
+                // already present. `reconcile_incoming_payments` runs first and
+                // records `Received` entries, so testing for "any payment with
+                // this contact" hid every send to a contact we had also
+                // received from — the incoming pass filled the map, this guard
+                // read it as done, and the sends were never reconstructed.
+                if managed.dashpay().payments.values().any(|payment| {
+                    payment.counterparty_id == contact
+                        && payment.direction == PaymentDirection::Sent
+                }) {
+                    continue;
+                }
+                let pools = account.managed_account_type().address_pools();
+                let Some(pool) = pools.first() else {
+                    continue;
+                };
+                eligible.push((owner, contact));
+                for address_info in pool.addresses.values() {
+                    out.entry(address_info.script_pubkey.clone())
+                        .or_insert((owner, contact));
+                }
+            }
+            (out, eligible)
+        };
+        if address_matches.is_empty() {
+            // Steady state — every contact is either reconstructed or already
+            // swept this launch. Silent on purpose: this runs on every
+            // `dashpay_sync` pass, and logging it would emit a line every
+            // 15 seconds for the life of the process.
+            return Ok(0);
+        }
+        tracing::info!(
+            eligible_contacts = eligible_contacts.len(),
+            candidate_addresses = address_matches.len(),
+            "reconcile_sent_payments_from_tx_history: candidate set built"
+        );
+
+        let txids = self.persister.list_wallet_core_txids().map_err(|e| {
+            PlatformWalletError::Persistence(format!("failed to enumerate wallet txids: {e}"))
+        })?;
+
+        let mut totals: BTreeMap<(Identifier, Identifier, String), (u64, PaymentStatus)> =
+            BTreeMap::new();
+        let mut had_read_error = false;
+        let txid_count = txids.len();
+        let mut records_read = 0usize;
+        let mut outputs_scanned = 0usize;
+        for txid in txids {
+            let record = match self.persister.get_core_tx_record(&txid) {
+                Ok(Some(record)) => record,
+                Ok(None) => continue,
+                Err(e) => {
+                    had_read_error = true;
+                    tracing::warn!(
+                        error = %e,
+                        %txid,
+                        "reconcile_sent_payments_from_tx_history: tx-record read failed; will retry next sweep"
+                    );
+                    continue;
+                }
+            };
+            records_read += 1;
+            let status = sent_payment_status_for_record(&record);
+            let txid_str = txid.to_string();
+            // Walk the decoded transaction's outputs, NOT `record.output_details`.
+            // Records handed back by `get_core_tx_record` are rebuilt from the
+            // host's raw transaction bytes: `transaction`, `txid` and `context`
+            // are real, every other field is a placeholder — `output_details` is
+            // always an empty vec. Matching on it silently found nothing.
+            for out in &record.transaction.output {
+                outputs_scanned += 1;
+                let Some(&(owner, contact)) = address_matches.get(&out.script_pubkey) else {
+                    continue;
+                };
+                let entry = totals
+                    .entry((owner, contact, txid_str.clone()))
+                    .or_insert((0u64, status));
+                entry.0 += out.value;
+                entry.1 = status;
+            }
+        }
+
+        tracing::info!(
+            txids = txid_count,
+            records_read,
+            outputs_scanned,
+            matched_txids = totals.len(),
+            "reconcile_sent_payments_from_tx_history: scan complete"
+        );
+
+        let mut wm = self.wallet_manager.write().await;
+        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+            return Ok(0);
+        };
+
+        let mut recorded = 0usize;
+        let mut write_failed_for: BTreeSet<(Identifier, Identifier)> = BTreeSet::new();
+        for ((owner, contact, txid), (amount_duffs, status)) in totals {
+            let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+                continue;
+            };
+            if managed.dashpay().payments.contains_key(&txid) {
+                continue;
+            }
+            let mut entry =
+                crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
+                    contact,
+                    amount_duffs,
+                    None,
+                );
+            entry.status = status;
+            tracing::info!(
+                owner = %owner,
+                contact = %contact,
+                %txid,
+                amount_duffs,
+                ?status,
+                "Recording reconstructed sent DashPay payment"
+            );
+            if let Err(e) = managed.record_dashpay_payment(txid, entry, &self.persister) {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to persist reconstructed sent payment; will retry next sweep"
+                );
+                write_failed_for.insert((owner, contact));
+                continue;
+            }
+            recorded += 1;
+        }
+
+        if !had_read_error {
+            for (owner, contact) in eligible_contacts {
+                if write_failed_for.contains(&(owner, contact)) {
+                    continue;
+                }
+                let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+                    continue;
+                };
+                managed
+                    .dashpay_sent_payment_reconcile_attempted_mut()
+                    .insert(contact);
+            }
+        }
+        Ok(recorded)
+    }
+
     /// Flip `Pending` `Sent` [`PaymentEntry`]s to `Confirmed` when the
     /// persisted core transaction record reports the transaction final.
     ///
@@ -394,6 +595,19 @@ fn record_received_payment_totals(
         recorded += 1;
     }
     recorded
+}
+
+fn sent_payment_status_for_record(
+    record: &key_wallet::managed_account::transaction_record::TransactionRecord,
+) -> crate::wallet::identity::types::dashpay::payment::PaymentStatus {
+    use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+    use key_wallet::transaction_checking::TransactionContext;
+
+    if record.is_confirmed() || matches!(record.context, TransactionContext::InstantSend(_)) {
+        PaymentStatus::Confirmed
+    } else {
+        PaymentStatus::Pending
+    }
 }
 
 /// Advance a sender's `Sent` [`PaymentEntry`] from `Pending` to
@@ -825,6 +1039,7 @@ mod tests {
     use dpp::identity::Identity;
     use dpp::prelude::Identifier;
     use key_wallet::account::account_collection::DashpayAccountKey;
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::mnemonic::{Language, Mnemonic};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
@@ -874,11 +1089,13 @@ mod tests {
     #[derive(Default)]
     struct RecordStorePersister {
         records: Mutex<
-            std::collections::HashMap<
+            std::collections::BTreeMap<
                 dashcore::Txid,
                 key_wallet::managed_account::transaction_record::TransactionRecord,
             >,
         >,
+        list_wallet_core_txids_calls: Mutex<usize>,
+        get_core_tx_record_calls: Mutex<usize>,
     }
 
     impl PlatformWalletPersistence for RecordStorePersister {
@@ -903,7 +1120,16 @@ mod tests {
             Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
             PersistenceError,
         > {
+            *self.get_core_tx_record_calls.lock().unwrap() += 1;
             Ok(self.records.lock().unwrap().get(txid).cloned())
+        }
+
+        fn list_wallet_core_txids(
+            &self,
+            _wallet_id: WalletId,
+        ) -> Result<Vec<dashcore::Txid>, PersistenceError> {
+            *self.list_wallet_core_txids_calls.lock().unwrap() += 1;
+            Ok(self.records.lock().unwrap().keys().copied().collect())
         }
     }
 
@@ -1192,6 +1418,155 @@ mod tests {
             },
         );
         txid.to_string()
+    }
+
+    async fn install_external_account(
+        manager: &Arc<PlatformWalletManager<RecordStorePersister>>,
+        wallet_id: WalletId,
+        owner: Identifier,
+        contact: Identifier,
+    ) -> Vec<dashcore::Address> {
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("wallet registered");
+        let iw = wallet.identity();
+        let mut wm = iw.wallet_manager.write().await;
+        let (wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&wallet_id)
+            .expect("wallet and info");
+
+        let account_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let account_xpub = test_receiving_xpub(&owner, &contact);
+        let account = key_wallet::Account {
+            parent_wallet_id: Some(wallet_id),
+            account_type,
+            network: Network::Testnet,
+            account_xpub,
+            is_watch_only: true,
+        };
+        let managed = ManagedCoreFundsAccount::from_account(&account);
+
+        wallet
+            .add_account(account_type, Some(account_xpub))
+            .expect("add immutable external account");
+        info.core_wallet
+            .accounts
+            .insert_funds_bearing_account(managed)
+            .expect("add managed external account");
+
+        let key = DashpayAccountKey {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&key)
+            .expect("external account present");
+        account
+            .managed_account_type()
+            .address_pools()
+            .first()
+            .expect("external account has a pool")
+            .addresses
+            .values()
+            .take(2)
+            .map(|info| info.address.clone())
+            .collect()
+    }
+
+    async fn first_standard_wallet_address(
+        manager: &Arc<PlatformWalletManager<RecordStorePersister>>,
+        wallet_id: WalletId,
+    ) -> dashcore::Address {
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("wallet registered");
+        let iw = wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+        info.core_wallet
+            .accounts
+            .standard_bip44_accounts
+            .get(&0)
+            .expect("bip44 account 0")
+            .managed_account_type()
+            .address_pools()
+            .first()
+            .expect("standard external pool")
+            .addresses
+            .values()
+            .next()
+            .expect("at least one standard address")
+            .address
+            .clone()
+    }
+
+    fn tx_record_with_outputs(
+        context: key_wallet::transaction_checking::TransactionContext,
+        outputs: Vec<(
+            dashcore::Address,
+            u64,
+            key_wallet::managed_account::transaction_record::OutputRole,
+        )>,
+    ) -> key_wallet::managed_account::transaction_record::TransactionRecord {
+        use dashcore::{OutPoint, Transaction, TxIn, TxOut, Txid};
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::transaction_record::{
+            OutputDetail, TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::TransactionType;
+
+        let tx = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from([0x91; 32]), 0),
+                ..Default::default()
+            }],
+            output: outputs
+                .iter()
+                .map(|(address, value, _)| TxOut {
+                    value: *value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
+            special_transaction_payload: None,
+        };
+        let output_details = outputs
+            .into_iter()
+            .enumerate()
+            .map(|(index, (address, value, role))| OutputDetail {
+                index: index as u32,
+                role,
+                address: Some(address),
+                value,
+            })
+            .collect();
+        TransactionRecord::new(
+            tx,
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            context,
+            TransactionType::Standard,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            output_details,
+            0,
+        )
     }
 
     /// 1. Registering a contact receival account must persist an
@@ -2520,6 +2895,438 @@ mod tests {
                 .expect("second pass"),
             0,
             "reconcile must be idempotent"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_rebuilds_and_is_idempotent() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let contact_addresses = install_external_account(&manager, wallet_id, owner, contact).await;
+        assert!(
+            contact_addresses.len() >= 2,
+            "external account must pre-derive at least two addresses"
+        );
+        let change_address = first_standard_wallet_address(&manager, wallet_id).await;
+
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(123, BlockHash::all_zeros(), 0)),
+            vec![
+                (contact_addresses[0].clone(), 25_000, OutputRole::Sent),
+                (change_address, 90_000, OutputRole::Change),
+                (contact_addresses[1].clone(), 10_000, OutputRole::Sent),
+            ],
+        );
+        let txid = record.txid;
+        persister.records.lock().unwrap().insert(txid, record);
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("reconcile"),
+            1,
+            "one reconstructed payment should be recorded"
+        );
+
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let entry = info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid.to_string())
+                .cloned()
+                .expect("reconstructed sent payment");
+            assert_eq!(entry.amount_duffs, 35_000, "sum all contact outputs only");
+            assert_eq!(entry.status, PaymentStatus::Confirmed);
+        }
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("second pass"),
+            0,
+            "reconstruction must be idempotent"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_does_not_overwrite_existing_entry() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        use crate::wallet::identity::types::dashpay::payment::{PaymentEntry, PaymentStatus};
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let contact_address = install_external_account(&manager, wallet_id, owner, contact)
+            .await
+            .remove(0);
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(55, BlockHash::all_zeros(), 0)),
+            vec![(contact_address, 50_000, OutputRole::Sent)],
+        );
+        let txid = record.txid;
+        persister.records.lock().unwrap().insert(txid, record);
+
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    txid.to_string(),
+                    PaymentEntry::new_received(contact, 7_500, Some("keep me".into())),
+                    &p,
+                )
+                .expect("preexisting received entry");
+        }
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("reconcile"),
+            0,
+            "an existing txid entry must win the dedup guard"
+        );
+
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let entry = info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid.to_string())
+                .cloned()
+                .expect("entry still present");
+            assert_eq!(entry.amount_duffs, 7_500);
+            assert_eq!(entry.status, PaymentStatus::Confirmed);
+            assert_eq!(entry.memo.as_deref(), Some("keep me"));
+        }
+    }
+
+    /// Reconstruction must work on the record shape the FFI actually hands
+    /// back. `PlatformWalletPersistence::get_core_tx_record` rebuilds a record
+    /// from the host's raw transaction bytes and fills only `transaction`,
+    /// `txid` and `context` — `output_details` is always empty. The test
+    /// helper populates both, which is why a version of this sweep that read
+    /// `output_details` passed every unit test and matched nothing on device
+    /// (`outputs_scanned=0`, `matched_txids=0` against 49 records read).
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_matches_without_output_details() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        use crate::wallet::identity::types::dashpay::payment::PaymentDirection;
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let contact_address = install_external_account(&manager, wallet_id, owner, contact)
+            .await
+            .remove(0);
+        let mut record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(77, BlockHash::all_zeros(), 0)),
+            vec![(contact_address, 250_000, OutputRole::Sent)],
+        );
+        // Exactly what the FFI returns: scripts on the decoded transaction,
+        // nothing in the details vec.
+        record.output_details.clear();
+        let txid = record.txid;
+        persister.records.lock().unwrap().insert(txid, record);
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("reconcile"),
+            1,
+            "matching must not depend on `output_details`, which the FFI leaves empty"
+        );
+
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let entry = info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid.to_string())
+                .cloned()
+                .expect("reconstructed entry");
+            assert_eq!(entry.direction, PaymentDirection::Sent);
+            assert_eq!(entry.amount_duffs, 250_000);
+            assert_eq!(entry.counterparty_id, contact);
+        }
+    }
+
+    /// A contact we have also *received* from must still get its sends
+    /// reconstructed. `reconcile_incoming_payments` runs first and fills the
+    /// payments map with `Received` entries; a skip-guard that only asked
+    /// "any payment with this contact?" read that as "already reconstructed"
+    /// and permanently hid the outgoing history for every two-way contact.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_reconstructs_for_contact_with_received_history()
+    {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+        use crate::wallet::identity::types::dashpay::payment::{
+            PaymentDirection, PaymentEntry, PaymentStatus,
+        };
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let contact_address = install_external_account(&manager, wallet_id, owner, contact)
+            .await
+            .remove(0);
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(55, BlockHash::all_zeros(), 0)),
+            vec![(contact_address, 50_000, OutputRole::Sent)],
+        );
+        let sent_txid = record.txid;
+        persister.records.lock().unwrap().insert(sent_txid, record);
+
+        // An unrelated incoming payment from the same contact, as the incoming
+        // reconcile would have left it — a different txid, so the per-txid
+        // dedup guard is not what is under test here.
+        let received_txid = "11".repeat(32);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .record_dashpay_payment(
+                    received_txid.clone(),
+                    PaymentEntry::new_received(contact, 7_500, None),
+                    &p,
+                )
+                .expect("preexisting received entry");
+        }
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("reconcile"),
+            1,
+            "received history with a contact must not suppress the sent sweep"
+        );
+
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let payments = &info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments;
+            let entry = payments.get(&sent_txid.to_string()).expect("sent entry");
+            assert_eq!(entry.direction, PaymentDirection::Sent);
+            assert_eq!(entry.amount_duffs, 50_000);
+            assert_eq!(entry.status, PaymentStatus::Confirmed);
+            // The incoming entry is untouched.
+            let received = payments.get(&received_txid).expect("received entry");
+            assert_eq!(received.direction, PaymentDirection::Received);
+            assert_eq!(received.amount_duffs, 7_500);
+        }
+    }
+
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_keeps_mempool_entries_pending() {
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::TransactionContext;
+
+        use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let contact_address = install_external_account(&manager, wallet_id, owner, contact)
+            .await
+            .remove(0);
+        let record = tx_record_with_outputs(
+            TransactionContext::Mempool,
+            vec![(contact_address, 11_000, OutputRole::Sent)],
+        );
+        let txid = record.txid;
+        persister.records.lock().unwrap().insert(txid, record);
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("reconcile"),
+            1
+        );
+
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(
+            info.identity_manager
+                .managed_identity(&owner)
+                .expect("managed")
+                .dashpay()
+                .payments
+                .get(&txid.to_string())
+                .expect("entry")
+                .status,
+            PaymentStatus::Pending,
+            "a mempool tx must reconstruct as Pending until the confirm sweep flips it"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_skips_repeat_empty_sweeps() {
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let _ = install_external_account(&manager, wallet_id, owner, contact).await;
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("first reconcile"),
+            0,
+            "an empty tx history should produce no reconstructed payments"
+        );
+        assert_eq!(
+            *persister.list_wallet_core_txids_calls.lock().unwrap(),
+            1,
+            "the first pass must enumerate txids once"
+        );
+        assert_eq!(
+            *persister.get_core_tx_record_calls.lock().unwrap(),
+            0,
+            "with no txids there should be no per-record reads"
+        );
+
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_sent_payments_from_tx_history()
+                .await
+                .expect("second reconcile"),
+            0,
+            "the second pass should early-exit before touching persistence"
+        );
+        assert_eq!(
+            *persister.list_wallet_core_txids_calls.lock().unwrap(),
+            1,
+            "steady state must not keep re-enumerating txids every sweep"
+        );
+        assert_eq!(
+            *persister.get_core_tx_record_calls.lock().unwrap(),
+            0,
+            "steady-state early exit should avoid tx-record fetches entirely"
         );
     }
 

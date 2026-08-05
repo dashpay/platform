@@ -123,6 +123,17 @@ impl ManagedIdentity {
         &mut self.dashpay.payments
     }
 
+    /// Mutable access to the per-session sent-payment reconcile guard.
+    ///
+    /// In-memory only — never persisted; see the field docs on
+    /// [`DashPayState::sent_payment_reconcile_attempted`] for the
+    /// relaunch contract.
+    pub fn dashpay_sent_payment_reconcile_attempted_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {
+        &mut self.dashpay.sent_payment_reconcile_attempted
+    }
+
     /// Mutable access to the cached contact profiles.
     ///
     /// Replay/restore surface: bypasses persistence on purpose (the

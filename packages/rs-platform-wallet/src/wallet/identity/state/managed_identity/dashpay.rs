@@ -89,6 +89,21 @@ pub struct DashPayState {
     /// identity, with direction, amount, memo, and status.
     pub payments: BTreeMap<String, PaymentEntry>,
 
+    /// Contacts whose historical sent-payment reconstruction sweep has
+    /// already run in this process lifetime.
+    ///
+    /// `reconcile_sent_payments_from_tx_history` is a restore-time
+    /// recovery path for contacts whose local payment cache is still
+    /// empty. Once a contact has either been reconstructed or proven to
+    /// have nothing to reconstruct, re-running the full persisted-tx
+    /// scan every recurring sync pass is pure overhead. This guard
+    /// suppresses that steady-state rescan.
+    ///
+    /// In-memory only (never persisted): a relaunch retries the sweep
+    /// once for still-empty contacts, which is safe and far cheaper than
+    /// re-scanning every sync pass forever.
+    pub sent_payment_reconcile_attempted: BTreeSet<Identifier>,
+
     /// Cached **contact** profiles keyed by the contact's identity id —
     /// established contacts, pending incoming-request senders, and (later)
     /// ignored senders, independent of relationship state. Populated by

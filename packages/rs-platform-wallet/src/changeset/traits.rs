@@ -344,6 +344,18 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Ok(None)
     }
 
+    /// Enumerate the persisted Core transaction ids that belong to
+    /// `wallet_id`.
+    ///
+    /// Used by DashPay sent-payment reconstruction to walk the
+    /// wallet's locally persisted transaction history without relying
+    /// on the optional in-memory `transactions()` map. The default
+    /// implementation returns an empty set for backwards compatibility
+    /// with backends that don't index wallet-scoped tx history.
+    fn list_wallet_core_txids(&self, _wallet_id: WalletId) -> Result<Vec<Txid>, PersistenceError> {
+        Ok(Vec::new())
+    }
+
     // TODO: `list_wallets` and `delete_wallet` are deferred contract
     // candidates. They live as inherent methods on the SQLite backend
     // today; they may return to this trait once a cross-backend contract

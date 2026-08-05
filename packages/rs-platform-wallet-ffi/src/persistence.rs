@@ -627,6 +627,34 @@ pub struct PersistenceCallbacks {
     pub on_get_core_tx_record_free_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, tx_bytes: *const u8, tx_bytes_len: usize),
     >,
+    /// Enumerate the persisted Core txids that belong to `wallet_id`.
+    ///
+    /// Used by DashPay sent-payment reconstruction to walk the local
+    /// transaction history without requiring the optional in-memory
+    /// `transactions()` map to retain finalized records.
+    ///
+    /// Output contract:
+    /// - Set `*out_txids` to a contiguous buffer of `32 * *out_count`
+    ///   bytes, one raw-wire txid per 32-byte chunk, and `*out_count`
+    ///   to the number of txids returned.
+    /// - Set `*out_txids = null` and `*out_count = 0` when no rows
+    ///   exist for the wallet.
+    /// - Return `0` on success; non-zero values are treated as backend
+    ///   failures by the Rust side.
+    pub on_list_wallet_core_txids_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_txids: *mut *const u8,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    /// Paired free callback for the txid buffer returned by
+    /// [`Self::on_list_wallet_core_txids_fn`]. Rust invokes this with
+    /// the same pointer and txid count, exactly once per successful
+    /// hit.
+    pub on_list_wallet_core_txids_free_fn:
+        Option<unsafe extern "C" fn(context: *mut c_void, txids: *const u8, count: usize)>,
     /// Called with an `AssetLockChangeSet` slice — upserts on the
     /// tracked-asset-lock store and outpoint tombstones. Swift maps
     /// upserts onto `PersistentAssetLock` rows keyed by the 36-byte
@@ -711,6 +739,8 @@ impl Default for PersistenceCallbacks {
             on_persist_contacts_fn: None,
             on_get_core_tx_record_fn: None,
             on_get_core_tx_record_free_fn: None,
+            on_list_wallet_core_txids_fn: None,
+            on_list_wallet_core_txids_free_fn: None,
             #[cfg(feature = "shielded")]
             on_persist_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
@@ -2729,6 +2759,74 @@ impl PlatformWalletPersistence for FFIPersister {
             fee: None,
             label: String::new(),
         }))
+    }
+
+    fn list_wallet_core_txids(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<dashcore::Txid>, PersistenceError> {
+        use dashcore::hashes::Hash;
+
+        let Some(list_cb) = self.callbacks.on_list_wallet_core_txids_fn else {
+            return Ok(Vec::new());
+        };
+
+        let mut txids_ptr: *const u8 = std::ptr::null();
+        let mut count: usize = 0;
+
+        let rc = unsafe {
+            list_cb(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                &mut txids_ptr,
+                &mut count,
+            )
+        };
+
+        struct TxidBytesGuard {
+            ptr: *const u8,
+            count: usize,
+            free_fn:
+                Option<unsafe extern "C" fn(context: *mut c_void, txids: *const u8, count: usize)>,
+            ctx: *mut c_void,
+        }
+        impl Drop for TxidBytesGuard {
+            fn drop(&mut self) {
+                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
+                    unsafe { free(self.ctx, self.ptr, self.count) };
+                }
+            }
+        }
+        let _txid_guard = TxidBytesGuard {
+            ptr: txids_ptr,
+            count,
+            free_fn: self.callbacks.on_list_wallet_core_txids_free_fn,
+            ctx: self.callbacks.context,
+        };
+
+        if rc != 0 {
+            return Err(PersistenceError::backend(format!(
+                "on_list_wallet_core_txids_fn returned non-zero status {rc}"
+            )));
+        }
+        if txids_ptr.is_null() || count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let raw = unsafe { slice::from_raw_parts(txids_ptr, count.saturating_mul(32)) };
+        if raw.len() != count.saturating_mul(32) {
+            return Err(PersistenceError::backend(
+                "on_list_wallet_core_txids_fn returned an inconsistent txid buffer",
+            ));
+        }
+
+        let mut out = Vec::with_capacity(count);
+        for chunk in raw.chunks_exact(32) {
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(chunk);
+            out.push(dashcore::Txid::from_byte_array(bytes));
+        }
+        Ok(out)
     }
 }
 
