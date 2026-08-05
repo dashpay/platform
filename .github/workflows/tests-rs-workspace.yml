@@ -128,6 +128,12 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov 2>/dev/null || true
 
+      # Self-hosted runners are not guaranteed to have nextest preinstalled;
+      # the test step invokes `cargo llvm-cov nextest` and dies with
+      # "no such command: nextest" on runners that lack it.
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest 2>/dev/null || true
+
       - name: Check formatting
         run: cargo fmt --check --all
 
