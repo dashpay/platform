@@ -27,26 +27,48 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Wallet a TXO belongs to, resolved the way `loadWalletList` already
+    /// resolves it.
+    ///
+    /// `PersistentTxo.walletId` is a denormalized convenience field and is
+    /// **empty on rows written before it existed**. Comparing it raw makes
+    /// every legacy TXO look like it belongs to no wallet — which, for
+    /// sent-payment reconstruction, silently reclassifies a real spend as
+    /// "not ours" and drops the payment. Fall back to the owning account's
+    /// wallet for those rows.
+    ///
+    /// `account.wallet` is non-optional on the model but is a fault-loaded
+    /// relationship, so it is read through an Optional cast: a
+    /// relationship-store inconsistency would otherwise crash here.
+    static func resolvedWalletId(of txo: PersistentTxo) -> Data? {
+        if !txo.walletId.isEmpty {
+            return txo.walletId
+        }
+        let account: PersistentAccount? = txo.account
+        guard let account else { return nil }
+        let wallet: PersistentWallet? = account.wallet
+        return wallet?.walletId
+    }
+
     static func walletOwnsTransaction(
         walletId: Data,
         transaction: PersistentTransaction
     ) -> Bool {
-        // `account.wallet` is non-optional on the model but is a fault-loaded
-        // relationship; a relationship-store inconsistency would crash here,
-        // so guard via Optional cast (same treatment as the UTXO bucketing in
-        // `loadWalletList`).
         if transaction.involvedAccounts.contains(where: {
             let wallet: PersistentWallet? = $0.wallet
             return wallet?.walletId == walletId
         }) {
             return true
         }
-        if transaction.outputs.contains(where: { $0.walletId == walletId }) {
+        if transaction.outputs.contains(where: { resolvedWalletId(of: $0) == walletId }) {
             return true
         }
-        if transaction.inputs.contains(where: { $0.walletId == walletId }) {
+        if transaction.inputs.contains(where: { resolvedWalletId(of: $0) == walletId }) {
             return true
         }
+        // `PersistentPendingInput` carries no account relationship, so its
+        // denormalized `walletId` is the only thing to compare — it is also a
+        // newer row type, written only by the current send path.
         return transaction.pendingInputs.contains(where: { $0.walletId == walletId })
     }
 
@@ -5807,7 +5829,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         transaction: PersistentTransaction
     ) -> Bool {
         transaction.inputs.contains { txo in
-            txo.walletId == walletId
+            // Resolved, not raw: a legacy TXO with an empty denormalized
+            // `walletId` is still our coin, and reading it as "not ours" turns
+            // a real spend into an unfunded transaction — the sweep then skips
+            // it and can still stamp the contact, losing the payment for the
+            // process lifetime.
+            Self.resolvedWalletId(of: txo) == walletId
                 && txo.account.map { $0.accountType != dashpayExternalAccountTypeTag } ?? true
         }
     }

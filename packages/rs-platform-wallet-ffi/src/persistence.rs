@@ -720,6 +720,13 @@ pub struct PersistenceCallbacks {
     /// [`Self::on_list_wallet_core_txids_fn`]. Rust invokes this with
     /// the same pointers and txid count, exactly once per successful
     /// hit.
+    ///
+    /// Ownership transfers on success ONLY: when the enumeration callback
+    /// returns non-zero, Rust does not call this and the host keeps
+    /// whatever it allocated (same contract as
+    /// [`Self::on_load_wallet_list_free_fn`]). On success it is called
+    /// whenever either output pointer is non-null, so a host that emits
+    /// only one of the two buffers still gets it released.
     pub on_list_wallet_core_txids_free_fn: Option<
         unsafe extern "C" fn(
             context: *mut c_void,
@@ -2821,11 +2828,30 @@ impl PlatformWalletPersistence for FFIPersister {
         }
         impl Drop for TxidBytesGuard {
             fn drop(&mut self) {
-                if let (Some(free), false) = (self.free_fn, self.txids.is_null()) {
+                // Either output pointer being non-null means the host handed
+                // over an allocation. Gating on `txids` alone would leak a
+                // flags-only buffer from a malformed but successful callback.
+                if let (Some(free), true) =
+                    (self.free_fn, !self.txids.is_null() || !self.flags.is_null())
+                {
                     unsafe { free(self.ctx, self.txids, self.flags, self.count) };
                 }
             }
         }
+
+        // Ownership transfers on success only — the same contract
+        // `on_load_wallet_list_fn` documents and `load` implements by building
+        // its guard after the status check. Installing the guard first would
+        // free a buffer the host still owns on the failure path, which is a
+        // double free for any host that cleans up its own failed allocation.
+        if rc != 0 {
+            return Err(PersistenceError::backend(format!(
+                "on_list_wallet_core_txids_fn returned non-zero status {rc}"
+            )));
+        }
+
+        // Success: ownership is ours now, and every return below must release
+        // it — including the error paths that reject a malformed buffer.
         let _txid_guard = TxidBytesGuard {
             txids: txids_ptr,
             flags: flags_ptr,
@@ -2834,11 +2860,6 @@ impl PlatformWalletPersistence for FFIPersister {
             ctx: self.callbacks.context,
         };
 
-        if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_list_wallet_core_txids_fn returned non-zero status {rc}"
-            )));
-        }
         if txids_ptr.is_null() || count == 0 {
             return Ok(Vec::new());
         }

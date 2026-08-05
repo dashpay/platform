@@ -182,6 +182,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         for (owner, contact) in to_mark {
             if let Some(managed) = info.identity_manager.managed_identity_mut(&owner) {
                 managed.dashpay_rescan_triggered_mut().insert(contact);
+                // Arm the completeness mark whenever the tip was actually
+                // rewound: until the backfill climbs back to `synced_height`
+                // as it stood a moment ago, the wallet's transaction table is
+                // still being filled and no snapshot of it is conclusive.
+                // Keep the highest target if several rescans overlap — the
+                // last one to finish is the one that matters.
+                if floor.is_some() {
+                    let target = managed.dashpay_rescan_backfill_target_mut();
+                    *target = Some(target.map_or(synced_height, |cur| cur.max(synced_height)));
+                }
             }
         }
         if let Some(floor) = floor {
@@ -225,6 +235,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use crate::wallet::identity::types::dashpay::payment::PaymentStatus;
         use dashcore::ScriptBuf;
         use key_wallet::managed_account::address_pool::{AddressPool, KeySource};
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         use std::collections::{BTreeMap, BTreeSet};
 
         /// The `(owner identity, contact identity)` pair every reconstructed
@@ -539,6 +550,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // gates on `incomplete_scan`: a pass that could not read every
         // wallet-funded record (or could not derive a contact's historical
         // address range) has not proven anything about the records it missed.
+        // A non-empty enumeration is not proof that history is complete. This
+        // sweep runs on a timer and can snapshot the transaction table while a
+        // DashPay rescan is still delivering rows into it — one early row is
+        // enough to make `txid_count > 0` true. Certifying that snapshot would
+        // stamp the guard and ignore every row that lands afterwards, which is
+        // the same permanent-miss this pass exists to prevent, just narrower.
+        // So refuse to certify while the backfill has not climbed back to the
+        // tip it rewound from.
+        let synced_height = info.core_wallet.synced_height();
         if !incomplete_scan && txid_count > 0 {
             for window in &windows {
                 if write_failed_for.contains(&(window.owner, window.contact)) {
@@ -548,6 +568,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 else {
                     continue;
                 };
+                if managed
+                    .dashpay()
+                    .rescan_backfill_target
+                    .is_some_and(|target| synced_height < target)
+                {
+                    continue;
+                }
                 managed
                     .dashpay_sent_payment_reconcile_attempted_mut()
                     .insert(window.contact);
@@ -3517,6 +3544,107 @@ mod tests {
 
     /// Once a sweep has actually scanned transactions, repeating it is pure
     /// overhead — the guard stops the full walk on every later pass.
+    /// A rescan still delivering rows must not let the sweep certify the scan.
+    ///
+    /// `txid_count > 0` only says the snapshot was non-empty. The sweep runs
+    /// on a timer, so it can read the transaction table while the DashPay
+    /// backfill is mid-flight: one early row makes the count positive, the
+    /// guard gets stamped, and every row that arrives afterwards is ignored
+    /// for the rest of the process.
+    #[tokio::test]
+    async fn reconcile_sent_payments_from_tx_history_waits_for_the_rescan_backfill() {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::managed_account::transaction_record::OutputRole;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let persister = Arc::new(RecordStorePersister::default());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let p = WalletPersister::new(wallet_id, Arc::clone(&persister) as _);
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(bare_identity([0xAA; 32]), 0, wallet_id, &p)
+                .expect("add owner");
+        }
+
+        let contact_address = install_external_account(&manager, wallet_id, owner, contact)
+            .await
+            .remove(0);
+        let record = tx_record_with_outputs(
+            TransactionContext::InBlock(BlockInfo::new(40, BlockHash::all_zeros(), 0)),
+            vec![(contact_address, 30_000, OutputRole::Sent)],
+        );
+        persister
+            .records
+            .lock()
+            .unwrap()
+            .insert(record.txid, record);
+
+        // Backfill in flight: the tip was rewound from 1000 and has only
+        // climbed back to 500.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet.update_synced_height(500);
+            *info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .dashpay_rescan_backfill_target_mut() = Some(1000);
+        }
+
+        iw.dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+            .expect("reconcile");
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert!(
+                !info
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed")
+                    .dashpay()
+                    .sent_payment_reconcile_attempted
+                    .contains(&contact),
+                "a snapshot taken mid-backfill must not certify the contact"
+            );
+        }
+
+        // Backfill complete: the tip is back at the mark.
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet.update_synced_height(1000);
+        }
+        iw.dashpay()
+            .reconcile_sent_payments_from_tx_history()
+            .await
+            .expect("reconcile");
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert!(
+                info.identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed")
+                    .dashpay()
+                    .sent_payment_reconcile_attempted
+                    .contains(&contact),
+                "once the backfill reaches its mark the scan is conclusive"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn reconcile_sent_payments_from_tx_history_skips_repeat_sweeps_after_a_real_scan() {
         use dashcore::hashes::Hash;

@@ -158,6 +158,14 @@ impl ManagedIdentity {
         &mut self.dashpay.rescan_triggered
     }
 
+    /// Mutable access to the rescan backfill high-water mark.
+    ///
+    /// In-memory only — see [`DashPayState::rescan_backfill_target`] for why
+    /// sent-payment reconstruction cannot certify a scan below it.
+    pub fn dashpay_rescan_backfill_target_mut(&mut self) -> &mut Option<u32> {
+        &mut self.dashpay.rescan_backfill_target
+    }
+
     /// Mutable access to the deferred contact-crypto queue.
     ///
     /// The queue's dedup invariant (≤ 1 entry per

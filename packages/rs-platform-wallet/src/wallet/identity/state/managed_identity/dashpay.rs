@@ -127,6 +127,23 @@ pub struct DashPayState {
     /// backfill durable across a crash if that ever becomes necessary.
     pub rescan_triggered: BTreeSet<Identifier>,
 
+    /// SPV scan tip captured immediately before a DashPay rescan lowered it —
+    /// the height the backfill has to climb back to before the wallet's
+    /// transaction history covers the rewound range again.
+    ///
+    /// Sent-payment reconstruction reads this as its completeness signal. A
+    /// non-empty enumeration is NOT proof that history is complete: the sweep
+    /// runs on a timer and can snapshot the transaction table while the
+    /// backfill is still delivering rows into it. Certifying that snapshot
+    /// would stamp the per-launch guard and ignore every row that arrives
+    /// afterwards. While `synced_height` is below this mark the scan is
+    /// treated as incomplete instead.
+    ///
+    /// In-memory only, same contract as [`Self::rescan_triggered`]: a relaunch
+    /// clears it, and `synced_height` is restored at its monotonic high-water,
+    /// so an interrupted backfill re-triggers and re-arms this mark.
+    pub rescan_backfill_target: Option<u32>,
+
     /// DashPay contact-crypto ops the unattended background sweep enqueued for
     /// THIS identity but could not perform because key material was unavailable
     /// (watch-only / signer locked). Drained when a signer is available
