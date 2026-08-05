@@ -35,7 +35,7 @@ internal fun interface ClaimInvitationNativeCall {
         identityIndex: Int,
         pubkeysBlob: ByteArray,
         signerHandle: Long,
-        nowUnix: Int,
+        nowUnix: Long,
     ): IdentityRegistrationNativeResult
 }
 
@@ -291,7 +291,8 @@ class IdentityRegistration internal constructor(
         identityIndex: Int,
         keys: RegistrationKeySet,
         signerHandle: Long,
-        nowUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+        // Long for the same 2038 reason as Dashpay.createInvitation.
+        nowUnix: Long = System.currentTimeMillis() / 1000L,
     ): ByteArray = gate.op {
         require(identityIndex >= 0) { "identityIndex must be non-negative, got $identityIndex" }
         require(keys.identityIndex == identityIndex) {

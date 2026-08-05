@@ -55,12 +55,11 @@ use platform_wallet_ffi::{
     AccountAddressPoolFFI, AccountChangeSetFFI, AccountSpecFFI, AddressBalanceEntryFFI,
     AssetLockEntryFFI, ContactIgnoredSenderFFI, ContactProfileRestoreEntryFFI, ContactRequestFFI,
     ContactRequestRemovalFFI, CoreAddressEntryFFI, IdentityEntryFFI, IdentityKeyEntryFFI,
-    InvitationEntryFFI,
-    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, PaymentRestoreEntryFFI,
-    PersistenceCallbacks, PlatformAddressFFI, ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI,
-    TokenBalanceRemovalFFI, TokenBalanceUpsertFFI, TransactionRecordFFI,
-    UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI, UtxoRestoreEntryFFI, WalletChangeSetFFI,
-    WalletRestoreEntryFFI,
+    IdentityKeyRemovalFFI, IdentityKeyRestoreFFI, IdentityRestoreEntryFFI, InvitationEntryFFI,
+    PaymentRestoreEntryFFI, PersistenceCallbacks, PlatformAddressFFI,
+    ProviderSpecialTxRestoreEntryFFI, SpentOutPointFFI, TokenBalanceRemovalFFI,
+    TokenBalanceUpsertFFI, TransactionRecordFFI, UnresolvedAssetLockTxRecordFFI, UtxoEntryFFI,
+    UtxoRestoreEntryFFI, WalletChangeSetFFI, WalletRestoreEntryFFI,
 };
 use std::ffi::{c_void, CStr, CString};
 use std::os::raw::c_char;
@@ -4162,7 +4161,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ("onWalletChangesetHeader", "([BZIZJJJJ[B)I"),
     ("onWalletChangesetAccountBegin", "([BIBBII[B[BIZIZ)I"),
     ("onWalletChangesetAccountEnd", "([BI)I"),
-    ("onWalletChangesetUtxoAdded", "([B[BIJLjava/lang/String;[BIZZZZ)I"),
+    (
+        "onWalletChangesetUtxoAdded",
+        "([B[BIJLjava/lang/String;[BIZZZZ)I",
+    ),
     ("onWalletChangesetUtxoSpent", "([B[BI[B)I"),
     (
         "onWalletChangesetTransaction",
@@ -4206,7 +4208,10 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     #[cfg(feature = "shielded")]
     ("onPersistShieldedSyncedIndex", "([B[BIJ)I"),
     #[cfg(feature = "shielded")]
-    ("onPersistShieldedActivity", "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I"),
+    (
+        "onPersistShieldedActivity",
+        "([B[BI[BBBBJJZJZJ[BZ[B[B[B[B)I",
+    ),
     #[cfg(feature = "shielded")]
     ("onPersistShieldedViewingKey", "([B[BI[B)I"),
     (

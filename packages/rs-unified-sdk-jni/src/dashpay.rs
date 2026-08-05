@@ -988,7 +988,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
     funding_account_index: jint,
     inviter_identity_id: JByteArray,
     inviter_username: JString,
-    now_unix: jint,
+    now_unix: jlong,
     core_signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -1000,7 +1000,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
             crate::support::throw_sdk_exception(env, 1, "fundingAccountIndex must be non-negative");
             return ptr::null_mut();
         }
-        if now_unix <= 0 {
+        if !(1..=jlong::from(u32::MAX)).contains(&now_unix) {
             crate::support::throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
             return ptr::null_mut();
         }
@@ -1042,9 +1042,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
                 wallet_handle as Handle,
                 amount_duffs as u64,
                 funding_account_index as u32,
-                inviter_id
-                    .as_ref()
-                    .map_or(ptr::null(), |id| id.as_ptr()),
+                inviter_id.as_ref().map_or(ptr::null(), |id| id.as_ptr()),
                 username_c.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
                 now_unix as u32,
                 core_signer_handle as *mut MnemonicResolverHandle,
@@ -1055,8 +1053,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createI
         if take_pwffi_error(env, result) {
             return ptr::null_mut();
         }
-        let value = unsafe { opt_cstr(uri) }.unwrap_or_default();
+        let value = unsafe { opt_cstr(uri) };
         unsafe { platform_wallet_ffi::platform_wallet_string_free(uri) };
+        let Some(value) = value else {
+            // Success with no link is a broken invariant, not an empty
+            // result: the funded voucher is recorded (persistence callback)
+            // and reclaimable from the Sent list, but there is nothing to
+            // share — fail loudly instead of returning "".
+            crate::support::throw_sdk_exception(
+                env,
+                99,
+                "create succeeded but returned no link; the voucher is recorded and reclaimable",
+            );
+            return ptr::null_mut();
+        };
         new_jstring(env, value)
     })
 }
@@ -1083,7 +1093,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
     identity_index: jint,
     pubkeys_blob: JByteArray,
     signer_handle: jlong,
-    now_unix: jint,
+    now_unix: jlong,
 ) -> jobject {
     guard(&mut env, ptr::null_mut(), |env| {
         let uri_c = match opt_jstring_to_cstring(env, "uri", &uri) {
@@ -1100,6 +1110,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
         }
         if signer_handle == 0 {
             crate::support::throw_sdk_exception(env, 1, "signerHandle must be non-zero");
+            return ptr::null_mut();
+        }
+        // Same clock guard as createInvitation — the shared C API takes a
+        // u32; a negative or overflowing value must never wrap silently
+        // (the FFI itself ignores the claim timestamp, but the two
+        // invitation entry points stay consistent).
+        if !(1..=jlong::from(u32::MAX)).contains(&now_unix) {
+            crate::support::throw_sdk_exception(env, 1, "nowUnix must be a valid unix timestamp");
             return ptr::null_mut();
         }
         let Some(decoded) = decode_registration_pubkeys_blob(env, &pubkeys_blob) else {
@@ -1130,7 +1148,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
         let identity_id = match env.byte_array_from_slice(&out_id) {
             Ok(value) => value,
             Err(_) => {
-                crate::support::throw_sdk_exception(env, 99, "identity result byte[] allocation failed");
+                crate::support::throw_sdk_exception(
+                    env,
+                    99,
+                    "identity result byte[] allocation failed",
+                );
                 return ptr::null_mut();
             }
         };
@@ -1149,7 +1171,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_claimIn
             }
             Err(_) => {
                 let _ = env.exception_clear();
-                crate::support::throw_sdk_exception(env, 99, "identity result object allocation failed");
+                crate::support::throw_sdk_exception(
+                    env,
+                    99,
+                    "identity result object allocation failed",
+                );
                 ptr::null_mut()
             }
         }

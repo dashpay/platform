@@ -229,7 +229,7 @@ internal object DashpayNative {
         fundingAccountIndex: Int,
         inviterIdentityId: ByteArray?,
         inviterUsername: String?,
-        nowUnix: Int,
+        nowUnix: Long,
         coreSignerHandle: Long,
     ): String?
 
@@ -248,6 +248,6 @@ internal object DashpayNative {
         identityIndex: Int,
         pubkeysBlob: ByteArray,
         signerHandle: Long,
-        nowUnix: Int,
+        nowUnix: Long,
     ): IdentityRegistrationNativeResult
 }

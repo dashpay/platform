@@ -103,7 +103,21 @@ fun CreateInvitationSheet(
     var isCreating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var createdLink by remember { mutableStateOf<String?>(null) }
-    var didCopy by remember { mutableStateOf(false) }
+    val didCopy = remember { mutableStateOf(false) }
+
+    // The result stage renders the only shareable copy of the bearer link:
+    // block screenshots/recents thumbnails while it is visible, and keep
+    // the host's dismissal gate held (busy) until the user presses Done —
+    // an accidental scrim-tap would otherwise discard the link (the
+    // voucher stays reclaimable, but the share opportunity is gone).
+    val setSecureScreen = org.dashfoundation.example.LocalSecureScreen.current
+    androidx.compose.runtime.DisposableEffect(createdLink != null) {
+        if (createdLink != null) {
+            setSecureScreen(true)
+            onBusyChange(true)
+        }
+        onDispose { if (createdLink != null) setSecureScreen(false) }
+    }
 
     fun create() {
         if (isCreating) return
@@ -136,7 +150,10 @@ fun CreateInvitationSheet(
                 errorMessage = t.message ?: "Creating the invitation failed."
             } finally {
                 isCreating = false
-                onBusyChange(false)
+                // A successful create keeps the host's dismissal gate held
+                // through the link stage (released by Done); a failure
+                // releases it so the sheet can be dismissed with the error.
+                onBusyChange(createdLink != null)
             }
         }
     }
@@ -220,7 +237,7 @@ fun CreateInvitationSheet(
             Button(
                 onClick = {
                     val label = copyInvitationLinkSensitive(context, link)
-                    didCopy = true
+                    didCopy.value = true
                     // Compare-and-clear after ~60 s (iOS parity window):
                     // Android has no clipboard expiry, so clear it ourselves.
                     // Application scope — a composition scope dies with the
@@ -231,11 +248,16 @@ fun CreateInvitationSheet(
                     val appContext = context.applicationContext
                     container.applicationScope.launch {
                         delay(60_000)
-                        clearClipboardIfLabelMatches(appContext, label)
+                        if (clearClipboardIfLabelMatches(appContext, label)) {
+                            // The link left the clipboard — the button must
+                            // stop claiming otherwise. (Writing to dead
+                            // composition state is harmless.)
+                            didCopy.value = false
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.copy"),
-            ) { Text(if (didCopy) "Copied" else "Copy link") }
+            ) { Text(if (didCopy.value) "Copied" else "Copy link") }
             Text(
                 "The link contains a one-time key. Anyone who has it can claim the " +
                     "funds, so share it privately.",
@@ -277,14 +299,17 @@ private fun copyInvitationLinkSensitive(context: Context, link: String): String 
     return label
 }
 
-/** Clear the clipboard only if OUR exact copy (by label nonce) is still current. */
-private fun clearClipboardIfLabelMatches(context: Context, label: String) {
+/**
+ * Clear the clipboard only if OUR exact copy (by label nonce) is still
+ * current. Returns whether a clear happened.
+ */
+private fun clearClipboardIfLabelMatches(context: Context, label: String): Boolean {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    if (clipboard.primaryClipDescription?.label == label) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            clipboard.clearPrimaryClip()
-        } else {
-            clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
-        }
+    if (clipboard.primaryClipDescription?.label != label) return false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        clipboard.clearPrimaryClip()
+    } else {
+        clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
     }
+    return true
 }

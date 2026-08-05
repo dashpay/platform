@@ -433,7 +433,10 @@ class Dashpay internal constructor(private val walletHandle: Long,
         inviterIdentityId: ByteArray?,
         inviterUsername: String?,
         coreSignerHandle: Long,
-        nowUnix: Int = (System.currentTimeMillis() / 1000L).toInt(),
+        // Unix seconds as Long: the shared C API takes a u32, so an Int
+        // default would go negative in 2038 and be rejected by the JNI
+        // guard even though the API itself remains valid.
+        nowUnix: Long = System.currentTimeMillis() / 1000L,
     ): String = gate.op {
         require(amountDuffs > 0) { "amountDuffs must be positive, got $amountDuffs" }
         require(fundingAccountIndex >= 0) {

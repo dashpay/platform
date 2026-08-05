@@ -102,6 +102,7 @@ fun ReclaimInvitationSheet(
         val mgr = manager ?: run {
             errorMessage = "No wallet loaded."
             isReclaiming = false
+            onBusyChange(false)
             return
         }
         val dao = container.database.invitationDao()
@@ -140,8 +141,15 @@ fun ReclaimInvitationSheet(
                             coreSignerHandle = mgr.mnemonicResolverHandle,
                         )
                     } else {
+                        // Spans committed identities AND slots held by
+                        // in-flight registrations on the app-scoped
+                        // coordinator (no Room row exists for those yet).
+                        val heldByCoordinator = container.registrationCoordinator
+                            .controllers.value.keys
+                            .filter { it.walletIdHex == wallet.walletId.toHex() }
+                            .map { it.identityIndex }
                         val identityIndex = InvitationReclaimLogic.nextUnusedIdentityIndex(
-                            walletIdentities.map { it.identityIndex },
+                            walletIdentities.map { it.identityIndex } + heldByCoordinator,
                         )
                         // Pre-broadcast local work — BEFORE the marker, so a
                         // failure here leaves no in-flight marker. Base 4-key

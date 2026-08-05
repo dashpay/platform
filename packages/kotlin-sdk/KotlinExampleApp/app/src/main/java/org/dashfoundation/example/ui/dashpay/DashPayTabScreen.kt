@@ -161,27 +161,16 @@ fun DashPayTabScreen(navController: NavHostController) {
     var showClaimSheet by remember { mutableStateOf(false) }
     val pendingInvite by appUiState.pendingInviteUri.collectAsStateWithLifecycle()
     val claimInFlight by appUiState.invitationClaimInFlight.collectAsStateWithLifecycle()
+    // The parked URI is NOT cleared at seeding: it stays in AppUiState (the
+    // only holder that survives this tab leaving composition) until the
+    // claim actually starts or the user explicitly closes the sheet — an
+    // activity recreation between seeding and claim re-seeds from it.
     LaunchedEffect(pendingInvite, walletsMap, claimInFlight, showClaimSheet) {
         val uri = pendingInvite
         if (uri != null && walletsMap.isNotEmpty() && !claimInFlight && !showClaimSheet) {
-            appUiState.pendingInviteUri.value = null
             claimSheetUri = uri
             showClaimSheet = true
         }
-    }
-    // A QR scan launched from the claim sheet returns its raw string here
-    // (the shared scanner's savedStateHandle contract); park it through the
-    // same pending-invite path so the sheet reopens seeded with it.
-    val savedStateHandle = navController.currentBackStackEntry?.savedStateHandle
-    LaunchedEffect(savedStateHandle) {
-        savedStateHandle
-            ?.getStateFlow<String?>(org.dashfoundation.example.navigation.QrScanner.RESULT_KEY, null)
-            ?.collect { scanned ->
-                if (!scanned.isNullOrBlank()) {
-                    savedStateHandle[org.dashfoundation.example.navigation.QrScanner.RESULT_KEY] = null
-                    appUiState.pendingInviteUri.value = scanned
-                }
-            }
     }
 
     fun refresh() {
@@ -388,15 +377,29 @@ fun DashPayTabScreen(navController: NavHostController) {
     )
 
     if (showClaimSheet) {
-        ModalBottomSheet(onDismissRequest = { if (!claimInFlight) showClaimSheet = false }) {
+        // Closing without claiming is an explicit decline — release the
+        // parked URI so the sheet doesn't re-seed forever.
+        fun closeClaimSheet() {
+            appUiState.pendingInviteUri.value = null
+            showClaimSheet = false
+        }
+        ModalBottomSheet(onDismissRequest = { if (!claimInFlight) closeClaimSheet() }) {
             ClaimInvitationSheet(
                 initialUri = claimSheetUri,
                 preferredWalletIdHex = selectionReady?.activeIdentity?.walletId?.toHex(),
                 onScanRequest = {
+                    // Bearer scan: arm the in-memory sink so the result
+                    // bypasses SavedStateHandle (never written to disk) and
+                    // lands back in the parked-URI path, re-seeding this
+                    // sheet. The scanner clears the sink on delivery/cancel.
+                    appUiState.scanResultSink = { scanned ->
+                        appUiState.pendingInviteUri.value = scanned
+                    }
                     showClaimSheet = false
                     navController.navigate(org.dashfoundation.example.navigation.QrScanner)
                 },
-                onClose = { showClaimSheet = false },
+                onClaimStarted = { appUiState.pendingInviteUri.value = null },
+                onClose = { closeClaimSheet() },
             )
         }
     }

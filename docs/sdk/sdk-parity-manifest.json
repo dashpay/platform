@@ -695,14 +695,6 @@
           "id": "generic_resume_refuses_invitation_voucher_locks",
           "command": "cargo test -p platform-wallet generic_resume_refuses_invitation_voucher_locks",
           "covers_restart": false
-        },
-        {
-          "host": "kotlin",
-          "kind": "unit",
-          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityAssetLockRecoveryTest.kt",
-          "id": "registration resume forwards same outpoint and false voucher flag then frees handle",
-          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityAssetLockRecoveryTest*'",
-          "covers_restart": false
         }
       ]
     },

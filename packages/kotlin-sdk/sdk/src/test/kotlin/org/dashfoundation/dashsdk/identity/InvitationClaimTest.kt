@@ -21,7 +21,7 @@ class InvitationClaimTest {
         val destroyed = mutableListOf<Long>()
         var capturedUri: String? = null
         var capturedIndex = -1
-        var capturedNow = 0
+        var capturedNow = 0L
         val registration = IdentityRegistration(
             claimInvitationNative = ClaimInvitationNativeCall { _, uri, index, _, _, now ->
                 capturedUri = uri
@@ -38,12 +38,12 @@ class InvitationClaimTest {
             identityIndex = 4,
             keys = keySet(identityIndex = 4),
             signerHandle = 2,
-            nowUnix = 1_800_000_000,
+            nowUnix = 1_800_000_000L,
         )
 
         assertEquals("dashpay://invite?assetlocktx=aa&pk=bb", capturedUri)
         assertEquals(4, capturedIndex)
-        assertEquals(1_800_000_000, capturedNow)
+        assertEquals(1_800_000_000L, capturedNow)
         assertEquals(listOf(55L), destroyed)
         assertEquals(32, identityId.size)
         assertTrue(identityId.all { it == 9.toByte() })

@@ -59,6 +59,7 @@ fun ClaimInvitationSheet(
     initialUri: String? = null,
     preferredWalletIdHex: String? = null,
     onScanRequest: (() -> Unit)? = null,
+    onClaimStarted: () -> Unit = {},
     onClose: () -> Unit,
 ) {
     val container = LocalAppContainer.current
@@ -77,6 +78,11 @@ fun ClaimInvitationSheet(
 
     var uriText by remember { mutableStateOf(initialUri.orEmpty()) }
     var preview by remember { mutableStateOf(InvitationPreview.INVALID) }
+    // The exact URI the displayed preview was parsed from. The submit gate
+    // and claim() both key off THIS, never off the live field text — edits
+    // after a valid parse would otherwise leave a stale-valid preview
+    // enabling a claim of the newly typed, unvalidated URI.
+    var previewedUri by remember { mutableStateOf<String?>(null) }
     var isClaiming by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     // Post-claim "Add <username>?" prompt payload: (username, new identity id).
@@ -94,33 +100,49 @@ fun ClaimInvitationSheet(
             ?: walletsMap.values.firstOrNull()
     }
 
-    LaunchedEffect(uriText) {
+    // Keyed on claimWallet too: a deep-link-seeded sheet can compose before
+    // the wallet flows emit, and the preview must re-parse once one exists.
+    LaunchedEffect(uriText, claimWallet) {
         val trimmed = uriText.trim()
-        preview = if (trimmed.isEmpty()) {
+        val parsed = if (trimmed.isEmpty()) {
             InvitationPreview.INVALID
         } else {
             claimWallet?.dashpay?.let { runCatching { it.parseInvitation(trimmed) }.getOrNull() }
                 ?: InvitationPreview.INVALID
         }
+        preview = parsed
+        previewedUri = trimmed.takeIf { parsed.structurallyValid }
     }
 
-    val canClaim = !isClaiming && preview.structurallyValid && claimWallet != null
+    val canClaim = !isClaiming && claimWallet != null &&
+        previewedUri != null && previewedUri == uriText.trim()
 
     fun claim() {
         if (!canClaim || isClaiming) return
         val wallet = claimWallet ?: return
         val mgr = manager ?: return
-        val uri = uriText.trim()
+        // Submit only the URI the displayed preview validated.
+        val uri = previewedUri ?: return
         isClaiming = true
         appUiState.invitationClaimInFlight.value = true
+        // The claim owns the URI from here — release the parked copy.
+        onClaimStarted()
         errorMessage = null
         container.applicationScope.launch {
             try {
                 val newIdentityId = withContext(NonCancellable) {
+                    // Next-unused spans BOTH committed identities (Room) and
+                    // slots held by in-flight registrations on the app-scoped
+                    // coordinator — a concurrent create-identity flow holds
+                    // its slot before any Room row exists.
+                    val heldByCoordinator = container.registrationCoordinator
+                        .controllers.value.keys
+                        .filter { it.walletIdHex == wallet.walletId.toHex() }
+                        .map { it.identityIndex }
                     val identityIndex = InvitationReclaimLogic.nextUnusedIdentityIndex(
                         walletOwned
                             .filter { it.walletId?.contentEquals(wallet.walletId) == true }
-                            .map { it.identityIndex },
+                            .map { it.identityIndex } + heldByCoordinator,
                     )
                     // Full fresh-registration set: base four + the DashPay
                     // enc/dec pair, pre-persisted before the broadcast.
