@@ -1,6 +1,9 @@
 /// The estimated costs for a contract insert
 mod add_estimation_costs_for_contract_insertion;
 
+use crate::drive::document::ranked_index_tree_type::{
+    non_indexed_mirror_tree_type, ranked_axes_for_index_level_info, ranked_property_name_tree_type,
+};
 use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
 use grovedb::TreeType;
 
@@ -44,6 +47,19 @@ impl TreeTypeWeights {
             TreeType::ProvableCountProvableSumTree => {
                 self.provable_count_provable_sum =
                     self.provable_count_provable_sum.saturating_add(1)
+            }
+            // Ranked (indexed) index trees — grovedb PR 657. `EstimatedSumTrees`
+            // has no indexed weight slots, so each one is tallied under its
+            // non-indexed mirror. Byte-accurate for the per-node aggregate
+            // cost (an indexed primary reuses its mirror's node shape); the
+            // extra ~1 + 33*axes bytes an indexed *element* carries for its
+            // secondary root keys / axis TLV are not captured by any weight
+            // slot and are a known underestimate. See
+            // `estimated_sum_trees_for_value_tree_type` for the same note.
+            TreeType::ProvableCountIndexedTree
+            | TreeType::ProvableSumIndexedTree
+            | TreeType::ProvableCountProvableSumIndexedTree => {
+                self.tally(non_indexed_mirror_tree_type(tree_type))
             }
             // Other tree variants (e.g. CommitmentTree) don't appear at
             // the doctype's children layer — they're shielded-pool-only.
@@ -93,12 +109,20 @@ impl TreeTypeWeights {
 /// follow the same matrix the document-storage primary-key dispatcher
 /// uses, see
 /// [`crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType::primary_key_tree_type`].
+///
+/// A terminator that additionally declares a meta-schema-v3 `ranked*` axis
+/// gets the indexed mirror of whatever the table above picks — see
+/// [`crate::drive::document::ranked_index_tree_type`]. Estimation is the only
+/// consumer here, so a ranked index that somehow violates the
+/// `ranked ⇒ range` invariant degrades to the unranked estimate rather than
+/// aborting the fee calculation; the write path resolves the same pair through
+/// `property_name_tree_type_and_ranked_axes` and *does* fail closed there.
 pub(super) fn property_name_tree_type_from_flags(
     info: &dpp::data_contract::document_type::IndexLevelTypeInfo,
 ) -> TreeType {
     let summable = info.summable.is_some();
     let countable = info.countable.is_countable();
-    match (
+    let base = match (
         info.range_summable,
         info.range_countable,
         summable,
@@ -111,5 +135,7 @@ pub(super) fn property_name_tree_type_from_flags(
         (false, false, true, false) => TreeType::SumTree,
         (false, false, false, true) => TreeType::CountTree,
         (false, false, false, false) => TreeType::NormalTree,
-    }
+    };
+    let ranked_axes = ranked_axes_for_index_level_info(Some(info));
+    ranked_property_name_tree_type(base, &ranked_axes).unwrap_or(base)
 }
