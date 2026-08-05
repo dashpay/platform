@@ -16,6 +16,7 @@ import org.dashfoundation.dashsdk.persistence.dao.DataContractDao
 import org.dashfoundation.dashsdk.persistence.dao.DocumentDao
 import org.dashfoundation.dashsdk.persistence.dao.DpnsNameDao
 import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
+import org.dashfoundation.dashsdk.persistence.dao.IdentityIndexStateDao
 import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
@@ -39,6 +40,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DocumentEntity
 import org.dashfoundation.dashsdk.persistence.entities.DocumentTypeEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.IdentityIndexStateEntity
 import org.dashfoundation.dashsdk.persistence.entities.IndexEntity
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.KeywordEntity
@@ -113,7 +115,9 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * Version 9 (DIP-13 invitations): adds the `invitations` table (mirror of
  * the Swift `PersistentInvitation` model — push-persisted by the
  * `on_persist_invitations_fn` callback, no Rust rehydrate, no secret
- * column; the "Sent invitations" list reads it via a Room `Flow`).
+ * column; the "Sent invitations" list reads it via a Room `Flow`). Also
+ * adds the per-wallet monotonic identity-index state used to prevent a
+ * derived registration slot from being reused after process death.
  */
 @Database(
     version = 9,
@@ -127,6 +131,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         CoreAddressEntity::class,
         AssetLockEntity::class,
         InvitationEntity::class,
+        IdentityIndexStateEntity::class,
         IdentityEntity::class,
         PublicKeyEntity::class,
         DpnsNameEntity::class,
@@ -165,6 +170,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun coreAddressDao(): CoreAddressDao
     abstract fun assetLockDao(): AssetLockDao
     abstract fun invitationDao(): InvitationDao
+    abstract fun identityIndexStateDao(): IdentityIndexStateDao
     abstract fun identityDao(): IdentityDao
     abstract fun publicKeyDao(): PublicKeyDao
     abstract fun dpnsNameDao(): DpnsNameDao
@@ -510,6 +516,22 @@ abstract class DashDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` " +
                         "ON `invitations` (`walletId`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `identity_index_state` (" +
+                        "`walletId` BLOB NOT NULL, " +
+                        "`lastIssuedIndex` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`walletId`))",
+                )
+                db.execSQL(
+                    "INSERT INTO `identity_index_state` (`walletId`, `lastIssuedIndex`) " +
+                        "SELECT `walletId`, MAX(`identityIndex`) FROM (" +
+                        "SELECT `walletId`, `identityIndex` AS `identityIndex` " +
+                        "FROM `identities` WHERE `walletId` IS NOT NULL " +
+                        "UNION ALL " +
+                        "SELECT `walletId`, `identityIndexRaw` AS `identityIndex` " +
+                        "FROM `asset_locks` WHERE `fundingTypeRaw` = 0" +
+                        ") GROUP BY `walletId`",
                 )
             }
         }

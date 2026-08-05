@@ -45,9 +45,9 @@ data class InvitationEntity(
     /** Amount locked in the voucher (duffs). */
     val amountDuffs: Long,
     /** Advisory expiry (unix seconds); display-only, not consensus-enforced. */
-    val expiryUnix: Int,
+    val expiryUnix: Long,
     /** Creation time (unix seconds), from the Rust changeset. */
-    val createdAtSecs: Int,
+    val createdAtSecs: Long,
     /** Whether the link carried inviter info (contact-bootstrap opted in). */
     val hasInviter: Boolean,
     /**

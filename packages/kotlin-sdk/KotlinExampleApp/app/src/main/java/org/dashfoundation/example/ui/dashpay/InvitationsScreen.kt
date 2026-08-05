@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.toHex
 import java.text.DateFormat
@@ -55,6 +56,9 @@ import java.util.Date
 @Composable
 fun InvitationsScreen(activeIdentityIdHex: String? = null) {
     val container = LocalAppContainer.current
+    val appState = LocalAppState.current
+    val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val isSdkLoading by appState.isLoading.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
         manager?.wallets ?: MutableStateFlow(emptyMap<String, ManagedPlatformWallet>())
@@ -63,19 +67,55 @@ fun InvitationsScreen(activeIdentityIdHex: String? = null) {
     val allInvitations by remember {
         container.database.invitationDao().observeAll()
     }.collectAsStateWithLifecycle(emptyList())
+    val restorationState by container.dashPayActiveIdentityRestorationCoordinator.state
+        .collectAsStateWithLifecycle()
+    val invitationReady = invitationActionsReady(
+        selectedNetwork = network,
+        managerNetwork = manager?.network,
+        restorationState = restorationState,
+        hasLoadedWallet = walletsMap.isNotEmpty(),
+        isSdkLoading = isSdkLoading,
+    )
     // Only rows whose wallet is loaded — a foreign-network or unloaded
     // wallet's row can neither be shared again nor reclaimed here.
-    val invitations = remember(allInvitations, walletsMap) {
-        allInvitations.filter { walletsMap.containsKey(it.walletId.toHex()) }
+    val invitations = remember(allInvitations, walletsMap, invitationReady) {
+        if (invitationReady) {
+            allInvitations.filter { walletsMap.containsKey(it.walletId.toHex()) }
+        } else {
+            emptyList()
+        }
     }
+    val appUiState = container.appUiState
+    val createState by appUiState.createInvitation.collectAsStateWithLifecycle()
+    val reclaimState by appUiState.reclaimInvitation.collectAsStateWithLifecycle()
 
     var showCreateSheet by remember { mutableStateOf(false) }
-    var reclaimTarget by remember { mutableStateOf<InvitationEntity?>(null) }
-    // Funds are moving while a hosted sheet reports busy — the scrim-tap /
-    // back dismissal must be gated exactly like the sheets' own Cancel
-    // buttons, or a dismissal mid-create discards the only bearer link and
-    // a re-opened reclaim can double-submit.
-    var sheetBusy by remember { mutableStateOf(false) }
+    var reclaimTargetOutPoint by remember { mutableStateOf<String?>(null) }
+    val createBusy = createState is org.dashfoundation.example.state.AppUiState
+        .CreateInvitationState.InFlight ||
+        createState is org.dashfoundation.example.state.AppUiState
+            .CreateInvitationState.Ready
+    val reclaimBusy = reclaimState is org.dashfoundation.example.state.AppUiState
+        .ReclaimInvitationState.InFlight
+    val shouldShowCreate = showCreateSheet ||
+        createState !is org.dashfoundation.example.state.AppUiState.CreateInvitationState.Idle
+    val retainedReclaimOutPoint = when (val state = reclaimState) {
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.InFlight ->
+            state.snapshot.outPointHex
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Completed ->
+            state.outPointHex
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Failed ->
+            state.snapshot.outPointHex
+        else -> null
+    }
+    val displayedReclaimTarget = if (invitationReady) {
+        val requestedOutPoint = reclaimTargetOutPoint ?: retainedReclaimOutPoint
+        requestedOutPoint?.let { outPoint ->
+            allInvitations.firstOrNull { it.outPointHex == outPoint }
+        }
+    } else {
+        null
+    }
 
     Scaffold(
         topBar = {
@@ -84,7 +124,7 @@ fun InvitationsScreen(activeIdentityIdHex: String? = null) {
                 actions = {
                     IconButton(
                         onClick = { showCreateSheet = true },
-                        enabled = walletsMap.isNotEmpty(),
+                        enabled = invitationReady,
                         modifier = Modifier.testTag("dashpay.invitations.create"),
                     ) {
                         Icon(Icons.Default.Add, contentDescription = "Create invitation")
@@ -116,36 +156,44 @@ fun InvitationsScreen(activeIdentityIdHex: String? = null) {
                 items(invitations, key = { it.outPointHex }) { invitation ->
                     InvitationRow(
                         invitation = invitation,
-                        onReclaim = { reclaimTarget = invitation },
+                        onReclaim = { reclaimTargetOutPoint = invitation.outPointHex },
                     )
                 }
             }
         }
     }
 
-    if (showCreateSheet) {
-        ModalBottomSheet(onDismissRequest = { if (!sheetBusy) showCreateSheet = false }) {
+    if (shouldShowCreate && invitationReady) {
+        ModalBottomSheet(onDismissRequest = {
+            if (!createBusy) {
+                appUiState.clearCreateInvitation()
+                showCreateSheet = false
+            }
+        }) {
             CreateInvitationSheet(
                 preferredIdentityIdHex = activeIdentityIdHex,
-                onBusyChange = { sheetBusy = it },
+                onBusyChange = {},
                 onClose = {
-                    sheetBusy = false
                     showCreateSheet = false
                 },
             )
         }
     }
-    reclaimTarget?.let { invitation ->
+    displayedReclaimTarget?.let { invitation ->
         val wallet = walletsMap[invitation.walletId.toHex()]
         if (wallet != null) {
-            ModalBottomSheet(onDismissRequest = { if (!sheetBusy) reclaimTarget = null }) {
+            ModalBottomSheet(onDismissRequest = {
+                if (!reclaimBusy) {
+                    appUiState.clearInvitationReclaim()
+                    reclaimTargetOutPoint = null
+                }
+            }) {
                 ReclaimInvitationSheet(
                     invitation = invitation,
                     wallet = wallet,
-                    onBusyChange = { sheetBusy = it },
+                    onBusyChange = {},
                     onClose = {
-                        sheetBusy = false
-                        reclaimTarget = null
+                        reclaimTargetOutPoint = null
                     },
                 )
             }

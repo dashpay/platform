@@ -28,6 +28,7 @@ class IdentityRegistrationController(
     val fundingKind: FundingKind = FundingKind.AssetLock,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
+    private val onActivityChanged: () -> Unit = {},
 ) {
     /**
      * How this registration is funded. Drives which step set the progress
@@ -119,7 +120,7 @@ class IdentityRegistrationController(
 
     /** Transition to [Phase.PreparingKeys]; the caller calls this before [submit]. */
     fun enterPreparingKeys() {
-        _phase.value = Phase.PreparingKeys
+        setPhase(Phase.PreparingKeys)
     }
 
     /**
@@ -142,7 +143,7 @@ class IdentityRegistrationController(
             is Phase.Idle, is Phase.PreparingKeys, is Phase.Failed -> Unit
             is Phase.InFlight, is Phase.Completed, is Phase.Unconfirmed -> return
         }
-        _phase.value = Phase.InFlight
+        setPhase(Phase.InFlight)
         _failureStage.value = null
         lastSubmittedAt = now()
         terminalAt = null
@@ -150,18 +151,25 @@ class IdentityRegistrationController(
             try {
                 val identityId = body()
                 terminalAt = now()
-                _phase.value = Phase.Completed(identityId)
+                setPhase(Phase.Completed(identityId))
             } catch (e: Throwable) {
                 val unconfirmedId = isUnconfirmed(e)
                 if (unconfirmedId != null) {
                     terminalAt = now()
-                    _phase.value = Phase.Unconfirmed(unconfirmedId, e.message ?: "Confirmation pending")
+                    setPhase(
+                        Phase.Unconfirmed(unconfirmedId, e.message ?: "Confirmation pending"),
+                    )
                 } else {
                     _failureStage.value = if (isBroadcastRejected(e)) FailureStage.BroadcastRejected else null
                     terminalAt = now()
-                    _phase.value = Phase.Failed(e.message ?: "Registration failed")
+                    setPhase(Phase.Failed(e.message ?: "Registration failed"))
                 }
             }
         }
+    }
+
+    private fun setPhase(value: Phase) {
+        _phase.value = value
+        onActivityChanged()
     }
 }

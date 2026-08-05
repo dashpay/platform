@@ -21,6 +21,7 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
+import org.dashfoundation.example.state.AppUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -33,6 +34,81 @@ class DashPayActiveIdentityStoreTest {
 
     @get:Rule
     val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun invitationActionsWaitForTheSelectedNetworkManagerAndWalletRestoration() {
+        val ready = DashPayActiveIdentityRestorationState.Ready(Network.TESTNET)
+
+        assertTrue(
+            invitationActionsReady(
+                selectedNetwork = Network.TESTNET,
+                managerNetwork = Network.TESTNET,
+                restorationState = ready,
+                hasLoadedWallet = true,
+                isSdkLoading = false,
+            ),
+        )
+        assertTrue(
+            !invitationActionsReady(
+                selectedNetwork = Network.TESTNET,
+                managerNetwork = Network.MAINNET,
+                restorationState = ready,
+                hasLoadedWallet = true,
+                isSdkLoading = false,
+            ),
+        )
+        assertTrue(
+            !invitationActionsReady(
+                selectedNetwork = Network.TESTNET,
+                managerNetwork = Network.TESTNET,
+                restorationState = DashPayActiveIdentityRestorationState.Loading(Network.TESTNET),
+                hasLoadedWallet = true,
+                isSdkLoading = false,
+            ),
+        )
+        assertTrue(
+            !invitationActionsReady(
+                selectedNetwork = Network.TESTNET,
+                managerNetwork = Network.TESTNET,
+                restorationState = ready,
+                hasLoadedWallet = false,
+                isSdkLoading = false,
+            ),
+        )
+        assertTrue(
+            !invitationActionsReady(
+                selectedNetwork = Network.TESTNET,
+                managerNetwork = Network.TESTNET,
+                restorationState = ready,
+                hasLoadedWallet = true,
+                isSdkLoading = true,
+            ),
+        )
+    }
+
+    @Test
+    fun contactDecisionStatesBlockParentSheetDismissal() {
+        val identityId = ByteArray(32)
+        val prompt = AppUiState.ClaimInvitationState.ContactPrompt(
+            1,
+            Network.TESTNET.ffiValue,
+            "wallet",
+            identityId,
+            "alice",
+        )
+        val failed = AppUiState.ClaimInvitationState.ContactFailed(
+            1,
+            Network.TESTNET.ffiValue,
+            "wallet",
+            identityId,
+            "alice",
+            "Sending failed.",
+        )
+
+        assertTrue(claimSheetDismissBlocked(prompt))
+        assertTrue(claimSheetDismissBlocked(failed))
+        assertTrue(!claimSheetDismissBlocked(AppUiState.ClaimInvitationState.Idle))
+    }
 
     @Test
     fun chosenIdentitySurvivesDataStoreReconstructionAndRemainsActive() = runTest {

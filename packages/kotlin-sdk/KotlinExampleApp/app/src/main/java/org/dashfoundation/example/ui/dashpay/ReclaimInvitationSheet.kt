@@ -33,7 +33,6 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.dashpay.InvitationReclaimLogic.ReclaimOutcome
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDuffs
-import org.dashfoundation.example.util.toHex
 
 /**
  * Reclaim-invitation sheet — port of `ReclaimInvitationSheet.swift`. The
@@ -69,7 +68,10 @@ fun ReclaimInvitationSheet(
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val isSdkLoading by appState.isLoading.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    val appUiState = container.appUiState
+    val reclaimState by appUiState.reclaimInvitation.collectAsStateWithLifecycle()
 
     // Identities on THIS wallet (the reclaim targets for top-up, and the
     // used-slot set for the register arm's next-unused index).
@@ -80,145 +82,230 @@ fun ReclaimInvitationSheet(
         walletOwned.filter { it.walletId?.contentEquals(invitation.walletId) == true }
     }
 
-    var targetTopUp by remember { mutableStateOf(true) }
-    var selectedIdentityB58 by remember { mutableStateOf<String?>(null) }
+    val retainedSnapshot = when (val state = reclaimState) {
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.InFlight ->
+            state.snapshot
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Failed ->
+            state.snapshot
+        else -> null
+    }?.takeIf { it.outPointHex == invitation.outPointHex }
+    var targetTopUp by remember(invitation.outPointHex) {
+        mutableStateOf(
+            retainedSnapshot == null ||
+                retainedSnapshot.target is org.dashfoundation.example.state.AppUiState
+                    .ReclaimTarget.TopUp,
+        )
+    }
+    var selectedIdentityB58 by remember(invitation.outPointHex) {
+        mutableStateOf(
+            (retainedSnapshot?.target as? org.dashfoundation.example.state.AppUiState
+                .ReclaimTarget.TopUp)?.identityId?.let(Base58::encode),
+        )
+    }
     val selectedIdentity = remember(walletIdentities, selectedIdentityB58) {
         walletIdentities.firstOrNull { Base58.encode(it.identityId) == selectedIdentityB58 }
             ?: walletIdentities.firstOrNull()
     }
-    var isReclaiming by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var infoMessage by remember { mutableStateOf<String?>(null) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    val isReclaiming = reclaimState is org.dashfoundation.example.state.AppUiState
+        .ReclaimInvitationState.InFlight
+    val stateForRow = when (val state = reclaimState) {
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Completed ->
+            state.takeIf { it.outPointHex == invitation.outPointHex }
+        is org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Failed ->
+            state.takeIf { it.snapshot.outPointHex == invitation.outPointHex }
+        else -> null
+    }
+    val errorMessage =
+        (stateForRow as? org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Failed)
+            ?.safeError ?: validationError
+    val infoMessage =
+        (stateForRow as? org.dashfoundation.example.state.AppUiState.ReclaimInvitationState.Completed)
+            ?.message
 
-    val canReclaim = !isReclaiming && invitation.statusRaw == 0 &&
-        (!targetTopUp || selectedIdentity != null)
+    val managerReady = !isSdkLoading && manager?.network == network
+    val canReclaim = managerReady && canSubmitInvitationReclaim(
+        isReclaiming = isReclaiming,
+        statusRaw = invitation.statusRaw,
+        targetTopUp = targetTopUp,
+        hasSelectedIdentity = selectedIdentity != null,
+        completedForRow = stateForRow is org.dashfoundation.example.state.AppUiState
+            .ReclaimInvitationState.Completed,
+    )
 
     fun reclaim() {
         if (!canReclaim || isReclaiming) return
-        isReclaiming = true
-        onBusyChange(true)
-        errorMessage = null
-        infoMessage = null
         val mgr = manager ?: run {
-            errorMessage = "No wallet loaded."
-            isReclaiming = false
-            onBusyChange(false)
+            validationError = "No wallet loaded."
             return
         }
         val dao = container.database.invitationDao()
         val hex = invitation.outPointHex
+        val reclaimAsTopUp = targetTopUp
+        val targetIdentity = selectedIdentity
+        val snapshot = org.dashfoundation.example.state.AppUiState.ReclaimSnapshot(
+            networkRaw = network.ffiValue,
+            outPointHex = hex,
+            target = if (reclaimAsTopUp) {
+                org.dashfoundation.example.state.AppUiState.ReclaimTarget.TopUp(
+                    checkNotNull(targetIdentity).identityId.copyOf(),
+                )
+            } else {
+                org.dashfoundation.example.state.AppUiState.ReclaimTarget.Register
+            },
+        )
+        val operationId = appUiState.beginInvitationReclaim(snapshot) ?: return
+        validationError = null
+        onBusyChange(true)
         container.applicationScope.launch {
             var hadPriorReclaimInFlight = false
             try {
                 withContext(NonCancellable) {
-                    val (txid, vout) = InvitationReclaimLogic.outPointParts(invitation.rawOutPoint)
-
-                    // Persist the in-flight marker ONLY immediately before the
-                    // on-chain consume — never before pre-broadcast local work.
-                    // The write must SUCCEED before the consume may run (an
-                    // unpersisted marker + consume + crash would strand the
-                    // row). The persisted prior value is captured first: it is
-                    // what downgrades a later "already consumed" from
-                    // "provably a foreign claim" to "explicitly ambiguous".
-                    suspend fun markInFlight() {
-                        hadPriorReclaimInFlight =
-                            dao.getByOutPointHex(hex)?.reclaimInFlight ?: false
-                        val updated = dao.setReclaimInFlight(hex, true, System.currentTimeMillis())
-                        check(updated == 1) {
-                            "invitation row vanished before the reclaim marker landed"
-                        }
-                    }
-
-                    if (targetTopUp) {
-                        val identity = selectedIdentity
-                            ?: error("Pick an identity to top up.")
-                        markInFlight()
-                        mgr.identityCredits.reclaimInvitationAsTopUp(
-                            walletHandle = wallet.handle,
-                            identityId = identity.identityId,
-                            outPointTxid = txid,
-                            outPointVout = vout,
-                            coreSignerHandle = mgr.mnemonicResolverHandle,
-                        )
+                    val permit = if (reclaimAsTopUp) {
+                        container.registrationCoordinator.beginInvitationOperation(wallet.walletId)
                     } else {
-                        // Spans committed identities AND slots held by
-                        // in-flight registrations on the app-scoped
-                        // coordinator (no Room row exists for those yet).
-                        val heldByCoordinator = container.registrationCoordinator
-                            .controllers.value.keys
-                            .filter { it.walletIdHex == wallet.walletId.toHex() }
-                            .map { it.identityIndex }
-                        val identityIndex = InvitationReclaimLogic.nextUnusedIdentityIndex(
-                            walletIdentities.map { it.identityIndex } + heldByCoordinator,
-                        )
-                        // Pre-broadcast local work — BEFORE the marker, so a
-                        // failure here leaves no in-flight marker. Base 4-key
-                        // set: a reclaim sends no contact request (iOS
-                        // authKeyCount = 4).
-                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
-                            walletHandle = wallet.handle,
-                            mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                            identityIndex = identityIndex,
-                            count = org.dashfoundation.dashsdk.identity.RegistrationKeys
-                                .keyCount(includeDashPayKeys = false),
-                        )
-                        val keySet = DashpayKeyProvisioning.provision(
-                            previews = previews,
-                            includeDashPayKeys = false,
-                            walletId = wallet.walletId,
-                            persister = { keyHex, priv, owner ->
-                                container.walletStorage.storePrivateKey(
-                                    keyHex, priv, ownerWalletId = owner,
-                                )
-                            },
-                        )
-                        markInFlight()
-                        mgr.identityRegistration.reclaimInvitationAsNewIdentity(
-                            walletHandle = wallet.handle,
-                            outPointTxid = txid,
-                            outPointVout = vout,
-                            identityIndex = identityIndex,
-                            keys = keySet,
-                            signerHandle = mgr.signerHandle,
-                            coreSignerHandle = mgr.mnemonicResolverHandle,
-                        )
+                        container.registrationCoordinator.beginInvitationRegistration(wallet.walletId)
                     }
+                    try {
+                        check(container.isCurrentInvitationManager(snapshot.networkRaw, mgr)) {
+                            "The active invitation manager changed."
+                        }
+                        val (txid, vout) =
+                            InvitationReclaimLogic.outPointParts(invitation.rawOutPoint)
 
-                    // Room is the UI source: flip the local row to Reclaimed
-                    // and clear the marker in one statement.
-                    dao.setStatusAndMarker(hex, 2, false, System.currentTimeMillis())
+                        suspend fun markInFlight() {
+                            hadPriorReclaimInFlight =
+                                dao.getByOutPointHex(hex)?.reclaimInFlight ?: false
+                            val updated =
+                                dao.setReclaimInFlight(hex, true, System.currentTimeMillis())
+                            check(updated == 1) {
+                                "invitation row vanished before the reclaim marker landed"
+                            }
+                        }
+
+                        if (reclaimAsTopUp) {
+                            val identity = targetIdentity
+                                ?: error("Pick an identity to top up.")
+                            markInFlight()
+                            mgr.identityCredits.reclaimInvitationAsTopUp(
+                                walletHandle = wallet.handle,
+                                identityId = identity.identityId,
+                                outPointTxid = txid,
+                                outPointVout = vout,
+                                coreSignerHandle = mgr.mnemonicResolverHandle,
+                            )
+                        } else {
+                            val identityIndex = checkNotNull(permit.identityIndex)
+                            val previews = mgr.identityRegistration.previewRegistrationKeySet(
+                                walletHandle = wallet.handle,
+                                mnemonicResolverHandle = mgr.mnemonicResolverHandle,
+                                identityIndex = identityIndex,
+                                count = org.dashfoundation.dashsdk.identity.RegistrationKeys
+                                    .keyCount(includeDashPayKeys = false),
+                            )
+                            val keySet = DashpayKeyProvisioning.provision(
+                                previews = previews,
+                                includeDashPayKeys = false,
+                                walletId = wallet.walletId,
+                                persister = { keyHex, priv, owner ->
+                                    container.walletStorage.storePrivateKey(
+                                        keyHex, priv, ownerWalletId = owner,
+                                    )
+                                },
+                            )
+                            markInFlight()
+                            mgr.identityRegistration.reclaimInvitationAsNewIdentity(
+                                walletHandle = wallet.handle,
+                                outPointTxid = txid,
+                                outPointVout = vout,
+                                identityIndex = identityIndex,
+                                keys = keySet,
+                                signerHandle = mgr.signerHandle,
+                                coreSignerHandle = mgr.mnemonicResolverHandle,
+                            )
+                        }
+
+                        check(
+                            dao.setStatusAndMarker(
+                                hex,
+                                2,
+                                false,
+                                System.currentTimeMillis(),
+                            ) == 1,
+                        ) { "invitation row vanished before reclaim completion was saved" }
+                    } finally {
+                        container.registrationCoordinator.endInvitationOperation(permit)
+                    }
                 }
-                onClose()
+                appUiState.completeInvitationReclaim(
+                    operationId,
+                    "The invitation was reclaimed into identity credits.",
+                )
             } catch (t: Throwable) {
                 when (InvitationReclaimLogic.classifyReclaimFailure(t, hadPriorReclaimInFlight)) {
                     ReclaimOutcome.RECLAIMED -> {
-                        dao.setStatusAndMarker(hex, 2, false, System.currentTimeMillis())
-                        infoMessage = "This invitation was already reclaimed by this " +
-                            "wallet. The credits were delivered to the target selected " +
-                            "for that reclaim."
+                        val updated =
+                            dao.setStatusAndMarker(hex, 2, false, System.currentTimeMillis())
+                        if (updated == 1) {
+                            appUiState.completeInvitationReclaim(
+                                operationId,
+                                "This invitation was already reclaimed by this wallet. " +
+                                    "The credits were delivered to the target selected " +
+                                    "for that reclaim.",
+                            )
+                        } else {
+                            appUiState.failInvitationReclaim(
+                                operationId,
+                                "The invitation row vanished while saving reclaimed status.",
+                            )
+                        }
                     }
                     ReclaimOutcome.CLAIMED -> {
                         // Neutral copy — the claimant is intentionally not named.
-                        dao.setStatusAndMarker(hex, 1, false, System.currentTimeMillis())
-                        infoMessage = "This invitation was already claimed."
+                        val updated =
+                            dao.setStatusAndMarker(hex, 1, false, System.currentTimeMillis())
+                        if (updated == 1) {
+                            appUiState.completeInvitationReclaim(
+                                operationId,
+                                "This invitation was already claimed.",
+                            )
+                        } else {
+                            appUiState.failInvitationReclaim(
+                                operationId,
+                                "The invitation row vanished while saving claimed status.",
+                            )
+                        }
                     }
                     ReclaimOutcome.CONSUMED_AMBIGUOUS -> {
                         // Provably consumed, but attribution is unknowable with
                         // our own attempt in flight — conservative terminal
                         // Claimed, never an inferred Reclaimed.
-                        dao.setStatusAndMarker(hex, 1, false, System.currentTimeMillis())
-                        infoMessage = "This invitation was already consumed — by the " +
-                            "invitee's claim, or possibly by your own earlier " +
-                            "interrupted reclaim. If that reclaim went through, the " +
-                            "credits were delivered to the target you selected then."
+                        val updated =
+                            dao.setStatusAndMarker(hex, 1, false, System.currentTimeMillis())
+                        if (updated == 1) {
+                            appUiState.completeInvitationReclaim(
+                                operationId,
+                                "This invitation was already consumed — by the " +
+                                    "invitee's claim, or possibly by your own earlier " +
+                                    "interrupted reclaim. If that reclaim went through, " +
+                                    "the credits were delivered to the target selected then.",
+                            )
+                        } else {
+                            appUiState.failInvitationReclaim(
+                                operationId,
+                                "The invitation row vanished while saving consumed status.",
+                            )
+                        }
                     }
                     ReclaimOutcome.UNTRACKED_AFTER_OWN_ATTEMPT -> {
                         // No on-chain proof of consumption at all — status and
                         // marker stay untouched; surface the ambiguity.
-                        errorMessage = "This voucher is no longer tracked by the wallet " +
-                            "after an earlier interrupted reclaim attempt. It may " +
-                            "already have been consumed by that attempt — check the " +
-                            "balance of the identity you targeted then before retrying."
+                        appUiState.failInvitationReclaim(
+                            operationId,
+                            "This voucher is no longer tracked by the wallet after an " +
+                                "earlier interrupted reclaim attempt. It may already have " +
+                                "been consumed — check the target identity balance before retrying.",
+                        )
                     }
                     ReclaimOutcome.ERROR -> {
                         if (InvitationReclaimLogic.shouldClearInFlightMarker(
@@ -228,14 +315,25 @@ fun ReclaimInvitationSheet(
                             // This attempt set the marker itself and then failed
                             // the LOCAL resume guard — the consume never started,
                             // so the freshly-set marker is demonstrably stale.
-                            dao.setReclaimInFlight(hex, false, System.currentTimeMillis())
+                            val updated = dao.setReclaimInFlight(
+                                hex,
+                                false,
+                                System.currentTimeMillis(),
+                            )
+                            if (updated != 1) {
+                                appUiState.failInvitationReclaim(
+                                    operationId,
+                                    "The invitation row vanished while clearing reclaim state.",
+                                )
+                                return@launch
+                            }
                         }
-                        errorMessage = t.message ?: "Reclaiming the invitation failed."
+                        appUiState.failInvitationReclaim(
+                            operationId,
+                            "Reclaiming the invitation failed.",
+                        )
                     }
                 }
-            } finally {
-                isReclaiming = false
-                onBusyChange(false)
             }
         }
     }
@@ -315,9 +413,26 @@ fun ReclaimInvitationSheet(
             }
         }
         TextButton(
-            onClick = { if (!isReclaiming) onClose() },
+            onClick = {
+                if (!isReclaiming) {
+                    appUiState.clearInvitationReclaim()
+                    onClose()
+                }
+            },
             enabled = !isReclaiming,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Cancel") }
     }
 }
+
+internal fun canSubmitInvitationReclaim(
+    isReclaiming: Boolean,
+    statusRaw: Int,
+    targetTopUp: Boolean,
+    hasSelectedIdentity: Boolean,
+    completedForRow: Boolean,
+): Boolean =
+    !isReclaiming &&
+        !completedForRow &&
+        statusRaw == 0 &&
+        (!targetTopUp || hasSelectedIdentity)

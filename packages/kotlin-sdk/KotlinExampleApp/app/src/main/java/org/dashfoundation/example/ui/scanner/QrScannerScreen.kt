@@ -50,6 +50,9 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import org.dashfoundation.example.navigation.QrScanner
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 /**
  * Camera QR scanner — port of `QRScannerView.swift` on CameraX + ML Kit
@@ -93,6 +96,12 @@ fun QrScannerScreen(navController: NavHostController) {
         if (sink != null) {
             appUiState.scanResultSink = null
             sink(raw)
+        } else if (isSensitiveInvitationQr(raw)) {
+            // The transient sink is lost on process recreation. Classify the
+            // content before the generic SavedStateHandle fallback so even a
+            // malformed bearer link remains memory-only.
+            appUiState.pendingInviteUri.value =
+                org.dashfoundation.example.state.SecretInvitationUri(raw)
         } else {
             navController.previousBackStackEntry
                 ?.savedStateHandle
@@ -230,6 +239,41 @@ fun QrScannerScreen(navController: NavHostController) {
             }
         }
     }
+}
+
+/**
+ * Returns true for any QR payload that may contain a DIP-13 bearer key.
+ *
+ * Transport matching is deliberately structural rather than parse-validity
+ * based: malformed links are still secrets. A `pk` query key is also enough
+ * to fail closed, including percent-encoded and mixed-case spellings.
+ */
+internal fun isSensitiveInvitationQr(raw: String): Boolean {
+    val value = raw.trim()
+    val lower = value.lowercase(Locale.ROOT)
+    val isCustomTransport = Regex("^dashpay://invite(?:[/?#]|$)")
+        .containsMatchIn(lower)
+    val isLegacyTransport = Regex(
+        "^https://invitations\\.dashpay\\.io/applink(?:[/?#]|$)",
+    ).containsMatchIn(lower)
+    if (isCustomTransport || isLegacyTransport) return true
+
+    val queryStart = value.indexOf('?')
+    if (queryStart < 0) return false
+    val queryEnd = value.indexOf('#', startIndex = queryStart + 1)
+        .takeIf { it >= 0 } ?: value.length
+    return value.substring(queryStart + 1, queryEnd)
+        .split('&', ';')
+        .any { parameter ->
+            val rawKey = parameter.substringBefore('=')
+            if (rawKey.equals("pk", ignoreCase = true)) {
+                true
+            } else {
+                runCatching {
+                    URLDecoder.decode(rawKey, StandardCharsets.UTF_8.name())
+                }.getOrNull()?.equals("pk", ignoreCase = true) == true
+            }
+        }
 }
 
 /** Run one camera frame through ML Kit; forward the first QR payload. */

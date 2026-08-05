@@ -53,6 +53,15 @@ interface IdentityDao {
         identityIndex: Int,
     ): Flow<List<IdentityEntity>>
 
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM identities WHERE walletId = :walletId " +
+            "AND identityIndex = :identityIndex)"
+    )
+    suspend fun existsByWalletAndIdentityIndex(walletId: ByteArray, identityIndex: Int): Boolean
+
+    @Query("SELECT MAX(identityIndex) FROM identities WHERE walletId = :walletId")
+    suspend fun maxIdentityIndex(walletId: ByteArray): Int?
+
     /** StorageRecordDetailViews: slot-only lookup. */
     @Query("SELECT * FROM identities WHERE identityIndex = :identityIndex")
     fun observeByIdentityIndex(identityIndex: Int): Flow<List<IdentityEntity>>

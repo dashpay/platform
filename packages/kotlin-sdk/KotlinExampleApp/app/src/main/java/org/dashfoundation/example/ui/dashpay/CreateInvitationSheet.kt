@@ -71,9 +71,11 @@ fun CreateInvitationSheet(
 ) {
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
+    val appUiState = container.appUiState
     val context = LocalContext.current
 
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val isSdkLoading by appState.isLoading.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
         manager?.wallets ?: kotlinx.coroutines.flow.MutableStateFlow(
@@ -100,9 +102,15 @@ fun CreateInvitationSheet(
 
     var amountText by remember { mutableStateOf("0.03") }
     var sendRequestBack by remember { mutableStateOf(true) }
-    var isCreating by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var createdLink by remember { mutableStateOf<String?>(null) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    val createState by appUiState.createInvitation.collectAsStateWithLifecycle()
+    val isCreating = createState is org.dashfoundation.example.state.AppUiState
+        .CreateInvitationState.InFlight
+    val errorMessage = (createState as? org.dashfoundation.example.state.AppUiState
+        .CreateInvitationState.Failed)?.safeError ?: validationError
+    val createdLink = (createState as? org.dashfoundation.example.state.AppUiState
+        .CreateInvitationState.Ready)?.uri?.reveal()
+    val managerReady = !isSdkLoading && manager?.network == network
     val didCopy = remember { mutableStateOf(false) }
 
     // The result stage renders the only shareable copy of the bearer link:
@@ -123,21 +131,36 @@ fun CreateInvitationSheet(
         if (isCreating) return
         val amountDuffs = parseDashToDuffs(amountText)
         if (amountDuffs == null || amountDuffs <= 0) {
-            errorMessage = "Enter a valid DASH amount."
+            validationError = "Enter a valid DASH amount."
             return
         }
-        val mgr = manager ?: run { errorMessage = "No wallet manager."; return }
+        validationError = null
+        val operationNetworkRaw = network.ffiValue
+        val operationId = appUiState.beginCreateInvitation(operationNetworkRaw) ?: return
+        val mgr = manager ?: run {
+            appUiState.failCreateInvitation(operationId, "No wallet manager.")
+            return
+        }
         val wallet = inviterIdentity?.walletId?.let { mgr.wallet(forWalletId = it) }
             ?: walletsMap.values.firstOrNull()
-            ?: run { errorMessage = "No wallet loaded."; return }
+            ?: run {
+                appUiState.failCreateInvitation(operationId, "No wallet loaded.")
+                return
+            }
         val withInviter = sendRequestBack && inviterUsername != null
-        isCreating = true
         onBusyChange(true)
-        errorMessage = null
         // Application scope: the L1 broadcast must not be cancelled by a
         // sheet teardown mid-flight.
         container.applicationScope.launch {
+            var permit: org.dashfoundation.example.services.RegistrationCoordinator
+                .InvitationOperationPermit? = null
             try {
+                permit = container.registrationCoordinator.beginInvitationOperation(
+                    wallet.walletId,
+                )
+                check(container.isCurrentInvitationManager(operationNetworkRaw, mgr)) {
+                    "The active invitation manager changed."
+                }
                 val link = wallet.dashpay.createInvitation(
                     amountDuffs = amountDuffs,
                     fundingAccountIndex = 0,
@@ -145,15 +168,11 @@ fun CreateInvitationSheet(
                     inviterUsername = if (withInviter) inviterUsername else null,
                     coreSignerHandle = mgr.mnemonicResolverHandle,
                 )
-                createdLink = link
+                appUiState.completeCreateInvitation(operationId, link)
             } catch (t: Throwable) {
-                errorMessage = t.message ?: "Creating the invitation failed."
+                appUiState.failCreateInvitation(operationId, "Creating the invitation failed.")
             } finally {
-                isCreating = false
-                // A successful create keeps the host's dismissal gate held
-                // through the link stage (released by Done); a failure
-                // releases it so the sheet can be dismissed with the error.
-                onBusyChange(createdLink != null)
+                permit?.let { container.registrationCoordinator.endInvitationOperation(it) }
             }
         }
     }
@@ -206,7 +225,7 @@ fun CreateInvitationSheet(
             }
             Button(
                 onClick = { create() },
-                enabled = !isCreating && walletsMap.isNotEmpty(),
+                enabled = !isCreating && walletsMap.isNotEmpty() && managerReady,
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.submit"),
             ) {
                 if (isCreating) {
@@ -248,12 +267,7 @@ fun CreateInvitationSheet(
                     val appContext = context.applicationContext
                     container.applicationScope.launch {
                         delay(60_000)
-                        if (clearClipboardIfLabelMatches(appContext, label)) {
-                            // The link left the clipboard — the button must
-                            // stop claiming otherwise. (Writing to dead
-                            // composition state is harmless.)
-                            didCopy.value = false
-                        }
+                        clearClipboardIfLabelMatches(appContext, label)
                     }
                 },
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.copy"),
@@ -265,7 +279,11 @@ fun CreateInvitationSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             TextButton(
-                onClick = onClose,
+                onClick = {
+                    appUiState.clearCreateInvitation()
+                    onBusyChange(false)
+                    onClose()
+                },
                 modifier = Modifier.fillMaxWidth().testTag("dashpay.invite.create.done"),
             ) { Text("Done") }
         }

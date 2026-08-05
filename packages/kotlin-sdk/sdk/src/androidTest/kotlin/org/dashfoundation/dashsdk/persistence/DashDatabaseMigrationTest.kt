@@ -319,14 +319,39 @@ class DashDatabaseMigrationTest {
     }
 
     /**
-     * v8 → v9 adds the DIP-13 `invitations` table (additive). The new table
+     * v8 → v9 adds the DIP-13 `invitations` table and identity-index high-water
+     * state (additive). The new invitation table
      * must accept a row under its `outPointHex` primary key, reject a
      * duplicate outpoint (upsert-in-place semantics rely on the PK), and
      * default nothing — every column is NOT NULL by schema.
      */
     @Test
-    fun migrate8To9AddsInvitationsTable() {
-        helper.createDatabase(dbName, 8).close()
+    fun migrate8To9AddsInvitationsAndSeedsIdentityIndexState() {
+        helper.createDatabase(dbName, 8).apply {
+            execSQL(
+                "INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, " +
+                    "syncedHeight, lastSynced, isImported, createdAt, lastUpdated) " +
+                    "VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "createdAt, lastUpdated, networkRaw, walletId, identityIndex) " +
+                    "VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, x'01', 4)",
+            )
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, " +
+                    "fundingTypeRaw, identityIndexRaw, accountIndexRaw, amountDuffs, " +
+                    "statusRaw, createdAt, updatedAt) " +
+                    "VALUES ('registration:0', x'01', x'AA', 0, 7, 0, 1, 0, 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, " +
+                    "fundingTypeRaw, identityIndexRaw, accountIndexRaw, amountDuffs, " +
+                    "statusRaw, createdAt, updatedAt) " +
+                    "VALUES ('invitation:0', x'01', x'BB', 3, 99, 0, 1, 0, 0, 0)",
+            )
+            close()
+        }
 
         val db = helper.runMigrationsAndValidate(dbName, 9, true, DashDatabase.MIGRATION_8_9)
         db.execSQL(
@@ -343,6 +368,12 @@ class DashDatabaseMigrationTest {
             assertEquals(3_000_000L, c.getLong(0))
             assertEquals(0, c.getInt(1))
             assertEquals(0, c.getInt(2))
+        }
+        db.query(
+            "SELECT lastIssuedIndex FROM identity_index_state WHERE walletId = x'01'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(7, c.getInt(0))
         }
         try {
             db.execSQL(

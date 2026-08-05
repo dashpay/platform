@@ -117,6 +117,14 @@ fun CreateIdentityScreen(navController: NavHostController) {
         selectedRecoveryLock = recoveryLocks.firstOrNull()
         if (fundingSource == CreateIdentityFundingSource.AssetLockResume) {
             selectedRecoveryLock?.let { identityIndexText = it.registrationIndex.toString() }
+        } else {
+            selectedWallet?.let { wallet ->
+                runCatching { coordinator.nextSafeIdentityIndex(wallet.walletId) }
+                    .onSuccess { identityIndexText = it.toString() }
+                    .onFailure {
+                        recoveryLoadError = "Failed to determine the next safe identity index"
+                    }
+            }
         }
     }
 
@@ -269,120 +277,81 @@ fun CreateIdentityScreen(navController: NavHostController) {
                             null
                         }
 
-                        // Step 1 (`.preparingKeys`): derive the full registration
-                        // key set in ONE pass, persist each private key to the
-                        // Keystore, and build the rich on-chain rows. Rust derives
-                        // keyId 0..N (base: MASTER auth, CRITICAL auth, HIGH auth,
-                        // TRANSFER/CRITICAL; plus the DashPay ENCRYPTION/DECRYPTION
-                        // pair on fresh funding), and the DPP role for each keyId
-                        // is stamped Kotlin-side by RegistrationKeys and shipped
-                        // over the wire. Fresh funding registers all 6 keys so the
-                        // new identity can send contact requests immediately;
-                        // asset-lock resume keeps the base 4 it originally
-                        // committed to on-chain (§ DashPay resume exclusion).
-                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
-                            walletHandle = wallet.handle,
-                            mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                            identityIndex = identityIndex,
-                            count = RegistrationKeys.keyCount(registerDashPayKeys),
-                        )
-                        val keySet = DashpayKeyProvisioning.provision(
-                            previews = previews,
-                            includeDashPayKeys = registerDashPayKeys,
+                        val fundingKind = when (submission.fundingSource) {
+                            CreateIdentityFundingSource.PlatformAddress ->
+                                IdentityRegistrationController.FundingKind.PlatformAddresses
+                            CreateIdentityFundingSource.ShieldedBalance ->
+                                IdentityRegistrationController.FundingKind.ShieldedPool
+                            else -> IdentityRegistrationController.FundingKind.AssetLock
+                        }
+                        coordinator.startRegistration(
                             walletId = wallet.walletId,
-                            // Prestored BEFORE the registration broadcasts: only
-                            // the owner index makes it reachable by wallet deletion
-                            // until the public_keys row commits.
-                            persister = { hex, priv, owner ->
-                                container.walletStorage.storePrivateKey(hex, priv, ownerWalletId = owner)
+                            identityIndex = identityIndex,
+                            fundingKind = fundingKind,
+                            reservationKind = if (
+                                submission.fundingSource == CreateIdentityFundingSource.AssetLockResume
+                            ) {
+                                org.dashfoundation.example.services.RegistrationCoordinator
+                                    .ReservationKind.AssetLockResume
+                            } else {
+                                org.dashfoundation.example.services.RegistrationCoordinator
+                                    .ReservationKind.Fresh
                             },
-                        )
-                        val keys = keySet.rows
-                        // Step 2: hand the single registration FFI entry point to
-                        // the coordinator as the body — no orchestration here. The
-                        // funding source picks which registration FFI runs (ID-01
-                        // Core asset lock vs ID-08 Platform addresses).
-                        when (submission.fundingSource) {
-                            CreateIdentityFundingSource.CoreBalance -> {
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
+                            body = {
+                                // Reserve the durable slot before deriving or
+                                // persisting any key material.
+                                val previews = mgr.identityRegistration.previewRegistrationKeySet(
+                                    walletHandle = wallet.handle,
+                                    mnemonicResolverHandle = mgr.mnemonicResolverHandle,
                                     identityIndex = identityIndex,
-                                    fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
-                                    body = {
+                                    count = RegistrationKeys.keyCount(registerDashPayKeys),
+                                )
+                                val keySet = DashpayKeyProvisioning.provision(
+                                    previews = previews,
+                                    includeDashPayKeys = registerDashPayKeys,
+                                    walletId = wallet.walletId,
+                                    persister = { hex, priv, owner ->
+                                        container.walletStorage.storePrivateKey(
+                                            hex,
+                                            priv,
+                                            ownerWalletId = owner,
+                                        )
+                                    },
+                                )
+                                when (submission.fundingSource) {
+                                    CreateIdentityFundingSource.CoreBalance ->
                                         mgr.identityRegistration.registerWithWalletFunding(
                                             walletHandle = wallet.handle,
                                             amountDuffs = amount
                                                 ?: error("A funding amount is required"),
                                             accountIndex = 0,
                                             identityIndex = identityIndex,
-                                            keys = keys,
+                                            keys = keySet.rows,
                                             signerHandle = mgr.signerHandle,
                                             coreSignerHandle = mgr.mnemonicResolverHandle,
                                         )
-                                    },
-                                )
-                            }
-                            CreateIdentityFundingSource.PlatformAddress -> {
-                                val inputs = platformInputs
-                                    ?: error("Platform funding inputs were not prepared")
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind =
-                                        IdentityRegistrationController.FundingKind.PlatformAddresses,
-                                    body = {
+                                    CreateIdentityFundingSource.PlatformAddress ->
                                         mgr.identityRegistration.registerFromAddresses(
                                             walletHandle = wallet.handle,
                                             identityIndex = identityIndex,
-                                            keys = keys,
+                                            keys = keySet.rows,
                                             signerHandle = mgr.signerHandle,
-                                            inputs = inputs,
+                                            inputs = platformInputs
+                                                ?: error("Platform funding inputs were not prepared"),
                                         )
-                                    },
-                                )
-                            }
-                            CreateIdentityFundingSource.ShieldedBalance -> {
-                                // Type-20: spend a fixed-denomination note from
-                                // the bound shielded pool. `amount` holds the
-                                // chosen denomination (credits) from the picker.
-                                // The 21-byte fallback failure address is REQUIRED
-                                // — build it from the wallet's first Platform-
-                                // payment address (1 variant tag + 20-byte hash),
-                                // the same (addressType, hash) pairing ID-08 feeds.
-                                val fallbackAddress = shieldedFallbackAddress
-                                    ?: error("Shielded fallback address was not prepared")
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind =
-                                        IdentityRegistrationController.FundingKind.ShieldedPool,
-                                    body = {
+                                    CreateIdentityFundingSource.ShieldedBalance ->
                                         mgr.shieldedIdentityCreateFromPool(
                                             walletId = wallet.walletId,
                                             identityIndex = identityIndex,
-                                            keys = keys,
+                                            keys = keySet.rows,
                                             denomination = amount
                                                 ?: error("A shielded denomination is required"),
-                                            fallbackAddress = fallbackAddress,
+                                            fallbackAddress = shieldedFallbackAddress
+                                                ?: error("Shielded fallback address was not prepared"),
                                         )
-                                    },
-                                    // Ambiguous broadcast: the identity may
-                                    // already be live — record Unconfirmed
-                                    // (slot held) instead of retryable Failed.
-                                    isUnconfirmed = {
-                                        (it as? org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed)
-                                            ?.identityId
-                                    },
-                                )
-                            }
-                            CreateIdentityFundingSource.AssetLockResume -> {
-                                val lock = submission.recoveryLock
-                                    ?: error("No resumable registration asset lock is selected")
-                                coordinator.startRegistration(
-                                    walletId = wallet.walletId,
-                                    identityIndex = identityIndex,
-                                    fundingKind = IdentityRegistrationController.FundingKind.AssetLock,
-                                    body = {
+                                    CreateIdentityFundingSource.AssetLockResume -> {
+                                        val lock = submission.recoveryLock
+                                            ?: error("No resumable registration asset lock is selected")
                                         IdentityAssetLockRecovery.submitRegistrationResume(lock) {
                                             mgr.identityRegistration.resumeWithExistingAssetLock(
                                                 walletHandle = wallet.handle,
@@ -393,10 +362,14 @@ fun CreateIdentityScreen(navController: NavHostController) {
                                                 coreSignerHandle = mgr.mnemonicResolverHandle,
                                             )
                                         }
-                                    },
-                                )
-                            }
-                        }
+                                    }
+                                }
+                            },
+                            isUnconfirmed = {
+                                (it as? org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedCreateUnconfirmed)
+                                    ?.identityId
+                            },
+                        )
                         navController.navigate(
                             RegistrationProgress(wallet.walletId.toHexString(), identityIndex),
                         )

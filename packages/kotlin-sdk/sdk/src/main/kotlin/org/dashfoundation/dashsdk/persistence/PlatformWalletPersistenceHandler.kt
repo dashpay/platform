@@ -1539,8 +1539,8 @@ class PlatformWalletPersistenceHandler(
         outPoint: ByteArray,
         fundingIndex: Int,
         amountDuffs: Long,
-        expiryUnix: Int,
-        createdAtSecs: Int,
+        expiryUnix: Long,
+        createdAtSecs: Long,
         hasInviter: Boolean,
         status: Int,
     ): Int = guarded {
@@ -2631,6 +2631,7 @@ class PlatformWalletPersistenceHandler(
             database.documentDao().deletePendingInputsByWallet(walletId)
             database.assetLockDao().deleteByWallet(walletId)
             database.invitationDao().deleteByWallet(walletId)
+            database.identityIndexStateDao().deleteByWallet(walletId)
             database.platformAddressDao().deleteByWallet(walletId)
             database.shieldedDao().deleteNotesByWallet(walletId)
             database.shieldedDao().deleteOutgoingNotesByWallet(walletId)

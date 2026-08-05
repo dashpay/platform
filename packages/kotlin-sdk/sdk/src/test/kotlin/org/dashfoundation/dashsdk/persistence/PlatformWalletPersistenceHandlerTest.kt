@@ -2616,6 +2616,8 @@ class PlatformWalletPersistenceHandlerTest {
     @Test
     fun invitationPersistRoundTripsEveryField() = runTest {
         val outpoint = makeOutpoint(ByteArray(32) { 50 }, 2)
+        val expiryUnix = 4_294_967_295L
+        val createdAtSecs = 2_147_483_648L
         handler.onChangesetBegin(walletId)
         assertEquals(
             0,
@@ -2624,8 +2626,8 @@ class PlatformWalletPersistenceHandlerTest {
                 outPoint = outpoint,
                 fundingIndex = 3,
                 amountDuffs = 3_000_000,
-                expiryUnix = 1_800_086_400,
-                createdAtSecs = 1_800_000_000,
+                expiryUnix = expiryUnix,
+                createdAtSecs = createdAtSecs,
                 hasInviter = true,
                 status = 0, // Created
             ),
@@ -2638,8 +2640,8 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(walletId.contentEquals(row.walletId))
         assertEquals(3, row.fundingIndexRaw)
         assertEquals(3_000_000L, row.amountDuffs)
-        assertEquals(1_800_086_400, row.expiryUnix)
-        assertEquals(1_800_000_000, row.createdAtSecs)
+        assertEquals(expiryUnix, row.expiryUnix)
+        assertEquals(createdAtSecs, row.createdAtSecs)
         assertTrue(row.hasInviter)
         assertEquals(0, row.statusRaw)
         assertFalse(row.reclaimInFlight)

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 9,
-    "identityHash": "cca6e723ae755b785f5b6f5b5bc108a3",
+    "identityHash": "8d1bf825554ba50ae50f8e2d26ecc0e9",
     "entities": [
       {
         "tableName": "wallets",
@@ -962,6 +962,30 @@
             "createSql": "CREATE INDEX IF NOT EXISTS `index_invitations_walletId` ON `${TABLE_NAME}` (`walletId`)"
           }
         ]
+      },
+      {
+        "tableName": "identity_index_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`walletId` BLOB NOT NULL, `lastIssuedIndex` INTEGER NOT NULL, PRIMARY KEY(`walletId`))",
+        "fields": [
+          {
+            "fieldPath": "walletId",
+            "columnName": "walletId",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastIssuedIndex",
+            "columnName": "lastIssuedIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "walletId"
+          ]
+        }
       },
       {
         "tableName": "identities",
@@ -4054,7 +4078,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cca6e723ae755b785f5b6f5b5bc108a3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8d1bf825554ba50ae50f8e2d26ecc0e9')"
     ]
   }
 }

@@ -55,12 +55,22 @@ fun SettingsScreen(navController: NavHostController) {
     // Gate the network picker while a registration holds a slot — switching
     // networks mid-flight tears down the FFI manager and would abort the
     // in-flight call (← RegistrationCoordinator.hasInFlightRegistrations
-    // driving the picker's `.disabled(_:)`). Observe the coordinator map so
-    // the gate re-evaluates as phases change.
-    val controllers by container.registrationCoordinator.controllers.collectAsStateWithLifecycle()
-    val registrationInFlight = remember(controllers) {
-        controllers.values.any { it.phase.value.isActive }
-    }
+    // driving the picker's `.disabled(_:)`). The coordinator's derived flow
+    // observes every controller phase, not just changes to the controller map.
+    val coordinatorInFlight by container.registrationCoordinator.inFlightRegistrations
+        .collectAsStateWithLifecycle()
+    val createInvitationState by container.appUiState.createInvitation.collectAsStateWithLifecycle()
+    val claimInvitationState by container.appUiState.claimInvitation.collectAsStateWithLifecycle()
+    val reclaimInvitationState by container.appUiState.reclaimInvitation.collectAsStateWithLifecycle()
+    val registrationInFlight = coordinatorInFlight ||
+        createInvitationState is org.dashfoundation.example.state.AppUiState
+            .CreateInvitationState.InFlight ||
+        claimInvitationState is org.dashfoundation.example.state.AppUiState
+            .ClaimInvitationState.InFlight ||
+        claimInvitationState is org.dashfoundation.example.state.AppUiState
+            .ClaimInvitationState.ContactSending ||
+        reclaimInvitationState is org.dashfoundation.example.state.AppUiState
+            .ReclaimInvitationState.InFlight
     val errorMessage by appState.errorMessage.collectAsStateWithLifecycle()
     val useDocker by appState.useDockerSetup.collectAsStateWithLifecycle()
 
@@ -85,10 +95,15 @@ fun SettingsScreen(navController: NavHostController) {
                     selected = network,
                     optionLabel = { it.displayName },
                     testTag = "settings.networkPicker",
+                    enabled = !registrationInFlight && !isLoading,
                 ) { selected ->
                     // Ignore selection while a registration is in flight — the
                     // note below explains why (1:1 with the iOS disabled gate).
-                    if (registrationInFlight) return@AccessiblePicker
+                    if (
+                        container.registrationCoordinator.hasInFlightRegistrations ||
+                        registrationInFlight ||
+                        isLoading
+                    ) return@AccessiblePicker
                     scope.launch {
                         appState.switchNetwork(
                             selected,
@@ -98,7 +113,7 @@ fun SettingsScreen(navController: NavHostController) {
                 }
                 if (registrationInFlight) {
                     Text(
-                        "Network switching is locked while an identity registration is in progress.",
+                        "Network switching is locked while an identity or invitation operation is in progress.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.testTag("settings.networkLocked"),

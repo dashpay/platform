@@ -47,6 +47,11 @@ class DataManager(private val db: DashDatabase) {
         when (category) {
             Category.WALLETS -> {
                 // Children first; wallets cascade accounts but be explicit.
+                db.invitationDao().deleteAll()
+                // Keep the identity-index high-water marks. Data management
+                // clears Room rows but does not erase the Keystore mnemonic,
+                // so the same wallet can be restored and must never reuse a
+                // previously issued DIP-9 derivation path.
                 db.accountDao().deleteAll()
                 db.walletDao().deleteAll()
                 db.walletManagerMetadataDao().deleteAll()

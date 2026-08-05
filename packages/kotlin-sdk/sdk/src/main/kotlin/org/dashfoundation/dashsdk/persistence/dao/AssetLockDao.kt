@@ -57,6 +57,13 @@ interface AssetLockDao {
     @Query("SELECT * FROM asset_locks WHERE walletId = :walletId AND statusRaw < 2")
     suspend fun getUnresolvedByWallet(walletId: ByteArray): List<AssetLockEntity>
 
+    /** Highest identity-registration slot represented by a tracked lock. */
+    @Query(
+        "SELECT MAX(identityIndexRaw) FROM asset_locks " +
+            "WHERE walletId = :walletId AND fundingTypeRaw = 0"
+    )
+    suspend fun maxIdentityRegistrationIndex(walletId: ByteArray): Int?
+
     /**
      * Resumable Platform-address top-up locks — `fundingTypeRaw == 4`
      * (AssetLockAddressTopUp) and `statusRaw ∈ [1, 3]` (Broadcast through

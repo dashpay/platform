@@ -489,7 +489,7 @@ abstract class NativePersistenceBridge {
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 
     /**
-     * One `InvitationEntryFFI` upsert. Descriptor `([B[BIJIIZI)I`.
+     * One `InvitationEntryFFI` upsert. Descriptor `([B[BIJJJZI)I`.
      *
      * A non-zero return fails the persist round: `create_invitation` treats
      * an unrecorded invitation row as a hard error (a funded voucher with no
@@ -506,8 +506,8 @@ abstract class NativePersistenceBridge {
         outPoint: ByteArray,
         fundingIndex: Int,
         amountDuffs: Long,
-        expiryUnix: Int,
-        createdAtSecs: Int,
+        expiryUnix: Long,
+        createdAtSecs: Long,
         hasInviter: Boolean,
         status: Int,
     ): Int = 0

@@ -2,11 +2,13 @@ package org.dashfoundation.example.services
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.persistence.IdentityIndexReservationStore
 import org.dashfoundation.example.services.IdentityRegistrationController.Phase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,6 +35,44 @@ class RegistrationCoordinatorTest {
     private val walletA = ByteArray(32) { 0xAA.toByte() }
     private val walletB = ByteArray(32) { 0xBB.toByte() }
 
+    private class FakeIndexStore : IdentityIndexReservationStore {
+        private val floors = mutableMapOf<List<Byte>, Int>()
+
+        override suspend fun nextSafeIndex(walletId: ByteArray): Int =
+            (floors[walletId.toList()] ?: -1) + 1
+
+        override suspend fun reserveNext(walletId: ByteArray): Int =
+            nextSafeIndex(walletId).also { floors[walletId.toList()] = it }
+
+        override suspend fun reserveFreshExact(walletId: ByteArray, identityIndex: Int) {
+            val key = walletId.toList()
+            check(identityIndex > (floors[key] ?: -1))
+            floors[key] = identityIndex
+        }
+
+        override suspend fun reserveResumeExact(walletId: ByteArray, identityIndex: Int) {
+            val key = walletId.toList()
+            floors[key] = maxOf(floors[key] ?: -1, identityIndex)
+        }
+    }
+
+    private class BlockingIndexStore : IdentityIndexReservationStore {
+        val reservationStarted = CompletableDeferred<Unit>()
+        val allowReservation = CompletableDeferred<Unit>()
+
+        override suspend fun nextSafeIndex(walletId: ByteArray): Int = 0
+
+        override suspend fun reserveNext(walletId: ByteArray): Int = 0
+
+        override suspend fun reserveFreshExact(walletId: ByteArray, identityIndex: Int) {
+            reservationStarted.complete(Unit)
+            allowReservation.await()
+        }
+
+        override suspend fun reserveResumeExact(walletId: ByteArray, identityIndex: Int) =
+            reserveFreshExact(walletId, identityIndex)
+    }
+
     /** Build a coordinator whose clock and scheduler are the test's virtual time. */
     private fun TestScope.coordinator(
         retentionMillis: Long = 30_000L,
@@ -40,10 +80,47 @@ class RegistrationCoordinatorTest {
     ): RegistrationCoordinator =
         RegistrationCoordinator(
             scope = this,
+            indexStore = FakeIndexStore(),
             retentionMillis = retentionMillis,
             pollMillis = pollMillis,
             now = { testScheduler.currentTime },
         )
+
+    @Test
+    fun `observable activity gate follows invitation permits`() = runTest {
+        val coordinator = coordinator()
+
+        val permit = coordinator.beginInvitationOperation(walletA)
+        runCurrent()
+        assertTrue(coordinator.inFlightRegistrations.value)
+
+        coordinator.endInvitationOperation(permit)
+        runCurrent()
+        assertFalse(coordinator.inFlightRegistrations.value)
+    }
+
+    @Test
+    fun `registration gate is active while durable slot reservation is suspended`() = runTest {
+        val indexStore = BlockingIndexStore()
+        val coordinator = RegistrationCoordinator(scope = this, indexStore = indexStore)
+        val registrationBody = CompletableDeferred<ByteArray>()
+
+        val start = async {
+            coordinator.startRegistration(walletA, 0, body = { registrationBody.await() })
+        }
+        indexStore.reservationStarted.await()
+
+        val synchronousGate = coordinator.hasInFlightRegistrations
+        val observableGate = coordinator.inFlightRegistrations.value
+
+        indexStore.allowReservation.complete(Unit)
+        start.await()
+        registrationBody.complete(ByteArray(32))
+        advanceUntilIdle()
+
+        assertTrue(synchronousGate)
+        assertTrue(observableGate)
+    }
 
     @Test
     fun `happy path walks idle to preparingKeys to inFlight to completed`() = runTest {
@@ -297,6 +374,48 @@ class RegistrationCoordinatorTest {
         gate.complete(ByteArray(32))
         advanceUntilIdle()
         // Completed is not active → gate opens (before the 30s sweep removes it).
+        assertFalse(coordinator.hasInFlightRegistrations)
+    }
+
+    @Test
+    fun `invitation reservation excludes a simultaneous normal exact slot`() = runTest {
+        val coordinator = coordinator()
+        val permit = coordinator.beginInvitationRegistration(walletA)
+        assertEquals(0, permit.identityIndex)
+
+        try {
+            coordinator.startRegistration(walletA, 0, body = { ByteArray(32) })
+            org.junit.Assert.fail("normal registration reused an invitation slot")
+        } catch (_: IllegalStateException) {
+        } finally {
+            coordinator.endInvitationOperation(permit)
+        }
+    }
+
+    @Test
+    fun `normal exact reservation advances the next invitation slot`() = runTest {
+        val gate = CompletableDeferred<ByteArray>()
+        val coordinator = coordinator()
+        coordinator.startRegistration(walletA, 0, body = { gate.await() })
+
+        val permit = coordinator.beginInvitationRegistration(walletA)
+        assertEquals(1, permit.identityIndex)
+        assertTrue(coordinator.hasInFlightRegistrations)
+
+        coordinator.endInvitationOperation(permit)
+        gate.complete(ByteArray(32))
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `invitation operation permit holds the network switch gate`() = runTest {
+        val coordinator = coordinator()
+        val permit = coordinator.beginInvitationOperation(walletA)
+
+        assertTrue(coordinator.hasInFlightRegistrations)
+        assertEquals(1, coordinator.invitationOperations.value.size)
+
+        coordinator.endInvitationOperation(permit)
         assertFalse(coordinator.hasInFlightRegistrations)
     }
 }

@@ -94,7 +94,12 @@ class AppContainer(private val context: Context) {
      * anyway. Its retention sweep runs on [applicationScope].
      */
     val registrationCoordinator =
-        org.dashfoundation.example.services.RegistrationCoordinator(applicationScope)
+        org.dashfoundation.example.services.RegistrationCoordinator(
+            scope = applicationScope,
+            indexStore = org.dashfoundation.dashsdk.persistence.RoomIdentityIndexReservationStore(
+                database,
+            ),
+        )
 
     /**
      * In-flight "fund a Platform address from an asset lock" attempts —
@@ -135,6 +140,7 @@ class AppContainer(private val context: Context) {
 
     private var spvOverlayJob: kotlinx.coroutines.Job? = null
     private var rebindJob: kotlinx.coroutines.Job? = null
+    private var invitationStateNetworkRaw: Int? = null
 
     /**
      * Activate the manager for the current SDK/network, load wallets, and
@@ -143,6 +149,16 @@ class AppContainer(private val context: Context) {
      */
     suspend fun activateManager() {
         val sdk = appState.sdk.value ?: return
+        val previousInvitationNetwork = invitationStateNetworkRaw
+        if (
+            previousInvitationNetwork != null &&
+            previousInvitationNetwork != sdk.network.ffiValue
+        ) {
+            // Clear before restoration: a failed manager activation must not
+            // leave the prior network's bearer or terminal state parked.
+            appUiState.clearInvitationStateForNetworkChange()
+        }
+        invitationStateNetworkRaw = sdk.network.ffiValue
         val manager = dashPayActiveIdentityRestorationCoordinator.restore(
             network = sdk.network,
             loadWallets = {

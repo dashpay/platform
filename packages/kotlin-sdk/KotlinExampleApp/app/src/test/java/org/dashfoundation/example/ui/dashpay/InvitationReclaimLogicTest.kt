@@ -168,4 +168,17 @@ class InvitationReclaimLogicTest {
             InvitationReclaimLogic.nextUnusedIdentityIndex(listOf(Int.MAX_VALUE)),
         )
     }
+
+    @Test
+    fun completedReclaimCannotSubmitAgainFromAStaleCreatedRowSnapshot() {
+        assertFalse(
+            canSubmitInvitationReclaim(
+                isReclaiming = false,
+                statusRaw = 0,
+                targetTopUp = false,
+                hasSelectedIdentity = false,
+                completedForRow = true,
+            ),
+        )
+    }
 }

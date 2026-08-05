@@ -735,6 +735,7 @@ unsafe fn persist_changeset_utxo_spent(
 
 const WALLET_CHANGESET_TRANSACTION_DESCRIPTOR: &str =
     "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BIBBIII[B[BIZ)I";
+const INVITATION_UPSERT_DESCRIPTOR: &str = "([B[BIJJJZI)I";
 
 unsafe fn persist_changeset_transaction(
     env: &mut JNIEnv,
@@ -1328,14 +1329,14 @@ unsafe extern "C" fn tramp_persist_invitations(
                 env.call_method(
                     bridge,
                     "onPersistInvitationUpsert",
-                    "([B[BIJIIZI)I",
+                    INVITATION_UPSERT_DESCRIPTOR,
                     &[
                         (&wid).into(),
                         (&outpoint).into(),
                         JValue::Int(e.funding_index as i32),
                         JValue::Long(e.amount_duffs as i64),
-                        JValue::Int(e.expiry_unix as i32),
-                        JValue::Int(e.created_at_secs as i32),
+                        JValue::Long(i64::from(e.expiry_unix)),
+                        JValue::Long(i64::from(e.created_at_secs)),
                         JValue::Bool(u8::from(e.has_inviter != 0)),
                         JValue::Int(i32::from(e.status)),
                     ],
@@ -4197,7 +4198,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
     ("onPersistContactRemovalIncoming", "([B[B[B)I"),
     ("onPersistAssetLockUpsert", "([B[B[BIBIJB[B)I"),
     ("onPersistAssetLockRemoval", "([B[B)I"),
-    ("onPersistInvitationUpsert", "([B[BIJIIZI)I"),
+    ("onPersistInvitationUpsert", INVITATION_UPSERT_DESCRIPTOR),
     ("onPersistInvitationRemoval", "([B[B)I"),
     #[cfg(feature = "shielded")]
     ("onPersistShieldedNote", "([B[BIJ[B[BJBJ[B)I"),
@@ -4339,6 +4340,12 @@ mod tests {
             WALLET_CHANGESET_TRANSACTION_DESCRIPTOR,
             "([B[B[BII[BIILjava/lang/String;IJJZLjava/lang/String;J[BIBBIII[B[BIZ)I"
         );
+    }
+
+    #[test]
+    fn invitation_callback_descriptor_carries_unsigned_timestamps_as_longs() {
+        assert_eq!(INVITATION_UPSERT_DESCRIPTOR, "([B[BIJJJZI)I");
+        assert_eq!(i64::from(u32::MAX), 4_294_967_295);
     }
 
     #[test]

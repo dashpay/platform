@@ -91,7 +91,8 @@ class MainActivity : FragmentActivity() {
         val isLegacyApplink = uri.scheme == "https" &&
             uri.host == "invitations.dashpay.io" && uri.path == "/applink"
         if (isInviteScheme || isLegacyApplink) {
-            container.appUiState.pendingInviteUri.value = uri.toString()
+            container.appUiState.pendingInviteUri.value =
+                org.dashfoundation.example.state.SecretInvitationUri(uri.toString())
         }
         intent.data = null
         setIntent(intent)

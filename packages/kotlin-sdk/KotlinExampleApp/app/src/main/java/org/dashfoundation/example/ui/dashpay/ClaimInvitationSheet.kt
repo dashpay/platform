@@ -51,8 +51,8 @@ import org.dashfoundation.example.util.toHex
  *
  * The URI is a bearer credential; it is never logged. The claim runs in
  * the application scope (dismissal-safe); back/dismiss is gated while
- * claiming, and [org.dashfoundation.example.state.AppUiState.invitationClaimInFlight]
- * defers any second deep link until this one resolves.
+ * claiming, and the application-scoped claim state defers any second deep
+ * link until this one resolves.
  */
 @Composable
 fun ClaimInvitationSheet(
@@ -66,6 +66,7 @@ fun ClaimInvitationSheet(
     val appState = LocalAppState.current
     val appUiState = container.appUiState
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val isSdkLoading by appState.isLoading.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
         manager?.wallets ?: kotlinx.coroutines.flow.MutableStateFlow(
@@ -76,17 +77,47 @@ fun ClaimInvitationSheet(
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }.collectAsStateWithLifecycle(emptyList())
 
-    var uriText by remember { mutableStateOf(initialUri.orEmpty()) }
+    val claimState by appUiState.claimInvitation.collectAsStateWithLifecycle()
+    val retainedRequest = when (val state = claimState) {
+        is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.InFlight -> state.request
+        is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Failed -> state.request
+        else -> null
+    }
+    var uriText by remember {
+        mutableStateOf(retainedRequest?.uri?.reveal() ?: initialUri.orEmpty())
+    }
     var preview by remember { mutableStateOf(InvitationPreview.INVALID) }
     // The exact URI the displayed preview was parsed from. The submit gate
     // and claim() both key off THIS, never off the live field text — edits
     // after a valid parse would otherwise leave a stale-valid preview
     // enabling a claim of the newly typed, unvalidated URI.
     var previewedUri by remember { mutableStateOf<String?>(null) }
-    var isClaiming by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    // Post-claim "Add <username>?" prompt payload: (username, new identity id).
-    var contactPrompt by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    val isClaiming = claimState is org.dashfoundation.example.state.AppUiState
+        .ClaimInvitationState.InFlight ||
+        claimState is org.dashfoundation.example.state.AppUiState
+            .ClaimInvitationState.ContactSending
+    val errorMessage = when (val state = claimState) {
+        is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Failed ->
+            state.safeError
+        is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.ContactFailed ->
+            state.safeError
+        else -> validationError
+    }
+
+    LaunchedEffect(claimState) {
+        if (claimState is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Completed) {
+            appUiState.clearInvitationClaim()
+            onClose()
+        }
+    }
+
+    val setSecureScreen = org.dashfoundation.example.LocalSecureScreen.current
+    androidx.compose.runtime.DisposableEffect(uriText.isNotBlank()) {
+        val containsBearer = uriText.isNotBlank()
+        if (containsBearer) setSecureScreen(true)
+        onDispose { if (containsBearer) setSecureScreen(false) }
+    }
 
     // Claim wallet: the DashPay tab's ACTIVE identity's wallet (passed by
     // the host — the user's actual selection, matching iOS), else the first
@@ -114,7 +145,8 @@ fun ClaimInvitationSheet(
         previewedUri = trimmed.takeIf { parsed.structurallyValid }
     }
 
-    val canClaim = !isClaiming && claimWallet != null &&
+    val managerReady = !isSdkLoading && manager?.network == network
+    val canClaim = !isClaiming && managerReady && claimWallet != null &&
         previewedUri != null && previewedUri == uriText.trim()
 
     fun claim() {
@@ -123,92 +155,114 @@ fun ClaimInvitationSheet(
         val mgr = manager ?: return
         // Submit only the URI the displayed preview validated.
         val uri = previewedUri ?: return
-        isClaiming = true
-        appUiState.invitationClaimInFlight.value = true
+        val operationNetworkRaw = network.ffiValue
+        val operationId = appUiState.beginInvitationClaim(
+            operationNetworkRaw,
+            uri,
+            wallet.walletId.toHex(),
+        ) ?: return
+        val inviterUsername = preview.inviterUsername
         // The claim owns the URI from here — release the parked copy.
         onClaimStarted()
-        errorMessage = null
+        validationError = null
         container.applicationScope.launch {
             try {
                 val newIdentityId = withContext(NonCancellable) {
-                    // Next-unused spans BOTH committed identities (Room) and
-                    // slots held by in-flight registrations on the app-scoped
-                    // coordinator — a concurrent create-identity flow holds
-                    // its slot before any Room row exists.
-                    val heldByCoordinator = container.registrationCoordinator
-                        .controllers.value.keys
-                        .filter { it.walletIdHex == wallet.walletId.toHex() }
-                        .map { it.identityIndex }
-                    val identityIndex = InvitationReclaimLogic.nextUnusedIdentityIndex(
-                        walletOwned
-                            .filter { it.walletId?.contentEquals(wallet.walletId) == true }
-                            .map { it.identityIndex } + heldByCoordinator,
-                    )
-                    // Full fresh-registration set: base four + the DashPay
-                    // enc/dec pair, pre-persisted before the broadcast.
-                    val previews = mgr.identityRegistration.previewRegistrationKeySet(
-                        walletHandle = wallet.handle,
-                        mnemonicResolverHandle = mgr.mnemonicResolverHandle,
-                        identityIndex = identityIndex,
-                        count = RegistrationKeys.keyCount(includeDashPayKeys = true),
-                    )
-                    val keySet = DashpayKeyProvisioning.provision(
-                        previews = previews,
-                        includeDashPayKeys = true,
-                        walletId = wallet.walletId,
-                        persister = { keyHex, priv, owner ->
-                            container.walletStorage.storePrivateKey(
-                                keyHex, priv, ownerWalletId = owner,
-                            )
-                        },
-                    )
-                    mgr.identityRegistration.claimInvitation(
-                        walletHandle = wallet.handle,
-                        uri = uri,
-                        identityIndex = identityIndex,
-                        keys = keySet,
-                        signerHandle = mgr.signerHandle,
-                    )
+                    val permit = container.registrationCoordinator
+                        .beginInvitationRegistration(wallet.walletId)
+                    try {
+                        check(container.isCurrentInvitationManager(operationNetworkRaw, mgr)) {
+                            "The active invitation manager changed."
+                        }
+                        val identityIndex = checkNotNull(permit.identityIndex)
+                        val previews = mgr.identityRegistration.previewRegistrationKeySet(
+                            walletHandle = wallet.handle,
+                            mnemonicResolverHandle = mgr.mnemonicResolverHandle,
+                            identityIndex = identityIndex,
+                            count = RegistrationKeys.keyCount(includeDashPayKeys = true),
+                        )
+                        val keySet = DashpayKeyProvisioning.provision(
+                            previews = previews,
+                            includeDashPayKeys = true,
+                            walletId = wallet.walletId,
+                            persister = { keyHex, priv, owner ->
+                                container.walletStorage.storePrivateKey(
+                                    keyHex, priv, ownerWalletId = owner,
+                                )
+                            },
+                        )
+                        mgr.identityRegistration.claimInvitation(
+                            walletHandle = wallet.handle,
+                            uri = uri,
+                            identityIndex = identityIndex,
+                            keys = keySet,
+                            signerHandle = mgr.signerHandle,
+                        )
+                    } finally {
+                        container.registrationCoordinator.endInvitationOperation(permit)
+                    }
                 }
-                val username = preview.inviterUsername
-                if (username != null) {
-                    contactPrompt = username to newIdentityId
-                } else {
-                    onClose()
-                }
+                appUiState.completeInvitationClaim(operationId, newIdentityId, inviterUsername)
             } catch (t: Throwable) {
-                errorMessage = t.message ?: "Claiming the invitation failed."
-            } finally {
-                isClaiming = false
-                appUiState.invitationClaimInFlight.value = false
+                appUiState.failInvitationClaim(
+                    operationId,
+                    "Claiming the invitation failed. The link was not included in the error.",
+                )
             }
         }
     }
 
-    fun sendContact(username: String, newIdentityId: ByteArray) {
-        val wallet = claimWallet ?: return
-        val mgr = manager ?: return
+    fun sendContact() {
+        val sending = appUiState.beginInvitationContactSend() ?: return
+        val wallet = walletsMap[sending.walletIdHex] ?: run {
+            appUiState.failInvitationContactSend(
+                sending.operationId,
+                "Identity claimed, but its wallet is no longer loaded.",
+            )
+            return
+        }
+        val mgr = manager ?: run {
+            appUiState.failInvitationContactSend(
+                sending.operationId,
+                "Identity claimed, but the wallet manager is no longer available.",
+            )
+            return
+        }
         container.applicationScope.launch {
+            var permit: org.dashfoundation.example.services.RegistrationCoordinator
+                .InvitationOperationPermit? = null
             try {
+                permit = container.registrationCoordinator.beginInvitationOperation(wallet.walletId)
+                check(container.isCurrentInvitationManager(sending.networkRaw, mgr)) {
+                    "The active invitation manager changed."
+                }
                 // Resolve the inviter's identity id from the link's username
                 // via wallet-scoped DPNS search (exact-label match — the id
                 // is not on the wire).
                 val inviter = parseDpnsSearchResults(
-                    wallet.dashpay.searchDpnsNames(username, 10),
-                ).firstOrNull { it.label.equals(username, ignoreCase = true) }
+                    wallet.dashpay.searchDpnsNames(sending.username, 10),
+                ).firstOrNull { it.label.equals(sending.username, ignoreCase = true) }
                 if (inviter == null) {
-                    errorMessage = "Identity claimed, but $username couldn't be found to add."
+                    appUiState.failInvitationContactSend(
+                        sending.operationId,
+                        "Identity claimed, but the inviter couldn't be found to add.",
+                    )
                     return@launch
                 }
                 wallet.dashpay.sendContactRequest(
-                    senderIdentityId = newIdentityId,
+                    senderIdentityId = sending.identityId,
                     recipientIdentityId = inviter.identityId,
                     signerHandle = mgr.signerHandle,
                     coreSignerHandle = mgr.mnemonicResolverHandle,
                 ).close()
-                onClose()
+                appUiState.completeInvitationContactSend(sending.operationId)
             } catch (t: Throwable) {
-                errorMessage = t.message ?: "Sending the contact request failed."
+                appUiState.failInvitationContactSend(
+                    sending.operationId,
+                    "Sending the contact request failed.",
+                )
+            } finally {
+                permit?.let { container.registrationCoordinator.endInvitationOperation(it) }
             }
         }
     }
@@ -276,26 +330,43 @@ fun ClaimInvitationSheet(
             }
         }
         TextButton(
-            onClick = { if (!isClaiming) onClose() },
+            onClick = {
+                if (!isClaiming) {
+                    appUiState.clearInvitationClaim()
+                    onClose()
+                }
+            },
             enabled = !isClaiming,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Cancel") }
     }
 
-    contactPrompt?.let { (username, newIdentityId) ->
+    val contactState = claimState
+    if (
+        contactState is org.dashfoundation.example.state.AppUiState
+            .ClaimInvitationState.ContactPrompt ||
+        contactState is org.dashfoundation.example.state.AppUiState
+            .ClaimInvitationState.ContactFailed
+    ) {
+        val username = when (contactState) {
+            is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.ContactPrompt ->
+                contactState.username
+            is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.ContactFailed ->
+                contactState.username
+            else -> error("unreachable")
+        }
         AlertDialog(
             onDismissRequest = { /* explicit choice required */ },
             title = { Text("Add $username?") },
             text = { Text("Send a contact request to the person who invited you.") },
             confirmButton = {
                 TextButton(onClick = {
-                    contactPrompt = null
-                    sendContact(username, newIdentityId)
+                    sendContact()
                 }) { Text("Add") }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    contactPrompt = null
+                    appUiState.clearInvitationClaim()
                     onClose()
                 }) { Text("Not now") }
             },

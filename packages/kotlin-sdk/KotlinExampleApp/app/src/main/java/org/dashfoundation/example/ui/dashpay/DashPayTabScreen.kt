@@ -98,6 +98,7 @@ fun DashPayTabScreen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
 
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
+    val isSdkLoading by appState.isLoading.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
         manager?.wallets ?: MutableStateFlow(emptyMap<String, ManagedPlatformWallet>())
@@ -136,7 +137,14 @@ fun DashPayTabScreen(navController: NavHostController) {
         restorationScreenState as? DashPayActiveIdentityRestorationState.Failed
     val selectionReady = selection as? DashPayActiveIdentitySelection.Ready
     val selectionFailure = selection as? DashPayActiveIdentitySelection.Failed
-    val contentReady = managerMatchesNetwork && restorationReady && selectionReady != null
+    val invitationReady = invitationActionsReady(
+        selectedNetwork = network,
+        managerNetwork = manager?.network,
+        restorationState = restorationState,
+        hasLoadedWallet = walletsMap.isNotEmpty(),
+        isSdkLoading = isSdkLoading,
+    )
+    val contentReady = invitationReady && selectionReady != null
 
     var pendingSelectionId by remember(network) { mutableStateOf<String?>(null) }
     var selectionWriteError by remember(network) { mutableStateOf<String?>(null) }
@@ -160,14 +168,42 @@ fun DashPayTabScreen(navController: NavHostController) {
     var claimSheetUri by remember { mutableStateOf<String?>(null) }
     var showClaimSheet by remember { mutableStateOf(false) }
     val pendingInvite by appUiState.pendingInviteUri.collectAsStateWithLifecycle()
-    val claimInFlight by appUiState.invitationClaimInFlight.collectAsStateWithLifecycle()
+    val claimState by appUiState.claimInvitation.collectAsStateWithLifecycle()
+    val claimDismissBlocked = claimSheetDismissBlocked(claimState)
+    val retainedClaimUri = when (val state = claimState) {
+        is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.InFlight ->
+            state.request.uri.reveal()
+        is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Failed ->
+            state.request.uri.reveal()
+        else -> null
+    }
     // The parked URI is NOT cleared at seeding: it stays in AppUiState (the
     // only holder that survives this tab leaving composition) until the
     // claim actually starts or the user explicitly closes the sheet — an
     // activity recreation between seeding and claim re-seeds from it.
-    LaunchedEffect(pendingInvite, walletsMap, claimInFlight, showClaimSheet) {
-        val uri = pendingInvite
-        if (uri != null && walletsMap.isNotEmpty() && !claimInFlight && !showClaimSheet) {
+    LaunchedEffect(
+        pendingInvite,
+        retainedClaimUri,
+        claimState,
+        invitationReady,
+        showClaimSheet,
+    ) {
+        if (
+            claimState is org.dashfoundation.example.state.AppUiState
+                .ClaimInvitationState.Completed
+        ) {
+            appUiState.clearInvitationClaim()
+            claimSheetUri = null
+            showClaimSheet = false
+            return@LaunchedEffect
+        }
+        val uri = retainedClaimUri ?: pendingInvite?.reveal()
+        val hasClaimPresentation = claimState !is org.dashfoundation.example.state.AppUiState
+            .ClaimInvitationState.Idle
+        if (
+            invitationReady && !showClaimSheet &&
+            (uri != null || hasClaimPresentation)
+        ) {
             claimSheetUri = uri
             showClaimSheet = true
         }
@@ -193,7 +229,7 @@ fun DashPayTabScreen(navController: NavHostController) {
                             claimSheetUri = null
                             showClaimSheet = true
                         },
-                        enabled = walletsMap.isNotEmpty(),
+                        enabled = invitationReady,
                         modifier = Modifier.testTag("dashpay.claimInvitation"),
                     ) {
                         Icon(Icons.Default.Redeem, contentDescription = "Claim invitation")
@@ -206,6 +242,7 @@ fun DashPayTabScreen(navController: NavHostController) {
                                 ),
                             )
                         },
+                        enabled = invitationReady,
                         modifier = Modifier.testTag("dashpay.openSentInvitations"),
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Sent invitations")
@@ -380,10 +417,14 @@ fun DashPayTabScreen(navController: NavHostController) {
         // Closing without claiming is an explicit decline — release the
         // parked URI so the sheet doesn't re-seed forever.
         fun closeClaimSheet() {
-            appUiState.pendingInviteUri.value = null
+            appUiState.clearPendingInviteUriIfPresented(claimSheetUri)
+            appUiState.clearInvitationClaim()
+            claimSheetUri = null
             showClaimSheet = false
         }
-        ModalBottomSheet(onDismissRequest = { if (!claimInFlight) closeClaimSheet() }) {
+        ModalBottomSheet(onDismissRequest = {
+            if (!claimDismissBlocked) closeClaimSheet()
+        }) {
             ClaimInvitationSheet(
                 initialUri = claimSheetUri,
                 preferredWalletIdHex = selectionReady?.activeIdentity?.walletId?.toHex(),
@@ -393,7 +434,8 @@ fun DashPayTabScreen(navController: NavHostController) {
                     // lands back in the parked-URI path, re-seeding this
                     // sheet. The scanner clears the sink on delivery/cancel.
                     appUiState.scanResultSink = { scanned ->
-                        appUiState.pendingInviteUri.value = scanned
+                        appUiState.pendingInviteUri.value =
+                            org.dashfoundation.example.state.SecretInvitationUri(scanned)
                     }
                     showClaimSheet = false
                     navController.navigate(org.dashfoundation.example.navigation.QrScanner)
@@ -432,6 +474,32 @@ internal fun dashPayRestorationScreenState(
             restorationState
         else -> DashPayActiveIdentityRestorationState.Loading(network)
     }
+
+internal fun invitationActionsReady(
+    selectedNetwork: Network,
+    managerNetwork: Network?,
+    restorationState: DashPayActiveIdentityRestorationState,
+    hasLoadedWallet: Boolean,
+    isSdkLoading: Boolean,
+): Boolean =
+    !isSdkLoading &&
+        managerNetwork == selectedNetwork &&
+        restorationState == DashPayActiveIdentityRestorationState.Ready(selectedNetwork) &&
+        hasLoadedWallet
+
+internal fun claimSheetDismissBlocked(
+    state: org.dashfoundation.example.state.AppUiState.ClaimInvitationState,
+): Boolean = when (state) {
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.InFlight,
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Completed,
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.ContactPrompt,
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.ContactSending,
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.ContactFailed,
+    -> true
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Idle,
+    is org.dashfoundation.example.state.AppUiState.ClaimInvitationState.Failed,
+    -> false
+}
 
 @Composable
 fun rememberDashPayActiveIdentitySelection(
