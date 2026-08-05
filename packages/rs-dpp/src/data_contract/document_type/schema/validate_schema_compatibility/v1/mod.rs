@@ -59,6 +59,13 @@ fn without_indices(schema: &JsonValue) -> Cow<'_, JsonValue> {
     }
 }
 
+/// Pairing invariant: stripping `indices` unconditionally is only safe
+/// because every `PlatformVersion` that selects this generation
+/// (`validate_schema_compatibility: 1`) also selects a `validate_update`
+/// generation of at least 1 (`dpp.validation.document_type.validate_update`),
+/// which rejects every real index change before this check runs. A future
+/// version table that bumps one without the other would let index changes
+/// bypass compatibility validation entirely.
 pub(super) fn validate_schema_compatibility_v1(
     original_schema: &JsonValue,
     new_schema: &JsonValue,

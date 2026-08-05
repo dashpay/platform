@@ -64,8 +64,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// variant did — so ranked secondaries keep ranking correctly over
 /// shared-prefix shapes.
 ///
-/// Until a contract uses the ranked grammar, the only v14 behavior change
-/// is the shared-prefix fix; everything else matches v13:
+/// Until a contract uses the ranked grammar, the v14 behavior changes are
+/// the shared-prefix fix and the index-reorder schema-compatibility fix
+/// (both described below); everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
