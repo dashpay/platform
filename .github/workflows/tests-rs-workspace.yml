@@ -138,14 +138,25 @@ jobs:
           cache: false
           components: llvm-tools, rustfmt, clippy
 
+      # Both tools are required by the test steps below. Install only when
+      # missing, and fail HERE, loudly, if the tool still doesn't work
+      # afterwards — the previous `cargo install ... 2>/dev/null || true`
+      # silently swallowed a failed nextest install on a freshly provisioned
+      # runner, and the job then died 10 minutes later in the test step with
+      # "no such command: nextest".
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov 2>/dev/null || true
+        run: |
+          if ! cargo llvm-cov --version >/dev/null 2>&1; then
+            cargo install cargo-llvm-cov --locked
+          fi
+          cargo llvm-cov --version
 
-      # Self-hosted runners are not guaranteed to have nextest preinstalled;
-      # the test step invokes `cargo llvm-cov nextest` and dies with
-      # "no such command: nextest" on runners that lack it.
       - name: Install cargo-nextest
-        run: cargo install cargo-nextest 2>/dev/null || true
+        run: |
+          if ! cargo nextest --version >/dev/null 2>&1; then
+            cargo install cargo-nextest --locked
+          fi
+          cargo nextest --version
 
       - name: Check formatting
         run: cargo fmt --check --all
