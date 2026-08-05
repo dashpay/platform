@@ -47,6 +47,7 @@ jobs:
       rs-packages: ${{ steps.override.outputs.rs-packages || steps.filter-rs.outputs.changes }}
       rs-workflows-changed: ${{ steps.filter-rs-workflows.outputs.rs-workflows }}
       rs-scope: ${{ steps.rs-scope.outputs.scope }}
+      shielded-changed: ${{ steps.override.outputs.shielded-changed || steps.filter-shielded.outputs.shielded-changed }}
       doctests-changed: ${{ steps.override.outputs.doctests-changed || steps.filter-doctests.outputs.doctests-changed }}
       swift-sdk-changed: ${{ steps.override.outputs.swift-sdk-changed || steps.filter-swift-sdk.outputs.swift-sdk-changed }}
       version-changed: ${{ steps.override.outputs.version-changed || steps.filter-version.outputs.version-changed }}
@@ -211,6 +212,78 @@ jobs:
             echo "Non-wallet Rust changes present — using full Rust workspace tests"
           fi
 
+      # Decide whether the shielded test phase of tests-rs-workspace.yml must
+      # run. This is a HEURISTIC, not a dependency-closure proof: shielded
+      # tests exercise shared consensus code (drive batch ops, state
+      # transition processing), so a PR touching only shared code could in
+      # principle break them while being classified "unrelated" here. The
+      # safety net is that every non-PR run (push to a dev branch after merge,
+      # the nightly schedule, manual dispatch) always runs the shielded suite,
+      # so an escape is caught minutes after merge and bisects to one PR.
+      #
+      # A PR counts as shielded-relevant if any of:
+      #   - a changed file's path mentions shield/orchard/halo2 (all shielded
+      #     modules live in *shield* directories, but keyword-match the whole
+      #     path to be safe);
+      #   - the diff content of any .rs file mentions those keywords (catches
+      #     edits to shielded match arms, error variants, and test names in
+      #     shared files outside the shielded directories);
+      #   - anything that changes how the shielded suite is built or selected:
+      #     any Cargo.toml/Cargo.lock (feature unification, dep bumps),
+      #     rust-toolchain.toml, the rust setup action, or the Rust test
+      #     workflows themselves.
+      - name: Check for shielded-relevant changes
+        id: filter-shielded
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        run: |
+          # No pipefail: the detection pipelines end in `grep -q`, which exits
+          # on first match and SIGPIPEs the upstream git diff — with pipefail
+          # a *match* would read as pipeline failure and silently flip the
+          # answer to "unchanged".
+          set -eu
+
+          # Non-PR runs are the safety net: always run shielded tests (and
+          # refresh the shared shielded-coverage cache).
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Not a pull request — shielded tests always run"
+            exit 0
+          fi
+
+          # --no-renames: a shielded file moved elsewhere must still count as
+          # a shielded change on both sides of the move.
+          if ! CHANGED=$(git diff --no-renames --name-only "${{ github.event.pull_request.base.sha }}"...HEAD); then
+            echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not diff against the PR base — assuming shielded changes"
+            exit 0
+          fi
+
+          SHIELD_RE='shield|orchard|halo2'
+
+          if echo "$CHANGED" | grep -qiE "$SHIELD_RE"; then
+            echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changed paths mention shielded modules — shielded tests will run"
+            exit 0
+          fi
+
+          if echo "$CHANGED" | grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain\.toml$|^\.github/actions/rust/|^\.github/workflows/tests\.yml$|^\.github/workflows/tests-rs-workspace\.yml$'; then
+            echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Build configuration changed — shielded tests will run"
+            exit 0
+          fi
+
+          # grep -v filters the +++/--- file headers so only real content
+          # lines are keyword-matched.
+          if git diff --no-renames --unified=0 "${{ github.event.pull_request.base.sha }}"...HEAD -- '*.rs' \
+            | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qiE "$SHIELD_RE"; then
+            echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changed Rust lines mention shielded identifiers — shielded tests will run"
+            exit 0
+          fi
+
+          echo "shielded-changed=false" >> "$GITHUB_OUTPUT"
+          echo "No shielded-relevant changes — shielded tests can reuse cached coverage"
+
       - name: Check for Swift SDK changes
         id: filter-swift-sdk
         if: ${{ github.event_name != 'workflow_dispatch' }}
@@ -295,6 +368,7 @@ jobs:
           echo "js-packages-direct=$(to_json .github/package-filters/js-packages-direct.yml)" >> "$GITHUB_OUTPUT"
           echo "rs-packages=$(to_json .github/package-filters/rs-packages-no-workflows.yml)" >> "$GITHUB_OUTPUT"
           echo 'doctests-changed=true' >> "$GITHUB_OUTPUT"
+          echo 'shielded-changed=true' >> "$GITHUB_OUTPUT"
           echo 'swift-sdk-changed=true' >> "$GITHUB_OUTPUT"
           echo 'version-changed=true' >> "$GITHUB_OUTPUT"
           echo 'e2e-tests-changed=true' >> "$GITHUB_OUTPUT"
@@ -348,6 +422,9 @@ jobs:
     uses: ./.github/workflows/tests-rs-workspace.yml
     with:
       doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
+      # Anything other than an explicit 'false' (including an empty output
+      # from a skipped detector step) fails safe into running the suite.
+      shielded-changed: ${{ needs.changes.outputs.shielded-changed != 'false' }}
 
   # Fast path: only wallet crates changed, so run the scoped wallet suite
   # instead of the full workspace job above (the two are mutually exclusive
