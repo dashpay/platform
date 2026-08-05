@@ -1434,6 +1434,11 @@ pub async fn query_owned_encrypted_documents(
                 ascending: true,
             }],
             limit: PAGE,
+            // Paging is by insertion-order cursor (`start`), not by row offset:
+            // `offset` is served only on the ranked-aggregate surface, and a
+            // skip-count page would silently drop documents whenever the owner
+            // writes between round-trips.
+            offset: None,
             start: start.clone(),
         };
 
@@ -2232,6 +2237,7 @@ mod query_tests {
                 ascending: true,
             }],
             limit: PAGE_SIZE as u32,
+            offset: None,
             start,
         }
     }

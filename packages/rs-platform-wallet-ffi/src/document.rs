@@ -2807,6 +2807,7 @@ mod tests {
                 ascending: true,
             }],
             limit: 100,
+            offset: None,
             start: None,
         }
     }

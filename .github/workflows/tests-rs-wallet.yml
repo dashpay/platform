@@ -19,11 +19,12 @@
 # through the fast path that the full path would have rejected.
 #
 # Coverage upload is intentionally omitted (codecov never gates the merge —
-# `fail_ci_if_error: false`). Known trade-offs: no Ubuntu backup jobs exist
-# here (if `UBUNTU_BACKUP_ENABLED` is turned on, wallet PRs still depend on
-# the mac runner being online), and the scoped `-p` builds feature-unify
-# shared deps differently than `--workspace` builds, so the shared target/
-# carries an extra artifact flavor.
+# `fail_ci_if_error: false`). Known trade-offs: this fast path stays pinned to
+# the macOS runners (unlike the full workspace job, which schedules onto any
+# `rust-ci` self-hosted runner), so wallet PRs depend on a mac runner being
+# online; and the scoped `-p` builds feature-unify shared deps differently
+# than `--workspace` builds, so the shared target/ carries an extra artifact
+# flavor.
 on:
   workflow_call:
     inputs:
@@ -199,8 +200,7 @@ jobs:
 
       # Wallet-only PRs can only change doc examples in the wallet crates, so
       # scoped doctests are equivalent to the full job's `--workspace --doc`
-      # run for this scope. (The standalone rs-doctests job in tests.yml is
-      # only an Ubuntu backup gated on UBUNTU_BACKUP_ENABLED.)
+      # run for this scope.
       - name: Run doctests (wallet crates)
         if: ${{ inputs.doctests-changed }}
         run: |

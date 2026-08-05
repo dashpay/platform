@@ -415,7 +415,7 @@ mod tests {
     fn committing_a_block_releases_the_outgoing_protocol_version() {
         let contracts = SystemDataContracts::new();
 
-        for committed_protocol_version in 9..=13 {
+        for committed_protocol_version in 9..=14 {
             // The block that switches protocol version executes at the candidate while
             // `check_tx` still validates against the committed one, so both are live at once.
             contracts
@@ -440,7 +440,7 @@ mod tests {
     fn memoization_is_bounded_to_the_live_protocol_versions() {
         let contracts = SystemDataContracts::new();
 
-        for protocol_version in [9, 10, 11, 12, 13] {
+        for protocol_version in [9, 10, 11, 12, 13, 14] {
             contracts
                 .load_dpns(platform_version(protocol_version))
                 .expect("materialize DPNS");
@@ -448,7 +448,7 @@ mod tests {
 
         assert_eq!(
             memoized_protocol_versions(&contracts),
-            vec![12, 13],
+            vec![13, 14],
             "only the most recent protocol versions stay memoized"
         );
 

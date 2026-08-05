@@ -106,6 +106,26 @@ pub mod batch_insert_empty_provable_count_sum_tree;
 /// variant once grovedb PR 670 ships) over the same tree.
 pub mod batch_insert_empty_provable_count_provable_sum_tree;
 
+/// Batch insert operation into an empty provable count-**indexed** tree
+/// (PCIT, grovedb PR 657). Same primary node shape as
+/// [`batch_insert_empty_provable_count_tree`], plus one ordered secondary
+/// Merk keyed by each child's aggregate count — the storage primitive behind
+/// `rankedCountable`.
+pub mod batch_insert_empty_provable_count_indexed_tree;
+
+/// Batch insert operation into an empty provable sum-**indexed** tree
+/// (PSIT, grovedb PR 657). Sum-axis mirror of
+/// [`batch_insert_empty_provable_count_indexed_tree`] — the storage primitive
+/// behind `rankedSummable` on a sum-only range layout.
+pub mod batch_insert_empty_provable_sum_indexed_tree;
+
+/// Batch insert operation into an empty provable-count + provable-sum
+/// **indexed** tree (PCPSIT, grovedb PR 657). Primary mirrors
+/// [`batch_insert_empty_provable_count_provable_sum_tree`]; the element
+/// carries a canonical TLV of 1..=3 ordered secondaries (Count / Sum / Avg).
+/// This is the arm every ranked index takes whose range layout is PCPS.
+pub mod batch_insert_empty_provable_count_provable_sum_indexed_tree;
+
 /// Batch insert operation into empty tree, but only if it doesn't already exist
 pub mod batch_insert_empty_tree_if_not_exists;
 

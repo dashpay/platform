@@ -86,7 +86,6 @@ jobs:
             rs-workflows:
               - .github/workflows/tests-rs-workspace.yml
               - .github/workflows/tests-rs-wallet.yml
-              - .github/workflows/tests-rs-doctests.yml
               - .github/workflows/tests.yml
               - .github/scripts/check-wallet-closure.py
 
@@ -156,11 +155,11 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' }}
         run: |
           # The fast path applies only to same-repo pull requests. Fork PRs
-          # must take the full workspace path (whose Ubuntu backup jobs cover
-          # them when UBUNTU_BACKUP_ENABLED is set, while the wallet
-          # workflow's only job skips fork PRs). Push and schedule runs have
-          # no reliable base SHA — scope computed from the last commit alone
-          # could silently downgrade the nightly / post-merge full runs.
+          # must take the full workspace path (both Rust workflows skip fork
+          # PRs outright, since neither may run untrusted code on a persistent
+          # runner). Push and schedule runs have no reliable base SHA — scope
+          # computed from the last commit alone could silently downgrade the
+          # nightly / post-merge full runs.
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "scope=full" >> "$GITHUB_OUTPUT"
             echo "Not a pull request — using full Rust workspace tests"
@@ -362,14 +361,6 @@ jobs:
     uses: ./.github/workflows/tests-rs-wallet.yml
     with:
       doctests-changed: ${{ needs.changes.outputs.doctests-changed == 'true' }}
-
-  rs-doctests:
-    name: Rust doctests
-    needs:
-      - changes
-    if: ${{ needs.changes.outputs.doctests-changed == 'true' }}
-    secrets: inherit
-    uses: ./.github/workflows/tests-rs-doctests.yml
 
   swift-sdk-build:
     name: Swift SDK build

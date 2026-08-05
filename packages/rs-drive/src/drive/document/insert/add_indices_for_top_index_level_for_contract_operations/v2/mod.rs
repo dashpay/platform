@@ -97,7 +97,15 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level);
+            // The top-level property-name tree is created once, at
+            // contract registration — this walker never writes it, so it
+            // has no use for `tree_types.ranked_axes`. The resolved type
+            // still has to include the meta-schema-v3 ranked upgrade: it
+            // describes the tree we insert INTO (the stateless apply
+            // type's `in_tree_type`) and stamps the estimation layer, and
+            // both must agree with what `insert_contract_operations_v0`
+            // laid down.
+            let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
             let property_name_tree_type = tree_types.property_name_tree_type;
             let value_tree_type = tree_types.value_tree_type;
 
