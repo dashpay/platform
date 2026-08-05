@@ -78,6 +78,35 @@ pub fn identity_id_from_nullifiers(nullifiers: &[[u8; 32]]) -> Identifier {
     Identifier::new(hash_double(buf))
 }
 
+/// Whether the identity id an `IdentityCreateFromShieldedPool` will publish can be reproduced
+/// OFFLINE, before (or after) the bundle is built, from the spent-note set alone.
+///
+/// The id is derived over the bundle's PUBLISHED nullifiers — every action's nullifier, padding
+/// included. Orchard's `BundleType::DEFAULT` pads any bundle to `MIN_ACTIONS = 2`, and a padding
+/// action carries a **randomly generated** dummy nullifier. So:
+///
+/// - `num_real_spends >= 2` — no padding is added, every published nullifier is the deterministic
+///   nullifier of a real note, and the id is a pure function of the spent notes. It can be
+///   predicted before building and RE-derived identically on a later retry.
+/// - `num_real_spends < 2` — the bundle is padded and at least one published nullifier is fresh
+///   randomness. The id is unpredictable beforehand and, critically, **not reproducible**: a retry
+///   builds a different dummy and therefore a different identity id.
+///
+/// Any flow that must recognise "this identity is the one my earlier attempt created" — idempotent
+/// claim recovery being the motivating case — MUST gate on this. When it returns `false` the
+/// caller cannot derive an expected id and has to treat recovery as unreliable rather than
+/// computing an id that will not match. Guarding on the *note count* is the cheapest correct check:
+/// it needs no chain lookup and is decided before any proving work.
+///
+/// The corollary drives note layout: funding an address with two sub-target notes (instead of one
+/// note covering the whole target) forces a later spend of that address to select BOTH — greedy
+/// largest-first selection cannot stop after one note that does not cover the target — which keeps
+/// the padding action, and its random nullifier, out of the bundle entirely.
+pub fn shielded_identity_id_is_reproducible(num_real_spends: usize) -> bool {
+    // Mirrors Orchard's `MIN_ACTIONS = 2`: at or above it, no padding action is appended.
+    num_real_spends >= 2
+}
+
 /// Convenience wrapper around [`identity_id_from_nullifiers`] that extracts the nullifiers from a
 /// slice of serialized Orchard actions. Shared by the SDK builder and the consensus re-derivation
 /// check so both compute the id identically.

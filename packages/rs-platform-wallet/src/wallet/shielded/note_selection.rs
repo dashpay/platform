@@ -383,6 +383,86 @@ mod tests {
         assert_eq!(exact_fee, min_fee_2);
     }
 
+    /// A multi-output transfer reserves against `recipients + 1` outputs, because the bundle
+    /// publishes `max(spends, recipients + 1, 2)` actions and a ShieldedTransfer's
+    /// `value_balance` must equal `compute_minimum_shielded_fee(actions.len())` EXACTLY. If the
+    /// reservation used the 2-action floor instead, it would under-reserve and the builder's
+    /// carved fee would not match what was reserved.
+    #[test]
+    fn test_select_notes_with_fee_reserves_multi_output_action_floor() {
+        let platform_version = PlatformVersion::latest();
+        // Two recipient notes + change = 3 outputs → a 3-action floor.
+        let min_actions = 3;
+        let min_fee_3 = compute_minimum_shielded_fee(3, platform_version).expect("fee");
+        let min_fee_2 = compute_minimum_shielded_fee(2, platform_version).expect("fee");
+        assert!(
+            min_fee_3 > min_fee_2,
+            "a 3-action bundle must cost more than a 2-action one"
+        );
+
+        let amount = 3_000_000_000u64; // the invite denomination, split across two notes
+                                       // A single note covering amount + the 3-action fee (plus change).
+        let notes = vec![test_note(amount + min_fee_3 + 1, 0)];
+
+        let (selected, _total, exact_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            min_actions,
+            ShieldedFeeKind::Base,
+            platform_version,
+        )
+        .expect("selection ok");
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(
+            exact_fee, min_fee_3,
+            "one spend but three outputs must reserve the 3-action fee, not the 2-action floor"
+        );
+    }
+
+    /// Two sub-denomination notes on one key are STRUCTURALLY forced to both be selected when
+    /// the spend targets the full denomination: the greedy selector takes the largest note first
+    /// and only stops once the accumulated value covers the target, and neither note alone can.
+    /// This is what removes Orchard's padding action (and its random, unreproducible dummy
+    /// nullifier) from the claim bundle.
+    #[test]
+    fn test_two_sub_denomination_notes_are_both_selected() {
+        // The two shipped invite denominations, each split floor(D/2) + ceil(D/2).
+        for denomination in [3_000_000_000u64, 25_000_000_000u64] {
+            let lo = denomination / 2;
+            let hi = denomination - lo;
+            assert!(
+                lo < denomination && hi < denomination,
+                "each half must be strictly below the denomination"
+            );
+
+            let notes = vec![test_note(hi, 0), test_note(lo, 1)];
+            // The claim targets the denomination exactly (fee metered from it, not added).
+            let selected = select_notes(&notes, denomination, 0).expect("selection ok");
+            assert_eq!(
+                selected.len(),
+                2,
+                "both sub-denomination notes must be selected for denomination {denomination}"
+            );
+            let total: u64 = selected.iter().map(|n| n.value).sum();
+            assert_eq!(total, denomination);
+        }
+    }
+
+    /// Contrast: a SINGLE note worth the whole denomination stops the greedy selector after one
+    /// note — the one-note invite shape that leaves Orchard to pad the bundle with a dummy.
+    #[test]
+    fn test_single_full_denomination_note_selects_alone() {
+        let denomination = 3_000_000_000u64;
+        let notes = vec![test_note(denomination, 0)];
+        let selected = select_notes(&notes, denomination, 0).expect("selection ok");
+        assert_eq!(
+            selected.len(),
+            1,
+            "a single full-denomination note covers the target alone, so the bundle needs padding"
+        );
+    }
+
     #[test]
     fn test_select_notes_with_fee_uses_actual_action_count() {
         let platform_version = PlatformVersion::latest();

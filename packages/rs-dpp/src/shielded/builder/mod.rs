@@ -43,7 +43,10 @@ pub use identity_create_from_shielded_pool::{
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
 #[cfg(feature = "core_key_wallet")]
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;
-pub use shielded_transfer::build_shielded_transfer_transition;
+pub use shielded_transfer::{
+    build_shielded_transfer_transition, build_shielded_transfer_transition_multi,
+    ShieldedTransferOutput,
+};
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
 pub use unshield::build_unshield_transition;
 
@@ -101,6 +104,36 @@ impl From<&OrchardAddress> for PaymentAddress {
     fn from(address: &OrchardAddress) -> Self {
         *address.inner()
     }
+}
+
+/// The number of Orchard actions a `BundleType::DEFAULT` bundle built from `num_spends` spends
+/// and `num_outputs` outputs will publish **on the wire**.
+///
+/// Every shielded fee predictor MUST size its fee with this function, because consensus prices
+/// the fee off the on-wire `actions.len()` (see
+/// `StateTransitionShieldedMinimumFeeValidationV0::validate_minimum_shielded_fee`, which reads
+/// `v0.actions.len()`), and an Orchard action is a *joined* spend/output slot: the action count
+/// is `max(num_spends, num_outputs)`, then padded up to Orchard's `MIN_ACTIONS = 2`.
+///
+/// The output side matters. A predictor that looks only at the spend count is correct **only**
+/// while `num_outputs <= 2`, because `max(n, 1).max(2) == max(n, 2).max(2)`. As soon as a
+/// transition publishes three or more outputs (a multi-recipient transfer plus change), a
+/// spends-only predictor under-counts and carves a fee below the one consensus computes — fatal
+/// for `ShieldedTransfer`, whose `value_balance` must equal the minimum fee **exactly**.
+///
+/// This delegates to Orchard's own [`BundleType::num_actions`] rather than re-deriving the rule,
+/// so the predictor cannot drift from the builder that actually lays out the bundle.
+pub fn shielded_bundle_action_count(
+    num_spends: usize,
+    num_outputs: usize,
+) -> Result<usize, ProtocolError> {
+    BundleType::DEFAULT
+        .num_actions(num_spends, num_outputs)
+        .map_err(|e| {
+            ProtocolError::ShieldedBuildError(format!(
+                "invalid Orchard bundle shape ({num_spends} spends, {num_outputs} outputs): {e}"
+            ))
+        })
 }
 
 /// Serializes an authorized Orchard bundle into the raw fields used by
@@ -779,6 +812,59 @@ mod mod_tests {
                 assert_eq!(msg, "closure rejected", "closure error must pass through");
             }
             other => panic!("expected the closure's error to propagate, got {:?}", other),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // `shielded_bundle_action_count` — the shared fee-sizing predictor.
+    // ------------------------------------------------------------------
+
+    /// The predictor must be `max(num_spends, num_outputs)` padded to Orchard's 2-action
+    /// minimum — for the OUTPUT side as well as the spend side. The `num_outputs >= 3` rows are
+    /// the ones a spends-only predictor gets wrong.
+    #[test]
+    fn shielded_bundle_action_count_is_max_spends_outputs_padded_to_two() {
+        for (spends, outputs, expected) in [
+            (0usize, 1usize, 2usize),
+            (1, 1, 2),
+            (1, 2, 2),
+            (2, 2, 2),
+            // Output-dominated shapes: the spend count no longer determines the fee.
+            (1, 3, 3),
+            (2, 3, 3),
+            (1, 4, 4),
+            (5, 3, 5),
+            (3, 7, 7),
+        ] {
+            let actual = shielded_bundle_action_count(spends, outputs)
+                .expect("DEFAULT bundles accept any spend/output mix");
+            assert_eq!(
+                actual, expected,
+                "action count for {spends} spends / {outputs} outputs"
+            );
+        }
+    }
+
+    /// A real bundle's on-wire `actions.len()` — the number consensus prices the fee off — must
+    /// equal what the predictor said. Exercised through the output-only builder because it is
+    /// the cheapest real bundle to construct at several output counts.
+    #[test]
+    fn shielded_bundle_action_count_matches_a_real_bundle() {
+        let recipient = test_orchard_address();
+        // (dummy_outputs, total outputs = 1 real + dummies)
+        for dummies in [0usize, 1, 4] {
+            let num_outputs = 1 + dummies;
+            let bundle =
+                build_output_only_bundle(&recipient, 10_000, [0u8; 36], None, dummies, &TestProver)
+                    .expect("bundle should build");
+            let predicted =
+                shielded_bundle_action_count(0, num_outputs).expect("valid bundle shape");
+            assert_eq!(
+                bundle.actions().len(),
+                predicted,
+                "predicted action count must match the real bundle's on-wire count for \
+                 {num_outputs} outputs"
+            );
         }
     }
 }

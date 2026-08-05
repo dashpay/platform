@@ -414,6 +414,13 @@ mod tests {
             identity_id_from_nullifiers(&[real_nullifier]),
             "the padding action's dummy nullifier must participate in the id derivation"
         );
+        // …which is precisely what `shielded_identity_id_is_reproducible` reports: with one real
+        // spend the published set contains fresh randomness, so the id cannot be re-derived
+        // offline (a retry would build a different dummy and thus a different id).
+        assert!(
+            !crate::state_transition::identity_create_from_shielded_pool_transition::shielded_identity_id_is_reproducible(1),
+            "a single-spend bundle is padded, so its id must be reported as NOT reproducible"
+        );
         assert!(
             result.predicted_fee < DENOMINATION,
             "predicted fee must leave the new identity a positive balance"
@@ -496,6 +503,13 @@ mod tests {
             result.identity_id,
             identity_id_from_nullifiers(&[nf_a, nf_b]),
             "with no padding, the published set is exactly the real spends' nullifiers"
+        );
+        // …which is precisely what `shielded_identity_id_is_reproducible` reports: with two real
+        // spends no padding is added, so the id is a pure function of the spent notes and a retry
+        // re-derives the SAME id. This is the property two-note funding buys.
+        assert!(
+            crate::state_transition::identity_create_from_shielded_pool_transition::shielded_identity_id_is_reproducible(2),
+            "a two-spend bundle needs no padding, so its id must be reported as reproducible"
         );
     }
 }

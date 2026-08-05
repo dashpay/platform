@@ -41,7 +41,7 @@
 
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString};
+use jni::objects::{GlobalRef, JByteArray, JClass, JLongArray, JObject, JString};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
@@ -838,6 +838,118 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
                 account as u32,
                 recipient.as_ptr(),
                 amount as u64,
+                memo_ptr,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Multi-output shielded → shielded transfer (Type 16) — bridges
+/// `platform_wallet_manager_shielded_transfer_multi`.
+///
+/// `recipientsRaw43` is `amounts.length` raw 43-byte Orchard addresses laid
+/// out back to back (so its length must be `43 * amounts.length`), and
+/// `amounts` holds the matching credit amounts. Each pair becomes its own
+/// note; repeating the same address funds that address with several
+/// independent notes. `memoText` is attached to every recipient note.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedTransferMulti(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    account: jint,
+    recipients_raw43: JByteArray,
+    amounts: JLongArray,
+    memo_text: JString,
+) {
+    guard(&mut env, (), |env| {
+        if account < 0 {
+            throw_sdk_exception(env, 1, "account must be non-negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        if recipients_raw43.is_null() {
+            throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was null");
+            return;
+        }
+        if amounts.is_null() {
+            throw_sdk_exception(env, 1, "amounts long[] was null");
+            return;
+        }
+        let recipients = match env.convert_byte_array(&recipients_raw43) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was invalid");
+                return;
+            }
+        };
+        let amount_len = match env.get_array_length(&amounts) {
+            Ok(n) if n >= 0 => n as usize,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "amounts long[] was invalid");
+                return;
+            }
+        };
+        if amount_len == 0 {
+            throw_sdk_exception(env, 1, "amounts must contain at least one entry");
+            return;
+        }
+        if recipients.len() != amount_len * 43 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "recipientsRaw43 must be 43 bytes per amount ({} expected), got {}",
+                    amount_len * 43,
+                    recipients.len()
+                ),
+            );
+            return;
+        }
+        let mut amount_buf = vec![0i64; amount_len];
+        if env
+            .get_long_array_region(&amounts, 0, &mut amount_buf)
+            .is_err()
+        {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "amounts long[] could not be read");
+            return;
+        }
+        // Reject sign errors at the boundary — negatives would otherwise bit-cast to huge
+        // unsigned values (never clamp).
+        for (index, &amount) in amount_buf.iter().enumerate() {
+            if amount <= 0 {
+                throw_sdk_exception(
+                    env,
+                    1,
+                    &format!("amounts[{index}] must be positive, got {amount}"),
+                );
+                return;
+            }
+        }
+        let amounts_u64: Vec<u64> = amount_buf.iter().map(|&a| a as u64).collect();
+
+        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
+            Ok(m) => m,
+            Err(()) => return,
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_transfer_multi(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                account as u32,
+                recipients.as_ptr(),
+                amounts_u64.as_ptr(),
+                amount_len,
                 memo_ptr,
             )
         };
