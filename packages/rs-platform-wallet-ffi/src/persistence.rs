@@ -23,7 +23,7 @@ use std::str::FromStr;
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
+    ListedCoreTxid, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
     PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
     PERSISTENCE_CAPABILITIES_VERSION,
 };
@@ -680,7 +680,8 @@ pub struct PersistenceCallbacks {
     /// callbacks memory-safe. A context needing no cleanup takes a no-op
     /// `release_fn`; `None` is valid only alongside a null `context`.
     pub release_fn: Option<unsafe extern "C" fn(context: *mut c_void)>,
-    /// Enumerate the persisted Core txids that belong to `wallet_id`.
+    /// Enumerate the persisted Core txids that belong to `wallet_id`,
+    /// each tagged with whether the wallet funded the transaction.
     ///
     /// Appended at the END so the struct layout stays stable — a host
     /// built against the previous vtable keeps working, it simply never
@@ -694,8 +695,16 @@ pub struct PersistenceCallbacks {
     /// - Set `*out_txids` to a contiguous buffer of `32 * *out_count`
     ///   bytes, one raw-wire txid per 32-byte chunk, and `*out_count`
     ///   to the number of txids returned.
-    /// - Set `*out_txids = null` and `*out_count = 0` when no rows
-    ///   exist for the wallet.
+    /// - Set `*out_flags` to a buffer of `*out_count` bytes, one per
+    ///   txid in the same order. Bit `0x01` means the transaction
+    ///   spends at least one input funded by this wallet's own
+    ///   spendable accounts. Inputs tracked only through a watch-only
+    ///   DashPay external (contact) account do NOT count — those are
+    ///   the contact's coins, and flagging them fabricates `Sent`
+    ///   history for third-party transactions. Remaining bits are
+    ///   reserved and must be zero.
+    /// - Set `*out_txids = null`, `*out_flags = null` and
+    ///   `*out_count = 0` when no rows exist for the wallet.
     /// - Return `0` on success; non-zero values are treated as backend
     ///   failures by the Rust side.
     pub on_list_wallet_core_txids_fn: Option<
@@ -703,15 +712,22 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             out_txids: *mut *const u8,
+            out_flags: *mut *const u8,
             out_count: *mut usize,
         ) -> i32,
     >,
-    /// Paired free callback for the txid buffer returned by
+    /// Paired free callback for the txid + flags buffers returned by
     /// [`Self::on_list_wallet_core_txids_fn`]. Rust invokes this with
-    /// the same pointer and txid count, exactly once per successful
+    /// the same pointers and txid count, exactly once per successful
     /// hit.
-    pub on_list_wallet_core_txids_free_fn:
-        Option<unsafe extern "C" fn(context: *mut c_void, txids: *const u8, count: usize)>,
+    pub on_list_wallet_core_txids_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            txids: *const u8,
+            flags: *const u8,
+            count: usize,
+        ),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -2768,7 +2784,7 @@ impl PlatformWalletPersistence for FFIPersister {
     fn list_wallet_core_txids(
         &self,
         wallet_id: WalletId,
-    ) -> Result<Vec<dashcore::Txid>, PersistenceError> {
+    ) -> Result<Vec<ListedCoreTxid>, PersistenceError> {
         use dashcore::hashes::Hash;
 
         let Some(list_cb) = self.callbacks.on_list_wallet_core_txids_fn else {
@@ -2776,6 +2792,7 @@ impl PlatformWalletPersistence for FFIPersister {
         };
 
         let mut txids_ptr: *const u8 = std::ptr::null();
+        let mut flags_ptr: *const u8 = std::ptr::null();
         let mut count: usize = 0;
 
         let rc = unsafe {
@@ -2783,26 +2800,35 @@ impl PlatformWalletPersistence for FFIPersister {
                 self.callbacks.context,
                 wallet_id.as_ptr(),
                 &mut txids_ptr,
+                &mut flags_ptr,
                 &mut count,
             )
         };
 
         struct TxidBytesGuard {
-            ptr: *const u8,
+            txids: *const u8,
+            flags: *const u8,
             count: usize,
-            free_fn:
-                Option<unsafe extern "C" fn(context: *mut c_void, txids: *const u8, count: usize)>,
+            free_fn: Option<
+                unsafe extern "C" fn(
+                    context: *mut c_void,
+                    txids: *const u8,
+                    flags: *const u8,
+                    count: usize,
+                ),
+            >,
             ctx: *mut c_void,
         }
         impl Drop for TxidBytesGuard {
             fn drop(&mut self) {
-                if let (Some(free), false) = (self.free_fn, self.ptr.is_null()) {
-                    unsafe { free(self.ctx, self.ptr, self.count) };
+                if let (Some(free), false) = (self.free_fn, self.txids.is_null()) {
+                    unsafe { free(self.ctx, self.txids, self.flags, self.count) };
                 }
             }
         }
         let _txid_guard = TxidBytesGuard {
-            ptr: txids_ptr,
+            txids: txids_ptr,
+            flags: flags_ptr,
             count,
             free_fn: self.callbacks.on_list_wallet_core_txids_free_fn,
             ctx: self.callbacks.context,
@@ -2815,6 +2841,15 @@ impl PlatformWalletPersistence for FFIPersister {
         }
         if txids_ptr.is_null() || count == 0 {
             return Ok(Vec::new());
+        }
+        // The flags buffer is not optional once rows exist: without the
+        // per-txid ownership verdict the reconstruction sweep cannot tell a
+        // wallet-funded send from a third-party transaction that pays a
+        // watched contact address. Failing loud beats guessing either way.
+        if flags_ptr.is_null() {
+            return Err(PersistenceError::backend(
+                "on_list_wallet_core_txids_fn returned txids without a flags buffer",
+            ));
         }
 
         // Validate the byte length BEFORE building the slice: `from_raw_parts`
@@ -2833,16 +2868,21 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         // SAFETY: the host guarantees `txids_ptr` points to `byte_len` valid
-        // bytes for the duration of the callback window — `_txid_guard` keeps
-        // that window open until this function returns — and `byte_len` is
-        // checked above to be a valid slice length.
+        // bytes and `flags_ptr` to `count` valid bytes for the duration of
+        // the callback window — `_txid_guard` keeps that window open until
+        // this function returns — and both lengths are checked above to be
+        // valid slice lengths (`count <= byte_len`).
         let raw = unsafe { slice::from_raw_parts(txids_ptr, byte_len) };
+        let flags = unsafe { slice::from_raw_parts(flags_ptr, count) };
 
         let mut out = Vec::with_capacity(count);
-        for chunk in raw.chunks_exact(32) {
+        for (chunk, flag) in raw.chunks_exact(32).zip(flags) {
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(chunk);
-            out.push(dashcore::Txid::from_byte_array(bytes));
+            out.push(ListedCoreTxid {
+                txid: dashcore::Txid::from_byte_array(bytes),
+                spends_wallet_input: flag & 0x01 != 0,
+            });
         }
         Ok(out)
     }

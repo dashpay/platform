@@ -12,6 +12,22 @@ use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
+/// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
+/// a persisted Core transaction id plus the host's per-wallet
+/// ownership verdict for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListedCoreTxid {
+    /// The persisted transaction's id.
+    pub txid: Txid,
+    /// `true` when the transaction spends at least one input funded by
+    /// this wallet's own spendable accounts — i.e. the wallet actually
+    /// paid out in this transaction. `false` for transactions the host
+    /// persisted for other reasons: incoming payments, and third-party
+    /// transactions that merely pay an address on a watch-only DashPay
+    /// external (contact) account.
+    pub spends_wallet_input: bool,
+}
+
 /// Retry classification for [`PersistenceError::Backend`].
 ///
 /// The kind carries the persister's `is_transient()` contract across
@@ -322,20 +338,23 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// (`SqliteWalletPersister`, the SwiftData iOS persister) should
     /// override.
     ///
-    /// **Field contract.** Implementations are only required to
-    /// populate `txid` and `context` (with the `BlockInfo` inside
-    /// `InChainLockedBlock` / `InBlock` carrying real height + block
-    /// hash + timestamp). Other fields (`transaction`, `input_details`,
+    /// **Field contract.** Implementations must populate `txid`,
+    /// `context` (with the `BlockInfo` inside `InChainLockedBlock` /
+    /// `InBlock` carrying real height + block hash + timestamp) and
+    /// `transaction` — the real consensus-decoded transaction, never a
+    /// synthetic body. A backend that cannot produce the real
+    /// transaction for a txid must return `Ok(None)` instead;
+    /// DashPay sent-payment reconstruction walks
+    /// `record.transaction.output` and treats a miss on a txid the
+    /// backend itself enumerated (via
+    /// [`Self::list_wallet_core_txids`]) as "not available yet", so a
+    /// placeholder body would silently corrupt reconstruction where a
+    /// miss is retried safely. The remaining fields (`input_details`,
     /// `output_details`, `account_type`, `transaction_type`,
     /// `direction`, `net_amount`, `fee`, `label`) MAY be returned as
-    /// best-effort placeholders and MUST NOT be relied upon by callers.
-    /// The current consumer — the asset-lock proof flow — only reads
-    /// `context` and `height()` (which is
-    /// `context.block_info().map(|b| b.height)`). FFI-backed
-    /// implementations (e.g. the SwiftData iOS persister) take
-    /// advantage of this contract by emitting a synthetic record with a
-    /// placeholder transaction body, since reconstructing the full
-    /// `Transaction` over the C ABI is not free and isn't needed.
+    /// best-effort placeholders and MUST NOT be relied upon by callers
+    /// — the asset-lock proof flow reads only `context` and `height()`
+    /// (which is `context.block_info().map(|b| b.height)`).
     fn get_core_tx_record(
         &self,
         _wallet_id: WalletId,
@@ -345,14 +364,28 @@ pub trait PlatformWalletPersistence: Send + Sync {
     }
 
     /// Enumerate the persisted Core transaction ids that belong to
-    /// `wallet_id`.
+    /// `wallet_id`, each tagged with whether the transaction spends an
+    /// input this wallet funded.
     ///
     /// Used by DashPay sent-payment reconstruction to walk the
     /// wallet's locally persisted transaction history without relying
     /// on the optional in-memory `transactions()` map. The default
     /// implementation returns an empty set for backwards compatibility
     /// with backends that don't index wallet-scoped tx history.
-    fn list_wallet_core_txids(&self, _wallet_id: WalletId) -> Result<Vec<Txid>, PersistenceError> {
+    ///
+    /// `spends_wallet_input` must be `true` only when at least one of
+    /// the transaction's inputs spends an output owned by one of this
+    /// wallet's own spendable accounts. Watch-only mirrors — a DashPay
+    /// external account tracking a *contact's* addresses — do NOT
+    /// count: a third party paying that contact produces a transaction
+    /// the host persists as wallet-involved, but nothing in it was
+    /// funded by this wallet. Reconstruction only considers
+    /// wallet-funded transactions, so an over-broad `true` here turns
+    /// other people's payments into fabricated `Sent` history.
+    fn list_wallet_core_txids(
+        &self,
+        _wallet_id: WalletId,
+    ) -> Result<Vec<ListedCoreTxid>, PersistenceError> {
         Ok(Vec::new())
     }
 

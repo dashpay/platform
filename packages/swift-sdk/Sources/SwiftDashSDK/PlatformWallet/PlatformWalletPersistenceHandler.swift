@@ -5780,7 +5780,41 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
-    /// Enumerate the persisted txids scoped to `walletId`.
+    /// `AccountTypeTagFFI` discriminant for a watch-only DashPay external
+    /// (contact) account. TXOs tracked under it are the *contact's* coins,
+    /// mirrored locally so sends to the contact can be detected — they are
+    /// not spendable by this wallet.
+    static let dashpayExternalAccountTypeTag: UInt32 = 13
+
+    /// `true` when `transaction` spends at least one input funded by one of
+    /// this wallet's own spendable accounts.
+    ///
+    /// Pure row data: each entry in `transaction.inputs` is a `PersistentTxo`
+    /// this transaction spent, carrying the owning wallet denorm and the
+    /// account it was tracked under. A TXO tracked only by the watch-only
+    /// DashPay external account does NOT count — those are the contact's
+    /// coins, and counting them would tag a third party's transaction (the
+    /// contact spending their own money) as wallet-funded. A TXO whose
+    /// account link faulted to `nil` counts as owned: spendable-account rows
+    /// always carry the link, so `nil` is a relationship-store anomaly and
+    /// under-reporting would silently erase real sent history.
+    /// `pendingInputs` are deliberately ignored: a spend of our own coins
+    /// always has its funding TXO persisted (the wallet had to know the
+    /// output to spend it), while a pending row proves nothing about
+    /// ownership.
+    static func walletFundedTransaction(
+        walletId: Data,
+        transaction: PersistentTransaction
+    ) -> Bool {
+        transaction.inputs.contains { txo in
+            txo.walletId == walletId
+                && txo.account.map { $0.accountType != dashpayExternalAccountTypeTag } ?? true
+        }
+    }
+
+    /// Enumerate the persisted txids scoped to `walletId`, each paired with
+    /// whether this wallet funded the transaction (see
+    /// [`walletFundedTransaction`]).
     ///
     /// Scope is the union of wallet-owned TXOs (`outputs`, `inputs`,
     /// `pendingInputs`) and payload-only account involvement
@@ -5789,7 +5823,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// report a non-zero status. Collapsing a database fault to an empty list
     /// would be indistinguishable from a wallet with no transactions, and the
     /// Rust side treats those two very differently.
-    func walletCoreTxids(walletId: Data) -> (txids: [Data], errored: Bool) {
+    func walletCoreTxids(
+        walletId: Data
+    ) -> (txids: [(txid: Data, spendsWalletInput: Bool)], errored: Bool) {
         onQueue {
             let descriptor = FetchDescriptor<PersistentTransaction>()
             let rows: [PersistentTransaction]
@@ -5802,8 +5838,17 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
                 return ([], true)
             }
-            let txids = rows.compactMap { tx in
-                Self.walletOwnsTransaction(walletId: walletId, transaction: tx) ? tx.txid : nil
+            let txids = rows.compactMap { tx -> (txid: Data, spendsWalletInput: Bool)? in
+                guard Self.walletOwnsTransaction(walletId: walletId, transaction: tx) else {
+                    return nil
+                }
+                return (
+                    txid: tx.txid,
+                    spendsWalletInput: Self.walletFundedTransaction(
+                        walletId: walletId,
+                        transaction: tx
+                    )
+                )
             }
             return (txids, false)
         }
@@ -7521,11 +7566,14 @@ private func getCoreTxRecordFreeCallback(
 }
 
 /// C shim for `on_list_wallet_core_txids_fn`. Returns a contiguous
-/// `count * 32` byte buffer of raw txids in wire order.
+/// `count * 32` byte buffer of raw txids in wire order plus a parallel
+/// `count`-byte flags buffer (bit `0x01` = the wallet funded the
+/// transaction).
 private func listWalletCoreTxidsCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
     outTxids: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
+    outFlags: UnsafeMutablePointer<UnsafePointer<UInt8>?>?,
     outCount: UnsafeMutablePointer<UInt>?
 ) -> Int32 {
     // Non-zero on a missing argument: reporting success here would hand Rust
@@ -7534,11 +7582,13 @@ private func listWalletCoreTxidsCallback(
     guard let context = context,
           let walletIdPtr = walletIdPtr,
           let outTxids = outTxids,
+          let outFlags = outFlags,
           let outCount = outCount else {
         return -1
     }
 
     outTxids.pointee = nil
+    outFlags.pointee = nil
     outCount.pointee = 0
 
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
@@ -7554,19 +7604,23 @@ private func listWalletCoreTxidsCallback(
     }
 
     let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count * 32)
+    let flags = UnsafeMutablePointer<UInt8>.allocate(capacity: txids.count)
     // Pack only well-formed txids and report how many were packed. Skipping a
     // malformed one while still reporting `txids.count` would leave its slot
     // uninitialized and hand Rust 32 bytes of garbage as a txid.
     var packed = 0
-    for txid in txids where txid.count == 32 {
-        txid.copyBytes(to: buffer.advanced(by: packed * 32), count: 32)
+    for row in txids where row.txid.count == 32 {
+        row.txid.copyBytes(to: buffer.advanced(by: packed * 32), count: 32)
+        flags.advanced(by: packed).pointee = row.spendsWalletInput ? 0x01 : 0x00
         packed += 1
     }
     guard packed > 0 else {
         buffer.deallocate()
+        flags.deallocate()
         return 0
     }
     outTxids.pointee = UnsafePointer(buffer)
+    outFlags.pointee = UnsafePointer(flags)
     outCount.pointee = UInt(packed)
     return 0
 }
@@ -7575,9 +7629,14 @@ private func listWalletCoreTxidsCallback(
 private func listWalletCoreTxidsFreeCallback(
     context: UnsafeMutableRawPointer?,
     txids: UnsafePointer<UInt8>?,
+    flags: UnsafePointer<UInt8>?,
     _ count: UInt
 ) {
-    guard let txids = txids else { return }
-    UnsafeMutablePointer(mutating: txids).deallocate()
+    if let txids = txids {
+        UnsafeMutablePointer(mutating: txids).deallocate()
+    }
+    if let flags = flags {
+        UnsafeMutablePointer(mutating: flags).deallocate()
+    }
     _ = context
 }
