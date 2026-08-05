@@ -3128,7 +3128,30 @@ fn build_core_address_entry_ffi(
         pool_type_tag,
         address_index: info.index,
         // key-wallet #818: `used` bool -> `state` enum (Used == funded).
-        is_used: matches!(info.state, AddressState::Used),
+        //
+        // `CoreAddressEntryFFI` predates that enum and carries a single
+        // `is_used` bool with no slot for a reservation, so `Reserved`
+        // can only flatten to `false` and would reload as `Available` —
+        // silently returning a handed-out address to the pool. Nothing
+        // in platform reserves addresses (no caller of
+        // `next_receive_address_and_reserve` / `next_unused_and_reserve`
+        // anywhere in the workspace), so that arm is unreachable today.
+        // It is spelled out rather than folded into a catch-all so the
+        // first reserving caller shows up as an explicit schema decision
+        // instead of losing state on the next reload.
+        is_used: match info.state {
+            AddressState::Used => true,
+            AddressState::Available => false,
+            AddressState::Reserved { .. } => {
+                tracing::warn!(
+                    index = info.index,
+                    "persist: address pool entry is reserved, but the persisted \
+                     address schema cannot represent a reservation; it will \
+                     reload as available and may be handed out again"
+                );
+                false
+            }
+        },
         balance: info.balance,
         address_base58: address_ptr,
         derivation_path: path_ptr,
@@ -3225,11 +3248,17 @@ unsafe fn address_info_from_ffi(
         index: entry.address_index,
         path,
         // key-wallet #818: the flat `used`/`generated_at`/`used_at` fields
-        // became the `state` enum. The FFI entry only carries `is_used`, so
-        // it round-trips to `Used`/`Available` (platform never hands out the
-        // `Reserved` state across FFI). The synthetic `generated_at: 0` /
-        // `used_at` values had no clock backing and have no equivalent on the
-        // new variants, so they are dropped without loss.
+        // became the `state` enum. The persisted entry only carries
+        // `is_used`, so it round-trips to `Used`/`Available`; see
+        // `build_core_address_entry_ffi` for why `Reserved` is unreachable
+        // here.
+        //
+        // Dropping `generated_at`/`used_at` is lossless because neither was
+        // ever persisted: `CoreAddressEntryFFI` has no field for them, so
+        // this constructor was the only thing that produced them, from the
+        // literals `0` / `Some(0)`. Upstream never had real values either —
+        // every key-wallet `AddressInfo` constructor set `generated_at: 0`
+        // ("Should use actual timestamp"). No stored information is lost.
         state: if entry.is_used {
             AddressState::Used
         } else {
@@ -6378,6 +6407,50 @@ mod tests {
                 "expected a typed ECDSA key after round-trip, got {:?}",
                 other
             ),
+        }
+    }
+
+    /// Pin what the persisted address row does to key-wallet #818's
+    /// `AddressState`. `CoreAddressEntryFFI` predates the enum and carries
+    /// a single `is_used` bool, so only `Used` and `Available` survive a
+    /// save/load cycle intact; `Reserved { .. }` has no representation and
+    /// comes back `Available`, i.e. a reload silently frees a handed-out
+    /// address. Nothing in platform reserves addresses today, so this
+    /// records the boundary rather than a live bug: if a reserving caller
+    /// is ever added, this test is where the schema decision (a dedicated
+    /// reservation field on the row) has to be made.
+    #[test]
+    fn address_state_round_trip_keeps_used_and_flattens_reserved() {
+        for (state, expected) in [
+            (AddressState::Available, AddressState::Available),
+            (AddressState::Used, AddressState::Used),
+            (
+                AddressState::Reserved { at: 1_700_000_000 },
+                AddressState::Available,
+            ),
+        ] {
+            let mut info = typed_key_test_address_info(11, None);
+            info.state = state;
+
+            let mut owned: Vec<CString> = Vec::new();
+            let entry = build_core_address_entry_ffi(
+                &info,
+                AddressPoolTypeTagFFI::AbsentHardened as u8,
+                false,
+                &mut owned,
+            )
+            .expect("build_core_address_entry_ffi must succeed");
+            // SAFETY: the address / path c-strings live in `owned`, kept
+            // alive until after this decode.
+            let restored = unsafe { address_info_from_ffi(&entry, Network::Testnet) }
+                .expect("address_info_from_ffi must decode the row");
+            drop(owned);
+
+            assert_eq!(
+                restored.state, expected,
+                "{:?} must restore as {:?} through the persisted row",
+                state, expected
+            );
         }
     }
 

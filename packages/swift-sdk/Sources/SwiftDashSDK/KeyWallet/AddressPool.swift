@@ -79,7 +79,30 @@ public struct AddressInfo {
     public let publicKey: Data?
     public let index: UInt32
     public let path: String
+
+    /// Whether funds have been seen at this address.
+    ///
+    /// key-wallet #818 replaced `AddressInfo`'s flat `used` flag with a
+    /// three-state `AddressState { Available | Reserved { at } | Used }`
+    /// lifecycle. `FFIAddressInfo.used` is now derived as
+    /// `state == .used`, so an address that has been *reserved* (handed
+    /// out but not yet funded) still reports `used == false`. The C
+    /// surface carries no reservation flag, so reservation state is not
+    /// observable from Swift; if that is ever needed, `FFIAddressInfo`
+    /// has to gain a field upstream in key-wallet-ffi first.
     public let used: Bool
+
+    /// Always the Unix epoch (1970-01-01).
+    ///
+    /// key-wallet #818 removed `generated_at` from `FFIAddressInfo`, and
+    /// none of the new `AddressState` variants carries a generation
+    /// timestamp, so there is nothing left to read. This is *not* a
+    /// substituted value: every `AddressInfo` upstream ever produced was
+    /// constructed with the literal placeholder `generated_at: 0`
+    /// (annotated "Should use actual timestamp" in key-wallet), so this
+    /// property has always evaluated to the epoch. It is retained only so
+    /// existing call sites keep compiling and observe the same value as
+    /// before; do not read it as a real generation time.
     public let generatedAt: Date
 
     init(ffiInfo: FFIAddressInfo) {
@@ -114,6 +137,10 @@ public struct AddressInfo {
         }
 
         self.used = ffiInfo.used
-        self.generatedAt = Date(timeIntervalSince1970: TimeInterval(ffiInfo.generated_at))
+        // key-wallet #818 dropped `generated_at` from the C struct. See the
+        // property doc: the field it used to read was always the literal 0,
+        // so pinning the epoch here reproduces the previous value exactly
+        // rather than inventing one.
+        self.generatedAt = Date(timeIntervalSince1970: 0)
     }
 }
