@@ -336,6 +336,39 @@ mod tests {
         );
     }
 
+    // Reordering the `indices` array without changing the definition set is
+    // a semantic no-op (indices are keyed by name), so the name-keyed
+    // comparison passes — and the schema-compatibility check must not trip
+    // over the surviving `/indices` JSON diff. Under protocol v13 that diff
+    // hit the unsupported-keyword hard error (an internal error, not a
+    // consensus-invalid result); at v14 `validate_schema_compatibility` v1
+    // strips `indices` before diffing and the update validates cleanly.
+    #[test]
+    fn should_pass_when_indices_are_reordered_without_changes() {
+        let platform_version = PlatformVersion::latest();
+
+        let old = old_doc_type(platform_version);
+
+        let new = doc_type_with_indices(
+            platform_value!([
+                {"name": "k", "properties": [{"a": "asc"}, {"b": "asc"}]},
+                {"name": "j", "properties": [{"c": "asc"}]},
+            ]),
+            platform_version,
+        );
+
+        let result = old
+            .as_ref()
+            .validate_update(new.as_ref(), platform_version)
+            .expect("validate_update should not error");
+
+        assert!(
+            result.is_valid(),
+            "a reorder-only indices update should be accepted, got {:?}",
+            result.errors
+        );
+    }
+
     #[test]
     fn should_pass_when_indices_are_unchanged() {
         let platform_version = PlatformVersion::latest();

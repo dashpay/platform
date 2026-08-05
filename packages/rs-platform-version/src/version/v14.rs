@@ -75,14 +75,20 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// shared-prefix shapes.
 ///
 /// Until a contract uses the ranked grammar, the only v14 behavior changes
-/// are the shared-prefix fix and the contested-index cross-check; everything
-/// else matches v13:
+/// are the shared-prefix fix, the contested-index cross-check and the
+/// index-reorder schema-compatibility fix; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
 ///   (`rankedCountable` / `rankedSummable` / `rankedAverageable`). v13 keeps
 ///   validating against meta-schema v2, where those keys are rejected as
 ///   unknown properties, so a pre-v14 contract cannot smuggle them in.
+///   It also bumps `validate_schema_compatibility` to 1, which strips the
+///   top-level `indices` key before diffing the old and new document type
+///   schemas: index immutability is enforced by `validate_update` v1's
+///   name-keyed comparison, so a contract update that merely reorders the
+///   `indices` array validates cleanly instead of hitting the
+///   unsupported-keyword hard error (an internal error under v13).
 /// * `DRIVE_VERSION_V9` carries `DRIVE_DOCUMENT_METHOD_VERSIONS_V4`, adding
 ///   the `detect_ranked_mode` routing slot, plus the grove-method slots for
 ///   creating the three indexed tree variants and the verify-method slot for
