@@ -222,14 +222,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         use dashcore::ScriptBuf;
         use std::collections::{BTreeMap, BTreeSet};
 
-        // Keyed by script pubkey, not by rendered address: the outputs this
-        // matches against come from a consensus-decoded `Transaction`, which
-        // carries scripts. Comparing scripts also sidesteps address-encoding
-        // pitfalls (network prefix, P2PKH vs P2SH rendering).
-        let (address_matches, eligible_contacts): (
-            BTreeMap<ScriptBuf, (Identifier, Identifier)>,
-            Vec<(Identifier, Identifier)>,
-        ) = {
+        /// The `(owner identity, contact identity)` pair every reconstructed
+        /// entry is attributed to.
+        type OwnerContact = (Identifier, Identifier);
+        /// Script pubkeys derived from the eligible contacts' external
+        /// accounts, mapped back to the pair that owns each one.
+        ///
+        /// Keyed by script pubkey, not by rendered address: the outputs this
+        /// matches against come from a consensus-decoded `Transaction`, which
+        /// carries scripts. Comparing scripts also sidesteps address-encoding
+        /// pitfalls (network prefix, P2PKH vs P2SH rendering).
+        type ContactScriptIndex = BTreeMap<ScriptBuf, OwnerContact>;
+
+        let (address_matches, eligible_contacts): (ContactScriptIndex, Vec<OwnerContact>) = {
             let wm = self.wallet_manager.read().await;
             let info = match wm.get_wallet_info(&self.wallet_id) {
                 Some(info) => info,
