@@ -107,13 +107,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
 
         // 3. Delegate to the key-wallet signer-driven builder.
+        //
+        // key-wallet #915 changed the builder signature: the funding
+        // source is now an explicit `AssetLockFundingAccount` (BIP44 vs
+        // CoinJoin) and a `drain` flag was added. This call site has
+        // always funded from the standard BIP44 account (`account_index`
+        // is documented as a BIP44 account index) and never drained, so
+        // `Bip44 { account_index }` + `drain = false` reproduces the
+        // pre-#915 behavior exactly.
+        // TODO(baseline-bump): confirm `drain` intent with QE — defaulted
+        // to `false` to preserve pre-#915 behavior (non-drain BIP44 funding).
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
         let result = info
             .core_wallet
             .build_asset_lock_with_signer(
                 wallet,
-                account_index,
+                AssetLockFundingAccount::Bip44 { account_index },
                 vec![funding],
                 DEFAULT_FEE_PER_KB,
+                false,
                 signer,
             )
             .await
@@ -937,7 +949,13 @@ mod tests {
         let persisted_invitation_used = stored.iter().any(|cs| {
             cs.account_address_pools.iter().any(|entry| {
                 matches!(entry.account_type, AccountType::IdentityInvitation)
-                    && entry.addresses.iter().any(|a| a.used)
+                    && entry.addresses.iter().any(|a| {
+                        // key-wallet #818: `used` bool -> `state` enum.
+                        matches!(
+                            a.state,
+                            key_wallet::managed_account::address_pool::AddressState::Used
+                        )
+                    })
             })
         });
         assert!(
@@ -1343,7 +1361,17 @@ mod tests {
                 .iter()
                 .filter(|e| matches!(e.account_type, AccountType::IdentityInvitation))
             {
-                let used = entry.addresses.iter().filter(|a| a.used).count();
+                // key-wallet #818: `used` bool -> `state` enum.
+                let used = entry
+                    .addresses
+                    .iter()
+                    .filter(|a| {
+                        matches!(
+                            a.state,
+                            key_wallet::managed_account::address_pool::AddressState::Used
+                        )
+                    })
+                    .count();
                 assert!(
                     used >= last_used,
                     "invitation pool snapshot rolled back: {used} used after {last_used}"

@@ -150,10 +150,21 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             // `set_funding` observes ReservationSet and `build_unsigned`
             // records its selection. There is no await between them and the
             // manager write guard prevents another finalizer interleaving.
-            let (unsigned, fee) = builder
+            //
+            // key-wallet #916 renamed `build_unsigned` to
+            // `build_unsigned_reserved`, which additionally surfaces the
+            // `ReservationToken` stamped onto the reserved inputs. Its body is
+            // otherwise identical to the old `build_unsigned` (the reservation
+            // was always recorded inside `assemble_unsigned`). This baseline
+            // path releases abandoned reservations via the unconditional
+            // `release_reservation(&unsigned)` below, exactly as before, so the
+            // token is intentionally discarded here to preserve pre-#916
+            // behavior. Owner-guarded release via the token is the TOCTOU fix
+            // threaded by dashpay/platform#4185, not baseline maintenance.
+            let (unsigned, fee, _reservation) = builder
                 .set_current_height(height)
                 .set_funding(managed, &account)
-                .build_unsigned()
+                .build_unsigned_reserved()
                 .map_err(|error| map_builder_error(error, account_type, account_index))?;
 
             let selected: Vec<Utxo> = match unsigned

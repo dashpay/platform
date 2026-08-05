@@ -204,7 +204,7 @@ pub fn populate_platform_node_pool(
     network: key_wallet::Network,
 ) -> Result<(), PlatformWalletError> {
     use dashcore::hashes::Hash;
-    use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+    use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::AddressInfo;
 
@@ -247,9 +247,12 @@ pub fn populate_platform_node_pool(
             public_key: Some(PublicKeyType::EdDSA(key.public_key.to_vec())),
             index: key.index,
             path,
-            used: false,
-            generated_at: 0,
-            used_at: None,
+            // key-wallet #818: the flat `used`/`generated_at`/`used_at`
+            // fields became the `state` enum. A freshly derived, unfunded
+            // address is `AddressState::Available` (the former
+            // `used: false`); the removed timestamps have no equivalent on
+            // the new `Available` variant.
+            state: AddressState::Available,
             tx_count: 0,
             total_received: 0,
             total_sent: 0,

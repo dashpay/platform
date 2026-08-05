@@ -2158,7 +2158,7 @@ mod tests {
         index: u32,
     ) -> key_wallet::transaction_checking::DerivedAddressInfo {
         use key_wallet::bip32::{ChildNumber, DerivationPath};
-        use key_wallet::managed_account::address_pool::{AddressInfo, PublicKeyType};
+        use key_wallet::managed_account::address_pool::{AddressInfo, AddressState, PublicKeyType};
 
         let pubkey =
             dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
@@ -2177,9 +2177,13 @@ mod tests {
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
-                used: true,
-                generated_at: 0,
-                used_at: None,
+                // key-wallet #818 replaced the flat `used`/`generated_at`/
+                // `used_at` fields with the `state` enum. This stub models a
+                // used address, so `used: true` maps to `AddressState::Used`.
+                // The new `Used` variant carries no timestamp, so the former
+                // `generated_at`/`used_at` values have no equivalent and are
+                // dropped (they were write-only in this test stub).
+                state: AddressState::Used,
                 tx_count: 0,
                 total_received: 0,
                 total_sent: 0,

@@ -12,7 +12,9 @@ use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
 use key_wallet::derivation_slip10::ExtendedEd25519PubKey;
-use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{
+    AddressPool, AddressPoolType, AddressState, PublicKeyType,
+};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
@@ -3125,7 +3127,8 @@ fn build_core_address_entry_ffi(
         key_type_tag,
         pool_type_tag,
         address_index: info.index,
-        is_used: info.used,
+        // key-wallet #818: `used` bool -> `state` enum (Used == funded).
+        is_used: matches!(info.state, AddressState::Used),
         balance: info.balance,
         address_base58: address_ptr,
         derivation_path: path_ptr,
@@ -3221,9 +3224,17 @@ unsafe fn address_info_from_ffi(
         public_key,
         index: entry.address_index,
         path,
-        used: entry.is_used,
-        generated_at: 0,
-        used_at: if entry.is_used { Some(0) } else { None },
+        // key-wallet #818: the flat `used`/`generated_at`/`used_at` fields
+        // became the `state` enum. The FFI entry only carries `is_used`, so
+        // it round-trips to `Used`/`Available` (platform never hands out the
+        // `Reserved` state across FFI). The synthetic `generated_at: 0` /
+        // `used_at` values had no clock backing and have no equivalent on the
+        // new variants, so they are dropped without loss.
+        state: if entry.is_used {
+            AddressState::Used
+        } else {
+            AddressState::Available
+        },
         tx_count: 0,
         total_received: 0,
         total_sent: 0,
@@ -3270,7 +3281,8 @@ fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
         pool.script_pubkey_index
             .insert(info.script_pubkey.clone(), idx);
         pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-        if info.used {
+        // key-wallet #818: `used` bool -> `state` enum (Used == funded).
+        if matches!(info.state, AddressState::Used) {
             pool.used_indices.insert(idx);
             pool.highest_used = Some(pool.highest_used.map_or(idx, |h| h.max(idx)));
         }
@@ -6248,9 +6260,8 @@ mod tests {
             index,
             path: DerivationPath::from_str(&format!("m/9'/1'/2'/{}", index))
                 .expect("static derivation path must parse"),
-            used: false,
-            generated_at: 0,
-            used_at: None,
+            // key-wallet #818: `used`/`generated_at`/`used_at` -> `state` enum.
+            state: AddressState::Available,
             tx_count: 0,
             total_received: 0,
             total_sent: 0,
@@ -7072,9 +7083,8 @@ mod tests {
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
-                used: true,
-                generated_at: 0,
-                used_at: None,
+                // key-wallet #818: `used`/`generated_at`/`used_at` -> `state`.
+                state: AddressState::Used,
                 tx_count: 0,
                 total_received: 0,
                 total_sent: 0,
@@ -7124,7 +7134,7 @@ mod tests {
             entries
                 .iter()
                 .flat_map(|e| e.addresses.iter())
-                .all(|a| a.used),
+                .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
     }

@@ -5,7 +5,9 @@ use std::sync::Arc;
 use dashcore::{OutPoint, Txid};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
-use key_wallet::managed_account::address_pool::{AddressInfo, AddressPool, AddressPoolType};
+use key_wallet::managed_account::address_pool::{
+    AddressInfo, AddressPool, AddressPoolType, AddressState,
+};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::utxo::Utxo;
 use key_wallet::WalletCoreBalance;
@@ -400,8 +402,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .address_pools()
                     .iter()
                     .fold((0u32, 0u32), |(used, total), pool| {
-                        let pool_used =
-                            pool.addresses.values().filter(|info| info.used).count() as u32;
+                        // key-wallet #818: `used` bool -> `state` enum.
+                        // "used" counts only funded addresses, so match on
+                        // `AddressState::Used` (a `Reserved` address is not
+                        // used); this preserves the pre-#818 count exactly.
+                        let pool_used = pool
+                            .addresses
+                            .values()
+                            .filter(|info| matches!(info.state, AddressState::Used))
+                            .count() as u32;
                         let pool_total = pool.addresses.len() as u32;
                         (used + pool_used, total + pool_total)
                     });
@@ -1110,7 +1119,8 @@ fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
     AccountAddressInfoSnapshot {
         pubkey_hash,
         address_index: info.index,
-        is_used: info.used,
+        // key-wallet #818: `used` bool -> `state` enum (Used == funded).
+        is_used: matches!(info.state, AddressState::Used),
         address,
         public_key_bytes,
     }
