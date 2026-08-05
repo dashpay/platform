@@ -25,7 +25,7 @@ use super::activity_recorder::{
 };
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
-    select_notes_for_denomination, select_notes_with_fee, ShieldedFeeKind,
+    select_notes_for_denomination, select_notes_with_fee, ChangeRequirement, ShieldedFeeKind,
 };
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
@@ -673,8 +673,18 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
     // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
     // debug assert below would fire).
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Unshield,
+        // `build_unshield_transition` accepts a zero-valued change output (it rejects only
+        // `required > total_spent`), so exact coverage is a fundable selection.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -860,8 +870,18 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
     // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Base,
+        // `build_shielded_transfer_transition` emits change only when there is some, so an
+        // exact-coverage selection is fundable.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -1049,6 +1069,11 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
 
     // Reserve against the SAME output count the builder sizes its fee from: every recipient
     // output plus the unconditional change output.
+    //
+    // That change output is unconditional and must carry a positive value, so the builder
+    // rejects `total_input == total_amount + fee`. Selection must therefore demand STRICTLY
+    // more, or a wallet holding e.g. `[total_amount + fee, 1]` would have the exact-coverage
+    // note reserved on its own and the build would fail despite the balance being sufficient.
     let num_outputs = builder_outputs.len() + 1;
     let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
         sdk,
@@ -1057,6 +1082,7 @@ pub async fn transfer_multi<S: ShieldedStore, P: OrchardProver>(
         total_amount,
         num_outputs,
         ShieldedFeeKind::Base,
+        ChangeRequirement::StrictlyPositive,
     )
     .await?;
 
@@ -1213,8 +1239,17 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
     // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
     // below would fire).
-    let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
+    let (selected_notes, total_input, exact_fee) = reserve_unspent_notes(
+        sdk,
+        store,
+        id,
+        amount,
+        2,
+        ShieldedFeeKind::Withdrawal,
+        // `build_shielded_withdrawal_transition` likewise accepts zero change.
+        ChangeRequirement::Optional,
+    )
+    .await?;
 
     info!(
         account,
@@ -2069,13 +2104,15 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     amount: u64,
     outputs: usize,
     fee_kind: ShieldedFeeKind,
+    change: ChangeRequirement,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
+        select_notes_with_fee(&unspent, amount, outputs, fee_kind, change, sdk.version())?
+            .into_owned();
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)

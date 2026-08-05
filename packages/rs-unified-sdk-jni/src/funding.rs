@@ -853,6 +853,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 /// `amounts` holds the matching credit amounts. Each pair becomes its own
 /// note; repeating the same address funds that address with several
 /// independent notes. `memoText` is attached to every recipient note.
+///
+/// At most `platform_wallet_ffi::MAX_SHIELDED_TRANSFER_RECIPIENTS` recipients
+/// are accepted, and that ceiling is enforced from the Java array LENGTHS
+/// before either array is copied into a native buffer — so no allocation is
+/// ever sized by an unvalidated caller-supplied count.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedTransferMulti(
     mut env: JNIEnv,
@@ -881,14 +886,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             throw_sdk_exception(env, 1, "amounts long[] was null");
             return;
         }
-        let recipients = match env.convert_byte_array(&recipients_raw43) {
-            Ok(b) => b,
-            Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was invalid");
-                return;
-            }
-        };
+        // Establish the recipient count and bound it BEFORE any caller-sized allocation. Both
+        // `convert_byte_array` (43 bytes per recipient) and the amount buffers below are sized
+        // from Java-supplied lengths, so an accidental or hostile oversized call would otherwise
+        // drive several large allocations — and possibly an allocator OOM — on its way to the
+        // native layer's clean `ErrorInvalidParameter`. `get_array_length` reads a header field
+        // and allocates nothing.
         let amount_len = match env.get_array_length(&amounts) {
             Ok(n) if n >= 0 => n as usize,
             _ => {
@@ -901,18 +904,48 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
             throw_sdk_exception(env, 1, "amounts must contain at least one entry");
             return;
         }
-        if recipients.len() != amount_len * 43 {
+        if amount_len > platform_wallet_ffi::MAX_SHIELDED_TRANSFER_RECIPIENTS {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "amounts must hold at most {} entries, got {amount_len}",
+                    platform_wallet_ffi::MAX_SHIELDED_TRANSFER_RECIPIENTS
+                ),
+            );
+            return;
+        }
+        // Same rule for the address blob: verify its LENGTH (a header read) against the bounded
+        // recipient count before copying it into a native buffer, so the copy that follows is
+        // bounded by `MAX_SHIELDED_TRANSFER_RECIPIENTS * 43` rather than by the caller.
+        let recipients_len = match env.get_array_length(&recipients_raw43) {
+            Ok(n) if n >= 0 => n as usize,
+            _ => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was invalid");
+                return;
+            }
+        };
+        if recipients_len != amount_len * 43 {
             throw_sdk_exception(
                 env,
                 1,
                 &format!(
                     "recipientsRaw43 must be 43 bytes per amount ({} expected), got {}",
                     amount_len * 43,
-                    recipients.len()
+                    recipients_len
                 ),
             );
             return;
         }
+        let recipients = match env.convert_byte_array(&recipients_raw43) {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "recipientsRaw43 byte[] was invalid");
+                return;
+            }
+        };
         let mut amount_buf = vec![0i64; amount_len];
         if env
             .get_long_array_region(&amounts, 0, &mut amount_buf)

@@ -70,6 +70,35 @@ impl ShieldedFeeKind {
     }
 }
 
+/// Whether the spend's builder tolerates a zero-valued change output.
+///
+/// The two shapes differ by exactly one credit at the boundary, and note selection MUST reserve
+/// against the shape its builder actually enforces — otherwise a selection is reserved, the
+/// builder rejects it, and a wallet with sufficient balance reports a failed spend (the
+/// reservation is released, so nothing is stranded, but the spend is refused).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChangeRequirement {
+    /// The builder tolerates zero change: `build_shielded_transfer_transition` simply omits its
+    /// change output, and `build_unshield_transition` /
+    /// `build_shielded_withdrawal_transition` emit a zero-valued one. All three reject only
+    /// `required > total_spent`, so exact coverage is a fundable selection.
+    Optional,
+    /// The builder ALWAYS emits a change output, which must carry a positive value, so it
+    /// rejects `total_spent == amount + fee` (`build_shielded_transfer_transition_multi` tests
+    /// `required >= total_spent`). Selection must therefore cover `amount + fee + 1`.
+    StrictlyPositive,
+}
+
+impl ChangeRequirement {
+    /// Credits the selection must cover ON TOP of `amount + fee`.
+    fn min_change_credits(self) -> u64 {
+        match self {
+            ChangeRequirement::Optional => 0,
+            ChangeRequirement::StrictlyPositive => 1,
+        }
+    }
+}
+
 /// Select unspent notes to cover `amount + fee` using a greedy algorithm.
 ///
 /// Notes are sorted by value descending and accumulated until the target is met.
@@ -153,27 +182,50 @@ pub fn select_notes(
 /// ShieldedTransfer. This MUST match the fee the builder/consensus will charge, otherwise the spend
 /// is under-funded.
 ///
-/// Returns the selected notes, total input value, and the exact fee.
+/// `change` states whether the builder can omit its change output. Pass
+/// [`ChangeRequirement::StrictlyPositive`] for the multi-output transfer builder, whose change
+/// output is unconditional and must carry a positive value: an exact-coverage selection
+/// (`total_input == amount + fee`) satisfies this function's `>=` test but is then REJECTED by
+/// that builder, so a wallet that could fund the spend by selecting one more note would report a
+/// failure instead. The extra credit is folded into the selection target on every iteration, so
+/// the fee re-computation that follows an added note (and the action count that added note
+/// implies) is applied to the strict target too.
+///
+/// Returns the selected notes, total input value, and the exact fee. The returned fee is the pure
+/// consensus fee — the change-requirement credit is a selection-side floor only and is NOT part
+/// of what the builder carves.
 pub fn select_notes_with_fee<'a>(
     unspent: &'a [ShieldedNote],
     amount: u64,
     min_actions: usize,
     fee_kind: ShieldedFeeKind,
+    change: ChangeRequirement,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
+    let min_change = change.min_change_credits();
     let mut fee_estimate = fee_kind
         .compute(min_actions, platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
+    // Target for `select_notes`, which adds it to `amount`: the fee plus the minimum change the
+    // builder demands.
+    let selection_target = |fee: u64| -> Result<u64, PlatformWalletError> {
+        fee.checked_add(min_change).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "fee + minimum change overflows u64".to_string(),
+            )
+        })
+    };
+
     for _ in 0..5 {
-        let selected = select_notes(unspent, amount, fee_estimate)?;
+        let selected = select_notes(unspent, amount, selection_target(fee_estimate)?)?;
         let total: u64 = selected.iter().map(|n| n.value).sum();
         let num_actions = selected.len().max(min_actions);
         let exact_fee = fee_kind
             .compute(num_actions, platform_version)
             .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        if total >= amount.saturating_add(exact_fee) {
+        if total >= amount.saturating_add(exact_fee).saturating_add(min_change) {
             return Ok((selected, total, exact_fee));
         }
 
@@ -181,17 +233,18 @@ pub fn select_notes_with_fee<'a>(
     }
 
     // Final attempt with last computed fee
-    let selected = select_notes(unspent, amount, fee_estimate)?;
+    let selected = select_notes(unspent, amount, selection_target(fee_estimate)?)?;
     let total: u64 = selected.iter().map(|n| n.value).sum();
     let num_actions = selected.len().max(min_actions);
     let exact_fee = fee_kind
         .compute(num_actions, platform_version)
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-    if total < amount.saturating_add(exact_fee) {
+    let required = amount.saturating_add(exact_fee).saturating_add(min_change);
+    if total < required {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
             available: total,
-            required: amount.saturating_add(exact_fee),
+            required,
         });
     }
 
@@ -372,9 +425,15 @@ mod tests {
         // A single note covering amount + the 2-action fee.
         let notes = vec![test_note(amount + min_fee_2 + 5, 0)];
 
-        let (selected, total, exact_fee) =
-            select_notes_with_fee(&notes, amount, 2, ShieldedFeeKind::Base, platform_version)
-                .expect("selection ok");
+        let (selected, total, exact_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            2,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::Optional,
+            platform_version,
+        )
+        .expect("selection ok");
 
         assert_eq!(selected.len(), 1);
         assert_eq!(total, amount + min_fee_2 + 5);
@@ -409,6 +468,7 @@ mod tests {
             amount,
             min_actions,
             ShieldedFeeKind::Base,
+            ChangeRequirement::Optional,
             platform_version,
         )
         .expect("selection ok");
@@ -417,6 +477,141 @@ mod tests {
         assert_eq!(
             exact_fee, min_fee_3,
             "one spend but three outputs must reserve the 3-action fee, not the 2-action floor"
+        );
+    }
+
+    /// THE regression pin for the exact-fit selection bug.
+    ///
+    /// `build_shielded_transfer_transition_multi` always emits a change output and so requires
+    /// the spent value to STRICTLY exceed `sum(amounts) + fee`. With notes valued
+    /// `[amount + fee, 1]`, largest-first selection used to stop on the exact-coverage note
+    /// alone: the reservation succeeded, the builder then rejected the spend, and a wallet that
+    /// could have funded it by taking the remaining credit reported a failure.
+    /// [`ChangeRequirement::StrictlyPositive`] makes the selector demand that extra credit.
+    #[test]
+    fn test_select_notes_with_fee_strict_change_takes_one_more_credit() {
+        let platform_version = PlatformVersion::latest();
+        // Two recipient notes + change = 3 outputs → the 3-action floor the multi-output
+        // transfer reserves against.
+        let min_actions = 3;
+        let fee = compute_minimum_shielded_fee(min_actions, platform_version).expect("fee");
+        let amount = 3_000_000_000u64;
+
+        // The reviewer's shape: one note covering `amount + fee` exactly, plus a single credit.
+        let notes = vec![test_note(amount + fee, 0), test_note(1, 1)];
+
+        let (selected, total, exact_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            min_actions,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::StrictlyPositive,
+            platform_version,
+        )
+        .expect("a wallet holding amount + fee + 1 must be able to fund a multi-output transfer");
+
+        assert_eq!(
+            selected.len(),
+            2,
+            "the exact-coverage note alone leaves zero change; the extra credit must be selected"
+        );
+        assert_eq!(
+            exact_fee, fee,
+            "two spends still sit under the 3-action floor"
+        );
+        assert!(
+            total > amount.saturating_add(exact_fee),
+            "the selection must leave STRICTLY positive change ({total} > {amount} + {exact_fee})"
+        );
+
+        // Same wallet under the permissive contract stops on the exact-coverage note — the state
+        // the builder rejects. This is what the strict variant exists to prevent.
+        let (permissive, permissive_total, permissive_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            min_actions,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::Optional,
+            platform_version,
+        )
+        .expect("selection ok");
+        assert_eq!(permissive.len(), 1);
+        assert_eq!(
+            permissive_total,
+            amount + permissive_fee,
+            "the permissive contract accepts exact coverage — zero change"
+        );
+    }
+
+    /// One credit short of the strict requirement is a genuine insufficient balance, and the
+    /// reported `required` must include the change credit so the caller sees the real shortfall.
+    #[test]
+    fn test_select_notes_with_fee_strict_change_reports_the_extra_credit_as_required() {
+        let platform_version = PlatformVersion::latest();
+        let min_actions = 3;
+        let fee = compute_minimum_shielded_fee(min_actions, platform_version).expect("fee");
+        let amount = 3_000_000_000u64;
+        // Exactly `amount + fee` and not a credit more.
+        let notes = vec![test_note(amount + fee, 0)];
+
+        let err = select_notes_with_fee(
+            &notes,
+            amount,
+            min_actions,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::StrictlyPositive,
+            platform_version,
+        )
+        .expect_err("exact coverage cannot fund a builder that demands positive change");
+
+        match err {
+            PlatformWalletError::ShieldedInsufficientBalance {
+                available,
+                required,
+            } => {
+                assert_eq!(available, amount + fee);
+                assert_eq!(
+                    required,
+                    amount + fee + 1,
+                    "the required figure must include the change credit"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// The strict floor must survive fee convergence: when the selector adds notes, the action
+    /// count (and therefore the fee) is recomputed, and the strict `total > amount + fee`
+    /// postcondition must hold against the RECOMPUTED fee, not the initial estimate.
+    #[test]
+    fn test_select_notes_with_fee_strict_change_holds_after_fee_reconvergence() {
+        let platform_version = PlatformVersion::latest();
+        let min_actions = 3;
+        let amount = 1_000_000u64;
+        // Many equal mid-size notes, so several must be selected and the action count — and with
+        // it the fee — climbs past the 3-action floor during convergence.
+        let notes: Vec<ShieldedNote> = (0..20).map(|i| test_note(60_000_000, i)).collect();
+
+        let (selected, total, exact_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            min_actions,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::StrictlyPositive,
+            platform_version,
+        )
+        .expect("selection ok");
+
+        let expected_fee =
+            compute_minimum_shielded_fee(selected.len().max(min_actions), platform_version)
+                .expect("fee");
+        assert_eq!(
+            exact_fee, expected_fee,
+            "the returned fee must match the selected action count"
+        );
+        assert!(
+            total > amount.saturating_add(exact_fee),
+            "strict change must hold against the recomputed fee"
         );
     }
 
@@ -472,9 +667,15 @@ mod tests {
         let note_val = 60_000_000u64;
         let notes: Vec<ShieldedNote> = (0..20).map(|i| test_note(note_val, i)).collect();
 
-        let (selected, total, exact_fee) =
-            select_notes_with_fee(&notes, amount, 2, ShieldedFeeKind::Base, platform_version)
-                .expect("selection ok");
+        let (selected, total, exact_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            2,
+            ShieldedFeeKind::Base,
+            ChangeRequirement::Optional,
+            platform_version,
+        )
+        .expect("selection ok");
 
         let expected_fee =
             compute_minimum_shielded_fee(selected.len().max(2), platform_version).unwrap();
@@ -513,6 +714,7 @@ mod tests {
             amount,
             2,
             ShieldedFeeKind::Withdrawal,
+            ChangeRequirement::Optional,
             platform_version,
         )
         .expect("selection ok");
@@ -550,6 +752,7 @@ mod tests {
             amount,
             2,
             ShieldedFeeKind::Unshield,
+            ChangeRequirement::Optional,
             platform_version,
         )
         .expect("selection ok");

@@ -1662,7 +1662,8 @@ class PlatformWalletManager(
      *
      * @param walletId the 32-byte wallet id.
      * @param outputs (raw 43-byte Orchard address, credits) pairs; must be
-     *   non-empty and every amount must be positive.
+     *   non-empty, hold at most 16 entries (the native ceiling), and every
+     *   amount must be positive.
      * @param account the ZIP-32 shielded account to spend from (usually 0).
      * @param memo optional UTF-8 memo attached to EVERY recipient note
      *   (null / empty = no memo; at most 32 UTF-8 bytes).
@@ -1674,6 +1675,12 @@ class PlatformWalletManager(
         memo: String? = null,
     ): Unit = teardownGate.op {
         require(outputs.isNotEmpty()) { "outputs must not be empty" }
+        // Mirror the native ceiling BEFORE flattening: the arrays built below are sized by
+        // `outputs.size`, and the native layer would reject an oversized call anyway — after
+        // this side had already allocated for it.
+        require(outputs.size <= MAX_SHIELDED_TRANSFER_RECIPIENTS) {
+            "outputs must hold at most $MAX_SHIELDED_TRANSFER_RECIPIENTS entries, got ${outputs.size}"
+        }
         require(account >= 0) { "account must be non-negative, got $account" }
         outputs.forEachIndexed { index, (recipientRaw43, amount) ->
             require(recipientRaw43.size == 43) {
@@ -2276,6 +2283,15 @@ class PlatformWalletManager(
     private companion object {
         /** SPV progress poll cadence — matches Swift's 1 Hz `startProgressPolling`. */
         const val POLL_INTERVAL_MS = 1_000L
+
+        /**
+         * Recipient ceiling of [shieldedTransferMulti] — mirrors
+         * `MAX_SHIELDED_TRANSFER_RECIPIENTS` in
+         * `packages/rs-platform-wallet-ffi/src/shielded_send.rs`, which the JNI adapter enforces
+         * from the array lengths before allocating. Checked here too so an oversized call is
+         * refused before this side flattens caller-sized buffers.
+         */
+        const val MAX_SHIELDED_TRANSFER_RECIPIENTS = 16
 
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
         const val PWFFI_INVALID_PARAMETER = 2
