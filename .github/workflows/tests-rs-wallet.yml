@@ -51,14 +51,28 @@ jobs:
         with:
           clean: false
 
+      # target/llvm-cov-target is deliberately NOT pruned here: the workspace
+      # job (tests-rs-workspace.yml) keeps its coverage-instrumented build
+      # there for incremental compiles, and this job shares the same runner
+      # workspace — wiping it on a wallet-only PR would force the next
+      # workspace run into a ~2.5 min cold rebuild. The size guard below
+      # still removes the whole target/ if it outgrows the caps.
       - name: Prune macOS runner disk before tests
         run: |
-          for path in ../target-backup-before-*-clean-* target/llvm-cov-target; do
+          for path in ../target-backup-before-*-clean-*; do
             if [ -e "$path" ]; then
               echo "Removing stale runner artifact: $path"
               rm -rf "$path"
             fi
           done
+
+          # Purge per-run coverage profile data possibly left by a cancelled
+          # workspace run in the shared workspace — before measuring target/,
+          # so stale profraw cannot inflate the size check and cost the
+          # instrumented build.
+          if [ -d target/llvm-cov-target ]; then
+            find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
+          fi
 
           TARGET_MAX_MB=120000
           MIN_FREE_MB=60000
