@@ -225,9 +225,10 @@ jobs:
       #   - a changed file's path mentions shield/orchard/halo2 (all shielded
       #     modules live in *shield* directories, but keyword-match the whole
       #     path to be safe);
-      #   - the diff content of any .rs file mentions those keywords (catches
-      #     edits to shielded match arms, error variants, and test names in
-      #     shared files outside the shielded directories);
+      #   - the diff content of any .rs or .proto file mentions those keywords
+      #     (catches edits to shielded match arms, error variants, and test
+      #     names in shared files outside the shielded directories, and
+      #     shielded gRPC message changes that regenerate into dapi-grpc);
       #   - anything that changes how the shielded suite is built or selected:
       #     any Cargo.toml/Cargo.lock (feature unification, dep bumps),
       #     rust-toolchain.toml, the rust setup action, or the Rust test
@@ -258,6 +259,8 @@ jobs:
             exit 0
           fi
 
+          # Keep in sync with the shielded-source content hash computed in
+          # tests-rs-workspace.yml ("Compute shielded source content hash").
           SHIELD_RE='shield|orchard|halo2'
 
           if echo "$CHANGED" | grep -qiE "$SHIELD_RE"; then
@@ -272,12 +275,22 @@ jobs:
             exit 0
           fi
 
+          # Capture the diff first so a git failure here is distinguishable
+          # from "no keyword match" — inside the pipeline the final grep's
+          # non-match status would mask it and fail open to "unchanged".
+          CONTENT_DIFF=$(mktemp)
+          trap 'rm -f "$CONTENT_DIFF"' EXIT
+          if ! git diff --no-renames --unified=0 "${{ github.event.pull_request.base.sha }}"...HEAD -- '*.rs' '*.proto' > "$CONTENT_DIFF"; then
+            echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Could not inspect changed file contents — assuming shielded changes"
+            exit 0
+          fi
+
           # grep -v filters the +++/--- file headers so only real content
           # lines are keyword-matched.
-          if git diff --no-renames --unified=0 "${{ github.event.pull_request.base.sha }}"...HEAD -- '*.rs' \
-            | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qiE "$SHIELD_RE"; then
+          if grep -E '^[+-]' "$CONTENT_DIFF" | grep -vE '^(\+\+\+|---)' | grep -qiE "$SHIELD_RE"; then
             echo "shielded-changed=true" >> "$GITHUB_OUTPUT"
-            echo "Changed Rust lines mention shielded identifiers — shielded tests will run"
+            echo "Changed Rust/proto lines mention shielded identifiers — shielded tests will run"
             exit 0
           fi
 

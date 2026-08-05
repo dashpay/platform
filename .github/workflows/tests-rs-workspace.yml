@@ -227,23 +227,49 @@ jobs:
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: rm -f lcov.info lcov-nonshielded.info lcov-shielded.info
 
+      # Content-address the shielded coverage cache: the key is a hash over
+      # the blobs of every tracked source file whose content mentions the
+      # shielded keywords (keep the regex in sync with the
+      # "Check for shielded-relevant changes" detector in tests.yml), plus
+      # the build inputs that select or compile the suite. An exact-key hit
+      # therefore proves the cached lcov was produced from byte-identical
+      # shielded sources — a PR can never reuse coverage from a tree whose
+      # shielded code differs from its own. `git grep` only searches tracked
+      # files, so runner-local artifacts (target/) cannot perturb the hash.
+      - name: Compute shielded source content hash
+        id: shielded-hash
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: |
+          set -eu
+          HASH=$(
+            {
+              git grep -ilE 'shield|orchard|halo2' -- '*.rs' '*.proto' || true
+              echo Cargo.lock
+              echo rust-toolchain.toml
+            } \
+              | LC_ALL=C sort -u \
+              | tr '\n' '\0' \
+              | xargs -0 git ls-files -s -- \
+              | git hash-object --stdin
+          )
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "Shielded source content hash: $HASH"
+
       # When the PR didn't touch anything shielded-relevant, reuse the
-      # shielded coverage produced by an earlier full run instead of paying
-      # ~4-5 minutes of halo2 proving per PR. The cache is keyed by commit
-      # (every save is unique) and restored by prefix, so a PR picks up the
-      # most recent shielded lcov visible to its branch — in practice the one
-      # saved by the last post-merge push run on the base branch. A restore
-      # miss (evicted cache, fresh repo) simply falls back to running the
-      # shielded suite, which then repopulates the cache.
+      # shielded coverage produced by an earlier run of identical shielded
+      # sources instead of paying ~4-5 minutes of halo2 proving per PR. In
+      # practice the hit comes from the entry saved by a post-merge push run
+      # on the base branch. Exact key match only — no restore-keys prefix
+      # fallback — so a hit is a content-verified reuse. A miss (evicted
+      # cache, shielded sources newer than any prior full run) simply falls
+      # back to running the shielded suite, which then repopulates the cache.
       - name: Restore shielded coverage from cache
         id: shielded-cache
         if: steps.coverage-cache.outputs.reuse == 'false' && inputs.shielded-changed == false
         uses: actions/cache/restore@v4
         with:
           path: lcov-shielded.info
-          key: rs-shielded-lcov-v1-${{ github.sha }}
-          restore-keys: |
-            rs-shielded-lcov-v1-
+          key: rs-shielded-lcov-v1-${{ steps.shielded-hash.outputs.hash }}
 
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
@@ -291,14 +317,14 @@ jobs:
           cargo llvm-cov clean --profraw-only
 
       # Runs when shielded-relevant code changed, and also when nothing
-      # shielded changed but no cached shielded coverage could be restored.
-      # (A skipped restore step yields an empty cache-matched-key, which
-      # correctly reads as "no cache" here.)
+      # shielded changed but no content-verified cached coverage could be
+      # restored. (A skipped restore step yields an empty cache-hit output,
+      # which correctly reads as "no cache" here.)
       - name: Run shielded tests with cargo test (shared process for VK reuse)
         id: shielded-tests
         if: >-
           steps.coverage-cache.outputs.reuse == 'false'
-          && (inputs.shielded-changed || steps.shielded-cache.outputs.cache-matched-key == '')
+          && (inputs.shielded-changed || steps.shielded-cache.outputs.cache-hit != 'true')
         run: |
           cargo llvm-cov test --no-report \
             --package dpp \
@@ -317,12 +343,14 @@ jobs:
         if: steps.shielded-tests.outcome == 'success'
         run: cargo llvm-cov report --lcov --output-path lcov-shielded.info
 
+      # Saving under the content hash means a duplicate save (same shielded
+      # sources already cached) is a harmless no-op warning.
       - name: Save shielded coverage to cache
         if: steps.shielded-tests.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: lcov-shielded.info
-          key: rs-shielded-lcov-v1-${{ github.sha }}
+          key: rs-shielded-lcov-v1-${{ steps.shielded-hash.outputs.hash }}
 
       # Written only after both lcov files exist (freshly generated or
       # restored), so a rerun of the identical tree can skip everything.
