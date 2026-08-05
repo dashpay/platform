@@ -2963,6 +2963,142 @@ mod tests {
         );
     }
 
+    /// Like [`CreditKeyFailingSigner`] but counts the transaction inputs it
+    /// signs, so a selected-account test can prove the credit-key failure lands
+    /// AFTER `build_signed` has selected, signed, and therefore reserved the
+    /// account's inputs — i.e. that it genuinely reaches the post-reservation
+    /// rollback in `build_asset_lock_tx_from_selected_account`, not a shortfall
+    /// or a prefetch failure that would die before any reservation is placed.
+    struct ReservingCreditKeyFailingSigner {
+        inner: WalletSigner,
+        inputs_signed: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl Signer for ReservingCreditKeyFailingSigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+            self.inner.supported_methods()
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            path: &DerivationPath,
+            sighash: [u8; 32],
+        ) -> Result<
+            (
+                dashcore::secp256k1::ecdsa::Signature,
+                dashcore::secp256k1::PublicKey,
+            ),
+            Self::Error,
+        > {
+            // A completed input signature means `build_signed` has already
+            // selected and reserved this input, before the credit-key round-trip.
+            self.inputs_signed
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.inner.sign_ecdsa(path, sighash).await
+        }
+
+        async fn public_key(
+            &self,
+            _path: &DerivationPath,
+        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+            Err("simulated transient Keychain failure".to_string())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ExtendedPubKeySigner for ReservingCreditKeyFailingSigner {
+        async fn extended_public_key(
+            &self,
+            path: &DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, Self::Error> {
+            self.inner.extended_public_key(path).await
+        }
+    }
+
+    /// dashpay/platform#4184 review (thepastaclaw): the SELECTED-account builder
+    /// must release its reservation when the credit-key round-trip fails AFTER
+    /// `build_signed` has already reserved the account's inputs.
+    ///
+    /// `build_asset_lock_tx_from_selected_account` reserves the selected
+    /// account's inputs inside `build_signed`, then performs the external
+    /// `signer.public_key(&path)` credit-key request; a failure there reaches the
+    /// path-matched rollback loop that releases the reservation on the funds
+    /// account whose derivation path equals `funding_path`. The sibling test
+    /// [`delegated_builder_credit_key_failure_does_not_strand_bip44_inputs`]
+    /// exercises the pinned BIP44 (`IdentityRegistration`) path instead, where
+    /// the credit signer is wrapped by `PrefetchedCreditKeySigner` and fails
+    /// up-front during the prefetch — before any reservation is placed — so it
+    /// never covers this selected-account rollback. Only
+    /// `AssetLockShieldedAddressTopUp` with an explicit funding path reaches it,
+    /// and this PR's account-by-`funding_path` rollback is what keeps a failed
+    /// CoinJoin / DashPay-receiving / explicit-BIP32 build from stranding its
+    /// inputs until the reservation-TTL backstop.
+    ///
+    /// The account holds a single CoinJoin UTXO, so a leaked reservation is
+    /// immediately visible as a shortfall on the next build. The signer counts
+    /// signed inputs, pinning that the failure is genuinely post-reservation
+    /// (not a shortfall or prefetch failure that would strand nothing). Reverting
+    /// the rollback loop's `release_reservation` makes the rebuild fail at input
+    /// selection.
+    #[tokio::test]
+    async fn shielded_selected_account_credit_key_failure_releases_reservation() {
+        // 0.09 DASH BIP44 (change sink) + a single 0.2 DASH CoinJoin UTXO.
+        let (manager, signer) = split_asset_lock_manager_ok(9_000_000, 20_000_000).await;
+        let coinjoin_path = coinjoin_account_path_for(&*manager).await;
+
+        let inputs_signed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let failing = ReservingCreditKeyFailingSigner {
+            inner: signer.clone(),
+            inputs_signed: Arc::clone(&inputs_signed),
+        };
+
+        // `build_signed` selects, signs, and reserves the CoinJoin UTXO; the
+        // subsequent credit-key `public_key` request then fails, driving the
+        // selected-account rollback.
+        let abandoned = manager
+            .build_asset_lock_transaction(
+                15_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &failing,
+                Some(coinjoin_path.clone()),
+            )
+            .await;
+        assert!(
+            abandoned.is_err(),
+            "a failing credit-output signer must abandon the selected-account build, \
+             got {abandoned:?}"
+        );
+        assert!(
+            inputs_signed.load(std::sync::atomic::Ordering::SeqCst) > 0,
+            "build_signed must have signed (and therefore reserved) the CoinJoin input \
+             before the credit-key failure, so the rollback under test is genuinely \
+             post-reservation"
+        );
+
+        // The rollback released the CoinJoin reservation: a fresh build over the
+        // same single-UTXO account reselects the freed coin and succeeds.
+        let rebuild = manager
+            .build_asset_lock_transaction(
+                15_000_000,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(coinjoin_path),
+            )
+            .await;
+        assert!(
+            rebuild.is_ok(),
+            "the selected-account rollback must release the CoinJoin reservation after a \
+             post-reservation credit-key failure so the coin is reselectable, got {rebuild:?}"
+        );
+    }
+
     /// A [`WalletSigner`] that records every `public_key` request and answers
     /// only the FIRST one — every later request is a hard error. A delegated
     /// build can therefore only succeed if the credit key it needs is served
