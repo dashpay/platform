@@ -228,14 +228,25 @@ jobs:
         run: rm -f lcov.info lcov-nonshielded.info lcov-shielded.info
 
       # Content-address the shielded coverage cache: the key is a hash over
-      # the blobs of every tracked source file whose content mentions the
-      # shielded keywords (keep the regex in sync with the
-      # "Check for shielded-relevant changes" detector in tests.yml), plus
-      # the build inputs that select or compile the suite. An exact-key hit
-      # therefore proves the cached lcov was produced from byte-identical
-      # shielded sources — a PR can never reuse coverage from a tree whose
-      # shielded code differs from its own. `git grep` only searches tracked
-      # files, so runner-local artifacts (target/) cannot perturb the hash.
+      # the blobs of the union of every input the shielded-change detector in
+      # tests.yml treats as shielded-relevant (keep the keyword regex and the
+      # build-input list in sync with it):
+      #   - tracked files whose PATH mentions a shielded keyword (shielded
+      #     module files don't all mention a keyword in their content, e.g.
+      #     error types under a shielded/ directory);
+      #   - tracked .rs/.proto files whose CONTENT mentions a keyword
+      #     (shielded match arms and test names in shared files);
+      #   - the build inputs that select or compile the suite: every Cargo
+      #     manifest and lockfile, rust-toolchain.toml, the rust setup
+      #     action, and the Rust test workflows.
+      # An exact-key hit therefore proves the cached lcov was produced from
+      # byte-identical shielded sources and build configuration — a PR can
+      # never reuse coverage from a tree whose shielded inputs differ from
+      # its own, and any change that forces a fresh shielded run also moves
+      # the key (Actions cache entries are immutable, so a stale entry must
+      # never stay reachable under a current key). `git ls-files`/`git grep`
+      # only consider tracked files, so runner-local artifacts (target/)
+      # cannot perturb the hash.
       - name: Compute shielded source content hash
         id: shielded-hash
         if: steps.coverage-cache.outputs.reuse == 'false'
@@ -243,9 +254,11 @@ jobs:
           set -eu
           HASH=$(
             {
+              git ls-files | grep -iE 'shield|orchard|halo2' || true
               git grep -ilE 'shield|orchard|halo2' -- '*.rs' '*.proto' || true
-              echo Cargo.lock
+              git ls-files | grep -E '(^|/)Cargo\.(toml|lock)$' || true
               echo rust-toolchain.toml
+              git ls-files -- .github/actions/rust .github/workflows/tests.yml .github/workflows/tests-rs-workspace.yml
             } \
               | LC_ALL=C sort -u \
               | tr '\n' '\0' \
@@ -352,10 +365,17 @@ jobs:
           path: lcov-shielded.info
           key: rs-shielded-lcov-v1-${{ steps.shielded-hash.outputs.hash }}
 
-      # Written only after both lcov files exist (freshly generated or
-      # restored), so a rerun of the identical tree can skip everything.
+      # The marker means "this exact tree passed the COMPLETE suite", so it
+      # is written only when the shielded phase actually ran and succeeded.
+      # A fast-path run (cache-restored shielded coverage) must not write it:
+      # the post-merge push commonly has the same tree as the PR merge ref,
+      # and on the same runner the marker would let the reuse check skip the
+      # push run's shielded suite — the safety net for shared-code changes
+      # the detector heuristic misses.
       - name: Record coverage tree hash
-        if: steps.coverage-cache.outputs.reuse == 'false'
+        if: >-
+          steps.coverage-cache.outputs.reuse == 'false'
+          && steps.shielded-tests.outcome == 'success'
         run: git rev-parse HEAD^{tree} > target/lcov-tree-hash
 
       - name: Reset GPG state (fix stale keyboxd locks on the macOS runners)
