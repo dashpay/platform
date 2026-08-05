@@ -12,8 +12,10 @@ ignore:
   - "**/tests/**"
   - "**/test/**"
   - "packages/strategy-tests/**"
+  # FFI host bindings — exercised by dedicated Rust and host SDK test workflows
   - "packages/rs-sdk-ffi/**"
   - "packages/rs-platform-wallet-ffi/**"
+  - "packages/rs-unified-sdk-jni/**"
   - "packages/wasm-dpp/**"
   - "packages/wasm-dpp2/**"
   - "packages/wasm-sdk/**"

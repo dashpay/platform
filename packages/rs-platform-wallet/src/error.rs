@@ -32,6 +32,107 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// A `txMetadata` plaintext payload is too large to seal into a document
+    /// that fits the `encryptedMetadata` byteArray field (`maxItems` 4096). The
+    /// `version(1) ‖ IV(16) ‖ AES-256-CBC/PKCS7(plaintext)` envelope caps the
+    /// plaintext at [`crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN`]
+    /// bytes; anything larger would derive the key and seal only to be rejected
+    /// at broadcast with an opaque DPP schema error, so the caller is rejected
+    /// HERE — before any key derivation or network work. `max` is the largest
+    /// accepted plaintext length and `len` is what was supplied.
+    #[error(
+        "txMetadata payload is {len} bytes; the encryptedMetadata field caps the \
+         plaintext at {max} bytes (version + IV + PKCS7 envelope must fit the \
+         4096-byte field). Reduce the batch and retry."
+    )]
+    TxMetadataPayloadTooLarge { len: usize, max: usize },
+
+    /// A deferred txMetadata payload did not honor the length used to prepare
+    /// its encryption context. The context has already derived the exact
+    /// per-document key, so accepting a different payload would break the
+    /// caller's materialization contract and make the early size validation
+    /// describe different bytes from the ones being sealed.
+    #[error(
+        "txMetadata payload length changed after encryption preparation: declared \
+         {declared} bytes, materialized {actual} bytes"
+    )]
+    TxMetadataPayloadLengthMismatch { declared: usize, actual: usize },
+
+    /// The txMetadata `encryptionKeyIndex` series for one identity, contract and
+    /// document type has no next derivable value left.
+    ///
+    /// The index is a hardened derivation-path element, so the series ends at
+    /// [`crate::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_ENCRYPTION_KEY_INDEX`].
+    /// Continuing past it could only hand out an index with no derivable key, or
+    /// repeat one already in use — so the allocation fails instead. Reaching this
+    /// requires over two billion documents for one identity on one document type.
+    #[error(
+        "txMetadata encryptionKeyIndex space is exhausted for this identity, \
+         contract and document type; no further index can be allocated that is \
+         both derivable and unused"
+    )]
+    TxMetadataEncryptionKeyIndexExhausted,
+
+    /// A caller-supplied `encryptionKeyIndex` with no derivable key.
+    ///
+    /// The index is the hardened last element of the txMetadata derivation path,
+    /// which carries only 31 bits, so anything above `max` addresses no key at
+    /// all. Typed (rather than a generic invalid-data error) so hosts can tell a
+    /// bad argument from a wallet or network failure, and so the rejection can
+    /// happen from the arguments alone — before the plaintext is copied and
+    /// before the host key resolver runs.
+    #[error(
+        "txMetadata encryptionKeyIndex {index} has no derivable key; the index is \
+         a hardened derivation element and must be at most {max}"
+    )]
+    TxMetadataEncryptionKeyIndexNotDerivable { index: u32, max: u32 },
+
+    /// A caller-supplied txMetadata wire version byte outside the set the
+    /// legacy `decryptTxMetadata` stack can decode. Sealing it would write a
+    /// document no reader could open, so it is rejected before the envelope is
+    /// built. Typed (rather than a generic invalid-data error) so hosts can
+    /// distinguish it at the FFI boundary and need no version list of their own.
+    #[error(
+        "txMetadata wire version {version} is not decodable by the legacy stack; \
+         only 0 (CBOR) and 1 (protobuf) are understood"
+    )]
+    UnsupportedTxMetadataVersion { version: u8 },
+
+    /// A `*_blocking` entry point could not take the wallet-manager read lock
+    /// without parking the calling thread, and parking it was not safe.
+    ///
+    /// The blocking entry points park on `blocking_read`, which Tokio refuses —
+    /// with a panic — on a thread that is currently driving tasks. Whether the
+    /// current thread may park is not observable from outside Tokio (a
+    /// `spawn_blocking` thread may; a runtime worker may not), so when a runtime
+    /// is in scope these entry points take the lock without waiting and report
+    /// contention here instead of risking a panic that `panic = "abort"` would
+    /// turn into an immediate process death.
+    ///
+    /// Transient by construction: retry, or call the API's async counterpart
+    /// from async code, which waits for the lock properly.
+    #[error(
+        "{api} could not take the wallet-manager read lock without parking the \
+         calling thread, and a Tokio runtime is in scope; retry, or call this \
+         API's async counterpart from async code"
+    )]
+    WalletManagerBusy { api: &'static str },
+
+    /// A paginated encrypted-document scan stopped advancing: a full page
+    /// produced a cursor that had already been used, so continuing would
+    /// refetch the same documents without end.
+    ///
+    /// Reported rather than silently truncated — a caller cannot tell a partial
+    /// history from a complete one, and for transaction metadata that
+    /// difference matters. `pages` is the number of pages read before the
+    /// repeat was seen; the cursor itself is a document identifier and is
+    /// deliberately not carried here.
+    #[error(
+        "encrypted-document pagination stopped advancing after {pages} page(s): \
+         the source repeated a page cursor"
+    )]
+    EncryptedDocumentPaginationStalled { pages: usize },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing

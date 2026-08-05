@@ -38,6 +38,7 @@ use zeroize::Zeroizing;
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::identity::network::encrypted_document::EncryptionKeyIndexAllocator;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
@@ -155,28 +156,41 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
         key_index,
     )?;
     let secp = Secp256k1::new();
-    // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
-    // wrap it in `Zeroizing` directly — but its inner
-    // `secp256k1::SecretKey` does implement `Drop` with a memzero,
-    // so the secret scalar is scrubbed when `derived` falls out of
-    // scope. The surrounding `chain_code` / `depth` /
-    // `parent_fingerprint` / `child_number` are non-secret BIP-32
-    // metadata; leaking them on the stack is a non-event. The
-    // returned `private_key` is wrapped in `Zeroizing` below so
-    // the 32-byte scalar copy crossing the function boundary is
-    // also scrubbed on the caller's drop.
-    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+    // The pinned `ExtendedPrivKey` zeroizes itself on drop, while a bare
+    // `secp256k1::SecretKey` does not. Erase the derived scalar immediately
+    // after copying it into the `Zeroizing` value that crosses the function
+    // boundary, rather than retaining it until the enclosing value's scope
+    // ends.
+    let mut derived = master.derive_priv(&secp, &path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
         ))
     })?;
     let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
 
+    let private_key = take_and_erase_identity_secret(&mut derived.private_key);
+
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.secret_bytes()),
+        private_key,
         public_key: extended_pub.public_key.serialize(),
     })
+}
+
+/// Copy a derived scalar into zeroizing storage and erase the source.
+///
+/// `secp256k1::SecretKey` does not erase itself on drop, so the intermediate
+/// scalar would otherwise outlive this call in the stack slot the derivation
+/// wrote it to, while only the returned copy is scrubbed.
+///
+/// Best-effort: the write removes that long-lived residue, but cannot reach a
+/// register copy or one the optimizer already made.
+fn take_and_erase_identity_secret(
+    secret: &mut dashcore::secp256k1::SecretKey,
+) -> Zeroizing<[u8; 32]> {
+    let copy = Zeroizing::new(secret.secret_bytes());
+    secret.non_secure_erase();
+    copy
 }
 
 /// Derive the DIP-9 identity-authentication keypair at
@@ -322,6 +336,13 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// signer-generic `PutDocument` trait) behind two by-value methods
     /// so the call sites stay simple.
     pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
+    /// In-process high-water map for allocating the txMetadata
+    /// `encryptionKeyIndex` when the host omits it. Shared across every clone of
+    /// this handle (an `Arc`), so two concurrent encrypted-document creates
+    /// through the same wallet process serialize through it and can never pick
+    /// the same index. Best-effort unique PER DEVICE only; see
+    /// [`IdentityWallet::allocate_encryption_key_index`](crate::wallet::identity::IdentityWallet::allocate_encryption_key_index).
+    pub(crate) enc_key_index_allocator: EncryptionKeyIndexAllocator,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -345,6 +366,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             persister: self.persister.clone(),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
+            enc_key_index_allocator: Arc::clone(&self.enc_key_index_allocator),
         }
     }
 }
@@ -471,6 +493,36 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
+
+    /// The intermediate derived scalar is erased once its bytes are copied.
+    ///
+    /// `secp256k1::SecretKey` does not erase itself on drop, so without the
+    /// explicit erase the identity-auth scalar stays in the stack slot the
+    /// derivation wrote it to after the call returns, while only the returned
+    /// copy is scrubbed. Removing the erase changes nothing a caller can see, so
+    /// this is what makes it fail.
+    #[test]
+    fn the_derived_identity_scalar_is_erased_after_its_bytes_are_copied() {
+        use dashcore::secp256k1::SecretKey;
+
+        let mut secret = SecretKey::from_slice(&[0x2Au8; 32]).expect("valid scalar");
+        let original = secret.secret_bytes();
+        assert_ne!(original, [0u8; 32], "the fixture must be a real scalar");
+
+        let copied = take_and_erase_identity_secret(&mut secret);
+
+        assert_eq!(
+            *copied, original,
+            "the caller's copy must be the scalar that was derived"
+        );
+        assert_ne!(
+            secret.secret_bytes(),
+            original,
+            "the source scalar must not still hold the key after the copy; \
+             secp256k1::SecretKey does not erase on drop, so leaving it intact \
+             leaves key material in the stack slot the derivation wrote it to"
+        );
+    }
 
     /// English BIP-39 test vector (all-zero entropy). Same fixture the
     /// FFI-side derive tests use, so the derivations here can be

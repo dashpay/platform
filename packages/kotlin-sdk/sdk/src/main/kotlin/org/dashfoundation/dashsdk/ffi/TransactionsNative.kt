@@ -165,6 +165,92 @@ internal object TransactionsNative {
     ): String
 
     /**
+     * Create + broadcast an ENCRYPTED wallet-contract document (the wire-
+     * compatible `txMetadata` shape) on [contractId]'s [documentType], owned by
+     * [ownerId], signed via [signerHandle]. Bridges
+     * the Rust-ABI composite
+     * `create_encrypted_document_with_deferred_payload`.
+     *
+     * The Rust side selects the identity's ENCRYPTION key id (the `keyIndex`
+     * field), derives the AES key from the wallet HD tree, and seals [payload]
+     * into the legacy `version ‖ IV ‖ AES-256-CBC` blob — decryptable by the
+     * legacy `org.dashj.platform` stack and vice versa.
+     *
+     * @param mnemonicResolverHandle the host mnemonic-resolver handle
+     *   ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]);
+     *   required (non-zero) for external-signable wallets — the app's shape —
+     *   whose txMetadata AES key derives on demand through the resolver.
+     *   Ignored for wallets with resident private keys.
+     * @param encryptionKeyIndex an explicit per-document index (migration /
+     *   tests), OR `-1` to let the SDK allocate one from authoritative Platform
+     *   state. Both forms enter one Rust operation. For `-1`, Rust settles the
+     *   index before asking JNI to copy this array into native memory — the
+     *   allocation query has no request timeout, so copying first would retain
+     *   plaintext throughout an unbounded wait. Rust then takes ownership of
+     *   the native copy and scrubs it as soon as the properties are sealed,
+     *   before broadcast.
+     *   Values `< -1` are rejected. `-1` rather than a boxed `Integer?` keeps
+     *   this signature on primitives.
+     * @param version payload version byte. This layer narrows it to a byte and
+     *   nothing more: which values are meaningful is decided by the wallet core,
+     *   which rejects an unsupported one before anything is sealed.
+     * @param payload the already-serialized opaque plaintext (a protobuf
+     *   `TxMetadataBatch`); the SDK does not parse it. The native copies made of
+     *   it are zeroized, but this `ByteArray` and any JVM copies of it are
+     *   plaintext-equivalent and cannot be scrubbed by the SDK — see
+     *   [org.dashfoundation.dashsdk.documents.DocumentTransactions.createEncryptedDocument].
+     * @return the confirmed document's canonical JSON (its 32-byte id is the
+     *   base58 `$id` field).
+     */
+    external fun documentCreateEncrypted(
+        walletHandle: Long,
+        mnemonicResolverHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        encryptionKeyIndex: Int,
+        version: Int,
+        payload: ByteArray,
+        signerHandle: Long,
+    ): String
+
+    /**
+     * Fetch + DECRYPT every encrypted wallet-contract document owned by
+     * [ownerId] on [contractId]'s [documentType] updated at or after [sinceMs]
+     * (epoch-millis). Bridges `platform_wallet_fetch_encrypted_documents` — the
+     * wire-compatible read counterpart of the legacy `getTxMetaData(since, key)`.
+     *
+     * @param mnemonicResolverHandle the host mnemonic-resolver handle
+     *   ([org.dashfoundation.dashsdk.wallet.PlatformWalletManager.mnemonicResolverHandle]);
+     *   required (non-zero) for external-signable wallets — the app's shape —
+     *   whose txMetadata AES key derives on demand through the resolver.
+     *   Ignored for wallets with resident private keys.
+     * @return a JSON array; each element is `{ "id", "ownerId" (base58),
+     *   "keyIndex", "encryptionKeyIndex", "version", "updatedAt" (number|null),
+     *   "payload" (base64 of the decrypted opaque plaintext) }`. Documents that
+     *   fail to decrypt, and documents carrying an unsupported wire version,
+     *   are skipped Rust-side. A payload that IS returned is not authenticated:
+     *   the envelope is AES-256-CBC with PKCS7 and no integrity tag, so a wrong
+     *   key or modified ciphertext usually fails the unpad but can occasionally
+     *   unpad cleanly and surface opaque garbage. Parse each payload strictly
+     *   and discard what does not parse.
+     *
+     * SDK-owned Rust/C decrypted payload and JSON buffers are zeroized before
+     * deallocation. The returned host `String` is plaintext-equivalent; its
+     * runtime-managed storage, copies, and parsed-object copies cannot be
+     * reliably overwritten by the SDK. Parse it promptly, do not log it, and
+     * do not retain or persist it longer than required.
+     */
+    external fun documentFetchEncrypted(
+        walletHandle: Long,
+        mnemonicResolverHandle: Long,
+        ownerId: ByteArray,
+        contractId: ByteArray,
+        documentType: String,
+        sinceMs: Long,
+    ): String
+
+    /**
      * Cast a masternode contested-resource vote and wait for the response.
      * Bridges `dash_sdk_contested_resource_cast_vote` (Swift
      * `SDK.castContestedResourceVote`).

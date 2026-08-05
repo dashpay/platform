@@ -456,6 +456,12 @@ impl PlatformWallet {
             sdk_writer: Arc::new(
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
+            // Fresh, empty allocator: the encryptionKeyIndex high-water is
+            // seeded lazily per scope from Platform state on the first
+            // host-omitted create.
+            enc_key_index_allocator: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         };
 
         let platform = PlatformAddressWallet::new(

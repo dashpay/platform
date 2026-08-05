@@ -74,6 +74,7 @@ pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
 pub mod tokens;
+mod tx_metadata_json;
 pub mod types;
 pub mod utils;
 pub mod wallet;
@@ -132,6 +133,10 @@ pub use persistence::*;
 pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
+// The txMetadata plaintext ceiling, surfaced here so callers that link this
+// crate as an rlib (the JNI layer) can gate on the same value the C exports
+// enforce instead of restating it.
+pub use platform_wallet::wallet::identity::crypto::tx_metadata::MAX_TX_METADATA_PLAINTEXT_LEN;
 pub use platform_wallet_info::*;
 pub use provider_key_at_index::*;
 #[cfg(feature = "shielded")]

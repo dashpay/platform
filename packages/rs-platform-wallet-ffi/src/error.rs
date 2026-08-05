@@ -405,6 +405,44 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
             }
+            // A txMetadata plaintext length that either exceeds the contract
+            // field or differs from the shape used to prepare its key context.
+            // Both are caller-input/materialization-contract errors rather than
+            // wallet failures, so they map to the already-mirrored
+            // ErrorInvalidParameter without numeric Swift/Kotlin enum churn.
+            PlatformWalletError::TxMetadataPayloadTooLarge { .. }
+            | PlatformWalletError::TxMetadataPayloadLengthMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
+            // A txMetadata wire version byte the legacy stack cannot decode.
+            // Like the size cap it is a caller-input error, and it maps to the
+            // already-mirrored ErrorInvalidParameter so no new numeric code
+            // churns the Swift/Kotlin mirror enums. Mapped as its own dedicated
+            // variant — the generic invalid-data error stays on ErrorUnknown, so
+            // this stays distinguishable and hosts need no version list of their
+            // own.
+            PlatformWalletError::UnsupportedTxMetadataVersion { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
+            // A caller-supplied encryptionKeyIndex above the hardened-derivation
+            // ceiling. Another out-of-range caller argument, so it joins the two
+            // above on the already-mirrored ErrorInvalidParameter; the typed
+            // Display carries the supplied index and the accepted maximum. The
+            // allocator's own exhaustion variant is deliberately NOT mapped here:
+            // that one is not a caller-input error.
+            PlatformWalletError::TxMetadataEncryptionKeyIndexNotDerivable { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
+            // A `*_blocking` wallet API that declined to park on a contended
+            // wallet-manager lock because a Tokio runtime was in scope. The C
+            // exports call those APIs from their own calling thread, which has
+            // no runtime, so this is unreachable through this crate — it is
+            // mapped anyway so an embedder that does reach it gets the retryable
+            // wallet-operation code rather than ErrorUnknown. No new numeric
+            // code: the condition is transient, not a distinct host contract.
+            PlatformWalletError::WalletManagerBusy { .. } => {
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
             // wallet operation that propagates the SDK error via `?`). The

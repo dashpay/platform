@@ -27,6 +27,7 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures 0.2.17",
+ "zeroize",
 ]
 
 [[package]]
@@ -5123,6 +5124,7 @@ dependencies = [
  "secp256k1",
  "sha2",
  "thiserror 1.0.69",
+ "zeroize",
 ]
 
 [[package]]
@@ -5209,6 +5211,7 @@ dependencies = [
  "image",
  "key-wallet",
  "key-wallet-manager",
+ "log",
  "platform-encryption",
  "rand 0.8.6",
  "rayon",
@@ -5233,6 +5236,7 @@ version = "4.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
  "bincode",
  "bs58",
  "cbindgen 0.27.0",

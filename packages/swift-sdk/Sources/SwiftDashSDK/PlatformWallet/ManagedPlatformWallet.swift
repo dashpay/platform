@@ -3415,6 +3415,287 @@ extension ManagedPlatformWallet {
         }.value
     }
 
+    /// Create + broadcast an ENCRYPTED wallet-contract document (the
+    /// wire-compatible `txMetadata` shape) on `contractId`'s
+    /// `documentType`, owned by `ownerIdentityId`, signed via `signer`.
+    /// Returns the 32-byte document id and the confirmed document's
+    /// canonical query-side JSON once Platform confirms the transition.
+    ///
+    /// Sibling to `createDocument` — the encrypted counterpart that
+    /// bridges `platform_wallet_create_encrypted_document_with_signer_auto_index`.
+    /// The Rust side selects the identity's ENCRYPTION key id (the
+    /// `keyIndex` field), ALLOCATES the per-document `encryptionKeyIndex`
+    /// from authoritative Platform state, derives the AES key from the
+    /// wallet HD tree, and seals `payload` into the legacy
+    /// `version ‖ IV ‖ AES-256-CBC` blob, then broadcasts
+    /// `{keyIndex, encryptionKeyIndex, encryptedMetadata}` via the generic
+    /// create-with-signer path. The written document is decryptable by the
+    /// legacy `org.dashj.platform` stack and vice versa. The resolved master
+    /// xprv is wiped BETWEEN the (synchronous) derivation and the (async)
+    /// broadcast, so no key material crosses the network `.await`.
+    ///
+    /// The `encryptionKeyIndex` is not a host parameter: Rust allocates it,
+    /// matching the Android path where Kotlin's `createEncryptedDocument`
+    /// omits it. Host-side index assignment risks cross-device collisions, so
+    /// both platforms defer to the Rust-side allocator.
+    ///
+    /// Batching stays app-side: the caller serializes its items into
+    /// `payload` (a protobuf `TxMetadataBatch` for `version == 1`). This wrapper
+    /// makes no intentional payload copy before the FFI call; it presents a
+    /// temporary byte view that Rust copies into a `Zeroizing` buffer. Swift's
+    /// runtime may still materialize or copy `Data` storage, as documented
+    /// below.
+    ///
+    /// `version` is the wire byte, passed through as-is. Which values are
+    /// meaningful is decided by the wallet core, which rejects an unsupported
+    /// one before anything is sealed and surfaces it as an invalid-parameter
+    /// error.
+    ///
+    /// ### What is not scrubbed
+    /// The SDK zeroizes the native copies Rust makes of `payload`. It cannot
+    /// scrub `payload` itself: `Data` is caller-owned, its backing storage may
+    /// be shared, and copy-on-write or a runtime move can leave further copies
+    /// the SDK never sees. Treat `payload` and everything derived from it as
+    /// plaintext-equivalent for as long as it is reachable: keep it
+    /// short-lived, never log it, and overwrite your own buffer once this call
+    /// returns where that is feasible. Overwriting the `Data` you hold does not
+    /// reach any copy its storage was shared into, so this reduces exposure
+    /// rather than eliminating it.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A `MnemonicResolver` is always passed, but Rust decides whether to
+    /// use it: a key-resident wallet derives the AES key in-process; an
+    /// external-signable / Keychain-backed wallet (the app's shape)
+    /// derives on demand through the resolver. The resolver is pinned
+    /// across the synchronous FFI call with `withExtendedLifetime`, same as
+    /// `previewIdentityRegistrationKeys`. Rust calls it back on the thread that
+    /// entered the export, after the index allocation has returned and before
+    /// the broadcast starts — never on a runtime worker. That thread belongs to
+    /// the detached task this method runs in, so a resolver that waits on
+    /// Keychain blocks neither the UI thread nor an actor's executor.
+    ///
+    /// Lifetime contract: the `signer` instance MUST stay alive for the
+    /// duration of the synchronous FFI call (Rust holds a `passUnretained`
+    /// ctx pointer). It is pinned with `withExtendedLifetime` around the
+    /// full marshalling chain, matching the other `*_with_signer` wrappers.
+    public func createEncryptedDocument(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        version: UInt8,
+        payload: Data,
+        signer: KeychainSigner,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> (Identifier, String) {
+        let handle = self.handle
+        let signerHandle = signer.handle
+        // Rust pulls the BIP-39 mnemonic on demand for external-signable
+        // wallets (the seed never round-trips into a Swift `String`); a
+        // key-resident wallet ignores it. Pinned below across the FFI call.
+        let resolver = MnemonicResolver(storage: storage)
+        let resolverHandle = resolver.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            var documentIdBytes = [UInt8](repeating: 0, count: 32)
+            // Receives an owned canonical-document JSON C string on
+            // success; freed with `platform_wallet_string_free` below.
+            var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            // Pin BOTH the signer and the resolver for the whole FFI call
+            // (see `createDocument` / `previewIdentityRegistrationKeys` for
+            // why a bare `_ = signer` is unreliable under -O). They are
+            // dereferenced at different moments and on different threads, so
+            // one pin spanning the entire synchronous call is what keeps both
+            // valid. Rust consults the resolver on the thread that entered the
+            // export — this one — after the index-allocation worker has
+            // returned, and dereferences the signer later, on the worker that
+            // runs the broadcast. Because this runs in a detached task, "the
+            // export-entry thread" is a cooperative-pool thread rather than the
+            // UI thread or any actor's executor, so a resolver callback that
+            // waits on Keychain blocks only here.
+            let result = withExtendedLifetime(resolver) {
+                withExtendedLifetime(signer) {
+                    ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                        contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                            documentType.withCString { typePtr -> PlatformWalletFFIResult in
+                                // Borrow a temporary byte view; this wrapper
+                                // makes no intentional explicit copy.
+                                // `baseAddress` is nil for an empty payload,
+                                // which the FFI accepts only when
+                                // `payload_len == 0`.
+                                payload.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> PlatformWalletFFIResult in
+                                    let payloadPtr = raw.bindMemory(to: UInt8.self).baseAddress
+                                    return documentIdBytes.withUnsafeMutableBufferPointer { outBp in
+                                        // Auto-index export: Rust allocates the
+                                        // per-document `encryptionKeyIndex` from
+                                        // Platform state, so no index argument is
+                                        // passed. This host can hand over a
+                                        // pointer to memory it already owns, so
+                                        // the single-call export is correct here.
+                                        // Hosts whose plaintext lives in a
+                                        // runtime-managed buffer use a Rust-ABI
+                                        // composite with deferred materialization.
+                                        platform_wallet_create_encrypted_document_with_signer_auto_index(
+                                            handle,
+                                            resolverHandle,
+                                            ownerBp.baseAddress!,
+                                            contractBp.baseAddress!,
+                                            typePtr,
+                                            version,
+                                            payloadPtr,
+                                            UInt(payload.count),
+                                            signerHandle,
+                                            outBp.baseAddress!,
+                                            &documentJsonPtr
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Registered BEFORE the throwing check: the export publishes a null
+            // sentinel on failure, but a non-null output must be released on
+            // every path out of this scope, including one that throws. A defer
+            // placed after the check would leak whatever the call had already
+            // written. The create output is canonical JSON — ciphertext and
+            // metadata, no plaintext — so it is released with the ordinary free.
+            defer { if let p = documentJsonPtr { platform_wallet_string_free(p) } }
+            try result.check()
+            // On a successful broadcast the Rust side always writes the
+            // canonical JSON; a null pointer here is an FFI/ABI contract
+            // violation. Fail loudly rather than persist an empty body.
+            guard let jsonPtr = documentJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "create_encrypted_document_with_signer_auto_index returned no canonical document JSON"
+                )
+            }
+            let canonicalJSON = String(cString: jsonPtr)
+            return (Data(documentIdBytes), canonicalJSON)
+        }.value
+    }
+
+    /// Fetch + DECRYPT every encrypted wallet-contract document owned by
+    /// `ownerIdentityId` on `contractId`'s `documentType` updated at or
+    /// after `sinceMs` (epoch-millis). Returns an owned JSON array string.
+    ///
+    /// The wire-compatible read counterpart of the legacy
+    /// `getTxMetaData(since, key)` — bridges
+    /// `platform_wallet_fetch_encrypted_documents`. Each document's
+    /// `encryptedMetadata` blob is decrypted with the identity's derived
+    /// key. Decryption is NOT authentication: the envelope is AES-256-CBC with
+    /// PKCS7 and no integrity tag, so a wrong key or modified ciphertext
+    /// usually fails the unpad and is skipped, but can occasionally unpad
+    /// cleanly and surface opaque garbage. Parse every `payload` strictly —
+    /// CBOR for `version` 0, protobuf for 1 — and discard what does not parse.
+    ///
+    /// Documents that can't be derived/decrypted are skipped Rust-side
+    /// (a bad document never aborts the fetch).
+    ///
+    /// Each element of the returned array is
+    /// `{ "id": base58, "ownerId": base58, "keyIndex": UInt32,
+    /// "encryptionKeyIndex": UInt32, "version": UInt8,
+    /// "updatedAt": UInt64|null, "payload": base64 }`, where `payload` is
+    /// the decrypted opaque plaintext the caller parses itself. Callers MUST
+    /// dispatch on `version`: `0` is a CBOR payload, `1` a protobuf
+    /// `TxMetadataBatch`. Those are the only versions the legacy format
+    /// defines; a document carrying anything else is skipped by the SDK and
+    /// never appears in this array.
+    ///
+    /// ### What is not scrubbed
+    /// The SDK zeroizes the native decrypted-payload and JSON buffers it owns.
+    /// It cannot scrub the returned `String`: that is a runtime-managed object,
+    /// as are every copy of it and every object parsed out of it, and the
+    /// runtime may have moved or copied its storage. Treat it and everything
+    /// derived from it as plaintext-equivalent for as long as it is reachable:
+    /// parse promptly, never log it, and do not retain or persist it longer
+    /// than required. Unlike a `Data` buffer there is no overwrite to attempt
+    /// here at all, so short retention is the only control the caller has.
+    ///
+    /// # Key source: chosen by wallet capability (Rust-side)
+    ///
+    /// A `MnemonicResolver` is always passed, but Rust consults it only
+    /// when the in-process wallet lacks resident keys (the app's
+    /// external-signable shape) AND the paginated scan actually found
+    /// candidates — an empty or failed fetch never calls back, which matters
+    /// where that callback prompts the user. The resolver is pinned across the
+    /// synchronous FFI call with `withExtendedLifetime`, same as
+    /// `previewIdentityRegistrationKeys`. Rust calls it back on the thread that
+    /// entered the export, after the scan worker has returned — never on a
+    /// runtime worker. That thread belongs to the detached task this method
+    /// runs in, so a resolver that waits on Keychain blocks neither the UI
+    /// thread nor an actor's executor.
+    public func fetchEncryptedDocuments(
+        ownerIdentityId: Identifier,
+        contractId: Identifier,
+        documentType: String,
+        sinceMs: UInt64,
+        storage: WalletStorage = WalletStorage()
+    ) async throws -> String {
+        let handle = self.handle
+        let resolver = MnemonicResolver(storage: storage)
+        let resolverHandle = resolver.handle
+        let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
+            Array(UnsafeBufferPointer(start: ptr, count: 32))
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            // Receives an owned JSON-array C string on success; freed with
+            // `platform_wallet_sensitive_string_free` below.
+            var documentsJsonPtr: UnsafeMutablePointer<CChar>? = nil
+
+            // Pin the resolver for the whole FFI call. Rust consults it on the
+            // thread that entered the export — this one — after the paginated
+            // scan worker has returned, and only when that scan actually found
+            // candidates, so an empty or failed fetch never calls back at all.
+            // Because this runs in a detached task, that thread is a
+            // cooperative-pool thread rather than the UI thread or any actor's
+            // executor.
+            let result = withExtendedLifetime(resolver) {
+                ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
+                    contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
+                        documentType.withCString { typePtr in
+                            platform_wallet_fetch_encrypted_documents(
+                                handle,
+                                resolverHandle,
+                                ownerBp.baseAddress!,
+                                contractBp.baseAddress!,
+                                typePtr,
+                                sinceMs,
+                                &documentsJsonPtr
+                            )
+                        }
+                    }
+                }
+            }
+
+            defer {
+                if let p = documentsJsonPtr {
+                    platform_wallet_sensitive_string_free(p)
+                }
+            }
+            try result.check()
+            // On success the Rust side always writes a JSON array (even
+            // `"[]"`); a null pointer here is an FFI/ABI contract violation.
+            guard let jsonPtr = documentsJsonPtr else {
+                throw PlatformWalletError.walletOperation(
+                    "fetch_encrypted_documents returned no JSON array"
+                )
+            }
+            return String(cString: jsonPtr)
+        }.value
+    }
+
     /// Replace + broadcast `documentId`'s properties on `contractId`'s
     /// `documentType`, owned by `ownerIdentityId`, signed with the
     /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the

@@ -63,9 +63,10 @@ pub use wallet::core::{CoreWallet, SignedCoreTransaction};
 // `identity::crypto::*` internally).
 pub use wallet::core_address_key::CoreAddressPrivateKey;
 pub use wallet::identity::network::{
-    derive_identity_auth_keypair, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,
-    ContactInfoPublishOutcome, ContactInfoSealed, SeedBindingVerification, IDENTITY_GAP_LIMIT,
-    MASTER_KEY_INDEX,
+    derive_identity_auth_keypair, query_owned_encrypted_documents, AutoAcceptProofSource,
+    ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
+    DecryptedEncryptedDocument, PreparedTxMetadataEncryption, SeedBindingVerification,
+    TxMetadataKeySource, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
