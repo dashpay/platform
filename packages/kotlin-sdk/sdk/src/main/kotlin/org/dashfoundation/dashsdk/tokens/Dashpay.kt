@@ -394,7 +394,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
     // everything they need from Rust-side state.
 
     /**
-     * Decode a `dashpay://invite` link into a read-only [InvitationPreview]
+     * Decode a `…dashpay.io/applink` link into a read-only [InvitationPreview]
      * — no network, no side effects. A malformed link yields
      * `structurallyValid == false`, never an exception, so the claim UI can
      * render a clean "invalid invitation" state.
@@ -408,7 +408,7 @@ class Dashpay internal constructor(private val walletHandle: Long,
 
     /**
      * Create a DashPay invitation voucher and return the shareable
-     * `dashpay://invite` link. Blocking (builds + broadcasts an L1 asset
+     * `…dashpay.io/applink` link. Blocking (builds + broadcasts an L1 asset
      * lock at the DIP-13 invitation path and waits for its InstantSend
      * proof); runs on IO. The sent-invitation row lands in Room via the
      * persistence callback before this returns, so the "Sent invitations"
@@ -663,7 +663,7 @@ internal inline fun translateManagedIdentityNotFoundToZero(getHandle: () -> Long
     }
 
 /**
- * Read-only preview of a `dashpay://invite` link, decoded off-chain by
+ * Read-only preview of a `…dashpay.io/applink` link, decoded off-chain by
  * [Dashpay.parseInvitation] — mirror of Swift
  * `ManagedPlatformWallet.InvitationPreview`.
  *

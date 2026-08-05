@@ -13,6 +13,12 @@ Tracked as the "NEXT" item in the DashPay backlog (dashpay/platform#4020); calle
 
 ## 0. As-built delta (supersedes the marked sections below)
 
+> **2026-07-23 amendment (owner decision, Kotlin-port branch):** the emitted &
+> parsed transport is now **solely** `https://invitations.dashpay.io/applink?…`
+> (the AppsFlyer standard, matching the production wallets); the
+> `dashpay://invite` custom scheme described in §0.1/§0A is retired from the
+> shared codec. Domain association files + fallback: dashpay/platform#4212.
+
 1. **Link envelope = the LEGACY query format, not the §6 binary blob (supersedes §6, §7).**
    The 2026-07-13 legacy-compat rework (owner decision; contract in §0A) replaced the hand-rolled versioned payload with the
    query form shared with dash-wallet Android / dashwallet-iOS, so links are field-level

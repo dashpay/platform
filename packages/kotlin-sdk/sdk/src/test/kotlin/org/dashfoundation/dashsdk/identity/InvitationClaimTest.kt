@@ -34,14 +34,14 @@ class InvitationClaimTest {
 
         val identityId = registration.claimInvitation(
             walletHandle = 1,
-            uri = "dashpay://invite?assetlocktx=aa&pk=bb",
+            uri = "https://invitations.dashpay.io/applink?assetlocktx=aa&pk=bb",
             identityIndex = 4,
             keys = keySet(identityIndex = 4),
             signerHandle = 2,
             nowUnix = 1_800_000_000L,
         )
 
-        assertEquals("dashpay://invite?assetlocktx=aa&pk=bb", capturedUri)
+        assertEquals("https://invitations.dashpay.io/applink?assetlocktx=aa&pk=bb", capturedUri)
         assertEquals(4, capturedIndex)
         assertEquals(1_800_000_000L, capturedNow)
         assertEquals(listOf(55L), destroyed)
@@ -60,7 +60,7 @@ class InvitationClaimTest {
         )
 
         val failure = runCatching {
-            registration.claimInvitation(1, "dashpay://invite?x", 4, keySet(4), 2)
+            registration.claimInvitation(1, "https://invitations.dashpay.io/applink?x", 4, keySet(4), 2)
         }
         assertTrue(failure.exceptionOrNull() is IllegalStateException)
         assertEquals(listOf(91L), destroyed)
@@ -77,7 +77,7 @@ class InvitationClaimTest {
         )
 
         val failure = runCatching {
-            registration.claimInvitation(1, "dashpay://invite?x", 4, keySet(identityIndex = 5), 2)
+            registration.claimInvitation(1, "https://invitations.dashpay.io/applink?x", 4, keySet(identityIndex = 5), 2)
         }
         assertTrue(failure.exceptionOrNull() is IllegalArgumentException)
         assertFalse(called)

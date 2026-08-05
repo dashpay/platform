@@ -36,7 +36,7 @@ struct DashPayTabView: View {
     @State private var showAddViaQR = false
 
     /// Drives the claim sheet via `.sheet(item:)`. A fresh value (new `id`)
-    /// re-presents the sheet — so a second `dashpay://invite` link arriving while
+    /// re-presents the sheet — so a second invitation applink arriving while
     /// the sheet is already open re-seeds it with the new URI instead of being
     /// dropped (`.sheet(isPresented:)` can't re-seed an already-presented sheet
     /// whose `uri` is seeded once at init).
@@ -133,7 +133,7 @@ struct DashPayTabView: View {
             ?? walletManager.wallets.keys.sorted { $0.lexicographicallyPrecedes($1) }.first
     }
 
-    /// Present the claim sheet pre-filled for a pending `dashpay://invite` link
+    /// Present the claim sheet pre-filled for a pending invitation applink
     /// (captured by the app's `.onOpenURL` into `AppUIState.pendingInviteURL`)
     /// and clear it so it isn't re-triggered. Invoked on both the warm path
     /// (`.onChange`) and the cold-launch path (`.onAppear`); the nil guard makes

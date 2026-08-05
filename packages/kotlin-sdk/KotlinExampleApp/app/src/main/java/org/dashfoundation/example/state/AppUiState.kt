@@ -11,7 +11,7 @@ class AppUiState {
     val showWalletsSyncDetails = MutableStateFlow(false)
 
     /**
-     * A `dashpay://invite` (or legacy applink) URI captured from an incoming
+     * A `…dashpay.io/applink` (or legacy applink) URI captured from an incoming
      * intent, parked until the claim sheet can consume it. Deliberately NOT
      * cleared by the no-wallet guard (deviation from iOS, which drops the
      * link walletless — flagged as an upstream bug): the fresh-install

@@ -5,8 +5,14 @@ persistence, PR #4041, `docs/dashpay/DIP15_INVITATIONS_SPEC.md`) to the Kotlin S
 KotlinExampleApp, on branch `feat/kotlin-dashpay-invitations` (base `v4.1-dev`).
 
 Status: **v3 — synced with owner (2026-07-22), all open questions resolved (§10);
-slices 1–5 implemented** (JVM + cargo gates green; instrumented + funded-testnet
-QA are the remaining environment-bound gates). (v2 was the post-review draft.)
+slices 1–5 implemented + funded-e2e verified; codex review folded.**
+**Amendment (owner, 2026-07-23): AppsFlyer applinks are the ONLY invitation
+transport** — the shared codec now emits and parses solely
+`https://invitations.dashpay.io/applink?…` (changing iOS too); the
+`dashpay://invite` custom scheme is retired end-to-end (codec, manifest,
+MainActivity). Domain-side association files + fallback are
+dashpay/platform#4212 (infra). This supersedes §3.3/§10.2 where they
+describe the dual-transport design. (v2 was the post-review draft.)
 Reference implementation: `packages/swift-sdk` + SwiftExampleApp (source of truth per the
 parity doctrine in `packages/kotlin-sdk/CLAUDE.md`).
 Feature behavior spec: `docs/dashpay/DIP15_INVITATIONS_SPEC.md` §0/§0A/§0B (as-built truth).

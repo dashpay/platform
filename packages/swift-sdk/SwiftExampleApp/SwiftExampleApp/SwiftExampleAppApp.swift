@@ -24,7 +24,7 @@ final class AppUIState: ObservableObject {
     /// that identity pre-selected.
     @Published var selectedTab: RootTab = .sync
 
-    /// A `dashpay://invite?data=…` link opened via `.onOpenURL`, awaiting the
+    /// An invitation applink opened via `.onOpenURL`, awaiting the
     /// DashPay tab to pick it up and present the claim sheet pre-filled. Cleared
     /// by the tab once consumed. (The URL embeds a one-time voucher key — treat
     /// it as a secret; never log it.)
@@ -146,11 +146,13 @@ struct SwiftExampleAppApp: App {
                 .environmentObject(appUIState)
                 .environment(\.modelContext, modelContainer.mainContext)
                 .onOpenURL { url in
-                    // DashPay invitation deep link: route to the DashPay tab and
-                    // hand the URL to the claim sheet. The URL carries a bearer
-                    // voucher key, so it is NOT logged here.
-                    guard url.scheme?.lowercased() == "dashpay",
-                          url.host?.lowercased() == "invite" else { return }
+                    // DashPay invitation link (AppsFlyer applink form; fires
+                    // once Universal Links are verified — dashpay/platform#4212):
+                    // route to the DashPay tab and hand the URL to the claim
+                    // sheet. The URL carries a bearer voucher key — never logged.
+                    guard url.scheme?.lowercased() == "https",
+                          url.host?.lowercased() == "invitations.dashpay.io",
+                          url.path == "/applink" else { return }
                     appUIState.selectedTab = .dashpay
                     appUIState.pendingInviteURL = url.absoluteString
                 }
