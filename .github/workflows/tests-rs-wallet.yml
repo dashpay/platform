@@ -66,6 +66,14 @@ jobs:
             fi
           done
 
+          # Purge per-run coverage profile data possibly left by a cancelled
+          # workspace run in the shared workspace — before measuring target/,
+          # so stale profraw cannot inflate the size check and cost the
+          # instrumented build.
+          if [ -d target/llvm-cov-target ]; then
+            find target/llvm-cov-target \( -name '*.profraw' -o -name '*.profdata' \) -delete || true
+          fi
+
           TARGET_MAX_MB=120000
           MIN_FREE_MB=60000
           SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
