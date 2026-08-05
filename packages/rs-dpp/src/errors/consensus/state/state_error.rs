@@ -37,8 +37,10 @@ use crate::consensus::state::data_contract::document_type_update_error::Document
 use crate::consensus::state::document::document_contest_currently_locked_error::DocumentContestCurrentlyLockedError;
 use crate::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use crate::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
+use crate::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use crate::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use crate::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
+use crate::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
 use crate::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use crate::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use crate::consensus::state::group::{GroupActionAlreadyCompletedError, GroupActionAlreadySignedByIdentityError, GroupActionDoesNotExistError, IdentityMemberOfGroupNotFoundError, IdentityNotMemberOfGroupError, ModificationOfGroupActionMainParametersNotPermittedError};
@@ -354,10 +356,77 @@ pub enum StateError {
 
     #[error(transparent)]
     InsufficientShieldedFeeError(InsufficientShieldedFeeError),
+
+    #[error(transparent)]
+    DocumentContestIndexMismatchError(DocumentContestIndexMismatchError),
+
+    #[error(transparent)]
+    DocumentContestNotRequiredError(DocumentContestNotRequiredError),
 }
 
 impl From<StateError> for ConsensusError {
     fn from(error: StateError) -> Self {
         Self::StateError(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::Identifier;
+
+    /// `StateError` is encoded by variant position, so inserting a variant
+    /// anywhere but the end silently reassigns the discriminant of every
+    /// variant after it — consensus errors travel to WASM and JavaScript
+    /// clients, which would then decode an existing error as a different one.
+    /// These are the frozen discriminants of the first variant, of the variant
+    /// that follows the document contest block (the one an insertion there
+    /// would shift first), and of the last two.
+    fn discriminant_of(error: StateError) -> u8 {
+        let bytes = bincode::encode_to_vec(error, bincode::config::standard())
+            .expect("expected to encode the state error");
+        // Discriminants below 251 are a single byte under bincode's varint.
+        bytes[0]
+    }
+
+    #[test]
+    fn state_error_discriminants_are_frozen() {
+        assert_eq!(
+            discriminant_of(StateError::DataContractAlreadyPresentError(
+                DataContractAlreadyPresentError::new(Identifier::from([1; 32]))
+            )),
+            0
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentNotFoundError(
+                DocumentNotFoundError::new(Identifier::from([1; 32]))
+            )),
+            8
+        );
+        assert_eq!(
+            discriminant_of(StateError::InsufficientShieldedFeeError(
+                InsufficientShieldedFeeError::new("fee".to_string())
+            )),
+            90
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestIndexMismatchError(
+                DocumentContestIndexMismatchError::new(
+                    Identifier::from([1; 32]),
+                    "expected".to_string(),
+                    "provided".to_string(),
+                )
+            )),
+            91
+        );
+        assert_eq!(
+            discriminant_of(StateError::DocumentContestNotRequiredError(
+                DocumentContestNotRequiredError::new(
+                    Identifier::from([1; 32]),
+                    "provided".to_string(),
+                )
+            )),
+            92
+        );
     }
 }

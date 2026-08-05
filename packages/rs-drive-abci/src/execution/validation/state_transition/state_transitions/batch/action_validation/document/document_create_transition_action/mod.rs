@@ -11,9 +11,11 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v0::DocumentCreateTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v0::DocumentCreateTransitionActionStructureValidationV0;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::advanced_structure_v1::DocumentCreateTransitionActionStructureValidationV1;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod advanced_structure_v0;
+mod advanced_structure_v1;
 mod state_v0;
 mod state_v1;
 
@@ -53,9 +55,12 @@ impl DocumentCreateTransitionActionValidation for DocumentCreateTransitionAction
             .document_create_transition_structure_validation
         {
             0 => self.validate_structure_v0(owner_id, block_info, network, platform_version),
+            // V1 introduces the cross-check that the prefunded voting balance names the same
+            // contested vote poll that the document itself resolves to
+            1 => self.validate_structure_v1(owner_id, block_info, network, platform_version),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentCreateTransitionAction::validate_structure".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
