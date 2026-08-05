@@ -24,7 +24,6 @@ dashcore = { workspace = true }
 thiserror = "1.0"
 async-trait = "0.1"
 arc-swap = "1"
-rand = "0.8"
 
 # Collections
 bimap = "0.6"
@@ -34,14 +33,8 @@ tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12" }
 dash-async = { path = "../rs-dash-async" }
 
-# Logging. `log` sits alongside `tracing` for on-device (Android)
-# diagnostics: the JNI layer installs `android_logger` as the global `log`
-# logger (logcat tag `DashSDK`), while the only `tracing` subscriber the
-# Kotlin SDK installs (`dash_sdk_enable_logging`) writes to stdout, which
-# Android discards — so breadcrumbs that must be visible in logcat are
-# emitted through BOTH facades. See `network/encrypted_document.rs`.
+# Logging
 tracing = "0.1"
-log = "0.4"
 
 # Encoding
 hex = "0.4"
@@ -69,13 +62,17 @@ zip32 = { version = "0.2.0", default-features = false, optional = true }
 # Same version as `dash-sdk` so the lockfile resolves a single copy.
 futures = { version = "0.3.30", optional = true }
 
-# NOTE: the OS CSPRNG (`OsRng`) this crate uses for one-time Orchard key
-# generation (`shielded::keys::generate_one_time_orchard_key`, the inviter
-# side of L2 shielded invitations) comes from the unconditional `rand = "0.8"`
-# in the "Standard dependencies" block above. dashpay/platform#4277 promoted
-# `rand` from a dev-dependency to a mandatory one, so this PR no longer
-# declares its own optional copy (a second `rand` key in `[dependencies]` is a
-# duplicate-key manifest error) and `shielded` no longer lists `dep:rand`.
+# CSPRNG + `log` facade for this PR's added lib code. `rand`'s `OsRng`/`RngCore`
+# back `shielded::keys::generate_one_time_orchard_key` (behind `shielded`) and
+# `identity::network::encrypted_document` (unconditional); that module also
+# dual-logs through the `log` facade so breadcrumbs reach Android logcat (the
+# JNI layer installs `android_logger` as the global `log` logger). base
+# v4.2-dev keeps `rand` as a dev-dependency only and does not depend on `log`,
+# so this PR declares BOTH as its own runtime dependencies here rather than in
+# the "Standard dependencies" block above, whose `rand`/`log` lines base edited
+# out — declaring them there would be dropped (or conflict) on merge into base.
+rand = "0.8"
+log = "0.4"
 
 # Networked, opt-in example binaries. Each one performs real network I/O
 # against a live devnet, so they are examples (compiled, never run by
