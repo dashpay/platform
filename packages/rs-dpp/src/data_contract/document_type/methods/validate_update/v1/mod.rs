@@ -354,4 +354,111 @@ mod tests {
             result.errors
         );
     }
+
+    // Ranked aggregate indexes (protocol v14 grammar) are covered by the
+    // same name-keyed definition comparison as every other index flag:
+    // toggling a ranking axis after creation changes the on-disk tree
+    // variant, so it must be rejected. The ranking axes are index-level,
+    // so `validate_config` — which covers the *doctype*-level count / sum
+    // flags — is deliberately not where they are enforced. These tests
+    // exercise the PUBLIC dispatcher so that routing is pinned, not just
+    // the helper in isolation; they live here rather than in v0 because
+    // the ranked grammar only exists at protocol v14, where
+    // validate_update dispatches to v1.
+    mod validate_update_ranked_indices {
+        use super::*;
+
+        /// `review` doctype, one averageable index over `restaurantId`, with
+        /// `rankedAverageable` set to the supplied value.
+        fn document_type_with_ranked_index(
+            ranked_averageable: bool,
+            platform_version: &PlatformVersion,
+        ) -> DocumentType {
+            let schema = platform_value!({
+                "type": "object",
+                "properties": {
+                    // 32 rather than the generic 63-character index limit:
+                    // an index declaring a ranking axis bounds its group key
+                    // more tightly (59 characters on the Avg axis), and both
+                    // halves of these tests have to build the same doctype
+                    // shape with only `rankedAverageable` differing.
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 1,
+                    },
+                },
+                "required": ["restaurantId", "grade"],
+                "additionalProperties": false,
+                "indices": [{
+                    "name": "byRestaurant",
+                    "properties": [{ "restaurantId": "asc" }],
+                    "averageable": "grade",
+                    "rangeAverageable": true,
+                    "rankedAverageable": ranked_averageable,
+                }],
+            });
+
+            let config = DataContractConfig::default_for_version(platform_version)
+                .expect("should create a default config");
+
+            DocumentType::try_from_schema(
+                Identifier::random(),
+                1,
+                config.version(),
+                "review",
+                schema,
+                None,
+                &BTreeMap::new(),
+                &config,
+                true,
+                &mut Vec::new(),
+                platform_version,
+            )
+            .expect("failed to create document type")
+        }
+
+        #[test]
+        fn should_return_invalid_result_when_ranked_averageable_is_changed() {
+            let platform_version = PlatformVersion::latest();
+            let old = document_type_with_ranked_index(false, platform_version);
+            let new = document_type_with_ranked_index(true, platform_version);
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), platform_version)
+                .expect("validate_update should not error");
+
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+                )] if e.index_path() == "changed index 'byRestaurant'"
+            );
+        }
+
+        #[test]
+        fn should_pass_when_ranked_averageable_is_unchanged() {
+            let platform_version = PlatformVersion::latest();
+            let old = document_type_with_ranked_index(true, platform_version);
+            let new = document_type_with_ranked_index(true, platform_version);
+
+            let result = old
+                .as_ref()
+                .validate_update(new.as_ref(), platform_version)
+                .expect("validate_update should not error");
+
+            assert!(
+                result.is_valid(),
+                "an unchanged ranked index must not be rejected, got {:?}",
+                result.errors
+            );
+        }
+    }
 }
