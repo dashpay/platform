@@ -1138,6 +1138,58 @@ impl PlatformWallet {
         .await
     }
 
+    /// Multi-output sibling of [`shielded_transfer_to`](Self::shielded_transfer_to): spend
+    /// `account`'s notes and create SEVERAL notes in one atomic Type-16 transition.
+    ///
+    /// `outputs` pairs each recipient (43 raw Orchard address bytes) with its amount in credits.
+    /// Repeating the same address is allowed and is the point of this call: it funds one address
+    /// with several independent notes, so a later spend of that address spends several REAL
+    /// notes instead of one real note plus an Orchard padding dummy (whose nullifier is random
+    /// and therefore not reproducible offline).
+    ///
+    /// `memo` is attached to every recipient note. `seed` supplies the transient spend authority
+    /// (see [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_transfer_multi_to<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        outputs: &[([u8; 43], u64)],
+        memo: [u8; 36],
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        let parsed: Vec<(grovedb_commitment_tree::PaymentAddress, u64)> = outputs
+            .iter()
+            .map(|(raw, amount)| {
+                Option::<grovedb_commitment_tree::PaymentAddress>::from(
+                    grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(raw),
+                )
+                .map(|addr| (addr, *amount))
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(
+                        "invalid Orchard payment address bytes".to_string(),
+                    )
+                })
+            })
+            .collect::<Result<_, _>>()?;
+
+        super::shielded::operations::transfer_multi(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            &parsed,
+            memo,
+            &prover,
+        )
+        .await
+    }
+
     /// Unshield from `account`'s notes to a transparent platform
     /// address (`"dash1…"` / `"tdash1…"`). Parsed via
     /// `PlatformAddress::from_bech32m_string`; the recipient's HRP is

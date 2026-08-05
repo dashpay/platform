@@ -350,6 +350,153 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     map_spend_result(result, "shielded transfer")
 }
 
+/// Defensive upper bound on the recipient count of a multi-output shielded transfer.
+///
+/// This is an FFI sanity bound, not the protocol limit: it stops an absurd or corrupt
+/// `num_recipients` from driving a huge allocation before anything else can reject it. The real
+/// ceiling is the 20 KiB state-transition size limit, which admits roughly six Orchard actions —
+/// so a legitimate caller stays far below this.
+const MAX_SHIELDED_TRANSFER_RECIPIENTS: usize = 16;
+
+/// Send a shielded → shielded transfer with SEVERAL outputs in one
+/// atomic transition.
+///
+/// Multi-output sibling of
+/// [`platform_wallet_manager_shielded_transfer`]. `recipients_raw_43`
+/// is `num_recipients` raw 43-byte Orchard payment addresses laid out
+/// back to back, and `amounts` is the matching array of
+/// `num_recipients` credit amounts. Each pair becomes its own note.
+///
+/// Repeating the same address is allowed and is the primary use: it
+/// funds one address with several independent notes, so a later spend
+/// of that address spends several REAL notes rather than one real note
+/// plus an Orchard padding dummy (whose nullifier is randomly
+/// generated and so cannot be reproduced offline).
+///
+/// `memo_text` is attached to EVERY recipient note (same encoding and
+/// 32-byte UTF-8 limit as the single-output call). The change note
+/// always carries the empty memo.
+///
+/// A multi-output transfer always emits a change output, so the spent
+/// value must strictly exceed `sum(amounts) + fee`.
+///
+/// `mnemonic_resolver_handle` supplies the per-operation Orchard spend
+/// authority (see `platform_wallet_manager_shielded_transfer`).
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `mnemonic_resolver_handle` must come from
+///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the
+///   caller retains ownership.
+/// - `recipients_raw_43` must point to `num_recipients * 43` readable
+///   bytes and `amounts` to `num_recipients` readable `u64`s.
+/// - `memo_text`, when non-null, must be a valid NUL-terminated UTF-8
+///   C string for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer_multi(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    mnemonic_resolver_handle: *mut MnemonicResolverHandle,
+    account: u32,
+    recipients_raw_43: *const u8,
+    amounts: *const u64,
+    num_recipients: usize,
+    memo_text: *const c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(mnemonic_resolver_handle);
+    check_ptr!(recipients_raw_43);
+    check_ptr!(amounts);
+
+    if num_recipients == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "num_recipients must be at least 1".to_string(),
+        );
+    }
+    if num_recipients > MAX_SHIELDED_TRANSFER_RECIPIENTS {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "num_recipients {num_recipients} exceeds the maximum of \
+                 {MAX_SHIELDED_TRANSFER_RECIPIENTS}"
+            ),
+        );
+    }
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let amount_slice = std::slice::from_raw_parts(amounts, num_recipients);
+    let mut outputs: Vec<([u8; 43], u64)> = Vec::with_capacity(num_recipients);
+    for (index, &amount) in amount_slice.iter().enumerate() {
+        if amount == 0 {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("amount at index {index} must be positive"),
+            );
+        }
+        let mut recipient = [0u8; 43];
+        std::ptr::copy_nonoverlapping(
+            recipients_raw_43.add(index * 43),
+            recipient.as_mut_ptr(),
+            43,
+        );
+        outputs.push((recipient, amount));
+    }
+
+    // Decode the optional memo before touching wallet state so a malformed memo fails fast.
+    let memo_str = if memo_text.is_null() {
+        None
+    } else {
+        match CStr::from_ptr(memo_text).to_str() {
+            Ok(s) => Some(s),
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                    format!("memo_text is not valid UTF-8: {e}"),
+                );
+            }
+        }
+    };
+    let memo = match encode_memo_text(memo_str) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    let seed = match crate::identity_keys_from_mnemonic::resolve_seed_from_resolver(
+        mnemonic_resolver_handle,
+        &wallet_id,
+    ) {
+        Ok(seed) => seed,
+        Err(result) => return result,
+    };
+
+    // Prove on a worker thread with an 8 MB stack (see
+    // `platform_wallet_manager_shielded_transfer`).
+    let result = block_on_worker(async move {
+        let prover = CachedOrchardProver::new();
+        let r = wallet
+            .shielded_transfer_multi_to(
+                &coordinator,
+                seed.as_ref(),
+                account,
+                &outputs,
+                memo,
+                &prover,
+            )
+            .await;
+        poke_sync_on_unconfirmed(&r, handle);
+        r
+    });
+    map_spend_result(result, "shielded multi-output transfer")
+}
+
 /// Unshield: spend shielded notes and send `amount` credits to a
 /// platform address.
 ///
