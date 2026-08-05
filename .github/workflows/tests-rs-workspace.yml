@@ -159,10 +159,21 @@ jobs:
 
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
+          # Work entirely over git transport: the pull_request checkout is
+          # the PR merge commit, whose first parent is the base-branch tip
+          # the merge was built on, so diffing against it yields exactly the
+          # PR's changes. The previous `gh pr view` call needed
+          # api.github.com, which has repeatedly been unreachable from a
+          # runner while git fetches to github.com kept working — and it
+          # failed the whole job before any test ran.
+          BASE_PARENT=$(git cat-file commit HEAD | awk '/^parent /{print $2; exit}')
+          if [ -z "$BASE_PARENT" ]; then
+            echo "::error::Could not determine the merge commit's base parent"
+            exit 1
+          fi
+          git fetch --depth=1 origin "$BASE_PARENT"
+          CHANGED_RS=$(git diff --no-renames --name-only "$BASE_PARENT" HEAD -- '*.rs')
           if [ -z "$CHANGED_RS" ]; then
             echo "No .rs files changed — skipping"
             exit 0
@@ -185,10 +196,9 @@ jobs:
             '
           }
 
-          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
           for file in $CHANGED_RS; do
             if [ ! -f "$file" ]; then continue; fi
-            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
+            BASE_CONTENT=$(git show "$BASE_PARENT":"$file" 2>/dev/null || true)
             if [ -z "$BASE_CONTENT" ]; then continue; fi
 
             BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
