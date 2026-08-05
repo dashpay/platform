@@ -34,14 +34,8 @@ tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12" }
 dash-async = { path = "../rs-dash-async" }
 
-# Logging. `log` sits alongside `tracing` for on-device (Android)
-# diagnostics: the JNI layer installs `android_logger` as the global `log`
-# logger (logcat tag `DashSDK`), while the only `tracing` subscriber the
-# Kotlin SDK installs (`dash_sdk_enable_logging`) writes to stdout, which
-# Android discards — so breadcrumbs that must be visible in logcat are
-# emitted through BOTH facades. See `network/encrypted_document.rs`.
+# Logging
 tracing = "0.1"
-log = "0.4"
 
 # Encoding
 hex = "0.4"
@@ -55,6 +49,18 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 
 # Security
 zeroize = "1"
+
+# `log` facade. `changeset/core_bridge.rs` emits watermark-freeze breadcrumbs
+# through `log` so they reach Android logcat (the JNI layer installs
+# `android_logger` as the global `log` logger, tag `DashSDK`; the Kotlin SDK's
+# only `tracing` subscriber writes to stdout, which Android discards).
+# Declared here — deliberately NOT inside the `tracing` block above — so this
+# crate owns the dependency independently of the encrypted-txMetadata change
+# (#4277) that first introduced a `log` line: that change was reverted on
+# v4.2-dev (#4279), and a `log` line living in that reverted region gets
+# dropped by the 3-way merge, leaving the `log::` calls in core_bridge.rs
+# undeclared (E0433). Keeping it in this untouched region makes it survive.
+log = "0.4"
 
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.1", optional = true }
