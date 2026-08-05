@@ -412,15 +412,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
-        // Subscribe to the wallet-event broadcast BEFORE the manager is
-        // wrapped in the shared `Arc<RwLock>` and handed to any producer,
-        // so no event emitted during startup is lost without a `Lagged`
-        // marker (a `broadcast::Receiver` only sees messages sent after its
-        // `subscribe()` — see `run_wallet_event_adapter`'s
-        // subscribe-before-publish note). The receiver is created here,
-        // synchronously, and moved into the adapter task below.
-        let wallet_manager_inner = WalletManager::new(sdk.network);
-        let event_receiver = wallet_manager_inner.subscribe_events();
+        // Take the manager's lossless, unbounded persistence receiver BEFORE
+        // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
+        // producer. Unlike the old broadcast subscription, an
+        // `mpsc::UnboundedReceiver` buffers events emitted during startup
+        // rather than dropping them, so there is no subscribe-before-publish
+        // race and — being unbounded — it can never `Lagged` and freeze the
+        // durable sync watermark (dashpay/platform#4069). The receiver is
+        // taken here, once, and moved into the adapter task below.
+        let mut wallet_manager_inner = WalletManager::new(sdk.network);
+        let event_receiver = wallet_manager_inner
+            .take_persistence_receiver()
+            .expect("persistence receiver is available exactly once on a fresh WalletManager");
         let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
         let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
         let lock_notify = Arc::new(Notify::new());
