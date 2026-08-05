@@ -9,9 +9,10 @@ on:
         # Computed by the `changes` job in tests.yml (see the
         # "Check for shielded-relevant changes" step there for the heuristic
         # and its safety net). When false, the shielded test phase is skipped
-        # and its coverage is restored from the cache populated by runs that
-        # did execute it. Defaults to true so any caller that doesn't compute
-        # the heuristic gets the full suite.
+        # and no rust-shielded coverage is uploaded — codecov carries the
+        # base commit's rust-shielded flag forward (see .codecov.yml).
+        # Defaults to true so any caller that doesn't compute the heuristic
+        # gets the full suite.
         description: Whether shielded code (or anything affecting the shielded suite) changed
         type: boolean
         default: true
@@ -255,7 +256,7 @@ jobs:
         run: |
           CURRENT_TREE=$(git rev-parse HEAD^{tree})
           CACHED_TREE=$(cat target/lcov-tree-hash 2>/dev/null || echo "none")
-          if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov-nonshielded.info ] && [ -f lcov-shielded.info ]; then
+          if [ "$CURRENT_TREE" = "$CACHED_TREE" ] && [ -f lcov-nonshielded.info ]; then
             echo "reuse=true" >> "$GITHUB_OUTPUT"
             echo "Tree hash matches ($CURRENT_TREE) — reusing coverage from previous run"
           else
@@ -267,80 +268,21 @@ jobs:
       # "Prune runner disk before tests", unconditionally for every job.
       - name: Remove stale coverage data
         if: steps.coverage-cache.outputs.reuse == 'false'
-        run: rm -f lcov.info lcov-nonshielded.info lcov-shielded.info
+        run: rm -f lcov.info lcov-nonshielded.info lcov-strategy.info lcov-shielded.info
 
-      # Content-address the shielded coverage cache: the key is a hash over
-      # the blobs of the union of every input the shielded-change detector in
-      # tests.yml treats as shielded-relevant (keep the keyword regex and the
-      # build-input list in sync with it):
-      #   - tracked files whose PATH mentions a shielded keyword (shielded
-      #     module files don't all mention a keyword in their content, e.g.
-      #     error types under a shielded/ directory);
-      #   - tracked .rs/.proto files whose CONTENT mentions a keyword
-      #     (shielded match arms and test names in shared files);
-      #   - the build inputs that select or compile the suite: every Cargo
-      #     manifest and lockfile, rust-toolchain.toml, the rust setup
-      #     action, and the Rust test workflows.
-      # An exact-key hit therefore proves the cached lcov was produced from
-      # byte-identical shielded sources and build configuration — a PR can
-      # never reuse coverage from a tree whose shielded inputs differ from
-      # its own, and any change that forces a fresh shielded run also moves
-      # the key (Actions cache entries are immutable, so a stale entry must
-      # never stay reachable under a current key). `git ls-files`/`git grep`
-      # only consider tracked files, so runner-local artifacts (target/)
-      # cannot perturb the hash.
-      - name: Compute shielded source content hash
-        id: shielded-hash
-        if: steps.coverage-cache.outputs.reuse == 'false'
-        run: |
-          set -eu
-          HASH=$(
-            {
-              git ls-files | grep -iE 'shield|orchard|halo2' || true
-              git grep -ilE 'shield|orchard|halo2' -- '*.rs' '*.proto' || true
-              git ls-files | grep -E '(^|/)Cargo\.(toml|lock)$' || true
-              echo rust-toolchain.toml
-              git ls-files -- .github/actions/rust .github/workflows/tests.yml .github/workflows/tests-rs-workspace.yml
-            } \
-              | LC_ALL=C sort -u \
-              | tr '\n' '\0' \
-              | xargs -0 git ls-files -s -- \
-              | git hash-object --stdin
-          )
-          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
-          echo "Shielded source content hash: $HASH"
-
-      # When the PR didn't touch anything shielded-relevant, reuse the
-      # shielded coverage produced by an earlier run of identical shielded
-      # sources instead of paying ~4-5 minutes of halo2 proving per PR. In
-      # practice the hit comes from the entry saved by a post-merge push run
-      # on the base branch. Exact key match only — no restore-keys prefix
-      # fallback — so a hit is a content-verified reuse. A miss (evicted
-      # cache, shielded sources newer than any prior full run) simply falls
-      # back to running the shielded suite, which then repopulates the cache.
-      - name: Restore shielded coverage from cache
-        id: shielded-cache
-        if: steps.coverage-cache.outputs.reuse == 'false' && inputs.shielded-changed == false
-        uses: actions/cache/restore@v4
-        with:
-          path: lcov-shielded.info
-          key: rs-shielded-lcov-v1-${{ steps.shielded-hash.outputs.hash }}
-
-      # On pull requests the drive-abci chain-simulation suite
-      # (strategy_tests, ~90 multi-second whole-chain simulations that
-      # dominate the test phase's wall time) is reduced to the single
-      # comprehensive simulation — see the doc comment on
+      # The drive-abci chain-simulation suite (strategy_tests, ~90
+      # multi-second whole-chain simulations that dominate the test phase's
+      # wall time) is reduced here to the single comprehensive simulation —
+      # see the doc comment on
       # run_chain_comprehensive_mixed_operations_with_epoch_change_and_quorum_rotation
-      # for what it covers. Push and nightly runs execute the full suite, so
-      # a regression in an excluded simulation is caught minutes after merge
-      # — the same safety-net pattern as the shielded phase above.
+      # for what it covers. The remaining simulations run in their own phase
+      # below on push and nightly only, so a regression in one of them is
+      # caught minutes after merge — the same safety-net pattern as the
+      # shielded phase. Keeping this phase's filter identical across events
+      # keeps the `rust` codecov flag comparable between PR and push runs.
       - name: Run non-shielded tests with nextest (parallel, compiles all packages)
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
-          FILTER='not test(~shield)'
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FILTER="$FILTER and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))"
-          fi
           cargo llvm-cov nextest --no-report \
             --package drive \
             --package dpp \
@@ -366,32 +308,54 @@ jobs:
             --package keyword-search-contract \
             --all-features \
             --locked \
-            -E "$FILTER"
+            -E 'not test(~shield) and (not binary_id(=drive-abci::strategy_tests) or test(~comprehensive_mixed_operations))'
         env:
           RUST_MIN_STACK: 4194304
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
-      # Report the non-shielded phase on its own, then drop its profraw files
-      # so the shielded report below contains only shielded execution. The
-      # two lcov files are uploaded together and codecov merges them, so the
-      # combined coverage is the same as the old single-report flow — but the
-      # shielded half is now separately cacheable.
+      # Each phase gets its own lcov file (upload steps below tag each with
+      # its codecov flag), so profraw files are dropped between phases to
+      # keep the reports disjoint.
       - name: Generate non-shielded coverage report
         if: steps.coverage-cache.outputs.reuse == 'false'
         run: |
           cargo llvm-cov report --lcov --output-path lcov-nonshielded.info
           cargo llvm-cov clean --profraw-only
 
-      # Runs when shielded-relevant code changed, and also when nothing
-      # shielded changed but no content-verified cached coverage could be
-      # restored. (A skipped restore step yields an empty cache-hit output,
-      # which correctly reads as "no cache" here.)
+      # The chain simulations excluded from the phase above. PR runs skip
+      # them (and upload no rust-strategy coverage — codecov carries the base
+      # commit's forward); push, nightly, and dispatch runs execute them all.
+      - name: Run full chain-simulation suite (push and nightly only)
+        id: strategy-tests
+        if: >-
+          steps.coverage-cache.outputs.reuse == 'false'
+          && github.event_name != 'pull_request'
+        run: |
+          cargo llvm-cov nextest --no-report \
+            --package drive-abci \
+            --all-features \
+            --locked \
+            -E 'binary_id(=drive-abci::strategy_tests) and not test(~comprehensive_mixed_operations) and not test(~shield)'
+        env:
+          RUST_MIN_STACK: 4194304
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
+
+      - name: Generate chain-simulation coverage report
+        if: steps.strategy-tests.outcome == 'success'
+        run: |
+          cargo llvm-cov report --lcov --output-path lcov-strategy.info
+          cargo llvm-cov clean --profraw-only
+
+      # When nothing shielded-relevant changed, the phase is skipped and no
+      # rust-shielded coverage is uploaded — codecov carries the base
+      # commit's forward (see .codecov.yml).
       - name: Run shielded tests with cargo test (shared process for VK reuse)
         id: shielded-tests
         if: >-
           steps.coverage-cache.outputs.reuse == 'false'
-          && (inputs.shielded-changed || steps.shielded-cache.outputs.cache-hit != 'true')
+          && inputs.shielded-changed
         run: |
           cargo llvm-cov test --no-report \
             --package dpp \
@@ -410,25 +374,17 @@ jobs:
         if: steps.shielded-tests.outcome == 'success'
         run: cargo llvm-cov report --lcov --output-path lcov-shielded.info
 
-      # Saving under the content hash means a duplicate save (same shielded
-      # sources already cached) is a harmless no-op warning.
-      - name: Save shielded coverage to cache
-        if: steps.shielded-tests.outcome == 'success'
-        uses: actions/cache/save@v4
-        with:
-          path: lcov-shielded.info
-          key: rs-shielded-lcov-v1-${{ steps.shielded-hash.outputs.hash }}
-
       # The marker means "this exact tree passed the COMPLETE suite", so it
-      # is written only when the shielded phase actually ran and succeeded.
-      # A fast-path run (cache-restored shielded coverage) must not write it:
-      # the post-merge push commonly has the same tree as the PR merge ref,
-      # and on the same runner the marker would let the reuse check skip the
-      # push run's shielded suite — the safety net for shared-code changes
-      # the detector heuristic misses.
+      # is written only when both skippable phases (chain simulations and
+      # shielded) actually ran and succeeded. A PR fast-path run must not
+      # write it: the post-merge push commonly has the same tree as the PR
+      # merge ref, and on the same runner the marker would let the reuse
+      # check skip the push run's full phases — the safety net for changes
+      # the PR-path gating misses.
       - name: Record coverage tree hash
         if: >-
           steps.coverage-cache.outputs.reuse == 'false'
+          && steps.strategy-tests.outcome == 'success'
           && steps.shielded-tests.outcome == 'success'
         run: git rev-parse HEAD^{tree} > target/lcov-tree-hash
 
@@ -439,15 +395,37 @@ jobs:
           rm -rf ~/.gnupg/public-keys.d/*.lock 2>/dev/null || true
           rm -rf ~/.gnupg/.#* 2>/dev/null || true
 
-      # Codecov merges the two report files into one combined coverage view;
-      # on runs that skipped the shielded phase, lcov-shielded.info is the
-      # cache-restored report from the last run that executed it.
+      # One upload per codecov flag. A phase that didn't run produces no file
+      # and uploads nothing — its flag is carried forward from the base
+      # commit by codecov (see .codecov.yml), so PR reports don't show a
+      # spurious coverage drop for suites that intentionally didn't run.
+      # File-existence gating (rather than step-outcome gating) also covers
+      # the tree-hash reuse path, where the files persist from the previous
+      # run of the identical tree.
       - name: Upload coverage
-        if: always()
+        if: always() && hashFiles('lcov-nonshielded.info') != ''
         uses: codecov/codecov-action@v6
         with:
-          files: lcov-nonshielded.info,lcov-shielded.info
+          files: lcov-nonshielded.info
           flags: rust
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload chain-simulation coverage
+        if: always() && hashFiles('lcov-strategy.info') != ''
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov-strategy.info
+          flags: rust-strategy
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload shielded coverage
+        if: always() && hashFiles('lcov-shielded.info') != ''
+        uses: codecov/codecov-action@v6
+        with:
+          files: lcov-shielded.info
+          flags: rust-shielded
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
