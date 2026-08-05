@@ -10,9 +10,17 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::version::drive_versions::DriveVersion;
+use grovedb::element::IndexAxis;
 use grovedb::{TransactionArg, TreeType};
 
 /// How the underlying v0 body builds the empty-tree operation.
+///
+/// Orthogonal to the `ranked_axes` argument every entry point also
+/// passes: the mode picks *how the element is wrapped*, the axes decide
+/// *which element variant is built*. Only `NotWrapped` admits a
+/// non-empty axis list — an indexed tree structurally cannot be wrapped
+/// (see `INDEXED_INNER_UNWRAPPABLE` in `fees::op`) — and the v0 body
+/// fails closed on the other combinations rather than dropping the axes.
 #[derive(Clone, Copy)]
 enum EmptyTreeInsertMode {
     /// Plain empty tree of the requested type (non-aggregating parent).
@@ -55,6 +63,7 @@ impl Drive {
                 path_key_info,
                 tree_type,
                 EmptyTreeInsertMode::NotWrapped, // non-aggregating insert, no wrap
+                &[],                             // ranked_axes — plain (non-indexed) tree
                 storage_flags,
                 apply_type,
                 transaction,
@@ -64,6 +73,60 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "batch_insert_empty_tree_if_not_exists".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Ranking-aware form of [`Self::batch_insert_empty_tree_if_not_exists`]
+    /// for an index's **terminal property-name tree**.
+    ///
+    /// `ranked_axes` is empty for every index that declares no ranking flag,
+    /// in which case this is bit-identical to the plain helper — which is why
+    /// the index walkers can call this unconditionally without changing what
+    /// they emit for pre-PV14 contracts. When non-empty, `tree_type` is one of
+    /// the three indexed variants (grovedb PR 657) and the axes supply the TLV
+    /// that `TreeType` alone cannot carry.
+    ///
+    /// Shares the `batch_insert_empty_tree_if_not_exists` version slot: the
+    /// existence check, the pending-operation scan and the delete-cancellation
+    /// behaviour are the same code path, and only the element being built
+    /// differs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn batch_insert_empty_index_tree_if_not_exists<const N: usize>(
+        &self,
+        path_key_info: PathKeyInfo<N>,
+        tree_type: TreeType,
+        ranked_axes: &[IndexAxis],
+        storage_flags: Option<&StorageFlags>,
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
+        check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<bool, Error> {
+        match drive_version
+            .grove_methods
+            .batch
+            .batch_insert_empty_tree_if_not_exists
+        {
+            0 => self.batch_insert_empty_tree_if_not_exists_v0(
+                path_key_info,
+                tree_type,
+                // An indexed tree can never be wrapped — see
+                // INDEXED_INNER_UNWRAPPABLE.
+                EmptyTreeInsertMode::NotWrapped,
+                ranked_axes,
+                storage_flags,
+                apply_type,
+                transaction,
+                check_existing_operations,
+                drive_operations,
+                drive_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "batch_insert_empty_index_tree_if_not_exists".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
@@ -113,6 +176,7 @@ impl Drive {
                 path_key_info,
                 tree_type,
                 EmptyTreeInsertMode::NonAggregatedForParent(aggregating_parent_tree_type),
+                &[], // ranked_axes — a wrapped child is never an indexed tree
                 storage_flags,
                 apply_type,
                 transaction,
@@ -151,6 +215,16 @@ impl Drive {
     /// would let downstream crates bypass that gate. The grove feature
     /// version is still dispatched like the sibling helpers so a future
     /// v1 of the batch-dedup semantics can't silently diverge here.
+    ///
+    /// `ranked_axes` must be empty: a ranked index's terminal
+    /// property-name tree is an indexed tree, which cannot be wrapped
+    /// *and* cannot be silently inserted unwrapped here (the
+    /// zero-contribution dispatcher's unwrapped fallback for sum-only
+    /// parents would otherwise accept one). Callers pass the resolved
+    /// axes rather than `&[]` so that shape fails closed with the
+    /// dedicated message instead of losing its secondaries — the same
+    /// backstop the v1 walkers got from
+    /// [`LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type`].
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists<
         const N: usize,
@@ -159,6 +233,7 @@ impl Drive {
         path_key_info: PathKeyInfo<N>,
         aggregating_parent_tree_type: TreeType,
         tree_type: TreeType,
+        ranked_axes: &[IndexAxis],
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -175,6 +250,7 @@ impl Drive {
                 path_key_info,
                 tree_type,
                 EmptyTreeInsertMode::ContributingZeroToParent(aggregating_parent_tree_type),
+                ranked_axes,
                 storage_flags,
                 apply_type,
                 transaction,

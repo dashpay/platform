@@ -7,9 +7,15 @@ on:
         default: false
 
 jobs:
-  test-mac:
-    name: Tests (macOS)
-    runs-on: [self-hosted, macOS, ARM64]
+  test:
+    name: Tests
+    # Scheduled onto whichever self-hosted runner is free — the macOS boxes or
+    # the Linux one. `rust-ci` is a custom label applied to exactly those
+    # runners; pairing it with `self-hosted` keeps the job off GitHub-hosted
+    # runners entirely, so untrusted code never reaches a hosted Linux VM by
+    # way of a label collision.
+    runs-on: [self-hosted, rust-ci]
+    # Fork PRs must not execute on any persistent runner, macOS or Linux.
     if: >-
       github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name == github.repository
@@ -21,7 +27,7 @@ jobs:
         with:
           clean: false
 
-      - name: Prune macOS runner disk before tests
+      - name: Prune runner disk before tests
         run: |
           for path in ../target-backup-before-*-clean-* target/llvm-cov-target; do
             if [ -e "$path" ]; then
@@ -30,21 +36,33 @@ jobs:
             fi
           done
 
+          # Absolute caps tuned for the large macOS volumes, clamped to a share
+          # of the volume so a smaller runner doesn't purge target/ every run
+          # and force a cold rebuild on each job.
+          TOTAL=$(df -m . | awk 'NR == 2 {print $2}')
+          FREE=$(df -m . | awk 'NR == 2 {print $4}')
+          SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
+          TOTAL=${TOTAL:-0}
+          FREE=${FREE:-0}
+          SIZE=${SIZE:-0}
+
           TARGET_MAX_MB=120000
           MIN_FREE_MB=60000
-          SIZE=$(du -sm target 2>/dev/null | awk '{print $1}' || echo 0)
-          FREE=$(df -m . | awk 'NR == 2 {print $4}')
-          SIZE=${SIZE:-0}
-          FREE=${FREE:-0}
+          if [ "$TOTAL" -gt 0 ]; then
+            [ $((TOTAL / 3)) -lt "$TARGET_MAX_MB" ] && TARGET_MAX_MB=$((TOTAL / 3))
+            [ $((TOTAL / 5)) -lt "$MIN_FREE_MB" ] && MIN_FREE_MB=$((TOTAL / 5))
+          fi
 
-          echo "target/ size: ${SIZE}MB"
-          echo "available disk: ${FREE}MB"
+          echo "volume size: ${TOTAL}MB"
+          echo "target/ size: ${SIZE}MB (cap ${TARGET_MAX_MB}MB)"
+          echo "available disk: ${FREE}MB (floor ${MIN_FREE_MB}MB)"
           if [ "$SIZE" -gt "$TARGET_MAX_MB" ] || [ "$FREE" -lt "$MIN_FREE_MB" ]; then
             echo "target/ exceeds ${TARGET_MAX_MB}MB or disk is below ${MIN_FREE_MB}MB free; removing target/"
             rm -rf target
           fi
 
-      - name: Install build dependencies
+      - name: Install build dependencies (macOS)
+        if: runner.os == 'macOS'
         run: |
           echo "/opt/homebrew/bin" >> $GITHUB_PATH
           echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
@@ -52,6 +70,44 @@ jobs:
           brew list gmp &>/dev/null || brew install gmp
           brew list llvm &>/dev/null || brew install llvm
           brew list gnupg &>/dev/null || brew install gnupg
+
+      # clang, llvm and libsnappy are installed by ./.github/actions/rust on
+      # Linux; this covers what the rest of the job needs and what a bare
+      # self-hosted image doesn't ship. Every branch is a no-op once the
+      # persistent runner has been provisioned by the first run.
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+          for pkg in build-essential cmake libgmp-dev libssl-dev pkg-config jq zip; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || MISSING+=("$pkg")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "Installing: ${MISSING[*]}"
+            sudo apt-get update -qq
+            sudo apt-get install -qq --yes "${MISSING[@]}"
+          fi
+
+          # Needed by the immutable-structure check below.
+          if ! command -v gh >/dev/null 2>&1; then
+            sudo apt-get install -qq --yes gh || {
+              curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+                | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+                | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+              sudo apt-get update -qq
+              sudo apt-get install -qq --yes gh
+            }
+          fi
+
+          # dtolnay/rust-toolchain drives rustup; it must already exist.
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --no-modify-path --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Setup Rust
         uses: ./.github/actions/rust
@@ -217,8 +273,8 @@ jobs:
           cargo llvm-cov report --lcov --output-path lcov.info
           git rev-parse HEAD^{tree} > target/lcov-tree-hash
 
-      - name: Reset GPG state (fix stale keyboxd locks on self-hosted runners)
-        if: always()
+      - name: Reset GPG state (fix stale keyboxd locks on the macOS runners)
+        if: always() && runner.os == 'macOS'
         run: |
           gpgconf --kill all 2>/dev/null || true
           rm -rf ~/.gnupg/public-keys.d/*.lock 2>/dev/null || true
@@ -262,311 +318,3 @@ jobs:
         env:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-
-  test-ubuntu:
-    name: "Tests backup (shard ${{ matrix.partition }}/4)"
-    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      id-token: write
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [1, 2, 3, 4]
-    steps:
-      - name: Wait and check if Mac runner is available
-        id: check-mac
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sleep 15
-          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
-          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
-          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
-          echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
-          if [ "$MAC_STATUS" = "in_progress" ]; then
-            echo "Mac runner picked up the job — skipping Ubuntu fallback"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
-            echo "Mac runner already failed — failing Ubuntu fallback too"
-            exit 1
-          else
-            echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Free disk space
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift
-          df -h /
-
-      - name: Check out repo
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: actions/checkout@v4
-
-      - name: Strip cdylib crate-types (incompatible with static rocksdb)
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
-          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
-          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
-
-      - name: Setup Rust
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/rust
-
-      - name: Setup sccache
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Install librocksdb
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/librocksdb
-
-      - uses: taiki-e/install-action@cargo-nextest
-        if: steps.check-mac.outputs.skip == 'false'
-
-      - name: Configure core dumps
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sudo mkdir /cores
-          sudo chmod 777 /cores
-          sudo bash -c 'echo "/cores/%e.%p.%t" > /proc/sys/kernel/core_pattern'
-
-      - name: Run tests (shard ${{ matrix.partition }}/6)
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          ulimit -c unlimited
-          cargo nextest run \
-            --package drive \
-            --package dpp \
-            --package drive-abci \
-            --package dash-sdk \
-            --package platform-value \
-            --package rs-dapi \
-            --package platform-wallet \
-            --package platform-wallet-storage \
-            --package rs-sdk-ffi \
-            --package platform-wallet-ffi \
-            --package rs-dapi-client \
-            --package platform-serialization \
-            --package dapi-grpc \
-            --package json-schema-compatibility-validator \
-            --package dashpay-contract \
-            --package dpns-contract \
-            --package masternode-reward-shares-contract \
-            --package withdrawals-contract \
-            --package token-history-contract \
-            --package wallet-utils-contract \
-            --package keyword-search-contract \
-            --all-features \
-            --locked \
-            --partition count:${{ matrix.partition }}/4
-        env:
-          RUST_MIN_STACK: 4194304
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: "0"
-          CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Collect crash artifacts
-        if: failure() && steps.check-mac.outputs.skip == 'false'
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          if ! compgen -G "/cores/*" > /dev/null; then
-            echo "No core dumps were produced; skipping artifact archive."
-            exit 0
-          fi
-
-          ARTIFACT_DIR=crash-artifacts
-          rm -rf "${ARTIFACT_DIR}"
-          mkdir -p "${ARTIFACT_DIR}/cores" "${ARTIFACT_DIR}/binaries"
-
-          cp -a /cores/. "${ARTIFACT_DIR}/cores/"
-
-          for path in target/debug/deps/*; do
-            if [[ -f "$path" && -x "$path" && ! "$path" == *.d ]]; then
-              cp -a "$path" "${ARTIFACT_DIR}/binaries/"
-            fi
-          done
-
-          (cd "${ARTIFACT_DIR}" && zip -9 -r ../core-dumps.zip .)
-
-      - name: Upload core dumps
-        if: failure() && steps.check-mac.outputs.skip == 'false'
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-dumps-shard-${{ matrix.partition }}-of-4
-          path: core-dumps.zip
-          if-no-files-found: ignore
-          retention-days: 3
-
-  lint-ubuntu:
-    name: "Formatting & Linting backup"
-    if: vars.UBUNTU_BACKUP_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Wait and check if Mac runner is available
-        id: check-mac
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sleep 15
-          MAC_JOB=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
-            --jq '.jobs[] | select(.name == "Rust workspace tests / Tests (macOS)")' 2>/dev/null || echo "{}")
-          MAC_STATUS=$(echo "$MAC_JOB" | jq -r '.status // "unknown"')
-          MAC_CONCLUSION=$(echo "$MAC_JOB" | jq -r '.conclusion // ""')
-          echo "mac-status=$MAC_STATUS" >> "$GITHUB_OUTPUT"
-          if [ "$MAC_STATUS" = "in_progress" ]; then
-            echo "Mac runner picked up the job — skipping Ubuntu fallback"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          elif [ "$MAC_STATUS" = "completed" ] && [ "$MAC_CONCLUSION" = "failure" ]; then
-            echo "Mac runner already failed — failing Ubuntu fallback too"
-            exit 1
-          else
-            echo "Mac runner not available (status: $MAC_STATUS) — running on Ubuntu"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check out repo
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: actions/checkout@v4
-
-      - name: Strip cdylib crate-types (incompatible with static rocksdb)
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          sed -i 's/\["cdylib", "rlib"\]/["rlib"]/' packages/rs-sdk/Cargo.toml packages/wasm-drive-verify/Cargo.toml
-          sed -i 's/\["cdylib", "lib"\]/["lib"]/' packages/wasm-dpp2/Cargo.toml
-          sed -i 's/\["cdylib"\]/["rlib"]/' packages/wasm-sdk/Cargo.toml
-          sed -i 's/\["staticlib", "cdylib", "rlib"\]/["staticlib", "rlib"]/g' packages/rs-sdk-ffi/Cargo.toml packages/rs-platform-wallet-ffi/Cargo.toml
-
-      - name: Setup Rust
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/rust
-        with:
-          components: rustfmt, clippy
-
-      - name: Setup sccache
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.CACHE_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-      - name: Install librocksdb
-        if: steps.check-mac.outputs.skip == 'false'
-        uses: ./.github/actions/librocksdb
-
-      - name: Check formatting
-        if: steps.check-mac.outputs.skip == 'false'
-        run: cargo fmt --check --all
-
-      - name: Clippy lints
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          cargo clippy \
-            --workspace \
-            --all-features \
-            --locked \
-            -- --no-deps -D warnings
-        env:
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_DEV_DEBUG: "0"
-          SCCACHE_S3_KEY_PREFIX: ${{ runner.os }}/sccache/${{ runner.arch }}/linux-gnu
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Find unused dependencies
-        if: steps.check-mac.outputs.skip == 'false'
-        run: |
-          cargo install cargo-machete 2>/dev/null || true
-          cargo machete
-        env:
-          ROCKSDB_STATIC: "/opt/rocksdb/usr/local/lib/librocksdb.a"
-          ROCKSDB_LIB_DIR: "/opt/rocksdb/usr/local/lib"
-          SNAPPY_STATIC: "/usr/lib/x86_64-linux-gnu/libsnappy.a"
-          SNAPPY_LIB_DIR: "/usr/lib/x86_64-linux-gnu"
-
-      - name: Detect immutable structure changes
-        if: steps.check-mac.outputs.skip == 'false' && github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          CHANGED_RS=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '[.files[].path] | map(select(test("\\.rs$"))) | .[]')
-          if [ -z "$CHANGED_RS" ]; then
-            echo "No .rs files changed — skipping"
-            exit 0
-          fi
-
-          # Brace-aware extractor: captures from @tag through the matching closing brace
-          extract_tagged_block() {
-            local tag="$1"
-            awk -v tag="$tag" '
-              $0 ~ tag { found=1; depth=0 }
-              found {
-                for (i=1; i<=length($0); i++) {
-                  c = substr($0,i,1)
-                  if (c == "{") depth++
-                  if (c == "}") depth--
-                }
-                print
-                if (found && depth <= 0 && index($0, "}")) { found=0 }
-              }
-            '
-          }
-
-          git fetch origin ${{ github.event.pull_request.base.ref }} --depth=1
-          for file in $CHANGED_RS; do
-            if [ ! -f "$file" ]; then continue; fi
-            BASE_CONTENT=$(git show origin/${{ github.event.pull_request.base.ref }}:"$file" 2>/dev/null || true)
-            if [ -z "$BASE_CONTENT" ]; then continue; fi
-
-            BASE_APPEND=$(echo "$BASE_CONTENT" | extract_tagged_block "@append_only")
-            PR_APPEND=$(extract_tagged_block "@append_only" < "$file")
-            BASE_IMMUTABLE=$(echo "$BASE_CONTENT" | extract_tagged_block "@immutable")
-            PR_IMMUTABLE=$(extract_tagged_block "@immutable" < "$file")
-
-            if [ -n "$BASE_APPEND" ]; then
-              DELETIONS=$(diff <(echo "$BASE_APPEND") <(echo "$PR_APPEND") | grep "^<" | grep -v "@append_only" | grep -v "^< *$" | grep -v "^< *///" | grep -v "^< *//" || true)
-              if [ -n "$DELETIONS" ]; then
-                echo "Deletions detected in @append_only structures in $file"
-                echo "$DELETIONS"
-                exit 1
-              fi
-            fi
-            if [ -n "$BASE_IMMUTABLE" ]; then
-              CHANGES=$(diff <(echo "$BASE_IMMUTABLE") <(echo "$PR_IMMUTABLE") | grep -E "^[<>]" | grep -v "^[<>] *$" | grep -v "^[<>] *///" | grep -v "^[<>] *//" | grep -v "@immutable" || true)
-              if [ -n "$CHANGES" ]; then
-                echo "Code changes detected in @immutable structures in $file"
-                echo "$CHANGES"
-                exit 1
-              fi
-            fi
-          done
-          echo "No immutable/append_only structure violations found"

@@ -118,6 +118,7 @@ impl Sdk {
                     ascending: true,
                 }],
                 limit: CONTACT_REQUEST_PAGE_SIZE,
+                offset: None,
                 start: start.clone(),
             };
 
