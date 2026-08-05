@@ -151,14 +151,14 @@ impl OrchardKeySet {
             ))
         })?;
 
-        let sk = ScrubOnDrop(SpendingKey::from_zip32_seed(seed, coin_type, account_id).map_err(
-            |e| {
+        let sk = ScrubOnDrop(
+            SpendingKey::from_zip32_seed(seed, coin_type, account_id).map_err(|e| {
                 PlatformWalletError::ShieldedKeyDerivation(format!(
                     "ZIP-32 derivation failed: {}",
                     e
                 ))
-            },
-        )?);
+            })?,
+        );
 
         let fvk = FullViewingKey::from(&*sk);
         let ask = SpendAuthorizingKey::from(&*sk);
