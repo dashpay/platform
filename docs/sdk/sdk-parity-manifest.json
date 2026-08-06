@@ -27,6 +27,7 @@
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
+    "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
     "on_load_shielded_viewing_keys_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_load_shielded_viewing_keys_free_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
     "on_persist_address_balances_fn": "packages/rs-platform-wallet-ffi/src/persistence.rs",
