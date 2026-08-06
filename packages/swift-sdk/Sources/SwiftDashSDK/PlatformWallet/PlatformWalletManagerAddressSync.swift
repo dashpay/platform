@@ -184,6 +184,27 @@ extension PlatformWalletManager {
         return running
     }
 
+    /// Whether the native manager has frozen its durable sync watermark this
+    /// session (dashpay/platform#4069). `true` means the wallet-event adapter
+    /// dropped record-bearing events, or a persistence `store()` was rejected,
+    /// so the persisted `syncedHeight` is deliberately held behind the chain
+    /// tip and a rescan is pending on the next launch. Poll this to surface a
+    /// hard "verification failed / rescan pending" state instead of leaving
+    /// the fault visible only in the error logs.
+    ///
+    /// The flag latches: once `true` it stays `true` for the process lifetime.
+    public func syncFaultDetected() throws -> Bool {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+
+        var detected = false
+        try platform_wallet_manager_sync_fault_detected(handle, &detected).check()
+        return detected
+    }
+
     public func isPlatformAddressSyncing() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(

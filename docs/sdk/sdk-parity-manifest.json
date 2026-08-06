@@ -32,6 +32,7 @@
     "platform_wallet_manager_create_with_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_persistence_capabilities": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_manager_spv_rescan_filters": "packages/rs-platform-wallet-ffi/src/spv.rs",
+    "platform_wallet_manager_sync_fault_detected": "packages/rs-platform-wallet-ffi/src/manager.rs",
     "platform_wallet_resume_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_sync_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
@@ -807,6 +808,63 @@
           "file": "packages/rs-platform-wallet/src/wallet/identity/state/manager/apply.rs",
           "id": "contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
           "command": "cargo test -p platform-wallet contested_dpns_apply_replaces_canonical_snapshot_and_allows_empty",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "persistence.sync_fault_latch",
+      "title": "Watermark-freeze sync fault latch is host-visible",
+      "area": "recovery",
+      "shared_apis": [
+        "platform_wallet_manager_sync_fault_detected"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": null
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/SyncFaultDetectedTests.swift",
+          "id": "testSyncFaultDetectedRequiresConfiguredManager",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/SyncFaultDetectedTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "syncFaultDetectedSymbolBindsAndRejectsInvalidHandle",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/changeset/core_bridge.rs",
+          "id": "lagged_broadcast_freezes_and_strips_subsequent_watermark",
+          "command": "cargo test -p platform-wallet lagged_broadcast_freezes_and_strips_subsequent_watermark",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/changeset/core_bridge.rs",
+          "id": "rejected_store_freezes_wallet_and_strips_watermark",
+          "command": "cargo test -p platform-wallet rejected_store_freezes_wallet_and_strips_watermark",
           "covers_restart": false
         }
       ]
