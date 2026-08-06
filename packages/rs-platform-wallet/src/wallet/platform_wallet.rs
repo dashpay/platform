@@ -12,7 +12,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
-use super::core::{CoreWallet, WalletBalance};
+use super::core::{CoreWallet, WalletBalance, WalletGeneration};
 use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
@@ -40,14 +40,28 @@ pub type WalletId = [u8; 32];
 /// Lives inside `WalletManager<PlatformWalletInfo>.wallet_infos`. The `Wallet`
 /// key material is in `WalletManager.wallets` — NOT inside this struct.
 ///
-/// `WalletBalance` is stored as `Arc<WalletBalance>` for lock-free UI reads.
+/// The per-generation state (lock-free balance + lifecycle gate) is stored as
+/// `Arc<WalletGeneration>`; `Arc::ptr_eq` on it is this wallet's generation identity.
 pub struct PlatformWalletInfo {
     /// Core wallet metadata, accounts, UTXOs, balances.
     /// Delegates `WalletInfoInterface` methods.
     pub core_wallet: ManagedWalletInfo,
-    /// Lock-free balance for UI reads. Updated from `ManagedWalletInfo` after
-    /// each SPV block/mempool processing and RPC refresh.
-    pub balance: Arc<WalletBalance>,
+    /// This wallet generation's shared state: the lock-free balance for UI reads
+    /// (updated from `ManagedWalletInfo` after each SPV block/mempool processing
+    /// and RPC refresh) and the generation's lifecycle gate.
+    ///
+    /// Deliberately `pub(crate)`, not `pub`: this `Arc` *is* the generation
+    /// identity that `Arc::ptr_eq` compares, and `PlatformWalletInfo` is
+    /// reachable mutably from outside the crate through
+    /// [`PlatformWallet::state_mut`] / [`PlatformWallet::state_mut_blocking`].
+    /// A public field would let safe downstream code drop a fresh `Arc` in here
+    /// while `PlatformWallet` and `CoreWallet` keep the original, splitting the
+    /// identity: `is_current_generation()` would then reject the still-live
+    /// wallet, generation-bound reservation cleanup would become a no-op, and
+    /// teardown would exclude through a different lifecycle gate than the
+    /// payment operations it has to fence. Read it through
+    /// [`PlatformWallet::generation`]; it is assigned only at construction.
+    pub(crate) generation: Arc<WalletGeneration>,
     pub identity_manager: IdentityManager,
     pub tracked_asset_locks: BTreeMap<OutPoint, TrackedAssetLock>,
 }
@@ -79,8 +93,8 @@ pub struct PlatformWallet {
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle.
     persister: WalletPersister,
-    /// Lock-free balance for UI reads, cloned from `PlatformWalletInfo.balance`.
-    pub(crate) balance: Arc<WalletBalance>,
+    /// This generation's shared state, cloned from `PlatformWalletInfo.generation`.
+    pub(crate) generation: Arc<WalletGeneration>,
     /// Per-account Orchard keysets, populated by [`bind_shielded`].
     /// `None` until bind has run; remains `None` for `WatchOnly`
     /// / `ExternalSignable` wallets that have never had a
@@ -185,8 +199,14 @@ impl PlatformWallet {
     }
 
     /// Get the lock-free balance for UI reads.
-    pub fn balance(&self) -> &Arc<WalletBalance> {
-        &self.balance
+    pub fn balance(&self) -> &WalletBalance {
+        self.generation.balance()
+    }
+
+    /// This wallet's [`WalletGeneration`] `Arc` — its generation identity and
+    /// lifecycle gate. See [`CoreWallet::is_same_generation`].
+    pub fn generation(&self) -> &Arc<WalletGeneration> {
+        &self.generation
     }
 
     /// Get a reference to the per-wallet persistence handle.
@@ -411,7 +431,7 @@ impl PlatformWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_id: WalletId,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-        balance: Arc<WalletBalance>,
+        generation: Arc<WalletGeneration>,
         lock_notify: Arc<tokio::sync::Notify>,
         persister: Arc<dyn PlatformWalletPersistence>,
         broadcaster: Arc<SpvBroadcaster>,
@@ -426,7 +446,7 @@ impl PlatformWallet {
             Arc::clone(&wallet_manager),
             wallet_id,
             Arc::clone(&broadcaster),
-            Arc::clone(&balance),
+            Arc::clone(&generation),
         );
 
         // Asset-lock broadcaster is pinned to `SpvBroadcaster`; the
@@ -475,7 +495,7 @@ impl PlatformWallet {
             platform,
             asset_locks,
             persister: wallet_persister,
-            balance,
+            generation,
             #[cfg(feature = "shielded")]
             shielded_keys: Arc::new(RwLock::new(None)),
             #[cfg(feature = "shielded")]
@@ -1604,7 +1624,7 @@ impl Clone for PlatformWallet {
             platform: self.platform.clone(),
             asset_locks: self.asset_locks.clone(),
             persister: self.persister.clone(),
-            balance: self.balance.clone(),
+            generation: self.generation.clone(),
             #[cfg(feature = "shielded")]
             shielded_keys: self.shielded_keys.clone(),
             #[cfg(feature = "shielded")]

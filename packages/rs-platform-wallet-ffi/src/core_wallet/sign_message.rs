@@ -67,8 +67,9 @@ unsafe fn read_utf8(
 /// * `address_ptr`/`address_len` — the UTF-8 P2PKH address whose key signs. Must
 ///   be one of this wallet's own addresses, on the wallet's network, and belong
 ///   to a signable funds account (BIP44 / BIP32 / CoinJoin /
-///   DashPay-receiving). A foreign address, or a watch-only DashPay *external*
-///   account's address, fails with
+///   DashPay-receiving). A foreign address, a watch-only DashPay *external*
+///   account's address, or a resolver that holds no mnemonic for this wallet
+///   (the signer's key-unavailable completion) fails with
 ///   [`PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable`] (31); an
 ///   unparseable, wrong-network, or non-P2PKH address fails with
 ///   [`PlatformWalletFFIResultCode::ErrorInvalidParameter`] (2).

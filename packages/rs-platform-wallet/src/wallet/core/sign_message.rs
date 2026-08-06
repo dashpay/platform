@@ -54,7 +54,7 @@ use key_wallet::signer::{Signer, SignerMethod};
 use key_wallet::ManagedAccountType;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::PlatformWalletError;
+use crate::error::{PlatformWalletError, SIGNER_KEY_UNAVAILABLE_PREFIX};
 use crate::wallet::core::CoreWallet;
 
 /// Every recovery id a compact ECDSA signature can carry. Ids 2 and 3 encode an
@@ -118,7 +118,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///   [`SignerMethod::Digest`]; a `Transaction`-only backend cannot sign a
     ///   message and is refused with
     ///   [`MessageSigningFailed`](PlatformWalletError::MessageSigningFailed)
-    ///   before it is invoked.
+    ///   before it is invoked. A signer that reports its key missing — the
+    ///   reserved key-unavailable marker at position 0 of its error rendering,
+    ///   as `MnemonicResolverCoreSigner::NotFound` does when the keychain holds
+    ///   no mnemonic — surfaces as
+    ///   [`MessageSigningKeyUnavailable`](PlatformWalletError::MessageSigningKeyUnavailable),
+    ///   the same typed condition as an unowned address.
     ///
     /// # Determinism
     ///
@@ -216,34 +221,32 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         }
 
         let hash = signed_msg_hash(message);
-        // Every signer failure becomes `MessageSigningFailed` (→ `ErrorUnknown`),
-        // including a key-unavailable one. That is a known limitation, not an
-        // oversight, and it cannot be fixed here.
-        //
-        // `preserve_signer_key_unavailable_or` — this crate's own helper for
-        // exactly this problem — takes a `dash_sdk::Error` and matches
-        // `Protocol(Generic(s))` with the reserved marker at position 0. It
-        // serves the STATE-TRANSITION signing paths, whose failures are
-        // `dash_sdk::Error`. `sign_ecdsa` is a different surface: its error is
-        // `S::Error`, bounded only by `Display + Send + Sync + 'static`, so
-        // there is no enum here to match — passing it to that helper will not
-        // type-check. The one production impl
-        // (`rs_sdk_ffi::MnemonicResolverCoreSigner`, `Error =
-        // MnemonicResolverSignerError`) never stamps the marker either, so even
-        // a position-0 check on `e.to_string()` would have no producer, while a
-        // `contains` check is the substring sniff #4183's review rejected.
-        //
-        // Closing it needs an upstream change — the signer rendering its
-        // key-unavailable variants with the marker at position 0, or key-wallet
-        // tightening `Signer::Error` to something matchable. See the NOTE on
-        // the `MessageSigningFailed` arm in `platform-wallet-ffi`'s error
-        // conversion for the full chain.
+        // `sign_ecdsa`'s error is the associated type `S::Error`, bounded only
+        // by `Display + Send + Sync + 'static` — there is no enum to match, so
+        // `preserve_signer_key_unavailable_or` (which takes a `dash_sdk::Error`
+        // and serves the state-transition signing paths) does not apply here.
+        // The one typed signal a `Display`-only surface can carry is the
+        // reserved machine marker a signer stamps at POSITION 0 of its own
+        // rendering (`MnemonicResolverCoreSigner::NotFound` in production), so
+        // key unavailability is recognized by that position-0 check — never a
+        // substring sniff (#4183 review) — and it must happen BEFORE the
+        // "signer rejected the digest at {path}: " context is prepended, which
+        // would push the marker mid-string where no permitted check can see it.
         let (signature, public_key) = signer
             .sign_ecdsa(&path, hash.to_byte_array())
             .await
-            .map_err(|e| PlatformWalletError::MessageSigningFailed {
-                address: target.to_string(),
-                reason: format!("signer rejected the digest at {path}: {e}"),
+            .map_err(|e| {
+                let rendered = e.to_string();
+                if rendered.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX) {
+                    PlatformWalletError::MessageSigningKeyUnavailable {
+                        address: target.to_string(),
+                    }
+                } else {
+                    PlatformWalletError::MessageSigningFailed {
+                        address: target.to_string(),
+                        reason: format!("signer rejected the digest at {path}: {rendered}"),
+                    }
+                }
             })?;
 
         // Signers return compressed public keys, so the address the signed
@@ -306,8 +309,8 @@ mod tests {
     use crate::test_support::{
         mnemonic_wallet_manager, AlwaysRejectedBroadcaster, MESSAGE_SIGNING_TEST_MNEMONIC,
     };
-    use crate::wallet::core::balance::WalletBalance;
     use crate::wallet::core::CoreWallet;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletError;
 
@@ -334,7 +337,7 @@ mod tests {
             wallet_manager,
             wallet_id,
             Arc::new(AlwaysRejectedBroadcaster),
-            Arc::new(WalletBalance::new()),
+            Arc::new(WalletGeneration::new()),
         )
     }
 
@@ -548,9 +551,9 @@ mod tests {
     }
 
     /// A digest-capable backend that fails every signature the way a Keystore
-    /// or Keychain reports a missing key: its `Display` begins with the reserved
-    /// key-unavailable marker, the representation the state-transition signing
-    /// paths rely on to recover FFI code 31.
+    /// or Keychain reports a missing key: its `Display` begins with the
+    /// reserved key-unavailable marker at position 0, exactly as
+    /// `MnemonicResolverCoreSigner::NotFound` renders in production.
     struct KeyUnavailableSigner;
 
     #[async_trait::async_trait]
@@ -577,24 +580,17 @@ mod tests {
         }
     }
 
-    /// **Pins a known limitation, so nobody has to re-derive it.** A signer that
-    /// reports key-unavailable during message signing does NOT reach FFI code
-    /// 31; it lands on `MessageSigningFailed`, which the FFI flattens to
-    /// `ErrorUnknown`.
+    /// **The signer-reported missing key is a typed condition.** A signer whose
+    /// failure rendering starts with the reserved key-unavailable marker maps
+    /// to `MessageSigningKeyUnavailable` — FFI code 31, the host's key-repair
+    /// route — never to `MessageSigningFailed`, whose context prefix would bury
+    /// the marker mid-string and flatten the condition to `ErrorUnknown`.
     ///
-    /// The mechanism is visible in the assertion: the marker survives, but
-    /// MID-STRING, because `reason` is composed as
-    /// "signer rejected the digest at {path}: {e}". A position-0 match — the
-    /// only kind #4183's review permits — therefore cannot see it, and
-    /// `preserve_signer_key_unavailable_or` cannot be applied because it takes a
-    /// `dash_sdk::Error` while `sign_ecdsa` yields `S::Error: Display`.
-    ///
-    /// If an upstream change ever makes this reachable as code 31 (the signer
-    /// stamping the marker at position 0 of its own error, or key-wallet
-    /// tightening `Signer::Error`), THIS TEST SHOULD FAIL — flip it to assert
-    /// `MessageSigningKeyUnavailable` and delete the surrounding notes.
+    /// The promotion is `sign_message`'s own position-0 check on the signer's
+    /// rendering BEFORE any context is added; the FFI boundary maps the typed
+    /// variant and parses nothing.
     #[tokio::test]
-    async fn signer_key_unavailable_is_not_preserved_during_message_signing() {
+    async fn signer_key_unavailable_is_typed_during_message_signing() {
         let (wm, wallet_id, _, address) =
             mnemonic_wallet_manager(MESSAGE_SIGNING_TEST_MNEMONIC).await;
         let core = core_wallet(wm, wallet_id);
@@ -604,15 +600,61 @@ mod tests {
             .await;
 
         match result {
+            Err(PlatformWalletError::MessageSigningKeyUnavailable { address: reported }) => {
+                assert_eq!(reported, address.to_string());
+            }
+            other => panic!("expected MessageSigningKeyUnavailable, got {other:?}"),
+        }
+    }
+
+    /// A digest-capable backend whose failure merely MENTIONS the reserved
+    /// marker after position 0 — the shape a foreign signer produces when its
+    /// human-readable text quotes another error.
+    struct MidStringMarkerSigner;
+
+    #[async_trait::async_trait]
+    impl Signer for MidStringMarkerSigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[SignerMethod] {
+            &[SignerMethod::Digest]
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            _path: &DerivationPath,
+            _sighash: [u8; 32],
+        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+            Err(format!(
+                "remote signer reported: {}oops",
+                crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+            ))
+        }
+
+        async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {
+            panic!("public_key is not part of the signed-message path");
+        }
+    }
+
+    /// The marker only counts at position 0 of the signer's rendering: a
+    /// mid-string mention stays `MessageSigningFailed`, never key-unavailable —
+    /// promoting it would be the substring sniff #4183's review rejected, and
+    /// would misroute a generic failure into the host's key repair.
+    #[tokio::test]
+    async fn mid_string_marker_is_not_promoted_during_message_signing() {
+        let (wm, wallet_id, _, address) =
+            mnemonic_wallet_manager(MESSAGE_SIGNING_TEST_MNEMONIC).await;
+        let core = core_wallet(wm, wallet_id);
+
+        let result = core
+            .sign_message(&address.to_string(), MESSAGE, &MidStringMarkerSigner)
+            .await;
+
+        match result {
             Err(PlatformWalletError::MessageSigningFailed { reason, .. }) => {
                 assert!(
                     reason.contains(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX),
-                    "the signer's marker should still be present: {reason:?}"
-                );
-                assert!(
-                    !reason.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX),
-                    "the marker is mid-string once wrapped, which is exactly why a \
-                     position-0 match cannot recover it: {reason:?}"
+                    "the signer's own text is preserved in the reason: {reason:?}"
                 );
             }
             other => panic!("expected MessageSigningFailed, got {other:?}"),

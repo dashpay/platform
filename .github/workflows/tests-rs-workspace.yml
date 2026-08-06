@@ -38,6 +38,13 @@ jobs:
         with:
           clean: false
 
+      - name: Fail on local rust-dashcore patch override
+        run: |
+          if grep -q '^\[patch\."https://github.com/dashpay/rust-dashcore"\]' Cargo.toml; then
+            echo "::error::Remove the local rust-dashcore [patch] override before merging"
+            exit 1
+          fi
+
       # target/llvm-cov-target is deliberately NOT pruned here: it holds the
       # coverage-instrumented build (~10GB) that makes the test step's compile
       # incremental (~2.5 min saved per run). The size/free-disk guard below

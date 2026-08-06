@@ -58,6 +58,19 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
     }
 
     /**
+     * Broadcast the deferred payment behind [token] and return its txid. An
+     * unusable token surfaces as one of the three sibling deferred-token
+     * errors — aged out
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.StaleReservationToken]),
+     * already consumed / unknown
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationTokenConsumed]),
+     * or a different wallet generation
+     * ([org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ReservationWalletMismatch]).
+     */
+    internal fun broadcastSignedPayment(token: Long): String =
+        WalletManagerNative.coreWalletBroadcastSignedPayment(handle, token)
+
+    /**
      * The engine's next unused BIP-44 EXTERNAL (receive) address for
      * [accountIndex], base58-encoded — Android port of Swift's
      * `ManagedCoreWallet.nextReceiveAddress(accountIndex:)`
