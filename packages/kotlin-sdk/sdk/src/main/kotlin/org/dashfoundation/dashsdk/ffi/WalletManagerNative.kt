@@ -228,6 +228,28 @@ internal object WalletManagerNative {
     external fun platformWalletGetCore(walletHandle: Long): Long
 
     /**
+     * `core_wallet_sign_message` — sign [message] with the private key behind
+     * [address] and return the base64 signature (a classic Dash signed message).
+     *
+     * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
+     * [address] must be a P2PKH address of THIS wallet on its network, owned by
+     * a signable funds account: a foreign or watch-only address throws
+     * `ErrorSigningKeyUnavailable` (31), while an unparseable, wrong-network, or
+     * non-P2PKH address throws `ErrorInvalidParameter` (2). [message] is signed
+     * verbatim — it is length-prefixed into the digest, so trailing whitespace
+     * and newlines are significant, and an empty string is valid and signable.
+     * [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     *
+     * Moves no value: nothing is selected, reserved, broadcast, or persisted.
+     */
+    external fun coreWalletSignMessage(
+        coreHandle: Long,
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String
+
+    /**
      * `core_wallet_broadcast_transaction` — broadcast a transaction built by
      * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
      * funding account so a definitive rejection releases its UTXO
