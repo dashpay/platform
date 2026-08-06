@@ -514,6 +514,47 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
     )
 }
 
+/// Extract the outpoint from Platform's rejection of an asset lock whose
+/// credit output has already been spent by an earlier transition
+/// (`IdentityAssetLockTransactionOutPointAlreadyConsumedError`, "Asset lock
+/// transaction {txid} output {n} already completely used").
+///
+/// The rejection is **deterministic and terminal**: the credits it would have
+/// bought already landed, so every retry receives the same answer. Callers
+/// treat it as the success-shaped outcome it really is — mark the lock
+/// [`Consumed`](crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed)
+/// and stop resuming it — rather than as a failure to retry.
+///
+/// Returns the outpoint Platform named, which identifies the local tracked
+/// lock without trusting the caller's bookkeeping.
+///
+/// Companion to [`is_instant_lock_proof_invalid`]: both classify a Platform
+/// rejection of an asset-lock proof, but that one is retryable via a CL
+/// upgrade while this one can never succeed.
+pub fn asset_lock_already_consumed_out_point(
+    error: &dash_sdk::Error,
+) -> Option<dashcore::OutPoint> {
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+
+    let consensus_error = match error {
+        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
+            broadcast_err.cause.as_ref()
+        }
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
+        _ => None,
+    };
+    match consensus_error {
+        Some(ConsensusError::BasicError(
+            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(e),
+        )) => Some(dashcore::OutPoint {
+            txid: e.transaction_id(),
+            vout: e.output_index() as u32,
+        }),
+        _ => None,
+    }
+}
+
 /// Check whether a platform-wallet error represents a *Core-side*
 /// InstantSend lock timeout (the asset-lock manager waited the full
 /// timeout for an IS-lock proof and never observed one).
