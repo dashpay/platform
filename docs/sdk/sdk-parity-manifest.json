@@ -1036,6 +1036,58 @@
       ]
     },
     {
+      "id": "persistence.dashpay_payment_history",
+      "title": "DashPay payment history persists event-driven through the persister callback",
+      "area": "persistence",
+      "shared_apis": [
+        "managed_identity_get_dashpay_payments"
+      ],
+      "required_persistence_capabilities": [
+        "atomic_changesets",
+        "wallet_restore"
+      ],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "not-applicable",
+          "restart": "tested",
+          "reason": "The on_persist_dashpay_payments_fn vtable slot lands PersistentDashpayPayment rows on every Rust store() round (live sends with memos, pending-to-confirmed sweep flips, reconstruction upserts), and the identity restore buffer's payments array feeds them back at load — Sent entries and memos survive relaunch without any UI surface appearing. The getter-backed refreshDashPayPayments path remains as a reconciler."
+        },
+        "kotlin": {
+          "sdk": "not-applicable",
+          "example_app": "not-applicable",
+          "restart": "not_applicable",
+          "reason": "Android derives contact payment attribution from transaction history on reads and does not consume PaymentEntry rows (confirmed by the Android team during the sent-payment reconstruction review), so the JNI vtable deliberately leaves the slot None and there is nothing to persist or restore on this host."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DashPayPersistenceTests.swift",
+          "id": "testChangesetRoundPersistsSentEntryAndRestoreBufferRoundTripsIt",
+          "command": "swift test --package-path packages/swift-sdk --filter DashPayPaymentPersistenceTests",
+          "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/DashPayPersistenceTests.swift",
+          "id": "testChangesetRoundStatusFlipRepersistsTheSameRow",
+          "command": "swift test --package-path packages/swift-sdk --filter DashPayPaymentPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/persistence.rs",
+          "id": "store_projects_dashpay_payments_from_identities_and_overlay",
+          "command": "cargo test -p platform-wallet-ffi --lib store_projects_dashpay_payments_from_identities_and_overlay",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "network.masternode_discovery",
       "title": "Canonical masternode endpoint discovery",
       "area": "shared_policy",

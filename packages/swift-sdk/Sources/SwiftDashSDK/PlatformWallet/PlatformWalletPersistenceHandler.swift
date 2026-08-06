@@ -121,6 +121,21 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Confined to `serialQueue` like all other mutable handler state.
     private var deferredBackfills: [(walletId: Data, items: [KeychainManager.IdentityPrivateKeyMetadata])] = []
 
+    /// DashPay payment rows the persister callback could not stage
+    /// because the owner `PersistentIdentity` row wasn't resolvable
+    /// mid-round. Normally the owner is visible — the identities
+    /// callback fires before the payments callback in the same Rust
+    /// `store()` round, and `FetchDescriptor` sees the round's pending
+    /// inserts — so this only holds rows whose owner is in neither the
+    /// current round nor the store. Replayed once by `endChangeset`
+    /// after a successful commit (one more chance for a late owner
+    /// row), then dropped with a log — the `refreshDashPayPayments`
+    /// reconciler re-upserts anything dropped here. Discarded on
+    /// rollback: a failed round also rolls the entries back out of the
+    /// Rust in-memory map, so persisting them would fabricate history.
+    /// Confined to `serialQueue` like all other mutable handler state.
+    private var deferredPaymentUpserts: [(ownerIdentityId: Data, payments: [DashPayPayment])] = []
+
     public init(modelContainer: ModelContainer, network: Network? = nil) {
         self.modelContainer = modelContainer
         self.network = network
@@ -1307,6 +1322,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
         cb.on_list_wallet_core_txids_fn = listWalletCoreTxidsCallback
         cb.on_list_wallet_core_txids_free_fn = listWalletCoreTxidsFreeCallback
+        cb.on_persist_dashpay_payments_fn = persistDashpayPaymentsCallback
         return cb
     }
 
@@ -1360,6 +1376,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             if success {
                 do {
                     try backgroundContext.save()
+                    // With the round durably committed, give payment rows
+                    // parked on a missing owner identity one replay — a
+                    // successful commit is the only point a late owner row
+                    // can have become visible.
+                    replayDeferredPaymentUpserts()
                     return true
                 } catch {
                     // The context still has the pending changes on
@@ -1370,10 +1391,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // round did NOT commit, so report failure upward.
                     print("⚠️ endChangeset: save failed: \(error.localizedDescription)")
                     backgroundContext.rollback()
+                    // The failed round's Rust-side rollback also removed
+                    // these entries from the in-memory map — persisting
+                    // them would fabricate history.
+                    deferredPaymentUpserts.removeAll()
                     return false
                 }
             } else {
                 backgroundContext.rollback()
+                deferredPaymentUpserts.removeAll()
                 return false
             }
         }
@@ -2399,19 +2425,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     // MARK: - DashPay payment-history persistence
 
-    /// Upsert DashPay payment-history rows for one owner identity.
-    ///
-    /// NOT a persister-callback path — the Rust persister doesn't
-    /// project payment history. Called by
+    /// Upsert DashPay payment-history rows for one owner identity —
+    /// the reconciler half of the payment durability loop. Called by
     /// `PlatformWalletManager.refreshDashPayPayments` after reading
     /// the `managed_identity_get_dashpay_payments` getter, so the UI
-    /// can `@Query` `PersistentDashpayPayment` rows reactively.
+    /// can `@Query` `PersistentDashpayPayment` rows reactively. The
+    /// authoritative event-driven half is the
+    /// `on_persist_dashpay_payments_fn` persister callback
+    /// (`persistDashpayPayments(walletId:entriesByOwner:)` below);
+    /// this refresh path reconciles anything the callback era predates
+    /// or a parked-row drop lost.
     ///
-    /// Upsert-only: the Rust `dashpay_payments` map is append-only
-    /// history (keyed by txid), so a refresh never has to delete
-    /// rows; cascade from the owner identity handles wallet wipes.
-    /// Rows are keyed `(networkRaw, ownerIdentityId, txid)`. Skips
-    /// silently when the owner identity row doesn't exist yet —
+    /// Skips silently when the owner identity row doesn't exist yet —
     /// the next refresh after the identity flush replays it.
     ///
     /// Saves immediately when no changeset round is open — same
@@ -2422,64 +2447,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         payments: [DashPayPayment]
     ) {
         onQueue {
-            let ownerId = ownerIdentityId
-            let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
-                predicate: #Predicate { $0.identityId == ownerId }
-            )
-            guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
-                return
-            }
-            let networkRaw = owner.networkRaw
-
-            for payment in payments {
-                guard !payment.txid.isEmpty else { continue }
-                let txid = payment.txid
-                let descriptor = FetchDescriptor<PersistentDashpayPayment>(
-                    predicate: #Predicate {
-                        $0.networkRaw == networkRaw
-                            && $0.ownerIdentityId == ownerId
-                            && $0.txid == txid
-                    }
-                )
-                if let existing = try? backgroundContext.fetch(descriptor).first {
-                    // Refresh in place only when a field actually changed.
-                    // The FFI snapshot is authoritative, and `status` is the
-                    // field that moves (Pending → Confirmed / Failed). A
-                    // no-op rewrite would still dirty the row and re-fire
-                    // every `@Query` observer on each refresh pass — and the
-                    // recurring DashPay-sync falling edge calls this even on
-                    // a quiescent channel, so skipping unchanged rows keeps
-                    // an open payment list from re-rendering every sync.
-                    let changed = existing.counterpartyIdentityId != payment.counterpartyId
-                        || existing.amountDuffs != payment.amountDuffs
-                        || existing.directionRaw != payment.direction.rawValue
-                        || existing.statusRaw != payment.status.rawValue
-                        || existing.memo != payment.memo
-                        || existing.owner !== owner
-                    if changed {
-                        existing.counterpartyIdentityId = payment.counterpartyId
-                        existing.amountDuffs = payment.amountDuffs
-                        existing.directionRaw = payment.direction.rawValue
-                        existing.statusRaw = payment.status.rawValue
-                        existing.memo = payment.memo
-                        if existing.owner !== owner {
-                            existing.owner = owner
-                        }
-                        existing.lastUpdated = Date()
-                    }
-                } else {
-                    let row = PersistentDashpayPayment(
-                        owner: owner,
-                        counterpartyIdentityId: payment.counterpartyId,
-                        amountDuffs: payment.amountDuffs,
-                        direction: payment.direction,
-                        status: payment.status,
-                        txid: payment.txid,
-                        memo: payment.memo
-                    )
-                    backgroundContext.insert(row)
-                }
-            }
+            guard stageDashpayPaymentUpserts(
+                ownerIdentityId: ownerIdentityId,
+                payments: payments
+            ) else { return }
             // Same guard as the other app-facing writers
             // (`setWalletName`, …): a refresh landing while a Rust
             // persister round is open must ride that round's
@@ -2498,6 +2469,152 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// Apply one `on_persist_dashpay_payments_fn` persister-callback
+    /// batch — payment rows flattened out of a Rust `store()` round,
+    /// grouped by owner identity. This is the event-driven write half
+    /// of the payment durability loop: it fires on every round whose
+    /// changeset carries payment rows (a live `send_payment`, a
+    /// pending→confirmed sweep flip, a reconstruction upsert), so
+    /// Sent entries + memos are durable without any UI surface ever
+    /// appearing.
+    ///
+    /// Runs mid-round: rows are staged on `backgroundContext` and ride
+    /// the round's `endChangeset` commit/rollback. A group whose owner
+    /// `PersistentIdentity` row isn't resolvable — not even as a
+    /// pending insert staged by this round's identities callback,
+    /// which fires first — is parked on `deferredPaymentUpserts` for
+    /// one post-commit replay rather than dropped (see that field's
+    /// doc).
+    func persistDashpayPayments(
+        walletId: Data,
+        entriesByOwner: [Data: [DashPayPayment]]
+    ) {
+        onQueue {
+            _ = walletId
+            for (ownerId, payments) in entriesByOwner {
+                if !stageDashpayPaymentUpserts(ownerIdentityId: ownerId, payments: payments) {
+                    deferredPaymentUpserts.append((ownerId, payments))
+                }
+            }
+            // No save here even outside a round: the Rust store() round
+            // that invoked this callback brackets it with begin/end, so
+            // `inChangeset` is set in practice; if a host ever fires it
+            // without a bracket, autosave/next round flushes the stage.
+        }
+    }
+
+    /// Replay payment groups parked on a missing owner identity. Must
+    /// run on `serialQueue`, immediately after a successful round
+    /// commit (the only point a late owner row becomes visible). One
+    /// attempt: still-missing owners are dropped with a log — the
+    /// `refreshDashPayPayments` reconciler re-upserts them later —
+    /// so the parked list can never grow across rounds.
+    private func replayDeferredPaymentUpserts() {
+        guard !deferredPaymentUpserts.isEmpty else { return }
+        let parked = deferredPaymentUpserts
+        deferredPaymentUpserts.removeAll()
+        var stagedAny = false
+        for entry in parked {
+            if stageDashpayPaymentUpserts(
+                ownerIdentityId: entry.ownerIdentityId,
+                payments: entry.payments
+            ) {
+                stagedAny = true
+            } else {
+                print(
+                    "⚠️ persistDashpayPayments: owner identity "
+                        + "\(entry.ownerIdentityId.toHexString()) never appeared; dropping "
+                        + "\(entry.payments.count) parked payment row(s) — the refresh "
+                        + "reconciler will restore them on the next read"
+                )
+            }
+        }
+        if stagedAny {
+            do {
+                try backgroundContext.save()
+            } catch {
+                print("⚠️ replayDeferredPaymentUpserts: SwiftData save failed — payment history may be incomplete: \(error)")
+            }
+        }
+    }
+
+    /// Stage upserts for one owner's payment rows on
+    /// `backgroundContext` — shared core of the persister callback,
+    /// the post-commit replay, and the refresh reconciler. No
+    /// `save()`; each caller owns its own commit point. Returns
+    /// `false` (nothing staged) when the owner `PersistentIdentity`
+    /// row doesn't exist — not even as a pending insert in the open
+    /// round. Must run on `serialQueue`.
+    ///
+    /// Upsert-only: the Rust `dashpay_payments` map is append-only
+    /// history (keyed by txid), so this never has to delete rows;
+    /// cascade from the owner identity handles wallet wipes. Rows are
+    /// keyed `(networkRaw, ownerIdentityId, txid)`.
+    private func stageDashpayPaymentUpserts(
+        ownerIdentityId: Data,
+        payments: [DashPayPayment]
+    ) -> Bool {
+        let ownerId = ownerIdentityId
+        let ownerDescriptor = FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == ownerId }
+        )
+        guard let owner = try? backgroundContext.fetch(ownerDescriptor).first else {
+            return false
+        }
+        let networkRaw = owner.networkRaw
+
+        for payment in payments {
+            guard !payment.txid.isEmpty else { continue }
+            let txid = payment.txid
+            let descriptor = FetchDescriptor<PersistentDashpayPayment>(
+                predicate: #Predicate {
+                    $0.networkRaw == networkRaw
+                        && $0.ownerIdentityId == ownerId
+                        && $0.txid == txid
+                }
+            )
+            if let existing = try? backgroundContext.fetch(descriptor).first {
+                // Refresh in place only when a field actually changed.
+                // The FFI snapshot is authoritative, and `status` is the
+                // field that moves (Pending → Confirmed / Failed). A
+                // no-op rewrite would still dirty the row and re-fire
+                // every `@Query` observer on each refresh pass — and the
+                // recurring DashPay-sync falling edge calls this even on
+                // a quiescent channel, so skipping unchanged rows keeps
+                // an open payment list from re-rendering every sync.
+                let changed = existing.counterpartyIdentityId != payment.counterpartyId
+                    || existing.amountDuffs != payment.amountDuffs
+                    || existing.directionRaw != payment.direction.rawValue
+                    || existing.statusRaw != payment.status.rawValue
+                    || existing.memo != payment.memo
+                    || existing.owner !== owner
+                if changed {
+                    existing.counterpartyIdentityId = payment.counterpartyId
+                    existing.amountDuffs = payment.amountDuffs
+                    existing.directionRaw = payment.direction.rawValue
+                    existing.statusRaw = payment.status.rawValue
+                    existing.memo = payment.memo
+                    if existing.owner !== owner {
+                        existing.owner = owner
+                    }
+                    existing.lastUpdated = Date()
+                }
+            } else {
+                let row = PersistentDashpayPayment(
+                    owner: owner,
+                    counterpartyIdentityId: payment.counterpartyId,
+                    amountDuffs: payment.amountDuffs,
+                    direction: payment.direction,
+                    status: payment.status,
+                    txid: payment.txid,
+                    memo: payment.memo
+                )
+                backgroundContext.insert(row)
+            }
+        }
+        return true
     }
 
     // MARK: - Identity key derivation-path helpers
@@ -7666,4 +7783,59 @@ private func listWalletCoreTxidsFreeCallback(
         UnsafeMutablePointer(mutating: flags).deallocate()
     }
     _ = context
+}
+
+/// C shim for `on_persist_dashpay_payments_fn`. Copies every
+/// `DashpayPaymentPersistEntryFFI` row into a Swift-owned
+/// `DashPayPayment` (grouped by owner identity) before invoking the
+/// handler, so the Rust side can drop its backing strings the moment
+/// we return. Rows without a txid pointer are skipped defensively —
+/// the Rust builder documents `txid` as always non-null.
+///
+/// Always returns 0: a missing owner identity parks the group for a
+/// post-commit replay rather than failing (see
+/// `deferredPaymentUpserts`), and a commit failure is reported through
+/// the round's `on_changeset_end_fn` return instead.
+private func persistDashpayPaymentsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<DashpayPaymentPersistEntryFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entriesByOwner: [Data: [DashPayPayment]] = [:]
+    if count > 0, let entriesPtr = entriesPtr {
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            guard let txidPtr = e.txid else { continue }
+            var ownerRaw = e.owner_identity_id
+            let ownerId = Swift.withUnsafeBytes(of: &ownerRaw) { Data($0) }
+            var counterpartyRaw = e.counterparty_id
+            let counterpartyId = Swift.withUnsafeBytes(of: &counterpartyRaw) { Data($0) }
+            // Unknown discriminants fall back to `.sent` / `.pending`
+            // rather than dropping the row — same forward-compat
+            // posture as `DashPayPayment.init(ffi:)`.
+            let payment = DashPayPayment(
+                counterpartyId: counterpartyId,
+                amountDuffs: e.amount_duffs,
+                direction: DashPayPaymentDirection(rawValue: e.direction_raw) ?? .sent,
+                status: DashPayPaymentStatus(rawValue: e.status_raw) ?? .pending,
+                txid: String(cString: txidPtr),
+                memo: e.memo.map { String(cString: $0) }
+            )
+            entriesByOwner[ownerId, default: []].append(payment)
+        }
+    }
+    guard !entriesByOwner.isEmpty else { return 0 }
+
+    handler.persistDashpayPayments(walletId: walletId, entriesByOwner: entriesByOwner)
+    return 0
 }

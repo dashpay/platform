@@ -116,8 +116,9 @@ unsafe impl Sync for KotlinPersistenceCtx {}
 //   ShieldedActivityData      org/dashfoundation/dashsdk/ffi/ShieldedActivityData
 //   CoreTxRecordData          org/dashfoundation/dashsdk/ffi/CoreTxRecordData
 
-/// Assemble the full 32-slot vtable. `context` is the boxed
-/// [`KotlinPersistenceCtx`] pointer.
+/// Assemble the full persistence vtable (every slot named, wired or an
+/// explicit `None`). `context` is the boxed [`KotlinPersistenceCtx`]
+/// pointer.
 pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
     PersistenceCallbacks {
         context,
@@ -180,6 +181,12 @@ pub(crate) fn build_vtable(context: *mut c_void) -> PersistenceCallbacks {
         // pre-restore contact payments) rather than misreporting.
         on_list_wallet_core_txids_fn: None,
         on_list_wallet_core_txids_free_fn: None,
+        // Android derives contact attribution from transaction history on
+        // reads and doesn't consume `PaymentEntry` rows, so there is
+        // nothing to land these in. `None` keeps the Rust-side payment
+        // recording in-memory-only on Android — same behaviour as before
+        // the slot existed.
+        on_persist_dashpay_payments_fn: None,
         release_fn: Some(release_persistence_ctx),
     }
 }
