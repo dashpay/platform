@@ -62,17 +62,14 @@ zip32 = { version = "0.2.0", default-features = false, optional = true }
 # Same version as `dash-sdk` so the lockfile resolves a single copy.
 futures = { version = "0.3.30", optional = true }
 
-# CSPRNG + `log` facade for this PR's added lib code. `rand`'s `OsRng`/`RngCore`
-# back `shielded::keys::generate_one_time_orchard_key` (behind `shielded`) and
-# `identity::network::encrypted_document` (unconditional); that module also
-# dual-logs through the `log` facade so breadcrumbs reach Android logcat (the
-# JNI layer installs `android_logger` as the global `log` logger). base
-# v4.2-dev keeps `rand` as a dev-dependency only and does not depend on `log`,
-# so this PR declares BOTH as its own runtime dependencies here rather than in
-# the "Standard dependencies" block above, whose `rand`/`log` lines base edited
-# out — declaring them there would be dropped (or conflict) on merge into base.
+# CSPRNG for this PR's added lib code: `rand`'s `OsRng`/`RngCore` back
+# `shielded::keys::generate_one_time_orchard_key` (behind `shielded`) and the
+# ephemeral keys in `identity::network::contact_info` (unconditional). base
+# v4.2-dev keeps `rand` as a dev-dependency only, so this PR declares it as
+# its own runtime dependency here rather than in the "Standard dependencies"
+# block above, whose `rand` line base edited out — declaring it there would
+# be dropped (or conflict) on merge into base.
 rand = "0.8"
-log = "0.4"
 
 # Networked, opt-in example binaries. Each one performs real network I/O
 # against a live devnet, so they are examples (compiled, never run by
