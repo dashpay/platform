@@ -120,15 +120,23 @@ pub enum PlatformWalletError {
     #[error("the message to sign for address {address} is not valid UTF-8: {reason}")]
     MessageSigningMessageInvalid { address: String, reason: String },
 
-    /// [`CoreWallet::sign_message`] was given a well-formed P2PKH address for
-    /// the right network that this wallet holds no signing key for: it belongs
-    /// to no *signable* funds account (BIP44 / BIP32 / CoinJoin /
-    /// DashPay-receiving), or it belongs to a watch-only DashPay **external**
-    /// account — a contact's receiving address, whose keys we never had.
+    /// [`CoreWallet::sign_message`] holds no usable signing key for a
+    /// well-formed P2PKH address on the right network. Two producers:
     ///
-    /// Distinct from a signer *failure*: nothing was attempted, because no
-    /// derivation path resolves the address. Carries no retry value as-is; the
-    /// caller must supply an address the wallet owns.
+    /// * **Address resolution** — the address belongs to no *signable* funds
+    ///   account (BIP44 / BIP32 / CoinJoin / DashPay-receiving), or it belongs
+    ///   to a watch-only DashPay **external** account (a contact's receiving
+    ///   address, whose keys we never had). No signer is invoked.
+    /// * **The signer itself** — the backend reported its key missing, stamped
+    ///   as the reserved [`SIGNER_KEY_UNAVAILABLE_PREFIX`] at position 0 of its
+    ///   error rendering (`MnemonicResolverCoreSigner::NotFound` in
+    ///   production: the keychain holds no mnemonic for the wallet).
+    ///   `sign_message` checks that marker BEFORE prepending any context, so
+    ///   the condition stays typed across the FFI.
+    ///
+    /// Either way the conclusion is the same — no key can sign for this
+    /// address as things stand — so hosts route both to key repair / address
+    /// correction (FFI code 31). Carries no retry value as-is.
     ///
     /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
     #[error(
@@ -156,14 +164,14 @@ pub enum PlatformWalletError {
     /// the host mirror-enum churn that follows one.
     ///
     /// Deliberately NOT given a dedicated FFI code: [`Signer::Error`] is
-    /// generic and bounded only by `Display`, so it cannot be classified
-    /// structurally here. Signer failures — including a signer-reported
-    /// key-unavailable completion — remain `MessageSigningFailed` and fall
-    /// through to `ErrorUnknown`. Only [`MessageSigningKeyUnavailable`]
-    /// (address resolution failing before a signer is ever invoked) reaches
-    /// FFI code 31. See the `MessageSigningFailed` arm's NOTE in
-    /// `platform-wallet-ffi`'s error conversion for the full type chain and
-    /// the upstream change that would be needed to close this gap.
+    /// generic and bounded only by `Display`, so what lands here cannot be
+    /// classified structurally and falls through to `ErrorUnknown`. The one
+    /// signer failure with a typed meaning — a key-unavailable rendering with
+    /// [`SIGNER_KEY_UNAVAILABLE_PREFIX`] at position 0 — never reaches this
+    /// variant: `sign_message` promotes it to
+    /// [`MessageSigningKeyUnavailable`] (FFI code 31) before any context
+    /// string is composed. See the `MessageSigningFailed` arm's NOTE in
+    /// `platform-wallet-ffi`'s error conversion.
     ///
     /// [`MessageSigningKeyUnavailable`]: Self::MessageSigningKeyUnavailable
     /// [`Signer::Error`]: key_wallet::signer::Signer::Error
@@ -604,6 +612,12 @@ pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWal
 
 /// The reserved machine prefix that a typed `SigningKeyUnavailable` signer
 /// completion stamps at the **start** of its `ProtocolError::Generic` payload.
+/// Also stamped at position 0 of `MnemonicResolverCoreSigner::NotFound`'s
+/// `Display`, which is how a missing key stays recognizable across key-wallet's
+/// `Signer` surface (whose error type is only `Display`) — `sign_message`
+/// checks this prefix on the signer's rendering before adding any context and
+/// promotes the failure to the typed
+/// [`PlatformWalletError::MessageSigningKeyUnavailable`].
 ///
 /// Canonically owned by the signer-completion boundary as
 /// [`rs_sdk_ffi::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`]. It is mirrored
