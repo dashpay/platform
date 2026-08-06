@@ -2,7 +2,7 @@
 //! (BIP70 / BIP270 "sign now, submit on merchant ack").
 //!
 //! The one-shot immediate send path (`core_wallet_tx_builder_finalize` +
-//! `core_wallet_broadcast_signed_transaction_v2`) sends a just-built
+//! `core_wallet_broadcast_signed_transaction`) sends a just-built
 //! transaction immediately. BIP70-style flows must split that: build and sign
 //! now (reserving the funding UTXOs), hand the raw bytes to a merchant server,
 //! then broadcast only on ack — or release the reservation on a nack /

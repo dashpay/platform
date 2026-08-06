@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 /**
  * Binding-level coverage for the MAYACHAIN-deposit builder controls
  * (`add_op_return`, `preserve_output_order`, `change_to_first_input`,
- * `signed_transaction_v2_bytes`) — the Android counterpart of the gated
+ * `signed_transaction_bytes`) — the Android counterpart of the gated
  * Swift `MayaDepositVerificationIntegrationTests`, minus everything that
  * needs a funded wallet. Proves the four new JNI symbols resolve, happy-path
  * calls succeed against a live builder, and the FFI's error paths surface as
@@ -83,7 +83,7 @@ class CoreTxBuilderOpReturnBindingTest {
         // Handle 0 can never be a finalized transaction; the call must throw
         // (not crash), which also proves the JNI symbol resolves.
         assertThrows(DashSDKException::class.java) {
-            WalletManagerNative.coreSignedTransactionV2Bytes(0L)
+            WalletManagerNative.coreSignedTransactionBytes(0L)
         }
     }
 

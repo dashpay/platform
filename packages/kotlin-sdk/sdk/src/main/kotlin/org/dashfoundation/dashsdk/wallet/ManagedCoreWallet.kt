@@ -27,16 +27,16 @@ class ManagedCoreWallet internal constructor(handle: Long) : AutoCloseable {
             check(it != 0L) { "ManagedCoreWallet has been closed" }
         }
 
-    /** Consume and broadcast a V2 finalized transaction. */
+    /** Consume and broadcast a finalized transaction. */
     fun broadcastTransaction(tx: FinalizedCoreTransaction): String =
-        WalletManagerNative.coreWalletBroadcastSignedTransactionV2(
+        WalletManagerNative.coreWalletBroadcastSignedTransaction(
             handle,
             tx.takeForBroadcast(),
         )
 
     /** Consume without sending and release the selected inputs immediately. */
     fun abandonTransaction(tx: FinalizedCoreTransaction) {
-        WalletManagerNative.coreWalletAbandonSignedTransactionV2(
+        WalletManagerNative.coreWalletAbandonSignedTransaction(
             handle,
             tx.takeForAbandon(),
         )

@@ -247,7 +247,7 @@ public class ManagedCoreWallet {
     ) throws -> CoreTransactionBroadcastOutcome {
         let transactionHandle = try tx.takeForBroadcast()
         var txidPtr: UnsafeMutablePointer<CChar>? = nil
-        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction_v2(
+        let result = PlatformWalletResult(core_wallet_broadcast_signed_transaction(
             handle,
             transactionHandle,
             &txidPtr
@@ -264,7 +264,7 @@ public class ManagedCoreWallet {
              .errorTransactionBroadcastUnconfirmed:
             guard let txidPtr else {
                 throw PlatformWalletError.nullPointer(
-                    "core_wallet_broadcast_signed_transaction_v2 returned a NULL txid pointer for \(result.code)"
+                    "core_wallet_broadcast_signed_transaction returned a NULL txid pointer for \(result.code)"
                 )
             }
             return try CoreTransactionBroadcastOutcome(
@@ -276,7 +276,7 @@ public class ManagedCoreWallet {
         default:
             try result.throwIfError()
             throw PlatformWalletError.unknown(
-                "core_wallet_broadcast_signed_transaction_v2 returned an unexpected success state"
+                "core_wallet_broadcast_signed_transaction returned an unexpected success state"
             )
         }
     }
@@ -323,7 +323,7 @@ public class ManagedCoreWallet {
 
     /// Consume without sending and release its reservation immediately.
     public func abandonTransaction(_ tx: FinalizedCoreTransaction) throws {
-        try core_wallet_abandon_signed_transaction_v2(
+        try core_wallet_abandon_signed_transaction(
             handle,
             tx.takeForAbandon()
         ).check()
