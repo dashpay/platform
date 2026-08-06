@@ -721,8 +721,8 @@ class WalletRestoreData(
      *
      * Without this, a restored UTXO on an address BEYOND the gap window
      * has no derivation-path mapping, so `managed.address_derivation_path`
-     * (called from `core_wallet_tx_builder_build_signed`) fails and the
-     * wallet cannot sign a core-to-core spend after a cold restart. Mirror
+     * (resolved during the signing finalizers) fails and the wallet cannot
+     * sign a core-to-core spend after a cold restart. Mirror
      * of the Swift `buildCoreAddressPoolBuffer` slice on `loadWalletList`.
      */
     @JvmField val coreAddressPools: Array<CoreAddressPoolRestoreData>,

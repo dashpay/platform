@@ -622,31 +622,24 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─────
 //
 // The base refactor replaced the one-shot `core_wallet_send_to_addresses`
-// with a step-by-step builder (`transaction_builder.rs`) + a separate
-// `core_wallet_broadcast_transaction`. Per `packages/kotlin-sdk/CLAUDE.md`,
-// each builder step is exported as its OWN thin JNI trampoline (one export
-// = one FFI call, no composite stitching); the Kotlin `CoreTransactionBuilder`
-// class orchestrates the sequence, mirroring the Swift `CoreTransactionBuilder`
-// + the `.coreToCore` flow in `SendViewModel.swift`.
+// with a step-by-step builder (`transaction_builder.rs`) + separate broadcast
+// entry points. Per `packages/kotlin-sdk/CLAUDE.md`, each builder step is
+// exported as its OWN thin JNI trampoline (one export = one FFI call, no
+// composite stitching); the Kotlin `CoreTransactionBuilder` class orchestrates
+// the sequence, mirroring the Swift `CoreTransactionBuilder` + the
+// `.coreToCore` flow in `SendViewModel.swift`.
 //
-// Handles cross as `jlong`:
-//   - the `*mut FFITransactionBuilder` from [coreTxBuilderNew], and
-//   - a heap-boxed `FFICoreTransaction` from [coreTxBuilderBuildSigned].
-//
-// `FFITransactionBuilder` / `FFICoreTransaction` have PRIVATE fields (the
-// FFI crate is an rlib dependency, so cbindgen's C-side field visibility
-// does not apply here). We therefore never read/construct their fields: the
-// out `FFICoreTransaction` is allocated zeroed via `MaybeUninit` (a zeroed
-// value is exactly Swift's `FFICoreTransaction(tx_bytes: nil, tx_len: 0,
-// fee: 0)`), `build_signed` fills it, and it crosses to Kotlin as an opaque
-// `jlong` that only [coreWalletBroadcastTransaction] / [coreTransactionFree]
-// consume — matching the opaque handle discipline the rest of this module
-// uses.
+// The `*mut FFITransactionBuilder` from [coreTxBuilderNew] crosses as a
+// `jlong`. It has PRIVATE fields (the FFI crate is an rlib dependency, so
+// cbindgen's C-side field visibility does not apply here); we never
+// read/construct its fields — it stays an opaque handle, matching the
+// discipline the rest of this module uses.
 
 /// `core_wallet_tx_builder_new` — create a builder for `network`
 /// (`Network.ffiValue`: 0 Mainnet, 1 Testnet, 2 Devnet, 3 Regtest). Returns
 /// the `*mut FFITransactionBuilder` as a `jlong` (0 after throwing). Free
-/// with [coreTxBuilderDestroy], or [coreTxBuilderBuildSigned] which consumes it.
+/// with [coreTxBuilderDestroy], or the consuming finalizers
+/// [coreTxBuilderFinalize] / [coreWalletFinalizeSignedPayment].
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderNew(
     mut env: JNIEnv,
@@ -899,114 +892,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// `core_wallet_tx_builder_set_funding` — fund the builder from a wallet
-/// account, setting inputs AND the change address. `account_type`: 0 BIP44,
-/// 1 BIP32, 2 CoinJoin. Rejects negative type/index at the boundary.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderSetFunding(
-    mut env: JNIEnv,
-    _class: JClass,
-    builder: jlong,
-    wallet_handle: jlong,
-    account_type: jni::sys::jint,
-    account_index: jni::sys::jint,
-) {
-    guard(&mut env, (), |env| {
-        if builder == 0 {
-            throw_sdk_exception(env, 1, "builder handle is 0");
-            return;
-        }
-        let Some(account_type) = core_account_type(account_type) else {
-            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
-            return;
-        };
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return;
-        }
-        let result = unsafe {
-            platform_wallet_ffi::core_wallet_tx_builder_set_funding(
-                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
-                wallet_handle as Handle,
-                account_type,
-                account_index as u32,
-            )
-        };
-        let _ = take_pwffi_error(env, result);
-    })
-}
-
-/// `core_wallet_tx_builder_build_signed` — build + sign against the wallet
-/// account, resolving Core ECDSA signatures via the `MnemonicResolverHandle`
-/// `core_signer_handle`. CONSUMES the builder (the FFI frees it on every
-/// path), so Kotlin must not reuse the builder handle afterwards.
-///
-/// Returns a heap-boxed `FFICoreTransaction` pointer as a `jlong` (0 after
-/// throwing) — an opaque handle for [coreWalletBroadcastTransaction] and
-/// [coreTransactionFree]. `account_type`: 0 BIP44, 1 BIP32, 2 CoinJoin.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderBuildSigned(
-    mut env: JNIEnv,
-    _class: JClass,
-    builder: jlong,
-    wallet_handle: jlong,
-    account_type: jni::sys::jint,
-    account_index: jni::sys::jint,
-    core_signer_handle: jlong,
-) -> jlong {
-    guard(&mut env, 0, |env| {
-        if builder == 0 {
-            throw_sdk_exception(env, 1, "builder handle is 0");
-            return 0;
-        }
-        let Some(account_type) = core_account_type(account_type) else {
-            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
-            return 0;
-        };
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return 0;
-        }
-        if core_signer_handle == 0 {
-            throw_sdk_exception(env, 1, "coreSignerHandle is 0");
-            return 0;
-        }
-
-        // Own an out `FFICoreTransaction` on the heap. Its fields are private
-        // to the FFI crate, so allocate it zeroed (== Swift's
-        // `FFICoreTransaction(tx_bytes: nil, tx_len: 0, fee: 0)`) rather than
-        // constructing it by field; `build_signed` fills it in place.
-        let mut boxed: Box<std::mem::MaybeUninit<platform_wallet_ffi::FFICoreTransaction>> =
-            Box::new(std::mem::MaybeUninit::zeroed());
-        let out_tx = boxed.as_mut_ptr();
-
-        let result = unsafe {
-            platform_wallet_ffi::core_wallet_tx_builder_build_signed(
-                builder as *mut platform_wallet_ffi::FFITransactionBuilder,
-                wallet_handle as Handle,
-                account_type,
-                account_index as u32,
-                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
-                out_tx,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            // build_signed already freed the builder on the error path; the
-            // out struct is still zeroed (null tx_bytes) — dropping `boxed`
-            // frees only the box, leaking nothing.
-            return 0;
-        }
-
-        // Success: the box now holds an initialized FFICoreTransaction. Leak
-        // it to Kotlin as an opaque jlong; reclaimed by coreTransactionFree.
-        // `MaybeUninit<T>` has the same layout as `T`, so the raw pointer from
-        // the leaked box points at the initialized value (build_signed
-        // returned Success, so it is initialized).
-        Box::into_raw(boxed).cast::<platform_wallet_ffi::FFICoreTransaction>() as jlong
-    })
-}
-
-/// Atomic V2 finalizer: consumes a configured builder, performs funding and
+/// Atomic finalizer: consumes a configured builder, performs funding and
 /// ReservationSet insertion indivisibly in platform-wallet, drops the manager
 /// lock, then invokes the mnemonic resolver to sign.
 #[no_mangle]
@@ -1065,7 +951,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 /// `core_wallet_tx_builder_destroy` — free a builder created by
-/// [coreTxBuilderNew] that was NOT consumed by [coreTxBuilderBuildSigned].
+/// [coreTxBuilderNew] that was NOT consumed by [coreTxBuilderFinalize] /
+/// [coreWalletFinalizeSignedPayment].
 /// Safe on 0.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderDestroy(
@@ -1187,7 +1074,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
-/// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
+/// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastSignedTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_platformWalletGetCore(
@@ -1207,63 +1094,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_p
             return 0;
         }
         core_handle as jlong
-    })
-}
-
-/// `core_wallet_broadcast_transaction` — broadcast a transaction built by
-/// [coreTxBuilderBuildSigned]. `account_type`/`account_index` identify the
-/// funding account so a definitive rejection releases its UTXO reservation.
-/// Returns the txid as a lowercase hex string (null after throwing).
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastTransaction(
-    mut env: JNIEnv,
-    _class: JClass,
-    core_handle: jlong,
-    tx: jlong,
-    account_type: jni::sys::jint,
-    account_index: jni::sys::jint,
-) -> jstring {
-    guard(&mut env, ptr::null_mut(), |env| {
-        if tx == 0 {
-            throw_sdk_exception(env, 1, "transaction handle is 0");
-            return ptr::null_mut();
-        }
-        let Some(account_type) = core_account_type(account_type) else {
-            throw_sdk_exception(env, 1, "accountType out of range (expected 0..=2)");
-            return ptr::null_mut();
-        };
-        if account_index < 0 {
-            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
-            return ptr::null_mut();
-        }
-
-        let mut out_txid: *mut c_char = ptr::null_mut();
-        let result = unsafe {
-            platform_wallet_ffi::core_wallet_broadcast_transaction(
-                core_handle as Handle,
-                tx as *const platform_wallet_ffi::FFICoreTransaction,
-                account_type,
-                account_index as u32,
-                &mut out_txid as *mut *mut c_char,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return ptr::null_mut();
-        }
-
-        if out_txid.is_null() {
-            throw_sdk_exception(env, 1, "broadcast returned a NULL txid");
-            return ptr::null_mut();
-        }
-        // Copy the txid out, then free the Rust-owned C string (same free the
-        // core wallet uses for its address C strings — `core_wallet_free_address`).
-        let txid = unsafe { CStr::from_ptr(out_txid) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
-        env.new_string(txid)
-            .map(|s| s.into_raw())
-            .unwrap_or(ptr::null_mut())
     })
 }
 
@@ -1367,9 +1197,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// Consume and broadcast an atomically finalized V2 transaction handle.
+/// Consume and broadcast an atomically finalized transaction handle.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedTransactionV2(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedTransaction(
     mut env: JNIEnv,
     _class: JClass,
     core_handle: jlong,
@@ -1382,7 +1212,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         }
         let mut out_txid: *mut c_char = ptr::null_mut();
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_broadcast_signed_transaction_v2(
+            platform_wallet_ffi::core_wallet_broadcast_signed_transaction(
                 core_handle as Handle,
                 transaction_handle as Handle,
                 &mut out_txid,
@@ -1406,7 +1236,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletAbandonSignedTransactionV2(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletAbandonSignedTransaction(
     mut env: JNIEnv,
     _class: JClass,
     core_handle: jlong,
@@ -1417,7 +1247,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             return;
         }
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_abandon_signed_transaction_v2(
+            platform_wallet_ffi::core_wallet_abandon_signed_transaction(
                 core_handle as Handle,
                 transaction_handle as Handle,
             )
@@ -1427,22 +1257,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Free(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionFree(
     mut env: JNIEnv,
     _class: JClass,
     transaction_handle: jlong,
 ) {
     guard(&mut env, (), |_| {
         if transaction_handle != 0 {
-            platform_wallet_ffi::core_wallet_signed_transaction_v2_free(
-                transaction_handle as Handle,
-            );
+            platform_wallet_ffi::core_wallet_signed_transaction_free(transaction_handle as Handle);
         }
     })
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Fee(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionFee(
     mut env: JNIEnv,
     _class: JClass,
     transaction_handle: jlong,
@@ -1450,7 +1278,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     guard(&mut env, 0, |env| {
         let mut fee = 0u64;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_transaction_v2_fee(
+            platform_wallet_ffi::core_wallet_signed_transaction_fee(
                 transaction_handle as Handle,
                 &mut fee,
             )
@@ -1462,7 +1290,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// `core_wallet_signed_transaction_v2_bytes` — the consensus-serialized
+/// `core_wallet_signed_transaction_bytes` — the consensus-serialized
 /// signed transaction bytes of a finalized-transaction handle from
 /// [coreTxBuilderFinalize], WITHOUT consuming the ownership token (mirror of
 /// Swift's `FinalizedCoreTransaction.serializedData()`). Lets the caller
@@ -1470,7 +1298,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 /// order) before deciding to broadcast. The FFI-owned buffer is copied into
 /// the returned `byte[]` and freed here.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Bytes(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionBytes(
     mut env: JNIEnv,
     _class: JClass,
     transaction_handle: jlong,
@@ -1483,7 +1311,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut bytes_ptr: *mut u8 = ptr::null_mut();
         let mut bytes_len: usize = 0;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_transaction_v2_bytes(
+            platform_wallet_ffi::core_wallet_signed_transaction_bytes(
                 transaction_handle as Handle,
                 &mut bytes_ptr,
                 &mut bytes_len,
@@ -1528,35 +1356,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// `core_wallet_transaction_free` — free a transaction from
-/// [coreTxBuilderBuildSigned] (its heap box AND the tx bytes it owns). Safe
-/// on 0; must be called exactly once per built transaction.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTransactionFree(
-    mut env: JNIEnv,
-    _class: JClass,
-    tx: jlong,
-) {
-    guard(&mut env, (), |_| {
-        if tx == 0 {
-            return;
-        }
-        // SAFETY: `tx` is a live FFICoreTransaction box from build_signed,
-        // consumed exactly once here. Free the tx bytes it owns, then reclaim
-        // the box itself.
-        let mut boxed =
-            unsafe { Box::from_raw(tx as *mut platform_wallet_ffi::FFICoreTransaction) };
-        unsafe {
-            platform_wallet_ffi::core_wallet_transaction_free(
-                boxed.as_mut() as *mut platform_wallet_ffi::FFICoreTransaction
-            )
-        };
-    })
-}
-
 // ── Deferred build → broadcast/release core-send (BIP70/BIP270) ───────
 //
-// ADDITIVE surface over the immediate `coreWalletBroadcastTransaction` path:
+// ADDITIVE surface over the immediate [coreTxBuilderFinalize] +
+// [coreWalletBroadcastSignedTransaction] send path:
 // [coreWalletFinalizeSignedPayment] atomically funds, reserves, signs, and
 // registers a builder in one native call, returning the raw bytes to hand to a
 // merchant server; the reservation is then broadcast on ack — or released on

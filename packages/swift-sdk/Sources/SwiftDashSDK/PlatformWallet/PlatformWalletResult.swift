@@ -122,7 +122,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// signed-payment finalize refuses to register a payment whose wallet was
     /// removed while it was being signed.
     ///
-    /// Finalized-transaction *handle* (V2) path: `finalizeAtomic` publishes no
+    /// Finalized-transaction *handle* path: `finalizeAtomic` publishes no
     /// handle when the wallet was removed or re-created during signing, and
     /// `broadcastTransactionWithOutcome(_: FinalizedCoreTransaction)` refuses a
     /// handle whose generation is gone.

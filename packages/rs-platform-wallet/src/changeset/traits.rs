@@ -369,9 +369,17 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// Used by DashPay sent-payment reconstruction to walk the
     /// wallet's locally persisted transaction history without relying
-    /// on the optional in-memory `transactions()` map. The default
-    /// implementation returns an empty set for backwards compatibility
-    /// with backends that don't index wallet-scoped tx history.
+    /// on the optional in-memory `transactions()` map.
+    ///
+    /// Returns `Ok(None)` when the backend does not index wallet-scoped
+    /// transaction history at all — the default, kept by backends that
+    /// never wire the capability (e.g. the Android vtable leaves the
+    /// enumeration callbacks unset). `None` is NOT an empty table: an
+    /// empty table (`Some(vec![])`) means "supported, nothing persisted
+    /// yet" and reconstruction keeps retrying until rows appear, while
+    /// `None` tells the caller to skip reconstruction entirely instead
+    /// of re-deriving candidate windows against a table that will never
+    /// materialize.
     ///
     /// `spends_wallet_input` must be `true` only when at least one of
     /// the transaction's inputs spends an output owned by one of this
@@ -385,8 +393,8 @@ pub trait PlatformWalletPersistence: Send + Sync {
     fn list_wallet_core_txids(
         &self,
         _wallet_id: WalletId,
-    ) -> Result<Vec<ListedCoreTxid>, PersistenceError> {
-        Ok(Vec::new())
+    ) -> Result<Option<Vec<ListedCoreTxid>>, PersistenceError> {
+        Ok(None)
     }
 
     // TODO: `list_wallets` and `delete_wallet` are deferred contract

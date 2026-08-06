@@ -81,7 +81,7 @@ impl<T> HandleStorage<T> {
 
     /// Remove (and drop) every stored item satisfying `predicate`, returning how
     /// many were removed. Used to sweep a wallet generation's handles at
-    /// teardown (e.g. abandon every finalized-transaction V2 handle whose
+    /// teardown (e.g. abandon every finalized-transaction handle whose
     /// originating wallet was just removed from its manager — the reservation
     /// ceases to exist with the generation, so dropping is the correct action).
     pub fn remove_matching<F>(&self, predicate: F) -> usize
@@ -124,8 +124,8 @@ pub static CORE_WALLET_STORAGE: Lazy<
 /// Atomically funded/signed Core transactions. Handles are removed exactly
 /// once by broadcast or abandon; repeating either operation is a safe
 /// invalid-handle error instead of dereferencing a freed pointer.
-pub static CORE_SIGNED_TRANSACTION_V2_STORAGE: Lazy<
-    HandleStorage<crate::core_wallet::FFICoreSignedTransactionV2>,
+pub static CORE_SIGNED_TRANSACTION_STORAGE: Lazy<
+    HandleStorage<crate::core_wallet::FFICoreSignedTransaction>,
 > = Lazy::new(HandleStorage::new);
 
 /// Storage for AssetLockManager handles (pinned to `SpvBroadcaster`).

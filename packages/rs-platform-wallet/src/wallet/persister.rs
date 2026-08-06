@@ -62,10 +62,11 @@ impl WalletPersister {
     /// Enumerate the persisted Core transaction ids scoped to this
     /// wallet, tagged with the host's wallet-funded verdict. Used by
     /// DashPay sent-payment reconstruction to fetch the full records
-    /// via [`Self::get_core_tx_record`].
+    /// via [`Self::get_core_tx_record`]. `None` means the backend does
+    /// not support wallet-scoped enumeration (never "empty table").
     pub(crate) fn list_wallet_core_txids(
         &self,
-    ) -> Result<Vec<crate::changeset::traits::ListedCoreTxid>, PersistenceError> {
+    ) -> Result<Option<Vec<crate::changeset::traits::ListedCoreTxid>>, PersistenceError> {
         self.inner.list_wallet_core_txids(self.wallet_id)
     }
 }

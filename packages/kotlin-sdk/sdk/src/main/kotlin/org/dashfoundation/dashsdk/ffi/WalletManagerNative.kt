@@ -134,15 +134,14 @@ internal object WalletManagerNative {
     // `packages/kotlin-sdk/CLAUDE.md`); the `CoreTransactionBuilder` Kotlin
     // class orchestrates the sequence, mirroring the Swift
     // `CoreTransactionBuilder` + the `.coreToCore` flow in
-    // `SendViewModel.swift`. `builder` and `tx` are opaque native pointers
-    // carried as `Long` (the builder's `FFITransactionBuilder`, and a
-    // heap-boxed `FFICoreTransaction` from [coreTxBuilderBuildSigned]).
+    // `SendViewModel.swift`. `builder` is an opaque native pointer (the
+    // builder's `FFITransactionBuilder`) carried as `Long`.
 
     /**
      * `core_wallet_tx_builder_new` — create a builder for [network]
      * (`Network.ffiValue`). Returns the builder pointer (0 after throwing);
-     * free with [coreTxBuilderDestroy] or [coreTxBuilderBuildSigned] (which
-     * consumes it).
+     * free with [coreTxBuilderDestroy] or the consuming finalizers
+     * [coreTxBuilderFinalize] / [coreWalletFinalizeSignedPayment].
      */
     external fun coreTxBuilderNew(network: Int): Long
 
@@ -163,8 +162,8 @@ internal object WalletManagerNative {
 
     /**
      * `core_wallet_tx_builder_set_change_address` — override the change
-     * address (network-checked). Optional; the Core→Core send relies on
-     * [coreTxBuilderSetFunding], which also sets a change address.
+     * address (network-checked). Optional; the finalizers pick a change
+     * address themselves during funding selection.
      */
     external fun coreTxBuilderSetChangeAddress(builder: Long, address: String)
 
@@ -179,7 +178,7 @@ internal object WalletManagerNative {
      * `core_wallet_tx_builder_change_to_first_input` — route change to the
      * address of the first selected input (VIN0). MAYACHAIN identifies the
      * depositor by VIN0 and pays refunds there. Overrides the change address
-     * [coreTxBuilderSetFunding] assigned.
+     * funding selection assigned.
      */
     external fun coreTxBuilderChangeToFirstInput(builder: Long)
 
@@ -200,35 +199,7 @@ internal object WalletManagerNative {
      */
     external fun coreTxBuilderSetCurrentHeight(builder: Long, height: Int)
 
-    /**
-     * `core_wallet_tx_builder_set_funding` — fund from a wallet account,
-     * setting inputs AND the change address. [accountType]: 0 BIP44,
-     * 1 BIP32, 2 CoinJoin.
-     */
-    external fun coreTxBuilderSetFunding(
-        builder: Long,
-        walletHandle: Long,
-        accountType: Int,
-        accountIndex: Int,
-    )
-
-    /**
-     * `core_wallet_tx_builder_build_signed` — build + sign against the wallet
-     * account, resolving Core ECDSA signatures via [coreSignerHandle] (a
-     * `MnemonicResolverHandle`). CONSUMES the builder (do not reuse the
-     * builder handle afterwards). Returns an opaque built-transaction pointer
-     * (0 after throwing) for [coreWalletBroadcastTransaction] /
-     * [coreTransactionFree].
-     */
-    external fun coreTxBuilderBuildSigned(
-        builder: Long,
-        walletHandle: Long,
-        accountType: Int,
-        accountIndex: Int,
-        coreSignerHandle: Long,
-    ): Long
-
-    /** Atomic V2 finalizer; consumes [builder] and returns an opaque registry handle. */
+    /** Atomic finalizer; consumes [builder] and returns an opaque signed-transaction handle. */
     external fun coreTxBuilderFinalize(
         builder: Long,
         walletHandle: Long,
@@ -239,14 +210,16 @@ internal object WalletManagerNative {
 
     /**
      * `core_wallet_tx_builder_destroy` — free a builder from [coreTxBuilderNew]
-     * that was NOT consumed by [coreTxBuilderBuildSigned]. Safe on 0.
+     * that was NOT consumed by [coreTxBuilderFinalize] /
+     * [coreWalletFinalizeSignedPayment]. Safe on 0.
      */
     external fun coreTxBuilderDestroy(builder: Long)
 
     /**
      * `platform_wallet_get_core` — resolve the transient core-wallet handle
-     * from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
-     * Free with [coreWalletDestroy]. Returns 0 after throwing.
+     * from a `PlatformWallet` handle, for
+     * [coreWalletBroadcastSignedTransaction]. Free with [coreWalletDestroy].
+     * Returns 0 after throwing.
      */
     external fun platformWalletGetCore(walletHandle: Long): Long
 
@@ -273,19 +246,6 @@ internal object WalletManagerNative {
     ): String
 
     /**
-     * `core_wallet_broadcast_transaction` — broadcast a transaction built by
-     * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
-     * funding account so a definitive rejection releases its UTXO
-     * reservation. Returns the txid as a lowercase hex string.
-     */
-    external fun coreWalletBroadcastTransaction(
-        coreHandle: Long,
-        tx: Long,
-        accountType: Int,
-        accountIndex: Int,
-    ): String
-
-    /**
      * `core_wallet_next_receive_address` — the engine's next unused BIP-44
      * EXTERNAL (receive) address for [accountIndex], base58-encoded.
      * Answered from the engine's in-memory used-set (authoritative over
@@ -301,35 +261,28 @@ internal object WalletManagerNative {
      */
     external fun coreWalletNextChangeAddress(coreHandle: Long, accountIndex: Int): String
 
-    /** Consume and broadcast an atomically finalized V2 transaction. */
-    external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
+    /** Consume and broadcast an atomically finalized transaction. */
+    external fun coreWalletBroadcastSignedTransaction(coreHandle: Long, transaction: Long): String
 
     /** Consume without sending and immediately release the reservation. */
-    external fun coreWalletAbandonSignedTransactionV2(coreHandle: Long, transaction: Long)
+    external fun coreWalletAbandonSignedTransaction(coreHandle: Long, transaction: Long)
 
     /** Idempotent cleaner fallback; abandons and releases the reservation. */
-    external fun coreSignedTransactionV2Free(transaction: Long)
+    external fun coreSignedTransactionFree(transaction: Long)
 
     /** Read the finalized transaction's fee before consumption. */
-    external fun coreSignedTransactionV2Fee(transaction: Long): Long
+    external fun coreSignedTransactionFee(transaction: Long): Long
 
     /**
-     * `core_wallet_signed_transaction_v2_bytes` — the consensus-serialized
+     * `core_wallet_signed_transaction_bytes` — the consensus-serialized
      * signed transaction bytes, read WITHOUT consuming the ownership token.
      * Lets the caller assert the deposit shape (e.g. MAYACHAIN's
      * vault/OP_RETURN/change ordering) before deciding to broadcast.
      */
-    external fun coreSignedTransactionV2Bytes(transaction: Long): ByteArray
+    external fun coreSignedTransactionBytes(transaction: Long): ByteArray
 
     /** `core_wallet_destroy` — release a core handle from [platformWalletGetCore]. Safe on 0. */
     external fun coreWalletDestroy(coreHandle: Long)
-
-    /**
-     * `core_wallet_transaction_free` — free a transaction from
-     * [coreTxBuilderBuildSigned] (its box AND the tx bytes it owns). Safe on
-     * 0; call exactly once per built transaction.
-     */
-    external fun coreTransactionFree(tx: Long)
 
     /**
      * `core_wallet_signed_payment_finalize` — atomically fund, reserve, sign,
