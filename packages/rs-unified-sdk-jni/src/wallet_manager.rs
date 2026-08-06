@@ -1006,6 +1006,105 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
+/// `core_wallet_sign_message` — sign `message` with the private key behind
+/// `address` and return the base64 signature: a classic Dash signed message,
+/// verifiable by Dash Core's `verifymessage` RPC, dashj's
+/// `ECKey.verifyMessage`, and CrowdNode's server-side check.
+///
+/// `core_handle` is the transient core-wallet `Handle` from
+/// [platformWalletGetCore]. `address` must be a P2PKH address of THIS wallet on
+/// its network, belonging to a signable funds account — a foreign or watch-only
+/// address throws `ErrorSigningKeyUnavailable` (31), while an unparseable,
+/// wrong-network, or non-P2PKH address throws `ErrorInvalidParameter` (2).
+/// `message` is signed verbatim (it is length-prefixed into the digest, so
+/// trailing whitespace is significant). `core_signer_handle` is the manager's
+/// `MnemonicResolverHandle`.
+///
+/// Moves no value: nothing is selected, reserved, broadcast, or persisted.
+/// Returns the base64 signature as a `String`, or null after throwing.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletSignMessage(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    address: JString,
+    message: JString,
+    core_signer_handle: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core handle is 0");
+            return ptr::null_mut();
+        }
+        if core_signer_handle == 0 {
+            throw_sdk_exception(env, 1, "coreSignerHandle is 0");
+            return ptr::null_mut();
+        }
+        let Some(address) = read_cstring_required(env, &address, "address") else {
+            return ptr::null_mut();
+        };
+        // The message is read leniently on emptiness — unlike `address`, an empty
+        // string is a legitimate thing to sign (the digest length-prefixes it),
+        // so `read_cstring_required` (which rejects empty) is wrong here. A JNI
+        // read error still throws: silently signing the empty message when the
+        // caller supplied text would produce a signature that verifies for a
+        // message they never sent.
+        if message.is_null() {
+            throw_sdk_exception(env, 1, "message was null");
+            return ptr::null_mut();
+        }
+        let message: String = match env.get_string(&message) {
+            Ok(v) => v.into(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "message string was invalid");
+                return ptr::null_mut();
+            }
+        };
+
+        // Both cross as UTF-8 bytes + length (no trailing NUL), so an embedded
+        // NUL cannot truncate what actually gets signed.
+        let address_bytes = address.as_bytes();
+        let message_bytes = message.as_bytes();
+
+        let mut out_signature: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_sign_message(
+                core_handle as Handle,
+                address_bytes.as_ptr(),
+                address_bytes.len(),
+                message_bytes.as_ptr(),
+                message_bytes.len(),
+                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                &mut out_signature as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        if out_signature.is_null() {
+            throw_sdk_exception(env, 1, "sign_message returned a NULL signature");
+            return ptr::null_mut();
+        }
+        let signature = unsafe { CStr::from_ptr(out_signature) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_signature) };
+        // A `new_string` failure must throw like every other failure path:
+        // Kotlin declares a non-null return, so a bare null here would surface
+        // as an unexplained NullPointerException at the platform-type boundary
+        // instead of a DashSdkException.
+        match env.new_string(signature) {
+            Ok(s) => s.into_raw(),
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "failed to allocate the signature string");
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
 /// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.
@@ -1082,6 +1181,106 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             .into_owned();
         unsafe { platform_wallet_ffi::core_wallet_free_address(out_txid) };
         env.new_string(txid)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// `core_wallet_next_receive_address` — the engine's next unused BIP-44
+/// EXTERNAL (receive) address for `account_index`, base58-encoded.
+///
+/// Kotlin parity for the Swift binding (`SwiftDashSDKReceiveAddressReader`
+/// → `coreWallet().nextReceiveAddress(accountIndex:)`): the engine answers
+/// from its in-memory used-set, so this is authoritative over the Room
+/// `core_addresses` mirror and needs no persistence read. Same cold-start
+/// caveat as iOS documents: until SPV replay populates the used-set a
+/// fresh install answers index 0.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletNextReceiveAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    account_index: jni::sys::jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core wallet handle is 0");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let mut out_address: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_next_receive_address(
+                core_handle as Handle,
+                account_index as u32,
+                &mut out_address as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_address.is_null() {
+            throw_sdk_exception(env, 1, "next receive address returned NULL");
+            return ptr::null_mut();
+        }
+        // Copy the address out, then free the Rust-owned C string with the
+        // module's own free (`core_wallet_free_address`).
+        let address = unsafe { CStr::from_ptr(out_address) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_address) };
+        env.new_string(address)
+            .map(|s| s.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// `core_wallet_next_change_address` — the engine's next unused BIP-44
+/// INTERNAL (change) address for `account_index`, base58-encoded. The
+/// change-side twin of [coreWalletNextReceiveAddress]; same contract.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletNextChangeAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    core_handle: jlong,
+    account_index: jni::sys::jint,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        if core_handle == 0 {
+            throw_sdk_exception(env, 1, "core wallet handle is 0");
+            return ptr::null_mut();
+        }
+        if account_index < 0 {
+            throw_sdk_exception(env, 1, "accountIndex must be non-negative");
+            return ptr::null_mut();
+        }
+
+        let mut out_address: *mut c_char = ptr::null_mut();
+        let result = unsafe {
+            platform_wallet_ffi::core_wallet_next_change_address(
+                core_handle as Handle,
+                account_index as u32,
+                &mut out_address as *mut *mut c_char,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+
+        if out_address.is_null() {
+            throw_sdk_exception(env, 1, "next change address returned NULL");
+            return ptr::null_mut();
+        }
+        let address = unsafe { CStr::from_ptr(out_address) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { platform_wallet_ffi::core_wallet_free_address(out_address) };
+        env.new_string(address)
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())
     })
@@ -2417,6 +2616,39 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_identity_sync_stop,
     platform_wallet_ffi::platform_wallet_manager_identity_sync_is_running
 );
+
+/// Whether the manager has frozen its durable sync watermark this session
+/// (dashpay/platform#4069). `true` means the wallet-event adapter dropped
+/// record-bearing events, or a persistence `store()` was rejected, so the
+/// persisted `syncedHeight` is deliberately held behind the chain tip and a
+/// rescan is pending on the next launch — the host should surface a hard
+/// "verification failed / rescan pending" state rather than leave the fault
+/// in the error logs. Latches for the process lifetime. Backs
+/// `PlatformWalletManager.syncFaultDetected()`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_syncFaultDetected(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |env| {
+        let mut detected = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_sync_fault_detected(
+                manager_handle as Handle,
+                &mut detected as *mut bool,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return JNI_FALSE;
+        }
+        if detected {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
 
 #[cfg(feature = "shielded")]
 sync_start_stop!(

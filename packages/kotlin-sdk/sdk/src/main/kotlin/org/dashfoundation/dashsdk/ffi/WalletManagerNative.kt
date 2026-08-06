@@ -228,6 +228,28 @@ internal object WalletManagerNative {
     external fun platformWalletGetCore(walletHandle: Long): Long
 
     /**
+     * `core_wallet_sign_message` — sign [message] with the private key behind
+     * [address] and return the base64 signature (a classic Dash signed message).
+     *
+     * [coreHandle] is a core-wallet handle from [platformWalletGetCore].
+     * [address] must be a P2PKH address of THIS wallet on its network, owned by
+     * a signable funds account: a foreign or watch-only address throws
+     * `ErrorSigningKeyUnavailable` (31), while an unparseable, wrong-network, or
+     * non-P2PKH address throws `ErrorInvalidParameter` (2). [message] is signed
+     * verbatim — it is length-prefixed into the digest, so trailing whitespace
+     * and newlines are significant, and an empty string is valid and signable.
+     * [coreSignerHandle] is the manager's `MnemonicResolverHandle`.
+     *
+     * Moves no value: nothing is selected, reserved, broadcast, or persisted.
+     */
+    external fun coreWalletSignMessage(
+        coreHandle: Long,
+        address: String,
+        message: String,
+        coreSignerHandle: Long,
+    ): String
+
+    /**
      * `core_wallet_broadcast_transaction` — broadcast a transaction built by
      * [coreTxBuilderBuildSigned]. [accountType]/[accountIndex] identify the
      * funding account so a definitive rejection releases its UTXO
@@ -239,6 +261,22 @@ internal object WalletManagerNative {
         accountType: Int,
         accountIndex: Int,
     ): String
+
+    /**
+     * `core_wallet_next_receive_address` — the engine's next unused BIP-44
+     * EXTERNAL (receive) address for [accountIndex], base58-encoded.
+     * Answered from the engine's in-memory used-set (authoritative over
+     * the Room `core_addresses` mirror). Kotlin parity for the Swift
+     * binding (`coreWallet().nextReceiveAddress(accountIndex:)`).
+     */
+    external fun coreWalletNextReceiveAddress(coreHandle: Long, accountIndex: Int): String
+
+    /**
+     * `core_wallet_next_change_address` — the engine's next unused BIP-44
+     * INTERNAL (change) address for [accountIndex], base58-encoded. The
+     * change-side twin of [coreWalletNextReceiveAddress].
+     */
+    external fun coreWalletNextChangeAddress(coreHandle: Long, accountIndex: Int): String
 
     /** Consume and broadcast an atomically finalized V2 transaction. */
     external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
@@ -432,6 +470,14 @@ internal object WalletManagerNative {
     external fun identitySyncStart(managerHandle: Long)
     external fun identitySyncStop(managerHandle: Long)
     external fun identitySyncIsRunning(managerHandle: Long): Boolean
+
+    /**
+     * Whether the durable sync watermark has been frozen this session because
+     * persistence events were dropped or a store was rejected — the persisted
+     * `syncedHeight` is held behind the chain tip and a rescan is pending on
+     * the next launch. Latches for the process lifetime.
+     */
+    external fun syncFaultDetected(managerHandle: Long): Boolean
 
     /** Shielded loop — only present when the native library is built with shielded. */
     external fun shieldedSyncStart(managerHandle: Long)

@@ -93,6 +93,87 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    /// The address handed to [`CoreWallet::sign_message`] cannot be a signing
+    /// target at all: unparseable, encoded for a different network than the
+    /// wallet's, or not P2PKH. A caller-input error — the classic Dash
+    /// signed-message format recovers a public key and compares its
+    /// `PubkeyHash` payload, so P2SH / SegWit payloads have no defined
+    /// verification and are refused rather than signed into something no
+    /// verifier accepts. `reason` names which of the three it was.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error("message-signing address {address:?} is unusable: {reason}")]
+    MessageSigningAddressInvalid { address: String, reason: String },
+
+    /// The bytes handed to `core_wallet_sign_message` as the message are not
+    /// valid UTF-8, so there is no string to sign. Caller input, exactly like
+    /// [`Self::MessageSigningAddressInvalid`] — and given its own variant for
+    /// the same reason the address case has one: these errors exist to name
+    /// *which argument* the caller must fix, and reusing the address variant
+    /// for a message problem would render "address … is unusable" over a
+    /// perfectly good address.
+    ///
+    /// Only reachable across the FFI, where the message arrives as raw bytes; a
+    /// Rust or Kotlin caller cannot construct an ill-formed `&str`/`String`.
+    /// `address` is the (already validated as UTF-8) signing target, carried
+    /// for log correlation like every sibling — the *message* is what failed.
+    #[error("the message to sign for address {address} is not valid UTF-8: {reason}")]
+    MessageSigningMessageInvalid { address: String, reason: String },
+
+    /// [`CoreWallet::sign_message`] was given a well-formed P2PKH address for
+    /// the right network that this wallet holds no signing key for: it belongs
+    /// to no *signable* funds account (BIP44 / BIP32 / CoinJoin /
+    /// DashPay-receiving), or it belongs to a watch-only DashPay **external**
+    /// account — a contact's receiving address, whose keys we never had.
+    ///
+    /// Distinct from a signer *failure*: nothing was attempted, because no
+    /// derivation path resolves the address. Carries no retry value as-is; the
+    /// caller must supply an address the wallet owns.
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    #[error(
+        "no signing key for message-signing address {address}: it belongs to no \
+         signable funds account of this wallet"
+    )]
+    MessageSigningKeyUnavailable { address: String },
+
+    /// [`CoreWallet::sign_message`] resolved a derivation path for the address
+    /// but could not produce a signature over it. Four causes, all carried in
+    /// `reason`: the signer backend does not advertise
+    /// [`SignerMethod::Digest`], so it cannot sign a host-computed digest at
+    /// all and is refused before it is ever invoked; the [`Signer`] itself
+    /// failed (Keystore/Keychain round-trip); the public key it returned does
+    /// not hash to the target address (a path-resolution bug — the guard exists
+    /// so a wrong-key signature can never be handed out as if it were the
+    /// address owner's); or no recovery id in `0..=3` recovers that public key.
+    ///
+    /// The capability refusal shares this variant rather than taking a
+    /// dedicated one because this is the crate's "a path resolved but no
+    /// signature came back" bucket, and because key-wallet folds the very same
+    /// refusal into its ordinary `BuilderError::SigningFailed`. It is
+    /// unreachable with any signer that ships today — the production mnemonic
+    /// resolver advertises `Digest` — so it does not warrant a new FFI code and
+    /// the host mirror-enum churn that follows one.
+    ///
+    /// Deliberately NOT given a dedicated FFI code: [`Signer::Error`] is
+    /// generic and bounded only by `Display`, so it cannot be classified
+    /// structurally here. Signer failures — including a signer-reported
+    /// key-unavailable completion — remain `MessageSigningFailed` and fall
+    /// through to `ErrorUnknown`. Only [`MessageSigningKeyUnavailable`]
+    /// (address resolution failing before a signer is ever invoked) reaches
+    /// FFI code 31. See the `MessageSigningFailed` arm's NOTE in
+    /// `platform-wallet-ffi`'s error conversion for the full type chain and
+    /// the upstream change that would be needed to close this gap.
+    ///
+    /// [`MessageSigningKeyUnavailable`]: Self::MessageSigningKeyUnavailable
+    /// [`Signer::Error`]: key_wallet::signer::Signer::Error
+    ///
+    /// [`CoreWallet::sign_message`]: crate::wallet::core::CoreWallet::sign_message
+    /// [`Signer`]: key_wallet::signer::Signer
+    /// [`SignerMethod::Digest`]: key_wallet::signer::SignerMethod::Digest
+    #[error("message signing failed for address {address}: {reason}")]
+    MessageSigningFailed { address: String, reason: String },
+
     /// Atomic Core finalization could not select enough unreserved funds.
     #[error(
         "insufficient unreserved Core funds on {account_type:?} account {account_index}: \
