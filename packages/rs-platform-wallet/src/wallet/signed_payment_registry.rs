@@ -45,15 +45,17 @@
 //!   wallet's `last_processed_height` has advanced far enough past the height at
 //!   which `build_signed` / `finalize_transaction` stamped the reservation that
 //!   key-wallet's own `ReservationSet` TTL could have swept and re-selected the
-//!   funding UTXO for an unrelated build,
-//!   broadcasting or releasing the token would act on state that may no longer
-//!   be its own — so both are refused with
+//!   funding UTXO for an unrelated build, a **broadcast** would spend against
+//!   state that may no longer be its own — so it is refused with
 //!   [`SignedPaymentError::StaleReservationToken`] and the caller must rebuild.
-//!   This guard is the primary defence: key-wallet exposes no per-outpoint
-//!   ownership/generation check to make [`release`](SignedPaymentRegistry::release)
-//!   itself generation-aware without modifying the pinned crate, so an
-//!   unconditional release-by-outpoint after a sweep is prevented by never
-//!   reaching it once the token is stale.
+//!   The stale entry's *reservation*, however, is still reconciled on the way
+//!   out: key-wallet's `release_reservation_if_owner` (the per-reservation
+//!   ownership check the funding token unlocks) frees the inputs only while
+//!   this build still owns them and no-ops after a sweep/re-reservation, so
+//!   releasing is safe at any age — and necessary, since below the TTL the
+//!   inputs are typically still held and the demanded rebuild would otherwise
+//!   fail selection. Only a token-less entry falls back to drop-without-release
+//!   (its by-outpoint release is unguarded).
 //!
 //! ## Process-death semantics
 //!
@@ -501,15 +503,23 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
             return Err(SignedPaymentError::WalletRemoved(token));
         }
 
-        // Refuse a token whose reservation could already have been swept and
-        // re-selected by an unrelated build. The entry is already removed, so we
-        // simply drop it — deliberately WITHOUT releasing, since a release by
-        // outpoint here could free a newer build's reservation. The stale
-        // reservation is reclaimed by key-wallet's own TTL sweep.
+        // Refuse to SEND a token whose reservation could already have been
+        // swept and re-selected by an unrelated build — but reconcile its
+        // reservation first. With the build's owner token present the release
+        // is safe at ANY age: `release_reservation_if_owner` frees the inputs
+        // only while this build still owns them and no-ops after a TTL sweep
+        // or re-reservation transferred ownership. Between the guard bound
+        // (RESERVATION_MAX_AGE_BLOCKS) and key-wallet's TTL the reservation is
+        // typically STILL HELD, so dropping without releasing would strand the
+        // inputs for several more blocks while telling the caller to rebuild —
+        // and the rebuild would fail selection. Only a token-less entry falls
+        // back to the drop-without-release policy (an unguarded by-outpoint
+        // release could free a newer build's reservation).
         if reservation_expired(
             entry.registered_height,
             current.last_processed_height().await,
         ) {
+            Self::reconcile_removed_entry(entry).await;
             return Err(SignedPaymentError::StaleReservationToken(token));
         }
 
@@ -529,18 +539,28 @@ impl<B: TransactionBroadcaster + ?Sized> SignedPaymentRegistry<B> {
         Ok(txid)
     }
 
-    /// Reconcile one already-removed entry's reservation, honouring the age
-    /// guard: if the token has outlived its reservation lifetime the funding
-    /// outpoint may already have been swept and re-selected by an unrelated
-    /// build, so releasing it by outpoint could free that newer reservation —
-    /// drop it without touching the `ReservationSet` (key-wallet's TTL reclaims
-    /// the original). Otherwise release the funding-account reservation (any
-    /// variant, CoinJoin included), bound to the token's own wallet generation.
+    /// Reconcile one already-removed entry's reservation, bound to the token's
+    /// own wallet generation and — when the build stamped an owner token —
+    /// owner-guarded, which makes it safe at ANY age:
+    /// `release_reservation_if_owner` frees the inputs only while this build
+    /// still owns them, and no-ops once a TTL sweep or a re-reservation has
+    /// transferred ownership. Between [`RESERVATION_MAX_AGE_BLOCKS`] and
+    /// key-wallet's own TTL the reservation is typically still held, so
+    /// releasing here is what lets an immediate rebuild reselect the inputs
+    /// instead of stranding them until the TTL backstop.
+    ///
+    /// Only a token-less entry (`funding_reservation_token == None` — a build
+    /// that reserved nothing, unreachable on the funded finalize path) honours
+    /// the age guard and is dropped without touching the `ReservationSet`: its
+    /// only release primitive is the unguarded by-outpoint form, which after a
+    /// sweep could free a newer build's reservation.
     async fn reconcile_removed_entry(entry: RegisteredPayment<B>) {
-        if reservation_expired(
-            entry.registered_height,
-            entry.core.last_processed_height().await,
-        ) {
+        if entry.funding_reservation_token.is_none()
+            && reservation_expired(
+                entry.registered_height,
+                entry.core.last_processed_height().await,
+            )
+        {
             return;
         }
         entry
@@ -1347,12 +1367,15 @@ mod tests {
     }
 
     /// Once the wallet has synced past `RESERVATION_MAX_AGE_BLOCKS` beyond the
-    /// registration height, the reservation could have been swept and
-    /// re-selected — so a broadcast must be refused with `StaleReservationToken`
-    /// (never a send) and must NOT release the reservation by outpoint (which
-    /// could free a newer, unrelated build's reservation).
+    /// registration height, a broadcast must be refused with
+    /// `StaleReservationToken` (never a send) — but the entry's reservation is
+    /// reconciled OWNER-GUARDED on the way out: below key-wallet's TTL the
+    /// reservation is still this build's, `release_reservation_if_owner` frees
+    /// it, and the immediate rebuild the error demands can actually reselect
+    /// the inputs. (Had a sweep already transferred ownership, the same call
+    /// would no-op — safe either way.)
     #[tokio::test]
-    async fn expired_token_broadcast_is_stale_and_keeps_reservation() {
+    async fn expired_token_broadcast_is_stale_and_releases_owner_guarded() {
         let broadcaster = Arc::new(CountingBroadcaster::new());
         let (core, signer, outputs) =
             funded_core_wallet(StandardAccountType::BIP44Account, Arc::clone(&broadcaster)).await;
@@ -1391,8 +1414,8 @@ mod tests {
         );
         assert_eq!(registry.outstanding(), 0, "the expired token is dropped");
 
-        // The reservation was NOT released: an immediate rebuild still can't
-        // reselect the input (it is reclaimed only by key-wallet's own TTL).
+        // The reservation WAS released (owner-guarded — still ours below the
+        // TTL): the immediate rebuild the error demands reselects the inputs.
         let rebuilt = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
@@ -1402,16 +1425,17 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(rebuilt, Err(PlatformWalletError::TransactionBuild(_))),
-            "expired broadcast must not release the reservation, got {rebuilt:?}"
+            rebuilt.is_ok(),
+            "stale broadcast must release owner-guarded so a rebuild succeeds, got {rebuilt:?}"
         );
     }
 
-    /// Releasing an expired token must likewise NOT touch the `ReservationSet`:
-    /// its outpoint may already belong to a newer build. The token is dropped
-    /// and the original reservation is left to key-wallet's TTL sweep.
+    /// Releasing an expired token reconciles owner-guarded too: below the TTL
+    /// the reservation is still this build's, so `releaseReservation` reported
+    /// success must actually free the inputs for an immediate rebuild (the old
+    /// drop-without-release left them stranded until the TTL backstop).
     #[tokio::test]
-    async fn expired_token_release_keeps_reservation() {
+    async fn expired_token_release_frees_reservation_owner_guarded() {
         let broadcaster = Arc::new(RecordingBroadcaster::new());
         let (core, signer, outputs) =
             funded_core_wallet(StandardAccountType::BIP44Account, broadcaster).await;
@@ -1439,8 +1463,8 @@ mod tests {
         registry.release(token).await;
         assert_eq!(registry.outstanding(), 0, "the expired token is dropped");
 
-        // Reservation intentionally kept (not released by outpoint): rebuild
-        // still fails until the TTL backstop reclaims it.
+        // Owner-guarded release freed the inputs: an immediate rebuild
+        // reselects them.
         let rebuilt = build_signed_tx(
             &core,
             StandardAccountType::BIP44Account,
@@ -1450,8 +1474,8 @@ mod tests {
         )
         .await;
         assert!(
-            matches!(rebuilt, Err(PlatformWalletError::TransactionBuild(_))),
-            "expired release must not free the reservation by outpoint, got {rebuilt:?}"
+            rebuilt.is_ok(),
+            "stale release must free the still-owned reservation, got {rebuilt:?}"
         );
     }
 
