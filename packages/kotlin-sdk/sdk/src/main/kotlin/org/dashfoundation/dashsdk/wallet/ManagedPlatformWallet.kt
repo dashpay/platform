@@ -178,7 +178,11 @@ class ManagedPlatformWallet internal constructor(
      * signature as base64 — a **classic Dash signed message**, byte-for-byte
      * compatible with dashj's `ECKey.signMessage` and Dash Core's `signmessage`
      * RPC, and verifiable by `verifymessage`, `ECKey.verifyMessage`, and
-     * CrowdNode's server-side check.
+     * CrowdNode's server-side check. Android port of Swift's
+     * `ManagedCoreWallet.signMessage(address:message:)`
+     * (`ManagedCoreWallet.swift`), which takes no signer parameter because it
+     * builds a per-call `MnemonicResolver` internally; here the manager's
+     * resolver handle is passed explicitly, as on the send paths.
      *
      * **The format.** The signed digest is
      * `SHA256d(prefix ‖ varint(bytes.size) ‖ bytes)` over
