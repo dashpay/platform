@@ -233,6 +233,25 @@ class ManagedPlatformWallet internal constructor(
          */
         override fun close() = cleanable.clean()
 
+        /**
+         * Value in duffs of the single non-OP_RETURN output — what the
+         * recipient actually receives.
+         *
+         * Needed for a DRAIN
+         * ([CoreTransactionBuilder.SelectionStrategy.ALL]): there the ENGINE
+         * computes the deliverable amount (`total inputs − fee`, no change),
+         * so the caller never supplied it and has no other way to learn it.
+         * A swap deposit must quote from this exact figure and then broadcast
+         * THIS transaction, so the quote and the payment cannot disagree.
+         *
+         * Derived from [rawTxBytes] (already present — no extra native call).
+         * Throws [IllegalStateException] if the bytes are malformed or hold
+         * anything other than exactly one non-OP_RETURN output; under a drain
+         * the engine guarantees exactly one, and a plain multi-recipient
+         * payment has no single "deliverable" amount to report.
+         */
+        val deliverableAmountDuffs: Long by lazy { parseSoleDeliverableValue(rawTxBytes) }
+
         override fun equals(other: Any?): Boolean =
             other is SignedCoreTransaction &&
                 txidHex == other.txidHex &&
@@ -260,6 +279,76 @@ class ManagedPlatformWallet internal constructor(
         }
 
         internal companion object {
+            private const val OP_RETURN: Byte = 0x6a
+
+            /**
+             * Value of the sole non-OP_RETURN output in a consensus-serialized
+             * Dash transaction. Walks the outputs rather than trusting an
+             * index: [buildSignedPayment]'s `preserveOutputOrder` is optional,
+             * so the value carrier is not always VOUT0.
+             *
+             * Layout: `i32 version | varint vinCount | vin* | varint voutCount
+             * | vout* | u32 locktime [| special payload]`, all little-endian.
+             * A `vin` is `32B txid | u32 vout | varint scriptLen | script |
+             * u32 sequence`; a `vout` is `i64 value | varint scriptLen |
+             * script`. Special-transaction payloads follow the locktime and are
+             * never read here. Dash has no segwit marker/flag.
+             */
+            private fun parseSoleDeliverableValue(txBytes: ByteArray): Long {
+                val buf = java.nio.ByteBuffer.wrap(txBytes)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                try {
+                    buf.int // version (+ 16-bit type for special transactions)
+                    repeat(readVarInt(buf).toIntExact("input count")) {
+                        buf.position(buf.position() + 36) // txid + prev vout
+                        // Read the length prefix BEFORE computing the new
+                        // position: readVarInt advances the buffer, and an
+                        // inline call would be evaluated after position() is
+                        // sampled, losing the prefix's own bytes.
+                        val scriptSigLen = readVarInt(buf).toIntExact("scriptSig length")
+                        buf.position(buf.position() + scriptSigLen)
+                        buf.position(buf.position() + 4) // sequence
+                    }
+                    var value: Long? = null
+                    repeat(readVarInt(buf).toIntExact("output count")) {
+                        val outValue = buf.long
+                        val script = ByteArray(readVarInt(buf).toIntExact("scriptPubKey length"))
+                        buf.get(script)
+                        if (script.isEmpty() || script[0] != OP_RETURN) {
+                            check(value == null) {
+                                "transaction has more than one non-OP_RETURN output; " +
+                                    "deliverableAmountDuffs is defined only for a single-" +
+                                    "destination payment (a drain always builds one)"
+                            }
+                            value = outValue
+                        }
+                    }
+                    return checkNotNull(value) {
+                        "transaction has no non-OP_RETURN output to deliver to"
+                    }
+                } catch (e: java.nio.BufferUnderflowException) {
+                    throw IllegalStateException("malformed signed transaction bytes", e)
+                } catch (e: IllegalArgumentException) {
+                    // ByteBuffer.position rejects an out-of-range index — a
+                    // length prefix pointing past the end of the buffer.
+                    throw IllegalStateException("malformed signed transaction bytes", e)
+                }
+            }
+
+            /** Bitcoin-style compact size: `<0xfd` inline, else 2/4/8 LE bytes. */
+            private fun readVarInt(buf: java.nio.ByteBuffer): Long =
+                when (val first = buf.get().toInt() and 0xff) {
+                    0xfd -> (buf.short.toInt() and 0xffff).toLong()
+                    0xfe -> buf.int.toLong() and 0xffffffffL
+                    0xff -> buf.long
+                    else -> first.toLong()
+                }
+
+            private fun Long.toIntExact(what: String): Int {
+                check(this in 0..Int.MAX_VALUE.toLong()) { "implausible $what: $this" }
+                return toInt()
+            }
+
             /**
              * Decode the big-endian native BLOB the atomic
              * finalize-and-register FFI returns: `u64 token, u64 feeDuffs,
@@ -346,6 +435,18 @@ class ManagedPlatformWallet internal constructor(
      *   output indices, as MAYAChain does.
      * @param changeToFirstInput route change back to the first selected
      *   input's address (VIN0) instead of a fresh change address.
+     * @param selectionStrategy coin-selection strategy, or null to leave the
+     *   builder's default. Pass
+     *   [CoreTransactionBuilder.SelectionStrategy.ALL] to DRAIN the funding
+     *   account: every spendable UTXO is selected, there is no change, and the
+     *   engine sets the single value-carrying output to `total inputs − fee`
+     *   — so the `amount` given in [recipients] is IGNORED (pass 0). A
+     *   zero-value [opReturnData] carrier may accompany the destination (the
+     *   MAYACHAIN "swap my whole balance" case); its bytes are priced into
+     *   the fee. Read what the drain will actually pay from
+     *   [SignedCoreTransaction.deliverableAmountDuffs] BEFORE broadcasting —
+     *   that is the only way to learn the engine-computed amount, and it is
+     *   what a swap quote must be taken from.
      */
     suspend fun buildSignedPayment(
         recipients: List<Pair<String, Long>>,
@@ -356,6 +457,7 @@ class ManagedPlatformWallet internal constructor(
         opReturnData: ByteArray? = null,
         preserveOutputOrder: Boolean = false,
         changeToFirstInput: Boolean = false,
+        selectionStrategy: CoreTransactionBuilder.SelectionStrategy? = null,
     ): SignedCoreTransaction = gate.opWithCleanupOnCancellation(
         // Native finalization mints the token and transfers reservation ownership
         // to it before the blocking JNI call returns, so the token already exists
@@ -369,8 +471,15 @@ class ManagedPlatformWallet internal constructor(
     ) {
         require(accountIndex >= 0) { "accountIndex must be non-negative, got $accountIndex" }
         require(recipients.isNotEmpty()) { "recipients must not be empty" }
-        require(recipients.all { it.second > 0 }) {
-            "every recipient amount must be positive"
+        // A DRAIN has the engine set the destination output to
+        // (total inputs − fee), so the caller's amount is ignored and 0 is the
+        // honest value to pass. Requiring a positive one here would make
+        // "send my whole balance" inexpressible through this API — the caller
+        // would have to invent a placeholder the engine then discards.
+        val draining = selectionStrategy == CoreTransactionBuilder.SelectionStrategy.ALL
+        require(draining || recipients.all { it.second > 0 }) {
+            "every recipient amount must be positive (except under " +
+                "SelectionStrategy.ALL, where the engine computes it)"
         }
         val builderAccountType = when (accountType) {
             AccountType.BIP44 -> CoreTransactionBuilder.AccountType.BIP44
@@ -400,6 +509,12 @@ class ManagedPlatformWallet internal constructor(
                 if (changeToFirstInput) {
                     builder.changeToFirstInput()
                 }
+                // Set LAST so it applies to the fully-composed output set: a
+                // drain (SelectionStrategy.ALL) requires exactly one
+                // value-carrying output, and the engine rejects the build here
+                // — before anything is reserved — if the OP_RETURN above
+                // carries a value or a second spendable output was added.
+                selectionStrategy?.let { builder.setSelectionStrategy(it) }
                 builder.finalizeSignedPayment(
                     this@ManagedPlatformWallet,
                     builderAccountType,

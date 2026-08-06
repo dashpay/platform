@@ -680,8 +680,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             throw_sdk_exception(env, 1, "builder handle is 0");
             return;
         }
-        if amount <= 0 {
-            throw_sdk_exception(env, 1, "amount must be positive");
+        // Negative only. A ZERO output is legitimate for a drain
+        // (SelectionStrategy::All): the engine overwrites the destination
+        // output with (total inputs - fee), so the caller supplies no amount.
+        // Rejecting it here made "send my whole balance" inexpressible and
+        // forced callers to invent a placeholder the engine then discarded.
+        // The positive-amount rule still holds for every other build — it is
+        // enforced one layer up in `ManagedPlatformWallet.buildSignedPayment`,
+        // which knows whether the caller is draining; this boundary does not,
+        // so it must not duplicate a check it cannot qualify. A negative
+        // jlong would bit-cast to a huge u64, so that stays refused here.
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must not be negative");
             return;
         }
         let Some(address_c) = read_cstring_required(env, &address, "address") else {
