@@ -343,11 +343,23 @@ jobs:
           SDK_VERSION: ${{ needs.build-and-release.outputs.version }}
         run: |
           URL="https://repo1.maven.org/maven2/org/dashj/dash-sdk-android/${SDK_VERSION}/dash-sdk-android-${SDK_VERSION}.pom"
-          if curl -sfIo /dev/null "$URL"; then
+          # Only an authoritative 404 may proceed to the deploy: treating an
+          # inconclusive lookup (DNS/TLS failure, timeout, rate limit, 5xx) as
+          # "not published" would let the run attempt an immutable version
+          # that may already exist.
+          STATUS=$(curl --silent --head --location --output /dev/null \
+            --write-out '%{http_code}' --connect-timeout 10 --max-time 30 "$URL") || {
+            echo "::error::Could not determine whether org.dashj:dash-sdk-android:${SDK_VERSION} exists on Maven Central (curl failed). Refusing to deploy blindly — re-run when repo1.maven.org is reachable."
+            exit 1
+          }
+          if [ "$STATUS" = "200" ]; then
             echo "::notice::org.dashj:dash-sdk-android:${SDK_VERSION} is already on Maven Central — deploy skipped (Central versions are immutable)."
             echo "already_published=true" >> "$GITHUB_OUTPUT"
-          else
+          elif [ "$STATUS" = "404" ]; then
             echo "already_published=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Maven Central lookup for ${SDK_VERSION} returned HTTP ${STATUS} — inconclusive. Refusing to deploy blindly; re-run once the lookup answers 200 or 404."
+            exit 1
           fi
 
       - name: Checkout repository
