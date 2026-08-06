@@ -198,6 +198,22 @@
           "covers_restart": false
         },
         {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/DeferredSignedPaymentIntegrationTests.swift",
+          "id": "testBuildBroadcastConsumesTokenExactlyOnce",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter DeferredSignedPaymentIntegrationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "integration",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKIntegrationTests/Core/DeferredSignedPaymentIntegrationTests.swift",
+          "id": "testReleaseFreesTheReservedInputs",
+          "command": "RUN_INTEGRATION_TESTS=1 swift test --package-path packages/swift-sdk --filter DeferredSignedPaymentIntegrationTests",
+          "covers_restart": false
+        },
+        {
           "host": "kotlin",
           "kind": "unit",
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/SignedCoreTransactionTest.kt",
