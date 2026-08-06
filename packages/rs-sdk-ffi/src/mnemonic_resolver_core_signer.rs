@@ -109,7 +109,21 @@ pub enum MnemonicResolverSignerError {
     /// The Swift-side resolver reported that no mnemonic is stored for
     /// the wallet_id this signer was constructed with. Translates the
     /// FFI `NOT_FOUND` return code.
-    #[error("mnemonic not found in keychain for the given wallet_id")]
+    ///
+    /// Renders with
+    /// [`DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`](crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX)
+    /// at position 0: this is the missing-key completion of the
+    /// `Signer` surface, whose error is only `Display`, so the reserved
+    /// machine marker at the START of the rendering is the one typed
+    /// signal a caller may recognize (position-0 check, never a
+    /// substring sniff — dashpay/platform#4183 review).
+    /// `platform-wallet`'s message signing promotes it to its typed
+    /// key-unavailable error, which the FFI maps to code 31
+    /// (`ErrorSigningKeyUnavailable`).
+    #[error(
+        "{}mnemonic not found in keychain for the given wallet_id",
+        crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX
+    )]
     NotFound,
 
     /// The resolver requested a longer output buffer than this signer
@@ -1184,6 +1198,21 @@ mod tests {
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The producer half of the key-unavailable contract: `NotFound` renders
+    /// with the reserved machine marker at position 0. Consumers of the
+    /// `Signer` surface (whose error is only `Display`) recognize the missing
+    /// key by exactly this start-of-rendering marker — a mid-string move
+    /// would silently break the promotion to FFI code 31 without failing any
+    /// structural match.
+    #[test]
+    fn not_found_renders_the_key_unavailable_marker_at_position_zero() {
+        let rendered = MnemonicResolverSignerError::NotFound.to_string();
+        assert!(
+            rendered.starts_with(crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX),
+            "NotFound must stamp the reserved marker at position 0, got: {rendered:?}"
+        );
     }
 
     #[tokio::test]

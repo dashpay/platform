@@ -79,7 +79,27 @@ public struct AddressInfo {
     public let publicKey: Data?
     public let index: UInt32
     public let path: String
+
+    /// Whether funds have been seen at this address.
+    ///
+    /// Upstream, addresses have a three-state
+    /// `AddressState { Available | Reserved | Used }` lifecycle, and
+    /// `FFIAddressInfo.used` is derived as `state == .used` — so an
+    /// address that has been *reserved* (handed out but not yet funded)
+    /// still reports `used == false`. The C surface carries no
+    /// reservation flag, so reservation state is not observable from
+    /// Swift; if that is ever needed, `FFIAddressInfo` has to gain a
+    /// field upstream in key-wallet-ffi first.
     public let used: Bool
+
+    /// Always the Unix epoch (1970-01-01) — do not read this as a real
+    /// generation time.
+    ///
+    /// key-wallet no longer exposes a generation timestamp, and the value
+    /// it used to expose was always the literal placeholder `0`, so this
+    /// property has always evaluated to the epoch. It is retained only so
+    /// existing call sites keep compiling and observe the same value as
+    /// before.
     public let generatedAt: Date
 
     init(ffiInfo: FFIAddressInfo) {
@@ -114,6 +134,8 @@ public struct AddressInfo {
         }
 
         self.used = ffiInfo.used
-        self.generatedAt = Date(timeIntervalSince1970: TimeInterval(ffiInfo.generated_at))
+        // The C struct no longer carries `generated_at`; see the property
+        // doc for why the epoch reproduces the previous value exactly.
+        self.generatedAt = Date(timeIntervalSince1970: 0)
     }
 }

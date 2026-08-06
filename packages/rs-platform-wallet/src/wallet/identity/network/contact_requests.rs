@@ -3338,7 +3338,7 @@ mod sweep_tests {
     use super::*;
     use crate::broadcaster::SpvBroadcaster;
     use crate::changeset::{ContactChangeSet, PlatformWalletChangeSet, SentContactRequestKey};
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
@@ -3362,7 +3362,7 @@ mod sweep_tests {
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
-            balance: Arc::new(WalletBalance::new()),
+            generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
         }

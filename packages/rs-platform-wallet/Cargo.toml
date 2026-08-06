@@ -17,8 +17,15 @@ key-wallet = { workspace = true }
 key-wallet-manager = { workspace = true, features = [] }
 dash-spv = { workspace = true }
 
-# Core dependencies
-dashcore = { workspace = true }
+# Core dependencies.
+#
+# `base64` is NOT among dashcore's default features (those are `secp-recovery`
+# and `bincode`), but `MessageSignature::to_base64` / `from_base64` are gated on
+# it — and base64 is the only wire form a classic Dash signed message has, the
+# one CrowdNode and Dash Core's `verifymessage` RPC accept. `secp-recovery`
+# arrives by default and carries `secp256k1/recovery`, which
+# `RecoverableSignature` / `recover_ecdsa` need. See `wallet::core::sign_message`.
+dashcore = { workspace = true, features = ["base64"] }
 
 # Standard dependencies
 thiserror = "1.0"
@@ -48,6 +55,18 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 
 # Security
 zeroize = "1"
+
+# `log` facade. `changeset/core_bridge.rs` emits watermark-freeze breadcrumbs
+# through `log` so they reach Android logcat (the JNI layer installs
+# `android_logger` as the global `log` logger, tag `DashSDK`; the Kotlin SDK's
+# only `tracing` subscriber writes to stdout, which Android discards).
+# Declared here — deliberately NOT inside the `tracing` block above — so this
+# crate owns the dependency independently of the encrypted-txMetadata change
+# (#4277) that first introduced a `log` line: that change was reverted on
+# v4.2-dev (#4279), and a `log` line living in that reverted region gets
+# dropped by the 3-way merge, leaving the `log::` calls in core_bridge.rs
+# undeclared (E0433). Keeping it in this untouched region makes it survive.
+log = "0.4"
 
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a2791bbdca756d6a6113024aec48f09f7a33faa9", optional = true }
