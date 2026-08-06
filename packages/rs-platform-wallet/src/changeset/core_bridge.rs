@@ -151,7 +151,8 @@ struct BatchDiagnostics {
     frozen: Option<u32>,
     /// Highest watermark the store rejected.
     rejected: Option<u32>,
-    /// Wallets in this drain that are faulted, plus wallets faulted *by* it.
+    /// Wallets in this drain that are faulted — whether they entered faulted
+    /// or were faulted by it. Each wallet counts at most once per drain.
     faulted: usize,
 }
 
@@ -450,7 +451,12 @@ where
                     diag.record_rejected(h);
                 }
                 fault.fault_wallet(wallet_id, sync_fault);
-                diag.faulted += 1;
+                // Count each faulted wallet once per drain: a wallet that
+                // entered already faulted was counted at the top of the loop,
+                // and a repeat rejection must not count it again.
+                if !is_faulted {
+                    diag.faulted += 1;
+                }
                 // One-shot, unambiguous logcat marker via the `log` facade
                 // (android_logger forwards `log` to logcat; `tracing` may not).
                 if !*freeze_logged {
@@ -1923,6 +1929,42 @@ mod tests {
             "a sibling wallet must not be faulted by another's rejection"
         );
         assert!(fault.is_faulted(&rejecting));
+    }
+
+    /// A wallet that entered the drain already faulted and whose store is
+    /// rejected AGAIN counts once, not twice: `faulted` is a wallet count and
+    /// must never exceed `wallets` (#4315 review finding 30c2e8e95003).
+    #[test]
+    fn repeat_rejection_of_a_faulted_wallet_counts_once() {
+        let wallet_id = [9u8; 32];
+        let (obs_tx, _obs_rx) = unbounded_channel();
+        let persister = ProbePersister::new(obs_tx);
+        persister.fail_next(wallet_id);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        // Pre-fault the wallet, as an earlier drain's rejection would have.
+        fault.fault_wallet(wallet_id, &sync_fault);
+        let mut freeze_logged = true;
+
+        let diag = commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(700, 700)),
+            1,
+            &mut fault,
+            &sync_fault,
+            &mut freeze_logged,
+        );
+
+        assert_eq!(diag.wallets, 1);
+        assert_eq!(
+            diag.faulted, 1,
+            "an already-faulted wallet rejected again must count once"
+        );
+        assert_eq!(diag.frozen, Some(700), "the guard stripped the watermark");
+        assert_eq!(
+            diag.rejected, None,
+            "the stripped changeset offered no watermark to reject"
+        );
     }
 
     /// Each field takes its monotonic max independently, so a lower height

@@ -526,13 +526,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
-    /// watermark this session (dashpay/platform#4069).
+    /// watermark this manager's lifetime (dashpay/platform#4069).
     ///
-    /// Returns `true` once — and stays `true` for the manager's lifetime
-    /// — after the adapter drops record-bearing events (a broadcast lag)
-    /// or a persistence `store()` is rejected, meaning the persisted
-    /// `syncedHeight` is deliberately held behind the chain tip and a
-    /// rescan is pending on the next launch. Integrators poll this to
+    /// Returns `true` once — and stays `true` for THIS manager instance's
+    /// lifetime (a destroyed-and-recreated manager starts unlatched) —
+    /// after a persistence `store()` was rejected, the one remaining fault
+    /// trigger: the lossless persistence channel cannot drop or lag events,
+    /// so the old broadcast-lag trigger no longer exists. A latch means the
+    /// persisted `syncedHeight` is deliberately held behind the chain tip
+    /// for the affected wallet and a rescan is pending on the next launch.
+    /// Integrators poll this to
     /// surface a hard "verification failed / rescan pending" state instead
     /// of the fault being visible only in error logs. It is intentionally
     /// a coarse, latch-once, all-or-nothing signal (the per-wallet vs.
