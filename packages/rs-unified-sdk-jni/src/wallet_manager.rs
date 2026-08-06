@@ -892,7 +892,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// Atomic V2 finalizer: consumes a configured builder, performs funding and
+/// Atomic finalizer: consumes a configured builder, performs funding and
 /// ReservationSet insertion indivisibly in platform-wallet, drops the manager
 /// lock, then invokes the mnemonic resolver to sign.
 #[no_mangle]
@@ -1074,7 +1074,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 /// `platform_wallet_get_core` — resolve the transient core-wallet `Handle`
-/// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastSignedTransactionV2].
+/// (as `jlong`) from a `PlatformWallet` handle, for [coreWalletBroadcastSignedTransaction].
 /// Free with [coreWalletDestroy]. Returns 0 after throwing.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_platformWalletGetCore(
@@ -1197,9 +1197,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// Consume and broadcast an atomically finalized V2 transaction handle.
+/// Consume and broadcast an atomically finalized transaction handle.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedTransactionV2(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletBroadcastSignedTransaction(
     mut env: JNIEnv,
     _class: JClass,
     core_handle: jlong,
@@ -1212,7 +1212,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         }
         let mut out_txid: *mut c_char = ptr::null_mut();
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_broadcast_signed_transaction_v2(
+            platform_wallet_ffi::core_wallet_broadcast_signed_transaction(
                 core_handle as Handle,
                 transaction_handle as Handle,
                 &mut out_txid,
@@ -1236,7 +1236,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletAbandonSignedTransactionV2(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreWalletAbandonSignedTransaction(
     mut env: JNIEnv,
     _class: JClass,
     core_handle: jlong,
@@ -1247,7 +1247,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
             return;
         }
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_abandon_signed_transaction_v2(
+            platform_wallet_ffi::core_wallet_abandon_signed_transaction(
                 core_handle as Handle,
                 transaction_handle as Handle,
             )
@@ -1257,22 +1257,20 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Free(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionFree(
     mut env: JNIEnv,
     _class: JClass,
     transaction_handle: jlong,
 ) {
     guard(&mut env, (), |_| {
         if transaction_handle != 0 {
-            platform_wallet_ffi::core_wallet_signed_transaction_v2_free(
-                transaction_handle as Handle,
-            );
+            platform_wallet_ffi::core_wallet_signed_transaction_free(transaction_handle as Handle);
         }
     })
 }
 
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Fee(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionFee(
     mut env: JNIEnv,
     _class: JClass,
     transaction_handle: jlong,
@@ -1280,7 +1278,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     guard(&mut env, 0, |env| {
         let mut fee = 0u64;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_transaction_v2_fee(
+            platform_wallet_ffi::core_wallet_signed_transaction_fee(
                 transaction_handle as Handle,
                 &mut fee,
             )
@@ -1292,7 +1290,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// `core_wallet_signed_transaction_v2_bytes` — the consensus-serialized
+/// `core_wallet_signed_transaction_bytes` — the consensus-serialized
 /// signed transaction bytes of a finalized-transaction handle from
 /// [coreTxBuilderFinalize], WITHOUT consuming the ownership token (mirror of
 /// Swift's `FinalizedCoreTransaction.serializedData()`). Lets the caller
@@ -1300,7 +1298,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 /// order) before deciding to broadcast. The FFI-owned buffer is copied into
 /// the returned `byte[]` and freed here.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionV2Bytes(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreSignedTransactionBytes(
     mut env: JNIEnv,
     _class: JClass,
     transaction_handle: jlong,
@@ -1313,7 +1311,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
         let mut bytes_ptr: *mut u8 = ptr::null_mut();
         let mut bytes_len: usize = 0;
         let result = unsafe {
-            platform_wallet_ffi::core_wallet_signed_transaction_v2_bytes(
+            platform_wallet_ffi::core_wallet_signed_transaction_bytes(
                 transaction_handle as Handle,
                 &mut bytes_ptr,
                 &mut bytes_len,
@@ -1361,7 +1359,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
 // ── Deferred build → broadcast/release core-send (BIP70/BIP270) ───────
 //
 // ADDITIVE surface over the immediate [coreTxBuilderFinalize] +
-// [coreWalletBroadcastSignedTransactionV2] send path:
+// [coreWalletBroadcastSignedTransaction] send path:
 // [coreWalletFinalizeSignedPayment] atomically funds, reserves, signs, and
 // registers a builder in one native call, returning the raw bytes to hand to a
 // merchant server; the reservation is then broadcast on ack — or released on

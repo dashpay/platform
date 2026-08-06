@@ -1,6 +1,6 @@
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
-use crate::handle::{Handle, CORE_SIGNED_TRANSACTION_V2_STORAGE, PLATFORM_WALLET_STORAGE};
+use crate::handle::{Handle, CORE_SIGNED_TRANSACTION_STORAGE, PLATFORM_WALLET_STORAGE};
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
@@ -46,11 +46,11 @@ pub struct FFICoreTransaction {
     fee: u64,
 }
 
-/// Internal value behind the opaque V2 numeric handle. Keeping the originating
+/// Internal value behind the opaque numeric handle. Keeping the originating
 /// CoreWallet with the signed transaction lets `free` perform the same safe
 /// reservation release as explicit abandon, even after the host discarded its
 /// transient CoreWallet handle.
-pub struct FFICoreSignedTransactionV2 {
+pub struct FFICoreSignedTransaction {
     pub(crate) wallet: platform_wallet::CoreWallet<platform_wallet::broadcaster::SpvBroadcaster>,
     pub(crate) transaction: platform_wallet::SignedCoreTransaction,
 }
@@ -81,9 +81,9 @@ impl From<CoreAccountTypeFFI> for AccountTypePreference {
 /// invoked. This function consumes `builder` on every path after its pointer
 /// is accepted.
 ///
-/// On success `out_transaction_handle` receives an opaque V2 handle. Consume
-/// it with `core_wallet_broadcast_signed_transaction_v2` or
-/// `core_wallet_abandon_signed_transaction_v2`.
+/// On success `out_transaction_handle` receives an opaque finalized-transaction handle. Consume
+/// it with `core_wallet_broadcast_signed_transaction` or
+/// `core_wallet_abandon_signed_transaction`.
 ///
 /// If the host removes (or re-creates) this wallet while the external signer is
 /// running, no handle is published: the build's reservation is reconciled and
@@ -126,13 +126,13 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
     ));
     let finalized = unwrap_result_or_return!(finalized);
 
-    // Publishing the V2 handle is gated exactly like the deferred-token sibling
+    // Publishing the finalized handle is gated exactly like the deferred-token sibling
     // below (`core_wallet_signed_payment_finalize`). `finalize_transaction` drops
     // the wallet-manager write lock before awaiting the (external, possibly slow)
     // signer, so the host can have removed this wallet while we were signing —
-    // and that removal's V2-handle sweep has then ALREADY run. Inserting now
+    // and that removal's finalized-handle sweep has then ALREADY run. Inserting now
     // would publish a live handle for a removed generation that no later sweep
-    // catches, and `core_wallet_broadcast_signed_transaction_v2` would happily
+    // catches, and `core_wallet_broadcast_signed_transaction` would happily
     // push it to the network: its `is_same_generation` check compares two
     // handles, and a removed generation matches itself (`dashpay/platform#4185`).
     //
@@ -162,11 +162,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_finalize(
         );
     }
 
-    *out_transaction_handle =
-        CORE_SIGNED_TRANSACTION_V2_STORAGE.insert(FFICoreSignedTransactionV2 {
-            wallet: wallet.core().clone(),
-            transaction: finalized,
-        });
+    *out_transaction_handle = CORE_SIGNED_TRANSACTION_STORAGE.insert(FFICoreSignedTransaction {
+        wallet: wallet.core().clone(),
+        transaction: finalized,
+    });
     PlatformWalletFFIResult::ok()
 }
 

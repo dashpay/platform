@@ -199,7 +199,7 @@ internal object WalletManagerNative {
      */
     external fun coreTxBuilderSetCurrentHeight(builder: Long, height: Int)
 
-    /** Atomic V2 finalizer; consumes [builder] and returns an opaque signed-transaction V2 handle. */
+    /** Atomic finalizer; consumes [builder] and returns an opaque signed-transaction handle. */
     external fun coreTxBuilderFinalize(
         builder: Long,
         walletHandle: Long,
@@ -218,7 +218,7 @@ internal object WalletManagerNative {
     /**
      * `platform_wallet_get_core` — resolve the transient core-wallet handle
      * from a `PlatformWallet` handle, for
-     * [coreWalletBroadcastSignedTransactionV2]. Free with [coreWalletDestroy].
+     * [coreWalletBroadcastSignedTransaction]. Free with [coreWalletDestroy].
      * Returns 0 after throwing.
      */
     external fun platformWalletGetCore(walletHandle: Long): Long
@@ -261,25 +261,25 @@ internal object WalletManagerNative {
      */
     external fun coreWalletNextChangeAddress(coreHandle: Long, accountIndex: Int): String
 
-    /** Consume and broadcast an atomically finalized V2 transaction. */
-    external fun coreWalletBroadcastSignedTransactionV2(coreHandle: Long, transaction: Long): String
+    /** Consume and broadcast an atomically finalized transaction. */
+    external fun coreWalletBroadcastSignedTransaction(coreHandle: Long, transaction: Long): String
 
     /** Consume without sending and immediately release the reservation. */
-    external fun coreWalletAbandonSignedTransactionV2(coreHandle: Long, transaction: Long)
+    external fun coreWalletAbandonSignedTransaction(coreHandle: Long, transaction: Long)
 
     /** Idempotent cleaner fallback; abandons and releases the reservation. */
-    external fun coreSignedTransactionV2Free(transaction: Long)
+    external fun coreSignedTransactionFree(transaction: Long)
 
     /** Read the finalized transaction's fee before consumption. */
-    external fun coreSignedTransactionV2Fee(transaction: Long): Long
+    external fun coreSignedTransactionFee(transaction: Long): Long
 
     /**
-     * `core_wallet_signed_transaction_v2_bytes` — the consensus-serialized
+     * `core_wallet_signed_transaction_bytes` — the consensus-serialized
      * signed transaction bytes, read WITHOUT consuming the ownership token.
      * Lets the caller assert the deposit shape (e.g. MAYACHAIN's
      * vault/OP_RETURN/change ordering) before deciding to broadcast.
      */
-    external fun coreSignedTransactionV2Bytes(transaction: Long): ByteArray
+    external fun coreSignedTransactionBytes(transaction: Long): ByteArray
 
     /** `core_wallet_destroy` — release a core handle from [platformWalletGetCore]. Safe on 0. */
     external fun coreWalletDestroy(coreHandle: Long)

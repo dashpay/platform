@@ -13,13 +13,13 @@
     "wallet_restore"
   ],
   "shared_symbols": {
-    "core_wallet_abandon_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
-    "core_wallet_broadcast_signed_transaction_v2": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_abandon_signed_transaction": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_broadcast_signed_transaction": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
     "core_wallet_get_balance": "packages/rs-platform-wallet-ffi/src/core_wallet/wallet.rs",
     "core_wallet_signed_payment_broadcast": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
     "core_wallet_signed_payment_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_signed_payment_release": "packages/rs-platform-wallet-ffi/src/core_wallet/signed_payment.rs",
-    "core_wallet_signed_transaction_v2_bytes": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
+    "core_wallet_signed_transaction_bytes": "packages/rs-platform-wallet-ffi/src/core_wallet/broadcast.rs",
     "core_wallet_tx_builder_add_op_return": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
@@ -101,8 +101,8 @@
       "area": "correctness",
       "shared_apis": [
         "core_wallet_tx_builder_finalize",
-        "core_wallet_broadcast_signed_transaction_v2",
-        "core_wallet_abandon_signed_transaction_v2"
+        "core_wallet_broadcast_signed_transaction",
+        "core_wallet_abandon_signed_transaction"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -267,7 +267,7 @@
         "core_wallet_tx_builder_add_op_return",
         "core_wallet_tx_builder_preserve_output_order",
         "core_wallet_tx_builder_change_to_first_input",
-        "core_wallet_signed_transaction_v2_bytes"
+        "core_wallet_signed_transaction_bytes"
       ],
       "required_persistence_capabilities": [],
       "hosts": {

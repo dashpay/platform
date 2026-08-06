@@ -9,9 +9,9 @@ public final class FinalizedCoreTransaction {
     init(handle: Handle) throws {
         var value: UInt64 = 0
         do {
-            try core_wallet_signed_transaction_v2_fee(handle, &value).check()
+            try core_wallet_signed_transaction_fee(handle, &value).check()
         } catch {
-            core_wallet_signed_transaction_v2_free(handle)
+            core_wallet_signed_transaction_free(handle)
             throw error
         }
         nativeHandle = handle
@@ -20,7 +20,7 @@ public final class FinalizedCoreTransaction {
 
     deinit {
         if nativeHandle != 0 {
-            core_wallet_signed_transaction_v2_free(nativeHandle)
+            core_wallet_signed_transaction_free(nativeHandle)
         }
     }
 
@@ -44,7 +44,7 @@ public final class FinalizedCoreTransaction {
 
         var bytesPtr: UnsafeMutablePointer<UInt8>? = nil
         var bytesLen: UInt = 0
-        try core_wallet_signed_transaction_v2_bytes(nativeHandle, &bytesPtr, &bytesLen).check()
+        try core_wallet_signed_transaction_bytes(nativeHandle, &bytesPtr, &bytesLen).check()
 
         guard let bytesPtr, bytesLen > 0 else {
             throw PlatformWalletError.unknown(

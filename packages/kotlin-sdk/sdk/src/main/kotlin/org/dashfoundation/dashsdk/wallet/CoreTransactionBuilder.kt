@@ -141,9 +141,9 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
             coreSignerHandle,
         )
         val fee = try {
-            WalletManagerNative.coreSignedTransactionV2Fee(transaction)
+            WalletManagerNative.coreSignedTransactionFee(transaction)
         } catch (error: Throwable) {
-            WalletManagerNative.coreSignedTransactionV2Free(transaction)
+            WalletManagerNative.coreSignedTransactionFree(transaction)
             throw error
         }
         return FinalizedCoreTransaction(transaction, fee)
@@ -235,7 +235,7 @@ class FinalizedCoreTransaction internal constructor(handle: Long, val fee: Long)
     fun serializedData(): ByteArray {
         val handle = handleRef.get()
         check(handle != 0L) { "FinalizedCoreTransaction has already been consumed" }
-        return WalletManagerNative.coreSignedTransactionV2Bytes(handle)
+        return WalletManagerNative.coreSignedTransactionBytes(handle)
     }
 
     override fun close() = cleanable.clean()
@@ -243,7 +243,7 @@ class FinalizedCoreTransaction internal constructor(handle: Long, val fee: Long)
     private class Cleanup(private val handleRef: AtomicLong) : Runnable {
         override fun run() {
             val handle = handleRef.getAndSet(0)
-            if (handle != 0L) WalletManagerNative.coreSignedTransactionV2Free(handle)
+            if (handle != 0L) WalletManagerNative.coreSignedTransactionFree(handle)
         }
     }
 }

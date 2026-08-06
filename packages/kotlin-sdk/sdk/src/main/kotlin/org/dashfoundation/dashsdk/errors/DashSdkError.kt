@@ -410,9 +410,9 @@ sealed class DashSdkError(
             //    whose wallet is no longer registered in the manager, or a
             //    signed-payment finalize whose wallet was removed while it was
             //    being signed;
-            //  * finalized-transaction HANDLE (V2) path — a tx-builder finalize
+            //  * finalized-transaction HANDLE path — a tx-builder finalize
             //    whose wallet was removed or re-created during signing (no handle
-            //    is published), or a V2 broadcast whose generation is gone.
+            //    is published), or a finalized-handle broadcast whose generation is gone.
             // Every one reconciles the build's UTXO reservation before returning.
             // Nothing was broadcast, and unlike ReservationWalletMismatch (36)
             // no other live generation holds the payment either — so it is not
