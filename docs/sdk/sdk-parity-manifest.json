@@ -855,7 +855,7 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/changeset/core_bridge.rs",
-          "id": "lagged_broadcast_freezes_and_strips_subsequent_watermark",
+          "id": "watermark_is_still_stripped_after_a_fault",
           "command": "cargo test -p platform-wallet lagged_broadcast_freezes_and_strips_subsequent_watermark",
           "covers_restart": false
         },
