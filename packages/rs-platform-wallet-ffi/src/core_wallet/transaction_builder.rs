@@ -76,9 +76,10 @@ impl From<CoreAccountTypeFFI> for AccountTypePreference {
 /// Atomically fund, reserve and sign a configured builder.
 ///
 /// Selection and insertion into the account ReservationSet happen under one
-/// wallet-manager lock, so they cannot interleave with a competing finalizer. The wallet-manager lock is dropped before the host
-/// mnemonic resolver is invoked. This function consumes `builder` on every
-/// path after its pointer is accepted.
+/// wallet-manager lock, so they cannot interleave with a competing finalizer.
+/// The wallet-manager lock is dropped before the host mnemonic resolver is
+/// invoked. This function consumes `builder` on every path after its pointer
+/// is accepted.
 ///
 /// On success `out_transaction_handle` receives an opaque V2 handle. Consume
 /// it with `core_wallet_broadcast_signed_transaction_v2` or

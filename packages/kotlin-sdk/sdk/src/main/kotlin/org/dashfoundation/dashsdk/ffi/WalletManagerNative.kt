@@ -199,7 +199,7 @@ internal object WalletManagerNative {
      */
     external fun coreTxBuilderSetCurrentHeight(builder: Long, height: Int)
 
-    /** Atomic V2 finalizer; consumes [builder] and returns an opaque registry handle. */
+    /** Atomic V2 finalizer; consumes [builder] and returns an opaque signed-transaction V2 handle. */
     external fun coreTxBuilderFinalize(
         builder: Long,
         walletHandle: Long,
