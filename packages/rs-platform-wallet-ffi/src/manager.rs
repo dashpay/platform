@@ -182,14 +182,16 @@ pub unsafe extern "C" fn platform_wallet_manager_persistence_capabilities(
 /// Whether the manager has frozen its durable sync watermark this session
 /// (dashpay/platform#4069).
 ///
-/// `true` means the wallet-event adapter dropped record-bearing events (a
-/// broadcast lag) or had a persistence `store()` rejected, so the persisted
+/// `true` means a persistence `store()` was rejected — the one remaining
+/// fault trigger; the lossless persistence channel cannot drop or lag
+/// events — so the affected wallet's persisted
 /// `syncedHeight` is deliberately held behind the chain tip and a rescan is
 /// pending on the next launch. Hosts poll this to surface a hard
 /// "verification failed / rescan pending" state instead of the fault being
 /// visible only in error logs.
 ///
-/// The flag latches: once `true` it stays `true` for the process lifetime.
+/// The flag latches: once `true` it stays `true` for this manager
+/// instance's lifetime (a destroyed-and-recreated manager starts unlatched).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_sync_fault_detected(
     handle: Handle,

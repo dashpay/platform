@@ -473,9 +473,10 @@ internal object WalletManagerNative {
 
     /**
      * Whether the durable sync watermark has been frozen this session because
-     * persistence events were dropped or a store was rejected — the persisted
+     * a persistence store was rejected (the lossless channel cannot drop
+     * events) — the persisted
      * `syncedHeight` is held behind the chain tip and a rescan is pending on
-     * the next launch. Latches for the process lifetime.
+     * the next launch. Latches for this manager instance's lifetime.
      */
     external fun syncFaultDetected(managerHandle: Long): Boolean
 

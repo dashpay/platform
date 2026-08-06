@@ -56,6 +56,18 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Security
 zeroize = "1"
 
+# `log` facade. `changeset/core_bridge.rs` emits watermark-freeze breadcrumbs
+# through `log` so they reach Android logcat (the JNI layer installs
+# `android_logger` as the global `log` logger, tag `DashSDK`; the Kotlin SDK's
+# only `tracing` subscriber writes to stdout, which Android discards).
+# Declared here — deliberately NOT inside the `tracing` block above — so this
+# crate owns the dependency independently of the encrypted-txMetadata change
+# (#4277) that first introduced a `log` line: that change was reverted on
+# v4.2-dev (#4279), and a `log` line living in that reverted region gets
+# dropped by the 3-way merge, leaving the `log::` calls in core_bridge.rs
+# undeclared (E0433). Keeping it in this untouched region makes it survive.
+log = "0.4"
+
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a2791bbdca756d6a6113024aec48f09f7a33faa9", optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
